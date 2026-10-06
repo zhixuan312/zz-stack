@@ -22,6 +22,8 @@
  * or roll back together, so a failed insert of either FAILS THE WRITE. Every other write — an
  * approval, a close, an evaluation document — records its act after its commit (`recordAct`). The
  * link, cause and request rows are `document-links.ts`.
+ * A change's `receipt` is composed in the transaction too, on the client that sees the change and
+ * once its captured source's name is settled; the request stores it and the act row its details.
  */
 import { createHash } from "node:crypto";
 
@@ -35,6 +37,7 @@ import { chainFor } from "./chain.js";
 import {
   type Cause, insertCauses, insertLinks, recordRequest, REQUEST_ID_CONFLICT, type RequestRecord, storedRequest,
 } from "./document-links.js";
+import type { Composed } from "./document-details.js";
 import { RESERVED_ENVELOPE } from "./document-rules.js";
 import { insertEvent } from "./indexing.js";
 import { stampEnvelope } from "./write-guards.js";
@@ -51,7 +54,9 @@ interface DocumentChange {
   /** The content generation the caller's `base` token named, when it sent one. */
   base?: number;
   /** A source captured from the caller's words, filed as its own document first, under the first
-   *  free name of its path's stem (`reserveName`); a cause naming `relPath` names the one filed. */
+   *  free name of its path's stem (`reserveName`), and recorded as an agent's cause of this change
+   *  under the name it was filed as. A cause in `causes` naming `relPath` names that path as it
+   *  stands — never the captured source, whatever name it took. */
   captured?: { relPath: string; text: string };
   /** The causes this change records: `cites` links from the resulting row, with their origin. */
   causes?: Cause[];
@@ -60,6 +65,11 @@ interface DocumentChange {
   /** The change's complete details, carried on its own event row as `detail.details_ref` and
    *  `detail.details`: what a receipt names when its lists were cut. */
   details?: { ref: string; text: string };
+  /** The receipt, composed in the transaction once the names it states are settled — the captured
+   *  source's and the document's own, which a `reserveName` create may suffix — on the
+   *  transaction's own client: what `request` stores, whose details the act row carries in place
+   *  of `details`, and what the write returns. */
+  receipt?: (c: Pick<pg.Pool, "query">, capturedPath: string | undefined, relPath: string) => Promise<Composed>;
 }
 
 /** One write, as the tools compose it. */
@@ -148,6 +158,8 @@ interface Saved {
   reserved?: string;
   /** The path a change's captured source was filed under. */
   capturedPath?: string;
+  /** The receipt `change.receipt` composed. */
+  receipt?: Composed;
 }
 
 /** A write sent back because the state moved and no stale `base` makes it a conflict. */
@@ -420,17 +432,20 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       if (change && same) {
         // A keyed no-change: nothing about the document moves, and the request is what is kept —
         // with the act row its receipt's `details_ref` names, when it carries details.
-        if (change.request) await recordRequest(client, w.team, asker!, id, change.request);
-        if (change.details) {
+        const composed = await composeIn(client, change, undefined, w.relPath);
+        if (change.request) await recordRequest(client, w.team, asker!, id, withReceipt(change.request, composed));
+        const kept = composed?.details ?? change.details;
+        if (kept) {
           const action = w.act ?? "write";
           const recorded = await insertEvent(client, {
             actor: w.by, team: w.team, initiative: splitStorePath(w.relPath).initiative || null,
             kind: `${DOCUMENT_EVENT_PREFIX}${action}`, subject: w.relPath,
-            detail: { user: w.by, action, path: w.relPath, details_ref: change.details.ref, details: change.details.text } });
+            detail: { user: w.by, action, path: w.relPath, result: "no_change", details_ref: kept.ref, details: kept.text } });
           if (!recorded.ok) return await bail({ refusal: `ERROR: ${w.relPath} could not be written: ${recorded.error}` });
         }
         await client.query("commit");
-        return { id, revision, version, generation, newVersion: false, newRow: false };
+        return { id, revision, version, generation, newVersion: false, newRow: false,
+                 ...(composed ? { receipt: composed } : {}) };
       }
       if (!same) generation += 1;
       mode = change
@@ -461,7 +476,9 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     }
 
     // A captured source is filed first, as its own document under its own lock, so the target's
-    // cause link — and, on a create, the waiting-supports insert below — find it.
+    // cause link — and, on a create, the waiting-supports insert below — find it. Its cause is added
+    // under the name it was filed as; a cause the change names is never repointed to it, because a
+    // named source and a captured one may ask for the same name.
     if (capturedWrite && cap && !("refusal" in cap)) {
       const asked = capturedWrite.relPath;
       const rel = await reservePath(client, w.team, asked);
@@ -469,8 +486,8 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
         capturedWrite = { ...capturedWrite, relPath: rel };
         cap = await prepare(p, capturedWrite);
         if ("refusal" in cap) return await bail(cap);
-        causes = causes.map((k) => (k.path === asked ? { ...k, path: rel } : k));
       }
+      causes = [...causes, { path: rel, revision: 1, linked_by: "agent" }];
       const capturedId = await createRows(client, capturedWrite, cap, initiativeId, writer, null);
       if (!capturedId) return await bail({ refusal: `ERROR: ${capturedWrite.relPath} could not be written — no row came back` });
       await insertLinks(client, w.team, capturedId, 1, capturedWrite);
@@ -554,7 +571,9 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
           `cause of ${w.relPath}; nothing was written.` });
       }
     }
-    if (change?.request && !(await recordRequest(client, w.team, asker!, id, change.request))) {
+    // The receipt, once the captured source's name is settled and on the client that sees the change.
+    const composed = await composeIn(client, change, capturedWrite?.relPath, w.relPath);
+    if (change?.request && !(await recordRequest(client, w.team, asker!, id, withReceipt(change.request, composed)))) {
       // The key was taken between the lookup and here — by a request on another path's lock.
       await bail(null);
       return (await storedRequest(p, w.team, asker!, change.request)) ?? { refusal: REQUEST_ID_CONFLICT };
@@ -564,7 +583,7 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     // the moment the receipt is. DELIBERATE: a failed insert refuses the write; a details reference
     // to a row that never landed is the dangling receipt this exists to prevent.
     const action = w.act ?? (mode === "append" ? "revise" : "write");
-    const details = change?.details;
+    const details = composed?.details ?? change?.details;
     const acts = [...(capturedWrite ? [{ path: capturedWrite.relPath, action: "source", extra: {} }] : []),
                   ...(details ? [{ path: w.relPath, action, extra: { details_ref: details.ref, details: details.text } }] : [])];
     for (const a of acts) {
@@ -579,7 +598,8 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     if (!details) recordAct(w.relPath, { user: w.by, action, path: w.relPath });
     return { id, revision, version, generation, newVersion: mode === "create" || mode === "append",
              newRow: mode !== "rewrite", ...(reserve ? { reserved: w.relPath } : {}),
-             ...(capturedWrite ? { capturedPath: capturedWrite.relPath } : {}) };
+             ...(capturedWrite ? { capturedPath: capturedWrite.relPath } : {}),
+             ...(composed ? { receipt: composed } : {}) };
   } catch (err) {
     await client.query("rollback").catch(() => undefined);
     return { refusal: `ERROR: ${w.relPath} could not be written: ` +
@@ -588,6 +608,23 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     client.release();
   }
 }
+
+/** A change's receipt, composed on the transaction's client inside a savepoint: what it reads sees
+ *  the change, and a read that fails there costs the receipt its next move, never the write. */
+async function composeIn(
+  client: pg.PoolClient, change: DocumentChange | undefined, capturedPath: string | undefined, relPath: string,
+): Promise<Composed | null> {
+  if (!change?.receipt) return null;
+  await client.query("savepoint receipt");
+  const composed = await change.receipt(client, capturedPath, relPath);
+  await client.query("release savepoint receipt")
+    .catch(async () => { await client.query("rollback to savepoint receipt"); });
+  return composed;
+}
+
+/** The request record with the receipt composed for it: the text and the next move it replays. */
+const withReceipt = (r: RequestRecord, c: Composed | null): RequestRecord =>
+  c ? { ...r, receipt: { ...r.receipt, text: c.text, next_move: c.nextMove } } : r;
 
 /** The write a captured source is filed with: a source in the target's initiative, typed by the
  *  stage it records when it names one, supporting what its envelope declares. */

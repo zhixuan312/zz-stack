@@ -7,8 +7,9 @@
  * a replacement can never become a later edit's target. Each must occur exactly once, counting
  * overlapping occurrences ("aa" occurs three times in "aaaa"); the spans must not overlap; the
  * splices run last to first so earlier offsets stay valid. All or nothing: a refusal carries no
- * body. No fuzzy matching, whitespace folding or Unicode normalisation — the bytes either match
- * or they do not.
+ * body, and names EVERY edit that cannot apply — each is judged against the one original body, so
+ * one failing edit says nothing about another. No fuzzy matching, whitespace folding or Unicode
+ * normalisation — the bytes either match or they do not.
  */
 
 export interface Edit { find: string; replace: string }
@@ -38,30 +39,35 @@ function lineOf(body: string, offset: number): number {
   return n;
 }
 
-export function applyEdits(body: string, edits: Edit[]): { body: string; changed: number } | EditRefusal {
+export function applyEdits(body: string, edits: Edit[]): { body: string; changed: number } | { refusals: EditRefusal[] } {
   if (!Array.isArray(edits) || edits.length < 1 || edits.length > MAX_EDITS) {
-    return { code: "EDIT_COUNT" };
+    return { refusals: [{ code: "EDIT_COUNT" }] };
   }
   const spans: { start: number; end: number; replace: string }[] = [];
-  // Validated in index order, so the first failing edit is the one reported.
+  const refusals: EditRefusal[] = [];
+  // In index order, every edit judged: the refusals come back in the order the edits were sent.
   for (let i = 0; i < edits.length; i++) {
     const e = edits[i];
     if (!e || typeof e.find !== "string" || typeof e.replace !== "string" || e.find === "") {
-      return { code: "INVALID_EDIT", edit_index: i };
+      refusals.push({ code: "INVALID_EDIT", edit_index: i });
+      continue;
     }
     const at = occurrences(body, e.find);
-    if (at.length === 0) return { code: "NO_MATCH", edit_index: i, match_count: 0 };
+    if (at.length === 0) { refusals.push({ code: "NO_MATCH", edit_index: i, match_count: 0 }); continue; }
     if (at.length > 1) {
-      return { code: "MULTIPLE_MATCHES", edit_index: i, match_count: at.length,
-               lines: at.map((o) => lineOf(body, o)) };
+      refusals.push({ code: "MULTIPLE_MATCHES", edit_index: i, match_count: at.length,
+                      lines: at.map((o) => lineOf(body, o)) });
+      continue;
     }
     const span = { start: at[0], end: at[0] + e.find.length, replace: e.replace };
     // Identical edits land on the same span, so they overlap and are refused here too.
     if (spans.some((s) => span.start < s.end && s.start < span.end)) {
-      return { code: "OVERLAPPING_EDITS", edit_index: i };
+      refusals.push({ code: "OVERLAPPING_EDITS", edit_index: i });
+      continue;
     }
     spans.push(span);
   }
+  if (refusals.length) return { refusals };
   let out = body;
   for (const s of [...spans].sort((a, b) => b.start - a.start)) {
     out = out.slice(0, s.start) + s.replace + out.slice(s.end);

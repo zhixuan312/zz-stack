@@ -9,13 +9,15 @@
  * the readings, which is exactly what `source_add` and `document_write` write.
  *
  *   1. a ledger is refused by name: none, two, a bad impact, reproduced with no reproducer, a
- *      wrong round number, `resolved` naming an unknown id, one id both restated and resolved
+ *      wrong round number, `resolved` naming an unknown id, one id both restated and resolved —
+ *      and a ledger with several of these at once is refused with every one, counted (AC-2.2)
  *   2. `reviewRoundOf` counts only the verifying document's own stage
  *   3. every reviewMove branch: round 1, fix, run_experiment, settled, out-of-scope, S1
  *      reproduced out of scope, a repeat, the budget on a non-converging review, a renewal, an accepted residual
  *   4. the approval rules: no round and no waiver, a stakeholder's waiver, no section, a missing row, a stray row, a bad status, no locator,
  *      a locator with a space after its colon, a table the gate cannot read, no quote, deferred
- *      with and without a stakeholder source, the Backlog, and `unavailable`
+ *      with and without a stakeholder source, the Backlog, and `unavailable` — and a table with
+ *      several independent problems, two on one row, refused with all of them, counted
  *   5. the readings: a task's whole criterion, the plan's declared checks bound to the criteria
  *      they verify and a row naming one asked only whether it passed, `no` refuses, `unclear`
  *      asks to sharpen, `unclear` again on new evidence goes to the stakeholder, whose source
@@ -219,6 +221,17 @@ const move = async (i: Fixture) =>
   bad(content(ledger(2, [finding("R1-A", "S2")], ["R1-A"])), [ledger(1, [finding("R1-A", "S2")])], /restate it or resolve it/,
       "an id both restated and resolved was accepted");
   is(rr.ledgerRefusal(content(ledger(1, [finding("R1-A", "S2")])), [], "review.md") === null, "a well-formed ledger was refused");
+  // Shape problems, the round number and an unknown `resolved` id at once: every one of them.
+  {
+    const said = rr.ledgerRefusal(content(ledger(3, [{ ...finding("R2-A", "S2"), impact: "high" },
+                                                     { ...finding("R2-B", "S1", "reproduced"), reproducer: null }], ["R1-X"])),
+                                  [ledger(1, [finding("R1-A", "S2")])], "review.md") ?? "";
+    for (const want of [/R2-A: `impact` must be one of S1/, /R2-B says reproduced and names no `reproducer`/,
+                        /it says round 3, and 1 round\(s\) are already recorded, so this is round 2/, /`resolved` names R1-X/]) {
+      is(want.test(said), `a ledger with several problems does not report ${want}: ${said}`);
+    }
+    is(/is not recorded — problems \(4\): /.test(said) && !/details:/.test(said), `the ledger's problems are not counted, whole: ${said}`);
+  }
 
   // 2. which sources are review rounds
   const a = await fresh();
@@ -319,6 +332,14 @@ const move = async (i: Fixture) =>
   is(/AC-2\.1 is established and quotes no output/.test(got.refusal ?? ""), `no quote: ${got.refusal}`);
   got = await approval(e, table([ok1, "| AC-2.1 | deferred | | next release |", okT]));
   is(/AC-2\.1 is deferred and no stakeholder source names it/.test(got.refusal ?? ""), `deferred alone: ${got.refusal}`);
+  // Several independent problems at once — a missing row, a stray row, and two on one row (no
+  // locator AND no quote): every one, counted, in one refusal.
+  got = await approval(e, table([ok1, "| I-1 | established | it passed | |", "| AC-9.9 | established | check:x — `x` | |"]));
+  for (const want of [/no row for AC-2\.1/, /rows for AC-9\.9/, /I-1's evidence names no kind-prefixed locator/,
+                      /I-1 is established and quotes no output/]) {
+    is(want.test(got.refusal ?? ""), `a table with several problems does not report ${want}: ${got.refusal}`);
+  }
+  is(/is not approved — problems \(4\): /.test(got.refusal ?? ""), `the table's problems are not counted as 4: ${got.refusal}`);
   stakeholder(e, "2026-09-26T05:00:00.000Z", "AC-2.1 moves to the next release.");
   got = await approval(e, table([ok1, "| AC-2.1 | deferred | | next release |", okT]));
   is(got.refusal === null && /unavailable for AC-1\.1, I-1/.test(got.note),

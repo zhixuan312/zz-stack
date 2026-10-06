@@ -145,14 +145,14 @@ async function versionTable(c: Core): Promise<void> {
   reply = await c.ok(step, "document_edit", { path: n, edits: [{ find: "three", replace: "four" }],
                                               sources: [rel(s1), rel(s2)], source_content: "and a third" });
   if (first(reply) !== `edited: ${n} — v3 (new version)`) c.fail(step, reply);
-  const listed = /^causes: (.*)$/m.exec(reply)?.[1].split(", ") ?? [];
+  const listed = /^causes \(\d+\): (.*)$/m.exec(reply)?.[1].split(", ") ?? [];
   if (listed.length !== 3 || !listed.includes(`${s1} (agent)`) || !listed.includes(`${s2} (agent)`)) c.fail(step, reply);
   if ((await rowOf(c, n)).version !== 3) c.fail(step, JSON.stringify(await rowOf(c, n)));
   c.pass(step);
 
   step = "a source the current version already cites, named again, opens no version";
   reply = await c.ok(step, "document_edit", { path: n, edits: [{ find: "four", replace: "five" }], sources: [rel(s1)] });
-  if (first(reply) !== `edited: ${n} — v3` || !/^causes: none$/m.test(reply)) c.fail(step, reply);
+  if (first(reply) !== `edited: ${n} — v3` || !/^causes \(0\): none$/m.test(reply)) c.fail(step, reply);
   c.pass(step);
 
   step = "an approval moves neither the public version nor the content identity";
@@ -190,7 +190,7 @@ async function versionTable(c: Core): Promise<void> {
   const approved = await rowOf(c, n);
   token = await tokenOf(c, n);
   reply = await c.ok(step, "document_edit", { path: n, title: "Notes, renamed" });
-  if (first(reply) !== `edited: ${n} — v4` || !/^causes: none$/m.test(reply)) c.fail(step, reply);
+  if (first(reply) !== `edited: ${n} — v4` || !/^causes \(0\): none$/m.test(reply)) c.fail(step, reply);
   row = await rowOf(c, n);
   if (row.version !== 4 || row.revision !== approved.revision + 1 || row.status === "approved"
       || row.approved_revision !== approved.revision) c.fail(step, JSON.stringify(row));
@@ -346,7 +346,7 @@ async function closedCorrections(c: Core): Promise<void> {
   step = "metadata alone on a closed gated document: the same version, a draft awaiting its own approval, no cause";
   const token = await tokenOf(c, review);
   reply = await c.ok(step, "document_edit", { path: review, title: "Review, retitled" });
-  if (first(reply) !== `edited: ${review} — v2` || !/^status: draft$/m.test(reply) || !/^causes: none$/m.test(reply)) {
+  if (first(reply) !== `edited: ${review} — v2` || !/^status: draft$/m.test(reply) || !/^causes \(0\): none$/m.test(reply)) {
     c.fail(step, reply);
   }
   if ((await tokenOf(c, review)) === token || (await closeRecord(c, K)) !== record) c.fail(step, "identity or close");

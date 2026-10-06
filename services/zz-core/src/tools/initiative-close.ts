@@ -21,6 +21,7 @@ import { moduleForFlow } from "../host/index.js";
 import { claimFor } from "../host/store.js";
 import { safeName, safePath, writeGuard } from "../paths.js";
 import { platformEvent, sealOf } from "../indexing.js";
+import { settleRefusal } from "../document-details.js";
 import { documentState, saveDocument, STATE_CHANGED } from "../document-save.js";
 import { stampEnvelope } from "../write-guards.js";
 import { db, teamFor } from "../platform-db.js";
@@ -417,7 +418,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         if (signedBy) doc = putEnvelopeField(doc, "accepted_by", signedBy);
         if (!signedBy && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
         const bad = await documentGuards(chain, relPath, doc, team, "initiative_close");
-        if (bad) return text(bad);
+        // Every unmet gate and every missing document, counted; a cut list's detail is recorded
+        // on the closing document before the refusal is answered.
+        if (bad) return text(await settleRefusal(p, { who: who.email, team, path: relPath }, bad));
         // The ONE insert path: `saveDocument`, which stamps, files the row and its revision, and
         // records the close on the anchor row in the same transaction. `accepted_by` and
         // `no_signoff_reason` satisfy the two CHECKs the migration declares (an `accepted` outcome

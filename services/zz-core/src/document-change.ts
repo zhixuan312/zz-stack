@@ -20,6 +20,12 @@
  * `document_write`'s create is computed here too (`planCreate`), on the same precedence: a request
  * key first, then the target, which for a create must be absent. Its v1 records its causes as an
  * edit's new version does — named, captured and owed by the one definition below.
+ *
+ * Every refusal here that does not depend on another is reported with it: what the call sends, its
+ * named sources, and every edit of a batch that cannot apply come back in one answer, each list
+ * counted (`document-details.ts`). The target, the mode and the `base` stay in their order, because
+ * each later step reads what the earlier one guards. A receipt is a list of lines — counted, fitted
+ * and backed by its complete detail when the write composes it.
  */
 import { createHash, randomUUID } from "node:crypto";
 
@@ -28,7 +34,8 @@ import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
 import { chainFor } from "./chain.js";
-import { applyEdits, type Edit, type EditRefusal, MAX_EDITS } from "./document-edits.js";
+import { batchRefusal, composeReceipt, type Line, mintRef, refusalText, settleRefusal } from "./document-details.js";
+import { applyEdits, type Edit, MAX_EDITS } from "./document-edits.js";
 import { changedSections, locateSection, replaceSection } from "./document-parts.js";
 import { bodyEnvelopeRefusal, type Metadata, normalizeContent, normalizeRefs } from "./document-normalize.js";
 import { oneLine, renderEnvelope } from "./document-rules.js";
@@ -56,16 +63,16 @@ export async function acceptanceLine(p: pg.Pool, team: string, chain: Chain, pat
 
 const INITIATIVE = "2026-10-06-doc-write-and-update-paradigm";
 
+/** The next move a receipt states, read on the client it is handed: the write's own, inside its
+ *  transaction, so the move is the one the committed state will show. */
+type MoveOf = (c: Pick<pg.Pool, "query">) => Promise<string>;
+const noMove: MoveOf = async () => "";
+
 /** How many times a change is computed against a document that keeps moving under it. */
 export const MAX_ATTEMPTS = 3;
 
 export const RETRYABLE_UNAVAILABLE =
   "ERROR: RETRYABLE_UNAVAILABLE — the document kept changing; read it again and resend";
-
-/** The most entries one receipt list carries, and the longest one entry may be, so the whole
- *  text stays well under 16 KiB whatever a change touched. */
-const LIST_CAP = 40;
-const ENTRY_CAP = 120;
 
 /** What `document_edit` is called with — spec v6's `DocumentEditArgs`. */
 interface EditArgs {
@@ -92,41 +99,14 @@ interface Planned {
   renamed: string[];
   /** Body and editable metadata are what they were: nothing is written, nothing is consumed. */
   noChange: boolean;
-  /** The receipt's lines, without the next move — that is computed after the commit. */
-  receipt: string;
+  /** The receipt's lines, naming the captured source by the name it was filed under, and the ref
+   *  its complete detail is recorded under. */
+  lines: (capturedPath?: string) => Line[];
+  ref: string;
   causes: Cause[];
   /** The approved snapshot this write displaces, when the document was approved before it. */
   replaced: { version: number; revision: number } | null;
   write: Write;
-}
-
-/** The refusal the edit primitive gave, in the platform's `ERROR: <CODE> — <what to send>` form. */
-function batchRefusal(path: string, r: EditRefusal): string {
-  const at = r.edit_index === undefined ? "" : `edit ${r.edit_index} (0-based): `;
-  switch (r.code) {
-    case "EDIT_COUNT":
-      return `ERROR: EDIT_COUNT — send between 1 and ${MAX_EDITS} edits in one call.`;
-    case "INVALID_EDIT":
-      return `ERROR: INVALID_EDIT — ${at}\`find\` must be a non-empty string and \`replace\` a string ` +
-        "(an empty `replace` deletes).";
-    case "NO_MATCH":
-      return `ERROR: NO_MATCH — ${at}\`find\` does not occur in ${path}. Matching is exact, with no ` +
-        "whitespace folding: read the document and copy the text as it is.";
-    case "MULTIPLE_MATCHES":
-      return `ERROR: MULTIPLE_MATCHES — ${at}\`find\` occurs ${r.match_count} times, on lines ` +
-        `${(r.lines ?? []).join(", ")} of the body. Send a longer \`find\` that includes enough ` +
-        "surrounding text to occur exactly once.";
-    case "OVERLAPPING_EDITS":
-      return `ERROR: OVERLAPPING_EDITS — ${at}this edit covers text another edit in the batch also ` +
-        "covers (identical edits included). Merge them into one edit, or make their `find` text disjoint.";
-  }
-}
-
-/** A list for one receipt line: at most LIST_CAP entries, then how many more there are. */
-function capped(items: string[]): string {
-  if (!items.length) return "none";
-  const shown = items.slice(0, LIST_CAP).map((x) => oneLine(x, ENTRY_CAP));
-  return shown.join(", ") + (items.length > LIST_CAP ? `, … and ${items.length - LIST_CAP} more` : "");
 }
 
 /** JSON with every object's keys sorted and absent values left out — the one spelling of a
@@ -152,13 +132,6 @@ function requestDigest(args: EditArgs, tool: RequestTool): string {
   return createHash("sha256").update(`${tool}\n${canonical(rest)}`, "utf8").digest("hex");
 }
 
-/** The receipt a committed request returns again, its first line marked as a replay. */
-export function replayText(receipt: Record<string, unknown>): string {
-  const lines = String(receipt.text ?? "").split("\n");
-  lines[0] = `${lines[0]} (replayed)`;
-  return lines.join("\n");
-}
-
 /** (0) A committed request under this key: its receipt again, or the conflict. Null when there is
  *  none — and when the caller has no request key, or is no principal a key could be held for.
  *  Asked once the caller's identity and team resolved, before anything about the document is: a
@@ -167,7 +140,7 @@ export function replayText(receipt: Record<string, unknown>): string {
 export async function replayFor(
   p: Pick<pg.Pool, "query">, team: string, who: string, path: string, args: EditArgs,
   tool: RequestTool = "document_edit",
-): Promise<string | null> {
+): Promise<{ replayed: Record<string, unknown> } | { refusal: string } | null> {
   if (args.request_id === undefined) return null;
   const principal = await principalId(p, who);
   if (!principal) return null;
@@ -177,13 +150,8 @@ export async function replayFor(
     [team, principal, path, args.request_id]);
   if (!rows[0]) return null;
   return rows[0].request_digest === requestDigest(args, tool)
-    ? replayText(rows[0].receipt)
-    : "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request";
-}
-
-/** The receipt a stored request replays — the text, and the facts it states. */
-function receiptOf(lines: string[], facts: Record<string, unknown>): Record<string, unknown> {
-  return { text: lines.join("\n"), ...facts };
+    ? { replayed: rows[0].receipt }
+    : { refusal: "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request" };
 }
 
 /** The sources a change to a document owes: sources in its initiative that declare they support
@@ -233,31 +201,30 @@ async function citedByVersion(p: Pick<pg.Pool, "query">, docId: string, version:
   return new Set(rows.map((r) => r.path));
 }
 
-/** A `sources` entry that is no path inside the initiative: INVALID_MODE, on a create as on a
- *  change. Asked before any entry is looked up, so a malformed one is never reported as missing. */
-function malformedSource(sources: string[] | undefined): string | null {
-  const bad = (sources ?? []).find((src) => !DOC_REF.test(src.trim()));
-  return bad === undefined ? null
-    : `ERROR: INVALID_MODE — source "${bad}" must be a path inside the initiative, ` +
-      "e.g. `sources/2026-10-06-call-notes.md` — letters, digits, dot, dash, underscore and / only.";
+/** Every `sources` entry that is no path inside the initiative: INVALID_MODE, on a create as on a
+ *  change, one line each. A malformed one is never looked up, so it is never reported as missing. */
+function malformedSources(sources: string[]): string[] {
+  return sources.filter((src) => !DOC_REF.test(src.trim())).map((bad) =>
+    `ERROR: INVALID_MODE — source "${bad}" must be a path inside the initiative, ` +
+    "e.g. `sources/2026-10-06-call-notes.md` — letters, digits, dot, dash, underscore and / only.");
 }
 
 /** The caller's causes, the one definition a create and a change share: the sources it names and
  *  the words it passes as `source_content`, filed as a new source — both the agent's. `sources` is
- *  in its canonical spelling (`normalizeRefs`). `already` is what the target's current version
- *  cites: named again, it is no new cause. `label` titles a captured source the caller gave no
- *  title. The platform's causes — owed sources — are added by each caller after these, so a named
- *  one wins.
+ *  in its canonical spelling (`normalizeRefs`) and well formed. `already` is what the target's
+ *  current version cites: named again, it is no new cause. `label` titles a captured source the
+ *  caller gave no title. The platform's causes — owed sources — are added by each caller after
+ *  these, so a named one wins.
  *
  *  Every named source is resolved in ONE statement, however many there are, and every one that
- *  names no document is reported. A captured source is asked for under its plain name: the write
- *  files it under the first free one, under the lock (`reserveName`), and the receipt says when that
- *  was a suffixed one (`filedAs`). */
+ *  names no document is reported, counted. A captured source is asked for under its plain name and
+ *  is NOT among `causes`: the write files it under the first free name, under the lock, and records
+ *  its cause under the name it took — a named source asking for the same name stays itself. */
 async function namedCauses(
   p: pg.Pool, team: string, who: string, path: string,
   a: { sources: string[]; source_content?: string; source_title?: string },
   o: { already: Set<string>; label: string },
-): Promise<{ reply: string } | { causes: Cause[]; captured?: { relPath: string; text: string } }> {
+): Promise<{ missing: Line } | { causes: Cause[]; captured?: { relPath: string; text: string } }> {
   const { initiative, name } = splitStorePath(path);
   const wanted = [...new Set(a.sources)];
   const { rows } = wanted.length
@@ -272,9 +239,9 @@ async function namedCauses(
   const found = new Map(rows.map((r) => [r.path, r.revision] as const));
   const missing = wanted.filter((src) => (found.get(src) ?? null) === null).map((src) => `${initiative}/${src}`);
   if (missing.length) {
-    return { reply: `ERROR: ${missing.join(", ")} ${missing.length > 1 ? "are not documents" : "is not a document"} ` +
-      `in this team's store, so ${missing.length > 1 ? "they" : "it"} cannot be named as a cause of ${path}. ` +
-      "source_add files new material, or pass the words themselves as `source_content`." };
+    return { missing: { lead: "ERROR: ", label: "named sources that are not documents in this team's store",
+      items: missing, tail: ` — none can be named as a cause of ${path}. source_add files new material, or ` +
+        "pass the words themselves as `source_content`." } };
   }
   const causes: Cause[] = wanted
     .filter((src) => !o.already.has(`${initiative}/${src}`))
@@ -288,20 +255,67 @@ async function namedCauses(
     const relPath = `${initiative}/sources/${day}-${titleSlug(title, "source")}.md`;
     captured = { relPath, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(),
                                                  supports: [name] }) };
-    causes.push({ path: relPath, revision: 1, linked_by: "agent" });
   }
   return { causes, captured };
 }
 
-/** A receipt naming the captured source by the name the write actually filed it under: the plain
- *  name the plan asked for is replaced, and a line says why, when the write took a suffixed one. */
-export function filedAs(receipt: string, asked: string | undefined, filed: string | undefined): string {
-  if (!asked || !filed || filed === asked) return receipt;
-  return `${receipt.split(asked).join(filed)}\nsource name: ${asked} was taken, so the words were filed as ${filed}`;
+/** The receipt lines a change's causes, normalisations and diagnostics make: each list counted,
+ *  the captured source named as it was filed, and a line saying so when that was another name. */
+function causeLines(causes: Cause[], captured: Cause | null, filed: string | undefined, normalised: string[]): Line[] {
+  const named = (c: Cause) => (c === captured && filed ? filed : c.path);
+  return [
+    { label: "causes", items: causes.map((c) => `${named(c)} (${c.linked_by})`) },
+    { label: "normalised", items: normalised, sep: "; " },
+    ...(captured && filed && filed !== captured.path
+      ? [`source name: ${captured.path} was taken, so the words were filed as ${filed}`] : []),
+  ];
 }
 
-/** The receipt's normalisation lines, one per thing done with what the caller sent. */
-const normalisedLines = (lines: string[]): string[] => lines.map((l) => `normalised: ${l}`);
+/** The content holds only an envelope: separated, it leaves no body. Refused rather than stored
+ *  empty — on `document_edit` a caller meaning to retitle would wipe the body. */
+export function envelopeOnlyRefusal(content: string, body: string, tool: "document_edit" | "document_write"): string | null {
+  if (!content.trim() || body.trim()) return null;
+  return "ERROR: INVALID_MODE — the content held only an envelope, and `content` is the document's body, so " +
+    "this would leave it empty. " + (tool === "document_edit"
+      ? "To change the title, tags, stakeholder or a field, send them as named arguments with no `content`; " +
+        "to replace the body, send the body itself."
+      : "Send the body as `content`, starting at its first heading, and the title, tags, stakeholder and " +
+        "fields as named arguments.");
+}
+
+/** What a call sends, in the spelling the platform stores, or every refusal that reading it gives:
+ *  the envelope `normalizeContent` separated, the tags it leaves held to TAG_TOKEN, a content that
+ *  was only an envelope, and every `sources` entry that is malformed. Asks nothing of the store. */
+function readSent(
+  sent: ReturnType<typeof normalizeContent>, a: EditArgs, whole: boolean, initiative: string,
+): { refusals: string[] } | { body: string; metadata: Metadata; refs: string[]; normalised: string[] } {
+  const refusals: string[] = [];
+  if ("refusals" in sent) refusals.push(...sent.refusals);
+  else {
+    const badTags = tagRefusal(sent.metadata.tags);
+    if (badTags) refusals.push(badTags);
+    const empty = whole ? envelopeOnlyRefusal(a.content ?? "", sent.body, "document_edit") : null;
+    if (empty) refusals.push(empty);
+  }
+  const refs = normalizeRefs(a.sources, initiative);
+  refusals.push(...("refusals" in refs ? refs.refusals : malformedSources(refs.refs)));
+  if (refusals.length || "refusals" in sent || "refusals" in refs) return { refusals };
+  return { body: sent.body, metadata: sent.metadata, refs: refs.refs, normalised: [...sent.normalised, ...refs.normalised] };
+}
+
+/** The refusals reading a `document_edit` call gives before its document is looked at — asked by
+ *  the handler beside its field and tag rules, so independent faults come back in one answer. */
+export function callRefusals(a: EditArgs, initiative: string): string[] {
+  const mode = modeOf(a);
+  if (typeof mode !== "string") return [];
+  const read = readSent(normalizeContent(mode === "content" ? a.content ?? "" : "", a), a, mode === "content", initiative);
+  return "refusals" in read ? read.refusals : [];
+}
+
+/** A refusal as the change service answers it: counted, fitted, a cut list's detail recorded. */
+async function refused(p: pg.Pool, who: string, team: string, path: string, lines: Line[]): Promise<{ reply: string }> {
+  return { reply: await settleRefusal(p, { who, team, path }, refusalText(lines)) };
+}
 
 /** Which body mode a call sends, or the INVALID_MODE that says why it sends none or two. */
 function modeOf(a: EditArgs): "edits" | "section" | "content" | "metadata" | { refusal: string } {
@@ -334,23 +348,21 @@ function modeOf(a: EditArgs): "edits" | "section" | "content" | "metadata" | { r
 
 /** (8) The body `section` with `content` makes, or SECTION_MISSING / SECTION_AMBIGUOUS. The edit
  *  path's own refusals: a writer picks a heading by its selectors, never by a character offset. */
-function sectionBody(path: string, body: string, a: EditArgs): { body: string } | { refusal: string } {
+function sectionBody(path: string, body: string, a: EditArgs): { body: string } | { refusal: Line } {
   const section = a.section ?? "";
   const pick = { level: a.section_level, occurrence: a.section_occurrence };
   const found = locateSection(body, section, pick);
   const selectors = [a.section_level !== undefined ? ` at level ${a.section_level}` : "",
                      a.section_occurrence !== undefined ? ` (occurrence ${a.section_occurrence})` : ""].join("");
   if ("missing" in found) {
-    const all = found.all.map((h) => `${"#".repeat(h.level)} ${h.title}`);
-    return { refusal: `ERROR: SECTION_MISSING — no heading "${section}"${selectors} in ${path}. Its ` +
-      `headings: ${capped(all)}.` };
+    return { refusal: { lead: `ERROR: SECTION_MISSING — no heading "${section}"${selectors} in ${path}. Its `,
+      label: "headings", items: found.all.map((h) => `${"#".repeat(h.level)} ${h.title}`), tail: "." } };
   }
   if ("ambiguous" in found) {
-    const listed = found.ambiguous.map((c) =>
-      `"${"#".repeat(c.level)} ${c.title}" on line ${c.line}: section_level ${c.level}, section_occurrence ${c.occurrence}`);
-    return { refusal: `ERROR: SECTION_AMBIGUOUS — ${found.ambiguous.length} headings read "${section}"` +
-      `${selectors}: ${capped(listed)}. Send the \`section_level\` and \`section_occurrence\` listed ` +
-      "beside the one you mean." };
+    return { refusal: { lead: `ERROR: SECTION_AMBIGUOUS — ${found.ambiguous.length} headings read "${section}"${selectors}: `,
+      label: "candidates", sep: "; ", items: found.ambiguous.map((c) =>
+        `"${"#".repeat(c.level)} ${c.title}" on line ${c.line}: section_level ${c.level}, section_occurrence ${c.occurrence}`),
+      tail: ". Send the `section_level` and `section_occurrence` listed beside the one you mean." } };
   }
   // Located, so the one refusal left is a replacement that does not open with its heading line.
   const spliced = replaceSection(body, section, a.content ?? "", pick);
@@ -385,9 +397,10 @@ function envelopeOf(current: string, a: EditArgs, approved: boolean, gated: bool
   return env;
 }
 
-/** (3)–(10): the change a call asks for, or the answer that stops it. `path` is canonical. */
+/** (3)–(10): the change a call asks for, or the answer that stops it. `path` is canonical; `moveOf`
+ *  reads the next move the receipt states, on the write's own client. */
 export async function planEdit(
-  p: pg.Pool, team: string, who: string, path: string, a: EditArgs,
+  p: pg.Pool, team: string, who: string, path: string, a: EditArgs, moveOf: MoveOf = noMove,
 ): Promise<{ reply: string } | Planned> {
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
   // The state first, then the document — see the module header.
@@ -409,24 +422,9 @@ export async function planEdit(
   // (5)
   const mode = modeOf(a);
   if (typeof mode !== "string") return { reply: mode.refusal };
-  // What the call sends, in the spelling the platform stores: whole `content`'s envelope separated
-  // and read into the metadata it stands for, tags lower-cased, `sources` canonical. Before any
-  // identity is compared, so a normalisation never manufactures a version. From here on `a` is the
-  // call as the platform reads it; `asSent` is the call as sent, which is what a request key digests.
-  const sent = normalizeContent(mode === "content" ? a.content ?? "" : "", a);
-  if ("refusals" in sent) return { reply: sent.refusals.join("\n") };
-  const badTags = tagRefusal(sent.metadata.tags);
-  if (badTags) return { reply: badTags };
-  const refs = normalizeRefs(a.sources, initiative);
-  if ("refusals" in refs) return { reply: refs.refusals.join("\n") };
-  const malformed = malformedSource(refs.refs);
-  if (malformed) return { reply: malformed };
-  const asSent = a;
-  a = { ...a, ...sent.metadata, ...(mode === "content" ? { content: sent.body } : {}) };
-  const normalised = normalisedLines([...sent.normalised, ...refs.normalised]);
   // (6)
   if (mode === "edits" && (!Array.isArray(a.edits) || a.edits.length < 1 || a.edits.length > MAX_EDITS)) {
-    return { reply: batchRefusal(path, { code: "EDIT_COUNT" }) };
+    return { reply: batchRefusal(path, { code: "EDIT_COUNT" }) as string };
   }
   // (7)
   const token = contentRevision(loaded.doc.id, Number(loaded.doc.content_generation));
@@ -434,25 +432,35 @@ export async function planEdit(
     return { reply: `ERROR: BASE_CONFLICT — ${path} is at content revision ${token} now, not the one ` +
       "`base` names; read it again and apply the change to what it says now." };
   }
-  // (8)
+  // (8) Every fault of the call that does not depend on another, in ONE answer: what it sends —
+  // whole `content`'s envelope separated and read into the metadata it stands for, tags
+  // lower-cased, `sources` canonical — and every edit of a batch, or the section, that cannot
+  // apply. Before any identity is compared, so a normalisation never manufactures a version.
+  const sent = normalizeContent(mode === "content" ? a.content ?? "" : "", a);
+  const read = readSent(sent, a, mode === "content", initiative);
+  const issues: Line[] = "refusals" in read ? [...read.refusals] : [];
   const body = documentBody(loaded.text);
   let next = body;
   if (mode === "edits") {
     const applied = applyEdits(body, a.edits ?? []);
-    if ("code" in applied) return { reply: batchRefusal(path, applied) };
-    next = applied.body;
+    if ("refusals" in applied) issues.push(...applied.refusals.map((r) => batchRefusal(path, r)));
+    else next = applied.body;
   } else if (mode === "section") {
     const spliced = sectionBody(path, body, a);
-    if ("refusal" in spliced) return { reply: spliced.refusal };
-    next = spliced.body;
-  } else if (mode === "content") {
-    next = a.content ?? "";
+    if ("refusal" in spliced) issues.push(spliced.refusal);
+    else next = spliced.body;
   }
   // The body a batch or a section MAKES may not open with a recognised envelope, which would read
   // back as a second one; whole `content` is held to the same by `normalizeContent` above. A
   // thematic break is markdown, and stays.
   const opened = mode === "edits" || mode === "section" ? bodyEnvelopeRefusal(next) : null;
-  if (opened) return { reply: opened };
+  if (opened) issues.push(opened);
+  if (issues.length || "refusals" in read) return refused(p, who, team, path, issues);
+  // From here on `a` is the call as the platform reads it; `asSent` is the call as sent, which is
+  // what a request key digests.
+  const asSent = a;
+  a = { ...a, ...read.metadata, ...(mode === "content" ? { content: read.body } : {}) };
+  if (mode === "content") next = a.content ?? "";
   const governing = await chainFor(p, team, path, loaded.text);
   const gated = governing.documents.some((d) => d.name === name && d.gate);
   const approved = loaded.doc.status === "approved";
@@ -465,29 +473,35 @@ export async function planEdit(
   const bodyChanged = after !== body;
   const version = loaded.rev.version;
   const status = (t: string) => parseEnvelope(t).status || (gated ? "draft" : "none");
+  const ref = mintRef();
   // (9) Body and editable metadata as they were: nothing is written and no cause is consumed. A
   // keyed one still goes to the write, which records the request and nothing else.
   if (contentIdentity(fixed.content, path) === contentIdentity(loaded.text, path)) {
-    const lines = [`edited: ${path} — v${version} (no change)`, `content revision: ${token}`,
-                   `status: ${status(loaded.text)}`, "changed sections: none", "causes: none", ...normalised];
-    return { chain, text: fixed.content, renamed: [], noChange: true, receipt: lines.join("\n"),
+    const lines = (): Line[] => [`edited: ${path} — v${version} (no change)`, `content revision: ${token}`,
+      `status: ${status(loaded.text)}`, { label: "changed sections", items: [] }, ...causeLines([], null, undefined, read.normalised)];
+    return { chain, text: fixed.content, renamed: [], noChange: true, lines, ref,
              causes: [], replaced: null,
              write: { team, relPath: path, initiative, text: fixed.content, by: who, mode: "rewrite",
                       flow: chain.name ?? undefined, type: chain.roles[name], act: "edit",
                       change: { nextVersion: false, expect: state,
-                                request: requestOf(asSent, who, path, lines, { result: "no_change", version }) } } };
+                                receipt: async (c) => composeReceipt(lines(), ref, await moveOf(c)),
+                                request: requestOf(asSent, who, path, { result: "no_change", version }) } } };
   }
   // The causes. Named sources and words captured as a new source are the caller's; owed sources
   // are the platform's, and a change that leaves the body alone owes none.
-  const named = await namedCauses(p, team, who, path, { ...a, sources: refs.refs }, {
+  const named = await namedCauses(p, team, who, path, { ...a, sources: read.refs }, {
     already: await citedByVersion(p, loaded.doc.id, version),
     label: `Input behind v${bodyChanged ? version + 1 : version}`,
   });
-  if ("reply" in named) return named;
-  const { causes, captured } = named;
+  if ("missing" in named) return refused(p, who, team, path, [named.missing]);
+  const { captured } = named;
+  const capturedCause: Cause | null = captured ? { path: captured.relPath, revision: 1, linked_by: "agent" } : null;
+  const causes: Cause[] = [...named.causes, ...(capturedCause ? [capturedCause] : [])];
+  // A named source an owed one repeats wins; the captured source does not, though it asks for a
+  // name an owed source may hold — it will be filed under another.
   if (bodyChanged) {
     for (const owed of await owedSources(p, team, initiative, name, loaded.doc.id)) {
-      if (!causes.some((c) => c.path === owed.path)) causes.push(owed);
+      if (!causes.some((c) => c !== capturedCause && c.path === owed.path)) causes.push(owed);
     }
   }
   // (10) An approved body changes only with a cause new to its version, which opens the next one.
@@ -498,13 +512,13 @@ export async function planEdit(
   }
   const nextVersion = bodyChanged && causes.length > 0;
   const newVersion = nextVersion ? version + 1 : version;
-  const lines = [
+  const lines = (filed?: string): Line[] => [
     `edited: ${path} — v${newVersion}${nextVersion ? " (new version)" : ""}`,
     `content revision: ${contentRevision(loaded.doc.id, state.generation + 1)}`,
     `status: ${status(fixed.content)}`,
-    `changed sections: ${capped(changedSections(body, after))}`,
-    `causes: ${capped(causes.map((c) => `${c.path} (${c.linked_by})`))}`,
-    ...normalised,
+    { label: "changed sections", items: changedSections(body, after) },
+    ...causeLines(causes, capturedCause, filed, read.normalised),
+    ...(fixed.renamed.length ? [`Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.`] : []),
   ];
   // DELIBERATE: a change in the same version keeps the version's note when it sends none — the
   // note says what the version is, and a typo fix does not unsay it.
@@ -512,32 +526,34 @@ export async function planEdit(
   const replaced = loaded.doc.approved_revision !== null && loaded.doc.approved_revision === loaded.doc.current_revision
     ? { version, revision: loaded.rev.revision } : null;
   return {
-    chain, text: fixed.content, renamed: fixed.renamed, noChange: false, receipt: lines.join("\n"),
+    chain, text: fixed.content, renamed: fixed.renamed, noChange: false, lines, ref,
     causes, replaced,
     write: {
       team, relPath: path, initiative, text: fixed.content, by: who, mode: "rewrite", note,
       flow: chain.name ?? undefined, type: chain.roles[name], act: "edit",
       change: {
-        nextVersion, expect: state, captured, causes,
+        // The captured source's cause is the write's to record, under the name it files it as.
+        nextVersion, expect: state, captured, causes: causes.filter((c) => c !== capturedCause),
         // The generation the caller's token named — the document's as read, which (7) found it to
         // be. Should the state compare then find the document moved, that is the generation it
         // asks about: still current means a retry, gone means BASE_CONFLICT.
         ...(a.base !== undefined ? { base: Number(loaded.doc.content_generation) } : {}),
-        request: requestOf(asSent, who, path, lines, { result: "applied", version: newVersion, new_version: nextVersion }),
+        receipt: async (c, filed) => composeReceipt(lines(filed), ref, await moveOf(c)),
+        request: requestOf(asSent, who, path, { result: "applied", version: newVersion, new_version: nextVersion }),
       },
     },
   };
 }
 
-/** The request record a keyed change commits with: the key, what it digests to, and its receipt. */
-function requestOf(a: EditArgs, who: string, path: string, lines: string[], facts: Record<string, unknown>,
+/** The request record a keyed change commits with: the key, what it digests to, and the facts its
+ *  receipt states — the text and the next move are the write's to compose, in its transaction. */
+function requestOf(a: EditArgs, who: string, path: string, facts: Record<string, unknown>,
                    tool: RequestTool = "document_edit") {
   return a.request_id === undefined ? undefined : {
     principalEmail: who, canonicalPath: path, requestId: a.request_id, digest: requestDigest(a, tool),
-    receipt: receiptOf(lines, { path, ...facts }),
+    receipt: { path, ...facts },
   };
 }
-
 
 /** What `document_write` is called with. */
 interface CreateArgs {
@@ -552,44 +568,50 @@ interface CreateArgs {
  *  receipt — or the answer that stops it. `path` is canonical; `sent` is the content as
  *  `normalizeContent` separated it, which the tool asked before its field and tag rules. The
  *  document's id is chosen here, so the receipt a keyed create records names the content revision
- *  it will have. */
+ *  it will have. Every malformed and every missing named source come back together. */
 export async function planCreate(
   p: pg.Pool, team: string, who: string, path: string, a: CreateArgs,
-  sent: { body: string; metadata: Metadata; normalised: string[] },
+  sent: { body: string; metadata: Metadata; normalised: string[] }, moveOf: MoveOf = noMove,
 ): Promise<{ reply: string } | Omit<Planned, "noChange" | "replaced">> {
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
   if (await documentAt(p, team, path)) return { reply: targetExists(path) };
   const refs = normalizeRefs(a.sources, initiative);
-  if ("refusals" in refs) return { reply: refs.refusals.join("\n") };
-  const malformed = malformedSource(refs.refs);
-  if (malformed) return { reply: malformed };
+  if ("refusals" in refs) return refused(p, who, team, path, refs.refusals);
+  const malformed = malformedSources(refs.refs);
   // The chain from the body and, failing that, the initiative's row — a first document is written
   // before any other carries a `flow:`. Never from an envelope the caller sent: that `flow` is
   // ignored, and governing by it would let a caller choose its gates.
   const chain = await chainFor(p, team, path, sent.body);
   const fixed = normalizeSections(chain, path, envelopeFor(chain, path, sent.body, sent.metadata));
-  const named = await namedCauses(p, team, who, path, { ...a, sources: refs.refs },
+  const named = await namedCauses(p, team, who, path,
+                                  { ...a, sources: refs.refs.filter((r) => DOC_REF.test(r.trim())) },
                                   { already: new Set(), label: "Input behind v1" });
-  if ("reply" in named) return named;
-  const { causes, captured } = named;
+  if (malformed.length || "missing" in named) {
+    return refused(p, who, team, path, [...malformed, ...("missing" in named ? [named.missing] : [])]);
+  }
+  const { captured } = named;
+  const capturedCause: Cause | null = captured ? { path: captured.relPath, revision: 1, linked_by: "agent" } : null;
+  const causes: Cause[] = [...named.causes, ...(capturedCause ? [capturedCause] : [])];
   for (const owed of await owedSources(p, team, initiative, name, null)) {
-    if (!causes.some((c) => c.path === owed.path)) causes.push(owed);
+    if (!causes.some((c) => c !== capturedCause && c.path === owed.path)) causes.push(owed);
   }
   const id = randomUUID();
-  const lines = [
+  const ref = mintRef();
+  const lines = (filed?: string): Line[] => [
     `written: ${path} (${fixed.content.length} chars)`,
     // A new document's content generation is 0 until its first change.
     `content revision: ${contentRevision(id, 0)}`,
-    `causes: ${capped(causes.map((c) => `${c.path} (${c.linked_by})`))}`,
-    ...normalisedLines([...sent.normalised, ...refs.normalised]),
+    ...causeLines(causes, capturedCause, filed, [...sent.normalised, ...refs.normalised]),
+    ...(fixed.renamed.length ? [`Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.`] : []),
   ];
   return {
-    chain, text: fixed.content, renamed: fixed.renamed, receipt: lines.join("\n"), causes,
+    chain, text: fixed.content, renamed: fixed.renamed, lines, ref, causes,
     write: {
       team, relPath: path, initiative, text: fixed.content, by: who, id, mode: "create", act: "write",
       flow: chain.name ?? undefined, type: chain.roles[name],
-      change: { nextVersion: false, captured, causes,
-                request: requestOf(a, who, path, lines, { result: "created", version: 1 }, "document_write") },
+      change: { nextVersion: false, captured, causes: causes.filter((c) => c !== capturedCause),
+                receipt: async (c, filed) => composeReceipt(lines(filed), ref, await moveOf(c)),
+                request: requestOf(a, who, path, { result: "created", version: 1 }, "document_write") },
     },
   };
 }

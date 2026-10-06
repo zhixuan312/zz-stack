@@ -22,6 +22,7 @@ import { shownSinceLastChange } from "../attest.js";
 import { chainFor, gateRefusal } from "../chain.js";
 import { PANEL_CALLABLE } from "../document-panel.js";
 import { NO_TEAM } from "../document-change.js";
+import { settleRefusal } from "../document-details.js";
 import { putEnvelopeField } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { noteDocument } from "../host/observe.js";
@@ -146,20 +147,22 @@ export function registerInitiativeActTools(server: McpServer): void {
       // read the rows rather than a second copy of them.
       const sources = await docRows(p, team, parts[0]);
       const answers = await assessmentsFor(p, team, parts[0]);
+      // A refusal whose list was cut names its complete detail, recorded here before it is answered.
+      const settle = (reply: string) => settleRefusal(p, { who: who.email, team, path: relPath }, reply);
       const acceptance = await acceptanceApprovalRefusal(p, team, chain, relPath, doc, who.email,
                                                           sources, answers);
-      if (acceptance.refusal) return text(acceptance.refusal);
+      if (acceptance.refusal) return text(await settle(acceptance.refusal));
       // A spec whose flow declares a phase outline and core statements is approved on them: every
       // criterion placed in a phase, every statement backed by a spike — spec-gate.ts's rules.
       const foundation = await specApprovalRefusal(p, team, chain, relPath, doc, who.email, sources);
-      if (foundation.refusal) return text(foundation.refusal);
+      if (foundation.refusal) return text(await settle(foundation.refusal));
       const already = loaded.doc.status === "approved";
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);
       doc = putEnvelopeField(doc, "approved_at", isoToday());
       const fixed = normalizeSections(chain, relPath, doc);
       const bad = await documentGuards(chain, relPath, fixed.content, team, "document_approve");
-      if (bad) return text(bad);
+      if (bad) return text(await settle(bad));
       // The seal, the status and the revision move together, in one statement's worth of write:
       // `doc_current_revision_required` holds that `status: approved` is true exactly when
       // `approved_revision` is the current revision, so a writer that set one without the other

@@ -27,7 +27,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     target: "every document write runs the guards",
     subject: "services/zz-core/src/tools/artifacts.ts",
     find: "      const gate = await documentGuards(plan.chain, path, plan.text, team);\n" +
-      "      if (gate) return text(gate);",
+      "      if (gate) return text(await settle(gate));",
     replace: "      void documentGuards;",
     planted: "document_write creates through saveDocument without asking documentGuards first, " +
       "so a document that sets a platform-owned field lands — the guard that would refuse it is " +

@@ -22,7 +22,9 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
-import { normalizeContent, normalizeRefs } from "../document-normalize.js";
+import { composeReceipt, type Line, mintRef, readDetails, receiptReply, refusalText, replayText,
+         settleRefusal } from "../document-details.js";
+import { normalizeContent, normalizeRefs, normalizeTags } from "../document-normalize.js";
 import { fieldRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { auditRoundOf, assessRound } from "../audit-rounds.js";
@@ -38,7 +40,7 @@ import { registerSourceUploadTool } from "./source-upload.js";
 import { db, teamFor } from "../platform-db.js";
 import { documentAt, documentPaths, loadDocument, NO_DB, recordAct } from "../versions.js";
 import { saveDocument } from "../document-save.js";
-import { acceptanceLine, filedAs, NO_TEAM, planCreate, replayFor, replayText } from "../document-change.js";
+import { acceptanceLine, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor } from "../document-change.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, panelDocument, PRESENT_META } from "../document-panel.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
@@ -83,7 +85,9 @@ export function registerArtifactTools(server: McpServer): void {
         "filed since the release that declare they support this document are linked by the " +
         "platform itself, and the reply names every cause. Send one `request_id` per document " +
         "you mean to create and reuse it on every retry of that create: a retry of a create that " +
-        "already landed returns its first reply instead of being refused as existing.",
+        "already landed returns its first reply instead of being refused as existing. Every list " +
+        "in the reply is counted, and the reply names its complete details as `details: dr_…`, " +
+        "which `document_read(path, details_ref)` returns in full.",
       inputSchema: {
         path: z.string(),
         content: z.string().describe("The document's BODY, starting at its first heading. The platform writes the frontmatter."),
@@ -111,10 +115,11 @@ export function registerArtifactTools(server: McpServer): void {
       // about the document's sections instead.
       const path = await safePath(args.path);
       const initiative = path.split("/")[0];
+      const now = async () => nextMoveLine(p, team, initiative);
       // (0) A create already committed under this key answers as it did the first time — before
       // the target is found to exist, because the document it made is the one that exists now.
       const replay = await replayFor(p, team, who, path, args, "document_write");
-      if (replay) return text(replay + await nextMoveLine(p, team, initiative));
+      if (replay) return text("refusal" in replay ? replay.refusal : replayText(replay.replayed, await now()));
       // (1)
       const blocked = writeGuard(path);
       if (blocked) return text(blocked);
@@ -125,25 +130,29 @@ export function registerArtifactTools(server: McpServer): void {
       if (unopened) return text(unopened);
       // (2) The content in the spelling the store keeps — its envelope, if it sent one, separated
       // and read into the metadata it stands for — then the rules every write applies to the
-      // field names and tags that leaves.
+      // field names and tags that leaves. Collected, not chained: each fault depends on no other,
+      // so every one comes back in one answer.
       const sent = normalizeContent(args.content,
         { title: args.title, tags: args.tags, stakeholder: args.stakeholder, fields: args.fields });
-      if ("refusals" in sent) return text(sent.refusals.join("\n"));
-      const { fields, tags } = sent.metadata;
-      const refused = fieldRefusal(fields) ?? tagRefusal(tags);
-      if (refused) return text(refused);
+      const { fields, tags } = "refusals" in sent ? { fields: args.fields, tags: normalizeTags(args.tags).tags } : sent.metadata;
+      const ruled = [fieldRefusal(fields), tagRefusal(tags)];
+      const read = "refusals" in sent ? sent.refusals : [envelopeOnlyRefusal(args.content, sent.body, "document_write")];
+      const refused = [...read, ...ruled].filter((r): r is string => r !== null);
+      const settle = (reply: string) => settleRefusal(p, { who, team, path }, reply);
+      if (refused.length || "refusals" in sent) return text(await settle(refusalText(refused)));
       // (3) onwards: an absent target, its envelope, its causes and its receipt. The flow is read
       // from the record `initiative_open` wrote, never from an argument here: an initiative that
       // acquired a manifest on its second document would have that manifest's gates land on
       // documents already written and unapproved.
-      const plan = await planCreate(p, team, who, path, args, sent);
+      const plan = await planCreate(p, team, who, path, args, sent,
+                                    (c) => nextMoveLine(c as pg.Pool, team, initiative));
       if ("reply" in plan) return text(plan.reply);
       const gate = await documentGuards(plan.chain, path, plan.text, team);
-      if (gate) return text(gate);
+      if (gate) return text(await settle(gate));
       // The create takes the per-document lock and finds the path still absent under it, or
       // answers TARGET_EXISTS; a key committed meanwhile replays.
       const written = await saveDocument(plan.write);
-      if ("replayed" in written) return text(replayText(written.replayed) + await nextMoveLine(p, team, initiative));
+      if ("replayed" in written) return text(replayText(written.replayed, await now()));
       if (!("revision" in written)) {
         return text("refusal" in written ? written.refusal : `ERROR: ${path} could not be written`);
       }
@@ -158,9 +167,8 @@ export function registerArtifactTools(server: McpServer): void {
       await noteDocument(plan.chain, path, "document", { version: written.version, revision: written.revision },
                          who, team);
       const assessed = await acceptanceLine(p, team, plan.chain, path, plan.text);
-      return text(filedAs(plan.receipt, plan.write.change?.captured?.relPath, written.capturedPath) +
-        (plan.renamed.length ? `\nRenamed to the heading this flow declares: ${plan.renamed.join(", ")}.` : "") +
-        assessed + await nextMoveLine(p, team, initiative));
+      return text(receiptReply(written.receipt ?? composeReceipt(plan.lines(written.capturedPath), plan.ref, await now()),
+                               assessed));
     },
   );
 
@@ -179,7 +187,9 @@ export function registerArtifactTools(server: McpServer): void {
         "with the same path to read it. A document too long for one result — over about " +
         `${PART_LIMIT} characters — is read in parts: \`section\` by heading, or \`offset\` and ` +
         "`limit` in characters. A part states the file's total size, which characters it is, " +
-        "and the offset to continue from.",
+        "and the offset to continue from. `details_ref` — the `dr_…` a reply named — reads that " +
+        "reply's complete details instead, a page at a time: send the `cursor` a page ends with " +
+        "for the next, until one ends `complete`.",
       inputSchema: {
         path: z.union([z.string(), z.array(z.string())])
           .describe("One path, or an array of paths read in the order given."),
@@ -192,9 +202,16 @@ export function registerArtifactTools(server: McpServer): void {
           .describe("Which shelf the path is on. Omit for your team's own store; " +
                     "\"platform\" for the shared journal, as knowledge_search reports it."),
         ...PART_INPUT,
+        details_ref: z.string().optional()
+          .describe("The `dr_…` a receipt or a refusal named: read its complete details, with `path` the document it named."),
+        cursor: z.string().optional().describe("The `dc_…` cursor the last details page ended with."),
       },
     },
-    async ({ path, version, scope, section, offset, limit }) => {
+    async ({ path, version, scope, section, offset, limit, details_ref, cursor }) => {
+      // A details read is its own mode: one document's stored detail, by its ref, page by page.
+      if (details_ref !== undefined || cursor !== undefined) {
+        return text(await detailsRead({ path, version, scope, section, offset, limit, details_ref, cursor }));
+      }
       // Refused before the loop, not once per entry. The shared journal holds no gated
       // documents, so it files no approvals and has no version history; answering per entry
       // would read as a missing file rather than as a request that does not apply.
@@ -440,19 +457,17 @@ export function registerArtifactTools(server: McpServer): void {
       // below refuses.
       // Each in its canonical spelling — `./spec`, `<initiative>/spec.md` and `spec` all name
       // `spec.md` — so the link it declares is filed rather than waiting on a name nothing has.
-      const named = normalizeRefs((Array.isArray(supports) ? supports : supports ? supports.split(",") : [])
-        .map((x) => x.trim()).filter(Boolean), initiative.trim(), "supports entry");
-      if ("refusals" in named) return text(named.refusals.join("\n"));
-      const list = named.refs;
+      // One entry at a time, so every entry that cannot be one comes back in one answer.
+      const named = (Array.isArray(supports) ? supports : supports ? supports.split(",") : [])
+        .map((x) => x.trim()).filter(Boolean).map((x) => normalizeRefs([x], initiative.trim(), "supports entry"));
+      const list = named.flatMap((n) => ("refs" in n ? n.refs : []));
+      const normalised = named.flatMap((n) => ("normalised" in n ? n.normalised : []));
       // These are written into YAML and read back by a comma-splitter, so a separator inside
       // one becomes two entries and a bracket or newline ends the envelope. They name
       // documents — single path segments.
-      for (const d of list) {
-        if (!PLAIN_TOKEN.test(d.trim())) {
-          return text(`ERROR: supports entry "${d}" must be a document name — ` +
-                      "letters, digits, dot, dash or underscore, nothing else");
-        }
-      }
+      const badSupports = [...named.flatMap((n) => ("refusals" in n ? n.refusals : [])),
+        ...list.filter((d) => !PLAIN_TOKEN.test(d.trim())).map((d) => `ERROR: supports entry "${d}" must be a document name — ` +
+          "letters, digits, dot, dash or underscore, nothing else")];
       const slug = titleSlug(title, "source");
       const date = isoToday();
       // The name asked for; a source already filed under it today makes the write take the first
@@ -474,6 +489,8 @@ export function registerArtifactTools(server: McpServer): void {
       await safePath(asked);
       const p = p0;
       const team = team0;
+      const settle = (reply: string) => settleRefusal(p, { who: who.email, team, path: asked }, reply);
+      if (badSupports.length) return text(await settle(refusalText(badSupports)));
       // An audit round is a source that names the stage producing it and supports the document
       // that stage audits. Anything else is material, however it is titled: a stakeholder's
       // answers support spec.md too, and counting them as a round would let a spec pass its
@@ -486,7 +503,7 @@ export function registerArtifactTools(server: McpServer): void {
         const earlier = reviewRounds(await docRows(p, team, initiative), review.stage, review.document)
           .map((r) => r.ledger);
         const refused = ledgerRefusal(content, earlier, review.document);
-        if (refused) return text(refused);
+        if (refused) return text(await settle(refused));
       }
       const round = auditRoundOf(governing, stage, list) ?? review;
       const cited = round ? await documentAt(p, team, `${initiative}/${round.document}`) : null;
@@ -496,6 +513,22 @@ export function registerArtifactTools(server: McpServer): void {
       const doc = sourceDocument(
         { title, by: who.email, day: date, content, supports: list,
           stage: round ? round.stage : undefined, audits_version: auditsVersion });
+      // Which of the named documents were already approved when this landed? An audit round lands
+      // on an approved document by design — the next move says what follows from it. And which do
+      // not exist yet: a `supports` link needs a document to point at, so `saveDocument` files
+      // none for these — said here rather than dropped without a word.
+      const stale: string[] = [];
+      const unwritten: string[] = [];
+      for (const d of list) {
+        const at = await documentAt(p, team, `${initiative}/${d}`);
+        if (!at) unwritten.push(d);
+        else if (!round && at.status === "approved") stale.push(d);
+      }
+      // The receipt, composed by the write once the name it filed is settled; its detail is the
+      // source's own act row.
+      const ref = mintRef();
+      const lines = (rel: string): Line[] => sourceReceipt({ rel, asked, list, normalised, round, auditsVersion,
+                                                            stage, review: !!review, unwritten, stale });
       const wrote = await saveDocument({
         team, relPath: asked, initiative, text: doc, by: who.email, flow: "", reserveName: true,
         // The stage is kept on the row's `type`: a source has no flow role, and the round it
@@ -509,21 +542,11 @@ export function registerArtifactTools(server: McpServer): void {
         // two are different facts: `cites` is what the source read, `supports` is what it is for.
         supports: list.map((d) => `${initiative}/${d}`),
         mode: "create", act: "source",
+        change: { nextVersion: false, receipt: async (_c, _captured, filed) => composeReceipt(lines(filed), ref, "") },
       });
       if (!("revision" in wrote)) return text("refusal" in wrote ? wrote.refusal : `ERROR: ${asked} could not be written`);
       const rel = wrote.reserved ?? asked;
       recordAct(rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
-      // which of the named documents were already approved when this landed? An audit round
-      // lands on an approved document by design — the next move says what follows from it.
-      const stale: string[] = [];
-      // And which of them do not exist yet. A `supports` link needs a document to point at, so
-      // `saveDocument` files none for these — said here rather than dropped without a word.
-      const unwritten: string[] = [];
-      for (const d of list) {
-        const at = await documentAt(p, team, `${initiative}/${d}`);
-        if (!at) unwritten.push(d);
-        else if (!round && at.status === "approved") stale.push(d);
-      }
       // An audit evidences itself with a source, which is why this call is here and not in a
       // tool named for auditing: `sdlc-spec-audit` and `sdlc-plan-audit` are declared as
       // producing a source that supports the document they audited, and no document of their
@@ -542,37 +565,65 @@ export function registerArtifactTools(server: McpServer): void {
       const assessed = review
         ? await assessReviewRound(p, team, initiative, rel, review.stage, review.document, who.email)
         : round ? await assessRound(p, team, initiative, rel, round.document, content, who.email) : null;
-      const stageNote = stage && !round
-        ? `\n\nNOT COUNTED AS A ROUND: "${stage}" is not a stage of this flow that produces a source ` +
-          `supporting ${list.join(", ") || "nothing"}, so this was recorded as material only.`
-        : "";
-      return text(
-        `source recorded: ${rel}` +
-        (rel !== asked ? `\nsource name: ${asked} was taken, so this was filed as ${rel}` : "") +
-        (list.length ? `\nsupports: ${list.join(", ")}` : "") +
-        named.normalised.map((l) => `\nnormalised: ${l}`).join("") +
-        (round ? `\nrecorded as a ${round.stage} round on ${round.document}` +
-                 (auditsVersion ? ` v${auditsVersion}` : "") : "") +
-        (assessed ? `\n${assessed}` : "") + stageNote +
-        (unwritten.length
-          ? `\n\nNOT LINKED YET: ${unwritten.join(", ")} ${unwritten.length > 1 ? "do" : "does"} not ` +
-            "exist yet. The link is filed when " + (unwritten.length > 1 ? "each is" : "it is") +
-            " first written, and until then this source is not listed as material behind " +
-            `${unwritten.length > 1 ? "them" : "it"}.` +
-            (review ? " The review round itself is counted by its stage, not by the link." : "")
-          : "") +
-        (stale.length
-          ? `\n\nNote for whoever works on this next: ${stale.join(", ")} ` +
-            `${stale.length > 1 ? "were" : "was"} already approved before this material arrived, so ` +
-            `the approval does not cover it. initiative_status reports this under ` +
-            `sources_after_approval. Whether to change the document is the team's call — if they ` +
-            `decide to, document_edit naming this source opens the next version and re-opens the gate.`
-          : list.length && !round ? "\n\nNo approved document is affected." : "") +
-        await nextMoveLine(p, team, initiative),
-      );
+      return text(receiptReply(wrote.receipt ?? composeReceipt(lines(rel), ref, ""), assessed ? `\n${assessed}` : "") +
+        await nextMoveLine(p, team, initiative));
     },
   );
 
+}
+
+/** What `source_add` answers with, line by line: the name it was filed under, and why when that
+ *  was another; what it supports and how each entry was read, counted; the round it counts as;
+ *  and the documents it could not link yet or that were approved before it arrived. */
+function sourceReceipt(o: {
+  rel: string; asked: string; list: string[]; normalised: string[]; round: { stage: string; document: string } | null;
+  auditsVersion: string | undefined; stage: string | undefined; review: boolean; unwritten: string[]; stale: string[];
+}): Line[] {
+  const n = o.unwritten.length;
+  return [
+    `source recorded: ${o.rel}`,
+    ...(o.rel !== o.asked ? [`source name: ${o.asked} was taken, so this was filed as ${o.rel}`] : []),
+    ...(o.list.length ? [{ label: "supports", items: o.list }] : []),
+    { label: "normalised", items: o.normalised, sep: "; " },
+    ...(o.round ? [`recorded as a ${o.round.stage} round on ${o.round.document}` + (o.auditsVersion ? ` v${o.auditsVersion}` : "")] : []),
+    ...(o.stage && !o.round
+      ? ["", `NOT COUNTED AS A ROUND: "${o.stage}" is not a stage of this flow that produces a source ` +
+         `supporting ${o.list.join(", ") || "nothing"}, so this was recorded as material only.`] : []),
+    ...(n ? ["", { lead: "NOT LINKED YET: ", label: "documents that do not exist yet", items: o.unwritten,
+                   tail: ` — the link is filed when ${n > 1 ? "each is" : "it is"} first written, and until then this ` +
+                     `source is not listed as material behind ${n > 1 ? "them" : "it"}.` +
+                     (o.review ? " The review round itself is counted by its stage, not by the link." : "") }] : []),
+    ...(o.stale.length
+      ? ["", { lead: "Note for whoever works on this next: ", label: "documents approved before this material arrived",
+               items: o.stale, tail: ", so the approval does not cover it. initiative_status reports this under " +
+                 "sources_after_approval. Whether to change the document is the team's call — if they decide to, " +
+                 "document_edit naming this source opens the next version and re-opens the gate." }]
+      : o.list.length && !o.round ? ["", "No approved document is affected."] : []),
+  ];
+}
+
+/** `document_read(path, details_ref, cursor?)`: the page of a stored detail, for the caller's team
+ *  and the path the detail is about — so a refused create's detail is readable though no document
+ *  exists. Every other way to narrow a read is another mode, and refused with it. */
+async function detailsRead(a: { path: string | string[]; version?: number; scope?: string; section?: string;
+                                offset?: number; limit?: number; details_ref?: string; cursor?: string }): Promise<string> {
+  const others = [a.section !== undefined && "`section`", a.offset !== undefined && "`offset`",
+                  a.limit !== undefined && "`limit`", a.version !== undefined && "`version`",
+                  a.scope === "platform" && "`scope: \"platform\"`", Array.isArray(a.path) && "an array `path`"]
+    .filter((x): x is string => typeof x === "string");
+  if (a.details_ref === undefined) {
+    return "ERROR: INVALID_MODE — `cursor` continues a details read; send it with the `details_ref` it belongs to.";
+  }
+  if (others.length) {
+    return `ERROR: INVALID_MODE — \`details_ref\` reads one reply's complete details, page by page, and cannot ` +
+      `be combined with ${others.join(", ")}. Send \`path\` (the one document the reply named), \`details_ref\` and ` +
+      "the `cursor` the last page named.";
+  }
+  const p = db();
+  if (!p) return NO_DB;
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  if (!team) return NO_TEAM;
+  return readDetails(p, team, await safePath(a.path as string), a.details_ref, a.cursor);
 }
 
 /** The current revision of each document a source names in `supports`, as `cites` links. A name

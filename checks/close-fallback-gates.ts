@@ -24,6 +24,12 @@
  *      draft carrying the stored outcome and closed_by forward is admitted — gated or not — with no
  *      gate or close requirement asked again; one changing or dropping the outcome is refused; and
  *      handover.md stays writable while the closing document it requires is that draft.
+ *   7. every reason a close is refused, at once (AC-2.2): over a synthetic chain of 60 gated
+ *      documents left in draft, a finished close names all 60, counted, with no details line; one
+ *      also missing its required documents names those too; and a chain whose list would not fit
+ *      16 KiB shows a counted preview and a details line saying how many entries it left out; and
+ *      the guards around a close say every field at once — a write typing `outcome` AND `closed_by`
+ *      by hand is told of both, and an attribution naming a role in two fields is told of both.
  *
  * Run: node checks/close-fallback-gates.ts   (also run by scripts/gate.ts)
  */
@@ -84,6 +90,7 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { chainFor } = await load("services/zz-core/dist/chain.js");
 const { documentGuards } = await load("services/zz-core/dist/guards.js");
+const { attributionCheck } = await load("services/zz-core/dist/write-guards.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 
 const fail: string[] = [];
@@ -148,7 +155,7 @@ async function open(flow: string, facts: Record<string, string> | null) {
   const i = await open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "proposal", release_mode: "proposal_only" });
   i.write("findings.md", {});
   const early = await i.close("findings.md", FINISHED);
-  is(typeof early === "string" && /proposal\.md does not exist/.test(early),
+  is(typeof early === "string" && /documents that do not exist \(1\): \S+\/proposal\.md — /.test(early),
      `proposal_only: a finished close on findings.md without proposal.md was not refused for it: ${JSON.stringify(early)}`);
   i.write("proposal.md", {});
   const got = await i.close("proposal.md", FINISHED);
@@ -250,6 +257,50 @@ async function open(flow: string, facts: Record<string, string> | null) {
   is(ungated === null, `an ungated correction carrying the close forward was refused: ${JSON.stringify(ungated)}`);
 }
 
+// 7. Every unmet gate and every missing required document, together and counted
+{
+  const synthetic = async (count: number, stem: string, required: string[] = []) => {
+    const name = `2026-09-25-close-${++n}`;
+    const w: W = { flow: "synthetic", docs: [], facts: {}, records: {} };
+    world.set(name, w);
+    const gated = Array.from({ length: count }, (_, k) => `${stem}-${String(k + 1).padStart(3, "0")}.md`);
+    const chain = { name: "synthetic", documents: [...gated.map((d) => ({ name: d, gate: true })), { name: "close.md" }],
+                    stages: [], docs: new Set([...gated, "close.md", ...required]), requires: {}, closingDoc: "close.md",
+                    closeRequires: required, roles: {} };
+    for (const d of gated) w.docs.push(row(name, d, { title: d, flow: "synthetic", status: "draft" }, body(chain, d, { title: d })));
+    const said = await documentGuards(chain, `${name}/close.md`, body(chain, "close.md", { title: "Closing", flow: "synthetic", ...FINISHED }),
+                                      TEAM, "fixture") as string | null;
+    return { name, gated, said: said ?? "" };
+  };
+  const sixty = await synthetic(60, "gated");
+  const listed = /documents carrying a gate this flow declares that are not approved \((\d+)\): ([^\n]*?), so this initiative cannot close/
+    .exec(sixty.said);
+  is(listed?.[1] === "60" && sixty.gated.every((d) => listed[2].split(", ").includes(`${sixty.name}/${d}`)),
+     `a finished close over 60 unapproved gates does not name every one, counted: ${sixty.said}`);
+  is(!/details:/.test(sixty.said), `an uncut list is backed by a details line: ${sixty.said}`);
+  const both = await synthetic(3, "gated", ["guide.md", "notes.md"]);
+  is(/not approved \(3\): /.test(both.said) && /documents that do not exist \(2\): \S+\/guide\.md, \S+\/notes\.md — /.test(both.said),
+     `unmet gates and missing required documents are not said together: ${both.said}`);
+  const long = await synthetic(400, "a-gated-document-whose-name-is-long-enough-to-fill-a-reply");
+  const cut = /not approved \(400\): (.*?), …, so this initiative/.exec(long.said);
+  const hidden = Number(/\ndetails: `dr_[a-z2-7]{26}` — (\d+) entries not shown above$/.exec(long.said)?.[1] ?? -1);
+  is(Buffer.byteLength(long.said, "utf8") <= 16 * 1024 && !!cut && cut[1].split(", ").length + hidden === 400,
+     `a list past 16 KiB is not a counted preview with its details line (${Buffer.byteLength(long.said, "utf8")} bytes): ` +
+     long.said.slice(0, 300));
+
+  // The platform-owned fields a write types by hand, and the attributions naming nobody: each
+  // field said, in one answer.
+  const freeform = { documents: [], docs: new Set(), requires: {}, closingDoc: "", closeRequires: [], roles: {}, stages: [], name: null };
+  const typed = await documentGuards(freeform, `${sixty.name}/notes.md`,
+    "---\ntitle: Notes\noutcome: delivered\nclosed_by: ada@zz.test\n---\n\n# Notes\n", TEAM, null) as string;
+  is(/^ERROR: outcome is written by the platform/m.test(typed) && /^ERROR: closed_by is written by the platform/m.test(typed),
+     `a write typing outcome and closed_by is not told of both: ${typed}`);
+  const anonymous = attributionCheck(freeform, `${sixty.name}/notes.md`,
+                                     "---\napproved_by: the team\nclosed_by: me\n---\n\n# Notes\n", TEAM) as string;
+  is(/^ERROR: approved_by: the team names a role/m.test(anonymous) && /^ERROR: closed_by: me names a role/m.test(anonymous),
+     `an attribution naming a role in two fields is not told of both: ${anonymous}`);
+}
+
 // DELIBERATE: the file version's damaged-facts cases — a DAMAGED `_facts.json` refusing its own
 // initiative, and an abandon still landing over it — have nothing left to assert. A row is written
 // whole by the database or not at all, so the truncated or non-object file they guarded cannot
@@ -262,4 +313,5 @@ if (fail.length) {
 }
 console.log("close-fallback-gates: skip, proposal_only and promotable each close where their branch " +
             "lands, a stop on a fallback draft is not asked for that draft's approval, and a closed " +
-            "record's correction is a draft that keeps what the close recorded");
+            "record's correction is a draft that keeps what the close recorded, and every reason a close " +
+            "is refused is said at once, counted");

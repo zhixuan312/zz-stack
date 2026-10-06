@@ -24,6 +24,7 @@
 import { admitEntry, documentApplies, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 import type pg from "pg";
 
+import { type Line, refusalText } from "./document-details.js";
 import { closingDocRuledOut, factsFor } from "./initiative-record.js";
 import { db } from "./platform-db.js";
 import { dayOf } from "./versions.js";
@@ -221,8 +222,12 @@ async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath
     [{ kind: parts[1], standard: parseEnvelope(content).status === "approved" ? "ratified" : "recorded" }],
     stop && fallback ? [{ kind: parts[1], ground: STOPPED_GROUND }] : [],
   );
+  // The closing document's own gate, every other unmet gate, and every missing required document
+  // are each a reason this close is refused, and none depends on another: all are said at once,
+  // each list counted — a chain of sixty gates is not sixty round trips.
+  const unmet: Line[] = [];
   if (!own.admitted) {
-    return (
+    unmet.push(
       `ERROR: ${parts[1]} is this flow's closing document AND carries a gate, so it cannot be ` +
       `closed while its own approval is unrecorded. Call document_approve("${parts[0]}/${parts[1]}") first — ` +
       "the platform stamps the approval, and an approval that exists only in the chat does not exist."
@@ -252,16 +257,13 @@ async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath
     stop ? written.map((d) => ({ kind: d.name, ground: STOPPED_GROUND })) : [],
   );
   if (!gates.admitted) {
-    // `chain.documents` order in, the same order out, so the document named is the first the
-    // manifest declares.
-    const [unmet] = gates.unmet;
-    return (
-      `ERROR: ${parts[0]}/${unmet.kind} carries a gate this flow declares and is not ` +
-      `approved, so this initiative cannot close as ${env.outcome}. Call ` +
-      `document_approve("${parts[0]}/${unmet.kind}") once the stakeholder agrees — or, if the work ` +
-      `stopped rather than finished, call initiative_close(initiative, "${OUTCOME_STOPPED}"), ` +
-      "which says so in the team's ledger. A gate left open is not a gate passed."
-    );
+    // `chain.documents` order in, the same order out: the documents in the order the manifest
+    // declares them.
+    unmet.push({ lead: "ERROR: ", label: "documents carrying a gate this flow declares that are not approved",
+      items: gates.unmet.map((u) => `${parts[0]}/${u.kind}`),
+      tail: `, so this initiative cannot close as ${env.outcome}. Call document_approve on each once the ` +
+        `stakeholder agrees — or, if the work stopped rather than finished, call initiative_close(initiative, ` +
+        `"${OUTCOME_STOPPED}"), which says so in the team's ledger. A gate left open is not a gate passed.` });
   }
   // Required to finish, not required to stop. The loop above tells a caller with unmet gates
   // to close as stopped instead; refusing that same close for a missing document would leave
@@ -289,15 +291,12 @@ async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath
     stop ? requiredClose.map((need) => ({ kind: need, ground: STOPPED_GROUND })) : [],
   );
   if (!needed.admitted) {
-    const [unmet] = needed.unmet;
-    return (
-      `ERROR: ${parts[0]}/${unmet.kind} does not exist — this flow's manifest requires it before the ` +
-      `initiative can close as finished, under exactly that name. If the work STOPPED ` +
-      `rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") records that and does ` +
-      "not ask for it — a document nobody wrote is not made true by the close needing one."
-    );
+    unmet.push({ lead: "ERROR: ", label: "documents that do not exist", items: needed.unmet.map((u) => `${parts[0]}/${u.kind}`),
+      tail: " — this flow's manifest requires each before the initiative can close as finished, under exactly " +
+        `that name. If the work STOPPED rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") ` +
+        "records that and does not ask for them — a document nobody wrote is not made true by the close needing one." });
   }
-  return null;
+  return unmet.length ? refusalText(unmet) : null;
 }
 /** An approved document changes through `document_edit`, or it does not change.
  *
@@ -497,11 +496,13 @@ async function ownershipCheck(p: pg.Pool, team: string | null, relPath: string, 
     for (const [field, value] of carried) if (value) prev[field] = value;
   }
   const next = parseEnvelope(content);
+  // Every field this write would change, one line each: a caller told of one would meet the next.
+  const changed: string[] = [];
   for (const field of PLATFORM_OWNED) {
     const a = (prev[field] ?? "").trim();
     const b = (next[field] ?? "").trim();
     if (a === b) continue;
-    return (
+    changed.push(
       `ERROR: ${field} is written by the platform, not by hand — this write would ` +
       (a ? `change it from \`${a}\` to \`${b || "(removed)"}\`` : `set it to \`${b}\``) + ". " +
       (field === "outcome" || field === "closed_by"
@@ -516,7 +517,7 @@ async function ownershipCheck(p: pg.Pool, team: string | null, relPath: string, 
       " A field the platform can fill is never a field you should be asked to."
     );
   }
-  return null;
+  return changed.length ? changed.join("\n") : null;
 }
 /** Everything that must be true before a mutation is allowed, in one place.
  *

@@ -26,9 +26,17 @@
  *     tags lower-cased; a `supports` entry spelled `./notes` linked as `notes.md`; a source name
  *     already taken today suffixed, by `source_add` and by a captured `source_content` alike, and
  *     the reply naming the name it was filed under;
+ *     — and the carried defects: a named source and a captured one asking for the same name are
+ *     both linked, each as itself; content that is only an envelope is refused on both tools;
+ *   - every fault of a call that depends on no other is said in one answer (AC-2.2): a malformed
+ *     field, a bad tag and an unsupported envelope key; a malformed `sources` entry with every
+ *     edit of a batch that cannot apply;
  *   - Chinese, emoji and CRLF bodies kept byte for byte through a create, a batch, a section and a
  *     whole body;
- *   - a 128-edit receipt naming 45 causes stays under 16 KiB, each list capped at 40 entries.
+ *   - a 128-edit receipt naming 45 causes stays under 16 KiB with its totals, its previews cut and
+ *     its details line saying how many entries it left out, and `document_read(path, details_ref)`
+ *     returns every one of them, page by page; a details read combined with another mode is
+ *     INVALID_MODE, and a ref on another path DETAILS_MISSING.
  *
  * The request key's conflict, step (0), is `checks/document-edit-races.ts`'s, with the races, the
  * replays and the injected failures.
@@ -102,7 +110,7 @@ async function skeleton(c: Core): Promise<void> {
   // envelope separator the tool answered 6 and 8 (checks/document-body-roundtrip.ts).
   step = "document_edit repeated find";
   await refusedUnchanged(c, step, path, { edits: [{ find: "LINE", replace: "x" }] },
-    /^ERROR: MULTIPLE_MATCHES — edit 0 \(0-based\): `find` occurs 2 times, on lines 3, 5 of the body/);
+    /^ERROR: MULTIPLE_MATCHES — edit 0 \(0-based\): `find` occurs 2 times in the body, on lines \(2\): 3, 5\. /);
   c.pass(step);
 
   // A draft's section changes in place: no cause, so the same public version.
@@ -125,7 +133,8 @@ async function skeleton(c: Core): Promise<void> {
   step = "document_edit on approved, with its cause";
   const caused = await c.ok(step, "document_edit",
     { path, ...lower, source_content: "The stakeholder asked for the first line in lower case." });
-  if (first(caused) !== `edited: ${path} — v2 (new version)` || !/^causes: .*\(agent\)/m.test(caused)) {
+  if (first(caused) !== `edited: ${path} — v2 (new version)` || !/^causes \(1\): .*\(agent\)$/m.test(caused)
+      || !/^details: `dr_[a-z2-7]{26}` \(complete\)$/m.test(caused)) {
     c.fail(step, `expected v2 as a new version with an agent cause, got: ${caused}`);
   }
   await bodyIs(c, step, path, bySection.replace("ALPHA", "alpha"));
@@ -147,7 +156,8 @@ async function modes(c: Core): Promise<void> {
   let reply = await c.ok(step, "document_edit", { path: b, edits: [
     { find: "one", replace: "ONE" }, { find: "- five\n", replace: "" }, { find: "six", replace: "six\n\nseven" }] });
   await bodyIs(c, step, b, "# Batch\n\nONE  two\tthree\n\n- four\n\nsix\n\nseven\n");
-  if (!/^changed sections: Batch$/m.test(reply) || !/^causes: none$/m.test(reply)) c.fail(step, reply);
+  if (!/^changed sections \(1\): Batch$/m.test(reply) || !/^causes \(0\): none$/m.test(reply)
+      || !/^normalised \(0\): none$/m.test(reply)) c.fail(step, reply);
   c.pass(step);
 
   step = "section: one section among duplicate headings, chosen by text, level and occurrence";
@@ -156,18 +166,18 @@ async function modes(c: Core): Promise<void> {
   reply = await c.ok(step, "document_edit", { path: s, section: "Notes", section_level: 3, content: "### Notes\n\nTHIRD\n" });
   let want = DUPLICATES.replace("third", "THIRD");
   await bodyIs(c, `${step} (level 3)`, s, want);
-  if (!/^changed sections: Notes \(3\)$/m.test(reply)) c.fail(step, `level 3: ${reply}`);
+  if (!/^changed sections \(1\): Notes \(3\)$/m.test(reply)) c.fail(step, `level 3: ${reply}`);
   reply = await c.ok(step, "document_edit",
     { path: s, section: "Notes", section_level: 2, section_occurrence: 1, content: "## Notes\n\nFIRST\n" });
   want = want.replace("first", "FIRST");
   await bodyIs(c, `${step} (level 2, occurrence 1)`, s, want);
-  if (!/^changed sections: Notes$/m.test(reply)) c.fail(step, `occurrence 1: ${reply}`);
+  if (!/^changed sections \(1\): Notes$/m.test(reply)) c.fail(step, `occurrence 1: ${reply}`);
   // The second `## Notes` runs to the next heading of its level or above, its `### Notes` included.
   reply = await c.ok(step, "document_edit",
     { path: s, section: "## Notes", section_level: 2, section_occurrence: 2, content: "## Notes\n\nSECOND\n" });
   want = "# Doc\n\nintro\n\n## Notes\n\nFIRST\n\n## Notes\n\nSECOND\n\n## End\n\nend\n";
   await bodyIs(c, `${step} (level 2, occurrence 2)`, s, want);
-  if (!/^changed sections: Notes \(2\), \(removed: Notes \(3\)\)$/m.test(reply)) c.fail(step, `occurrence 2: ${reply}`);
+  if (!/^changed sections \(2\): Notes \(2\), \(removed: Notes \(3\)\)$/m.test(reply)) c.fail(step, `occurrence 2: ${reply}`);
   c.pass(step);
 
   step = "content alone: the whole body, exactly";
@@ -176,14 +186,14 @@ async function modes(c: Core): Promise<void> {
   const whole = "# Whole\n\nnew first paragraph\n\n## Added\n\n  indented, trailing spaces  \n";
   reply = await c.ok(step, "document_edit", { path: w, content: whole });
   await bodyIs(c, step, w, whole);
-  if (first(reply) !== `edited: ${w} — v1` || !/^changed sections: Whole, Added$/m.test(reply)) c.fail(step, reply);
+  if (first(reply) !== `edited: ${w} — v1` || !/^changed sections \(2\): Whole, Added$/m.test(reply)) c.fail(step, reply);
   c.pass(step);
 
   step = "metadata alone: title, tags, stakeholder and a field change, the body untouched";
   const before = await stateOf(c, step, w);
   reply = await c.ok(step, "document_edit",
     { path: w, title: "Renamed", tags: ["alpha", "beta"], stakeholder: "Ana", fields: { component: "billing" } });
-  if (first(reply) !== `edited: ${w} — v1` || !/^changed sections: none$/m.test(reply)) c.fail(step, reply);
+  if (first(reply) !== `edited: ${w} — v1` || !/^changed sections \(0\): none$/m.test(reply)) c.fail(step, reply);
   const read = await c.ok(step, "document_read", { path: w });
   for (const line of ["title: Renamed", "tags: alpha, beta", "stakeholder: Ana", "component: billing"]) {
     if (!new RegExp(`^${esc(line)}$`, "m").test(read)) c.fail(step, `no \`${line}\` in: ${read}`);
@@ -195,6 +205,7 @@ async function modes(c: Core): Promise<void> {
 
 async function precedence(c: Core): Promise<void> {
   const I = await c.open("edit-refusals");
+  let said: string;
   const p = `${I}/notes.md`;
   await c.ok("write the refused document", "document_write", { path: p, content: "# Notes\n\nalpha\n\nbeta\n\nalpha beta\n" });
 
@@ -215,6 +226,16 @@ async function precedence(c: Core): Promise<void> {
   await refusedUnchanged(c, step, p, { tags: ["Not A Tag"] }, /^ERROR: "not a tag" is not a tag/);
   // (2) before (3): the rules every write applies answer before the target is looked for.
   await c.refused(step, "document_edit", { path: `${I}/absent.md`, content: "# x\n", tags: ["Bad tag"] }, /is not a tag/);
+  c.pass(step);
+
+  step = "(2) every fault that depends on no other, in one answer: both field classes, a bad tag, an unsupported envelope key";
+  said = await refusedUnchanged(c, step, p, { content: "---\ndueDate: x\n---\n# Notes\n", tags: ["Not A Tag"],
+                                              fields: { status: "x", "Due Date": "y" } }, /^ERROR: /);
+  for (const want of [/^ERROR: status is written by the platform/m, /^ERROR: "Due Date" is not a frontmatter name/m,
+                      /^ERROR: "not a tag" is not a tag/m, /^ERROR: UNSUPPORTED_METADATA — the content's envelope carries "dueDate"/m]) {
+    if (!want.test(said)) c.fail(step, `${want} is not reported: ${said}`);
+  }
+  if (/details:/.test(said)) c.fail(step, `an uncut refusal names a detail: ${said}`);
   c.pass(step);
 
   step = "(3) a target that does not exist is TARGET_MISSING";
@@ -242,7 +263,7 @@ async function precedence(c: Core): Promise<void> {
   c.pass(step);
 
   step = "(5) an envelope in whole `content` with a malformed key, or a value the named argument contradicts, is refused, every key named";
-  let said = await refusedUnchanged(c, step, p, { content: "---\ndueDate: x\nDue-Date: y\n---\n# Notes\n" },
+  said = await refusedUnchanged(c, step, p, { content: "---\ndueDate: x\nDue-Date: y\n---\n# Notes\n" },
     /^ERROR: UNSUPPORTED_METADATA — the content's envelope carries "dueDate", "Due-Date"/);
   said = await refusedUnchanged(c, step, p, { content: "---\ntitle: Alpha\n---\n# Notes\n", title: "Beta" },
     /^ERROR: METADATA_CONFLICT — title is "Alpha" in the content's envelope and "Beta" as the named argument/);
@@ -268,12 +289,22 @@ async function precedence(c: Core): Promise<void> {
 
   step = "(8) the batch's own refusals: NO_MATCH, MULTIPLE_MATCHES, OVERLAPPING_EDITS, INVALID_EDIT";
   await refusedUnchanged(c, step, p, { edits: [{ find: "gamma", replace: "x" }] }, /^ERROR: NO_MATCH — edit 0 \(0-based\): `find` does not occur/);
-  await refusedUnchanged(c, step, p, { edits: [{ find: "beta", replace: "x" }] }, /^ERROR: MULTIPLE_MATCHES — edit 0 \(0-based\): `find` occurs 2 times, on lines 5, 7 of the body/);
+  await refusedUnchanged(c, step, p, { edits: [{ find: "beta", replace: "x" }] },
+    /^ERROR: MULTIPLE_MATCHES — edit 0 \(0-based\): `find` occurs 2 times in the body, on lines \(2\): 5, 7\. /);
   await refusedUnchanged(c, step, p, { edits: [{ find: "alpha\n\nbeta", replace: "x" }, { find: "beta\n\nALPHA", replace: "y" }] },
     /^ERROR: OVERLAPPING_EDITS — edit 1 \(0-based\)/);
   await refusedUnchanged(c, step, p, { edits: [{ find: "# Notes", replace: "# N" }, { find: "# Notes", replace: "# N" }] },
     /^ERROR: OVERLAPPING_EDITS — edit 1 \(0-based\)/);
   await refusedUnchanged(c, step, p, { edits: [{ find: "", replace: "x" }] }, /^ERROR: INVALID_EDIT — edit 0 \(0-based\): `find` must be a non-empty string/);
+  c.pass(step);
+
+  step = "(8) every fault of the call, together: a malformed `sources` entry and every edit of the batch that cannot apply";
+  said = await refusedUnchanged(c, step, p, { sources: ["sources/a b.md"], edits: [{ find: "gamma", replace: "x" },
+    { find: "alpha\n\nbeta\n", replace: "ok\n" }, { find: "beta", replace: "x" }, { find: "", replace: "y" }] }, /^ERROR: INVALID_MODE — source "sources\/a b\.md"/);
+  for (const want of [/^ERROR: NO_MATCH — edit 0 /m, /^ERROR: MULTIPLE_MATCHES — edit 2 /m, /^ERROR: INVALID_EDIT — edit 3 /m]) {
+    if (!want.test(said)) c.fail(step, `${want} is not reported: ${said}`);
+  }
+  if (/edit 1 /.test(said)) c.fail(step, `an edit that applies is reported: ${said}`);
   c.pass(step);
 
   step = "(8) the section's own refusals: SECTION_MISSING, SECTION_AMBIGUOUS by level and occurrence, a replacement without its heading";
@@ -288,7 +319,7 @@ async function precedence(c: Core): Promise<void> {
   reply = await refusedUnchanged(c, step, d, { section: "Notes", section_level: 2, content: "## Notes\n\nx\n" },
     /^ERROR: SECTION_AMBIGUOUS — 2 headings read "Notes" at level 2: /);
   await refusedUnchanged(c, step, d, { section: "Notes", section_level: 2, section_occurrence: 3, content: "## Notes\n\nx\n" },
-    /^ERROR: SECTION_MISSING — no heading "Notes" at level 2 \(occurrence 3\) in .*Its headings: # Doc, ## Notes, ## Notes, ### Notes, ## End\.$/);
+    /^ERROR: SECTION_MISSING — no heading "Notes" at level 2 \(occurrence 3\) in .*Its headings \(5\): # Doc, ## Notes, ## Notes, ### Notes, ## End\.$/);
   await refusedUnchanged(c, step, d, { section: "Elsewhere", content: "## Elsewhere\n" }, /^ERROR: SECTION_MISSING — no heading "Elsewhere"/);
   await refusedUnchanged(c, step, d, { section: "End", content: "no heading line\n" }, /^ERROR: INVALID_EDIT — with `section`, `content` replaces the heading/);
   c.pass(step);
@@ -323,8 +354,12 @@ async function precedence(c: Core): Promise<void> {
     if (first(reply) !== `edited: ${p} — v1 (no change)` || !reply.includes(`content revision: ${now.token}`)) c.fail(step, reply);
   }
   for (const key of ["content_revision", "version", "updated_at"]) {
-    if (!new RegExp(`^normalised: ignored ${key} from the content's envelope`, "m").test(reply)) c.fail(step, `${key} is not reported: ${reply}`);
+    if (!new RegExp(`^normalised \\(\\d+\\): .*ignored ${key} from the content's envelope`, "m").test(reply)) c.fail(step, `${key} is not reported: ${reply}`);
   }
+  // An unkeyed no_change writes no row of the document, and still the record its details_ref names.
+  const noted = /^details: `(dr_[a-z2-7]{26})` \(complete\)$/m.exec(reply)?.[1] ?? c.fail(step, `no details line: ${reply}`);
+  const page = await c.ok(step, "document_read", { path: p, details_ref: noted });
+  if (!page.includes(`edited: ${p} — v1 (no change)`) || !/\ncomplete$/.test(page)) c.fail(step, `the no_change detail: ${page}`);
   const after = (await c.sql.query<{ r: number; at: string }>(
     `select d.current_revision as r, r.written_at::text as at from zz.doc d join zz.initiative i on i.id = d.initiative_id
        join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision where i.slug = $1 and d.path = 'notes.md'`, [I])).rows[0];
@@ -350,15 +385,17 @@ async function precedence(c: Core): Promise<void> {
 
 async function normalisation(c: Core): Promise<void> {
   const I = await c.open("edit-normalise");
+  let said: string;
   const n = `${I}/notes.md`;
   await c.ok("write the normalised document", "document_write", { path: n, content: "# Notes\n\nold\n" });
 
   let step = "an envelope in whole `content` is separated: its title taken, the keys the platform writes ignored, each reported";
   let reply = await c.ok(step, "document_edit", { path: n,
     content: "\r\n---\r\ntitle: From The Envelope\r\nstatus: approved\r\nflow: some-other-flow\r\n---\r\n\r\n# Notes\r\n\r\nnew\r\n" });
-  for (const line of ["normalised: took title from the content's envelope", "normalised: ignored status from the content's envelope",
-                      "normalised: ignored flow from the content's envelope"]) {
-    if (!reply.includes(line)) c.fail(step, `no \`${line}\` in: ${reply}`);
+  const normalised = /^normalised \(3\): (.*)$/m.exec(reply)?.[1] ?? c.fail(step, `no normalised (3) line: ${reply}`);
+  for (const line of ["took title from the content's envelope", "ignored status from the content's envelope",
+                      "ignored flow from the content's envelope"]) {
+    if (!normalised.split("; ").some((x) => x.startsWith(line))) c.fail(step, `no \`${line}\` in: ${reply}`);
   }
   await bodyIs(c, step, n, "# Notes\r\n\r\nnew\r\n");
   const read = await c.ok(step, "document_read", { path: n });
@@ -372,7 +409,7 @@ async function normalisation(c: Core): Promise<void> {
 
   step = "tags are lower-cased and reported";
   reply = await c.ok(step, "document_edit", { path: n, tags: ["Alpha", "beta"] });
-  if (!reply.includes('normalised: tag "Alpha" lower-cased to "alpha"')) c.fail(step, reply);
+  if (!/^normalised \(1\): tag "Alpha" lower-cased to "alpha"$/m.test(reply)) c.fail(step, reply);
   if (!/^tags: alpha, beta$/m.test(await c.ok(step, "document_read", { path: n }))) c.fail(step, "the tags were not stored lower-cased");
   c.pass(step);
 
@@ -389,21 +426,50 @@ async function normalisation(c: Core): Promise<void> {
 
   step = "a `supports` entry spelled `./notes` is linked to notes.md, and a source name taken today is suffixed";
   const one = await c.call(step, "source_add", { initiative: I, title: "Call notes", content: "first", supports: ["./notes"] });
-  if (!/^source recorded: \S+\/sources\/\d{4}-\d{2}-\d{2}-call-notes\.md$/m.test(one) || !one.includes('normalised: "./notes" read as "notes.md"')
+  if (!/^source recorded: \S+\/sources\/\d{4}-\d{2}-\d{2}-call-notes\.md$/m.test(one) || !one.includes('normalised (1): "./notes" read as "notes.md"')
+      || !/^supports \(1\): notes\.md$/m.test(one) || !/^details: `dr_[a-z2-7]{26}` \(complete\)$/m.test(one)
       || /NOT LINKED YET/.test(one)) c.fail(step, one);
   const two = await c.call(step, "source_add", { initiative: I, title: "Call notes", content: "second" });
   const taken = /^source recorded: (\S+)$/m.exec(one)?.[1] ?? "";
   if (!two.includes(`source recorded: ${taken.replace(/\.md$/, "-2.md")}`) || !two.includes(`source name: ${taken} was taken`)) c.fail(step, two);
   c.pass(step);
 
+  step = "every `supports` entry that cannot be one is said in one answer";
+  said = await c.refused(step, "source_add", { initiative: I, title: "Bad supports", content: "x", supports: ["../up.md", "has space"] },
+    /^ERROR: INVALID_MODE — supports entry "\.\.\/up\.md" must be a path inside the initiative/);
+  if (!/^ERROR: supports entry "has space\.md" must be a document name/m.test(said)) c.fail(step, said);
+  c.pass(step);
+
   step = "a captured source whose name is taken is filed under the next one, and the receipt names it";
   reply = await c.ok(step, "document_edit", { path: n, edits: [{ find: "after a rule", replace: "after a call" }],
                                               source_content: "third", source_title: "Call notes" });
   const third = taken.replace(/\.md$/, "-3.md");
-  if (!new RegExp(`^causes: .*${esc(third)} \\(agent\\)`, "m").test(reply) || !reply.includes(`was taken, so the words were filed as ${third}`)) {
+  if (!new RegExp(`^causes \\(\\d+\\): (.*, )?${esc(third)} \\(agent\\)`, "m").test(reply) || !reply.includes(`was taken, so the words were filed as ${third}`)) {
     c.fail(step, reply);
   }
   if ((await c.cites(n)).filter((x) => x.startsWith(third)).length !== 1) c.fail(step, `the cause is not linked to ${third}: ${(await c.cites(n)).join(" | ")}`);
+  c.pass(step);
+
+  // Carried into Phase 2's wave 3: the write repointed EVERY cause naming the asked name to the
+  // captured source it suffixed, so a named source of exactly that name was linked as the capture.
+  step = "a named source and a captured one asking for the same name are both linked, each as itself";
+  const twin = await c.source(step, { initiative: I, title: "Twin notes", content: "the named one" });
+  const twin2 = twin.replace(/\.md$/, "-2.md");
+  reply = await c.ok(step, "document_edit", { path: n, edits: [{ find: "after a call", replace: "after two calls" }],
+                                              sources: [twin.slice(I.length + 1)], source_content: "the captured one", source_title: "Twin notes" });
+  if (!new RegExp(`^causes \\(2\\): ${esc(twin)} \\(agent\\), ${esc(twin2)} \\(agent\\)$`, "m").test(reply)) c.fail(step, reply);
+  const cited = await c.cites(n);
+  if (!cited.some((x) => x.startsWith(`${twin} `)) || !cited.some((x) => x.startsWith(`${twin2} `))) {
+    c.fail(step, `both are not linked: ${cited.join(" | ")}`);
+  }
+  c.pass(step);
+
+  // Decided in Phase 2's wave 3: whole content that is only an envelope would store an empty body.
+  step = "content that is only an envelope is refused on both tools, saying what to send";
+  await refusedUnchanged(c, step, n, { content: "---\ntitle: Retitled\n---\n" },
+    /^ERROR: INVALID_MODE — the content held only an envelope.*send them as named arguments with no `content`/);
+  await c.refused(step, "document_write", { path: `${I}/only.md`, content: "---\ntitle: Only\n---\n\n" },
+    /^ERROR: INVALID_MODE — the content held only an envelope.*Send the body as `content`/);
   c.pass(step);
 }
 
@@ -442,7 +508,7 @@ async function fidelity(c: Core): Promise<void> {
 
 async function bigReceipt(c: Core): Promise<void> {
   const I = await c.open("edit-receipt");
-  const step = "a 128-edit receipt with 45 causes stays under 16 KiB, each list capped at 40";
+  const step = "a 128-edit receipt with 45 causes stays under 16 KiB, its totals whole and every entry in its detail";
   const pad = "a long heading that a careless receipt would repeat in full ".repeat(4).trim();
   const nums = Array.from({ length: 128 }, (_, i) => String(i + 1).padStart(3, "0"));
   const body = `# Receipt\n\n${nums.map((n) => `## S${n} ${pad}\n\nt${n}\n`).join("\n")}`;
@@ -456,14 +522,39 @@ async function bigReceipt(c: Core): Promise<void> {
     { path, edits: nums.map((n) => ({ find: `t${n}`, replace: `T${n}` })), sources });
   await bodyIs(c, step, path, nums.reduce((b, n) => b.replace(`t${n}`, `T${n}`), body));
   const bytes = Buffer.byteLength(reply, "utf8");
-  if (bytes >= 16 * 1024) c.fail(step, `the receipt is ${bytes} bytes`);
-  const changed = /^changed sections: (.*)$/m.exec(reply)?.[1] ?? c.fail(step, `no changed sections line: ${reply}`);
-  const causes = /^causes: (.*)$/m.exec(reply)?.[1] ?? c.fail(step, `no causes line: ${reply}`);
-  if (!changed.endsWith(", … and 88 more") || changed.split(", ").length !== 41) c.fail(step, `changed sections: ${changed}`);
-  if (!causes.endsWith(", … and 5 more") || causes.split(", ").length !== 41) c.fail(step, `causes: ${causes}`);
-  if (changed.split(", ").some((e) => e.length > 120)) c.fail(step, `an entry is not cut: ${changed}`);
+  if (bytes > 16 * 1024) c.fail(step, `the receipt is ${bytes} bytes`);
+  const changed = /^changed sections \(128\): (.*)$/m.exec(reply)?.[1] ?? c.fail(step, `no changed sections (128) line: ${reply}`);
+  const causes = /^causes \(45\): (.*)$/m.exec(reply)?.[1] ?? c.fail(step, `no causes (45) line: ${reply}`);
+  // Shown whole: an entry cut short ends in `…`, and counts among those not shown.
+  const shown = (line: string) => line.split(", ").filter((e) => !e.endsWith("…")).length;
+  const [ref, hidden] = /^details: `(dr_[a-z2-7]{26})` — (\d+) entries not shown above$/m.exec(reply)?.slice(1) ?? c.fail(step, `no details line: ${reply}`);
+  if (shown(changed) + shown(causes) + Number(hidden) !== 128 + 45) c.fail(step, `${shown(changed)} + ${shown(causes)} shown, ${hidden} hidden`);
   if (first(reply) !== `edited: ${path} — v2 (new version)`) c.fail(step, reply);
+  // Every entry, page by page, through the read the reply names.
+  let detail = "";
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const got = await c.ok(step, "document_read", { path, details_ref: ref, ...(cursor ? { cursor } : {}) });
+    const lines = got.split("\n");
+    if (!lines[0].startsWith(`details \`${ref}\` of ${path} — bytes `)) c.fail(step, `a page is not headed: ${lines[0]}`);
+    detail += lines.slice(1, -1).join("\n");
+    const next = /^Next: cursor (dc_[a-z2-7]+)$/.exec(lines[lines.length - 1]);
+    if (!next) break;
+    cursor = next[1];
+  }
+  if (!cursor) c.fail(step, "a detail of 173 entries came back in one page");
+  for (const n of nums) if (!detail.includes(`\n- S${n} ${pad}`)) c.fail(step, `the detail does not name S${n}`);
+  for (const src of sources) if (!detail.includes(`\n- ${I}/${src} (agent)`)) c.fail(step, `the detail does not name ${src}`);
   c.pass(step);
+
+  const modes = "a details read combined with another mode is INVALID_MODE; a ref on another path is DETAILS_MISSING";
+  for (const extra of [{ section: "Receipt" }, { offset: 0 }, { limit: 10 }, { version: 1 }, { scope: "platform" }, { path: [path] }]) {
+    await c.refused(modes, "document_read", { path, details_ref: ref, ...extra }, /^ERROR: INVALID_MODE — `details_ref` reads one reply's/);
+  }
+  await c.refused(modes, "document_read", { path, cursor: cursor ?? "dc_x" }, /^ERROR: INVALID_MODE — `cursor` continues a details read/);
+  await c.refused(modes, "document_read", { path: `${I}/other.md`, details_ref: ref },
+    new RegExp(`^ERROR: DETAILS_MISSING — ${ref} is not a detail of ${esc(I)}/other\\.md$`));
+  c.pass(modes);
 }
 
 process.exitCode = await withThrowawayCore(NAME,

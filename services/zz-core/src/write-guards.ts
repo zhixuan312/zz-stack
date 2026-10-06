@@ -99,6 +99,8 @@ export function attributionCheck(chain: Chain, relPath: string, content: string,
   if (parts.length !== 2) return null;
   if (chain.documents.length && !chain.docs.has(parts[1])) return null;
   const env = parseEnvelope(content);
+  // Every field that names nobody, and a missing attribution, are said together, one line each.
+  const said: string[] = [];
   for (const field of ["approved_by", "accepted_by", "closed_by"] as const) {
     const who = (env[field] ?? "").trim();
     if (!who) continue;
@@ -109,7 +111,7 @@ export function attributionCheck(chain: Chain, relPath: string, content: string,
         ? "names a role, not a person"
         : null;
     if (why) {
-      return (
+      said.push(
         `ERROR: ${field}: ${who} ${why}. ` +
         `${field === "accepted_by" ? "Acceptance" : "An approval"} is a verdict somebody gave — ` +
         "record who gave it, as they are known to you (their name, or the address they wrote " +
@@ -120,7 +122,8 @@ export function attributionCheck(chain: Chain, relPath: string, content: string,
 
   // A gated document carrying `status: approved` with no attribution at all. The loop above
   // starts `if (!who) continue`, so it only ever judges a field that is there, and
-  // statusCheck looks at nothing but the status word.
+  // statusCheck looks at nothing but the status word. A field named but naming nobody is not
+  // missing, so the two never say the same thing twice.
   //
   // Gated documents only: a flow can mark an ungated document `approved` as a working state,
   // with nobody having said anything.
@@ -128,7 +131,7 @@ export function attributionCheck(chain: Chain, relPath: string, content: string,
       && chain.documents.some((d) => d.name === parts[1] && d.gate)) {
     const missing = (["approved_by", "approved_at"] as const).filter((f) => !(env[f] ?? "").trim());
     if (missing.length) {
-      return (
+      said.push(
         `ERROR: ${parts[1]} is a gated document carrying status: approved without ` +
         `${missing.join(" or ")}. A gate is passed by a person, on a day, and both are stamped ` +
         `by the act — call document_approve("${parts[0]}/${parts[1]}") to record the verdict properly. ` +
@@ -137,7 +140,7 @@ export function attributionCheck(chain: Chain, relPath: string, content: string,
       );
     }
   }
-  return null;
+  return said.length ? said.join("\n") : null;
 }
 
 /** The `## ` headings the manifest says this document must carry.

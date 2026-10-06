@@ -14,16 +14,19 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
+import type pg from "pg";
 import { z } from "zod";
 
-import { acceptanceLine, filedAs, MAX_ATTEMPTS, NO_TEAM, planEdit, replayFor, replayText,
+import { acceptanceLine, callRefusals, MAX_ATTEMPTS, NO_TEAM, planEdit, replayFor,
          RETRYABLE_UNAVAILABLE } from "../document-change.js";
+import { composeReceipt, receiptReply, refusalText, replayText, settleRefusal } from "../document-details.js";
 import { MAX_EDITS } from "../document-edits.js";
 import { normalizeTags } from "../document-normalize.js";
 import { fieldRefusal } from "../document-rules.js";
 import { saveDocument } from "../document-save.js";
 import { documentGuards } from "../guards.js";
 import { noteDocument, noteRevision } from "../host/observe.js";
+import { insertEvent } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { safePath, tagRefusal, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
@@ -51,7 +54,8 @@ export function registerDocumentEditTool(server: McpServer): void {
       "and a change made to a document that moved since is refused instead of landing on text you " +
       "did not read. Send one `request_id` per intended change and reuse it on every retry of that " +
       "change: a retry of a change that already landed returns its first reply instead of landing " +
-      "twice.",
+      "twice. Every list in the reply is counted — `causes (3): …` — and every reply names its " +
+      "complete details as `details: dr_…`, which `document_read(path, details_ref)` returns in full.",
     inputSchema: {
       path: z.string(),
       edits: z.array(z.object({ find: z.string(), replace: z.string() })).optional()
@@ -83,10 +87,15 @@ export function registerDocumentEditTool(server: McpServer): void {
     // is what the lock, the request key and every row are addressed by.
     const path = await safePath(args.path);
     const initiative = path.split("/")[0];
+    // The next move a receipt states, read on the client it is handed — the write's own, so it is
+    // the move the committed change will show.
+    // DELIBERATE: a transaction's client is not a pool, and the next move asks nothing but `query`.
+    const moveOf = (c: Pick<pg.Pool, "query">) => nextMoveLine(c as pg.Pool, team, initiative);
+    const now = async () => nextMoveLine(p, team, initiative);
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       // (0) A request already committed under this key answers as it did the first time.
       const replay = await replayFor(p, team, who, path, args);
-      if (replay) return text(replay + await nextMoveLine(p, team, initiative));
+      if (replay) return text("refusal" in replay ? replay.refusal : replayText(replay.replayed, await now()));
       // (1)
       const blocked = writeGuard(path);
       if (blocked) return text(blocked);
@@ -94,20 +103,27 @@ export function registerDocumentEditTool(server: McpServer): void {
       if (unopened) return text(unopened);
       // (2) The rules every write applies to a caller's field names and tags — the tags lower-cased
       // first, as they will be stored. An envelope sent in whole `content` is the change service's
-      // to separate (5), and its tags are held to the same rule there.
+      // to separate (8), and its tags are held to the same rule there; refused here, the call is
+      // also read as (8) would read it, so every fault that depends on no other comes back at once.
       const { fields } = args;
       const { tags } = normalizeTags(args.tags);
-      const malformed = fieldRefusal(fields) ?? tagRefusal(tags);
-      if (malformed) return text(malformed);
+      const malformed = [fieldRefusal(fields), tagRefusal(tags)].filter((r): r is string => r !== null);
+      if (malformed.length) {
+        const all = [...new Set([...malformed, ...callRefusals(args, initiative)])];
+        return text(await settleRefusal(p, { who, team, path }, refusalText(all)));
+      }
       // (3)–(10)
-      const plan = await planEdit(p, team, who, path, args);
+      const plan = await planEdit(p, team, who, path, args, moveOf);
       if ("reply" in plan) return text(plan.reply);
-      const finish = async (filed?: string): Promise<string> => filedAs(plan.receipt, plan.write.change?.captured?.relPath, filed)
-        + (plan.renamed.length ? `\nRenamed to the heading this flow declares: ${plan.renamed.join(", ")}.` : "")
-        + (plan.noChange ? "" : await acceptanceLine(p, team, plan.chain, path, plan.text))
-        + await nextMoveLine(p, team, initiative);
-      // An unkeyed no_change writes nothing at all; a keyed one records its request.
-      if (plan.noChange && args.request_id === undefined) return text(await finish());
+      // An unkeyed no_change writes no document row, only the record its receipt's details_ref
+      // names — awaited, so the ref the reply prints names a row that is there.
+      if (plan.noChange && args.request_id === undefined) {
+        const receipt = composeReceipt(plan.lines(), plan.ref, await now());
+        const recorded = await insertEvent(p, { actor: who, team, initiative, kind: "document.edit", subject: path,
+          detail: { user: who, action: "edit", path, result: "no_change", details_ref: plan.ref, details: receipt.details.text } });
+        return text(recorded.ok ? receiptReply(receipt)
+          : receiptReply({ ...receipt, text: receipt.text.replace(`\`${plan.ref}\``, () => `not recorded (${recorded.error})`) }));
+      }
       // (11) The guards, on the whole candidate. `via`: this tool composes the governance fields
       // itself — it carries an outcome forward and takes an approval off — so the three guards
       // that refuse a caller writing them by hand stand aside, as they do for the other acts.
@@ -116,9 +132,10 @@ export function registerDocumentEditTool(server: McpServer): void {
       const written = await saveDocument(plan.write);
       if ("retry" in written) continue;
       // The same key committed between the lookup above and the lock: its receipt, as (0) gives it.
-      if ("replayed" in written) return text(replayText(written.replayed) + await nextMoveLine(p, team, initiative));
+      if ("replayed" in written) return text(replayText(written.replayed, await now()));
       if ("refusal" in written) return text(written.refusal);
-      if (plan.noChange) return text(await finish());
+      const receipt = written.receipt ?? composeReceipt(plan.lines(written.capturedPath), plan.ref, await now());
+      if (plan.noChange) return text(receiptReply(receipt));
       recordAct(path, { user: who, action: "document_edit", path, version: written.version,
                         sources: plan.causes.map((c) => c.path).join(","), explained: plan.causes.length > 0 });
       // The control loop is told after the write, never before. A new version, or an approved
@@ -131,7 +148,7 @@ export function registerDocumentEditTool(server: McpServer): void {
       } else {
         await noteDocument(plan.chain, path, "document", at, who, team);
       }
-      return text(await finish(written.capturedPath));
+      return text(receiptReply(receipt, await acceptanceLine(p, team, plan.chain, path, plan.text)));
     }
     return text(RETRYABLE_UNAVAILABLE);
   });

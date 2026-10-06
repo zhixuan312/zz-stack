@@ -32,6 +32,7 @@
 import type pg from "pg";
 
 import { ROUND_BUDGET } from "./audit-rounds.js";
+import { refusalText } from "./document-details.js";
 import { docRows, type DocRow } from "./indexing.js";
 import { assessFamily, type Assessment } from "./semantic.js";
 
@@ -125,12 +126,20 @@ export function reviewRoundOf(chain: Chain, stage: string | undefined,
 
 /** The one ledger a round's content carries, or why it cannot be read. */
 function parseLedger(content: string): Ledger | string {
+  const read = inspectLedger(content);
+  return "error" in read ? read.error : read.bad.length ? read.bad.join("; ") : read.ledger;
+}
+
+/** The ledger a round's content carries as far as it can be read, and every shape problem in it —
+ *  or, when there is not exactly one ledger, why. What reads as a round number and a `resolved`
+ *  list is kept even beside shape problems, so the checks on those still run. */
+function inspectLedger(content: string): { error: string } | { ledger: Ledger; bad: string[] } {
   const blocks = [...content.matchAll(/```json[ \t]*\n([\s\S]*?)\n```/g)].map((m) => m[1]);
   const parsed = blocks.map((b) => { try { return JSON.parse(b) as unknown; } catch { return undefined; } })
     .filter((v): v is Record<string, unknown> => !!v && typeof v === "object" && "round" in v);
   if (parsed.length !== 1) {
-    return `a review round carries exactly one fenced \`\`\`json ledger with a "round" field; ` +
-           `this content has ${parsed.length}`;
+    return { error: `a review round carries exactly one fenced \`\`\`json ledger with a "round" field; ` +
+                    `this content has ${parsed.length}` };
   }
   const j = parsed[0];
   const bad: string[] = [];
@@ -166,25 +175,28 @@ function parseLedger(content: string): Ledger | string {
     if (!str(r.by)) bad.push(`${at} has no \`by\` (the fixing commit, or the check that failed to reproduce it)`);
     if (!RESOLUTIONS.includes(r.how as never)) bad.push(`${at}: \`how\` must be one of ${RESOLUTIONS.join(", ")}`);
   });
-  if (bad.length) return bad.join("; ");
-  return { round: j.round as number, scope: { base: String(scope?.base), head: String(scope?.head) },
-           findings: findings as unknown as Finding[], resolved: resolved as unknown as Resolution[] };
+  return { bad, ledger: { round: j.round as number, scope: { base: String(scope?.base), head: String(scope?.head) },
+                          findings: findings as unknown as Finding[], resolved: resolved as unknown as Resolution[] } };
 }
 
 /** Why `source_add` refuses this round, or null. Checked before the source is written: sources
  *  are immutable, so a malformed ledger that landed could never be corrected. */
 export function ledgerRefusal(content: string, earlier: Ledger[], document: string): string | null {
-  const l = parseLedger(content);
+  const read = inspectLedger(content);
   const lead = `ERROR: this ${document} review round is not recorded — `;
-  if (typeof l === "string") return lead + l + ". The ledger's shape is in the sdlc-review skill.";
-  const bad: string[] = [];
-  if (l.round !== earlier.length + 1) {
+  const skill = ". The ledger's shape is in the sdlc-review skill.";
+  if ("error" in read) return lead + read.error + skill;
+  // Every shape problem, and the round number and the ids it resolves as far as they read: none
+  // of these depends on another, so a ledger with several is refused once, with all of them.
+  const { ledger: l, bad } = read;
+  const shape = bad.length;
+  if (Number.isInteger(l.round) && l.round !== earlier.length + 1) {
     bad.push(`it says round ${l.round}, and ${earlier.length} round(s) are already recorded, so this is round ${earlier.length + 1}`);
   }
   const known = new Set(earlier.flatMap((e) => e.findings.map((f) => f.id)));
-  const unknown = l.resolved.map((r) => r.id).filter((id) => !known.has(id));
+  const unknown = l.resolved.map((r) => r.id).filter((id) => str(id) && !known.has(id));
   if (unknown.length) bad.push(`\`resolved\` names ${unknown.join(", ")}, which no earlier round reported`);
-  return bad.length ? lead + bad.join("; ") : null;
+  return bad.length ? refusalText([{ lead, label: "problems", items: bad, sep: "; ", tail: shape ? skill : "" }]) : null;
 }
 
 interface ReviewRound { file: string; added_at: string; ledger: Ledger }

@@ -48,9 +48,11 @@ function headings(text: string): Heading[] {
   return out;
 }
 
+/** Headings as a counted list — `headings (<total>): <preview>` — at most 40 shown, and a cut
+ *  list ends in `…`, so a reader is never shown part of the list as the whole of it. */
 const listed = (hs: Heading[]): string =>
-  hs.slice(0, 40).map((h) => `${"#".repeat(h.level)} ${h.title} (offset ${h.at})`).join("; ") +
-  (hs.length > 40 ? `; … ${hs.length - 40} more` : "");
+  `headings (${hs.length}): ` + (hs.length ? hs.slice(0, 40).map((h) => `${"#".repeat(h.level)} ${h.title} (offset ${h.at})`).join("; ") +
+  (hs.length > 40 ? "; …" : "") : "none");
 
 /** Which of several same-named headings a caller means: its level (1–4), then its 1-based
  *  occurrence among the headings that are left. Both optional; neither narrows nothing. */
@@ -99,11 +101,10 @@ export function sectionRange(text: string, section: string, pick: SectionPick = 
     { lo: number; hi: number } | string {
   const found = locateSection(text, section, pick);
   if ("missing" in found) {
-    return `ERROR: no heading "${section}" in this document. Its headings: ` +
-           (found.all.length ? listed(found.all) : "none") + ".";
+    return `ERROR: no heading "${section}" in this document. Its ${listed(found.all)}.`;
   }
   if ("ambiguous" in found) {
-    return `ERROR: ${found.hits.length} headings read "${section}": ${listed(found.hits)}. Ask for one ` +
+    return `ERROR: ${found.hits.length} headings read "${section}" — ${listed(found.hits)}. Ask for one ` +
            "by `offset` instead.";
   }
   return found;
@@ -204,7 +205,7 @@ export function partHeader(rel: string, part: Part, of: string, text: string): s
   }
   if (!whole) {
     const hs = headings(text);
-    if (hs.length) lines.push(`Sections: ${listed(hs)}.`);
+    if (hs.length) lines.push(`Sections — ${listed(hs)}.`);
   }
   return lines.join("\n");
 }

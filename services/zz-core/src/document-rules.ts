@@ -79,27 +79,26 @@ export function slugify(slug: string): string {
  * Two ways a field fails, and both are refused here rather than dropped: a name the envelope
  * owns, and a name that is merely malformed (`dueDate` where the skill said
  * `due_date`, or a key with a space in it). A dropped field returns a successful write
- * and a document missing the pointer the flow's skill asked for.
+ * and a document missing the pointer the flow's skill asked for. Both classes are said at once,
+ * one line each: neither depends on the other, and a caller fixing one should not meet the second.
  *
  * COUPLED: this is the one rule every write path calls — document_write and document_edit. */
 export function fieldRefusal(fields: Record<string, unknown> | undefined): string | null {
   const names = Object.keys(fields ?? {}).map((k) => k.trim());
   const clash = names.filter((k) => RESERVED_ENVELOPE.has(k));
-  if (clash.length) {
-    return `ERROR: ${clash.join(", ")} ${clash.length > 1 ? "are" : "is"} written by the platform — ` +
+  const malformed = names.filter((k) => !RESERVED_ENVELOPE.has(k) && !FIELD_NAME.test(k));
+  const said = [
+    ...(clash.length ? [`ERROR: ${clash.join(", ")} ${clash.length > 1 ? "are" : "is"} written by the platform — ` +
       "pass it as its own argument where one exists, and otherwise leave it out: a flow field " +
-      "with the same name would be a second answer to a question the envelope already answers.";
-  }
-  const malformed = names.filter((k) => !FIELD_NAME.test(k));
-  if (malformed.length) {
-    return `ERROR: ${malformed.map((k) => JSON.stringify(k)).join(", ")} ` +
+      "with the same name would be a second answer to a question the envelope already answers."] : []),
+    ...(malformed.length ? [`ERROR: ${malformed.map((k) => JSON.stringify(k)).join(", ")} ` +
       `${malformed.length > 1 ? "are not frontmatter names" : "is not a frontmatter name"} — ` +
       "a field is lowercase, starts with a letter, and joins words with underscores " +
       "(`due_date`, not `dueDate` and not `Due Date`). Rename it and send " +
       "the call again; it is refused rather than dropped because a document written without " +
-      "the field it was told to carry looks finished.";
-  }
-  return null;
+      "the field it was told to carry looks finished."] : []),
+  ];
+  return said.length ? said.join("\n") : null;
 }
 
 /** Anything written into a line-structured file — a frontmatter value, a markdown table cell,

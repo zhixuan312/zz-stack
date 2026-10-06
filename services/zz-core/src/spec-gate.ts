@@ -34,6 +34,7 @@ import { documentBody } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
 import type pg from "pg";
 
+import { refusalText } from "./document-details.js";
 import type { DocRow } from "./indexing.js";
 import { locatorProblem, readAcceptanceCache, rowDigest } from "./review-acceptance.js";
 import { names, stakeholderSources } from "./review-rounds.js";
@@ -89,7 +90,9 @@ function outlineProblems(body: string, section: string | null): string[] {
   return bad;
 }
 
-/** What the core statements get wrong deterministically, one entry each. */
+/** What the core statements get wrong deterministically, one entry each — every problem of every
+ *  row. Whether a fails or partial row is settled is asked only of a status the gate knows; every
+ *  other rule stands on its own. */
 function statementProblems(rows: Statement[] | null, vouched: (id: string) => boolean): string[] {
   if (rows === null) {
     return [`it has no \`## ${CORE_STATEMENTS}\` — the assumptions the design rests on, each with a spike's evidence: ` +
@@ -99,15 +102,13 @@ function statementProblems(rows: Statement[] | null, vouched: (id: string) => bo
   const bad: string[] = [];
   for (const r of rows) {
     const locator = locatorProblem(r.id, r.evidence, KINDS);
-    if (!r.statement || !r.ifFalse) {
-      bad.push(`${r.id} does not say ${r.statement ? "what breaks if it is false" : "what it states"}`);
-    } else if (!STATUSES.includes(r.status as never)) {
-      bad.push(`${r.id}: status "${r.status}" is not one of ${STATUSES.join(", ")}`);
-    } else if (locator) {
-      bad.push(locator);
-    } else if (!QUOTED.test(r.evidence)) {
-      bad.push(`${r.id} quotes no output — add the spike's decisive line, in backticks`);
-    } else if (r.status !== "holds" && !RESOLVED.test(r.note) && !vouched(r.id)) {
+    const unsaid = [!r.statement && "what it states", !r.ifFalse && "what breaks if it is false"].filter(Boolean);
+    if (unsaid.length) bad.push(`${r.id} does not say ${unsaid.join(" or ")}`);
+    const known = STATUSES.includes(r.status as never);
+    if (!known) bad.push(`${r.id}: status "${r.status}" is not one of ${STATUSES.join(", ")}`);
+    if (locator) bad.push(locator);
+    if (!QUOTED.test(r.evidence)) bad.push(`${r.id} quotes no output — add the spike's decisive line, in backticks`);
+    if (known && r.status !== "holds" && !RESOLVED.test(r.note) && !vouched(r.id)) {
       bad.push(`${r.id} ${r.status === "fails" ? "fails" : "holds only in part"} and nothing settles it — change the ` +
                "design and mark the note `resolved-by-design-change: <what changed>`, or record the stakeholder's " +
                `decision with source_add(supports: [...]) naming ${r.id}`);
@@ -135,11 +136,12 @@ export async function specApprovalRefusal(
   const statementsSection = sectionOf(body, CORE_STATEMENTS);
   const rows = statementsSection === null ? null : statementRows(statementsSection);
   const lead = `ERROR: ${relPath} is not approved — `;
+  const refuse = (problems: string[]): string => refusalText([{ lead, label: "problems", items: problems, sep: "; " }]);
   const bad = [
     ...(wantsOutline ? outlineProblems(body, sectionOf(body, PHASE_OUTLINE)) : []),
     ...(wantsStatements ? statementProblems(rows, vouched) : []),
   ];
-  if (bad.length) return { refusal: lead + bad.join("; "), note: "" };
+  if (bad.length) return { refusal: refuse(bad), note: "" };
   if (!wantsStatements || !rows) return { refusal: null, note: "" };
 
   // Only rows that passed every deterministic rule are read, and a row nobody asked about yet is
@@ -193,7 +195,7 @@ export async function specApprovalRefusal(
       }
     }
   }
-  if (bad.length) return { refusal: lead + bad.join("; "), note: "" };
+  if (bad.length) return { refusal: refuse(bad), note: "" };
   const count = (s: string) => rows.filter((r) => r.status === s).length;
   return { refusal: null,
            note: `Core statements: ${count("holds")} hold, ${count("fails")} fail, ${count("partial")} partial` +

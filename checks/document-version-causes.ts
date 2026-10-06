@@ -51,7 +51,7 @@ async function run(c: Core): Promise<void> {
     const step = "a source filed before its target existed is linked to v1 by the create";
     const early = await c.source(step, { initiative: I, title: "Early material", content: "words", supports: "a.md" });
     const created = await c.ok(step, "document_write", { path: a, content: "# A\n\nalpha\n" });
-    if (!new RegExp(`^causes: ${esc(early)} \\(platform\\)$`, "m").test(created)) c.fail(step, `receipt: ${created}`);
+    if (!new RegExp(`^causes \\(1\\): ${esc(early)} \\(platform\\)$`, "m").test(created)) c.fail(step, `receipt: ${created}`);
     const cited = await c.cites(a);
     if (!cited.includes(`${early} platform v1`)) c.fail(step, `v1 cites ${JSON.stringify(cited)}`);
     c.pass(step);
@@ -64,7 +64,7 @@ async function run(c: Core): Promise<void> {
     const g = `${I}/g.md`;
     const created = await c.ok(step, "document_write",
       { path: g, content: "# G\n\ngee\n", sources: [named.slice(I.length + 1)], source_content: "what the call said" });
-    const listed = /^causes: (.*)$/m.exec(created)?.[1].split(", ") ?? [];
+    const listed = /^causes \(\d+\): (.*)$/m.exec(created)?.[1].split(", ") ?? [];
     const captured = listed.find((x) => x !== `${named} (agent)`) ?? "";
     if (listed.length !== 2 || !listed.includes(`${named} (agent)`)
         || !new RegExp(`^${esc(I)}/sources/\\d{4}-\\d{2}-\\d{2}-input-behind-v1\\.md \\(agent\\)$`).test(captured)) {
@@ -93,7 +93,7 @@ async function run(c: Core): Promise<void> {
     const later = await c.source(step, { initiative: I, title: "Later material", content: "more words", supports: "a.md" });
     const edited = await c.ok(step, "document_edit", { path: a, edits: [{ find: "alpha", replace: "beta" }] });
     if (first(edited) !== `edited: ${a} — v2 (new version)`) c.fail(step, edited);
-    if (!new RegExp(`^causes: ${esc(later)} \\(platform\\)$`, "m").test(edited)) c.fail(step, edited);
+    if (!new RegExp(`^causes \\(1\\): ${esc(later)} \\(platform\\)$`, "m").test(edited)) c.fail(step, edited);
     if (!(await c.cites(a)).includes(`${later} platform v2`)) c.fail(step, JSON.stringify(await c.cites(a)));
     c.pass(step);
   }
@@ -103,7 +103,7 @@ async function run(c: Core): Promise<void> {
     const step = "a metadata-only call and a no_change call consume no owed source";
     const owed = await c.source(step, { initiative: I, title: "Owed material", content: "owed words", supports: "a.md" });
     const titled = await c.ok(step, "document_edit", { path: a, title: "A titled" });
-    if (first(titled) !== `edited: ${a} — v2` || !/^causes: none$/m.test(titled)) c.fail(step, `metadata-only: ${titled}`);
+    if (first(titled) !== `edited: ${a} — v2` || !/^causes \(0\): none$/m.test(titled)) c.fail(step, `metadata-only: ${titled}`);
     const same = await c.ok(step, "document_edit", { path: a, title: "A titled" });
     if (first(same) !== `edited: ${a} — v2 (no change)`) c.fail(step, `no_change: ${same}`);
     if (citesSource(await c.cites(a), owed)) c.fail(step, "the owed source was consumed before a body change");
@@ -121,7 +121,7 @@ async function run(c: Core): Promise<void> {
     const both = await c.source(step, { initiative: I, title: "Named and owed", content: "both", supports: "a.md" });
     const rel = both.slice(I.length + 1);
     const edited = await c.ok(step, "document_edit", { path: a, edits: [{ find: "gamma", replace: "delta" }], sources: [rel] });
-    const line = /^causes: (.*)$/m.exec(edited)?.[1] ?? "";
+    const line = /^causes \(\d+\): (.*)$/m.exec(edited)?.[1] ?? "";
     if (line !== `${both} (agent)`) c.fail(step, `causes line: ${line}`);
     const links = (await c.cites(a)).filter((x) => x.startsWith(`${both} `));
     if (JSON.stringify(links) !== JSON.stringify([`${both} agent v4`])) c.fail(step, JSON.stringify(links));
@@ -166,7 +166,7 @@ async function run(c: Core): Promise<void> {
       // Named, it is the agent's cause like any other.
       const named = await c.ok(step, "document_edit",
         { path: d, edits: [{ find: "dee", replace: "DEE" }], sources: [old.slice(I.length + 1)] });
-      if (first(named) !== `edited: ${d} — v2 (new version)` || !new RegExp(`^causes: ${esc(old)} \\(agent\\)$`, "m").test(named)) {
+      if (first(named) !== `edited: ${d} — v2 (new version)` || !new RegExp(`^causes \\(1\\): ${esc(old)} \\(agent\\)$`, "m").test(named)) {
         c.fail(step, `named: ${named}`);
       }
     } finally {
@@ -185,7 +185,7 @@ async function run(c: Core): Promise<void> {
       `update zz.doc_revision r set written_at = null from zz.doc s join zz.initiative i on i.id = s.initiative_id
         where r.doc_id = s.id and i.slug || '/' || s.path = $1`, [undated]);
     const edited = await c.ok(step, "document_edit", { path: e, edits: [{ find: "ee", replace: "EE" }] });
-    if (first(edited) !== `edited: ${e} — v1` || !/^causes: none$/m.test(edited)) c.fail(step, edited);
+    if (first(edited) !== `edited: ${e} — v1` || !/^causes \(0\): none$/m.test(edited)) c.fail(step, edited);
     if (citesSource(await c.cites(e), undated)) c.fail(step, "the undated source was linked");
     c.pass(step);
   }
@@ -238,7 +238,7 @@ async function run(c: Core): Promise<void> {
     // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
     if (settled.document === "plan.md" && settled.action === "add_source") c.fail(step, `round 1 on v1 did not settle v1: ${JSON.stringify(settled)}`);
     const typo = await c.ok(step, "document_edit", { path: plan, edits: [{ find: "Run the gate.", replace: "Run the gate!" }] });
-    if (first(typo) !== `edited: ${plan} — v2 (new version)` || !new RegExp(`^causes: ${esc(round)} \\(platform\\)$`, "m").test(typo)) {
+    if (first(typo) !== `edited: ${plan} — v2 (new version)` || !new RegExp(`^causes \\(1\\): ${esc(round)} \\(platform\\)$`, "m").test(typo)) {
       c.fail(step, `the typo edit: ${typo}`);
     }
     const owes = (when: string, move: { action?: string; document?: string; why?: string }): void => {

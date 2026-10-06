@@ -20,6 +20,13 @@
  *      `offset`; the edit path's candidates carry the level and occurrence that pick each one; the
  *      real `document_edit` schema takes all three; and a part of the current document states its
  *      content revision.
+ *   7. counted lists and detail pages (AC-2.2): a list too long for 16 KiB comes back as a counted
+ *      preview whose details line says how many entries it left out; a receipt fits 16 KiB with its
+ *      totals intact and names `(complete)` when nothing was cut; a cut refusal's detail is recorded
+ *      as a `document.refused` row before it is answered; and that detail reads back page by page —
+ *      every page at most 12,000 UTF-8 bytes, cut on a code point, the pages joining to the stored
+ *      text — while a cursor for another ref is INVALID_MODE and another path or an unknown ref is
+ *      DETAILS_MISSING.
  *
  * COUPLED: the fact behind "counts as presented" is `doc_revision.presented_at`, and the part
  * spans are `zz.event` rows — a column cannot hold a span set — so the fixture is a stubbed
@@ -110,6 +117,11 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
     events.push({ kind: String(values[3] ?? ""), subject: String(values[4] ?? ""),
                   detail: JSON.parse(String(values[5] ?? "{}")) });
     return one([]);
+  }
+  // A details read: the row a ref names, on the subject it was recorded about.
+  if (/e\.detail->>'details_ref' = \$3/.test(sql)) {
+    const hit = events.find((e) => e.subject === values[1] && e.detail.details_ref === values[2]);
+    return one(hit ? [{ details: hit.detail.details }] : []);
   }
   if (/from zz\.team where slug = \$1|select slug from zz\.team/.test(sql)) return one([{ slug: TEAM }]);
   return one([]);
@@ -318,9 +330,78 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
      "a part of the current document does not state its content revision");
 }
 
+// 7. Counted lists and detail pages
+{
+  const { composeReceipt, detailPage, readDetails, refusalText, settleRefusal, PAGE_BYTES } =
+    await load("services/zz-core/dist/document-details.js");
+  const bytes = (t: string) => Buffer.byteLength(t, "utf8");
+  // 300 headings of ~90 bytes with a 3-byte character in each: about 27 KB, so the preview must shrink.
+  const headings = Array.from({ length: 300 }, (_, i) => `Section ${String(i).padStart(3, "0")} — 中 ${"x".repeat(70)}`);
+  const receipt = composeReceipt([`edited: ${REL} — v2 (new version)`, { label: "changed sections", items: headings },
+                                  { label: "causes", items: [] }, { label: "normalised", items: [], sep: "; " }],
+                                 "dr_aaaaaaaaaaaaaaaaaaaaaaaaaa", "Next move: present review.md (waiting on agent) — x");
+  const shownCount = (/^changed sections \(300\): (.*), …$/m.exec(receipt.text)?.[1] ?? "").split(", ").length;
+  const hidden = Number(/^details: `dr_a{26}` — (\d+) entries not shown above$/m.exec(receipt.text)?.[1] ?? -1);
+  is(bytes(receipt.text) <= 16 * 1024 && shownCount + hidden === 300 && /^causes \(0\): none$/m.test(receipt.text),
+     `a receipt over 16 KiB is not a counted preview naming what it left out (${bytes(receipt.text)} bytes, ` +
+     `${shownCount} shown, ${hidden} hidden)`);
+  is(receipt.details.text.split("\n").filter((l: string) => l.startsWith("- Section ")).length === 300,
+     "the receipt's detail does not hold every changed section, one per line");
+  const small = composeReceipt([`edited: ${REL} — v1`, { label: "changed sections", items: ["A", "B"] }], "dr_bbbbbbbbbbbbbbbbbbbbbbbbbb", "");
+  is(/^changed sections \(2\): A, B\ndetails: `dr_b{26}` \(complete\)$/m.test(small.text),
+     `a receipt that fits does not name its detail as complete: ${small.text}`);
+
+  // A cut refusal: its detail recorded on the path before it is answered, then read in pages.
+  const said = refusalText([{ lead: "ERROR: ", label: "named sources that are not documents", items: headings.map((h) => `${h}.md`),
+                              tail: " — none can be named as a cause." }]);
+  const ref = /`(dr_[a-z2-7]{26})`/.exec(said)?.[1] ?? "";
+  is(bytes(said) <= 16 * 1024 && !!ref, `a refusal over 16 KiB is not cut with a details line (${bytes(said)} bytes)`);
+  const answered = await settleRefusal(db()!, { who: "ada@zz.test", team: TEAM, path: REL }, said);
+  const row = events.find((e) => e.kind === "document.refused" && e.detail.details_ref === ref);
+  is(answered === said && row?.subject === REL && String(row?.detail.details).includes(`- ${headings[299]}.md`),
+     `a cut refusal's detail was not recorded on its path before it was answered: ${JSON.stringify(row)}`);
+  let cursor: string | undefined;
+  let joined = "";
+  for (let page = 0; page < 20; page++) {
+    const got: string = await readDetails(db()!, TEAM, REL, ref, cursor);
+    const lines = got.split("\n");
+    const text = lines.slice(1, -1).join("\n");
+    is(lines[0].startsWith(`details \`${ref}\` of ${REL} — bytes `) && bytes(text) <= PAGE_BYTES,
+       `a detail page is not headed or exceeds ${PAGE_BYTES} bytes: ${lines[0]} (${bytes(text)})`);
+    joined += text;
+    const next = /^Next: cursor (dc_[a-z2-7]+)$/.exec(lines[lines.length - 1]);
+    if (!next) { is(lines[lines.length - 1] === "complete", `a last page does not say complete: ${lines[lines.length - 1]}`); break; }
+    cursor = next[1];
+  }
+  is(joined === row?.detail.details, "the detail's pages do not join to the stored detail");
+  const other = refusalText([{ label: "x", items: headings.map((h) => `${h}.md`) }]);
+  const otherRef = /`(dr_[a-z2-7]{26})`/.exec(other)?.[1] ?? "";
+  await settleRefusal(db()!, { who: "ada@zz.test", team: TEAM, path: REL }, other);
+  const firstOfOther = await readDetails(db()!, TEAM, REL, otherRef, undefined);
+  const otherCursor = /Next: cursor (dc_[a-z2-7]+)$/.exec(firstOfOther)?.[1];
+  is(/^ERROR: INVALID_MODE — cursor dc_/.test(await readDetails(db()!, TEAM, REL, ref, otherCursor)),
+     "a cursor for another ref was not INVALID_MODE");
+  is(await readDetails(db()!, TEAM, "elsewhere/doc.md", ref, undefined) === `ERROR: DETAILS_MISSING — ${ref} is not a detail of elsewhere/doc.md`,
+     "a ref read on another path was not DETAILS_MISSING");
+  is(/^ERROR: DETAILS_MISSING — dr_c{26} is not a detail of /.test(await readDetails(db()!, TEAM, REL, `dr_${"c".repeat(26)}`, undefined)),
+     "an unknown ref was not DETAILS_MISSING");
+  // A single line longer than the budget — a sentence naming every key it refuses — is cut, and
+  // the cut is counted, so even it never exceeds 16 KiB unannounced.
+  const sentence = refusalText([`ERROR: UNSUPPORTED_METADATA — the content's envelope carries ${"\"k中\", ".repeat(3000)}.`]);
+  is(bytes(sentence) <= 16 * 1024 && /…\ndetails: `dr_[a-z2-7]{26}` — 1 entry not shown above$/.test(sentence),
+     `one line past the budget is not cut and counted (${bytes(sentence)} bytes): ${sentence.slice(-120)}`);
+  // A 3-byte character straddling the page boundary, with no line break to back up to: the page
+  // stops before it, never inside it.
+  const straddle = "a".repeat(PAGE_BYTES - 1) + "中" + "b".repeat(10);
+  const first = detailPage(straddle, 0);
+  is(first.end === PAGE_BYTES - 1 && first.text === "a".repeat(PAGE_BYTES - 1) && detailPage(straddle, first.end).text.startsWith("中"),
+     `a page cut inside a code point: ends at ${first.end}`);
+}
+
 if (fail.length) {
   console.error(`document-parts: ${fail.length} failure(s)`);
   for (const f of fail) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("document-parts: a 130k document pages and sections round-trip; parts count as presented only when they cover the body");
+console.log("document-parts: a 130k document pages and sections round-trip; parts count as presented only when they cover the body; " +
+            "lists are counted and detail pages read back whole");

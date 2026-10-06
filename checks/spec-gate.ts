@@ -10,7 +10,9 @@
  *
  *   1. refused: no `## Phase outline`, an outline naming no phase, an AC no phase covers, an AC
  *      the spec does not declare; no `## Core statements`, a row with no evidence locator, no
- *      quote, no "if false", a bad status, a `fails` row nothing settles
+ *      quote, no "if false", a bad status, a `fails` row nothing settles — and a spec with several
+ *      independent problems, in its outline and across and within its rows, refused with all of
+ *      them at once, counted (AC-2.2)
  *   2. passes: a complete spec; a `fails` row settled by a design change or by a stakeholder source
  *   3. the readings of a `holds` row: `no` refuses, `unclear` asks to sharpen, `unclear` again on
  *      new evidence goes to the stakeholder, `unavailable` passes and says so
@@ -146,6 +148,23 @@ const stakeholder = (name: string, text: string) =>
     "a failing statement nothing settled was approved");
   await refused("# Spec\n\n" + ACS + OUTLINE + statements(FAILS.replace("| holds |", "| partial |").replace("| fails |", "| partial |")),
     /CS-1 holds only in part/, "a partial statement nothing settled was approved");
+
+  // Several independent problems in one table: every one of them, counted, in one refusal — the
+  // outline's uncovered AC, a row missing its "if false" AND its locator AND its quote, and a
+  // second row with a bad status and no quote.
+  {
+    const r = await specApproval(fresh(), "# Spec\n\n" + ACS + OUTLINE.replace(" Covers AC-2.1.", "") + statements(
+      "| CS-1 | The relay delivers. | | holds | we believe so | |\n",
+      "| CS-2 | The queue drains. | Cases pile up. | probably | run:drain — it drained | |\n"));
+    const said = r.refusal ?? "";
+    const count = Number(/is not approved — problems \((\d+)\): /.exec(said)?.[1] ?? 0);
+    for (const want of [/no phase covers AC-2\.1/, /CS-1 does not say what breaks if it is false/,
+                        /CS-1's evidence names no kind-prefixed locator/, /CS-1 quotes no output/,
+                        /CS-2: status "probably"/, /CS-2 quotes no output/]) {
+      is(want.test(said), `a spec with several problems does not report ${want}: ${said}`);
+    }
+    is(count === 6 && !/details:/.test(said), `the problems are not counted as 6, whole, with no details line: ${said}`);
+  }
 
   // 2. What passes.
   const ok = await specApproval(fresh(), SPEC);

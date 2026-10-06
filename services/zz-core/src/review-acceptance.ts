@@ -36,6 +36,7 @@ import { documentBody } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
 import type pg from "pg";
 
+import { refusalText } from "./document-details.js";
 import type { DocRow } from "./indexing.js";
 
 import { names, reviewMove, reviewRounds, stakeholderSources, unbackloggedFindings,
@@ -316,6 +317,8 @@ export async function acceptanceApprovalRefusal(
   const initiative = relPath.replace(/^\/+/, "").split("/")[0];
   const body = documentBody(content);
   const lead = `ERROR: ${relPath} is not approved — `;
+  // Every problem, counted — a table of many rows can carry more than one reply holds.
+  const refuse = (problems: string[]): string => refusalText([{ lead, label: "problems", items: problems, sep: "; " }]);
   const backlog = unbackloggedFindings(doc.stage, doc.name, body, sources);
   const criteria = await declaredCriteriaOf(team, initiative, doc.verifies);
   const bad: string[] = [];
@@ -342,22 +345,22 @@ export async function acceptanceApprovalRefusal(
   const parsed = acceptanceTable(body);
   const table = parsed?.rows;
   if (!criteria.length) {
-    return { refusal: bad.length ? lead + bad.join("; ") : null,
+    return { refusal: bad.length ? refuse(bad) : null,
              note: waived + `${doc.verifies.join(" and ")} declare no acceptance criterion, so no acceptance evidence is owed.` };
   }
   if (!table) {
-    return { refusal: lead + [...bad, `it has no \`## Acceptance evidence\` section, and ${doc.verifies.join(" and ")} ` +
+    return { refusal: refuse([...bad, `it has no \`## Acceptance evidence\` section, and ${doc.verifies.join(" and ")} ` +
              `declare ${criteria.length} criteria (${criteria.map((c) => c.id).join(", ")}) — one row each: ` +
-             TABLE_HEADER].join("; "), note: "" };
+             TABLE_HEADER]), note: "" };
   }
   // A table none of whose rows the gate can read is one sentence, not "no row for" every
   // criterion: a review written as `| Item | Locator | Decisive line |` holds every row a person
   // would look for, and was refused 37 times over without being told why (bug a568b3d8).
   if (!table.length) {
-    return { refusal: lead + [...bad, `its \`## Acceptance evidence\` table has no row the gate can read — it ` +
+    return { refusal: refuse([...bad, `its \`## Acceptance evidence\` table has no row the gate can read — it ` +
              `starts \`${parsed.header || "(no table)"}\`, and the gate reads \`${TABLE_HEADER}\`: the criterion's id ` +
              `alone in the first column, then one of ${AC_STATUSES.join(", ")}, then the evidence — one row each for ` +
-             `${criteria.map((c) => c.id).join(", ")}`].join("; "), note: "" };
+             `${criteria.map((c) => c.id).join(", ")}`]), note: "" };
   }
   const byId = new Map(table.map((r) => [r.id, r]));
   const declared = new Set(criteria.map((c) => c.id));
@@ -367,19 +370,26 @@ export async function acceptanceApprovalRefusal(
   if (missing.length) bad.push(`no row for ${missing.join(", ")}`);
   const stray = table.filter((r) => !declared.has(r.id)).map((r) => r.id);
   if (stray.length) bad.push(`rows for ${stray.join(", ")}, which neither ${doc.verifies.join(" nor ")} declares`);
+  // Every problem of every row. A status the gate does not know is the row's one problem — the
+  // other rules are rules for a status — and past it, a missing locator and a missing quote are
+  // two faults, each said.
   for (const r of table.filter((x) => declared.has(x.id))) {
     if (!AC_STATUSES.includes(r.status as never)) {
       bad.push(`${r.id}: status "${r.status}" is not one of ${AC_STATUSES.join(", ")}`);
-    } else if ((r.status === "established" || r.status === "blocked") && !EVIDENCE_KIND.test(r.evidence)) {
+      continue;
+    }
+    if ((r.status === "established" || r.status === "blocked") && !EVIDENCE_KIND.test(r.evidence)) {
       bad.push(locatorProblem(r.id, r.evidence, KINDS)!);
-    } else if (r.status === "established" && !QUOTED.test(r.evidence)) {
+    }
+    if (r.status === "established" && !QUOTED.test(r.evidence)) {
       bad.push(`${r.id} is established and quotes no output — add the decisive line, in backticks`);
-    } else if (r.status === "deferred" && !vouched(r.id)) {
+    }
+    if (r.status === "deferred" && !vouched(r.id)) {
       bad.push(`${r.id} is deferred and no stakeholder source names it — record their decision with ` +
                `source_add(supports: ["${doc.name}"]) naming ${r.id}`);
     }
   }
-  if (bad.length) return { refusal: lead + bad.join("; "), note: "" };
+  if (bad.length) return { refusal: refuse(bad), note: "" };
 
   // Only rows that passed every deterministic rule are read; a row nobody asked about yet is asked now.
   await assessAcceptance(p, team, initiative, doc, body, by);
@@ -407,7 +417,7 @@ export async function acceptanceApprovalRefusal(
       }
     }
   }
-  if (bad.length) return { refusal: lead + bad.join("; "), note: "" };
+  if (bad.length) return { refusal: refuse(bad), note: "" };
   return { refusal: null,
            note: waived + `Acceptance evidence: ${table.length} row(s) against ${criteria.length} declared criteria` +
                  (onPlan.length ? `; ${onPlan.length} rest on the check the approved plan declares for them, read only for whether it passed` : "") +

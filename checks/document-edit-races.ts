@@ -22,7 +22,9 @@
  *     keyed create replays before TARGET_EXISTS; a changed request under a used key, and the same
  *     arguments sent to the other tool under it, are REQUEST_ID_CONFLICT; an unkeyed resend is
  *     `no_change`; a replay survives a restart of zz-core; a caller whose membership was removed
- *     is refused, not replayed;
+ *     is refused, not replayed; a replay prints the next move the first call stated, labelled as of
+ *     then, and the one there is now; a keyed change whose captured source took a suffixed name
+ *     replays that name, never the one it asked for;
  *   - an injected failure at each statement a change commits — the captured source, the document
  *     row, the cause links, the request row and the change's own `document.*` event row — leaves
  *     nothing committed, and the same keyed change lands once the failure is gone.
@@ -291,6 +293,36 @@ async function requests(c: Core, second: Mcp): Promise<string> {
   before = await facts(c, Q);
   again = await c.ok(step, "document_edit", plain);
   if (first(again) !== `edited: ${q} — v1 (no change)` || (await facts(c, Q)) !== before) c.fail(step, again);
+  c.pass(step);
+
+  // Carried into Phase 2's wave 3: the stored receipt was built before the write reserved the
+  // captured source's name, so a replay named the name asked for, not the one filed.
+  step = "a keyed change whose captured source took a suffixed name replays the name it was filed under";
+  const taken = await c.source(step, { initiative: Q, title: "Taken words", content: "already here" });
+  const filed = taken.replace(/\.md$/, "-2.md");
+  const capturing = { path: q, edits: [{ find: "# Plain", replace: "# Plain, captured" }], source_content: "the words",
+                      source_title: "Taken words", request_id: "captured-1" };
+  const capturedReply = await c.ok(step, "document_edit", capturing);
+  again = await c.ok(step, "document_edit", capturing);
+  for (const reply of [capturedReply, again]) {
+    if (!new RegExp(`^causes \\(1\\): ${esc(filed)} \\(agent\\)$`, "m").test(reply)
+        || !reply.includes(`source name: ${taken} was taken, so the words were filed as ${filed}`)) c.fail(step, reply);
+  }
+  if (first(again) !== `${first(capturedReply)} (replayed)`) c.fail(step, again);
+  c.pass(step);
+
+  step = "a replay prints the next move as of the first call, then the one there is now";
+  const F = await c.open("requests-flow", "sdlc-flow");
+  const e = `${F}/explore.md`;
+  const body = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
+  await c.ok(step, "document_write", { path: e, content: body });
+  const keyedFlow = { path: e, edits: [{ find: "## Background\nx", replace: "## Background\ny" }], request_id: "flow-1" };
+  const flowReply = await c.ok(step, "document_edit", keyedFlow);
+  const then = /\n\nNext move: (.+)$/.exec(flowReply)?.[1] ?? c.fail(step, `the first call states no next move: ${flowReply}`);
+  await c.ok(step, "document_write", { path: `${F}/spec.md`, content: "# Spec\n" });
+  again = await c.ok(step, "document_edit", keyedFlow);
+  const moves = /\n\nNext move \(as of the first call\): (.+)\nNext move \(now\): (.+)$/.exec(again);
+  if (!moves || moves[1] !== then || moves[2] === then) c.fail(step, `first:\n${flowReply}\nagain:\n${again}`);
   c.pass(step);
 
   return firstReply;

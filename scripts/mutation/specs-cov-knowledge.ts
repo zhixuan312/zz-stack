@@ -433,8 +433,8 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     target: "a frontmatter field that will not appear is refused, never dropped",
     assertion: "every tool taking `fields` runs the refusal over what the caller actually sent",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      const refused = fieldRefusal(fields) ?? tagRefusal(tags);",
-    replace: "      const refused = fieldRefusal(fields === undefined ? undefined : {}) ?? tagRefusal(tags);",
+    find: "      const ruled = [fieldRefusal(fields), tagRefusal(tags)];",
+    replace: "      const ruled = [fieldRefusal(fields === undefined ? undefined : {}), tagRefusal(tags)];",
     planted: "document_write runs the frontmatter-name refusal over nothing, so it can no " +
       "longer see the names the caller sent — `buildingBlock` where the skill said " +
       "`building_block` is dropped in silence, and the call reports the document written " +

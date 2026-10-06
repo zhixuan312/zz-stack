@@ -87,7 +87,7 @@ function docFacts(rows: Map<string, DocRow>, name: string): Record<string, strin
   if (d.closed_by) env.closed_by = d.closed_by;
   if (d.approved_by) env.approved_by = d.approved_by;
   if (d.approved_at) env.approved_at = d.approved_at;
-  if (d.current_revision !== null) env.version = String(d.current_revision);
+  if (d.current_version !== null) env.version = String(d.current_version);
   if (d.flow) env.flow = d.flow;
   for (const [k, v] of Object.entries(d.fields ?? {})) env[k] = v;
   return env;
@@ -191,8 +191,7 @@ export async function initiativeState(
       };
     }
     // The same two source fields the governed return carries: freeform has no manifest but
-    // still has sources, `source_add` still writes them, and `document_revise` still refuses a
-    // revision that cites nothing.
+    // still has sources, and `source_add` still writes them.
     const freeSources = sourceReport(rows);
     return {
       initiative: name,
@@ -292,26 +291,34 @@ export async function initiativeState(
   // without this such a plan read as built and the review round was offered a third of the way in.
   const unplannedPhase = plan?.unplanned_phase ?? null;
   if (outcome) {
-    // The platform appends the handover to every flow, whatever the flow declares, so what
-    // gets captured does not depend on the flow author. It is not verified mid-flow: execute
-    // and review happen in the caller's own terminal, which the platform cannot see.
+    // The platform appends the handover to every flow, so what gets captured does not depend on
+    // the flow author. Its completion signal is handover.md's own approval (zero knowledge nodes
+    // is a legitimate outcome), read through `states` like every other gated document. A FINISHED
+    // close owes it, so until it is approved the next move is the handover, not `closed`; an
+    // abandoned close owes nothing. It stays writeable after the close (guards.ts).
     //
-    // The handover is a knowledge node minted by zz-handover, not a document. Zero nodes is a
-    // legitimate outcome, so the completion signal is handover.md's own approval, read
-    // through the same `states` machinery as every other gated document.
-    //
-    // A FINISHED close owes the handover — it is where the platform collects what the cycle
-    // taught — so until handover.md is approved the next move is the handover, not `closed`. An
-    // abandoned close owes nothing. The handover stays writeable after the close: the guard in
-    // guards.ts lets a closed initiative satisfy a prerequisite its close skipped.
-    //
-    // COUPLED: a close that still owes the handover is not `closed`, so the no-argument listing
-    // shows it among the initiatives with work left and `nextMoveLine` names the handover after
-    // every call. That is the point: it has work left. A flow that declares no handover at all
-    // is closed rather than stuck.
+    // COUPLED: a close that still owes the handover, or a correction, is not `closed`, so the
+    // no-argument listing shows it among the initiatives with work left and `nextMoveLine` names
+    // it after every call. A flow that declares no handover at all is closed rather than stuck.
     const handover = states.find(isHandover);
     const owed = outcome !== OUTCOME_STOPPED && handover !== undefined && handover.status !== "approved";
-    if (owed && handover.exists) {
+    // A correction: a gated document approved before, a draft now, written after the close. It
+    // awaits its own approval while the close and its ledger row stand. A stop's fallback document
+    // was closed as a draft (closeCheck waives its gate), so a stop owes one only on its closing doc.
+    const corrected = (d: DocState): boolean => {
+      const row = rows.get(d.name);
+      return d.gate && d.status !== "approved" && !isHandover(d) && row?.approved_revision != null &&
+        !!own?.closed_at && Date.parse(row.updated_at) > Date.parse(own.closed_at) &&
+        (outcome !== OUTCOME_STOPPED || d.name === chain.closingDoc);
+    };
+    const correction = states.find(corrected);
+    if (correction) {
+      next = { action: "await_approval", document: correction.name, waiting_on: "stakeholder",
+               why: `closed with outcome: ${outcome}, and ${correction.name} ` +
+                    `v${rows.get(correction.name)?.current_version} is a correction awaiting its own ` +
+                    `approval — document_approve("${name}/${correction.name}") signs it; the close ` +
+                    "and its ledger row stand and are not recorded again." };
+    } else if (owed && handover.exists) {
       next = { action: "await_approval", document: handover.name, waiting_on: "stakeholder",
                why: `closed with outcome: ${outcome}, and a finished close owes the handover: ` +
                     `${handover.name} is written and waiting on a verdict — ` +
@@ -393,7 +400,7 @@ export async function initiativeState(
       .filter((st) => Boolean(st.supports) && appliesOf(st.supports as string) !== "not_applicable"
                      && auditedWhile(st.supports as string))
       .map((st) => auditMove(name, st.name ?? "", st.supports as string,
-                             rows.get(st.supports as string)?.current_revision ?? 1, sources, answers))
+                             rows.get(st.supports as string)?.current_version ?? 1, sources, answers))
       .find((m): m is NonNullable<typeof m> => m !== null);
     // A stage that produces a `record` writes no document, so `pending` cannot see it. The first
     // such stage ahead of the pending document's own stage that has recorded nothing is what runs
@@ -467,7 +474,7 @@ export async function initiativeState(
       next = {
         action: "run_stage", stage: planStage, waiting_on: "agent",
         why: `${plan?.document} declares phase ${unplannedPhase} with no tasks under it — plan it` +
-             `${planStage ? ` with ${planStage}` : ""} (document_revise ${plan?.document}), then build it; ` +
+             `${planStage ? ` with ${planStage}` : ""} (document_edit ${plan?.document}), then build it; ` +
              "a phase that needs no tasks is done when it carries its `### As built`; " +
              `${verifying?.name ?? "the verifying document"} owes its review round once every ` +
              "declared phase is planned and built",
@@ -510,13 +517,10 @@ export async function initiativeState(
         // tool to call. The handover owed after a finished close is a write_document and then an
         // await_approval of handover.md, not an action of its own.
         //
-        // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer, and a
-        // `when`-conditional closing document (`improvement.md`, promotable only) is
-        // `not_applicable` on every other branch — the same question `initiative_close`
-        // (initiative-close.ts) and `closeCheck` (guards.ts) both ask before deciding where a
-        // close actually lands, asked here too so this call never names a document those two
-        // would refuse to close on. By construction of this `else` arm every document that
-        // applies exists, so `branchClosing` IS the furthest document this branch wrote.
+        // FR-58 (Task I-28): a `when`-conditional closing document is `not_applicable` on every
+        // other branch, so this names `branchClosing` — where `initiative_close` and `closeCheck`
+        // land a close too. Every document that applies exists in this arm, so it IS the furthest
+        // document this branch wrote.
         : { action: "close", document: branchClosing,
             waiting_on: "agent",
             // Every gate being recorded is a statement about approvals; acceptance is a
@@ -540,7 +544,7 @@ export async function initiativeState(
            flow: chain.name ?? own?.flow ?? null,
            documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
            // reported, never enforced: material that landed after an approval may warrant
-           // a revision — the team decides, and document_revise is how they do it
+           // a new version — the team decides, and document_edit with its cause is how
            sources_after_approval: needsRefinement,
            // Omitted when empty: only a flow with `produces: "record"` stages writes any.
            records: Object.keys(records).length ? records : undefined,

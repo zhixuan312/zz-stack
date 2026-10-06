@@ -22,6 +22,12 @@
  *   8. `nextMoveLine` says the next move, and nothing for a freeform initiative
  *   9. a round is asked `changes_commitment` only: `repeats_finding` routes no audit move, so it
  *      is not asked, and a repeating round still owes the revision its round
+ *  10. the plan is audited before its approval, the spec after it
+ *  11. a round reads the PUBLIC version: every fixture's stored revision differs from its version,
+ *      and a new snapshot of the same version owes no round
+ *  12. a closed initiative's gated document corrected after the close awaits its own approval,
+ *      with the outcome still reported from the anchor and the initiative not counted closed;
+ *      a draft the close itself left — a stop's fallback, or a change before the close — does not
  *
  * Run: node checks/audit-rounds.ts   (also run by scripts/gate.ts)
  */
@@ -125,7 +131,7 @@ const docRow = (initiative: string, path: string, o: Record<string, unknown> = {
   id: `d${++seq}`, path, initiative, flow: "", type: "", status: "",
   outcome: null, approved_by: null, approved_at: null, closed_by: null,
   updated_at: "2026-09-24T00:00:00.000Z", title: "", body: "", tags: [],
-  current_revision: 1, approved_revision: null, fields: null, supports: [], ...o,
+  current_revision: 1, approved_revision: null, current_version: 1, fields: null, supports: [], ...o,
 });
 
 interface Fixture { name: string; chain: Awaited<ReturnType<typeof chainFor>> }
@@ -143,8 +149,8 @@ function spec(name: string, version: number) {
   const w = world.get(name)!;
   w.docs = w.docs.filter((d) => d.path !== "spec.md");
   w.docs.push(docRow(name, "spec.md", { title: "Spec", flow: "sdlc-flow", status: "approved",
-    approved_by: "ada@zz.test", approved_at: "2026-09-24", current_revision: version,
-    body: "# Spec" }));
+    approved_by: "ada@zz.test", approved_at: "2026-09-24", current_revision: version * 2 + 1,
+    current_version: version, body: "# Spec" }));
 }
 function round(name: string, i: number, read: number, extra: Record<string, string> = {}): string {
   const file = `2026-09-24-spec-audit-round-${i}.md`;
@@ -266,7 +272,7 @@ is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? ""
     const w = world.get(p.name)!;
     w.docs = w.docs.filter((x) => x.path !== "plan.md");
     w.docs.push(docRow(p.name, "plan.md", { title: "Plan", flow: "sdlc-flow", status: "draft",
-      current_revision: version, body: "# Plan\n\n## Phase 1 — skeleton\n" }));
+      current_revision: version + 5, current_version: version, body: "# Plan\n\n## Phase 1 — skeleton\n" }));
   };
   plan(1);
   let pm = await move(p);
@@ -293,6 +299,63 @@ is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? ""
   const qm = await move(q);
   is(qm?.action === "await_approval" && qm?.document === "spec.md",
      `a draft spec was sent to its audit before its approval: ${JSON.stringify(qm)}`);
+}
+
+// 11. A new snapshot of the same public version is not a revision an audit owes a round for: the
+//     round read v2, the document is still v2 though its stored revision moved.
+{
+  const r = await fresh(2);
+  round(r.name, 1, 2);
+  let rm = await move(r);
+  is(rm?.action === "write_document" && rm?.document === "plan.md",
+     `a round that read the current public version did not settle the audit: ${JSON.stringify(rm)}`);
+  Object.assign(world.get(r.name)!.docs.find((x) => x.path === "spec.md")!, { current_revision: 9 });
+  rm = await move(r);
+  is(rm?.action === "write_document" && rm?.document === "plan.md",
+     `a same-version snapshot owed an audit round, so the stored revision was read as the version: ${JSON.stringify(rm)}`);
+}
+
+// 12. A closed initiative's correction.
+{
+  const closed = async (outcome: string, written: string, closing: string, draftOutcome: boolean) => {
+    const c = await fresh(1);
+    round(c.name, 1, 1);
+    const w = world.get(c.name)!;
+    Object.assign(w, { outcome, closed_at: "2026-09-25T00:00:00.000Z", closed_by: "bo@zz.test" });
+    for (const path of ["plan.md", "review.md", "handover.md"]) {
+      w.docs.push(docRow(c.name, path, { title: path, flow: "sdlc-flow", status: "approved",
+        approved_by: "ada@zz.test", approved_at: "2026-09-24", approved_revision: 1, body: `# ${path}` }));
+    }
+    // The document under test: approved at r1, a draft at r2 of v2, written at `written`.
+    Object.assign(w.docs.find((x) => x.path === closing)!, {
+      status: "draft", approved_by: null, approved_at: null, approved_revision: 1, current_revision: 2,
+      current_version: 2, updated_at: written, outcome: draftOutcome ? outcome : null,
+      closed_by: draftOutcome ? "bo@zz.test" : null });
+    return c;
+  };
+  const after = "2026-09-26T00:00:00.000Z", before = "2026-09-24T12:00:00.000Z";
+  const c = await closed("accepted", after, "review.md", true);
+  const st = await initiativeState(db()!, TEAM, c.name, c.chain, c.chain.documents);
+  is(st.next_move?.action === "await_approval" && st.next_move?.document === "review.md"
+     && /v2 is a correction/.test(st.next_move?.why ?? ""),
+     `a corrected closing document does not await its own approval: ${JSON.stringify(st.next_move)}`);
+  is(st.outcome === "accepted" && st.closed_by === "bo@zz.test",
+     `the outcome and closer are not reported from the anchor during a correction: ${st.outcome}, ${st.closed_by}`);
+  is((await nextMoveLine(db()!, TEAM, c.name)).includes("Next move: await_approval review.md"),
+     "an initiative with a pending correction reads as closed to the listing and to nextMoveLine");
+  // Any gated document of a finished close, corrected after it, is one too.
+  const s2 = await closed("accepted", after, "spec.md", false);
+  const m2 = (await initiativeState(db()!, TEAM, s2.name, s2.chain, s2.chain.documents)).next_move;
+  is(m2?.action === "await_approval" && m2?.document === "spec.md",
+     `a spec corrected after a finished close does not await approval: ${JSON.stringify(m2)}`);
+  // A draft written before the close is what the close closed on, not a correction.
+  const early = await closed("accepted", before, "spec.md", false);
+  const m3 = (await initiativeState(db()!, TEAM, early.name, early.chain, early.chain.documents)).next_move;
+  is(m3?.action === "closed", `a draft left before the close reopened the initiative: ${JSON.stringify(m3)}`);
+  // A stop's fallback document was closed as a draft; its gate is waived, so it is not a correction.
+  const stop = await closed("abandoned", after, "spec.md", true);
+  const m4 = (await initiativeState(db()!, TEAM, stop.name, stop.chain, stop.chain.documents)).next_move;
+  is(m4?.action === "closed", `a stop's fallback draft reads as a correction: ${JSON.stringify(m4)}`);
 }
 
 if (fail.length) {

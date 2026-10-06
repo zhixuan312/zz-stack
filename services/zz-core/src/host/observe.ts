@@ -1,8 +1,8 @@
 /**
  * What the platform tells the control loop when something actually happens.
  *
- * One place, because there are four callers: `document_write`, `document_revise`,
- * `document_approve` and `source_add` each complete a step for some flow. Four copies of "work
+ * One place, because every act that completes a step for some flow — a document written or
+ * changed, an approval, a source added — reports here. Several copies of "work
  * out the initiative, find the module, find the step, record it" would disagree invisibly — each
  * caller would go on succeeding, and the run would be judged on a different set of facts
  * depending on which door the work came through.
@@ -18,8 +18,6 @@
  * recorded, and the loop says the step's requirement is unmet — a missing fact reads as missing
  * rather than as satisfied.
  */
-import { parseEnvelope } from "@zz/contracts";
-
 import { loadDocument } from "../versions.js";
 import type { Chain } from "../write-guards.js";
 
@@ -33,16 +31,22 @@ import { openRun, recordEvidence, recordedIds, runFor } from "./store.js";
  *  a stage producing a source asks for. They are the module's words, not this file's. */
 export type Fact = "document" | "approval" | "audit";
 
+/** Which snapshot of a document a fact is about: its public version, and the stored row within
+ *  it. Several rows can share one public version — a change with no new cause lands on a row
+ *  somebody was shown or signed as a new row of the same version — so the version alone does not
+ *  name the bytes an approval signed. Local, like `EvidenceFact`: callers pass the literal. */
+interface Snapshot { readonly version: number; readonly revision: number }
+
 /** One fact as the log identifies it: what it is about, and — for the two a document carries a
- *  version of — which version of it.
+ *  snapshot of — which snapshot.
  *
  *  `path` is the initiative-relative path the entry is about: the document itself for a write, an
  *  approval or a revision, and the source file for an audit. Local rather than exported: the shape
  *  is `evidenceEntryId`'s parameter and nothing else names it, and this repository's gate refuses
  *  an export no other file imports. */
 type EvidenceFact =
-  | { readonly kind: "document"; readonly path: string; readonly version: number }
-  | { readonly kind: "approval"; readonly path: string; readonly version: number }
+  | { readonly kind: "document"; readonly path: string; readonly at: Snapshot }
+  | { readonly kind: "approval"; readonly path: string; readonly at: Snapshot }
   | { readonly kind: "audit"; readonly path: string };
 
 /**
@@ -52,45 +56,41 @@ type EvidenceFact =
  * interface rather than an implementation detail because it is what makes the fix assertable:
  * `checks/control-evidence-identity.ts` drives it with no database at all.
  *
- * A document is identified by its version, and so is an approval of it. The kernel tells a fact
- * that still stands from one that does not by the id it carries, so an id that stood for two
- * facts could not tell "the approval I replaced" from "the approval somebody gave afterwards":
- * a withdrawal of that document's approval would reach the wrong one — and, with the run's ids
- * unique by constraint, the later approval could not be recorded at all. Versioning the id gives
- * each of those its own fact: a revision withdraws the approval of the version it replaced, and a
- * re-approval after a revision is a different id that nothing reaches.
+ * A document is identified by its snapshot — public version and stored row, `@v<version>.<revision>`
+ * — and so is an approval of it. The kernel tells a fact that still stands from one that does not
+ * by the id it carries, so an id that stood for two facts could not tell "the approval I replaced"
+ * from "the approval somebody gave afterwards": a withdrawal of that document's approval would
+ * reach the wrong one — and, with the run's ids unique by constraint, the later approval could not
+ * be recorded at all. The version alone is not enough: a metadata-only correction of an approved
+ * document is a new row of the SAME version, approved again later, and the two approvals must be
+ * two facts. Naming the snapshot gives each its own: a change withdraws the approval of the
+ * snapshot it displaced, and a re-approval after it is a different id that nothing reaches.
  *
  * An audit is identified by its own source path. It is not a fact about a version of the
  * document it rates — it is a round's findings recorded in a file of their own — so it carries no
  * version, and the document it audited is named by its `about`. */
 export function evidenceEntryId(fact: EvidenceFact): string {
   switch (fact.kind) {
-    case "document": return `doc:${fact.path}@v${fact.version}`;
-    case "approval": return `approval:${fact.path}@v${fact.version}`;
+    case "document": return `doc:${fact.path}@v${fact.at.version}.${fact.at.revision}`;
+    case "approval": return `approval:${fact.path}@v${fact.at.version}.${fact.at.revision}`;
     case "audit": return `audit:${fact.path}`;
   }
 }
 
 /**
- * The version a document is at, read from the document itself.
+ * The snapshot a document is at now, read from the document's own row — what an audit of it is
+ * about. Only an audit asks: a write and an approval are told their snapshot by the act that made
+ * it, which is the one place that knows it without a second read racing the next write.
  *
- * The document is the authority on its own version: `document_revise` derives the next one as
- * `previous + 1` from this same field, so a version worked out anywhere else — by counting the
- * run's entries, say — would disagree with that writer the first time a document was written
- * twice without a revision between the two. One means the first version, which is what a document
- * nobody has revised carries: the field is written on revision and not before.
- *
- * It is read from the document's ROW, which is where a document lives now (`versions.ts`) — the
- * store this used to be a file in is retired. A `readFileSync` of the old path answered 1 for
- * every document that existed, so an approval of a revised document was recorded against its
- * first version and a re-approval after a revision was a fact the run already held and never
- * recorded at all.
+ * Read from the ROW (`versions.ts`), never from a file: a `readFileSync` of the retired store
+ * answered 1 for every document, so an audit of a revised document pointed at its first version.
+ * A document that cannot be read answers the first snapshot, whose entry a run that recorded
+ * nothing else does not hold either — the audit then satisfies nothing, which is the truth.
  */
-async function documentVersion(team: string, relPath: string): Promise<number> {
+async function currentSnapshot(team: string, relPath: string): Promise<Snapshot> {
   const loaded = await loadDocument(team, relPath);
-  if (!loaded.ok) return 1;
-  const declared = parseInt(parseEnvelope(loaded.text).version ?? "", 10);
-  return Number.isFinite(declared) && declared > 0 ? declared : 1;
+  return loaded.ok ? { version: loaded.rev.version, revision: loaded.rev.revision }
+    : { version: 1, revision: 1 };
 }
 
 /** The initiative an initiative-relative path belongs to. `2026-09-20-x/spec.md` -> the first
@@ -109,37 +109,37 @@ function initiativeOf(relPath: string): string | null {
  * evidence" must not be recorded as "this was evidence for the step I assumed".
  */
 export async function noteDocument(
-  chain: Chain, relPath: string, fact: Fact, by: string, team: string | null,
+  chain: Chain, relPath: string, fact: Fact, at: Snapshot, by: string, team: string | null,
 ): Promise<void> {
   const step = stepForDocument(chain.stages as readonly DeclaredStage[], relPath);
   if (!step) return;   // the flow does not declare this document — not evidence for anything
-  await note(chain, relPath, fact, by, team, step);
+  await note(chain, relPath, fact, by, team, step, at);
 }
 
 /**
- * Record that a document was revised, which withdraws whatever approval it carried.
+ * Record that a change displaced an approved snapshot, which withdraws that approval.
  *
- * A revision is a fact and so is the approval it replaces. `document_revise` files a new
- * `doc_revision` row, moves `doc.approved_revision` off the sealed one and returns a gated
- * document to draft — the approval really was given, so nothing deletes it, and it no longer
- * stands, so nothing may count it. The new entry says which earlier entry it withdraws and the
- * log goes on only growing.
+ * A change is a fact and so is the approval it displaces. A new version, or a same-version draft
+ * of an approved document, files a new `doc_revision` row and returns a gated document to draft —
+ * the approval really was given, so nothing deletes it, and it no longer stands, so nothing may
+ * count it. The new entry says which earlier entry it withdraws and the log goes on only growing.
  *
- * Without this, a run whose spec had been revised back to draft goes on reporting that step met,
+ * Without this, a run whose spec had been changed back to draft goes on reporting that step met,
  * and the loop grants `close:initiative` where `documentGuards` refuses it.
  *
- * The withdrawn id is derived, not looked up: `document_approve` records `approval:<relPath>@v<n>`
- * for the version it approved, and this withdraws that id for the version before the one the
- * document just moved to. Deterministic, so a replay rebuilds the same graph, and it costs nothing
- * when the document was never approved — a withdrawal of nothing, which is the null this writes
- * rather than a reference to an entry no run holds.
+ * `at` is the snapshot the write produced; `replaced` is the approved snapshot it displaced — the
+ * row `doc.approved_revision` named while it was the current row — or null when the write
+ * displaced no approval. The withdrawn id is exactly `replaced`'s approval: named by the act that
+ * knows it, not derived by arithmetic on versions, so a same-version draft withdraws the approval
+ * it displaced and a later approval of the same version is never reached. A `replaced` the run
+ * never recorded an approval of is a withdrawal of nothing, which is the null the row carries.
  */
 export async function noteRevision(
-  chain: Chain, relPath: string, version: number, by: string, team: string | null,
+  chain: Chain, relPath: string, at: Snapshot, replaced: Snapshot | null, by: string, team: string | null,
 ): Promise<void> {
   const step = stepForDocument(chain.stages as readonly DeclaredStage[], relPath);
   if (!step) return;
-  await note(chain, relPath, "document", by, team, step, null, { version });
+  await note(chain, relPath, "document", by, team, step, at, null, { replaced });
 }
 
 /**
@@ -158,16 +158,18 @@ export async function noteSource(
   // An audit is about the document it audited — the document the source supports, not the source
   // file itself. The rule says `{kind: "audit", about: "document"}`, and the only document entry
   // in the run that answers it is the one for the audited document.
-  await note(chain, relPath, "audit", by, team, step, supports);
+  await note(chain, relPath, "audit", by, team, step, null, supports);
 }
 
 async function note(
   chain: Chain, relPath: string, fact: Fact, by: string, team: string | null,
-  step: string | null, aboutDocument?: string | null,
-  /** A revision's own fact: the version the document moved TO. Its entry is that version's
-   *  document entry, and what it withdraws is the approval of the version before it. Absent for
-   *  every other fact, which neither renames itself nor withdraws anything — see `noteRevision`. */
-  revision?: { version: number },
+  step: string | null,
+  /** The snapshot a write or an approval is about, as the act that made it says; null for an
+   *  audit, whose document is read as it stands now. */
+  at: Snapshot | null, aboutDocument?: string | null,
+  /** A change that displaced an approval: which approved snapshot its entry withdraws. Absent for
+   *  every other fact, which withdraws nothing — see `noteRevision`. */
+  change?: { replaced: Snapshot | null },
 ): Promise<void> {
   if (!step || !team) return;
   const initiative = initiativeOf(relPath);
@@ -191,11 +193,11 @@ async function note(
   // `evidence.some(p => p.kind === rule.about && p.id === e.about)`. An approval recorded `about`
   // a filename satisfies nothing, because no entry has that filename as its id.
   //
-  // So an approval and an audit point at the document entry of the version they are about, and
-  // that version is the one the document is at. Which is why it is read from the document rather
-  // than from the run: the run's newest entry for a path and the document's own version are the
-  // same thing only while every write records a version, and the document is the authority
-  // `document_revise` already derives its arithmetic from.
+  // So an approval and an audit point at the document entry of the snapshot they are about. An
+  // approval is told it by the act that sealed it — the same snapshot the write recorded, since a
+  // seal rewrites that row in place — and an audit reads it off the document rather than the run:
+  // the run's newest entry for a path is the document's own snapshot only while every write
+  // records one, and the row is the authority.
   //
   // The pointer is an initiative-relative path, because that is what the document entry's id was
   // built from. A `supports` value is the flow's own vocabulary — a bare `spec.md` — while a
@@ -204,12 +206,11 @@ async function note(
   const supported = aboutDocument
     ? (aboutDocument.includes("/") ? aboutDocument : `${initiative}/${aboutDocument}`)
     : relPath;
-  const version = revision ? revision.version : await documentVersion(team, supported);
-  const documentEntry = evidenceEntryId({ kind: "document", path: supported, version });
-  const id = revision ? documentEntry
-    : fact === "document" ? evidenceEntryId({ kind: "document", path: relPath, version })
-      : fact === "approval" ? evidenceEntryId({ kind: "approval", path: relPath, version })
-        : evidenceEntryId({ kind: "audit", path: relPath });
+  const snapshot = at ?? await currentSnapshot(team, supported);
+  const documentEntry = evidenceEntryId({ kind: "document", path: supported, at: snapshot });
+  const id = fact === "document" ? documentEntry
+    : fact === "approval" ? evidenceEntryId({ kind: "approval", path: relPath, at: snapshot })
+      : evidenceEntryId({ kind: "audit", path: relPath });
 
   const held = await recordedIds(runId);
   // A fact the run already holds is not written a second time. The id IS the fact: a document
@@ -219,13 +220,12 @@ async function note(
   // fact already recorded into a failed tool call for whoever asked.
   if (held.has(id)) return;
 
-  // A revision withdraws the approval it replaced and nothing else: the approval of the version
-  // the document was at before it, which is the version immediately below the one it moved to.
-  // Checked against the run rather than written blind, because the log refuses a withdrawal that
-  // names no entry of its own run — and a document never approved at that version has no approval
+  // A change withdraws the approval it displaced and nothing else: the approval of the snapshot
+  // its act names. Checked against the run rather than written blind, because the log refuses a
+  // withdrawal that names no entry of its own run — and a snapshot nobody approved has no approval
   // to withdraw, which is the null the row carries.
-  const replaced = revision
-    ? evidenceEntryId({ kind: "approval", path: relPath, version: version - 1 })
+  const replaced = change?.replaced
+    ? evidenceEntryId({ kind: "approval", path: relPath, at: change.replaced })
     : null;
 
   await recordEvidence(runId, step, {

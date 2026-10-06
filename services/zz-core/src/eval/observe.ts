@@ -162,7 +162,7 @@ async function computeObservation(
   // Whoever's calls wrote a document: a door's own record, or a flow's runs writing through the
   // baseline door. Read off `record` alone, every flow reported "wrote no document".
   const writesDocuments = traces.use.some((u) =>
-    ["document_write", "document_patch", "document_revise"].includes(u.tool.split(":").pop() ?? ""));
+    ["document_write", "document_edit"].includes(u.tool.split(":").pop() ?? ""));
 
   const [latencyBytes, outcomes, detail] = await Promise.all([
     latencyAndByteFacts(pool, plugin, version, serves, window),

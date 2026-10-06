@@ -16,9 +16,13 @@
  *   7. driven through the real door, as a person, against a stubbed store:
  *      - `document_present` names the panel, and its result carries the WHOLE body in `_meta`
  *        with a ticket even when the text half is a part, and no `structuredContent`;
+ *      - the panel speaks PUBLIC versions: one history entry per version, `previous` the version
+ *        before as it is read (its approved snapshot), and an earlier snapshot of the current
+ *        version is drawn as history, with no ticket;
  *      - history carries no ticket, and a part the model asks for draws no panel at all;
  *      - `document_shown` is app-only, records the present with a valid ticket, and records
- *        nothing with a forged one, another person's, or once the document has changed.
+ *        nothing with a forged one, another person's, once the document has a new snapshot of the
+ *        same version (the ticket binds the revision), or once it has a new version.
  *
  * Run: node checks/document-panel.ts   (also run by scripts/gate.ts)
  */
@@ -147,27 +151,35 @@ is(JSON.stringify(r.outline.map((o: { id: string }) => o.id)) === JSON.stringify
 // 7. Through the door
 const TEAM = "t1", INIT = "2026-09-30-panel", REL = `${INIT}/spec.md`;
 const body = ["# Spec", "", ...Array.from({ length: 2600 }, (_, i) => `Line ${i} of the body, long enough to page.`)].join("\n");
-const doc = { current: 2, written_at: "2026-09-30T00:00:00.000Z", presented: 0 };
+const signedBody = "# Spec\n\nThe signed first version.";
+// Stored snapshots: v1 approved at r1; v2 at r2, and r3 joins v2 later — the same public version.
+const revs: { revision: number; version: number; body: string; approved_by: string | null }[] = [
+  { revision: 1, version: 1, body: signedBody, approved_by: "ada@zz.test" },
+  { revision: 2, version: 2, body, approved_by: null },
+];
+const doc = { current: 2, version: 2, written_at: "2026-09-30T00:00:00.000Z", presented: 0, shownSince: false };
 const events: { kind: string; detail: Record<string, unknown> }[] = [];
 pg.Pool.prototype.query = (async function query(sql0: string, values: unknown[] = []) {
   const sql = String(sql0).replace(/\s+/g, " ");
   const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
   if (/CASE WHEN t\.status = 'active' THEN t\.slug END AS slug/.test(sql)) return one([{ slug: TEAM, role: "admin", active_slug: TEAM }]);
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    const rev = (n: number) => ({ revision: n, version: n, content_state: "retained", title: "Spec", body, tags: [],
-      content_hash: `h${n}`, revision_note: null, fields: null, written_by: "u@zz.test", written_at: doc.written_at,
-      approved_by: null, approved_at: null });
-    return one([rev(1), rev(2)]);
+    return one(revs.map((r) => ({ revision: r.revision, version: r.version, content_state: "retained", title: "Spec",
+      body: r.body, tags: [], content_hash: `h${r.revision}`, revision_note: null, fields: null, written_by: "u@zz.test",
+      written_at: doc.written_at, approved_by: r.approved_by, approved_at: r.approved_by ? "2026-09-29" : null })));
   }
-  if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) { doc.presented += 1; return { rows: [], rowCount: 1 }; }
-  // `shownSinceLastChange`: presented after the revision was written, once anything recorded it.
+  if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) {
+    doc.presented += 1; doc.shownSince = true; return { rows: [], rowCount: 1 };
+  }
+  // `shownSinceLastChange`: presented after the current revision was written, once anything
+  // recorded it — a new snapshot clears it.
   if (/select r\.presented_at::text as presented_at/.test(sql)) {
-    return one([{ presented_at: doc.presented ? "2026-09-30T00:00:01.000Z" : null, written_at: doc.written_at }]);
+    return one([{ presented_at: doc.shownSince ? "2026-09-30T00:00:01.000Z" : null, written_at: doc.written_at }]);
   }
   if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
     if (values[1] !== INIT || values[2] !== "spec.md") return one([]);
     return one([{ id: "d1", initiative: INIT, path: "spec.md", flow: "", type: "", status: "draft", outcome: null,
-                  current_revision: doc.current, approved_revision: null, current_version: doc.current,
+                  current_revision: doc.current, approved_revision: 1, current_version: doc.version,
                   content_generation: "0", updated_at: doc.written_at }]);
   }
   if (/insert into zz\.event\b/.test(sql)) {
@@ -218,13 +230,15 @@ try {
      "the panel resource is not the built page, as the MCP Apps type");
 
   const res = await me.callTool({ name: "document_present", arguments: { path: REL } }) as Result;
-  const drawn = (res._meta?.["zz-core/documents"] ?? []) as { body: string; ticket: string | null; version: number; previous?: unknown }[];
+  const drawn = (res._meta?.["zz-core/documents"] ?? []) as { body: string; ticket: string | null; version: number;
+    current: number | null; latest: boolean; history: { version: number; approvedBy: string | null }[]; previous?: unknown }[];
   is(said(res).includes("Presented in part"), "the fixture body did not come back in parts — it tests nothing");
   is(res.structuredContent === undefined, "document_present returns structuredContent, which Claude Code shows instead of the text");
-  is(drawn.length === 1 && drawn[0]!.body === body.trim() && drawn[0]!.version === 2 && !!drawn[0]!.ticket,
-     "the panel is not handed the whole current body with a ticket");
+  is(drawn.length === 1 && drawn[0]!.body === body.trim() && drawn[0]!.version === 2 && drawn[0]!.latest
+     && !!drawn[0]!.ticket, "the panel is not handed the whole current body with a ticket");
   const prev = (drawn[0] as { previous?: { version: number; body: string } | null } | undefined)?.previous;
-  is(prev?.version === 1 && prev.body === body.trim(), "the panel is not handed the revision before, to mark what changed");
+  is(prev?.version === 1 && prev.body === signedBody,
+     `the panel is not handed the version before, as it was signed, to mark what changed: ${JSON.stringify(prev)}`);
   const paged = await me.callTool({ name: "document_present", arguments: { path: REL, offset: 60000 } }) as Result;
   is(((paged._meta?.["zz-core/documents"] ?? []) as unknown[]).length === 0 && paged._meta?.["zz-core/reading"] === true,
      "a part the model asked for draws the whole document again, in another panel under the last");
@@ -253,9 +267,31 @@ try {
   const outlived = await me.callTool({ name: "document_shown", arguments: { path: REL, version: 2, ticket: "0.from-before-the-restart" } }) as Result;
   is(/^Already recorded/.test(said(outlived)) && doc.presented === before + 1,
      `a panel open across a restart is refused for a document already on record: ${said(outlived)}`);
-  doc.current = 3;
+  // A new snapshot of the SAME version: the version still matches, the ticket does not.
+  revs.push({ revision: 3, version: 2, body: `${body}\nOne more line.`, approved_by: null });
+  doc.current = 3; doc.shownSince = false;
+  const sameVersion = await me.callTool({ name: "document_shown", arguments: { path: REL, version: 2, ticket } }) as Result;
+  is(/^ERROR/.test(said(sameVersion)) && doc.presented === before + 1,
+     `a ticket for a snapshot the document has moved past, within one version, records a present: ${said(sameVersion)}`);
+  // One entry per public version, though three snapshots are stored; and the current version read
+  // by number is its earlier snapshot only when that one is signed — here it is not, so it is r3.
+  const now = ((await me.callTool({ name: "document_present", arguments: { path: REL } }) as Result)
+    ._meta?.["zz-core/documents"] ?? []) as typeof drawn;
+  is(JSON.stringify(now[0]?.history.map((h) => h.version)) === "[1,2]" && now[0]?.history[0]?.approvedBy === "ada@zz.test",
+     `the panel's history is not one entry per public version: ${JSON.stringify(now[0]?.history)}`);
+  revs[1]!.approved_by = "bo@zz.test";
+  const signedSnapshot = ((await me.callTool({ name: "document_present", arguments: { path: REL, version: 2 } }) as Result)
+    ._meta?.["zz-core/documents"] ?? []) as typeof drawn;
+  is(signedSnapshot[0]?.version === 2 && signedSnapshot[0]?.current === 2 && signedSnapshot[0]?.latest === false
+     && signedSnapshot[0]?.ticket === null && signedSnapshot[0]?.body === body.trim(),
+     `v2's signed snapshot, behind a newer draft of v2, is drawn as current or with a ticket: ${JSON.stringify({ ...signedSnapshot[0], body: undefined })}`);
+  revs[1]!.approved_by = null;
+  // A new public version: named as the change.
+  doc.version = 3;
+  const beforeStale = doc.presented;
   const stale = await me.callTool({ name: "document_shown", arguments: { path: REL, version: 2, ticket } }) as Result;
-  is(/^ERROR/.test(said(stale)) && doc.presented === before + 1, "a ticket for a revision the document has moved past records a present");
+  is(/^ERROR/.test(said(stale)) && /now v3/.test(said(stale)) && doc.presented === beforeStale,
+     "a ticket for a version the document has moved past records a present");
 } catch (err) {
   fail.push(`the door could not be driven: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
 } finally {

@@ -21,6 +21,8 @@
  * path would be approving what nobody read — a fail-OPEN path on the one gate agents are delegated.
  * The ticket is an HMAC over the team, the path, the revision and the person, so a model holding
  * none of `_meta` cannot mint one, and one ticket vouches for exactly one revision to one person.
+ * The REVISION, not the public version a person is shown: several snapshots can share one version,
+ * and a ticket for one of them must not vouch for the next.
  * Every record the panel writes rests on it. The key is drawn per process, so a restart ends every
  * ticket — which costs nothing for a document already on record, answered before the ticket is
  * read, and asks the person to open anything else again.
@@ -37,7 +39,7 @@ import { z } from "zod";
 import { recordPresented, shownSinceLastChange, splitDocPath } from "./attest.js";
 import { chainFor, gateRefusal } from "./chain.js";
 import { db, teamFor } from "./platform-db.js";
-import { loadDocument, recordAct } from "./versions.js";
+import { loadDocument, publicVersions, recordAct } from "./versions.js";
 
 /** The panel's address. Stable across releases on purpose: a hosted client caches the template it
  *  read at connect time, and an address that moved every release would need a reconnect for each. */
@@ -62,22 +64,30 @@ export const PRESENT_META = {
 export const PANEL_CALLABLE = { "openai/widgetAccessible": true };
 
 /** One document as the panel draws it. `ticket` is present only for the current revision: showing
- *  history is a read, and nothing it renders may vouch for the present. */
+ *  history is a read, and nothing it renders may vouch for the present.
+ *
+ *  Versions are PUBLIC versions — what a person is shown and approves by. `latest` says whether the
+ *  snapshot drawn is the document's current one: a version's approved snapshot can be shown while
+ *  a newer draft of the same version is current, and only the current one can be approved. */
 export interface PanelDocument {
   path: string;
   initiative: string;
   name: string;
   version: number;
+  /** The document's current public version. */
   current: number | null;
+  latest: boolean;
   status: string | null;
   approvedBy: string | null;
   approvedAt: string | null;
   /** Null when the document can be approved; otherwise why not, in `document_approve`'s words. */
   gate: string | null;
+  /** One entry per public version. */
   history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
   body: string;
-  /** The revision before this one, when there is one and this is the current revision: what the
-   *  panel marks changed and new sections against, so a reviewer checks what moved, not everything. */
+  /** The previous public version, as it is read (its approved snapshot, else its last), when this
+   *  is the current snapshot: what the panel marks changed and new sections against, so a reviewer
+   *  checks what moved, not everything. */
   previous: { version: number; body: string } | null;
   ticket: string | null;
 }
@@ -119,20 +129,21 @@ export async function panelDocument(
   if (!at || !loaded.ok) return null;
   const env = parseEnvelope(loaded.text);
   const shown = loaded.rev.revision;
-  const current = loaded.doc.current_revision;
-  const before = shown === current && shown > 1 ? await loadDocument(team, relPath, shown - 1) : null;
+  const latest = shown === loaded.doc.current_revision;
+  const prior = publicVersions(loaded.history).filter((r) => r.version < loaded.rev.version).pop();
+  const before = latest && prior ? await loadDocument(team, relPath, prior.version) : null;
   return {
     path: relPath, initiative: at.initiative, name: at.path,
-    version: shown, current,
+    version: loaded.rev.version, current: loaded.doc.current_version, latest,
     status: env.status ?? null,
     approvedBy: env.approved_by ?? null,
     approvedAt: env.approved_at ?? null,
     gate: gateRefusal(await chainFor(p, team, relPath, loaded.text), at.path),
-    history: loaded.history.map((r) => ({ version: r.revision, approvedBy: r.approved_by ?? null,
-                                          approvedAt: r.approved_at ?? null })),
+    history: publicVersions(loaded.history).map((r) => ({ version: r.version, approvedBy: r.approved_by ?? null,
+                                                          approvedAt: r.approved_at ?? null })),
     body: documentBody(loaded.text).trim(),
-    previous: before?.ok ? { version: shown - 1, body: documentBody(before.text).trim() } : null,
-    ticket: shown === current ? ticketFor(team, relPath, shown, user) : null,
+    previous: before?.ok ? { version: before.rev.version, body: documentBody(before.text).trim() } : null,
+    ticket: latest ? ticketFor(team, relPath, shown, user) : null,
   };
 }
 
@@ -168,7 +179,7 @@ export function registerDocumentPanel(server: McpServer): void {
         "pass. To put a document in front of someone, call document_present.",
       inputSchema: {
         path: z.string().describe("The document the panel showed, `<initiative>/<name>.md`."),
-        version: z.number().int().positive().describe("The revision the panel showed."),
+        version: z.number().int().positive().describe("The public version the panel showed."),
         ticket: z.string().describe("The ticket document_present handed the panel."),
       },
       _meta: { ui: { visibility: ["app"] }, ...PANEL_CALLABLE },
@@ -181,9 +192,10 @@ export function registerDocumentPanel(server: McpServer): void {
       const loaded = await loadDocument(team, path);
       if (!loaded.ok) return text(loaded.refusal);
       // The same rule every present keeps: only the revision the document points at can be
-      // vouched for, so a panel left open across a rewrite records nothing.
-      if (loaded.doc.current_revision !== version) {
-        return text(`ERROR: ${path} changed since the panel opened it (now v${loaded.doc.current_revision}) ` +
+      // vouched for, so a panel left open across a rewrite records nothing. A new version is named
+      // here; a new snapshot of the same version is caught by the ticket, which binds the revision.
+      if (loaded.doc.current_version !== version) {
+        return text(`ERROR: ${path} changed since the panel opened it (now v${loaded.doc.current_version}) ` +
                     "— open it again with document_present");
       }
       // Once is the fact. A host re-mounts a panel whenever the person scrolls back to it or opens
@@ -197,13 +209,14 @@ export function registerDocumentPanel(server: McpServer): void {
       if (await shownSinceLastChange(p, team, path)) {
         return text(`Already recorded: ${path} v${version} was shown in full. It counts as presented.`);
       }
-      // Every record the panel writes rests on the ticket.
-      if (!ticketValid(ticket, team, path, version, user)) {
+      // Every record the panel writes rests on the ticket, and the ticket on the current revision.
+      if (!ticketValid(ticket, team, path, loaded.rev.revision, user)) {
         return text("ERROR: this panel's ticket is not valid for you and this revision — open the " +
                     "document again with document_present");
       }
       await recordPresented(p, team, path);
-      recordAct(path, { user, action: "shown", path, version: String(version), via: "panel" });
+      recordAct(path, { user, action: "shown", path, version: String(version), revision: loaded.rev.revision,
+                        via: "panel" });
       return text(`Shown in full in the panel: ${path} v${version}. It counts as presented.`);
     },
   );

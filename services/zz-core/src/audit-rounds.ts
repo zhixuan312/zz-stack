@@ -30,8 +30,8 @@ const stripEnvelope = (s: string): string => s.replace(ENVELOPE_BLOCK, "");
 
 /** The source rows an audit reads, as the fields this module routes on. The two live in the
  *  revision's own envelope payload — `stage` and `supports` name which round a source is, and
- *  `audits_version` says which revision it read — so both are read off the row rather than parsed
- *  out of a file. */
+ *  `audits_version` says which PUBLIC version it read — so both are read off the row rather than
+ *  parsed out of a file. */
 const stageOf = (d: DocRow): string => (d.fields?.stage ?? "").trim();
 const auditsVersionOf = (d: DocRow): number => Number(d.fields?.audits_version) || 1;
 const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
@@ -104,7 +104,8 @@ interface AuditMove { action: string; document: string; waiting_on: string; why:
 
 /**
  * The next move an audited document owes, or null when its audit is settled.
- * `version` is the document as it stands. Asked of an approved document, and of the plan while it
+ * `version` is the document's public version as it stands — the number a round records as
+ * `audits_version` — never a stored row number, which also moves on a same-version draft. Asked of an approved document, and of the plan while it
  * is a draft: a plan phase is audited before its approval, so the round is owed before that gate
  * (`initiative_status`'s `auditedWhile`).
  */
@@ -130,7 +131,7 @@ export function auditMove(initiative: string, stage: string, document: string,
              why: `round ${n} (${last.file}) reopens something ${document} records as agreed ` +
                   `(changes_commitment p=${a?.probability?.toFixed(2)}). That is the ` +
                   `stakeholder's to decide, not the audit's: if they change the agreement, ` +
-                  `document_revise ${document} citing sources/${last.file}; if they keep it, record ` +
+                  `document_edit ${document} with sources/${last.file} as its cause; if they keep it, record ` +
                   `their decision with source_add(supports: ["${document}"]) and the audit continues.` };
   }
   if (last.version < version) {

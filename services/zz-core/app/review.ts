@@ -9,7 +9,7 @@
  * as one message, with the instruction to revise and present again, so a review is one clear
  * request rather than a stream of vague ones.
  *
- * Notes are kept per document revision in the frame's own storage where the host allows it, so a
+ * Notes are kept per public version of a document in the frame's own storage where the host allows it, so a
  * re-mounted panel still has them; a sandbox that refuses storage only loses them on reload.
  */
 import { clip, schedule, selected } from "./context.ts";
@@ -124,7 +124,7 @@ export async function sendNotes(s: Slot): Promise<void> {
   ].join("\n"));
   await app.sendMessage({ role: "user", content: [{ type: "text", text: [
     `Review notes on ${s.doc.path} (v${s.doc.version}), from the document panel:`, "", ...items, "",
-    "Revise the document for these with document_revise, then present it again so I can see what changed.",
+    "Change the document for these with document_edit, then present it again so I can see what changed.",
   ].join("\n") }] });
   s.sent = `${s.notes.length} note${s.notes.length === 1 ? "" : "s"} sent — the assistant will revise and show it again, with what changed marked.`;
   s.notes = [];

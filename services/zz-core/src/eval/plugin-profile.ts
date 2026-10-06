@@ -103,7 +103,7 @@ interface PluginTraces {
    *  can only be drawn over a figure that is on the sheet. A judge reading markdown cannot see a
    *  column. */
   record: { documents: number; revised: number; revised_with_evidence: number;
-            patched: number; patched_with_evidence: number } | null;
+            edits_without_cause: number; edits_with_cause: number } | null;
   /** Which query shape `use` and `never_called` were counted over — a door plugin's own traffic,
    *  or the tool calls inside this version's own skill runs. Both are now bounded by the same
    *  `EvidenceWindow` every other figure here is; this says which population, not which window. */
@@ -415,7 +415,7 @@ export async function pluginTraces(
         join zz.team t on t.id = e.team_id
        where e.run_id in (select r.id ${RUNS_OF})
          and e.kind = 'tool_call' and e.ok is true
-         and split_part(coalesce(e.tool_key, e.subject), ':', 2) in ('document_write', 'document_revise', 'document_patch')
+         and split_part(coalesce(e.tool_key, e.subject), ':', 2) in ('document_write', 'document_edit')
     )
     select w.initiative, w.ts::text as ts, wp.stage as back_to_step,
            (select lp.stage from zz.doc d join pos lp on lp.doc = d.path
@@ -448,7 +448,7 @@ export async function pluginTraces(
               where r0.run_id = r.run_id and r0.target = r.target and r0.ts < r.ts
                 and not exists (select 1 from ev w
                                  where w.run_id = r.run_id and w.target = r.target
-                                   and w.tool in ('document_write', 'document_revise', 'document_patch')
+                                   and w.tool in ('document_write', 'document_edit')
                                    and w.ts > r0.ts and w.ts < r.ts)))::text as repeats
       from reads r`, params)).rows[0];
 
@@ -497,7 +497,7 @@ export async function pluginTraces(
   // store's — every document on the platform — which is zz-core's record and nobody else's, so
   // the test is: has this door recorded a call to a tool that writes a document. A door that only reads them has not produced them.
   const writesDocuments = servesOwnDoor && use.some((u) =>
-    ["document_write", "document_patch", "document_revise"].includes(u.tool.split(":").pop() ?? ""));
+    ["document_write", "document_edit"].includes(u.tool.split(":").pop() ?? ""));
   // Scoped to the initiatives THIS window's own door traffic actually touched — the store-wide
   // query this replaced counted every
   // document on the platform, which made `record` a fact about zz-core's whole install rather
@@ -510,7 +510,7 @@ export async function pluginTraces(
   const recParams = [plugin, window.from, window.to];
   const rec = writesDocuments
     ? (await pool.query<{ documents: string; revised: string; revised_with_evidence: string;
-                          patched: string; patched_with_evidence: string }>(`
+                          edits_without_cause: string; edits_with_cause: string }>(`
         with touched as (
           select distinct ii.id as initiative_id from zz.event e
             join zz.initiative ii on ii.id = e.initiative_id
@@ -538,32 +538,27 @@ export async function pluginTraces(
                    join zz.initiative i on i.id = d.initiative_id
                    left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
                   where i.id in (select initiative_id from touched)),
-        rev as (select l.evidence_list as evidence,
-                       l.revised,
-                       -- The same initiative, named by an event rather than spelled by one: the
-                       -- document's own initiative id is what the call has to match.
-                       exists (select 1 from zz.event e
-                                where e.kind = 'tool_call' and e.ok is not false
-                                  and e.initiative_id = l.initiative_id
-                                  and split_part(coalesce(e.tool_key, e.subject), ':', 2) = 'document_patch') as patched
-                  from live l)
+        -- The changes this window made to those documents, split by whether the call named its
+        -- cause (sources or source_content). A body change to an approved document is refused
+        -- without one, and a draft fill needs none, so the split says where the cause obligation
+        -- bit. A cause the platform linked itself is in the cites links above, not in the call.
+        edits as (select coalesce(e.detail->'args', '[]'::jsonb) ?| array['sources', 'source_content'] as caused
+                    from zz.event e
+                   where e.kind = 'tool_call' and e.ok is not false
+                     and e.ts between $2 and $3
+                     and e.initiative_id in (select initiative_id from touched)
+                     and split_part(coalesce(e.tool_key, e.subject), ':', 2) = 'document_edit')
         select count(*)::text as documents,
                count(*) filter (where revised)::text as revised,
-               count(*) filter (where revised and coalesce(array_length(evidence,1),0) > 0)::text
+               count(*) filter (where revised and coalesce(array_length(evidence_list,1),0) > 0)::text
                  as revised_with_evidence,
-               -- Which tool last touched it, because the two carry different obligations: document_revise
-               -- refuses a version naming no cause, and document_patch edits the body and requires none. If
-               -- the documents without evidence are the patched ones, the gap is a missing obligation on one
-               -- tool rather than a rule nobody follows.
-               count(*) filter (where revised and patched)::text as patched,
-               count(*) filter (where revised and patched
-                                  and coalesce(array_length(evidence,1),0) > 0)::text
-                 as patched_with_evidence
-          from rev`, recParams)).rows.map((r) => ({
+               (select count(*) filter (where not caused) from edits)::text as edits_without_cause,
+               (select count(*) filter (where caused) from edits)::text as edits_with_cause
+          from live`, recParams)).rows.map((r) => ({
             documents: Number(r.documents), revised: Number(r.revised),
             revised_with_evidence: Number(r.revised_with_evidence),
-            patched: Number(r.patched),
-            patched_with_evidence: Number(r.patched_with_evidence) }))[0] ?? null
+            edits_without_cause: Number(r.edits_without_cause),
+            edits_with_cause: Number(r.edits_with_cause) }))[0] ?? null
     : null;
 
   return {

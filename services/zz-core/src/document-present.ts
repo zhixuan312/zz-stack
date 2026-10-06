@@ -8,8 +8,12 @@
  * COUPLED: the fact is `doc_revision.presented_at`, set by `recordPresented` (attest.ts) on the
  * revision a person was shown, and `shownSinceLastChange` is what reads it back. Presentation is
  * about the CURRENT BYTES and the current bytes are a revision, so the revision is the grain;
- * a revision nobody has been shown carries null, and a `document_patch` moves the revision's own
- * `written_at` past the present without anybody having to remember to clear anything.
+ * a revision nobody has been shown carries null, and a change rewriting it in place moves the
+ * revision's own `written_at` past the present without anybody having to remember to clear anything.
+ *
+ * A reader is shown PUBLIC versions: `version` is the one a change's cause opened, and several
+ * stored snapshots can share it. `version: N` reads the snapshot `loadDocument` reads N as — its
+ * approved one, else its last — and the history lists each version once.
  *
  * DELIBERATE: an unasked present is ONE part when the body is longer than a client can carry. The
  * old store version cut a present into parts only when a part was asked for, and returned the
@@ -29,8 +33,7 @@
 import { documentBody, parseEnvelope } from "@zz/contracts";
 import type pg from "pg";
 
-import { recordAct } from "./versions.js";
-import { loadDocument } from "./versions.js";
+import { contentRevision, loadDocument, publicVersions, recordAct } from "./versions.js";
 import { recordPresented, splitDocPath } from "./attest.js";
 import { type PartAsk, PART_LIMIT, asksPart, partHeader, slicePart } from "./document-parts.js";
 
@@ -66,16 +69,16 @@ async function presentPart(
   const body = documentBody(content).trim();
   const part = slicePart(body, ask);
   if (typeof part === "string") return part;
-  const shownVersion = String(loaded.rev.revision);
-  const facts = [`This is ${relPath}`];
-  facts.push(`version ${shownVersion}`);
+  const shownVersion = String(loaded.rev.version);
+  const facts = [`This is ${relPath}`, `version ${shownVersion}`];
   if (env.status) facts.push(`status ${env.status}`);
+  facts.push(contentFact(loaded));
   const signed = env.approved_by
     ? ` Approved by ${env.approved_by}${env.approved_at ? ` on ${env.approved_at}` : ""}.` : "";
   // The part's own row, so coverage can be computed: `total` is what tells two parts of different
-  // revisions apart, and `version` is which revision this one was cut from.
+  // revisions apart, and `version`/`revision` say which snapshot this one was cut from.
   recordAct(relPath, { user, action: "shown_part", path: relPath, version: shownVersion,
-                       start: part.start, end: part.end, total: part.total });
+                       revision: loaded.rev.revision, start: part.start, end: part.end, total: part.total });
   // A part of the WHOLE body, when it is the whole body, is a present and not a partial one — the
   // record follows the bytes a reader has actually seen rather than the shape of the call.
   //
@@ -95,12 +98,13 @@ async function presentPart(
   } else if (current
              && await partsCover(p, team, relPath, part.total, { start: part.start, end: part.end }) === "covered") {
     await recordPresented(p, team, relPath);
-    recordAct(relPath, { user, action: "shown", path: relPath, version: shownVersion, via: "parts" });
+    recordAct(relPath, { user, action: "shown", path: relPath, version: shownVersion,
+                         revision: loaded.rev.revision, via: "parts" });
     covered = "shown";
   }
   const standing = !current
-    ? `This is version ${shownVersion}, not the current one. Presenting history does not vouch for ` +
-      "the current revision: approval is refused until that revision's own bytes have been presented."
+    ? `This is a snapshot of version ${shownVersion}, not the current one. Presenting history does not ` +
+      "vouch for the current revision: approval is refused until that revision's own bytes have been presented."
     : covered !== "partial"
       ? "Every character of the current body has now been presented, in parts — it counts as presented."
       : "Presented in part. It does NOT yet count as presented: present the remaining characters " +
@@ -125,8 +129,9 @@ async function presentDocument(
   const revision = loaded.rev.revision;
   // Only what the document carries: a source has no status, and stating "status: none" for one
   // asserts a lifecycle nothing governs.
-  const facts = [`This is ${relPath}`, `version ${revision}`];
+  const facts = [`This is ${relPath}`, `version ${loaded.rev.version}`];
   if (env.status) facts.push(`status ${env.status}`);
+  facts.push(contentFact(loaded));
   const signed = env.approved_by
     ? ` Approved by ${env.approved_by}${env.approved_at ? ` on ${env.approved_at}` : ""}.` : "";
   // The presentation is recorded on the revision that was SHOWN, which is the revision `version`
@@ -134,15 +139,28 @@ async function presentDocument(
   // lives on the revision row the document points at. Opening history is a read, not a present.
   const current = revision === loaded.doc.current_revision;
   if (current) await recordPresented(p, team, relPath);
-  recordAct(relPath, { user, action: "shown", path: relPath, version: String(revision) });
-  const history = loaded.history.map((r) =>
-    `v${r.revision} ${r.approved_by ? "approved" : "filed"}` +
+  recordAct(relPath, { user, action: "shown", path: relPath, version: String(loaded.rev.version), revision });
+  // One entry per public version, each the snapshot it is read as, with the note that says why it
+  // differs from the one before.
+  const history = publicVersions(loaded.history).map((r) =>
+    `v${r.version} ${r.approved_by ? "approved" : "filed"}` +
     (r.approved_by ? ` by ${r.approved_by}` : "") +
-    (r.approved_at ? ` on ${r.approved_at}` : ""));
+    (r.approved_at ? ` on ${r.approved_at}` : "") +
+    (r.revision_note ? ` — ${r.revision_note}` : ""));
   const listed = history.length
     ? `Versions filed: ${history.join("; ")}. Read one with \`version: N\`.`
     : "Versions filed: none — no approval has landed on this document yet.";
   return `${facts.join(", ")}.${signed}\n${listed}\n\n${documentBody(content).trim()}\n`;
+}
+
+/** The document's current content revision — the token a change sends as `base` — stated on every
+ *  present. The envelope carries it only on the current snapshot, so a present of history names
+ *  it as the CURRENT document's, never as the token of the bytes shown. */
+function contentFact(loaded: Extract<Awaited<ReturnType<typeof loadDocument>>, { ok: true }>): string {
+  const token = contentRevision(loaded.doc.id, Number(loaded.doc.content_generation));
+  return loaded.rev.revision === loaded.doc.current_revision
+    ? `content revision ${token}`
+    : `current version ${loaded.doc.current_version} at content revision ${token}`;
 }
 
 /** How much of the current body has been presented since its content last changed: `shown` when
@@ -158,8 +176,8 @@ async function presentDocument(
  *
  * COUPLED: the spans are `zz.event` rows, and only those recorded SINCE the current revision was
  * written count — a part cut from other bytes is a part of another document-as-it-was. That is the
- * same rule `presented_at > written_at` states for a whole present, and it is what makes a
- * `document_patch` invalidate the parts without anybody having to clear them. */
+ * same rule `presented_at > written_at` states for a whole present, and it is what makes a change
+ * rewriting the revision in place invalidate the parts without anybody having to clear them. */
 async function partsCover(
   p: pg.Pool, team: string, relPath: string, total: number,
   also?: { start: number; end: number },

@@ -164,6 +164,12 @@ function identityOf(c: { body: string; title: string; tags: string[]; fields: Re
                     JSON.stringify(Object.fromEntries(open.map((k) => [k, f[k]])))].join("\u0000"));
 }
 
+/** The content identity of a document's text, by the same rule `saveDocument` compares stored
+ *  values with: what a change service asks to tell a change from `no_change` before it writes. */
+export function contentIdentity(text: string, relPath: string): string {
+  return identityOf(projection(text, relPath));
+}
+
 /** A write, prepared outside the transaction: the stamped text and every value its rows take. */
 type Prepared = ReturnType<typeof projection> & {
   text: string; type: string; hash: string; status: string; identity: string;

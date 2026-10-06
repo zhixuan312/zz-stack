@@ -218,6 +218,7 @@ check("zz-core binds the port --port names in plain decimal, 8000 with none, and
 check("a document's body is what its author wrote, through any number of reads and writes", runsCheck("document-body-roundtrip.ts"));
 check("the walking skeleton creates, edits, presents and approves a document through a real zz-core on a throwaway database", runsCheck("document-edit.ts"));
 check("the write path keeps the pin rule, the state compare, the per-document lock, one transaction for a captured source and its request, and reads public versions on a throwaway database", runsCheck("document-store.ts"));
+check("the console lists one entry per public version, fetches a snapshot by revision, and reads a pending correction as closed with the correction named, on a throwaway database", runsCheck("console-versions.ts"));
 check("a support named before its document exists is linked when that document is written", runsCheck("supports-wait-for-target.ts"));
 check("zz-router loads a routed flow and names how a person opens one they open", runsCheck("router-routes.ts"));
 check("the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",

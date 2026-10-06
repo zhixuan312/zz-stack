@@ -20,6 +20,10 @@
  *   5. where a close lands (`closeLandsOn`): the declared closing document, the furthest one
  *      written, the one named — and an abandon of an initiative holding no document lands on its
  *      anchor row even when a document is named.
+ *   6. a correction of a closed record, through `documentGuards` as `document_edit` calls it: a
+ *      draft carrying the stored outcome and closed_by forward is admitted — gated or not — with no
+ *      gate or close requirement asked again; one changing or dropping the outcome is refused; and
+ *      handover.md stays writable while the closing document it requires is that draft.
  *
  * Run: node checks/close-fallback-gates.ts   (also run by scripts/gate.ts)
  */
@@ -123,7 +127,10 @@ async function open(flow: string, facts: Record<string, string> | null) {
   // the rows can answer once documents stop being files.
   const close = async (doc: string, fields: Record<string, string>): Promise<string | null> =>
     await documentGuards(chain, `${name}/${doc}`, body(chain, doc, { title: doc, flow, ...fields }), TEAM, "fixture");
-  return { name, chain, write, close };
+  // The write `document_edit` makes: its own `via`, through the same guards.
+  const edit = async (doc: string, fields: Record<string, string>): Promise<string | null> =>
+    await documentGuards(chain, `${name}/${doc}`, body(chain, doc, { title: doc, flow, ...fields }), TEAM, "document_edit");
+  return { name, chain, write, close, edit };
 }
 
 // 1. skip: improvement ruled out, proposal ruled out — closes on findings.md
@@ -198,6 +205,51 @@ async function open(flow: string, facts: Record<string, string> | null) {
      "a freeform close did not land on the document named");
 }
 
+// 6. A correction of a closed record is admitted as a draft; what the close recorded is not rewritten
+{
+  const i = await open("sdlc-flow", null);
+  i.write("explore.md", {});
+  i.write("spec.md", APPROVED);
+  i.write("plan.md", APPROVED);
+  i.write("review.md", { ...APPROVED, ...FINISHED });
+  const gated = await i.edit("review.md", { status: "draft", ...FINISHED });
+  is(gated === null, `a gated draft correction carrying the close forward was refused: ${JSON.stringify(gated)}`);
+  const changed = await i.edit("review.md", { status: "draft", ...FINISHED, outcome: "abandoned" });
+  is(typeof changed === "string" && /closed on \(outcome: delivered/.test(changed) && /would alter/.test(changed),
+     `a correction changing the outcome was not refused for it: ${JSON.stringify(changed)}`);
+  const dropped = await i.edit("review.md", { status: "draft" });
+  is(typeof dropped === "string" && /closed on/.test(dropped) && /would drop/.test(dropped),
+     `a correction dropping the outcome was not refused for it: ${JSON.stringify(dropped)}`);
+  const otherCloser = await i.edit("review.md", { status: "draft", ...FINISHED, closed_by: "bo@zz.test" });
+  is(typeof otherCloser === "string" && /closed on/.test(otherCloser),
+     `a correction changing closed_by was not refused: ${JSON.stringify(otherCloser)}`);
+
+  // While the correction waits for its approval, the close still settles what handover.md needs.
+  const j = await open("sdlc-flow", null);
+  j.write("explore.md", {});
+  j.write("spec.md", APPROVED);
+  j.write("plan.md", APPROVED);
+  j.write("review.md", { status: "draft", ...FINISHED });
+  const handover = await j.edit("handover.md", { status: "draft" });
+  is(handover === null || !/review\.md is status: draft/.test(handover),
+     `handover.md was refused while the closed review.md is a draft correction: ${JSON.stringify(handover)}`);
+  // ...and an open initiative's draft review.md still holds handover.md back.
+  const k = await open("sdlc-flow", null);
+  k.write("explore.md", {});
+  k.write("spec.md", APPROVED);
+  k.write("plan.md", APPROVED);
+  k.write("review.md", { status: "draft" });
+  const early = await k.edit("handover.md", { status: "draft" });
+  is(typeof early === "string" && /review\.md is status: draft/.test(early),
+     `handover.md was written over an open initiative's draft review.md: ${JSON.stringify(early)}`);
+
+  // Ungated: an abandon that landed on explore.md is corrected the same way.
+  const u = await open("sdlc-flow", null);
+  u.write("explore.md", STOPPED);
+  const ungated = await u.edit("explore.md", STOPPED);
+  is(ungated === null, `an ungated correction carrying the close forward was refused: ${JSON.stringify(ungated)}`);
+}
+
 // DELIBERATE: the file version's damaged-facts cases — a DAMAGED `_facts.json` refusing its own
 // initiative, and an abandon still landing over it — have nothing left to assert. A row is written
 // whole by the database or not at all, so the truncated or non-object file they guarded cannot
@@ -209,4 +261,5 @@ if (fail.length) {
   process.exit(1);
 }
 console.log("close-fallback-gates: skip, proposal_only and promotable each close where their branch " +
-            "lands, and a stop on a fallback draft is not asked for that draft's approval");
+            "lands, a stop on a fallback draft is not asked for that draft's approval, and a closed " +
+            "record's correction is a draft that keeps what the close recorded");

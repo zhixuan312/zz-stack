@@ -9,7 +9,7 @@ import type { Rendered } from "./render.ts";
 /** What `document_present` hands over. COUPLED: `PanelDocument` in src/document-panel.ts. */
 export interface PanelDocument {
   path: string; initiative: string; name: string;
-  version: number; current: number | null;
+  version: number; current: number | null; latest: boolean;
   status: string | null; approvedBy: string | null; approvedAt: string | null;
   gate: string | null;
   history: { version: number; approvedBy: string | null; approvedAt: string | null }[];

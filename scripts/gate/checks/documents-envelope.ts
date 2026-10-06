@@ -80,7 +80,7 @@ check("only an act may move the fields the platform owns", () => {
   // approved_at, outcome or closed_by — unless the caller passes `via`, saying it is the act
   // that legitimately moves them. `via` is a bypass, so it is only safe while the list of
   // callers holding it is exactly the list that should.
-  const ACTS = ["document_approve", "initiative_close", "document_revise"];
+  const ACTS = ["document_approve", "initiative_close", "document_revise", "document_edit"];
   const src = zzCoreSource();
   const lines = src.split("\n");
   const holders: { tool: string; via: string; line: number }[] = [];

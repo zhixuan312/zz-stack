@@ -2,150 +2,133 @@
  * `document_edit` — every change to an existing document, one tool.
  *
  * Beside `artifacts.ts` rather than in it, and registered from there the way `source_list` is: the
- * document tools already fill that file. Phase 0 builds one mode, an exact edit batch applied to a
- * draft's body (`applyEdits`, which holds the rules). The schema declares every argument the final
- * tool takes so a client sees its whole shape now, and an argument whose mode is not built yet is
- * answered `NOT_YET` rather than ignored — an ignored argument would look like a change that
- * landed.
+ * document tools already fill that file. What a call changes, what caused it and which public
+ * version it lands in are computed by the change service (`document-change.ts`); this handler runs
+ * the guards on that candidate and writes it, so the path every write takes — `writeGuard`, then
+ * `documentGuards`, then `saveDocument` — is read here in one place.
+ *
+ * A change commits only onto the state it was computed from. When the document moved in between,
+ * `saveDocument` sends it back and the call is computed again from the top — a request key looked
+ * up again, the document read again — at most MAX_ATTEMPTS times.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentBody, parseCaller } from "@zz/contracts";
+import { parseCaller } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { chainFor } from "../chain.js";
+import { acceptanceLine, MAX_ATTEMPTS, NO_DB, NO_TEAM, planEdit, replayFor, replayText,
+         RETRYABLE_UNAVAILABLE } from "../document-change.js";
+import { MAX_EDITS } from "../document-edits.js";
 import { fieldRefusal } from "../document-rules.js";
+import { saveDocument } from "../document-save.js";
 import { documentGuards } from "../guards.js";
-import { applyEdits, type EditRefusal, MAX_EDITS } from "../document-edits.js";
+import { noteDocument, noteRevision } from "../host/observe.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { safePath, tagRefusal, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
-import { loadDocument, recordAct } from "../versions.js";
-import { saveDocument } from "../document-save.js";
-import { normalizeSections } from "../write-guards.js";
-import { acceptanceLine, NO_DB, NO_TEAM } from "./artifacts.js";
+import { recordAct } from "../versions.js";
 import { nextMoveLine } from "./initiative-status.js";
-
-const INITIATIVE = "2026-10-06-doc-write-and-update-paradigm";
-
-/** The arguments whose modes are not built, in the order the first one present is named, and the
- *  phase each arrives in. COUPLED: the schema below declares exactly these. */
-const NOT_BUILT: { names: string[]; phase: number }[] = [
-  { names: ["section", "section_level", "section_occurrence", "content"], phase: 1 },
-  { names: ["sources", "source_content", "source_title", "note"], phase: 1 },
-  { names: ["title", "tags", "stakeholder", "fields"], phase: 1 },
-  { names: ["base", "request_id"], phase: 1 },
-  { names: ["upload", "file"], phase: 4 },
-];
-
-const notYet = (what: string, phase: number): string =>
-  `ERROR: NOT_YET — ${what} arrives in Phase ${phase} of ${INITIATIVE}; use document_revise until then`;
-
-/** The refusal in the platform's `ERROR: <CODE> — <what to send instead>` form. */
-function refusalText(path: string, r: EditRefusal): string {
-  const at = r.edit_index === undefined ? "" : `edit ${r.edit_index} (0-based): `;
-  switch (r.code) {
-    case "EDIT_COUNT":
-      return `ERROR: EDIT_COUNT — send between 1 and ${MAX_EDITS} edits in one call.`;
-    case "INVALID_EDIT":
-      return `ERROR: INVALID_EDIT — ${at}\`find\` must be a non-empty string and \`replace\` a string ` +
-        "(an empty `replace` deletes).";
-    case "NO_MATCH":
-      return `ERROR: NO_MATCH — ${at}\`find\` does not occur in ${path}. Matching is exact, with no ` +
-        "whitespace folding: read the document and copy the text as it is.";
-    case "MULTIPLE_MATCHES":
-      return `ERROR: MULTIPLE_MATCHES — ${at}\`find\` occurs ${r.match_count} times, on lines ` +
-        `${(r.lines ?? []).join(", ")} of the body. Send a longer \`find\` that includes enough ` +
-        "surrounding text to occur exactly once.";
-    case "OVERLAPPING_EDITS":
-      return `ERROR: OVERLAPPING_EDITS — ${at}this edit covers text another edit in the batch also ` +
-        "covers (identical edits included). Merge them into one edit, or make their `find` text disjoint.";
-  }
-}
 
 export function registerDocumentEditTool(server: McpServer): void {
   server.registerTool("document_edit", {
     annotations: WRITES,
     description:
-      "Change an existing DRAFT document. Send `edits`: 1 to " + MAX_EDITS + " exact " +
-      "{find, replace} pairs, each `find` located in the document as it is now and occurring " +
-      "exactly once (an empty `replace` deletes). The batch is all or nothing, and a replacement " +
-      "never becomes another edit's target. An approved document is not edited here yet: it " +
-      "changes through document_revise. The other arguments are declared so the final shape is " +
-      "visible, and answer NOT_YET until their phase ships.",
+      "Change an existing document by sending only what changed. ONE body change per call: " +
+      "`edits` — 1 to " + MAX_EDITS + " exact {find, replace} pairs, each `find` occurring exactly " +
+      "once in the document as it is now (an empty `replace` deletes; the batch is all or nothing, " +
+      "and a replacement never becomes another edit's target); or `section` with `content` — the " +
+      "section's new text, heading line first, with `section_level` and `section_occurrence` to pick " +
+      "among headings of the same name; or `content` alone — the whole body, only when the change " +
+      "is not one section's. Metadata — `title`, `tags`, `stakeholder`, `fields` — may come with any " +
+      "of them, or ALONE: a metadata-only call changes no body and never needs a cause. " +
+      "An APPROVED document's body changes only with its cause: name an existing source in " +
+      "`sources`, or pass the words that caused it as `source_content` (with `source_title`), which " +
+      "the platform files as a source. A cause new to the current version opens the next version, as " +
+      "a draft; the approved version stays readable. Sources filed since the release that declare " +
+      "they support this document are linked by the platform itself and named in the reply. `note` " +
+      "is the version's one-line note. Send the `content revision` your last read returned as `base` " +
+      "and a change made to a document that moved since is refused instead of landing on text you " +
+      "did not read. Send one `request_id` per intended change and reuse it on every retry of that " +
+      "change: a retry of a change that already landed returns its first reply instead of landing " +
+      "twice.",
     inputSchema: {
       path: z.string(),
       edits: z.array(z.object({ find: z.string(), replace: z.string() })).optional()
         .describe(`1..${MAX_EDITS} exact edits, applied together.`),
-      section: z.string().optional(), section_level: z.number().int().optional(),
-      section_occurrence: z.number().int().optional(), content: z.string().optional(),
+      section: z.string().optional().describe("The heading text of the section `content` replaces."),
+      section_level: z.number().int().optional().describe("1..4: the heading's level, when several share its text."),
+      section_occurrence: z.number().int().optional()
+        .describe("1-based: which of the headings left after `section` and `section_level`."),
+      content: z.string().optional()
+        .describe("With `section`: the section's new text, heading line first. Alone: the whole body."),
       upload: z.string().optional(), file: z.record(z.unknown()).optional(),
-      sources: z.array(z.string()).optional(), source_content: z.string().optional(),
-      source_title: z.string().optional(), note: z.string().optional(),
+      sources: z.array(z.string()).optional()
+        .describe("Sources that caused this change, as paths inside the initiative, e.g. 'sources/2026-10-06-call.md'."),
+      source_content: z.string().optional().describe("The words that caused this change, filed as a new source."),
+      source_title: z.string().optional().describe("The title of the source `source_content` files."),
+      note: z.string().optional().describe("One line on what this version is; stored as its revision note."),
       title: z.string().optional(), tags: z.array(z.string()).optional(),
       stakeholder: z.string().optional(), fields: z.record(z.string()).optional(),
-      base: z.string().optional(), request_id: z.string().optional(),
+      base: z.string().optional().describe("The `content revision` your last read returned."),
+      request_id: z.string().optional().describe("One per intended change, reused on every retry of it."),
     },
   }, async (args) => {
-    const { path, edits, fields, tags } = args;
-    const blocked = writeGuard(path);
-    if (blocked) return text(blocked);
-    // The same rules every write applies to a caller's fields and tags, asked before anything else
-    // even while those arguments answer NOT_YET: a malformed name is refused by name, never
-    // carried silently to the phase that will write it.
-    const malformed = fieldRefusal(fields) ?? tagRefusal(tags);
-    if (malformed) return text(malformed);
     const p = db();
     if (!p) return text(NO_DB);
     const who = parseCaller(requestHeaders()).email;
     const team = await teamFor(who);
     if (!team) return text(NO_TEAM);
-    // DELIBERATE: the path is resolved before the guards run, as document_patch does.
-    await safePath(path);
-    const unopened = await unopenedRefusal(p, team, path);
-    if (unopened) return text(unopened);
-    // 1. The target. The body is the current revision's, read from the row that retained it.
-    const loaded = await loadDocument(team, path);
-    if (!loaded.ok) {
-      return text(loaded.why === "missing"
-        ? `ERROR: TARGET_MISSING — ${path} does not exist. document_write creates a document; ` +
-          "document_list shows the paths there are."
-        : loaded.refusal);
+    // DELIBERATE: the path is resolved before anything about it is judged, and the canonical form
+    // is what the lock, the request key and every row are addressed by.
+    const path = await safePath(args.path);
+    const initiative = path.split("/")[0];
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      // (0) A request already committed under this key answers as it did the first time.
+      const replay = await replayFor(p, team, who, path, args);
+      if (replay) return text(replay + await nextMoveLine(p, team, initiative));
+      // (1)
+      const blocked = writeGuard(path);
+      if (blocked) return text(blocked);
+      const unopened = await unopenedRefusal(p, team, path);
+      if (unopened) return text(unopened);
+      // (2) The rules every write applies to a caller's field names and tags.
+      const { fields, tags } = args;
+      const malformed = fieldRefusal(fields) ?? tagRefusal(tags);
+      if (malformed) return text(malformed);
+      // (3)–(10)
+      const plan = await planEdit(p, team, who, path, args);
+      if ("reply" in plan) return text(plan.reply);
+      const finish = async (): Promise<string> => plan.receipt
+        + (plan.renamed.length ? `\nRenamed to the heading this flow declares: ${plan.renamed.join(", ")}.` : "")
+        + (plan.noChange ? "" : await acceptanceLine(p, team, plan.chain, path, plan.text))
+        + await nextMoveLine(p, team, initiative);
+      // An unkeyed no_change writes nothing at all; a keyed one records its request.
+      if (plan.noChange && args.request_id === undefined) return text(await finish());
+      // (11) The guards, on the whole candidate. `via`: this tool composes the governance fields
+      // itself — it carries an outcome forward and takes an approval off — so the three guards
+      // that refuse a caller writing them by hand stand aside, as they do for the other acts.
+      const bad = plan.noChange ? null : await documentGuards(plan.chain, path, plan.text, team, "document_edit");
+      if (bad) return text(bad);
+      const written = await saveDocument(plan.write);
+      if ("retry" in written) continue;
+      // The same key committed between the lookup above and the lock: its receipt, as (0) gives it.
+      if ("replayed" in written) return text(replayText(written.replayed) + await nextMoveLine(p, team, initiative));
+      if ("refusal" in written) return text(written.refusal);
+      if (plan.noChange) return text(await finish());
+      recordAct(path, { user: who, action: "document_edit", path, version: written.version,
+                        sources: plan.causes.map((c) => c.path).join(","), explained: plan.causes.length > 0 });
+      // The control loop is told after the write, never before. A new version, or an approved
+      // snapshot turned into a draft, withdraws the approval it displaced; anything else is a
+      // document fact. Awaited: a reply that returned before its evidence landed would let a
+      // caller be told the step is unmet.
+      const at = { version: written.version, revision: written.revision };
+      if (written.newVersion || plan.replaced) {
+        await noteRevision(plan.chain, path, at, plan.replaced, who, team);
+      } else {
+        await noteDocument(plan.chain, path, "document", at, who, team);
+      }
+      return text(await finish());
     }
-    // 2. An unbuilt mode, the first present in table order.
-    const given = args as Record<string, unknown>;
-    for (const { names, phase } of NOT_BUILT) {
-      const name = names.find((n) => given[n] !== undefined);
-      if (name) return text(notYet(`\`${name}\``, phase));
-    }
-    // 3. An approved document is a verdict on bytes a person read.
-    if (loaded.doc.status === "approved") return text(notYet("editing an approved document", 1));
-    // 4. No mode at all.
-    if (edits === undefined) {
-      return text("ERROR: INVALID_MODE — send `edits`: a list of {find, replace} pairs. A call " +
-        "with no body change asks for nothing.");
-    }
-    // 5. The batch's own refusals, in index order.
-    const body = documentBody(loaded.text);
-    const applied = applyEdits(body, edits);
-    if ("code" in applied) return text(refusalText(path, applied));
-    // The envelope is not editable: the edits ran on the body alone, and the envelope the
-    // document already had goes back on byte for byte.
-    const result = loaded.text.slice(0, loaded.text.length - body.length) + applied.body;
-    const chain = await chainFor(p, team, path, result);
-    const fixed = normalizeSections(chain, path, result);
-    const bad = await documentGuards(chain, path, fixed.content, team);
-    if (bad) return text(bad);
-    const written = await saveDocument({
-      team, relPath: path, initiative: path.split("/")[0], text: fixed.content, by: who,
-      flow: chain.name ?? undefined, type: chain.roles[path.split("/")[1] ?? ""],
-      mode: "rewrite", act: "patch",
-    });
-    if ("refusal" in written) return text(written.refusal);
-    recordAct(path, { user: who, action: "document_edit", path });
-    const assessed = await acceptanceLine(p, team, chain, path, fixed.content);
-    return text(`edited: ${path} (${applied.changed} edits)`
-      + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
-      + assessed + await nextMoveLine(p, team, path.split("/")[0]));
+    return text(RETRYABLE_UNAVAILABLE);
   });
 }

@@ -60,6 +60,6 @@ export function planStructureNote(plan: PlanStructure | undefined, status: strin
   const kinds = [...new Set(plan.violations.map((v) => v.kind))].join(", ");
   return ` NOTE: the approved ${plan.document} fails structural validation ` +
     `(${plan.violations.length} violation${plan.violations.length === 1 ? "" : "s"}: ${kinds}), ` +
-    "so no parallel waves can be derived from it — see `plan.violations`; revise it with " +
-    "document_revise before executing in parallel.";
+    "so no parallel waves can be derived from it — see `plan.violations`; correct it with " +
+    "document_edit before executing in parallel.";
 }

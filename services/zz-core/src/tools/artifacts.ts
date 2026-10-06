@@ -24,10 +24,8 @@ import { z } from "zod";
 import { chainFor } from "../chain.js";
 import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
-import { type Chain } from "../write-guards.js";
 import { auditRoundOf, assessRound } from "../audit-rounds.js";
 import { docRows } from "../indexing.js";
-import { assessAcceptance, verifyingDoc } from "../review-acceptance.js";
 import { assessReviewRound, ledgerRefusal, reviewRoundOf, reviewRounds } from "../review-rounds.js";
 import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
@@ -39,6 +37,7 @@ import { registerSourceUploadTool } from "./source-upload.js";
 import { db, teamFor } from "../platform-db.js";
 import { dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf } from "../versions.js";
 import { saveDocument } from "../document-save.js";
+import { acceptanceLine, NO_DB, NO_TEAM } from "../document-change.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, panelDocument, PRESENT_META } from "../document-panel.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
@@ -46,16 +45,6 @@ import { journalOrdinal, listJournalNodes, readJournalNode } from "./journal.js"
 
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 import { nextMoveLine } from "./initiative-status.js";
-
-/** A deployment with no database has no store left: the columns are where a document lives, and
- *  there is no file to fall back to. Said once, in the refusals that would otherwise reach a
- *  pool that is not there. */
-export const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
-  "nowhere to read or write this document.";
-
-/** A person the platform cannot place in a team has no store to act on. */
-export const NO_TEAM = "ERROR: you are not in a team — a team's documents live in the database under " +
-  "its own membership, and nothing resolves you to one.";
 
 /** The part of a long document to return. COUPLED: document-parts.ts slicePart reads these. */
 const PART_INPUT = {
@@ -152,7 +141,9 @@ export function registerArtifactTools(server: McpServer): void {
         flow: chain.name ?? undefined, type: chain.roles[path.split("/")[1] ?? ""],
         mode: prev ? "rewrite" : "create", act: "write",
       });
-      if ("refusal" in written) return text(written.refusal);
+      if (!("revision" in written)) {
+        return text("refusal" in written ? written.refusal : `ERROR: ${path} could not be written`);
+      }
       recordAct(path, { user: who, action: "document_write", path, chars: fixed.content.length });
       // The control loop is told after the write succeeded, never before. `noteDocument`
       // cannot refuse anything — `documentGuards` above has already decided — it only records
@@ -160,7 +151,8 @@ export function registerArtifactTools(server: McpServer): void {
       //
       // DELIBERATE: awaited, not fired and forgotten. A write that returned before its
       // evidence landed would let a caller write a document and be told the step is unmet.
-      await noteDocument(chain, path, "document", who, team);
+      await noteDocument(chain, path, "document", { version: written.version, revision: written.revision },
+                         who, team);
       const assessed = await acceptanceLine(p, team, chain, path, fixed.content);
       return text(`written: ${path} (${fixed.content.length} chars)` +
         (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "") +
@@ -556,8 +548,9 @@ export function registerArtifactTools(server: McpServer): void {
       }
       const round = auditRoundOf(governing, stage, list) ?? review;
       const cited = round ? await documentAt(p, team, `${initiative}/${round.document}`) : null;
-      const auditsVersion = round && !review && cited?.current_revision != null
-        ? String(cited.current_revision) : undefined;
+      // The PUBLIC version the round read, the one a reader is shown — not the snapshot id.
+      const auditsVersion = round && !review && cited?.current_version != null
+        ? String(cited.current_version) : undefined;
       const doc = sourceDocument(
         { title, by: who.email, day: date, content, supports: list,
           stage: round ? round.stage : undefined, audits_version: auditsVersion });
@@ -650,15 +643,4 @@ async function citedRevisions(
     if (at && at.current_revision !== null) out.push({ path, revision: at.current_revision });
   }
   return out;
-}
-
-/** After a verifying document is written or patched: ask `evidence_relation` of the acceptance
- *  rows nobody asked about yet, so approval reads a cache instead of waiting on the service. */
-export async function acceptanceLine(p: pg.Pool, team: string, chain: Chain, path: string,
-                              content: string): Promise<string> {
-  const doc = verifyingDoc(chain, path);
-  if (!doc) return "";
-  const said = await assessAcceptance(p, team, path.split("/")[0], doc, content,
-                                      parseCaller(requestHeaders()).email);
-  return said ? `\n${said}` : "";
 }

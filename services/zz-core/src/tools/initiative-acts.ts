@@ -182,7 +182,10 @@ export function registerInitiativeActTools(server: McpServer): void {
       // An approval is a separate fact from the document: a gated step requires `1x document` and
       // `1x approval`, so recording only one leaves the step a requirement short or credits a
       // document nobody wrote.
-      await noteDocument(chain, relPath, "approval", who.email, team);
+      if ("revision" in sealed) {
+        await noteDocument(chain, relPath, "approval", { version: sealed.version, revision: sealed.revision },
+                           who.email, team);
+      }
       return text(
         `${relPath} approved — recorded under ${signer}` +
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +
@@ -523,7 +526,12 @@ export function registerInitiativeActTools(server: McpServer): void {
       });
       // The control loop is told. A revision withdraws the approval it was counting; the entry says
       // which earlier one it withdraws, and nothing is deleted.
-      await noteRevision(chain, relPath, nextVersion, who.email, team);
+      if ("revision" in written) {
+        await noteRevision(chain, relPath, { version: written.version, revision: written.revision },
+          loaded.doc.approved_revision !== null && loaded.doc.approved_revision === loaded.doc.current_revision
+            ? { version: loaded.rev.version, revision: loaded.rev.revision } : null,
+          who.email, team);
+      }
       return text(
         // The status is named only where one exists: a closed record stays approved, and an ungated
         // document carries none.

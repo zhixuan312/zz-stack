@@ -9,7 +9,12 @@
  * What is here is the SLICING: which characters of a body a caller asked for, and the line that
  * says what the part is. Nothing here reads a store — a part is cut from bytes the caller
  * already holds, and the bytes come from `doc_revision` through `versions.ts`.
+ *
+ * A section is also what `document_edit` replaces and what its receipt names as changed, so the
+ * one reading of "a section" — and of which heading a selector picks — lives here for both.
  */
+import { parseEnvelope } from "@zz/contracts";
+
 
 /** The size above which a present comes back in parts unasked. Characters, not tokens: a client's
  *  cap is in tokens, and 60k characters stays under the common 25k-token result cap even for
@@ -47,32 +52,70 @@ const listed = (hs: Heading[]): string =>
   hs.slice(0, 40).map((h) => `${"#".repeat(h.level)} ${h.title} (offset ${h.at})`).join("; ") +
   (hs.length > 40 ? `; … ${hs.length - 40} more` : "");
 
-/** Where one heading's section is: from the heading line to the next heading of the same or a
- *  higher level, or the end. The one reading of "a section" — `slicePart` reads by it and
- *  `replaceSection` writes by it, so what a caller read is exactly what a revise replaces. */
-export function sectionRange(text: string, section: string): { lo: number; hi: number } | string {
+/** Which of several same-named headings a caller means: its level (1–4), then its 1-based
+ *  occurrence among the headings that are left. Both optional; neither narrows nothing. */
+type SectionPick = { level?: number; occurrence?: number };
+
+/** A heading a selector could have meant, with the selectors that pick it alone: its level, and
+ *  its occurrence among the headings of that text AND that level. */
+type Candidate = { title: string; level: number; occurrence: number; line: number };
+
+/** Where a section is, or why there is none: no heading matches (`all` lists every heading), or
+ *  more than one still does after the selectors (`candidates`). */
+type Located =
+  | { lo: number; hi: number }
+  | { missing: true; all: Heading[] }
+  | { ambiguous: Candidate[]; hits: Heading[] };
+
+/** The section a heading text and the optional selectors name. Text is matched without its `#`s
+ *  and case-insensitively; a heading inside a code fence is not one. */
+export function locateSection(text: string, section: string, pick: SectionPick = {}): Located {
   const want = section.replace(/^#+\s*/, "").trim().toLowerCase();
   const all = headings(text);
-  const hits = all.filter((h) => h.title.toLowerCase() === want);
-  if (!hits.length) {
-    return `ERROR: no heading "${section}" in this document. Its headings: ` +
-           (all.length ? listed(all) : "none") + ".";
-  }
+  const named = all.filter((h) => h.title.toLowerCase() === want);
+  const levelled = pick.level === undefined ? named : named.filter((h) => h.level === pick.level);
+  const hits = pick.occurrence === undefined
+    ? levelled
+    : levelled.slice(pick.occurrence - 1, pick.occurrence);
+  if (!hits.length || (pick.occurrence !== undefined && pick.occurrence < 1)) return { missing: true, all };
   if (hits.length > 1) {
-    return `ERROR: ${hits.length} headings read "${section}": ${listed(hits)}. Ask for one ` +
-           "by `offset` instead.";
+    return { hits, ambiguous: hits.map((h) => ({
+      title: h.title, level: h.level,
+      occurrence: named.filter((n) => n.level === h.level && n.at <= h.at).length,
+      line: text.slice(0, h.at).split("\n").length,
+    })) };
   }
   const h = hits[0];
   return { lo: h.at, hi: all.find((n) => n.at > h.at && n.level <= h.level)?.at ?? text.length };
 }
 
+/** Where one heading's section is: from the heading line to the next heading of the same or a
+ *  higher level, or the end. The one reading of "a section" — `slicePart` reads by it and
+ *  `replaceSection` writes by it, so what a caller read is exactly what a change replaces.
+ *
+ *  The refusals are the READ path's: a reader pages by `offset`, so an ambiguous heading sends
+ *  it there. `document_edit` words its own from `locateSection`. */
+export function sectionRange(text: string, section: string, pick: SectionPick = {}):
+    { lo: number; hi: number } | string {
+  const found = locateSection(text, section, pick);
+  if ("missing" in found) {
+    return `ERROR: no heading "${section}" in this document. Its headings: ` +
+           (found.all.length ? listed(found.all) : "none") + ".";
+  }
+  if ("ambiguous" in found) {
+    return `ERROR: ${found.hits.length} headings read "${section}": ${listed(found.hits)}. Ask for one ` +
+           "by `offset` instead.";
+  }
+  return found;
+}
+
 /** `body` with one section replaced by `content`, which carries the section's heading line — or a
  *  refusal. Everything outside the section is kept byte for byte, which is the point: a large
- *  approved document is revised by sending the part that changed, not the whole of it (bug
+ *  approved document is changed by sending the part that changed, not the whole of it (bug
  *  87fce795). The replacement is followed by one blank line when anything comes after it. */
-export function replaceSection(body: string, section: string, content: string):
+export function replaceSection(body: string, section: string, content: string, pick: SectionPick = {}):
     { body: string } | { refusal: string } {
-  const range = sectionRange(body, section);
+  const range = sectionRange(body, section, pick);
   if (typeof range === "string") return { refusal: range };
   if (!/^#{1,6}\s/.test(content.trimStart())) {
     return { refusal: "ERROR: with `section`, `content` replaces the heading and everything under " +
@@ -81,6 +124,29 @@ export function replaceSection(body: string, section: string, content: string):
   const tail = body.slice(range.hi);
   return { body: body.slice(0, range.lo) + content.trimStart().replace(/\s*$/, "") +
                  (tail ? "\n\n" : "\n") + tail };
+}
+
+/** What a change did to a body, section by section, for its receipt: every section whose bytes
+ *  differ or that is new, in the order the new body has them, then `(removed: <heading>)` for each
+ *  one that is gone. Text before the first heading is `(preamble)`. A section here runs to the next
+ *  heading of ANY level, so a changed subsection names itself and not its parent too; a repeated
+ *  heading is told apart by its occurrence, `Notes (2)`. */
+export function changedSections(before: string, after: string): string[] {
+  const split = (text: string): Map<string, string> => {
+    const hs = headings(text);
+    const out = new Map<string, string>([["(preamble)", text.slice(0, hs[0]?.at ?? text.length)]]);
+    const seen = new Map<string, number>();
+    hs.forEach((h, i) => {
+      const n = (seen.get(h.title) ?? 0) + 1;
+      seen.set(h.title, n);
+      out.set(n > 1 ? `${h.title} (${n})` : h.title, text.slice(h.at, hs[i + 1]?.at ?? text.length));
+    });
+    return out;
+  };
+  const was = split(before);
+  const now = split(after);
+  return [...[...now].filter(([k, v]) => was.get(k) !== v).map(([k]) => k),
+          ...[...was.keys()].filter((k) => !now.has(k)).map((k) => `(removed: ${k})`)];
 }
 
 /** The part of `text` a caller asked for, or a refusal saying why there is none.
@@ -121,6 +187,11 @@ export function partHeader(rel: string, part: Part, of: string, text: string): s
   const whole = part.start === 0 && part.end === part.total;
   const lines = [`Part of ${rel}: characters ${part.start}–${part.end} of ${part.total} ` +
                  `(${of}; offsets count UTF-16 characters)${whole ? " — the whole of it" : ""}.`];
+  // The token a change sends as `base`, so a reader of one part can change the document without
+  // reading it whole. Read off the envelope the text carries, which states it on the current
+  // snapshot alone: a body with no envelope, or an older version, states none.
+  const current = parseEnvelope(text).content_revision;
+  if (current) lines.push(`content revision: ${current} (the document as it is now)`);
   /* A hosted client keeps the tool list it read when the connector was added: ChatGPT's copy from
    * before 0.79.3 had no `offset`, and a model holding it re-asked for part one until it filed a
    * bug. The fix is on the person's side, so the line says what it is. */

@@ -7,7 +7,7 @@
  * (a sticky bar with the section, the share read and the minutes left; a jump list with each
  * section's length; a rail on a wide panel; each document's place kept), tell the agent what they
  * see (context.ts), turn a selection into a question or a note (review.ts), mark what changed since
- * the revision before so a re-review reads only what moved, and take the approval through the same
+ * the version before so a re-review reads only what moved, and take the approval through the same
  * `document_approve` a model would call. Layout follows the panel's own width, not the window's.
  *
  * One theme and one register, the console's: cream ground, hairlines not shadows, one accent for
@@ -39,13 +39,13 @@ const day = (iso: string | null): string => {
 /** What the header's pill says, and in which of the three reserved tones. */
 function standing(s: Slot): { label: string; tone: "green" | "amber" | "neutral" } {
   const d = s.doc;
-  if (d.version !== d.current) return { label: "Earlier version", tone: "neutral" };
+  if (!d.latest) return { label: "Earlier version", tone: "neutral" };
   if (s.approval === "done" || d.status === "approved") return { label: "Approved", tone: "green" };
   if (d.gate) return { label: "Written", tone: "neutral" };
   return { label: "Awaiting approval", tone: "amber" };
 }
 
-/** What moved since the revision before, in one line of the header's facts. */
+/** What moved since the version before, in one line of the header's facts. */
 function changeFact(s: Slot): string | null {
   if (!s.doc.previous) return null;
   const changed = [...s.marks.values()].filter((m) => m === "changed").length;
@@ -117,8 +117,10 @@ const withoutTitle = (s: Slot): string =>
 function footer(s: Slot): string {
   const d = s.doc;
   const who = d.approvedBy ? ` by ${esc(d.approvedBy)}` : "";
-  if (d.version !== d.current) {
-    return `<footer class="foot"><p class="note">This is version ${d.version}. Only the current version, v${d.current ?? "?"}, can be approved.</p></footer>`;
+  if (!d.latest) {
+    return `<footer class="foot"><p class="note">${d.version === d.current
+      ? `This is an earlier snapshot of v${d.version}. Only its current one can be approved — open the document again.`
+      : `This is version ${d.version}. Only the current version, v${d.current ?? "?"}, can be approved.`}</p></footer>`;
   }
   if (s.approval === "done") {
     return `<footer class="foot foot-done" role="status">
@@ -260,7 +262,7 @@ function goTo(id: string): void {
  *  document with no ticket, or twice. */
 async function recordShown(s: Slot): Promise<void> {
   if (s.shown !== "pending") return;
-  if (!s.doc.ticket || s.doc.version !== s.doc.current) { s.shown = "recorded"; draw(); return; }
+  if (!s.doc.ticket || !s.doc.latest) { s.shown = "recorded"; draw(); return; }
   try {
     const r = answer(await app.callServerTool({ name: "document_shown",
       arguments: { path: s.doc.path, version: s.doc.version, ticket: s.doc.ticket } }));

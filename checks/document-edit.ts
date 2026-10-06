@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * checks/document-edit.ts — the Phase 0 walking skeleton of `document_edit`: one command that
- * runs create → edit → present → approve end to end through the real MCP door.
+ * checks/document-edit.ts — the walking skeleton of `document_edit`: one command that runs
+ * create → edit → present → approve end to end through the real MCP door.
  *
  *   node checks/document-edit.ts   # needs Docker and a built tree (`npm run build`)
  *
@@ -9,9 +9,10 @@
  * the built zz-core on a free port against that database, and, with that principal's identity
  * headers, opens a freeform initiative, writes `notes.md`, applies a two-edit `document_edit`,
  * reads the body back byte-equal, presents it and approves it. Between the edit and the present
- * it asserts the two refusals Phase 0 has (`MULTIPLE_MATCHES` with line numbers, `section` is
- * `NOT_YET`), and after the approval that editing the approved document is `NOT_YET` — each
- * leaving the body unchanged.
+ * it asserts that a repeated `find` is refused with its line numbers (`MULTIPLE_MATCHES`) and
+ * changes nothing, and that a `section` change lands in the same version. After the approval it
+ * asserts that a body change naming no cause is refused (`CAUSE_REQUIRED`) and changes nothing,
+ * and that the same change with its cause as `source_content` opens v2.
  *
  * The only database it touches is the one it started; the zz-core child is killed and the
  * container removed on every exit path.
@@ -185,16 +186,28 @@ async function run(db: pg.Client, url: string): Promise<void> {
     await refused("document_edit repeated find", "document_edit",
       { path, edits: [{ find: "LINE", replace: "x" }] }, /^ERROR: MULTIPLE_MATCHES — edit 0 \(0-based\): `find` occurs 2 times, on lines 3, 5 of the body/);
     await unchanged("document_read (after MULTIPLE_MATCHES)", edited);
-    await refused("document_edit with section", "document_edit",
-      { path, section: "Notes", content: "# Notes\n" }, /^ERROR: NOT_YET.*Phase 1/);
-    await unchanged("document_read (after section)", edited);
+    // A draft's section changes in place: no cause, so the same public version.
+    const bySection = "# Notes\n\nALPHA LINE\n\nBETA LINE, by section\n";
+    const sectioned = await ok("document_edit with section", "document_edit",
+      { path, section: "Notes", content: bySection });
+    if (sectioned.split("\n")[0] !== `edited: ${path} — v1`) {
+      fail("document_edit with section", `expected the first line \`edited: ${path} — v1\`, got: ${sectioned}`);
+    }
+    await unchanged("document_read (after section)", bySection);
 
     await ok("document_present", "document_present", { path });
     await ok("document_approve", "document_approve", { path });
 
-    await refused("document_edit on approved", "document_edit",
-      { path, edits: [{ find: "ALPHA", replace: "alpha" }] }, /^ERROR: NOT_YET.*Phase 1/);
-    await unchanged("document_read (after approved edit)", edited);
+    // An approved body changes only with its cause, and the change opens the next version.
+    const lower = { path, edits: [{ find: "ALPHA", replace: "alpha" }] };
+    await refused("document_edit on approved, no cause", "document_edit", lower, /^ERROR: CAUSE_REQUIRED — /);
+    await unchanged("document_read (after the refused approved edit)", bySection);
+    const caused = await ok("document_edit on approved, with its cause", "document_edit",
+      { ...lower, source_content: "The stakeholder asked for the first line in lower case." });
+    if (caused.split("\n")[0] !== `edited: ${path} — v2 (new version)` || !/^causes: .*\(agent\)/m.test(caused)) {
+      fail("document_edit on approved, with its cause", `expected v2 as a new version with an agent cause, got: ${caused}`);
+    }
+    await unchanged("document_read (after the approved edit)", bySection.replace("ALPHA", "alpha"));
   } finally {
     child.kill("SIGTERM");
     await new Promise<void>((resolve) => {

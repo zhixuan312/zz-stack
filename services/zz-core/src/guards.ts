@@ -104,14 +104,35 @@ async function held(p: pg.Pool, team: string | null, relPath: string):
   };
 }
 /** Closing an initiative (writing `outcome:` into the manifest's closing document) requires
- * every document the manifest marks `requiredForClose`. */
+ * every document the manifest marks `requiredForClose`.
+ *
+ * The act of closing is a write whose STORED current revision carries no `outcome` and whose text
+ * does — that is `initiative_close`, the one caller that writes an outcome for the first time, and
+ * the rest of this function judges it. A write to a document that already carries an outcome is a
+ * correction of a closed record: carrying the stored `outcome` and `closed_by` forward unchanged
+ * it is admitted with no gate or close requirement asked again — the close happened, and a draft
+ * correction awaiting its own approval does not undo it — and changing or dropping either is
+ * refused, because what an initiative closed on is not what a correction may rewrite. */
 async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
                           content: string): Promise<string | null> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   const env = parseEnvelope(content);
-  if (!env.outcome) return null;
   const rows = await documents(p, team, parts[0]);
+  const stored = rows.get(parts[1]) ?? null;
+  if (stored?.outcome) {
+    const kept = (env.outcome ?? "").trim() === stored.outcome.trim()
+      && (env.closed_by ?? "").trim() === (stored.closed_by ?? "").trim();
+    if (kept) return null;
+    return (
+      `ERROR: ${parts[1]} is the document this initiative closed on (outcome: ${stored.outcome}` +
+      `${stored.closed_by ? `, closed by ${stored.closed_by}` : ""}), and this change would ` +
+      `${env.outcome ? "alter" : "drop"} what the close recorded. On a correction of a closed record ` +
+      "the platform keeps the outcome and who closed it as they are — document_edit does that by " +
+      "itself — because what the initiative concluded is not what a correction may change."
+    );
+  }
+  if (!env.outcome) return null;
   // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer — a `when`-conditional
   // closing document (`improvement.md`, promotable only) is `not_applicable` on every other
   // branch, and the branch still has to close somewhere. `closingDocRuledOut` is the same
@@ -284,7 +305,7 @@ async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath
  * `approved` as a working state, and editing that is ordinary work, as is editing a draft. */
 async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
                                      via: string | null): Promise<string | null> {
-  if (via) return null;                       // document_approve(), initiative_close() and document_revise own their writes
+  if (via) return null;                       // the acts that pass `via` own their writes, document_edit among them
   const { doc } = await held(p, team, relPath);
   if (!doc || doc.status !== "approved") return null;
   // A signature in the revision table, not a line in a manifest. Testing the manifest's `gate`
@@ -318,7 +339,7 @@ async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | nu
  * record may be corrected, and a correction says what caused it. */
 async function closedDocumentGuard(p: pg.Pool, team: string | null, relPath: string,
                                    via: string | null): Promise<string | null> {
-  if (via) return null;                       // initiative_close and document_revise own their writes
+  if (via) return null;                       // the acts that pass `via` own their writes, document_edit among them
   const { doc } = await held(p, team, relPath);
   if (!doc?.outcome) return null;
   return (
@@ -410,8 +431,12 @@ async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath:
   const depRow = (await documents(p, team, parts[0])).get(dep) ?? null;
   const exists = depRow !== null;
   const status = depRow?.status ?? null;
+  // A prerequisite carrying the initiative's outcome is the document it closed on, and the close
+  // already settled it: it is required only `recorded`. A correction of it waiting for its own
+  // approval is a draft, and asking `ratified` there would block the handover the close owes.
+  const settledByClose = !!depRow?.outcome;
   const admission = admitEntry(
-    [{ kind: dep, standard: depGate ? "ratified" : "recorded" }],
+    [{ kind: dep, standard: depGate && !settledByClose ? "ratified" : "recorded" }],
     // A document the store holds a revision of is recorded; one carrying a recorded approval is
     // ratified. What is held is stated as it stands and never trimmed to what is demanded — an
     // ungated prerequisite that somehow carries `status: approved` is reported as ratified.

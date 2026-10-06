@@ -164,6 +164,12 @@ export interface StageDoc {
   /** Which documents this one bears on, comma-joined — a source's own declaration. It
    *  evidences a stage that produces evidence rather than a deliverable. */
   supports?: string | null;
+  /** The public version of a pending correction, else null: the initiative is closed, this
+   *  document's current snapshot is unapproved and carries the close's outcome, and an earlier
+   *  snapshot carrying the outcome was approved. A close on an unapproved draft (an abandoned
+   *  close) is not one. COUPLED: computed in SQL by every console/initiatives.ts statement that
+   *  feeds stageOf. */
+  correction?: number | null;
 }
 
 /** How far an initiative got, from the documents that exist and their approvals.
@@ -172,6 +178,8 @@ export interface StageDoc {
 export interface DocRow {
   path: string; type: string; status: string | null; outcome: string | null;
   approved_by: string | null; updated_at: string; bytes: number; title: string | null;
+  /** See StageDoc's. */
+  correction: number | null;
 }
 /** What the flow says about each of its documents: which are gated, which is the closing
  * one, which are required to close.
@@ -254,10 +262,17 @@ export function stageOf(
   /** One of `accepted` | `delivered` | `abandoned`, or null while the initiative is open.
    *  All three mean closed — see @zz/contracts OUTCOMES for what each says. */
   outcome: string | null;
+  /** The closing document's correction awaiting approval, on a closed initiative: which
+   *  document and its public version. The close stands while it waits, so its gate counts as
+   *  held for `complete`, and the gate itself still reads as waiting on a person. */
+  correction: { path: string; version: number } | null;
 } {
   // Every row is a live document. A version is a `doc_revision` row now, so no row is a frozen
   // copy of another carrying the same type, and nothing has to be dropped before counting.
   const live = docs;
+  // At most one document carries the close's outcome, so the first correction found is the one.
+  const pending = lifecycle.closed ? live.find((d) => d.correction != null) : undefined;
+  const correction = pending ? { path: pending.path, version: Number(pending.correction) } : null;
 
   // The flow's own stages and gates, read from its manifest, so a flow that adds a stage is
   // described correctly with no change here.
@@ -286,8 +301,8 @@ export function stageOf(
     // applies (services/zz-core/src/guards.ts): a gate the branch has ruled out is not a gate
     // this initiative owes, and leaving it in would draw it pending forever — nothing writes a
     // document that documentGuards refuses.
-    const gates = declared.filter((d) => d.gate === true && applic.get(d.name) !== "not_applicable")
-      .map((d) => ({ name: `approve ${d.name.replace(/\.md$/, "")}`,
+    const gated = declared.filter((d) => d.gate === true && applic.get(d.name) !== "not_applicable");
+    const gates = gated.map((d) => ({ name: `approve ${d.name.replace(/\.md$/, "")}`,
                      // Carried for the same reason flowShape carries it.
                      role: d.role,
                      passed: byName.get(d.name)?.status === "approved",
@@ -328,7 +343,8 @@ export function stageOf(
     // document required to close present. Independent of `closed`. FR-58: a requiredForClose
     // document the branch ruled out is discharged, the same `documentApplies` reading
     // `initiative_status` and `initiative_close` both give it (services/zz-core/src/guards.ts).
-    const complete = gates.every((g) => g.passed)
+    // A pending correction holds its gate: the close was recorded on its approved snapshot.
+    const complete = gated.every((d) => byName.get(d.name)?.status === "approved" || d.name === correction?.path)
       && declared.filter((d) => d.requiredForClose === true && applic.get(d.name) !== "not_applicable")
            .every((d) => byName.has(d.name));
     // Each stage's state from what the manifest says it leaves behind, in three kinds:
@@ -414,7 +430,7 @@ export function stageOf(
     ];
     return {
       at, of: stages.length, stage: label(String(stages[at - 1] ?? "")), accepted,
-      closed, outcome, complete, steps,
+      closed, outcome, complete, correction, steps,
       // +1 for the `open` bookend: a gate declared after stage 2 sits after the third step.
       gates: gates.map((g) => ({ ...g, after: g.after > 0 ? g.after + 1 : steps.length - 1 })),
     };
@@ -458,9 +474,11 @@ export function stageOf(
   }));
   const currentAt = fallbackSteps.findIndex((st) => st.state !== "done");
   if (!closed && currentAt >= 0) fallbackSteps[currentAt].current = true;
+  // A pending correction holds its gate here too, as in the manifest branch.
+  const held = (d: StageDoc | undefined, signed: boolean) => signed || (!!d && d.path === correction?.path);
   return {
-    at, of: STAGES.length, stage: STAGES[at - 1], accepted, closed, outcome,
-    complete: !!g1 && !!g2 && !!g3 && accepted,
+    at, of: STAGES.length, stage: STAGES[at - 1], accepted, closed, outcome, correction,
+    complete: held(intent, g1) && held(spec, g2) && held(plan, g3) && accepted,
     steps: [
       { name: "open", what: "the initiative exists: its folder was created and it was opened",
         produces: "", state: "done" as const, current: false },

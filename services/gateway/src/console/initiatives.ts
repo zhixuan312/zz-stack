@@ -97,7 +97,9 @@ export function mountInitiatives(app: Express): void {
        COUPLED: a document reaches its team and its initiative through initiative_id — zz.doc
        carries neither slug — its approver through the revision it currently points at, and its
        supports through that revision's envelope payload. None of the four is a column of zz.doc,
-       so a select naming them off it would stop preparing the day the migration lands. */
+       so a select naming them off it would stop preparing the day the migration lands.
+       COUPLED: correction is the same expression in every statement of this file that feeds
+       stageOf, and in the document read below; StageDoc in shared.ts says what it means. */
     // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
     // `zz.initiative_fact` (001) — the console's own copy of `<initiative>/
     // _facts.json`, which it cannot read directly (it has no filesystem access to the store).
@@ -168,6 +170,13 @@ export function mountInitiatives(app: Express): void {
                                and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
+              case when i.closed_at is not null and d.status <> 'approved'
+                         and r.fields->>'outcome' is not null
+                         and exists (select 1 from zz.doc_revision c
+                                      where c.doc_id = d.id and c.revision < r.revision
+                                        and c.approved_by is not null
+                                        and c.fields->>'outcome' is not null)
+                   then d.current_version end as correction,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc d
          join zz.initiative i on i.id = d.initiative_id
@@ -186,6 +195,13 @@ export function mountInitiatives(app: Express): void {
                                and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
+              case when i.closed_at is not null and d.status <> 'approved'
+                         and r.fields->>'outcome' is not null
+                         and exists (select 1 from zz.doc_revision c
+                                      where c.doc_id = d.id and c.revision < r.revision
+                                        and c.approved_by is not null
+                                        and c.fields->>'outcome' is not null)
+                   then d.current_version end as correction,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc d
          join zz.initiative i on i.id = d.initiative_id
@@ -203,6 +219,13 @@ export function mountInitiatives(app: Express): void {
                                and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
+              case when i.closed_at is not null and d.status <> 'approved'
+                         and r.fields->>'outcome' is not null
+                         and exists (select 1 from zz.doc_revision c
+                                      where c.doc_id = d.id and c.revision < r.revision
+                                        and c.approved_by is not null
+                                        and c.fields->>'outcome' is not null)
+                   then d.current_version end as correction,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc d
          join zz.initiative i on i.id = d.initiative_id
@@ -249,17 +272,26 @@ export function mountInitiatives(app: Express): void {
      * a badge that is usually empty. This answers it in a row per open gate.
      *
      * `written`, because a gate nobody has drafted is waiting on the agent and not on a person, and
-     * `!passed`, which is the approval itself. */
+     * `!passed`, which is the approval itself.
+     *
+     * A closed initiative waits on a person in one case: its closing document's correction, a
+     * draft until somebody approves it again — the same `await_approval` initiative_status
+     * routes it to. Its gates are otherwise settled, so that document is the one row it adds. */
     if (req.query.waiting === "1") {
       const waiting = initiatives
-        .filter((i) => !i.closed)
-        .flatMap((i) => i.gates
-          .filter((g) => g.written && !g.passed)
-          .map((g) => ({ id: `${i.team}/${i.slug}/${g.name}`,
-                         // The verb is the platform's ("approve spec"); the reader is shown the noun.
-                         gate: g.name.replace(/^approve /, ""),
-                         team: i.team, slug: i.slug, updated: i.updated,
-                         stage: i.stage, at: i.at, of: i.of })))
+        .flatMap((i) => {
+          const where = { team: i.team, slug: i.slug, updated: i.updated, stage: i.stage, at: i.at, of: i.of };
+          if (i.closed) {
+            return i.correction
+              ? [{ id: `${i.team}/${i.slug}/${i.correction.path}`,
+                   gate: `${i.correction.path.replace(/\.md$/, "")} correction v${i.correction.version}`, ...where }]
+              : [];
+          }
+          return i.gates
+            .filter((g) => g.written && !g.passed)
+            // The verb is the platform's ("approve spec"); the reader is shown the noun.
+            .map((g) => ({ id: `${i.team}/${i.slug}/${g.name}`, gate: g.name.replace(/^approve /, ""), ...where }));
+        })
         .sort((a, b) => b.updated.localeCompare(a.updated));
       res.json({ waiting });
       return;
@@ -311,7 +343,14 @@ export function mountInitiatives(app: Express): void {
                              where l.from_doc_id = d.id and l.from_revision = r.revision
                                and l.kind = 'supports') as supports,
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-                length(coalesce(r.body,'')) as bytes
+                length(coalesce(r.body,'')) as bytes,
+                case when i.closed_at is not null and d.status <> 'approved'
+                           and r.fields->>'outcome' is not null
+                           and exists (select 1 from zz.doc_revision c
+                                        where c.doc_id = d.id and c.revision < r.revision
+                                          and c.approved_by is not null
+                                          and c.fields->>'outcome' is not null)
+                     then d.current_version end as correction
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id
@@ -401,7 +440,8 @@ export function mountInitiatives(app: Express): void {
     // row, not a second `zz.doc` row filed under a snapshot name, so the path asked for IS the
     // document's own.
     const base = path;
-    /* One revision's text, on request: `?revision=<n>`.
+    /* One snapshot's text, on request: `?revision=<n>`, the snapshot id a `versions` entry names.
+     * It answers with the public version that snapshot belongs to beside it.
      *
      * DELIBERATE: the history is listed by its metadata and its bodies are read one at a time.
      * `zz.doc_revision` holds the whole text of every write — 184 MB of it on this deployment,
@@ -415,8 +455,8 @@ export function mountInitiatives(app: Express): void {
     const wantRevision = typeof req.query.revision === "string" && /^\d+$/.test(req.query.revision)
       ? Number(req.query.revision) : null;
     if (wantRevision !== null) {
-      const { rows } = await db.query<{ version: number; body: string | null }>(
-        `select r.revision as version, r.body
+      const { rows } = await db.query<{ version: number; revision: number; body: string | null }>(
+        `select r.version, r.revision, r.body
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id
@@ -427,12 +467,19 @@ export function mountInitiatives(app: Express): void {
         res.status(404).json({ error: `no revision ${wantRevision} of ${team}/${initiative}/${path}` });
         return;
       }
-      res.json({ version: +rows[0].version, body: rows[0].body ?? null });
+      res.json({ version: +rows[0].version, revision: +rows[0].revision, body: rows[0].body ?? null });
       return;
     }
     const [doc, versions, sources] = await Promise.all([
       db.query(
-        `select t.slug as team, i.slug as initiative, d.path, d.current_revision,
+        `select t.slug as team, i.slug as initiative, d.path, d.current_revision, d.current_version,
+                case when i.closed_at is not null and d.status <> 'approved'
+                           and r.fields->>'outcome' is not null
+                           and exists (select 1 from zz.doc_revision c
+                                        where c.doc_id = d.id and c.revision < r.revision
+                                          and c.approved_by is not null
+                                          and c.fields->>'outcome' is not null)
+                     then d.current_version end as correction,
                 coalesce(i.flow,'') as flow,
                 d.type, d.status, r.fields->>'outcome' as outcome,
                 a.email as approved_by, r.approved_at, r.fields->>'closed_by' as closed_by,
@@ -448,8 +495,14 @@ export function mountInitiatives(app: Express): void {
            left join zz.principal a on a.id = r.approved_by
           where t.slug = $1 and i.slug = $2 and d.path = $3`,
         [team, initiative, path]),
-      // Every version of this document, oldest first — the revision rows themselves, which ARE
-      // the history now that a version is a row rather than a frozen copy beside the document.
+      // One entry per public version of this document, oldest first. A version can hold several
+      // snapshots (a presented or approved row that changed with no new cause files another row in
+      // the same version), and its entry is the one it is read as: its last approved snapshot when
+      // it has one, else its last. `version` is the public number; `revision` is the snapshot a
+      // reader fetches through `?revision=`.
+      //
+      // COUPLED: the subquery's order is `snapshotOf`'s rule in services/zz-core/src/versions.ts,
+      // so the console and `document_read(version: N)` show the same bytes for vN.
       //
       // DELIBERATE: no body and no `length(body)`. Both detoast every revision the document has
       // ever had, and the browser needs neither to draw the history — it asks for the two texts
@@ -462,9 +515,10 @@ export function mountInitiatives(app: Express): void {
       // needs a fingerprint of the body. md5 is the one that costs: it detoasts, so it is
       // proportional to a document's whole revision history (620 ms on the largest here, 94 MB
       // of it, and under a millisecond on the other 2,050 documents). Paid, because the
-      // alternative is sending that 94 MB to the browser to compare it there.
+      // alternative is sending that 94 MB to the browser to compare it there. The snapshot is
+      // picked before the hash is taken, so only one body per version is read.
       db.query(
-        `select d.path, r.revision as version,
+        `select d.path, r.version, r.revision,
                 md5(coalesce(r.body, '')) as hash,
                 case when r.approved_by is not null then 'approved'
                      when r.revision = d.current_revision then d.status
@@ -478,7 +532,11 @@ export function mountInitiatives(app: Express): void {
            join zz.doc_revision r on r.doc_id = d.id
            left join zz.principal a on a.id = r.approved_by
           where t.slug = $1 and i.slug = $2 and d.path = $3
-          order by r.revision`, [team, initiative, path]),
+            and r.revision in (select distinct on (x.version) x.revision
+                                 from zz.doc_revision x
+                                where x.doc_id = d.id
+                                order by x.version, (x.approved_by is not null) desc, x.revision desc)
+          order by r.version`, [team, initiative, path]),
       // Why it changed. A source declares the documents it bears on — the chain from "what we
       // learned" to "what we changed" — and that declaration is a `doc_link` row of kind
       // `supports`, pinned to the revision that wrote it at one end and to the target document's
@@ -541,7 +599,7 @@ export function mountInitiatives(app: Express): void {
         withQualifier: decisions.filter((d) => d.qualifier).length,
         withChecker: decisions.filter((d) => d.checker).length,
       },
-      versions: versions.rows.map((v) => ({ ...v, bytes: +v.bytes, version: +v.version })),
+      versions: versions.rows.map((v) => ({ ...v, version: +v.version, revision: +v.revision })),
       sources: sources.rows.map((x) => ({ ...x, bytes: +x.bytes })),
     });
   }));

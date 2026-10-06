@@ -14,7 +14,12 @@
  *      ambiguous heading and a replacement that does not start with a heading, and a heading inside
  *      a code fence is not one; the real `document_revise` schema takes `section`;
  *   4. the real `document_read` and `document_present` schemas accept `section`, `offset` and
- *      `limit`.
+ *      `limit`;
+ *   6. a heading's level and then its occurrence pick one of several same-named headings — the
+ *      selectors `document_edit` takes — while the read path's ambiguity still sends a reader to
+ *      `offset`; the edit path's candidates carry the level and occurrence that pick each one; the
+ *      real `document_edit` schema takes all three; and a part of the current document states its
+ *      content revision.
  *
  * COUPLED: the fact behind "counts as presented" is `doc_revision.presented_at`, and the part
  * spans are `zz.event` rows — a column cannot hold a span set — so the fixture is a stubbed
@@ -111,7 +116,8 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
 }) as unknown as typeof pg.Pool.prototype.query;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
-const { PART_LIMIT, replaceSection, sectionRange, slicePart } = await load("services/zz-core/dist/document-parts.js");
+const { PART_LIMIT, locateSection, partHeader, replaceSection, sectionRange, slicePart } =
+  await load("services/zz-core/dist/document-parts.js");
 const { present } = await load("services/zz-core/dist/document-present.js");
 const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
@@ -270,6 +276,44 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   const revise = readFileSync(join(process.cwd(), "services/zz-core/dist/tools/initiative-acts.js"), "utf8");
   is(/replaceSection\(documentBody\(loaded\.text\), section, content\)/.test(revise),
      "document_revise does not splice `content` into the current body when `section` is given");
+}
+
+// 6. Selectors
+{
+  const three = "# A\n\nx\n\n## A\n\ny\n\n## A\n\nz\n";
+  const top = sectionRange(three, "A", { level: 1 });
+  is(typeof top !== "string" && top.lo === 0 && top.hi === three.length,
+     `level 1 did not pick the H1, whose section is the whole text: ${JSON.stringify(top)}`);
+  const second = sectionRange(three, "A", { level: 2, occurrence: 2 });
+  is(typeof second !== "string" && three.slice(second.lo, second.hi) === "## A\n\nz\n",
+     `level 2, occurrence 2 did not pick the last heading: ${JSON.stringify(second)}`);
+  const readAmbiguous = sectionRange(three, "A", { level: 2 });
+  is(typeof readAmbiguous === "string" && readAmbiguous.includes("2 headings") && readAmbiguous.includes("offset"),
+     `the read path's ambiguity text changed: ${JSON.stringify(readAmbiguous)}`);
+  is(typeof sectionRange(three, "A", { level: 2, occurrence: 3 }) === "string",
+     "an occurrence past the last matching heading was answered");
+  const editAmbiguous = locateSection(three, "A");
+  is("ambiguous" in editAmbiguous
+     && JSON.stringify(editAmbiguous.ambiguous.map((c: { level: number; occurrence: number }) => [c.level, c.occurrence]))
+        === "[[1,1],[2,1],[2,2]]",
+     `the edit path's candidates do not carry the level and occurrence that pick each: ${JSON.stringify(editAmbiguous)}`);
+  const swapped = replaceSection(three, "A", "## A\n\nZ", { level: 2, occurrence: 2 });
+  is("body" in swapped && swapped.body === "# A\n\nx\n\n## A\n\ny\n\n## A\n\nZ\n",
+     `replacing level 2, occurrence 2 touched more than that section: ${JSON.stringify(swapped)}`);
+
+  interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
+  const tools = new Map<string, { inputSchema?: Record<string, ZodLike> }>();
+  const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
+  registerArtifactTools({ registerTool: (name: string, def: { inputSchema?: Record<string, ZodLike> }) => tools.set(name, def) });
+  const edit = tools.get("document_edit")?.inputSchema ?? {};
+  is(edit.section?.safeParse("Phase 5").success && edit.section_level?.safeParse(2).success
+     && edit.section_occurrence?.safeParse(1).success,
+     "document_edit does not take `section`, `section_level` and `section_occurrence`");
+
+  const current = `---\ntitle: Review\ncontent_revision: cr_abc\n---\n\n${body}`;
+  const part = slicePart(current, { offset: 0 });
+  is(typeof part !== "string" && partHeader(REL, part, "the whole file", current).includes("content revision: cr_abc"),
+     "a part of the current document does not state its content revision");
 }
 
 if (fail.length) {

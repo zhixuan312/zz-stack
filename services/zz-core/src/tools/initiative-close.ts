@@ -32,6 +32,33 @@ import { packagedModules } from "../reviewed-modules.js";
  *  rather than about the name, and a reader goes looking in the wrong file. */
 const CLOSE_ACTION = "close:initiative";
 
+/**
+ * The document a close is recorded on, or "" when there is none to record it on.
+ *
+ * The flow's declared closing document, unless the branch ruled it out or the work stopped before
+ * it was written; then the document the caller names, or the furthest declared one that exists. A
+ * freeform initiative closes on the document the caller names.
+ *
+ * An abandon of an initiative that holds no document is "" whatever `named` says, so it lands on
+ * the anchor row: a close cannot be recorded on a document nobody wrote, and naming the one the
+ * flow starts with was refused with "write it first" — which left an initiative opened under the
+ * wrong slug open for good (bug 8fcf5d90).
+ */
+export function closeLandsOn(o: {
+  initiative: string; stopped: boolean; held: readonly string[]; closingDoc: string | null | undefined;
+  documents: readonly { name: string }[]; ruledOut: boolean; named: string;
+}): string {
+  if (o.stopped && !o.held.some((f) => f.endsWith(".md"))) return "";
+  const held = new Set(o.held);
+  const named = o.named.trim();
+  if (!o.closingDoc) return named;
+  const missing = o.stopped && !held.has(`${o.initiative}/${o.closingDoc}`);
+  if (!o.ruledOut && !missing) return o.closingDoc;
+  const furthest = [...o.documents].reverse()
+    .find((d) => d.name !== "handover.md" && held.has(`${o.initiative}/${d.name}`))?.name;
+  return named || furthest || "";
+}
+
 export function registerInitiativeCloseTool(server: McpServer): void {
   server.registerTool(
     "initiative_close",
@@ -62,7 +89,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           "Which document records the close. REQUIRED for a freeform initiative, where no " +
           "flow declares a closing document. Ignored where one does — except on an " +
           "`abandoned` close whose closing document was never written, which records on the " +
-          "furthest document the work reached, or on this one when you name it."),
+          "furthest document the work reached, or on this one when you name it. An abandon " +
+          "of an initiative that holds no document needs none: it is recorded on the " +
+          "initiative itself."),
         no_signoff_reason: z.string().optional().describe(
           "For a finished close that NOBODY accepted — one line on why. The outcome is then " +
           "`delivered`. Leave it out unless that is true; closing is otherwise an acceptance."),
@@ -176,16 +205,8 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // `closeCheck` asks too, so the two never disagree about which document a close lands on.
       const declaredDoc = chain.documents.find((d) => d.name === chain.closingDoc);
       const ruledOut = closingDocRuledOut(declaredDoc, await factsFor(p, team, initiative));
-      const held = new Set(dirOf);
-      const missing = stopped && !!chain.closingDoc && !held.has(`${initiative}/${chain.closingDoc}`);
-      const furthest = (ruledOut || missing)
-        ? [...chain.documents].reverse()
-          .find((d) => d.name !== "handover.md" && held.has(`${initiative}/${d.name}`))?.name
-        : undefined;
-      const named = (document ?? "").trim();
-      const closingDoc = chain.closingDoc
-        ? ((ruledOut || missing) ? named || furthest || "" : chain.closingDoc)
-        : named;
+      const closingDoc = closeLandsOn({ initiative, stopped, held: dirOf, closingDoc: chain.closingDoc,
+                                        documents: chain.documents, ruledOut, named: document ?? "" });
       if (!closingDoc) {
         if (stopped) {
           // An empty initiative is abandoned on its own anchor row, not on a document nobody

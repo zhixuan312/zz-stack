@@ -17,11 +17,9 @@
  *      draft and admitted once approved.
  *   4. sdlc-flow abandoned mid-draft: a stop on spec.md (gated, draft, no review.md) is
  *      admitted, and so is one on plan.md in draft; a FINISHED close there is not a close at all.
- *   5. a damaged `_facts.json` — the branch a close is judged on — is refused by name for that
- *      initiative, and the no-argument listing reports it as damaged and still lists the rest.
- *   6. over that same damage an ABANDON still lands — the one way out of an initiative whose
- *      branch cannot be read — while a finished close is refused with a refusal that names the
- *      abandon and the operator repair.
+ *   5. where a close lands (`closeLandsOn`): the declared closing document, the furthest one
+ *      written, the one named — and an abandon of an initiative holding no document lands on its
+ *      anchor row even when a document is named.
  *
  * Run: node checks/close-fallback-gates.ts   (also run by scripts/gate.ts)
  */
@@ -183,7 +181,24 @@ async function open(flow: string, facts: Record<string, string> | null) {
   is(plan === null, `sdlc: abandoning on a draft plan.md was refused: ${JSON.stringify(plan)}`);
 }
 
-// DELIBERATE: the file version's cases 5 and 6 — a DAMAGED `_facts.json` refusing its own
+// 5. where the close lands, as `closeLandsOn` answers it — and an abandon of an initiative holding
+//    no document lands on its anchor row even when the caller names a document (bug 8fcf5d90)
+{
+  const { closeLandsOn } = await load("services/zz-core/dist/tools/initiative-close.js");
+  const docs = [{ name: "explore.md" }, { name: "spec.md" }, { name: "plan.md" }, { name: "review.md" }];
+  const at = (o: Record<string, unknown>) => closeLandsOn({ initiative: "i", stopped: true, held: [],
+    closingDoc: "review.md", documents: docs, ruledOut: false, named: "", ...o });
+  is(at({ named: "explore.md" }) === "", `an abandon of an empty initiative naming explore.md landed on "${at({ named: "explore.md" })}"`);
+  is(at({}) === "", "an abandon of an empty initiative did not land on its anchor row");
+  is(at({ held: ["i/explore.md", "i/spec.md"] }) === "spec.md", "an abandon did not land on the furthest document written");
+  is(at({ held: ["i/explore.md", "i/spec.md"], named: "explore.md" }) === "explore.md", "an abandon ignored the document named");
+  is(at({ stopped: false, held: ["i/review.md"], named: "explore.md" }) === "review.md",
+     "a finished close did not land on the flow's declared closing document");
+  is(at({ stopped: false, closingDoc: null, held: ["i/notes.md"], named: "notes.md" }) === "notes.md",
+     "a freeform close did not land on the document named");
+}
+
+// DELIBERATE: the file version's damaged-facts cases — a DAMAGED `_facts.json` refusing its own
 // initiative, and an abandon still landing over it — have nothing left to assert. A row is written
 // whole by the database or not at all, so the truncated or non-object file they guarded cannot
 // arise; the refusals they proved named a state the store can no longer be in. `factsFor`

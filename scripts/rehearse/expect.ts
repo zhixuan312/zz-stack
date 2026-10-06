@@ -168,10 +168,53 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  * declares one here rather than leaving a path nothing can reach.
  */
 export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
-  // Empty, and that is the steady state rather than a gap: every migration this tree ships is
-  // folded into `001_init.sql`, so none of them is pending and there is no before->after pair to
-  // declare. A release that adds one adds its entry here with it — the tables it reshapes, the
-  // joins that say the change was exactly the rows it named — and that entry leaves with the file
-  // when it folds. `foldedTableExpectation` and `declaredTableNames` above read whatever is
-  // declared; nothing is declared today.
+  // The document-versions release. It reshapes three tables by adding columns and deletes no row,
+  // so each keeps its count and hashes unchanged over the columns it had before — the added ones
+  // (`version`, `current_version`, `content_generation`, `linked_by`) are this file's own and are
+  // left out of the digest. The two tables it creates are declared added. This entry leaves with
+  // the file when it folds into `001_init.sql`.
+  "002_document_versions.sql": {
+    tables: {
+      doc: {
+        hashColumns: ["path", "type", "status", "updated_at", "body_tsv", "body", "title", "tags",
+                      "content_hash", "created_at", "id", "initiative_id", "analyzer_version",
+                      "current_revision", "approved_revision"],
+      },
+      doc_revision: {
+        hashColumns: ["doc_id", "revision", "content_state", "title", "body", "tags", "content_hash",
+                      "written_by", "written_at", "revision_note", "approved_by", "approved_at",
+                      "fields", "presented_at"],
+      },
+      doc_link: {
+        hashColumns: ["from_doc_id", "from_revision", "to_doc_id", "to_revision", "kind"],
+      },
+      doc_request: { added: true },
+      cause_link_epoch: { added: true },
+    },
+    joins: [
+      // The backfill copies a value every row already has under a new name: until this file every
+      // revision was a public version, so the two numbers are equal on every existing row.
+      {
+        name: "every existing doc_revision's version is its revision",
+        violatingCount: `select count(*)::int as n from zz.doc_revision r
+          where r.version is distinct from r.revision`,
+      },
+      {
+        name: "every doc's current_version is its current_revision",
+        violatingCount: `select count(*)::int as n from zz.doc d
+          where d.current_version is distinct from d.current_revision`,
+      },
+      // A link filed before this file has no origin recorded; one with an origin is a cause, and no
+      // cause existed before the release that records them.
+      {
+        name: "no existing doc_link carries an origin",
+        violatingCount: `select count(*)::int as n from zz.doc_link l where l.linked_by is not null`,
+      },
+      // The epoch is the instant this file ran, written once by it.
+      {
+        name: "cause_link_epoch holds exactly one row",
+        violatingCount: `select abs(count(*) - 1)::int as n from zz.cause_link_epoch`,
+      },
+    ],
+  },
 };

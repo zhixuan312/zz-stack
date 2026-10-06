@@ -55,6 +55,16 @@ export const ALWAYS_JOINS: readonly JoinExpectation[] = [
            (d.approved_revision is not null and d.approved_revision = d.current_revision)`,
   },
   {
+    // `zz.doc.current_version` is a projection of the current snapshot's `version`, declared with
+    // `rebuilt_from=doc_revision[current_revision].version`; this is what checks the claim. The
+    // table's own CHECK holds only that the two are null together.
+    name: "doc.current_version is the version of the row current_revision names",
+    violatingCount: `select count(*)::int as n
+      from zz.doc d join zz.doc_revision r
+        on r.doc_id = d.id and r.revision = d.current_revision
+     where d.current_version is distinct from r.version`,
+  },
+  {
     // A source's `supports` is a relation to a DOCUMENT's identity, which is what makes it survive
     // a revision of the target. A row naming a revision is the `cites` grain wearing the other
     // kind's name, and every reader of `supports` compares against a document path.

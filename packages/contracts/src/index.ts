@@ -210,6 +210,10 @@ export const Envelope = z.object({
   type: z.string().min(1),
   status: z.enum(STATUSES),
   version: z.string().optional(),
+  /** The current content's opaque token (`cr_` + 26 base32 characters), rendered on a read from
+   *  the document's content generation and never stored. A caller hands it back as `base` to say
+   *  which content its change was computed from. Declared so RESERVED_ENVELOPE defends the name. */
+  content_revision: z.string().optional(),
   updated_at: z.string().optional(),
   approved_by: z.string().optional(),
   approved_at: z.string().optional(),

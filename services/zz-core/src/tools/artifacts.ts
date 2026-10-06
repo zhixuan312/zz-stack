@@ -37,8 +37,8 @@ import { registerDocumentEditTool } from "./document-edit.js";
 import { registerSourceListTool } from "./source-list.js";
 import { registerSourceUploadTool } from "./source-upload.js";
 import { db, teamFor } from "../platform-db.js";
-import { dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf,
-         saveDocument } from "../versions.js";
+import { dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf } from "../versions.js";
+import { saveDocument } from "../document-save.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, panelDocument, PRESENT_META } from "../document-panel.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";

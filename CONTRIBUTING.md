@@ -42,20 +42,21 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the four that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the five that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the four checks that migrate a real PostgreSQL** — the schema inventory, the
+**Docker is needed by the five checks that migrate a real PostgreSQL** — the schema inventory, the
 rehearsal, the evaluation readers, which EXPLAINs every evaluation statement against a database
-migrated from `001_init.sql`, and the document walking skeleton (`checks/document-edit.ts`), which
+migrated from `001_init.sql`, the document write path (`checks/document-store.ts`), which drives
+`saveDocument` against one, and the document walking skeleton (`checks/document-edit.ts`), which
 runs a real zz-core against one. Each exits 2 when Docker is absent rather than passing, because a
 throwaway database that could not be started is not a check that agreed. Everything else in the
 gate, and the whole of `tsc`, runs without it, and `.github/workflows/gate.yml` runs the entire gate
 on every push to master, building the pinned PostgreSQL image on the runner. So a machine that never
-runs those four commands never needs Docker.
+runs those five commands never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

@@ -64,11 +64,11 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
     if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "spec.md") return one([]);
     return one([{ id: "d1", initiative: INIT, path: "spec.md", flow: "", type: "", status: "draft",
                   outcome: null, current_revision: 1, approved_revision: null,
-                  updated_at: doc.written_at }]);
+                  current_version: 1, content_generation: "0", updated_at: doc.written_at }]);
   }
   // the history of that document
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    return one([{ revision: 1, content_state: "retained", title: "Spec", body: doc.body, tags: [],
+    return one([{ revision: 1, version: 1, content_state: "retained", title: "Spec", body: doc.body, tags: [],
                   content_hash: "h", revision_note: null, fields: null,
                   written_by: "u@zz.test", written_at: doc.written_at,
                   approved_by: null, approved_at: null }]);

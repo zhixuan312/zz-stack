@@ -53,6 +53,32 @@ for (const c of ["from_doc_id", "from_revision", "to_doc_id", "to_revision", "ki
 }
 assert.ok((t("doc_link").checks ?? []).some((c) => /kind/.test(c)), "doc_link.kind is constrained");
 
+// Public versions: the snapshot id stays `revision`, and the version a reader is shown is its own
+// column, so several snapshots can share one version.
+assert.deepEqual(col("doc_revision", "version")?.slice(1, 3), ["integer", false],
+  "doc_revision.version is a NOT NULL integer — every snapshot belongs to a public version");
+assert.ok((t("doc_revision").checks ?? []).some((c) => /version >= 1/.test(c)), "and versions start at 1");
+assert.ok((t("doc_revision").indexes ?? []).some((i) => /\(doc_id, version\)/.test(i)),
+  "a version read is served by an index on (doc_id, version)");
+assert.deepEqual(col("doc", "current_version")?.slice(1, 3), ["integer", true], "doc.current_version is nullable");
+assert.ok((t("doc").checks ?? []).some((c) => /\(current_version IS NULL\) = \(current_revision IS NULL\)/.test(c)),
+  "and null exactly when current_revision is");
+assert.deepEqual(col("doc", "content_generation"), ["content_generation", "bigint", false, "0"],
+  "doc.content_generation is a NOT NULL bigint counter starting at 0");
+// Causes are citations with an origin; a support never carries one.
+assert.deepEqual(col("doc_link", "linked_by")?.slice(1, 3), ["text", true], "doc_link.linked_by is nullable text");
+assert.ok((t("doc_link").checks ?? []).some((c) => /'agent'::text, 'platform'::text/.test(c)),
+  "linked_by is agent or platform");
+assert.ok((t("doc_link").checks ?? []).some((c) => /linked_by IS NULL\) OR \(kind = 'cites'/.test(c)),
+  "and only a citation carries one");
+// The request record is keyed by path, so a create's replay is found before the document exists.
+assert.deepEqual(t("doc_request").primaryKey, ["team_id", "principal_id", "canonical_path", "request_id"],
+  "doc_request is keyed by (team, principal, path, request_id)");
+assert.equal((t("doc_request").foreignKeys ?? []).find((f) => f.columns.join() === "doc_id")?.onDelete, "CASCADE",
+  "and goes with the document it names");
+assert.ok((t("cause_link_epoch").indexes ?? []).some((i) => /UNIQUE INDEX .*\(\(true\)\)/.test(i)),
+  "cause_link_epoch holds at most one row, by a unique index on a constant");
+
 assert.equal((SCHEMA_TARGET as { phase: number }).phase, 6,
   "the target says which phase it describes, and the rehearsal prints it");
 

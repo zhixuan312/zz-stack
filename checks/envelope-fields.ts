@@ -28,10 +28,13 @@ assert.ok(/^\s*fields\s+jsonb,\s*$/m.test(rev), "zz.doc_revision declares fields
 assert.ok(/-- absorbs: 004_envelope_fields\.sql/.test(one),
   "and the folded file names the envelope-fields migration it absorbed");
 
-// 3. the writer computes the residual against the columns, and the reader prefers them.
+// 3. the writer computes the residual against the columns, and the reader prefers them. Two
+// files since the write path left the readers: `document-save.ts` writes, `versions.ts` reads.
+const w = readFileSync("services/zz-core/src/document-save.ts", "utf8");
+assert.ok(/parseEnvelope\(/.test(w), "the writer reads the envelope it is storing");
+assert.ok(/fields/.test(w) && /ENVELOPE_COLUMN_KEYS/.test(w), "and computes the payload against the columns' keys");
 const v = readFileSync("services/zz-core/src/versions.ts", "utf8");
-assert.ok(/parseEnvelope/.test(v), "the writer reads the envelope it is storing");
-assert.ok(/fields/.test(v), "and names the payload");
+assert.ok(/ENVELOPE_COLUMN_KEYS/.test(v) && /fields/.test(v), "the reader filters the payload through the same keys");
 // The columns-win rule, stated where a reader can see it.
 assert.ok(/(columns?\s+win|column\s+wins|over\s+it|columns?\s+over)/i.test(v),
   "and the module states that the columns win over the payload on read");

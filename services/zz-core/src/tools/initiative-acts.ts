@@ -35,7 +35,8 @@ import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
 import { specApprovalRefusal } from "../spec-gate.js";
 import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct,
-         principalId, revisionsOf, saveDocument, supportsOf } from "../versions.js";
+         principalId, revisionsOf, supportsOf } from "../versions.js";
+import { saveDocument } from "../document-save.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";

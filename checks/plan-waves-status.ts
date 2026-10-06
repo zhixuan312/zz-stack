@@ -58,7 +58,7 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   }
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
     const d = [...world.values()].flatMap((x) => x.docs).find((x) => x.id === String(values[0]));
-    return one(d ? [{ revision: 1, content_state: "retained", title: d.title, body: d.body,
+    return one(d ? [{ revision: 1, version: 1, content_state: "retained", title: d.title, body: d.body,
                       tags: [], content_hash: "h", fields: d.fields, revision_note: null,
                       written_by: "ada@zz.test", written_at: d.updated_at,
                       approved_by: d.approved_by, approved_at: d.approved_at }] : []);
@@ -100,7 +100,7 @@ const row = (initiative: string, path: string, o: Record<string, unknown>) => ({
   id: `d${++seq}`, path, initiative, flow: "", type: "", status: "", outcome: null,
   approved_by: null, approved_at: null, closed_by: null, updated_at: "2026-09-26T00:00:00.000Z",
   title: "", body: "", tags: [], current_revision: 1, approved_revision: null, fields: null,
-  supports: [], ...o });
+  current_version: 1, content_generation: "0", supports: [], ...o });
 
 /** A recorded audit round: a source naming its stage and supporting the document it audited, which
  *  is all `auditMove` needs to stop owing that stage. */

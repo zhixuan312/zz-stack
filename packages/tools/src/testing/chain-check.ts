@@ -201,7 +201,7 @@ async function main(): Promise<number> {
   // `status` field is refused by ownershipCheck, one layer before the attribution guard.
   check("a draft needs no approver", await writeDoc(`${INIT}/${OPENS_ON}`, "intent"), false);
 
-  // `saveDocument` (services/zz-core/src/versions.ts) stamps `zz.doc.initiative_id` in the same
+  // `saveDocument` (services/zz-core/src/document-save.ts) stamps `zz.doc.initiative_id` in the same
   // insert that writes the document's row — no reindex or reconciler needed to catch up. `doc_index`, reported by `initiative_status` for a named initiative, is the one MCP
   // surface for that column (`zz.doc.initiative_id` itself has none): `tagged === total`
   // immediately after this first write is the observable proof.

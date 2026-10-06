@@ -15,6 +15,7 @@ const OWNED = [
   "services/zz-core/src/review-acceptance.ts",
   "services/zz-core/src/document-parts.ts",
   "services/zz-core/src/versions.ts",
+  "services/zz-core/src/document-save.ts",
 ];
 
 // A check fails on the tree; it does not crash on a path that is not there yet.

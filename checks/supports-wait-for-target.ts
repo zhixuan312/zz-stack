@@ -48,7 +48,7 @@ pg.Pool.prototype.connect = (async function connect() {
 const { sourceDocument } = await import(
   pathToFileURL(join(process.cwd(), "services/zz-core/dist/indexing.js")).href);
 const { saveDocument } = await import(
-  pathToFileURL(join(process.cwd(), "services/zz-core/dist/versions.js")).href);
+  pathToFileURL(join(process.cwd(), "services/zz-core/dist/document-save.js")).href);
 
 // 1. The declaration survives into the envelope.
 const source = sourceDocument({ title: "Review round 1", by: "ada@zz.test", day: "2026-09-30",

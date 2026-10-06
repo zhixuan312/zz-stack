@@ -154,7 +154,7 @@ pg.Pool.prototype.query = (async function query(sql0: string, values: unknown[] 
   const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
   if (/CASE WHEN t\.status = 'active' THEN t\.slug END AS slug/.test(sql)) return one([{ slug: TEAM, role: "admin", active_slug: TEAM }]);
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    const rev = (n: number) => ({ revision: n, content_state: "retained", title: "Spec", body, tags: [],
+    const rev = (n: number) => ({ revision: n, version: n, content_state: "retained", title: "Spec", body, tags: [],
       content_hash: `h${n}`, revision_note: null, fields: null, written_by: "u@zz.test", written_at: doc.written_at,
       approved_by: null, approved_at: null });
     return one([rev(1), rev(2)]);
@@ -167,7 +167,8 @@ pg.Pool.prototype.query = (async function query(sql0: string, values: unknown[] 
   if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
     if (values[1] !== INIT || values[2] !== "spec.md") return one([]);
     return one([{ id: "d1", initiative: INIT, path: "spec.md", flow: "", type: "", status: "draft", outcome: null,
-                  current_revision: doc.current, approved_revision: null, updated_at: doc.written_at }]);
+                  current_revision: doc.current, approved_revision: null, current_version: doc.current,
+                  content_generation: "0", updated_at: doc.written_at }]);
   }
   if (/insert into zz\.event\b/.test(sql)) {
     events.push({ kind: String(values[3] ?? ""), detail: JSON.parse(String(values[5] ?? "{}")) });

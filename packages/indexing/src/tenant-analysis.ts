@@ -343,7 +343,7 @@ function fieldTerms(text: string, weight: RowVectorWeight): RowVectorTerm[] {
  *  DELIBERATE: the kernel gate is enforced HERE, and this is the only place that needs it.
  *  `assertWithinInputLimit` was called from the tenant-info harness alone before the file store
  *  was retired, so the bound stayed on the books with nothing enforcing it: every analyzed byte in
- *  the platform goes through this function — a document write (`versions.ts`'s `saveDocument`), a
+ *  the platform goes through this function — a document write (`document-save.ts`'s `saveDocument`), a
  *  journal node (`indexNode`), a team reindex and the rederivation pass — so one call is the whole
  *  write path. It is the ONLY bound on a stored body: both writers used to cut the body at
  *  200,000 characters without saying so — a search-index cap from the file store that became the

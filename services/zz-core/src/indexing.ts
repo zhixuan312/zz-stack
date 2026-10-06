@@ -2,7 +2,7 @@
  * What zz-core records beside a document, and the seam a guard reads one through.
  *
  * COUPLED: the row a document IS — `zz.doc` + `zz.doc_revision` — is written by `saveDocument`
- * in `versions.ts`, the ONE insert path into that shape. Nothing here writes a second one: two
+ * in `document-save.ts`, the ONE insert path into that shape. Nothing here writes a second one: two
  * writers for one row shape drift, and this platform's two already had (the path column, the
  * revision numbering, what a revision's `body` holds).
  *

@@ -52,14 +52,14 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/data-telemetry.ts",
     target: "a tool that changes something records that it did",
-    subject: "services/zz-core/src/versions.ts",
+    subject: "services/zz-core/src/document-save.ts",
     // The recorder every document write goes through. Removing a tool's own `recordAct` was the
     // plant until the first full run: it survived, correctly, because `saveDocument` had recorded
-    // the write anyway. `void recordAct;` keeps the identifier and drops the call — the check
-    // matches a call, not a name.
-    find: "    recordAct(w.relPath,\n" +
-      '      { user: w.by, action: w.act ?? (w.mode === "append" ? "revise" : "write"), path: w.relPath });',
-    replace: "    void recordAct;",
+    // the write anyway. `void recordAct; void acts;` keeps the identifiers and drops the call — the
+    // check matches a call, not a name — and drops the one loop that records the document and its
+    // captured source alike, so the captured source's record cannot keep the check green.
+    find: "    for (const a of acts) recordAct(a.path, { user: w.by, action: a.action, path: a.path });",
+    replace: "    void recordAct; void acts;",
     planted: "the write every document tool goes through stops recording that it did, so no " +
       "document change can be recovered except by reading the state it made",
   },

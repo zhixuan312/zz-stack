@@ -47,7 +47,7 @@ pg.Pool.prototype.connect = (async function connect() {
 }) as unknown as typeof pg.Pool.prototype.connect;
 
 const { saveDocument } = await import(
-  pathToFileURL(join(process.cwd(), "services/zz-core/dist/versions.js")).href);
+  pathToFileURL(join(process.cwd(), "services/zz-core/dist/document-save.js")).href);
 const { MAX_INPUT_BYTES } = await import(
   pathToFileURL(join(process.cwd(), "packages/indexing/dist/index.js")).href);
 

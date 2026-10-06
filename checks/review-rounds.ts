@@ -78,7 +78,7 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
     const id = String(values[0]);
     const d = [...world.values()].flatMap((w) => w.docs).find((x) => x.id === id);
-    return one(d ? [{ revision: d.current_revision, content_state: "retained", title: d.title,
+    return one(d ? [{ revision: d.current_revision, version: d.current_revision, content_state: "retained", title: d.title,
                       body: d.body, tags: d.tags, content_hash: "h", fields: d.fields,
                       revision_note: null, written_by: "ada@zz.test", written_at: d.updated_at,
                       approved_by: d.approved_by, approved_at: d.approved_at }] : []);
@@ -159,6 +159,7 @@ const env = (initiative: string, path: string, cols: Record<string, string>, bod
   status: cols.status ?? "", outcome: cols.outcome ?? null, approved_by: cols.approved_by ?? null,
   approved_at: cols.approved_at ?? null, closed_by: null, updated_at: "2026-09-26T00:00:00.000Z",
   title: cols.title ?? "", body, tags: [], current_revision: Number(cols.version) || 1,
+  current_version: Number(cols.version) || 1, content_generation: "0",
   approved_revision: null, fields: payload, supports,
 });
 

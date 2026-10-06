@@ -1,0 +1,381 @@
+#!/usr/bin/env node
+/**
+ * checks/document-store.ts — the document write path and version reads, on a real database.
+ *
+ *   node checks/document-store.ts   # needs Docker and a built tree (`npm run build`)
+ *
+ * It starts a throwaway PostgreSQL (`withThrowawayDb`), seeds one principal in one team with one
+ * freeform initiative, and drives the built `saveDocument` (`services/zz-core/dist/document-save.js`)
+ * and `loadDocument` (`dist/versions.js`) against it with `TEAM_DB_URL` pointed at the container.
+ * What it establishes:
+ *
+ *   - the pin rule's three branches: a presented row, a row a `document.shown` event covers and an
+ *     approved row each get a new row in the same public version, carrying the row's causes, and
+ *     an unpinned row is rewritten in place;
+ *   - the content generation moves on a change of body or editable metadata and not on an approval;
+ *   - the state compare: a generation change, an approval and a close each send a change back
+ *     (`retry`, or `BASE_CONFLICT` when the caller's base is stale), and nothing is written;
+ *   - a second writer waits on the per-document lock, a create included;
+ *   - a refusal rolls back a captured source with everything else;
+ *   - request records replay, conflict on a different digest, and record a keyed no-change;
+ *   - a cause linked by the platform is upgraded when the writer names it;
+ *   - version reads: a public version's approved snapshot, else its last, and the refusal for a
+ *     version that does not exist lists the versions that do.
+ *
+ * The only database it touches is the one it started.
+ *
+ * Exit 0: every case held — one line per case, then the final line.
+ * Exit 1: a case failed — the case and what was found.
+ * Exit 2: Docker is not available — the check could not run, and that is not a pass.
+ */
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import pg from "pg";
+
+import { root } from "../scripts/deployment.ts";
+import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+
+const EMAIL = "store@example.test";
+const TEAM = "store-team";
+const INIT = "2026-10-06-store";
+const DOC = `${INIT}/notes.md`;
+const SRC = `${INIT}/sources/s1.md`;
+
+class CaseFailure extends Error {}
+function fail(step: string, detail: string): never {
+  throw new CaseFailure(`document-store: FAILED at "${step}": ${detail}`);
+}
+const ok = (step: string): void => console.log(`  ${step}: ok`);
+
+/** The text a write sends: a title envelope and a body. */
+const doc = (body: string, extra = ""): string => `---\ntitle: Notes\n${extra}---\n\n${body}`;
+
+type State = { generation: number; revision: number; writtenAt: string };
+type Saved = { id: string; revision: number; version: number; generation: number; newVersion: boolean; newRow: boolean };
+type Save = (w: Record<string, unknown>) => Promise<Saved | { refusal: string } | { retry: true } | { replayed: Record<string, unknown> }>;
+
+async function seed(db: pg.Client): Promise<string> {
+  const p = await db.query<{ id: string }>(
+    "INSERT INTO zz.principal (email, display_name, role) VALUES ($1, 'Store', 'member') RETURNING id", [EMAIL]);
+  const principal = p.rows[0].id;
+  const t = await db.query<{ id: string }>(
+    "INSERT INTO zz.team (slug, name, created_by) VALUES ($1, 'Store team', $2) RETURNING id", [TEAM, principal]);
+  await db.query(
+    "INSERT INTO zz.membership (team_id, principal_id, role, added_by) VALUES ($1, $2, 'admin', $2)", [t.rows[0].id, principal]);
+  await db.query("UPDATE zz.principal SET active_team_id = $1 WHERE id = $2", [t.rows[0].id, principal]);
+  const i = await db.query<{ id: string }>(
+    "INSERT INTO zz.initiative (team_id, slug, flow, opened_by) VALUES ($1, $2, null, $3) RETURNING id",
+    [t.rows[0].id, INIT, principal]);
+  return i.rows[0].id;
+}
+
+async function run(db: pg.Client, url: string): Promise<void> {
+  const initiativeId = await seed(db);
+  process.env.TEAM_DB_URL = url;
+  process.env.ZZ_CATALOG_DIR = join(root, "catalog");
+  const load = (p: string) => import(pathToFileURL(join(root, p)).href);
+  const save = (await load("services/zz-core/dist/document-save.js")) as {
+    saveDocument: Save; documentState: (p: unknown, team: string, rel: string) => Promise<State | null>;
+  };
+  const versions = await load("services/zz-core/dist/versions.js");
+  const platform = await load("services/zz-core/dist/platform-db.js");
+  const pool = platform.db() as pg.Pool;
+  try {
+    await cases(db, pool, save, versions, initiativeId);
+  } finally {
+    // The write's journal entry is fire-and-forget: let it land before the pool and the container go.
+    await new Promise((r) => setTimeout(r, 300));
+    await pool.end();
+  }
+}
+
+async function cases(
+  db: pg.Client, pool: pg.Pool,
+  { saveDocument, documentState }: { saveDocument: Save; documentState: (p: unknown, team: string, rel: string) => Promise<State | null> },
+  versions: { loadDocument: Function; revisionsOf: Function; publicVersions: Function; contentRevision: Function },
+  initiativeId: string,
+): Promise<void> {
+  const base = { team: TEAM, initiative: INIT, by: EMAIL };
+  const state = async (rel = DOC): Promise<State> => (await documentState(pool, TEAM, rel)) ?? fail("state", `${rel} has no state`);
+  const saved = (step: string, r: Awaited<ReturnType<Save>>): Saved => {
+    if (!("id" in r)) fail(step, `expected a write, got ${JSON.stringify(r)}`);
+    return r;
+  };
+  const row = async (revision: number) => (await db.query<{ version: number; body: string; approved_by: string | null }>(
+    `select r.version, r.body, r.approved_by::text from zz.doc_revision r join zz.doc d on d.id = r.doc_id
+      where d.path = 'notes.md' and r.revision = $1`, [revision])).rows[0];
+  const docRow = async () => (await db.query<{ current_revision: number; current_version: number; content_generation: string }>(
+    "select current_revision, current_version, content_generation from zz.doc where path = 'notes.md'")).rows[0];
+  const change = async (text: string, extra: Record<string, unknown> = {}) =>
+    saveDocument({ ...base, relPath: DOC, text, mode: "rewrite", change: { nextVersion: false, expect: await state(), ...extra } });
+
+  // ── create, and the generation ─────────────────────────────────────────────────────────────
+  await saveDocument({ ...base, relPath: SRC, text: "---\ntitle: S1\n---\n\nsource one\n", type: "source", mode: "create" });
+  const created = saved("create", await saveDocument({ ...base, relPath: DOC, text: doc("alpha\n"), mode: "create" }));
+  if (created.revision !== 1 || created.version !== 1 || created.generation !== 0) fail("create", JSON.stringify(created));
+  if ((await docRow()).current_version !== 1) fail("create", "doc.current_version is not 1");
+  ok("create: revision 1, version 1, generation 0");
+
+  await saveDocument({ ...base, relPath: DOC, text: doc("beta\n"), mode: "rewrite" });
+  if ((await docRow()).content_generation !== "1") fail("generation", "a body change without `change` did not move the generation");
+  await saveDocument({ ...base, relPath: DOC, text: doc("beta\n"), mode: "rewrite" });
+  if ((await docRow()).content_generation !== "1") fail("generation", "a rewrite of the same body and metadata moved the generation");
+  ok("generation: moves on a body change, not on a re-stamp of the same content");
+
+  // ── the pin rule ─────────────────────────────────────────────────────────────────────────────
+  // Unpinned: rewritten in place, with a cause the platform linked.
+  const inPlace = saved("unpinned", await change(doc("gamma\n"),
+    { causes: [{ path: SRC, revision: 1, linked_by: "platform" }] }));
+  if (inPlace.newRow || inPlace.revision !== 1 || inPlace.version !== 1 || inPlace.generation !== 2) {
+    fail("unpinned", `expected an in-place rewrite at r1/v1/g2, got ${JSON.stringify(inPlace)}`);
+  }
+  ok("pin rule, unpinned: rewritten in place");
+
+  // The writer names the same cause: platform is upgraded to agent on the same row.
+  saved("upgrade", await change(doc("gamma 2\n"), { causes: [{ path: SRC, revision: 1, linked_by: "agent" }] }));
+  const by = async (revision: number) => (await db.query<{ linked_by: string }>(
+    `select l.linked_by from zz.doc_link l join zz.doc d on d.id = l.from_doc_id
+      where d.path = 'notes.md' and l.from_revision = $1 and l.kind = 'cites'`, [revision])).rows.map((r) => r.linked_by);
+  if ((await by(1)).join() !== "agent") fail("upgrade", `the cause reads ${JSON.stringify(await by(1))}, not one agent link`);
+  ok("cause upgrade: platform -> agent on conflict");
+
+  // Presented: a new row in the same version, carrying the row's causes.
+  await db.query("update zz.doc_revision r set presented_at = now() from zz.doc d where d.id = r.doc_id and d.path = 'notes.md' and r.revision = 1");
+  const presented = saved("presented", await change(doc("delta\n")));
+  if (!presented.newRow || presented.revision !== 2 || presented.version !== 1 || presented.newVersion) {
+    fail("presented", `expected a new row r2 in v1, got ${JSON.stringify(presented)}`);
+  }
+  if ((await row(1)).body !== "gamma 2\n") fail("presented", "the presented row was rewritten");
+  if ((await by(2)).join() !== "agent") fail("presented", `the new row carries ${JSON.stringify(await by(2))}, not the presented row's cause`);
+  ok("pin rule, presented: new row r2 in v1, causes carried");
+
+  // Shown: a `document.shown` event at or after the row's write pins it.
+  await db.query(
+    "insert into zz.event (kind, subject, initiative_id, team_id) select 'document.shown', $1, i.id, i.team_id from zz.initiative i where i.id = $2",
+    [DOC, initiativeId]);
+  const shown = saved("shown", await change(doc("epsilon\n")));
+  if (!shown.newRow || shown.revision !== 3 || shown.version !== 1) fail("shown", `expected r3 in v1, got ${JSON.stringify(shown)}`);
+  ok("pin rule, shown event: new row r3 in v1");
+
+  // Approved: sealed by a write without `change`, as document_approve writes it.
+  const before = await state();
+  await saveDocument({ ...base, relPath: DOC, text: doc("epsilon\n", "status: approved\n"), mode: "rewrite",
+                       seal: { by: EMAIL, at: new Date().toISOString() } });
+  const sealed = await docRow();
+  if (sealed.content_generation !== String(before.generation)) fail("approval", "an approval moved the content generation");
+  const approvedRow = await row(3);
+  if (!approvedRow.approved_by) fail("approval", "the seal did not land");
+  const meta = saved("approved", await change(doc("epsilon\n", "status: draft\ntags: renamed\n")));
+  if (!meta.newRow || meta.revision !== 4 || meta.version !== 1 || meta.generation !== before.generation + 1) {
+    fail("approved", `expected a metadata change to make r4 in v1 at a new generation, got ${JSON.stringify(meta)}`);
+  }
+  if (!(await row(3)).approved_by || (await row(3)).body !== "epsilon\n") fail("approved", "the approved row was touched");
+  ok("pin rule, approved: new row r4 in v1, the signed row untouched");
+
+  // nextVersion: a new public version.
+  const next = saved("nextVersion", await change(doc("zeta\n"), { nextVersion: true }));
+  if (!next.newVersion || !next.newRow || next.revision !== 5 || next.version !== 2) fail("nextVersion", JSON.stringify(next));
+  if ((await docRow()).current_version !== 2) fail("nextVersion", "doc.current_version did not follow");
+  ok("nextVersion: r5 opens v2");
+
+  // ── the state compare ────────────────────────────────────────────────────────────────────────
+  const unchanged = async (step: string, at: State): Promise<void> => {
+    const now = await docRow();
+    if (now.current_revision !== at.revision) fail(step, "a sent-back change wrote a row");
+  };
+  {
+    const s = await state();
+    await saveDocument({ ...base, relPath: DOC, text: doc("eta\n"), mode: "rewrite" });
+    const moved = await state();
+    const conflict = await saveDocument({ ...base, relPath: DOC, text: doc("theta\n"), mode: "rewrite",
+                                          change: { nextVersion: false, expect: s, base: s.generation } });
+    if (!("refusal" in conflict) || !/^ERROR: BASE_CONFLICT/.test(conflict.refusal)) fail("generation change", JSON.stringify(conflict));
+    const retry = await saveDocument({ ...base, relPath: DOC, text: doc("theta\n"), mode: "rewrite",
+                                       change: { nextVersion: false, expect: s } });
+    if (!("retry" in retry)) fail("generation change", `without a base, expected retry, got ${JSON.stringify(retry)}`);
+    await unchanged("generation change", moved);
+    ok("state compare: a generation change is BASE_CONFLICT with a stale base, retry without one");
+  }
+  {
+    const s = await state();
+    await saveDocument({ ...base, relPath: DOC, text: doc("eta\n", "status: approved\n"), mode: "rewrite",
+                         seal: { by: EMAIL, at: new Date().toISOString() } });
+    const r = await saveDocument({ ...base, relPath: DOC, text: doc("iota\n"), mode: "rewrite",
+                                   change: { nextVersion: false, expect: s, base: s.generation } });
+    if (!("retry" in r)) fail("approval", `an approval mid-change was not detected: ${JSON.stringify(r)}`);
+    ok("state compare: an approval sends the change back to retry");
+  }
+  {
+    const s = await state();
+    await saveDocument({ ...base, relPath: DOC, text: doc("eta\n", `status: approved\noutcome: delivered\nclosed_by: ${EMAIL}\n`),
+                         mode: "rewrite" });
+    if ((await docRow()).content_generation !== String(s.generation)) fail("closing", "closing the initiative moved the content generation");
+    const r = await saveDocument({ ...base, relPath: DOC, text: doc("kappa\n"), mode: "rewrite",
+                                   change: { nextVersion: false, expect: s } });
+    if (!("retry" in r)) fail("closing", `closing the initiative mid-change was not detected: ${JSON.stringify(r)}`);
+    ok("state compare: a close sends the change back to retry");
+  }
+
+  // ── the lock ─────────────────────────────────────────────────────────────────────────────────
+  const waits = async (step: string, rel: string, write: () => Promise<unknown>): Promise<void> => {
+    await db.query("begin");
+    await db.query("select pg_advisory_xact_lock(hashtext($1))", [`doc:${TEAM}/${rel}`]);
+    let settled = false;
+    const pending = write().then((r) => { settled = true; return r; });
+    await new Promise((r) => setTimeout(r, 700));
+    if (settled) { await db.query("rollback"); fail(step, "the write did not wait for the lock another transaction holds"); }
+    await db.query("commit");
+    const r = await pending as Record<string, unknown>;
+    if ("refusal" in r) fail(step, `after the lock was released the write was refused: ${String(r.refusal)}`);
+  };
+  await waits("lock (create)", `${INIT}/second.md`,
+    () => saveDocument({ ...base, relPath: `${INIT}/second.md`, text: doc("one\n"), mode: "create" }));
+  await waits("lock (rewrite)", `${INIT}/second.md`,
+    () => saveDocument({ ...base, relPath: `${INIT}/second.md`, text: doc("two\n"), mode: "rewrite" }));
+  ok("lock: a second writer waits, a create included");
+
+  // ── a refusal rolls back a captured source ───────────────────────────────────────────────────
+  {
+    const s = await state();
+    const cap = `${INIT}/sources/captured.md`;
+    const r = await saveDocument({ ...base, relPath: DOC, text: doc("lambda\n"), mode: "rewrite", change: {
+      nextVersion: true, expect: s,
+      captured: { relPath: cap, text: "---\ntitle: Captured\nsupports: notes.md\n---\n\ncaptured words\n" },
+      causes: [{ path: cap, revision: 1, linked_by: "agent" }, { path: `${INIT}/sources/nowhere.md`, revision: 1, linked_by: "agent" }],
+    } });
+    if (!("refusal" in r)) fail("rollback", `a cause that does not exist was not refused: ${JSON.stringify(r)}`);
+    const left = await db.query("select 1 from zz.doc where path = 'sources/captured.md'");
+    if (left.rowCount) fail("rollback", "the captured source survived the refusal");
+    await unchanged("rollback", s);
+    ok("refusal: the captured source rolls back with the change");
+
+    const good = saved("captured", await saveDocument({ ...base, relPath: DOC, text: doc("lambda\n"), mode: "rewrite", change: {
+      nextVersion: true, expect: s,
+      captured: { relPath: cap, text: "---\ntitle: Captured\nsupports: notes.md\n---\n\ncaptured words\n" },
+      causes: [{ path: cap, revision: 1, linked_by: "agent" }],
+    } }));
+    const linked = await db.query(
+      `select 1 from zz.doc_link l join zz.doc t on t.id = l.to_doc_id
+        where t.path = 'sources/captured.md' and l.from_revision = $1 and l.kind = 'cites' and l.linked_by = 'agent'`, [good.revision]);
+    if (!linked.rowCount) fail("captured", "the captured source is not a cause of the new row");
+    ok("captured: the source and its cause link commit with the change");
+  }
+
+  // ── requests ─────────────────────────────────────────────────────────────────────────────────
+  {
+    const request = (digest: string, receipt: Record<string, unknown>) =>
+      ({ principalEmail: EMAIL, canonicalPath: DOC, requestId: "req-1", digest, receipt });
+    const first = saved("request", await change(doc("mu\n"), { request: request("d1", { line: "edited" }) }));
+    const replay = await change(doc("nu\n"), { request: request("d1", { line: "other" }) });
+    if (!("replayed" in replay) || replay.replayed.line !== "edited") fail("replay", JSON.stringify(replay));
+    const conflict = await change(doc("nu\n"), { request: request("d2", {}) });
+    if (!("refusal" in conflict) || conflict.refusal !== "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request") {
+      fail("conflict", JSON.stringify(conflict));
+    }
+    const s = await state();
+    const noChange = saved("no change", await saveDocument({ ...base, relPath: DOC, text: doc("mu\n"), mode: "rewrite", change: {
+      nextVersion: false, expect: s, request: { ...request("d3", { line: "no change" }), requestId: "req-2" } } }));
+    if (noChange.newRow || noChange.revision !== first.revision || (await state()).writtenAt !== s.writtenAt) {
+      fail("no change", `a keyed no-change wrote the document: ${JSON.stringify(noChange)}`);
+    }
+    const kept = await db.query("select 1 from zz.doc_request where request_id = 'req-2'");
+    if (!kept.rowCount) fail("no change", "a keyed no-change was not recorded");
+    ok("requests: replay, conflict, and a recorded keyed no-change");
+  }
+
+  // ── a read written back stores no rendered token ─────────────────────────────────────────────
+  {
+    const read = await versions.loadDocument(TEAM, DOC);
+    if (!read.ok || !/^content_revision: cr_/m.test(read.text)) fail("read back", "the current read carries no content_revision");
+    saved("read back", await saveDocument({ ...base, relPath: DOC, text: read.text, mode: "rewrite" }));
+    const stored = await db.query<{ n: number }>(
+      `select count(*)::int as n from zz.doc_revision r join zz.doc d on d.id = r.doc_id
+        where d.path = 'notes.md' and r.fields ? 'content_revision'`);
+    if (stored.rows[0].n !== 0) fail("read back", "a rewrite of what a read returned stored content_revision in fields");
+    ok("read back: content_revision is rendered, never stored");
+  }
+
+  // ── an act without `change` refuses a state it did not read ──────────────────────────────────
+  {
+    const s = await state();
+    await saveDocument({ ...base, relPath: DOC, text: doc("xi\n"), mode: "rewrite" });
+    const stale = await saveDocument({ ...base, relPath: DOC, text: doc("xi\n", "status: approved\n"), mode: "rewrite",
+                                       expect: s, seal: { by: EMAIL, at: new Date().toISOString() } });
+    if (!("refusal" in stale) || !/^ERROR: STATE_CHANGED — /.test(stale.refusal)) fail("expect", JSON.stringify(stale));
+    if ((await row((await docRow()).current_revision)).approved_by) fail("expect", "the refused approval sealed the row");
+    saved("expect", await saveDocument({ ...base, relPath: DOC, text: doc("xi\n"), mode: "rewrite", expect: await state() }));
+    ok("expect without change: a moved state is STATE_CHANGED, the read one commits");
+  }
+
+  // ── version reads ────────────────────────────────────────────────────────────────────────────
+  {
+    const v1 = await versions.loadDocument(TEAM, DOC, 1);
+    if (!v1.ok || v1.rev.revision !== 3 || !/^version: 1$/m.test(v1.text)) {
+      fail("read v1", `version 1 did not answer with its approved snapshot r3: ${JSON.stringify(v1.ok ? v1.rev : v1)}`);
+    }
+    if (/^content_revision:/m.test(v1.text)) fail("read v1", "a past snapshot carries the current content revision");
+    const cur = await versions.loadDocument(TEAM, DOC);
+    const gen = (await docRow()).content_generation;
+    const want = versions.contentRevision(cur.doc.id, Number(gen));
+    if (!/^cr_[a-z2-7]{26}$/.test(want)) fail("content revision", `malformed: ${want}`);
+    const digest = createHash("sha256").update(`${cur.doc.id}:${gen}`).digest();
+    if (!cur.ok || !cur.text.includes(`content_revision: ${want}`) || want !== `cr_${base32(digest).slice(0, 26)}`) {
+      fail("content revision", `the current read does not carry ${want}`);
+    }
+    if (!new RegExp(`^version: ${cur.rev.version}$`, "m").test(cur.text)) fail("read current", "the envelope's version is not the row's");
+    const missing = await versions.loadDocument(TEAM, DOC, 9);
+    if (missing.ok || !/\bv1\b/.test(missing.refusal) || !/\bv2\b/.test(missing.refusal) || /\bv2, v2\b/.test(missing.refusal)) {
+      fail("read v9", `the refusal does not list each version once: ${missing.ok ? "ok" : missing.refusal}`);
+    }
+    const history = await versions.revisionsOf(pool, cur.doc.id);
+    const listed = versions.publicVersions(history).map((r: { version: number; revision: number }) => `${r.version}:${r.revision}`);
+    if (listed[0] !== "1:3") fail("public versions", `one entry per version, the approved snapshot first: ${listed.join(", ")}`);
+    if (new Set(listed.map((l: string) => l.split(":")[0])).size !== listed.length) fail("public versions", `repeated: ${listed}`);
+    ok("version reads: approved snapshot of a version, its last otherwise, distinct versions listed");
+  }
+
+  // ── an approval whose person resolves to no principal still pins ─────────────────────────────
+  // The seal's two columns stay null together, and `approved_revision` carries the approval.
+  {
+    await saveDocument({ ...base, relPath: DOC, text: doc("omicron\n", "status: approved\n"), mode: "rewrite",
+                         seal: { by: "nobody@example.test", at: new Date().toISOString() } });
+    const sealed = await docRow();
+    if ((await row(sealed.current_revision)).approved_by) fail("unresolved seal", "a seal by nobody stamped approved_by");
+    const r = saved("unresolved seal", await change(doc("pi\n")));
+    if (!r.newRow || r.revision !== sealed.current_revision + 1) {
+      fail("unresolved seal", `a change to an approved row with no sealing principal was not a new row: ${JSON.stringify(r)}`);
+    }
+    ok("pin rule, approved without a resolved principal: a new row");
+  }
+}
+
+/** RFC 4648 base32, lowercase, no padding — the content revision's alphabet. */
+function base32(bytes: Buffer): string {
+  const A = "abcdefghijklmnopqrstuvwxyz234567";
+  let bits = 0, value = 0, out = "";
+  for (const b of bytes) {
+    value = (value << 8) | b; bits += 8;
+    while (bits >= 5) { out += A[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  return bits > 0 ? out + A[(value << (5 - bits)) & 31] : out;
+}
+
+async function main(): Promise<number> {
+  let dbUrl = "";
+  try {
+    await withThrowawayDb((db) => run(db, dbUrl), async (url) => { dbUrl = url; });
+  } catch (err) {
+    if (err instanceof Error && /Docker is not running/.test(err.message)) {
+      console.error("document-store: Docker is not available — the check could not run, which is not a pass");
+      return 2;
+    }
+    console.error(err instanceof CaseFailure ? err.message : `document-store: ${String((err as Error)?.stack ?? err)}`);
+    return 1;
+  }
+  console.log("document-store: pin rule, generation, state compare, lock, rollback, requests and version reads: ok");
+  return 0;
+}
+
+process.exitCode = await main();

@@ -21,7 +21,7 @@ import { moduleForFlow } from "../host/index.js";
 import { claimFor } from "../host/store.js";
 import { safeName, safePath, writeGuard } from "../paths.js";
 import { platformEvent, sealOf } from "../indexing.js";
-import { saveDocument } from "../versions.js";
+import { saveDocument } from "../document-save.js";
 import { stampEnvelope } from "../write-guards.js";
 import { db, teamFor } from "../platform-db.js";
 import { packagedModules } from "../reviewed-modules.js";

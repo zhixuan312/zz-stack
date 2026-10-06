@@ -67,8 +67,10 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
     historySql = sql;
     const hit = [...docs.values()].find((x) => x.id === String(values[0]));
+    // Every revision of this fixture is its own public version, as every row filed before
+    // `doc_revision.version` existed is.
     return one((hit?.revisions ?? []).map((r: Rev) => ({
-      revision: r.revision, content_state: "retained", title: name, body: r.body, tags: [],
+      revision: r.revision, version: r.revision, content_state: "retained", title: name, body: r.body, tags: [],
       content_hash: "h", revision_note: null, fields: null, written_by: "w@zz.test",
       written_at: r.written_at, approved_by: r.approved_by, approved_at: r.approved_at })));
   }
@@ -96,7 +98,7 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
     const rev = d.revisions.find((r) => r.revision === d.current)!;
     return one([{ id: d.id, initiative: INIT, path: name, flow: "", type: "", status: "draft",
                   outcome: null, current_revision: d.current, approved_revision: null,
-                  updated_at: rev.written_at }]);
+                  current_version: d.current, content_generation: "0", updated_at: rev.written_at }]);
   }
   if (/insert into zz\.event\b/.test(sql)) return one([]);
   if (/from zz\.team where slug = \$1|select slug from zz\.team/.test(sql)) return one([{ slug: TEAM }]);

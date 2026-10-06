@@ -7,7 +7,7 @@ import { check } from "../run.ts";
 check("new writes carry the analyzer's han terms and the row's own latin text, each to its own half", () => {
   // COUPLED: EVERY statement that assigns `body_tsv` must build it from the shared construction,
   // and there are two files to hold: `packages/indexing/src/index.ts` writes a journal node's row,
-  // and `services/zz-core/src/versions.ts` writes a document's. Read from the source rather than
+  // and `services/zz-core/src/document-save.ts` writes a document's. Read from the source rather than
   // the SQL string: the failure guarded against is a statement that goes back to re-parsing the
   // raw prose columns, where a prose configuration tokenizes on whitespace and punctuation and an
   // unspaced Han run goes in as one opaque word.
@@ -19,7 +19,7 @@ check("new writes carry the analyzer's han terms and the row's own latin text, e
   // it from `bodyTsvSql` is the failure, and the two counts are equal exactly when there is none.
   // A count pinned to a number instead would drift with the number of write paths, and somebody
   // would update it rather than read it.
-  const WRITERS = ["packages/indexing/src/index.ts", "services/zz-core/src/versions.ts"];
+  const WRITERS = ["packages/indexing/src/index.ts", "services/zz-core/src/document-save.ts"];
   for (const rel of WRITERS) {
     const src = withoutComments(readFileSync(join(root, rel), "utf8"));
     const names = (src.match(/\bbody_tsv\b/g) ?? []).length;

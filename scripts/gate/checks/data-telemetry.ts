@@ -41,8 +41,8 @@ check("a tool that changes something records that it did", () => {
   // mutation suite's first full run planted the removal of a tool's own `recordAct` and this
   // stayed green — correctly, because `saveDocument` had recorded the write anyway. This is the
   // recorder that removal can take away.
-  const save = functionBody(readFileSync(join(root, "services/zz-core/src/versions.ts"), "utf8"), "saveDocument");
-  if (!save) bad.push("services/zz-core/src/versions.ts no longer defines saveDocument — this cannot check its record");
+  const save = functionBody(readFileSync(join(root, "services/zz-core/src/document-save.ts"), "utf8"), "saveDocument");
+  if (!save) bad.push("services/zz-core/src/document-save.ts no longer defines saveDocument — this cannot check its record");
   else if (!/\brecordAct\(/.test(withoutComments(save))) {
     bad.push("saveDocument, the write every document tool goes through, records nothing");
   }

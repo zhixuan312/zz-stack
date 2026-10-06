@@ -177,6 +177,28 @@ const stakeholder = (name: string, text: string) =>
   await refused(SPEC, /unclear a second time.*the stakeholder decides/, "a second `unclear` went past the stakeholder", again);
   stakeholder(again, "CS-1 is accepted on the relay log as it stands.");
   is((await specApproval(again, SPEC)).refusal === null, "a second `unclear` the stakeholder accepted was refused");
+  // A row nobody asked about yet is asked at the approval, and that answer is judged in the same
+  // approval. It was read from a memo taken before the question, so a first approval reported the
+  // fresh `no` as unavailable and approved over it (CS-8, 2026-10-06). The typed service answers
+  // through a stubbed `fetch`, in the body shape scripts/eval-flow-e2e/stub-model.ts serves.
+  {
+    const realFetch = globalThis.fetch;
+    const realKey = process.env.TYPESAFE_API_KEY;
+    process.env.TYPESAFE_API_KEY = "not-a-key";
+    (globalThis as Record<string, unknown>).fetch = async () => ({
+      ok: true, status: 200, headers: { get: () => null },
+      text: async () => "",
+      json: async () => ({ model: "jev-latest", usage: { input_tokens: 1, output_tokens: 1 },
+                           answers: { evidence_relation: { type: "noul", noul: 0.1, confidence: 0.8 } } }),
+    });
+    try {
+      await refused(SPEC, /CS-1: evidence_relation reads its evidence as not supporting/,
+        "a `no` taken at the approval itself was approved as unavailable");
+    } finally {
+      globalThis.fetch = realFetch;
+      if (realKey === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = realKey;
+    }
+  }
 
   // 4. A flow that does not declare the sections is untouched.
   const free = "2026-09-26-freeform";

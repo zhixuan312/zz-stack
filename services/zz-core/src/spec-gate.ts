@@ -161,9 +161,17 @@ export async function specApprovalRefusal(
   // connections, and the whole thing inside a `document_approve` the MCP request severs at about
   // two minutes. Approving one document could lose the answers already paid for.
   for (let i = 0; i < due.length; i += 8) {
-    await Promise.all(due.slice(i, i + 8).map((x) => assessFamily({
+    const batch = due.slice(i, i + 8);
+    const answers = await Promise.all(batch.map((x) => assessFamily({
       family: "evidence_relation", subject: `${x.r.id}: ${x.r.statement}`, context: x.r.evidence,
       initiative, about: `${memoDoc}#${x.r.id}#${x.digest}`, askedBy: by })));
+    // The answers just taken are judged now, not read back on the next approval. `cache` was read
+    // before they existed, so judging from it alone reported every row asked here as unavailable
+    // and approved over a `no` (CS-8, 2026-10-06). From the answer itself rather than a re-read,
+    // because `assessFamily` persists best-effort and an answer in hand is the reading.
+    batch.forEach((x, k) => (cache[x.r.id] ??= []).push({
+      digest: x.digest, reading: answers[k].reading, probability: answers[k].probability,
+      reason: answers[k].reason, asked_at: answers[k].asked_at }));
   }
 
   const unavailable: string[] = [];

@@ -413,6 +413,10 @@ export async function planEdit(
   } else if (mode === "content") {
     next = a.content ?? "";
   }
+  // The body a batch or a section MAKES is held to the rule whole `content` is held to above: one
+  // that opens with a frontmatter block would be read back as the envelope, not as its body.
+  const opened = mode === "edits" || mode === "section" ? frontmatterRefusal(next, "document_edit") : null;
+  if (opened) return { reply: opened };
   const governing = await chainFor(p, team, path, loaded.text);
   const gated = governing.documents.some((d) => d.name === name && d.gate);
   const approved = loaded.doc.status === "approved";

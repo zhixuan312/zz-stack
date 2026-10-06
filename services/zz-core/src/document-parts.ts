@@ -122,8 +122,10 @@ export function replaceSection(body: string, section: string, content: string, p
              "it — start it with that heading line, as `document_read` with the same `section` returns it." };
   }
   const tail = body.slice(range.hi);
+  // The body's own line ending, so a section edit never leaves a CRLF document with LF joins.
+  const eol = body.includes("\r\n") ? "\r\n" : "\n";
   return { body: body.slice(0, range.lo) + content.trimStart().replace(/\s*$/, "") +
-                 (tail ? "\n\n" : "\n") + tail };
+                 (tail ? eol + eol : eol) + tail };
 }
 
 /** What a change did to a body, section by section, for its receipt: every section whose bytes

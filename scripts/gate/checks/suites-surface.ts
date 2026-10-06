@@ -216,7 +216,8 @@ check("a document body is stored whole, or refused past the input limit — neve
 check("an exact edit batch applies to one original body, all or nothing, and names the edit it could not apply", runsCheck("document-edits.ts"));
 check("zz-core binds the port --port names in plain decimal, 8000 with none, and stops on anything else", runsCheck("core-port.ts"));
 check("a document's body is what its author wrote, through any number of reads and writes", runsCheck("document-body-roundtrip.ts"));
-check("the walking skeleton creates, edits, presents and approves a document through a real zz-core on a throwaway database", runsCheck("document-edit.ts"));
+check("the walking skeleton creates, edits, presents and approves a document, and every edit mode and refusal keeps the body byte for byte, through a real zz-core on a throwaway database", runsCheck("document-edit.ts"));
+check("concurrent changes never overwrite each other, keyed requests replay once and only for a member, and a failure at any statement of a change commits nothing, through a real zz-core", runsCheck("document-edit-races.ts"));
 check("the write path keeps the pin rule, the state compare, the per-document lock, one transaction for a captured source and its request, and reads public versions on a throwaway database", runsCheck("document-store.ts"));
 check("the console lists one entry per public version, fetches a snapshot by revision, and reads a pending correction as closed with the correction named, on a throwaway database", runsCheck("console-versions.ts"));
 check("every row of the version table holds through a real zz-core: causes move versions once, signed snapshots stay as signed, a closed record's correction is a draft and the acts meet a concurrent edit safely", runsCheck("document-version.ts"));

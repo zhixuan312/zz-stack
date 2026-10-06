@@ -264,6 +264,12 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
                                 "Swap", "## Swap\n\nnew");
   is("body" in fenced && fenced.body === "## Keep\n\nk\n\n## Swap\n\nnew\n\n## After\n\na\n",
      `a heading inside a code fence ended the section: ${JSON.stringify(fenced)}`);
+  // A CRLF body stays CRLF: the blank line the splice adds is the body's own line ending, so a
+  // section edit never leaves a document with two kinds of line ending.
+  const crlf = replaceSection("## Keep\r\n\r\nk\r\n\r\n## Swap\r\n\r\nold\r\n\r\n## After\r\n\r\na\r\n",
+                              "Swap", "## Swap\r\n\r\nMID\r\n\r\n");
+  is("body" in crlf && crlf.body === "## Keep\r\n\r\nk\r\n\r\n## Swap\r\n\r\nMID\r\n\r\n## After\r\n\r\na\r\n",
+     `a section edit on a CRLF body mixed in an LF line ending: ${JSON.stringify(crlf)}`);
 
   // `document_edit` takes `section` — its schema is asserted in 6 — and splices rather than
   // overwrites: a `section` accepted and then ignored would write one section's text over the whole

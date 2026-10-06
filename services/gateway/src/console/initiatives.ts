@@ -6,6 +6,7 @@
  */
 import type { Express } from "express";
 
+import { contentRevision } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
 
 import { platformDb } from "../db.js";
@@ -472,7 +473,8 @@ export function mountInitiatives(app: Express): void {
     }
     const [doc, versions, sources] = await Promise.all([
       db.query(
-        `select t.slug as team, i.slug as initiative, d.path, d.current_revision, d.current_version,
+        `select d.id, coalesce(r.content_generation, d.content_generation) as content_generation,
+                t.slug as team, i.slug as initiative, d.path, d.current_revision, d.current_version,
                 case when i.closed_at is not null and d.status <> 'approved'
                            and r.fields->>'outcome' is not null
                            and exists (select 1 from zz.doc_revision c
@@ -584,8 +586,16 @@ export function mountInitiatives(app: Express): void {
     // The claims this one document makes, computed from the body the response already carries.
     // A snapshot keeps none: its claims are the live document's.
     const decisions = claimsOf([doc.rows[0]]);
+    // The displayed snapshot's identity, the token zz-core names it by, so the console can record
+    // that it showed exactly this snapshot and approve exactly it. The current row's own generation,
+    // or the document's while that row predates per-row generations — exact, because both describe
+    // the same current content.
+    //
+    // COUPLED: `snapshotRevision` in services/zz-core/src/review-context.ts states the same rule.
+    const { id, content_generation, ...row } = doc.rows[0];
     res.json({
-      ...doc.rows[0], bytes: +doc.rows[0].bytes,
+      ...row, bytes: +row.bytes,
+      content_revision: contentRevision(id, Number(content_generation)),
       gated: rule ? rule.gate : null,
       closing: rule?.closing ?? false,
       requiredForClose: rule?.requiredForClose ?? false,

@@ -51,8 +51,9 @@ node scripts/doctor.ts --layer repo,image       # offline; no host needed
 **Docker is needed by the ten checks that migrate a real PostgreSQL** — the schema inventory,
 the rehearsal, the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, the document write path (`checks/document-store.ts`), which drives
-`saveDocument` against one, the console's document reads (`checks/console-versions.ts`), and the
-five that run a real zz-core against one: the document walking skeleton and every edit mode
+`saveDocument` against one, and the six that run a real zz-core against one: the console's
+document reads, presentation and approval (`checks/console-versions.ts`), the document walking
+skeleton and every edit mode
 (`checks/document-edit.ts`), concurrent changes and keyed requests (`checks/document-edit-races.ts`),
 the version table and the acts racing an edit (`checks/document-version.ts`), the causes that
 link themselves (`checks/document-version-causes.ts`), and normalisation, counted receipts and

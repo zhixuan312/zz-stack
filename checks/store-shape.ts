@@ -65,6 +65,12 @@ assert.ok((t("doc").checks ?? []).some((c) => /\(current_version IS NULL\) = \(c
   "and null exactly when current_revision is");
 assert.deepEqual(col("doc", "content_generation"), ["content_generation", "bigint", false, "0"],
   "doc.content_generation is a NOT NULL bigint counter starting at 0");
+// Every snapshot carries the generation it was written at, so a presented or approved one can be
+// named by its own content revision; a row written before generations were recorded has none.
+assert.deepEqual(col("doc_revision", "content_generation"), ["content_generation", "bigint", true, null],
+  "doc_revision.content_generation is a nullable bigint with no default — never backfilled");
+assert.equal(names("doc_revision").at(-1), "content_generation",
+  "and last in ordinal order, because the release's migration adds it with ADD COLUMN");
 // Causes are citations with an origin; a support never carries one.
 assert.deepEqual(col("doc_link", "linked_by")?.slice(1, 3), ["text", true], "doc_link.linked_by is nullable text");
 assert.ok((t("doc_link").checks ?? []).some((c) => /'agent'::text, 'platform'::text/.test(c)),

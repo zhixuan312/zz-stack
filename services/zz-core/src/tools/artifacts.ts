@@ -38,7 +38,7 @@ import { registerDocumentEditTool } from "./document-edit.js";
 import { registerSourceListTool } from "./source-list.js";
 import { registerSourceUploadTool } from "./source-upload.js";
 import { db, teamFor } from "../platform-db.js";
-import { documentAt, documentPaths, loadDocument, NO_DB, recordAct } from "../versions.js";
+import { documentAt, documentPaths, loadDocument, loadSnapshot, NO_DB, recordAct } from "../versions.js";
 import { saveDocument } from "../document-save.js";
 import { acceptanceLine, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor } from "../document-change.js";
 import { present } from "../document-present.js";
@@ -189,7 +189,8 @@ export function registerArtifactTools(server: McpServer): void {
         "`limit` in characters. A part states the file's total size, which characters it is, " +
         "and the offset to continue from. `details_ref` — the `dr_…` a reply named — reads that " +
         "reply's complete details instead, a page at a time: send the `cursor` a page ends with " +
-        "for the next, until one ends `complete`.",
+        "for the next, until one ends `complete`. `content_revision` — a `cr_…` an envelope or a " +
+        "reply named — reads that exact snapshot of one document, whole, for as long as it is retained.",
       inputSchema: {
         path: z.union([z.string(), z.array(z.string())])
           .describe("One path, or an array of paths read in the order given."),
@@ -205,9 +206,14 @@ export function registerArtifactTools(server: McpServer): void {
         details_ref: z.string().optional()
           .describe("The `dr_…` a receipt or a refusal named: read its complete details, with `path` the document it named."),
         cursor: z.string().optional().describe("The `dc_…` cursor the last details page ended with."),
+        content_revision: z.string().optional()
+          .describe("A `cr_…` token: read exactly that snapshot of `path`, whole."),
       },
     },
-    async ({ path, version, scope, section, offset, limit, details_ref, cursor }) => {
+    async ({ path, version, scope, section, offset, limit, details_ref, cursor, content_revision }) => {
+      if (content_revision !== undefined) {
+        return text(await snapshotRead({ path, version, scope, section, offset, limit, details_ref, cursor }, content_revision));
+      }
       // A details read is its own mode: one document's stored detail, by its ref, page by page.
       if (details_ref !== undefined || cursor !== undefined) {
         return text(await detailsRead({ path, version, scope, section, offset, limit, details_ref, cursor }));
@@ -624,6 +630,26 @@ async function detailsRead(a: { path: string | string[]; version?: number; scope
   const team = await teamFor(parseCaller(requestHeaders()).email);
   if (!team) return NO_TEAM;
   return readDetails(p, team, await safePath(a.path as string), a.details_ref, a.cursor);
+}
+
+/** `document_read(path, content_revision)`: one exact retained snapshot of one document, whole.
+ *  Every other way to narrow or redirect a read is another mode, and refused with it. */
+async function snapshotRead(a: { path: string | string[]; version?: number; scope?: string; section?: string;
+                                 offset?: number; limit?: number; details_ref?: string; cursor?: string },
+                            token: string): Promise<string> {
+  const others = [a.version !== undefined && "`version`", a.details_ref !== undefined && "`details_ref`",
+                  a.cursor !== undefined && "`cursor`", a.section !== undefined && "`section`",
+                  a.offset !== undefined && "`offset`", a.limit !== undefined && "`limit`",
+                  a.scope === "platform" && "`scope: \"platform\"`", Array.isArray(a.path) && "an array `path`"]
+    .filter((x): x is string => typeof x === "string");
+  if (others.length) {
+    return `ERROR: INVALID_MODE — \`content_revision\` reads one exact snapshot of one document, whole, and ` +
+      `cannot be combined with ${others.join(", ")}. Send \`path\` and \`content_revision\` alone.`;
+  }
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  if (!team) return NO_TEAM;
+  const loaded = await loadSnapshot(team, await safePath(a.path as string), token);
+  return loaded.ok ? loaded.text : loaded.refusal;
 }
 
 /** The current revision of each document a source names in `supports`, as `cites` links. A name

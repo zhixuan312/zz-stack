@@ -9,6 +9,9 @@
  *     where a version lives now — a revision is a ROW, not a frozen file, so "which versions are
  *     filed" is the revision list and a version that is not there is refused by the same reader
  *     that answers one that is;
+ *   - the real `loadSnapshot`, which reads one exact snapshot by its `content_revision` and answers
+ *     SNAPSHOT_UNAVAILABLE by its two texts, and `document_read`'s handler refusing every argument
+ *     a snapshot read cannot be combined with;
  *   - `writeGuard` and `safePath`, asked whether a mechanical record is still unwritable and
  *     whether a path that walks out is still refused;
  *   - `shownSinceLastChange` as the oracle for the per-document record — the same function an
@@ -23,6 +26,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { contentRevision } from "@zz/contracts";
 import pg from "pg";
 
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
@@ -31,26 +35,29 @@ const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const TEAM = "t1";
 const INIT = "2026-01-01-fixture";
 
-/** The fixture: two documents, and spec.md's three approvals. A revision is a row. */
+/** The fixture: two documents, and spec.md's three approvals. A revision is a row, carrying the
+ *  content generation it was written at — none on a row written before generations were recorded.
+ *  spec.md's generation 2 was a working state rewritten in place; plan.md's current row predates
+ *  generations, so it is named by the document's. */
 interface Rev { revision: number; body: string; approved_by: string | null; approved_at: string | null;
-                written_at: string }
-const docs = new Map<string, { id: string; revisions: Rev[]; current: number;
+                written_at: string; content_generation: string | null }
+const docs = new Map<string, { id: string; revisions: Rev[]; current: number; generation: string;
                                presented_at: string | null }>();
 docs.set("spec.md", {
-  id: "d-spec", current: 10, presented_at: null,
+  id: "d-spec", current: 10, generation: "3", presented_at: null,
   revisions: [
     { revision: 1, body: "# Spec\n\nThe first approval.", approved_by: "ada@zz.test",
-      approved_at: "2026-01-05", written_at: "2026-01-05T00:00:00.000Z" },
+      approved_at: "2026-01-05", written_at: "2026-01-05T00:00:00.000Z", content_generation: null },
     { revision: 2, body: "# Spec\n\nThe second approval.", approved_by: "bo@zz.test",
-      approved_at: "2026-02-09", written_at: "2026-02-09T00:00:00.000Z" },
+      approved_at: "2026-02-09", written_at: "2026-02-09T00:00:00.000Z", content_generation: "1" },
     { revision: 10, body: "# Spec\n\nThe current draft.", approved_by: null,
-      approved_at: null, written_at: "2026-03-01T00:00:00.000Z" },
+      approved_at: null, written_at: "2026-03-01T00:00:00.000Z", content_generation: "3" },
   ],
 });
 docs.set("plan.md", {
-  id: "d-plan", current: 1, presented_at: null,
+  id: "d-plan", current: 1, generation: "2", presented_at: null,
   revisions: [{ revision: 1, body: "# Plan\n\nThe current plan.", approved_by: null,
-                approved_at: null, written_at: "2026-01-01T00:00:00.000Z" }],
+                approved_at: null, written_at: "2026-01-01T00:00:00.000Z", content_generation: null }],
 });
 
 /* The statement the history was read with. The stub cannot show an ORDER BY by its answer: it
@@ -72,7 +79,8 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
     return one((hit?.revisions ?? []).map((r: Rev) => ({
       revision: r.revision, version: r.revision, content_state: "retained", title: name, body: r.body, tags: [],
       content_hash: "h", revision_note: null, fields: null, written_by: "w@zz.test",
-      written_at: r.written_at, approved_by: r.approved_by, approved_at: r.approved_at })));
+      written_at: r.written_at, approved_by: r.approved_by, approved_at: r.approved_at,
+      content_generation: r.content_generation })));
   }
   if (/from zz\.doc_link l\b/.test(sql)) return one([]);
   // DELIBERATE: the routes that decide this check come FIRST. The generic `from zz.doc d` arm
@@ -98,14 +106,14 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
     const rev = d.revisions.find((r) => r.revision === d.current)!;
     return one([{ id: d.id, initiative: INIT, path: name, flow: "", type: "", status: "draft",
                   outcome: null, current_revision: d.current, approved_revision: null,
-                  current_version: d.current, content_generation: "0", updated_at: rev.written_at }]);
+                  current_version: d.current, content_generation: d.generation, updated_at: rev.written_at }]);
   }
   if (/insert into zz\.event\b/.test(sql)) return one([]);
   if (/from zz\.team where slug = \$1|select slug from zz\.team/.test(sql)) return one([{ slug: TEAM }]);
   return one([]);
 }) as unknown as typeof pg.Pool.prototype.query;
 
-const { loadDocument } = await load("services/zz-core/dist/versions.js");
+const { loadDocument, loadSnapshot } = await load("services/zz-core/dist/versions.js");
 const { present } = await load("services/zz-core/dist/document-present.js");
 const { writeGuard, safePath } = await load("services/zz-core/dist/paths.js");
 const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
@@ -121,10 +129,14 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 // accepts.
 interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
 interface ToolDef { inputSchema?: Record<string, ZodLike>; [key: string]: unknown }
+type Handler = (a: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
 
 const tools = new Map<string, ToolDef>();
+const handlers = new Map<string, Handler>();
 const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
-registerArtifactTools({ registerTool: (name: string, def: ToolDef) => tools.set(name, def) });
+registerArtifactTools({ registerTool: (name: string, def: ToolDef, handler: Handler) => {
+  tools.set(name, def); handlers.set(name, handler);
+} });
 
 for (const name of ["document_read", "document_present"]) {
   const def = tools.get(name);
@@ -186,6 +198,59 @@ is((await loadDocument(TEAM, `${INIT}/spec.md`, 2)).ok, "version 2 is refused al
 const absent = await loadDocument(TEAM, `${INIT}/plan.md`, 2);
 is(!absent.ok && absent.why === "no_version",
    "a version of a document that has one revision is not refused");
+
+// 2b. One exact snapshot, by its content revision
+is(tools.get("document_read")?.inputSchema?.content_revision?.safeParse("cr_x").success
+   && tools.get("document_read")?.inputSchema?.content_revision?.safeParse(undefined).success,
+   "document_read takes no optional `content_revision`");
+{
+  const SPEC = `${INIT}/spec.md`;
+  const past = await loadSnapshot(TEAM, SPEC, contentRevision("d-spec", 1));
+  is(past.ok && past.rev.revision === 2 && /The second approval/.test(past.text)
+     && past.text.includes(`content_revision: ${contentRevision("d-spec", 1)}\n`),
+     `a past snapshot is not read by its own content revision — got ${JSON.stringify(past.ok ? past.rev : past)}`);
+  const v2 = await loadDocument(TEAM, SPEC, 2);
+  // The stub titles a row by its last bound value, which differs between the two reads, so the row
+  // and the token it renders are compared rather than the whole text.
+  is(v2.ok && past.ok && v2.rev.revision === past.rev.revision
+     && v2.text.includes(`content_revision: ${contentRevision("d-spec", 1)}\n`),
+     "a version read of a past snapshot does not carry that snapshot's own content revision");
+  const current = await loadSnapshot(TEAM, SPEC, contentRevision("d-spec", 3));
+  is(current.ok && current.rev.revision === 10, "the current snapshot is not read by its content revision");
+  const v1 = await loadDocument(TEAM, SPEC, 1);
+  is(v1.ok && !/^content_revision:/m.test(v1.text),
+     "a superseded row written before generations were recorded was handed a content revision");
+  const rewritten = await loadSnapshot(TEAM, SPEC, contentRevision("d-spec", 2));
+  is(!rewritten.ok && rewritten.refusal === `ERROR: SNAPSHOT_UNAVAILABLE — ${contentRevision("d-spec", 2)} was a ` +
+       "working state that is not retained; read the current one",
+     `a rewritten working state is not refused by its text — got ${JSON.stringify(rewritten)}`);
+  const foreign = await loadSnapshot(TEAM, SPEC, contentRevision("d-plan", 2));
+  is(!foreign.ok && foreign.refusal === `ERROR: SNAPSHOT_UNAVAILABLE — ${contentRevision("d-plan", 2)} names no ` +
+       `snapshot of ${SPEC}`,
+     `another document's token is not refused by its text — got ${JSON.stringify(foreign)}`);
+  // A current row written before generations were recorded is named by the document's, read at
+  // read time: both describe the same content.
+  const plan = await loadDocument(TEAM, `${INIT}/plan.md`);
+  is(plan.ok && plan.text.includes(`content_revision: ${contentRevision("d-plan", 2)}\n`),
+     "a current row with no generation of its own is not named by the document's");
+  const planSnap = await loadSnapshot(TEAM, `${INIT}/plan.md`, contentRevision("d-plan", 2));
+  is(planSnap.ok && planSnap.rev.revision === 1, "a current row with no generation of its own is not read by the document's token");
+}
+// A snapshot read is one whole snapshot of one document: every other way to narrow or redirect a
+// read is refused with it, before anything is looked up.
+{
+  const read = handlers.get("document_read")!;
+  const cr = contentRevision("d-spec", 3);
+  const combos: [string, Record<string, unknown>][] = [
+    ["version", { version: 1 }], ["details_ref", { details_ref: "dr_x" }], ["cursor", { cursor: "dc_x" }],
+    ["section", { section: "Spec" }], ["offset", { offset: 0 }], ["limit", { limit: 10 }],
+    ["scope", { scope: "platform" }], ["an array path", { path: [`${INIT}/spec.md`] }],
+  ];
+  for (const [label, extra] of combos) {
+    const reply = (await read({ path: `${INIT}/spec.md`, content_revision: cr, ...extra })).content[0].text;
+    is(/^ERROR: INVALID_MODE — `content_revision`/.test(reply), `content_revision with ${label} is not INVALID_MODE — got ${reply}`);
+  }
+}
 
 // 3. The record, per document, with shownSinceLastChange as the oracle
 const shown = async (rel: string) => shownSinceLastChange(db()!, TEAM, rel);

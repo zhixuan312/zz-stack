@@ -1,5 +1,5 @@
--- 002_document_versions.sql — public versions, the content generation, cause links, request
--- records, the cause-link epoch, and the activity record's details.
+-- 002_document_versions.sql — public versions, the content generation and each snapshot's own,
+-- cause links, request records, the cause-link epoch, and the activity record's details.
 --
 -- `zz.doc_revision.revision` stays the snapshot id every pin names (`doc_link`,
 -- `eval_assessment.doc_revision`, `eval_protocol_version.approved_doc_revision`, the approval
@@ -29,6 +29,15 @@ ALTER TABLE zz.doc_revision ADD CONSTRAINT doc_revision_version_positive CHECK (
 CREATE INDEX doc_revision_version ON zz.doc_revision USING btree (doc_id, version);
 
 COMMENT ON COLUMN zz.doc_revision.version IS 'class=state_machine; authority=this; question=which public version of the document does this snapshot belong to, the number a reader asks for while revision stays the snapshot every pin names?';
+
+-- zz.doc_revision: the content generation each snapshot carries, so a presented or approved one is
+-- named by its own content revision. DELIBERATE: no backfill. A superseded row's generation cannot
+-- be derived after the fact — a rewrite in place moved the document's counter without a row — so a
+-- row written before this file has none; a current row with none takes doc.content_generation on
+-- read, which describes the same content, and the first rewrite stamps it.
+ALTER TABLE zz.doc_revision ADD COLUMN content_generation bigint;
+
+COMMENT ON COLUMN zz.doc_revision.content_generation IS 'class=state_machine; authority=this; question=which content generation of its document do this revision''s body and editable metadata carry, the one its own content_revision names, null for a revision last written before generations were recorded per revision?';
 
 -- zz.doc: the current public version, and the content generation.
 ALTER TABLE zz.doc ADD COLUMN current_version integer;

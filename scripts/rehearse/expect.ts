@@ -170,7 +170,7 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
 export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
   // The document-versions release. It reshapes three tables by adding columns and deletes no row,
   // so each keeps its count and hashes unchanged over the columns it had before — the added ones
-  // (`version`, `current_version`, `content_generation`, `linked_by`) are this file's own and are
+  // (`version`, both `content_generation`s, `current_version`, `linked_by`) are this file's own and are
   // left out of the digest. The two tables it creates are declared added. On `zz.event` it adds an
   // index and restates the table's comment, which move no row, so `event` is deliberately not named
   // here: its default — count and every column hashed unchanged — is exactly what the file claims.
@@ -205,6 +205,13 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
         name: "every doc's current_version is its current_revision",
         violatingCount: `select count(*)::int as n from zz.doc d
           where d.current_version is distinct from d.current_revision`,
+      },
+      // A snapshot's own generation is recorded from this file on and never invented for a row
+      // written before it.
+      {
+        name: "no existing doc_revision carries a content_generation",
+        violatingCount: `select count(*)::int as n from zz.doc_revision r
+          where r.content_generation is not null`,
       },
       // A link filed before this file has no origin recorded; one with an origin is a cause, and no
       // cause existed before the release that records them.

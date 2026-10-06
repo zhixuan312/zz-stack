@@ -10,11 +10,12 @@
  * before it checks the path is absent, which is what makes "absent" mean anything.
  *
  * A write carrying `change` is the change service's: it commits only onto the state it was
- * computed from (`expect`), decides a new row or an in-place rewrite by the pin rule, and commits
- * its captured source, its cause links and its request record with the document. A write without
- * it behaves as it always has (`create`, `append`, `rewrite`), apart from the lock and the two new
- * counters every write keeps true: `current_version` follows `current_revision`, and
- * `content_generation` moves whenever the content identity does.
+ * computed from (`expect`) and commits its captured source, its cause links and its request record
+ * with the document. Every write lands where the pin rule says (`document-snapshot.ts`): a write
+ * that changes a shown or signed row's content files a new row beside it, with or without `change`.
+ * Every write keeps three counters true: `current_version` follows `current_revision`,
+ * `content_generation` moves whenever the content identity does, and every row it inserts or
+ * rewrites stores the generation it carries.
  *
  * Every write records its act — the `document.<act>` row of `zz.event`. A change carrying
  * `details` writes its row in its own transaction, last, with the complete details its receipt
@@ -29,7 +30,7 @@ import { createHash } from "node:crypto";
 
 import type pg from "pg";
 
-import { documentBody, parseEnvelope } from "@zz/contracts";
+import { contentRevision, documentBody, parseEnvelope } from "@zz/contracts";
 import { bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "@zz/indexing";
 
 import { DOCUMENT_EVENT_PREFIX } from "./attest.js";
@@ -40,9 +41,10 @@ import {
 import type { Composed } from "./document-details.js";
 import { RESERVED_ENVELOPE } from "./document-rules.js";
 import { insertEvent } from "./indexing.js";
+import { currentRow, type CurrentRow, landing, lockPath, reservePath } from "./document-snapshot.js";
 import { stampEnvelope } from "./write-guards.js";
 import { db as platformDb } from "./platform-db.js";
-import { ENVELOPE_COLUMN_KEYS, NO_DB, contentRevision, principalId, recordAct, splitStorePath } from "./versions.js";
+import { ENVELOPE_COLUMN_KEYS, NO_DB, principalId, recordAct, splitStorePath } from "./versions.js";
 
 /** What a change service adds to a write: the state it computed from, and what commits with it. */
 interface DocumentChange {
@@ -264,27 +266,6 @@ async function initiativeIdIn(
   return rows[0]?.id ?? null;
 }
 
-/** The per-document lock, held to the end of the transaction. */
-async function lockPath(c: Pick<pg.Pool, "query">, team: string, relPath: string): Promise<void> {
-  await c.query("select pg_advisory_xact_lock(hashtext($1))", [`doc:${team}/${relPath}`]);
-}
-
-/** The first free name of a path's stem — `<stem>.md`, `<stem>-2.md`, … — with its lock held.
- *
- *  DELIBERATE: the stem's lock first, so two reservations of one stem serialise and the second
- *  sees the first's row; then the chosen path's, which a create of that exact name also takes, and
- *  the name is looked at again under it. A probe outside the lock let two writers pick one name. */
-async function reservePath(c: Pick<pg.Pool, "query">, team: string, relPath: string): Promise<string> {
-  const stem = relPath.replace(/\.md$/, "");
-  await lockPath(c, team, stem);
-  for (let n = 1; ; n++) {
-    const rel = n === 1 ? `${stem}.md` : `${stem}-${n}.md`;
-    if (await currentRow(c, team, rel)) continue;
-    await lockPath(c, team, rel);
-    if (!(await currentRow(c, team, rel))) return rel;
-  }
-}
-
 /** The document's state, as a change service reads it before computing, and as `saveDocument`
  *  compares it under the lock. Null when the document does not exist. */
 export async function documentState(
@@ -294,45 +275,8 @@ export async function documentState(
   return cur ? stateOf(cur) : null;
 }
 
-interface CurrentRow {
-  id: string; status: string; current_revision: number | null; approved_revision: number | null;
-  generation: string; version: number | null; written_at: string | null;
-  title: string | null; body: string | null; tags: string[] | null; fields: Record<string, string> | null;
-  pinned: boolean;
-}
-
 const stateOf = (c: CurrentRow): DocumentState =>
   ({ generation: Number(c.generation), revision: c.current_revision ?? 0, writtenAt: c.written_at ?? "" });
-
-/** The document a store path names and its current row, with the pin rule's answer.
- *
- * PINNED is the rule a change obeys: a row somebody was shown or signed is never rewritten. Shown
- * means `presented_at` set, or a `document.shown`/`document.shown_part` event for this document at
- * or after the row's write; signed means sealed, or the document's approved revision — a seal whose
- * person resolved to no principal leaves the row's columns null and the approval stands. */
-async function currentRow(
-  p: Pick<pg.Pool, "query">, team: string, relPath: string,
-): Promise<CurrentRow | null> {
-  const { initiative, name } = splitStorePath(relPath);
-  const { rows } = await p.query<CurrentRow>(
-    `select d.id::text as id, d.status, d.current_revision, d.approved_revision,
-            d.content_generation::text as generation, r.version, r.written_at::text as written_at,
-            r.title, r.body, r.tags, r.fields,
-            (r.approved_by is not null or d.approved_revision = d.current_revision
-             or r.presented_at is not null
-             or exists (select 1 from zz.event e
-                         where e.initiative_id = d.initiative_id and e.subject = $4
-                           and e.kind in ('document.shown', 'document.shown_part')
-                           and e.ts >= r.written_at)) as pinned
-       from zz.doc d
-       join zz.initiative i on i.id = d.initiative_id
-       join zz.team t on t.id = i.team_id
-       left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-      where t.slug = $1 and i.slug = $2 and d.path = $3
-      order by d.updated_at desc
-      limit 1`, [team, initiative, name, relPath]);
-  return rows[0] ?? null;
-}
 
 /** What a write answers: the rows it left, a refusal, or — only for a write carrying `change` —
  *  a retry or a replayed receipt. */
@@ -448,9 +392,7 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
                  ...(composed ? { receipt: composed } : {}) };
       }
       if (!same) generation += 1;
-      mode = change
-        ? (change.nextVersion ? "append" : existing.pinned ? "pinned" : "rewrite")
-        : (w.mode === "append" ? "append" : "rewrite");
+      mode = landing(change ? change.nextVersion : w.mode === "append", same, existing.pinned);
     } else if (existing) {
       // A source is immutable and has no change to send instead; every other document has one.
       return await bail({ refusal: w.act === "source" ? `ERROR: ${w.relPath} already exists`
@@ -503,7 +445,7 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       // A document changed after an approval is draft again while its last approved revision
       // stays recorded: `approved_revision` moves only when THIS revision is the sealed one.
       const sealed = prep.status === "approved" ? revision : existing!.approved_revision;
-      await insertRevision(client, id, revision, version, w, prep, writer, seal);
+      await insertRevision(client, id, revision, version, generation, w, prep, writer, seal);
       await client.query(
         `update zz.doc set current_revision = $2, status = $3, approved_revision = $4,
                             type = $5, updated_at = now(), body = $6, title = $7,
@@ -529,7 +471,8 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       //
       // DELIBERATE: a sealed revision is not rewritten. `doc_current_revision_required` has no
       // state for "approved at this revision, draft now", and an approver's name stands on the
-      // bytes they read. A change never reaches here with one: the pin rule files a new row.
+      // bytes they read. A write that changes its content never reaches here: the pin rule files a
+      // new row.
       if (existing!.approved_revision === revision && prep.status !== "approved") {
         return await bail({ refusal:
           `ERROR: ${w.relPath} v${version} is approved — an approved revision is not ` +
@@ -547,10 +490,10 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
                                     revision_note = $7, written_by = $8::uuid, written_at = now(),
                                     approved_by = coalesce($9::uuid, approved_by),
                                     approved_at = coalesce($10::timestamptz, approved_at),
-                                    fields = $11::jsonb
+                                    fields = $11::jsonb, content_generation = $12
           where doc_id = $1::uuid and revision = $2`,
         [id, revision, prep.title, prep.body, prep.tags, prep.hash, w.note ?? null, writer,
-         seal?.by ?? null, seal?.at ?? null, prep.fields]);
+         seal?.by ?? null, seal?.at ?? null, prep.fields, generation]);
       await client.query(
         // COUPLED: `coalesce` here too. The last approved revision stays recorded when this
         // write is not the one sealing it.
@@ -657,7 +600,7 @@ async function createRows(
      prep.tags, prep.hash, prep.analyzer, ...prep.tsv, approved, w.id ?? null]);
   const id = ins.rows[0]?.id ?? "";
   if (!id) return "";
-  await insertRevision(client, id, 1, 1, w, prep, writer, seal);
+  await insertRevision(client, id, 1, 1, 0, w, prep, writer, seal);
   // The supports that were waiting for this document. A source that named it before it existed
   // filed no link — `doc_link` needs a row to point at — and kept the name in its envelope's
   // `supports`; the link lands now, the moment there is a row.
@@ -673,20 +616,20 @@ async function createRows(
   return id;
 }
 
-/** One revision row. `content_state` is always `retained` here: a write that has the bytes is
- *  the one case where they are, and `missing_legacy` is a fact only a legacy store can state.
- *  `fields` is the residual `prepare` computed from the same envelope the row's projection came
- *  off; `pg` writes SQL NULL for null. */
+/** One revision row, carrying the content generation it was written at. `content_state` is always
+ *  `retained` here: a write that has the bytes is the one case where they are, and `missing_legacy`
+ *  is a fact only a legacy store can state. `fields` is the residual `prepare` computed from the
+ *  same envelope the row's projection came off; `pg` writes SQL NULL for null. */
 async function insertRevision(
-  p: Pick<pg.Pool, "query">, docId: string, revision: number, version: number, w: DocumentWrite,
-  prep: Prepared, writer: string | null, seal: { by: string; at: string } | null,
+  p: Pick<pg.Pool, "query">, docId: string, revision: number, version: number, generation: number,
+  w: DocumentWrite, prep: Prepared, writer: string | null, seal: { by: string; at: string } | null,
 ): Promise<void> {
   await p.query(
     `insert into zz.doc_revision
        (doc_id, revision, content_state, title, body, tags, content_hash, revision_note,
-        written_by, written_at, approved_by, approved_at, fields, version)
+        written_by, written_at, approved_by, approved_at, fields, version, content_generation)
      values ($1::uuid, $2, 'retained', $3, $4, $5::text[], $6, $7, $8::uuid, now(),
-             $9::uuid, $10::timestamptz, $11::jsonb, $12)`,
+             $9::uuid, $10::timestamptz, $11::jsonb, $12, $13)`,
     [docId, revision, prep.title, prep.body, prep.tags, prep.hash, w.note ?? null, writer,
-     seal?.by ?? null, seal?.at ?? null, prep.fields, version]);
+     seal?.by ?? null, seal?.at ?? null, prep.fields, version, generation]);
 }

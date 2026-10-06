@@ -6,6 +6,8 @@
  * consumer deep-imports a sibling module.
  */
 
+import { createHash } from "node:crypto";
+
 import { z } from "zod";
 
 export { actingTeam, addressResolver, mintPat, parseCaller, PAT_TOKEN,
@@ -67,6 +69,27 @@ export const ENVELOPE_BLOCK = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n?/;
 export function documentBody(content: string): string {
   const m = content.match(ENVELOPE_BLOCK);
   return m ? content.slice(m[0].length).replace(/^(?:[ \t]*\r?\n)+/, "") : content;
+}
+
+const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
+
+/** The opaque token naming one content generation of one document: `cr_` and the first 26
+ *  characters of the RFC 4648 lowercase base32, unpadded, of sha256(doc id + ":" + generation). It
+ *  binds the document and the generation, never a row number, so A -> B -> A does not hand A's old
+ *  token back. zz-core and the gateway derive it here, so both name a snapshot alike. Callers
+ *  compare it for equality and never parse it. */
+export function contentRevision(docId: string, generation: number): string {
+  const bytes = createHash("sha256").update(`${docId}:${generation}`, "utf8").digest();
+  let bits = 0, value = 0, out = "";
+  for (const b of bytes) {
+    value = ((value << 8) | b) & 0xffff;
+    bits += 8;
+    while (bits >= 5) {
+      out += BASE32[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  return `cr_${out.slice(0, 26)}`;
 }
 
 /** A document's frontmatter envelope, or {} when there is none. Later keys win, and a value's

@@ -12,7 +12,13 @@
  *   - the pin rule's three branches: a presented row, a row a `document.shown` event covers and an
  *     approved row each get a new row in the same public version, carrying the row's causes, and
  *     an unpinned row is rewritten in place;
- *   - the content generation moves on a change of body or editable metadata and not on an approval;
+ *   - the content generation moves on a change of body or editable metadata and not on an approval,
+ *     and every row stores the generation it was last written at;
+ *   - presented snapshots are immutable for every writer: a write without `change` that changes a
+ *     pinned row's content files a new row in the same version, an approval stays in place;
+ *   - snapshot reads by `content_revision`: a past snapshot carries its own token and is read by it,
+ *     a current row written before generations were recorded takes the document's (nothing is
+ *     written to it), and a rewritten working state or a foreign token is SNAPSHOT_UNAVAILABLE;
  *   - the state compare: a generation change, an approval and a close each send a change back
  *     (`retry`, or `BASE_CONFLICT` when the caller's base is stale), and nothing is written;
  *   - a second writer waits on the per-document lock, a create included;
@@ -41,7 +47,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { OUTCOMES } from "@zz/contracts";
+import { contentRevision, OUTCOMES } from "@zz/contracts";
 import pg from "pg";
 
 import { SCHEMA_TARGET } from "../schema-target.ts";
@@ -133,7 +139,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
 async function cases(
   db: pg.Client, pool: pg.Pool,
   { saveDocument, documentState }: { saveDocument: Save; documentState: (p: unknown, team: string, rel: string) => Promise<State | null> },
-  versions: { loadDocument: Function; revisionsOf: Function; publicVersions: Function; contentRevision: Function },
+  versions: { loadDocument: Function; loadSnapshot: Function; revisionsOf: Function; publicVersions: Function },
   initiativeId: string,
 ): Promise<void> {
   const base = { team: TEAM, initiative: INIT, by: EMAIL };
@@ -145,8 +151,11 @@ async function cases(
   const row = async (revision: number) => (await db.query<{ version: number; body: string; approved_by: string | null }>(
     `select r.version, r.body, r.approved_by::text from zz.doc_revision r join zz.doc d on d.id = r.doc_id
       where d.path = 'notes.md' and r.revision = $1`, [revision])).rows[0];
-  const docRow = async () => (await db.query<{ current_revision: number; current_version: number; content_generation: string }>(
-    "select current_revision, current_version, content_generation from zz.doc where path = 'notes.md'")).rows[0];
+  const docRow = async () => (await db.query<{ id: string; current_revision: number; current_version: number; content_generation: string }>(
+    "select id::text as id, current_revision, current_version, content_generation from zz.doc where path = 'notes.md'")).rows[0];
+  const gen = async (revision: number, path = "notes.md") => (await db.query<{ g: string | null }>(
+    `select r.content_generation::text as g from zz.doc_revision r join zz.doc d on d.id = r.doc_id
+      where d.path = $1 and r.revision = $2`, [path, revision])).rows[0]?.g;
   const change = async (text: string, extra: Record<string, unknown> = {}) =>
     saveDocument({ ...base, relPath: DOC, text, mode: "rewrite", change: { nextVersion: false, expect: await state(), ...extra } });
 
@@ -155,10 +164,12 @@ async function cases(
   const created = saved("create", await saveDocument({ ...base, relPath: DOC, text: doc("alpha\n"), mode: "create" }));
   if (created.revision !== 1 || created.version !== 1 || created.generation !== 0) fail("create", JSON.stringify(created));
   if ((await docRow()).current_version !== 1) fail("create", "doc.current_version is not 1");
+  if (await gen(1) !== "0") fail("create", `r1 stores generation ${await gen(1)}, not 0`);
   ok("create: revision 1, version 1, generation 0");
 
   await saveDocument({ ...base, relPath: DOC, text: doc("beta\n"), mode: "rewrite" });
   if ((await docRow()).content_generation !== "1") fail("generation", "a body change without `change` did not move the generation");
+  if (await gen(1) !== "1") fail("generation", `an in-place rewrite left r1 at generation ${await gen(1)}, not 1`);
   await saveDocument({ ...base, relPath: DOC, text: doc("beta\n"), mode: "rewrite" });
   if ((await docRow()).content_generation !== "1") fail("generation", "a rewrite of the same body and metadata moved the generation");
   ok("generation: moves on a body change, not on a re-stamp of the same content");
@@ -204,6 +215,7 @@ async function cases(
                        seal: { by: EMAIL, at: new Date().toISOString() } });
   const sealed = await docRow();
   if (sealed.content_generation !== String(before.generation)) fail("approval", "an approval moved the content generation");
+  if (sealed.current_revision !== before.revision) fail("approval", "an identity-keeping approval filed a new row instead of sealing in place");
   const approvedRow = await row(3);
   if (!approvedRow.approved_by) fail("approval", "the seal did not land");
   const meta = saved("approved", await change(doc("epsilon\n", "status: draft\ntags: renamed\n")));
@@ -218,6 +230,13 @@ async function cases(
   if (!next.newVersion || !next.newRow || next.revision !== 5 || next.version !== 2) fail("nextVersion", JSON.stringify(next));
   if ((await docRow()).current_version !== 2) fail("nextVersion", "doc.current_version did not follow");
   ok("nextVersion: r5 opens v2");
+  {
+    const want = [[1, 3], [2, presented.generation], [3, shown.generation], [4, meta.generation], [5, next.generation]];
+    for (const [revision, g] of want) {
+      if (await gen(revision) !== String(g)) fail("generation per row", `r${revision} stores ${await gen(revision)}, not ${g}`);
+    }
+    ok("generation per row: every row stores the generation it was last written at");
+  }
 
   // ── the state compare ────────────────────────────────────────────────────────────────────────
   const unchanged = async (step: string, at: State): Promise<void> => {
@@ -357,12 +376,19 @@ async function cases(
     if (!v1.ok || v1.rev.revision !== 3 || !/^version: 1$/m.test(v1.text)) {
       fail("read v1", `version 1 did not answer with its approved snapshot r3: ${JSON.stringify(v1.ok ? v1.rev : v1)}`);
     }
-    if (/^content_revision:/m.test(v1.text)) fail("read v1", "a past snapshot carries the current content revision");
     const cur = await versions.loadDocument(TEAM, DOC);
-    const gen = (await docRow()).content_generation;
-    const want = versions.contentRevision(cur.doc.id, Number(gen));
+    const own = contentRevision(cur.doc.id, Number(await gen(3)));
+    const current = (await docRow()).content_generation;
+    if (!v1.text.includes(`content_revision: ${own}\n`) || own === contentRevision(cur.doc.id, Number(current))) {
+      fail("read v1", "a past snapshot does not carry its own content revision, or carries the current one");
+    }
+    const byToken = await versions.loadSnapshot(TEAM, DOC, own);
+    if (!byToken.ok || byToken.rev.revision !== 3 || byToken.text !== v1.text) {
+      fail("read by content revision", `the token of r3 did not read r3: ${JSON.stringify(byToken.ok ? byToken.rev : byToken)}`);
+    }
+    const want = contentRevision(cur.doc.id, Number(current));
     if (!/^cr_[a-z2-7]{26}$/.test(want)) fail("content revision", `malformed: ${want}`);
-    const digest = createHash("sha256").update(`${cur.doc.id}:${gen}`).digest();
+    const digest = createHash("sha256").update(`${cur.doc.id}:${current}`).digest();
     if (!cur.ok || !cur.text.includes(`content_revision: ${want}`) || want !== `cr_${base32(digest).slice(0, 26)}`) {
       fail("content revision", `the current read does not carry ${want}`);
     }
@@ -376,6 +402,7 @@ async function cases(
     if (listed[0] !== "1:3") fail("public versions", `one entry per version, the approved snapshot first: ${listed.join(", ")}`);
     if (new Set(listed.map((l: string) => l.split(":")[0])).size !== listed.length) fail("public versions", `repeated: ${listed}`);
     ok("version reads: approved snapshot of a version, its last otherwise, distinct versions listed");
+    ok("snapshot reads: a past snapshot carries its own content revision and is read by it");
   }
 
   // ── an approval whose person resolves to no principal still pins ─────────────────────────────
@@ -392,9 +419,68 @@ async function cases(
     ok("pin rule, approved without a resolved principal: a new row");
   }
 
+  await immutable(db, saveDocument, saved, row, gen);
+  await legacy(db, saveDocument, versions, saved, gen);
   await activity(db, change, saved);
   await setBased(db, saveDocument, state, saved);
   await reservations(db, saveDocument, saved);
+}
+
+type Gen = (revision: number, path?: string) => Promise<string | null | undefined>;
+
+/** A write without `change` — an evaluation document's — that changes a pinned row's content files
+ *  a new row in the same version; on an unpinned row it rewrites in place. */
+async function immutable(
+  db: pg.Client, saveDocument: Save, saved: (step: string, r: Awaited<ReturnType<Save>>) => Saved,
+  row: (revision: number) => Promise<{ version: number; body: string }>, gen: Gen,
+): Promise<void> {
+  const cur = (await db.query<{ r: number; g: string }>(
+    "select current_revision as r, content_generation::text as g from zz.doc where path = 'notes.md'")).rows[0];
+  const shown = await row(cur.r);
+  await db.query("update zz.doc_revision r set presented_at = now() from zz.doc d where d.id = r.doc_id and d.path = 'notes.md' and r.revision = $1", [cur.r]);
+  const filed = saved("immutable", await saveDocument({ team: TEAM, initiative: INIT, by: EMAIL, relPath: DOC,
+                                                         text: doc("an evaluation's rewrite\n"), mode: "rewrite", act: "write" }));
+  if (!filed.newRow || filed.revision !== cur.r + 1 || filed.version !== shown.version) {
+    fail("immutable", `a non-change write over a presented row did not file r${cur.r + 1} in v${shown.version}: ${JSON.stringify(filed)}`);
+  }
+  if ((await row(cur.r)).body !== shown.body || await gen(cur.r) !== cur.g) fail("immutable", "the presented row was rewritten");
+  if (await gen(filed.revision) !== String(Number(cur.g) + 1)) fail("immutable", `the new row stores generation ${await gen(filed.revision)}`);
+  const again = saved("immutable", await saveDocument({ team: TEAM, initiative: INIT, by: EMAIL, relPath: DOC,
+                                                        text: doc("an evaluation's second rewrite\n"), mode: "rewrite", act: "write" }));
+  if (again.newRow || again.revision !== filed.revision) fail("immutable", `an unpinned row was not rewritten in place: ${JSON.stringify(again)}`);
+  ok("immutable: a non-change write over a presented row files a new row in its version; an unpinned one rewrites in place");
+}
+
+/** A current row written before generations were recorded: its identity is the document's, read at
+ *  read time and written nowhere; the first rewrite stamps it, and the token it had then names a
+ *  working state that is not retained. */
+async function legacy(
+  db: pg.Client, saveDocument: Save, versions: { loadDocument: Function; loadSnapshot: Function },
+  saved: (step: string, r: Awaited<ReturnType<Save>>) => Saved, gen: Gen,
+): Promise<void> {
+  const rel = `${INIT}/legacy.md`;
+  const made = saved("legacy", await saveDocument({ team: TEAM, initiative: INIT, by: EMAIL, relPath: rel, text: doc("old\n"), mode: "create" }));
+  await db.query("update zz.doc_revision set content_generation = null where doc_id = $1::uuid", [made.id]);
+  await db.query("update zz.doc set content_generation = 4 where id = $1::uuid", [made.id]);
+  const token = contentRevision(made.id, 4);
+  const read = await versions.loadDocument(TEAM, rel);
+  if (!read.ok || !read.text.includes(`content_revision: ${token}\n`)) fail("legacy", "the current row does not take the document's generation");
+  const snap = await versions.loadSnapshot(TEAM, rel, token);
+  if (!snap.ok || snap.rev.revision !== 1 || snap.text !== read.text) fail("legacy", `its token does not read it: ${JSON.stringify(snap)}`);
+  if (await gen(1, "legacy.md") !== null) fail("legacy", "a read wrote a generation onto the legacy row");
+  saved("legacy", await saveDocument({ team: TEAM, initiative: INIT, by: EMAIL, relPath: rel, text: doc("new\n"), mode: "rewrite" }));
+  if (await gen(1, "legacy.md") !== "5") fail("legacy", `the first rewrite stamped ${await gen(1, "legacy.md")}, not 5`);
+  ok("legacy: a current row with no generation is named by the document's, unwritten until its first rewrite stamps it");
+
+  const gone = await versions.loadSnapshot(TEAM, rel, token);
+  const goneText = `ERROR: SNAPSHOT_UNAVAILABLE — ${token} was a working state that is not retained; read the current one`;
+  if (gone.ok || gone.refusal !== goneText) fail("unavailable", `a rewritten state answered ${JSON.stringify(gone)}`);
+  const foreign = contentRevision(made.id, 99);
+  const none = await versions.loadSnapshot(TEAM, rel, foreign);
+  if (none.ok || none.refusal !== `ERROR: SNAPSHOT_UNAVAILABLE — ${foreign} names no snapshot of ${rel}`) {
+    fail("unavailable", `a token of no generation answered ${JSON.stringify(none)}`);
+  }
+  ok("unavailable: a rewritten working state and a token of no snapshot are SNAPSHOT_UNAVAILABLE, each by its own text");
 }
 
 /** The `zz.event` rows that carry one details reference. */
@@ -556,7 +642,8 @@ async function main(): Promise<number> {
     console.error(err instanceof CaseFailure ? err.message : `document-store: ${String((err as Error)?.stack ?? err)}`);
     return 1;
   }
-  console.log("document-store: pin rule, generation, state compare, lock, rollback, requests, version reads, activity, set-based causes and reservations: ok");
+  console.log("document-store: pin rule, generation per row, immutable snapshots, state compare, lock, rollback, requests, " +
+              "version and snapshot reads, activity, set-based causes and reservations: ok");
   return 0;
 }
 

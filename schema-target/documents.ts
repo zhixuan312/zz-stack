@@ -12,7 +12,7 @@
  *
  * A revision is a snapshot and `revision` is its id; the public `version` a reader is shown is its
  * own column, and `doc.content_generation` counts the content changes a `content_revision` token
- * binds. `doc_request` records keyed changes so a retry replays its reply, and `cause_link_epoch`
+ * binds; each revision records the generation it carries. `doc_request` records keyed changes so a retry replays its reply, and `cause_link_epoch`
  * is the instant automatic causes start.
  *
  * `doc_revision.fields` is the envelope's OPEN payload: the fields a document carries that have no
@@ -338,6 +338,19 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         false,
         null,
       ],
+      // The content generation these bytes and this editable metadata carry, written on every
+      // insert and every in-place rewrite, so a snapshot someone was shown or signed is named by its
+      // own `content_revision`. Null on a row last written before the release that adds it, and
+      // never backfilled: a superseded row's generation cannot be derived after the fact, because a
+      // rewrite in place moved the document's counter without a row. A current row with none takes
+      // `doc.content_generation` on read, which describes the same content. Last in ordinal order
+      // because `002_document_versions.sql` adds it, and an `ADD COLUMN` appends.
+      [
+        "content_generation",
+        "bigint",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "doc_id",
@@ -390,6 +403,7 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       fields: "class=state_machine; authority=this; question=which envelope fields does this revision carry that have no column of their own?",
       presented_at: "class=state_machine; authority=this; question=when were these exact bytes put in front of a person, the fact document_approve is refused by and a column rather than a sweepable event row so an approval gate cannot fail open?",
       version: "class=state_machine; authority=this; question=which public version of the document does this snapshot belong to, the number a reader asks for while revision stays the snapshot every pin names?",
+      content_generation: "class=state_machine; authority=this; question=which content generation of its document do this revision's body and editable metadata carry, the one its own content_revision names, null for a revision last written before generations were recorded per revision?",
     },
   },
   doc_link: {

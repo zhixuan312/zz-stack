@@ -29,7 +29,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 
-import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
+import { contentRevision, documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
@@ -43,7 +43,7 @@ import { contentIdentity, documentState, type saveDocument, targetExists } from 
 import { sourceDocument } from "./indexing.js";
 import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
-import { contentRevision, documentAt, loadDocument, principalId, splitStorePath } from "./versions.js";
+import { documentAt, loadDocument, principalId, splitStorePath } from "./versions.js";
 import { type Chain, envelopeFor, isoToday, normalizeSections } from "./write-guards.js";
 
 /** A person the platform cannot place in a team has no store to act on. */

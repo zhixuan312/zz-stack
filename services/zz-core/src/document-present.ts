@@ -30,10 +30,10 @@
  * span set. Losing those rows makes a partly-presented document read as unpresented, which refuses
  * an approval: it fails CLOSED, and that is the direction this platform fails in.
  */
-import { documentBody, parseEnvelope } from "@zz/contracts";
+import { contentRevision, documentBody, parseEnvelope } from "@zz/contracts";
 import type pg from "pg";
 
-import { contentRevision, loadDocument, publicVersions, recordAct } from "./versions.js";
+import { loadDocument, publicVersions, recordAct } from "./versions.js";
 import { recordPresented, splitDocPath } from "./attest.js";
 import { type PartAsk, PART_LIMIT, asksPart, partHeader, slicePart } from "./document-parts.js";
 

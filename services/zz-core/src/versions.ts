@@ -33,8 +33,7 @@
  * document's `evidence` is a key of that payload; and a source's `supports` is a `doc_link` row of
  * kind `supports`, which is the only home that relation has.
  */
-import { createHash } from "node:crypto";
-
+import { contentRevision } from "@zz/contracts";
 import type pg from "pg";
 
 import { renderEnvelope } from "./document-rules.js";
@@ -95,6 +94,9 @@ interface RevisionRecord {
   written_at: string | null;
   approved_by: string | null;
   approved_at: string | null;
+  /** The content generation this snapshot carries, as text (`bigint`); null on a row last written
+   *  before generations were recorded per row. */
+  content_generation: string | null;
 }
 
 /** What a read answers with: the document, the revision it read, its text, and the history. */
@@ -137,7 +139,8 @@ export async function revisionsOf(
                     order by (x.approved_by is not null) desc, x.revision desc limit 1))
                  then r.body end as body,
             r.revision_note, w.email as written_by, r.written_at::text as written_at,
-            a.email as approved_by, r.approved_at::text as approved_at
+            a.email as approved_by, r.approved_at::text as approved_at,
+            r.content_generation::text as content_generation
        from zz.doc_revision r
        left join zz.principal w on w.id = r.written_by
        left join zz.principal a on a.id = r.approved_by
@@ -161,26 +164,6 @@ export function publicVersions<R extends { revision: number; version: number; ap
 ): R[] {
   return [...new Set(history.map((r) => r.version))].sort((a, b) => a - b)
     .map((v) => snapshotOf(history, v)!);
-}
-
-const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
-
-/** The opaque token naming a document's content as it is now: `cr_` and the first 26 characters
- *  of the RFC 4648 lowercase base32, unpadded, of sha256(doc id + ":" + content generation). It
- *  binds the document and the generation, never a row number, so A -> B -> A does not hand A's
- *  old token back. Callers compare it for equality and never parse it. */
-export function contentRevision(docId: string, generation: number): string {
-  const bytes = createHash("sha256").update(`${docId}:${generation}`, "utf8").digest();
-  let bits = 0, value = 0, out = "";
-  for (const b of bytes) {
-    value = ((value << 8) | b) & 0xffff;
-    bits += 8;
-    while (bits >= 5) {
-      out += BASE32[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  return `cr_${out.slice(0, 26)}`;
 }
 
 /** The `doc` row a store path names, or null.
@@ -223,7 +206,7 @@ export function splitStorePath(relPath: string): { initiative: string; name: str
  *  construction rather than by a comment: `flow`/`type` are the document's (the flow through the
  *  initiative it is filed under), `title`/`tags`/`version`/`updated_at`/`status`/`approved_by`/
  *  `approved_at`/`revision_note` are `doc`'s and the revision's columns rendered back,
- *  `content_revision` is rendered from `doc.content_generation`, and `sources` is joined from the
+ *  `content_revision` is rendered from the snapshot's generation, and `sources` is joined from the
  *  `cites` links. A key rendered on read and written back by a caller that read it must never
  *  land in the payload, where it would answer stale.
  *
@@ -259,12 +242,8 @@ function documentText(doc: DocIdentity, rev: RevisionRecord, cites: string[] = [
   if (rev.title) env.title = rev.title;
   if (rev.tags?.length) env.tags = rev.tags.join(", ");
   env.version = String(rev.version);
-  // The current content's token, on the current snapshot alone: an earlier snapshot's own
-  // generation is not recorded, and handing it the current one would let a reader of old bytes
-  // pass them off as a base for a change to the new ones.
-  if (rev.revision === doc.current_revision) {
-    env.content_revision = contentRevision(doc.id, Number(doc.content_generation));
-  }
+  const generation = generationOf(doc, rev);
+  if (generation !== null) env.content_revision = contentRevision(doc.id, generation);
   if (rev.written_at) env.updated_at = dayOf(rev.written_at);
   // The status a revision carries: a seal on the revision IS its approval, and the document's
   // own status is the answer for the current revision alone. A revision superseded after an
@@ -281,6 +260,16 @@ function documentText(doc: DocIdentity, rev: RevisionRecord, cites: string[] = [
   return `${renderEnvelope(env, ["flow", "type", "title", "tags", "version", "content_revision", "updated_at",
                                  "status", "approved_by", "approved_at", "revision_note"])}\n` +
     carried;
+}
+
+/** The content generation a snapshot is named by: its own, or — for a current row written before
+ *  generations were recorded per row — the document's, which describes the same content and is
+ *  read here rather than written onto the row. A superseded row without one has no identity, and is
+ *  never handed the current one: a reader of old bytes could pass them off as a base for a change
+ *  to the new ones. */
+function generationOf(doc: DocIdentity, rev: RevisionRecord): number | null {
+  if (rev.content_generation != null) return Number(rev.content_generation);
+  return rev.revision === doc.current_revision ? Number(doc.content_generation) : null;
 }
 
 /** A revision that retained no bytes refuses a read of its body by name. */
@@ -325,6 +314,36 @@ export async function loadDocument(
   }
   return { ok: true, doc, rev,
            text: documentText(doc, rev, await citationsOf(p, doc.id, rev.revision)), history };
+}
+
+/** One exact retained snapshot, by the `content_revision` it is named by — `document_read(path,
+ *  content_revision)`. The token is matched against the document's generations, so a token this
+ *  document issued for a state no retained row carries (rewritten in place) is told apart from one
+ *  it never issued. When several rows carry one generation, the one read is `snapshotOf`'s: the
+ *  last sealed, else the last. */
+export async function loadSnapshot(team: string, relPath: string, token: string): Promise<Loaded> {
+  const p = pool();
+  if (!p) return { ok: false, why: "no_database", refusal: NO_DB };
+  const doc = await documentAt(p, team, relPath);
+  if (!doc) return { ok: false, why: "missing", refusal: `ERROR: ${relPath} does not exist` };
+  const unavailable = (why: string): Loaded =>
+    ({ ok: false, why: "no_version", refusal: `ERROR: SNAPSHOT_UNAVAILABLE — ${token} ${why}` });
+  let generation = -1;
+  for (let g = Number(doc.content_generation); g >= 0; g--) {
+    if (contentRevision(doc.id, g) === token) { generation = g; break; }
+  }
+  if (generation < 0) return unavailable(`names no snapshot of ${relPath}`);
+  const named = (await revisionsOf(p, doc.id))
+    .filter((r) => generationOf(doc, r) === generation)
+    .sort((a, b) => Number(!!a.approved_by) - Number(!!b.approved_by) || a.revision - b.revision)
+    .pop();
+  if (!named) return unavailable("was a working state that is not retained; read the current one");
+  const history = await revisionsOf(p, doc.id, named.revision);
+  const rev = history.find((r) => r.revision === named.revision)!;
+  if (rev.content_state !== "retained") {
+    return { ok: false, why: "missing_legacy", refusal: missingLegacy(relPath, rev.version) };
+  }
+  return { ok: true, doc, rev, text: documentText(doc, rev, await citationsOf(p, doc.id, rev.revision)), history };
 }
 
 /** Every DOCUMENT the team's store holds, under a folder prefix — `document_list`.

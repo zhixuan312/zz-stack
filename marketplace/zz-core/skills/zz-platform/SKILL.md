@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.80
+version: 3.81
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -49,9 +49,9 @@ afterwards, deliberately: the gates it declares would land on documents already 
 | From | The act | To | Who writes the envelope |
 |---|---|---|---|
 | nothing | `document_write` | `status: draft` — ONLY where the flow gates the document | the platform |
-| draft | `document_patch`, `document_write` | draft | the platform |
+| draft | `document_edit`, `document_patch`, `document_write` | draft | the platform |
 | draft | `document_approve(path)` | `status: approved`, plus `approved_by` and `approved_at` | the platform, from your session |
-| approved | `document_patch`, `document_write` | **refused**, pointing you at `document_revise` | — |
+| approved | `document_edit`, `document_patch`, `document_write` | **refused**, pointing you at `document_revise` | — |
 | approved | `document_revise` | draft again, a new `version`, the cause recorded | the platform |
 | any | `document_present(path)` | unchanged — a `shown` entry is appended to the activity log | the platform |
 | approved | `source_add(..., supports: <path>)` | approved, and flagged for refinement | the platform |
@@ -490,6 +490,11 @@ source (what they said) and v2 (what it made us change)** — and anyone
 reading later can see one caused the other.
 
 - Never overwrite an approved document with `document_write`.
+- **To change part of a draft, send only what changes:** `document_edit(path: "<initiative>/spec.md",
+  edits: [{find: "<the text as it is>", replace: "<what it becomes>"}])` takes up to 128 exact
+  pairs and applies them together or not at all; each `find` must occur exactly once in the
+  document as it is now, and the refusal names the edit and the lines when it does not. An
+  approved document still changes through `document_revise`.
 - **A large document is revised one section at a time:** `document_revise(..., section: "Phase 5",
   content: "## Phase 5\n\n…")` replaces that heading and everything under it and keeps the rest byte
   for byte. `document_read(path, section: "Phase 5")` returns exactly what it replaces. Send the
@@ -534,7 +539,7 @@ reading later can see one caused the other.
 
   | | door | |
   |---|---|---|
-  | documents | `/core/mcp` | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` `document_shown` |
+  | documents | `/core/mcp` | `document_write` `document_edit` `document_read` `document_present` `document_patch` `document_list` `document_revise` `document_shown` |
   | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
   | gates | `/core/mcp` | `document_approve` |
   | sources | `/core/mcp` | `source_add` `source_upload` `source_list` |

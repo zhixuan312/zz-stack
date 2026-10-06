@@ -145,7 +145,7 @@ const DOMAIN_DOOR: Record<string, string> = {
 const TOOL_DOMAIN: Record<string, string> = {
   // Work — an initiative, its records, and reading the doctrine a step needs. Reading a skill
   // is part of doing the work; managing what is on the shelf is Catalog.
-  document_approve: "work", document_list: "work", document_patch: "work",
+  document_approve: "work", document_list: "work", document_patch: "work", document_edit: "work",
   document_present: "work", document_read: "work", document_revise: "work",
   document_write: "work", initiative_close: "work", initiative_open: "work",
   initiative_status: "work", source_add: "work", source_list: "work", source_upload: "work",

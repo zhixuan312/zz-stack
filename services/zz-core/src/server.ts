@@ -21,6 +21,7 @@ import express from "express";
 
 import { OWN_TOOLS, recordingDoor } from "./door.js";
 import { buildEvalServer } from "./eval-door.js";
+import { listenPort } from "./listen-port.js";
 import { refuseIssuanceOnDoors, reviewedModuleHost,
          type ReviewedModuleHost } from "./host/index.js";
 import { packagedModules } from "./reviewed-modules.js";
@@ -113,7 +114,7 @@ function buildServer(everything = false): McpServer {
   // What this door says about itself, from orientation.ts — the `instructions` a client is
   // handed at `initialize`, before it has called anything. It is constructed there rather than
   // inline here so that a check can build the same server and read the handshake back through a
-  // real client; this file cannot be imported, because it binds :8000 below.
+  // real client; this file cannot be imported, because it binds its port below.
   //
   // `recordingDoor` makes a thrown `Refusal` arrive in our refusal shape and fills OWN_TOOLS as
   // each tool is declared. COUPLED: eval-door.ts wraps its server in the same function.
@@ -222,8 +223,10 @@ buildEvalServer();
 // state must not come up.
 refuseIssuanceOnDoors(OWN_TOOLS);
 
-app.listen(8000, "0.0.0.0", () => {
-  console.log("zz-core (TS) listening on :8000 (/mcp /eval-mcp)");
+// Also above `listen`: a bad `--port` has to stop the process before anything is bound.
+const port = listenPort(process.argv);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`zz-core (TS) listening on :${port} (/mcp /eval-mcp)`);
   // The files are the truth and this index is derived, so it is rebuilt from them at boot.
   // Not awaited: the service serves while it runs, and a partial index beats a dead port.
   void reindexAllTeams().catch((err: unknown) => console.error("boot reindex failed:", err));

@@ -49,6 +49,10 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
     if (freeName) {
       check("a freeform initiative still takes a document",
         await writeDoc(`${freeName}/notes.md`, "hand-assembled"), false);
+      check("a draft changes by an exact edit batch, sending only what changes",
+        await call("document_edit", {
+          path: `${freeName}/notes.md`, edits: [{ find: "hand-assembled", replace: "hand-assembled, then edited" }],
+        }), false);
       await call("document_present", { path: `${freeName}/notes.md` });
       check("a freeform initiative still records a gate",
         await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: signer }),
@@ -61,6 +65,10 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
         await call("document_patch", {
           path: `${freeName}/notes.md`, find: "hand-assembled", replace: "quietly changed",
         }), true, /document_revise/);
+      check("an approved freeform document is not edited afterwards either",
+        await call("document_edit", {
+          path: `${freeName}/notes.md`, edits: [{ find: "then edited", replace: "quietly changed" }],
+        }), true, /NOT_YET|document_revise/);
       check("a freeform initiative still closes, on the document it names",
         await call("initiative_close", {
           initiative: freeName, disposition: "finished", accepted_by: "Chain Check",

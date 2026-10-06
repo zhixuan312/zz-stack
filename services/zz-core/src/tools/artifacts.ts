@@ -33,6 +33,7 @@ import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { PLAIN_TOKEN, safeName, safePath, tagRefusal, titleSlug, writeGuard } from "../paths.js";
+import { registerDocumentEditTool } from "./document-edit.js";
 import { registerSourceListTool } from "./source-list.js";
 import { registerSourceUploadTool } from "./source-upload.js";
 import { db, teamFor } from "../platform-db.js";
@@ -49,11 +50,11 @@ import { nextMoveLine } from "./initiative-status.js";
 /** A deployment with no database has no store left: the columns are where a document lives, and
  *  there is no file to fall back to. Said once, in the refusals that would otherwise reach a
  *  pool that is not there. */
-const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
+export const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
   "nowhere to read or write this document.";
 
 /** A person the platform cannot place in a team has no store to act on. */
-const NO_TEAM = "ERROR: you are not in a team — a team's documents live in the database under " +
+export const NO_TEAM = "ERROR: you are not in a team — a team's documents live in the database under " +
   "its own membership, and nothing resolves you to one.";
 
 /** The part of a long document to return. COUPLED: document-parts.ts slicePart reads these. */
@@ -71,6 +72,7 @@ export function registerArtifactTools(server: McpServer): void {
   // tools, and the read-back and the upload's other half are each their own file beside it.
   registerSourceListTool(server);
   registerSourceUploadTool(server);
+  registerDocumentEditTool(server);
   server.registerTool(
     "document_write",
     {
@@ -652,7 +654,7 @@ async function citedRevisions(
 
 /** After a verifying document is written or patched: ask `evidence_relation` of the acceptance
  *  rows nobody asked about yet, so approval reads a cache instead of waiting on the service. */
-async function acceptanceLine(p: pg.Pool, team: string, chain: Chain, path: string,
+export async function acceptanceLine(p: pg.Pool, team: string, chain: Chain, path: string,
                               content: string): Promise<string> {
   const doc = verifyingDoc(chain, path);
   if (!doc) return "";

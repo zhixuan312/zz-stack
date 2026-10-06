@@ -15,6 +15,13 @@
  * it behaves as it always has (`create`, `append`, `rewrite`), apart from the lock and the two new
  * counters every write keeps true: `current_version` follows `current_revision`, and
  * `content_generation` moves whenever the content identity does.
+ *
+ * Every write records its act — the `document.<act>` row of `zz.event`. A change carrying
+ * `details` writes its row in its own transaction, last, with the complete details its receipt
+ * names, and a captured source's row is written there too: the record and what it records commit
+ * or roll back together, so a failed insert of either FAILS THE WRITE. Every other write — an
+ * approval, a close, an evaluation document — records its act after its commit (`recordAct`). The
+ * link, cause and request rows are `document-links.ts`.
  */
 import { createHash } from "node:crypto";
 
@@ -23,8 +30,13 @@ import type pg from "pg";
 import { documentBody, parseEnvelope } from "@zz/contracts";
 import { bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "@zz/indexing";
 
+import { DOCUMENT_EVENT_PREFIX } from "./attest.js";
 import { chainFor } from "./chain.js";
+import {
+  type Cause, insertCauses, insertLinks, recordRequest, REQUEST_ID_CONFLICT, type RequestRecord, storedRequest,
+} from "./document-links.js";
 import { RESERVED_ENVELOPE } from "./document-rules.js";
+import { insertEvent } from "./indexing.js";
 import { stampEnvelope } from "./write-guards.js";
 import { db as platformDb } from "./platform-db.js";
 import { ENVELOPE_COLUMN_KEYS, NO_DB, contentRevision, principalId, recordAct, splitStorePath } from "./versions.js";
@@ -38,13 +50,16 @@ interface DocumentChange {
   expect?: DocumentState;
   /** The content generation the caller's `base` token named, when it sent one. */
   base?: number;
-  /** A source captured from the caller's words, filed as its own document first. */
+  /** A source captured from the caller's words, filed as its own document first, under the first
+   *  free name of its path's stem (`reserveName`); a cause naming `relPath` names the one filed. */
   captured?: { relPath: string; text: string };
   /** The causes this change records: `cites` links from the resulting row, with their origin. */
-  causes?: { path: string; revision: number; linked_by: "agent" | "platform" }[];
-  /** The caller's request key, recorded last so a retry replays the receipt. */
-  request?: { principalEmail: string; canonicalPath: string; requestId: string; digest: string;
-              receipt: Record<string, unknown> };
+  causes?: Cause[];
+  /** The caller's request key, recorded with the change so a retry replays the receipt. */
+  request?: RequestRecord;
+  /** The change's complete details, carried on its own event row as `detail.details_ref` and
+   *  `detail.details`: what a receipt names when its lists were cut. */
+  details?: { ref: string; text: string };
 }
 
 /** One write, as the tools compose it. */
@@ -100,6 +115,9 @@ interface DocumentWrite {
    *  transaction: after the lock and the state compare, so a moved document, a refused write or a
    *  concurrent close commits neither the row nor the document. */
   closeAnchor?: CloseAnchor;
+  /** A create only: file the document under the first free name of its path's stem —
+   *  `<stem>.md`, `<stem>-2.md`, … — chosen under the lock, rather than refusing a taken name. */
+  reserveName?: boolean;
 }
 
 /** What `initiative_close` records on `zz.initiative`. */
@@ -126,6 +144,10 @@ interface DocumentState { generation: number; revision: number; writtenAt: strin
 interface Saved {
   id: string; revision: number; version: number; generation: number;
   newVersion: boolean; newRow: boolean;
+  /** The path a `reserveName` create was filed under. */
+  reserved?: string;
+  /** The path a change's captured source was filed under. */
+  capturedPath?: string;
 }
 
 /** A write sent back because the state moved and no stale `base` makes it a conflict. */
@@ -235,6 +257,22 @@ async function lockPath(c: Pick<pg.Pool, "query">, team: string, relPath: string
   await c.query("select pg_advisory_xact_lock(hashtext($1))", [`doc:${team}/${relPath}`]);
 }
 
+/** The first free name of a path's stem — `<stem>.md`, `<stem>-2.md`, … — with its lock held.
+ *
+ *  DELIBERATE: the stem's lock first, so two reservations of one stem serialise and the second
+ *  sees the first's row; then the chosen path's, which a create of that exact name also takes, and
+ *  the name is looked at again under it. A probe outside the lock let two writers pick one name. */
+async function reservePath(c: Pick<pg.Pool, "query">, team: string, relPath: string): Promise<string> {
+  const stem = relPath.replace(/\.md$/, "");
+  await lockPath(c, team, stem);
+  for (let n = 1; ; n++) {
+    const rel = n === 1 ? `${stem}.md` : `${stem}-${n}.md`;
+    if (await currentRow(c, team, rel)) continue;
+    await lockPath(c, team, rel);
+    if (!(await currentRow(c, team, rel))) return rel;
+  }
+}
+
 /** The document's state, as a change service reads it before computing, and as `saveDocument`
  *  compares it under the lock. Null when the document does not exist. */
 export async function documentState(
@@ -284,20 +322,6 @@ async function currentRow(
   return rows[0] ?? null;
 }
 
-const REQUEST_ID_CONFLICT = "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request";
-
-/** A committed request under this key: the receipt to replay, or the conflict. Null when none. */
-async function storedRequest(
-  c: Pick<pg.Pool, "query">, team: string, principal: string, r: NonNullable<DocumentChange["request"]>,
-): Promise<Replayed | { refusal: string } | null> {
-  const { rows } = await c.query<{ request_digest: string; receipt: Record<string, unknown> }>(
-    `select q.request_digest, q.receipt from zz.doc_request q join zz.team t on t.id = q.team_id
-      where t.slug = $1 and q.principal_id = $2::uuid and q.canonical_path = $3 and q.request_id = $4`,
-    [team, principal, r.canonicalPath, r.requestId]);
-  if (!rows[0]) return null;
-  return rows[0].request_digest === r.digest ? { replayed: rows[0].receipt } : { refusal: REQUEST_ID_CONFLICT };
-}
-
 /** What a write answers: the rows it left, a refusal, or — only for a write carrying `change` —
  *  a retry or a replayed receipt. */
 type SaveAnswer = Saved | { refusal: string } | Retry | Replayed;
@@ -331,11 +355,12 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     return { refusal: `ERROR: ${change.request.principalEmail} is no principal this platform knows, ` +
                       "so a request_id cannot be recorded for it." };
   }
-  const prep = await prepare(p, w);
+  let prep = await prepare(p, w);
   if ("refusal" in prep) return prep;
-  const capturedWrite: DocumentWrite | null = change?.captured ? capturedSource(w, change.captured.relPath, change.captured.text) : null;
-  const cap = capturedWrite ? await prepare(p, capturedWrite) : null;
+  let capturedWrite: DocumentWrite | null = change?.captured ? capturedSource(w, change.captured.relPath, change.captured.text) : null;
+  let cap = capturedWrite ? await prepare(p, capturedWrite) : null;
   if (cap && "refusal" in cap) return cap;
+  let causes = change?.causes ?? [];
 
   const client = await p.connect();
   const bail = async <T>(answer: T): Promise<T> => {
@@ -344,7 +369,18 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
   };
   try {
     await client.query("begin");
-    await lockPath(client, w.team, w.relPath);
+    const reserve = w.reserveName === true && w.mode === "create";
+    if (reserve) {
+      const rel = await reservePath(client, w.team, w.relPath);
+      if (rel !== w.relPath) {
+        // The bytes are stamped for the name they are filed under.
+        w = { ...w, relPath: rel };
+        prep = await prepare(p, w);
+        if ("refusal" in prep) return await bail(prep);
+      }
+    } else {
+      await lockPath(client, w.team, w.relPath);
+    }
     if (change?.request) {
       const stored = await storedRequest(client, w.team, asker!, change.request);
       if (stored) return await bail(stored);
@@ -382,8 +418,17 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       revision = existing.current_revision ?? 1;
       version = existing.version ?? revision;
       if (change && same) {
-        // A keyed no-change: nothing about the document moves, and the request is what is kept.
+        // A keyed no-change: nothing about the document moves, and the request is what is kept —
+        // with the act row its receipt's `details_ref` names, when it carries details.
         if (change.request) await recordRequest(client, w.team, asker!, id, change.request);
+        if (change.details) {
+          const action = w.act ?? "write";
+          const recorded = await insertEvent(client, {
+            actor: w.by, team: w.team, initiative: splitStorePath(w.relPath).initiative || null,
+            kind: `${DOCUMENT_EVENT_PREFIX}${action}`, subject: w.relPath,
+            detail: { user: w.by, action, path: w.relPath, details_ref: change.details.ref, details: change.details.text } });
+          if (!recorded.ok) return await bail({ refusal: `ERROR: ${w.relPath} could not be written: ${recorded.error}` });
+        }
         await client.query("commit");
         return { id, revision, version, generation, newVersion: false, newRow: false };
       }
@@ -418,9 +463,13 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     // A captured source is filed first, as its own document under its own lock, so the target's
     // cause link — and, on a create, the waiting-supports insert below — find it.
     if (capturedWrite && cap && !("refusal" in cap)) {
-      await lockPath(client, w.team, capturedWrite.relPath);
-      if (await currentRow(client, w.team, capturedWrite.relPath)) {
-        return await bail({ refusal: `ERROR: ${capturedWrite.relPath} already exists` });
+      const asked = capturedWrite.relPath;
+      const rel = await reservePath(client, w.team, asked);
+      if (rel !== asked) {
+        capturedWrite = { ...capturedWrite, relPath: rel };
+        cap = await prepare(p, capturedWrite);
+        if ("refusal" in cap) return await bail(cap);
+        causes = causes.map((k) => (k.path === asked ? { ...k, path: rel } : k));
       }
       const capturedId = await createRows(client, capturedWrite, cap, initiativeId, writer, null);
       if (!capturedId) return await bail({ refusal: `ERROR: ${capturedWrite.relPath} could not be written — no row came back` });
@@ -497,8 +546,8 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
          prep.analyzer, ...prep.tsv, generation]);
     }
     await insertLinks(client, w.team, id, revision, w);
-    if (change?.causes?.length) {
-      const missing = await insertCauses(client, w.team, id, revision, change.causes);
+    if (causes.length) {
+      const missing = await insertCauses(client, w.team, id, revision, causes);
       if (missing) {
         return await bail({ refusal:
           `ERROR: ${missing} is not a document in this team's store, so it cannot be recorded as a ` +
@@ -510,14 +559,27 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       await bail(null);
       return (await storedRequest(p, w.team, asker!, change.request)) ?? { refusal: REQUEST_ID_CONFLICT };
     }
+    // The acts recorded in the transaction, last: a captured source's, and the document's own when
+    // the change carries details — the row its receipt's `details_ref` names, which must be there
+    // the moment the receipt is. DELIBERATE: a failed insert refuses the write; a details reference
+    // to a row that never landed is the dangling receipt this exists to prevent.
+    const action = w.act ?? (mode === "append" ? "revise" : "write");
+    const details = change?.details;
+    const acts = [...(capturedWrite ? [{ path: capturedWrite.relPath, action: "source", extra: {} }] : []),
+                  ...(details ? [{ path: w.relPath, action, extra: { details_ref: details.ref, details: details.text } }] : [])];
+    for (const a of acts) {
+      const recorded = await insertEvent(client, {
+        actor: w.by, team: w.team, initiative: splitStorePath(a.path).initiative || null,
+        kind: `${DOCUMENT_EVENT_PREFIX}${a.action}`, subject: a.path,
+        detail: { user: w.by, action: a.action, path: a.path, ...a.extra } });
+      if (!recorded.ok) return await bail({ refusal: `ERROR: ${w.relPath} could not be written: ${recorded.error}` });
+    }
     await client.query("commit");
-    // The acts, after the commit and from one call, so the record of a write cannot be dropped
-    // for the document and kept for its captured source.
-    const acts = [...(capturedWrite ? [{ path: capturedWrite.relPath, action: "source" }] : []),
-                  { path: w.relPath, action: w.act ?? (mode === "append" ? "revise" : "write") }];
-    for (const a of acts) recordAct(a.path, { user: w.by, action: a.action, path: a.path });
+    // Every other write's act, after its commit.
+    if (!details) recordAct(w.relPath, { user: w.by, action, path: w.relPath });
     return { id, revision, version, generation, newVersion: mode === "create" || mode === "append",
-             newRow: mode !== "rewrite" };
+             newRow: mode !== "rewrite", ...(reserve ? { reserved: w.relPath } : {}),
+             ...(capturedWrite ? { capturedPath: capturedWrite.relPath } : {}) };
   } catch (err) {
     await client.query("rollback").catch(() => undefined);
     return { refusal: `ERROR: ${w.relPath} could not be written: ` +
@@ -572,79 +634,6 @@ async function createRows(
      on conflict do nothing`,
     [id, initiativeId, splitStorePath(w.relPath).name]);
   return id;
-}
-
-/** The documents a set of store paths name, newest row per path, in one statement. It was a
- *  `documentAt` per entry — 2.1 ms each, sequential (checks/document-body-whole.ts). */
-async function idsOf(c: Pick<pg.Pool, "query">, team: string, rels: string[]): Promise<Map<string, string>> {
-  if (!rels.length) return new Map();
-  const { rows } = await c.query<{ rel: string; id: string }>(`
-    select distinct on (i.slug || '/' || d.path) i.slug || '/' || d.path as rel, d.id::text as id
-      from zz.doc d
-      join zz.initiative i on i.id = d.initiative_id
-      join zz.team t on t.id = i.team_id
-     where t.slug = $1 and (i.slug || '/' || d.path) = any($2::text[])
-     order by i.slug || '/' || d.path, d.updated_at desc`, [team, rels]);
-  return new Map(rows.map((r) => [r.rel, r.id] as const));
-}
-
-/** The write's own `cites` and `supports`, from the revision it filed. */
-async function insertLinks(
-  c: Pick<pg.Pool, "query">, team: string, id: string, revision: number, w: DocumentWrite,
-): Promise<void> {
-  const links = [
-    ...(w.cites ?? []).map((l) => ({ rel: l.path, toRevision: l.revision as number | null, kind: "cites" })),
-    ...(w.supports ?? []).map((rel) => ({ rel, toRevision: null, kind: "supports" })),
-  ];
-  const ids = await idsOf(c, team, links.map((l) => l.rel));
-  for (const l of links) {
-    const target = ids.get(l.rel);
-    if (!target) continue;
-    // DELIBERATE: `on conflict do nothing` — `doc_link_unique` is NULLS NOT DISTINCT, so citing
-    // twice is one row.
-    await c.query(
-      `insert into zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind)
-       values ($1::uuid, $2, $3::uuid, $4, $5)
-       on conflict do nothing`,
-      [id, revision, target, l.toRevision, l.kind]);
-  }
-}
-
-/** A change's causes, as `cites` links with their origin. A cause the writer named wins over the
- *  same cause the platform linked: `platform` is upgraded to `agent`, never the other way, and a
- *  citation recorded before origins were (`linked_by` null, read as `agent`) is left as it is.
- *  Returns the first path that names no document, which refuses the whole change. */
-async function insertCauses(
-  c: Pick<pg.Pool, "query">, team: string, id: string, revision: number,
-  causes: NonNullable<DocumentChange["causes"]>,
-): Promise<string | null> {
-  const ids = await idsOf(c, team, causes.map((k) => k.path));
-  const missing = causes.find((k) => !ids.has(k.path));
-  if (missing) return missing.path;
-  for (const k of causes) {
-    await c.query(
-      `insert into zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind, linked_by)
-       values ($1::uuid, $2, $3::uuid, $4, 'cites', $5)
-       on conflict (from_doc_id, from_revision, to_doc_id, to_revision, kind)
-       do update set linked_by = 'agent'
-        where zz.doc_link.linked_by = 'platform' and excluded.linked_by = 'agent'`,
-      [id, revision, ids.get(k.path), k.revision, k.linked_by]);
-  }
-  return null;
-}
-
-/** The request row, last in the transaction. False when the key was already taken. */
-async function recordRequest(
-  c: Pick<pg.Pool, "query">, team: string, principal: string, docId: string,
-  r: NonNullable<DocumentChange["request"]>,
-): Promise<boolean> {
-  const { rowCount } = await c.query(
-    `insert into zz.doc_request (team_id, principal_id, canonical_path, request_id, doc_id,
-                                 request_digest, receipt)
-     select t.id, $2::uuid, $3, $4, $5::uuid, $6, $7::jsonb from zz.team t where t.slug = $1
-     on conflict do nothing`,
-    [team, principal, r.canonicalPath, r.requestId, docId || null, r.digest, JSON.stringify(r.receipt)]);
-  return (rowCount ?? 0) > 0;
 }
 
 /** One revision row. `content_state` is always `retained` here: a write that has the bytes is

@@ -11,8 +11,9 @@
  * `zz.doc_revision`, and the close's own `outcome`/`closed_by` from the revision's `fields`
  * payload — the envelope's open half, which is where a key no column carries lands.
  *
- * What is here is zz-core's alone: `platformEvent` writes `zz.event` and is the one call a
- * mutating tool makes to record that it did; `journalLog` is the knowledge tools' spelling of
+ * What is here is zz-core's alone: `insertEvent` is the one statement that writes a `zz.event`
+ * row, which `platformEvent` runs fire-and-forget for a mutating tool and `saveDocument` runs on its
+ * transaction's client; `journalLog` is the knowledge tools' spelling of
  * the same act; `docRows` is the folder listing every document reader here shares; `sealOf` is
  * the approval a write carries forward into `saveDocument`; and `sourceDocument` is the envelope
  * shape the knowledge tools produce.
@@ -73,28 +74,14 @@ export function platformEvent(e: {
   detail?: Record<string, unknown>;
 } & Record<string, unknown>): void {
   const { actor, kind, subject, team, initiative = null, detail, ...rest } = e;
-  // DELIBERATE: no refusal for an actor this platform does not know. A journal entry by nobody —
-  // `journalLog` writes one — has that column null, and a row that is a record of an act is
-  // worth more than a refusal to make one. The statement resolves the id, so an address nothing
-  // matches lands as null rather than as an error.
   const write = (slug: string | null): void => {
     const p = db();
     if (!p) return;
-    void p.query(
-      `insert into zz.event (actor_id, team_id, initiative_id, kind, subject, detail)
-       -- FOLDED ON BOTH SIDES, as platform-db.ts, versions.ts and semantic.ts all do. This folded
-       -- only the parameter, so an address stored with any upper case resolved to no principal and
-       -- zz.event.actor_id was written null, silently — the insert is fire-and-forget and nothing
-       -- reads the column back to notice.
-       values ((select id from zz.principal where lower(email) = lower($1)),
-               (select id from zz.team where slug = $2),
-               (select i.id from zz.initiative i join zz.team t on t.id = i.team_id
-                 where t.slug = $2 and i.slug = $3),
-               $4, $5, $6)`,
-      [actor, slug, initiative, kind, subject ?? initiative ?? "", JSON.stringify({ ...rest, ...(detail ?? {}) })],
+    void insertEvent(p, { actor, team: slug, initiative, kind, subject: subject ?? initiative ?? "",
+                          detail: { ...rest, ...(detail ?? {}) } })
     // Logged: a row dropped here leaves no trace anywhere, so a database refusing every
     // insert would look identical to one recording them all.
-    ).catch((err) => console.error("platform journal insert failed:", err));
+      .then((r) => { if (!r.ok) console.error("platform journal insert failed:", r.error); });
   };
   if (team !== undefined) return write(team);
   // No team named, so it is resolved from the actor's own membership — the query every tool
@@ -102,6 +89,45 @@ export function platformEvent(e: {
   if (!actor) return write(null);
   void teamFor(actor).then(write)
     .catch((err) => console.error("journal insert failed:", err));
+}
+/** The one statement that writes a `zz.event` row, on whatever runs it: the pool, for
+ *  `platformEvent`'s fire-and-forget record, or a transaction's client, for a row that must commit
+ *  or roll back with the write it records — a change's own act, which carries the details its
+ *  receipt names (`saveDocument`).
+ *
+ *  Awaitable, and it answers whether the row was written rather than throwing: a caller in a
+ *  transaction must turn a failed record into a failed write (the transaction is aborted anyway,
+ *  and a change whose record did not land must not commit), and `platformEvent` only logs it.
+ *
+ *  DELIBERATE: the team is a slug or null, never "resolve it": the resolution is `teamFor`, a pool
+ *  query, and a transaction must not wait on a second connection. `platformEvent` resolves first.
+ *
+ *  DELIBERATE: no refusal for an actor this platform does not know. A journal entry by nobody —
+ *  `journalLog` writes one — has that column null, and a row that is a record of an act is worth
+ *  more than a refusal to make one. The statement resolves the id, so an address nothing matches
+ *  lands as null rather than as an error. */
+export async function insertEvent(
+  c: Pick<pg.Pool, "query">,
+  e: { actor: string; team: string | null; initiative: string | null; kind: string; subject: string;
+       detail: Record<string, unknown> },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await c.query(
+      `insert into zz.event (actor_id, team_id, initiative_id, kind, subject, detail)
+       -- FOLDED ON BOTH SIDES, as platform-db.ts, versions.ts and semantic.ts all do. This folded
+       -- only the parameter, so an address stored with any upper case resolved to no principal and
+       -- zz.event.actor_id was written null, silently — platformEvent's insert is fire-and-forget and nothing
+       -- reads the column back to notice.
+       values ((select id from zz.principal where lower(email) = lower($1)),
+               (select id from zz.team where slug = $2),
+               (select i.id from zz.initiative i join zz.team t on t.id = i.team_id
+                 where t.slug = $2 and i.slug = $3),
+               $4, $5, $6)`,
+      [e.actor, e.team, e.initiative, e.kind, e.subject, JSON.stringify(e.detail)]);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 /** The journal's human-readable log. It named `_knowledge/log.md`; the store is the database
  * now, so the entry lands in `zz.event` like every other act and there is no file to append to.

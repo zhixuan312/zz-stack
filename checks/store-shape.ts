@@ -79,6 +79,17 @@ assert.equal((t("doc_request").foreignKeys ?? []).find((f) => f.columns.join() =
 assert.ok((t("cause_link_epoch").indexes ?? []).some((i) => /UNIQUE INDEX .*\(\(true\)\)/.test(i)),
   "cause_link_epoch holds at most one row, by a unique index on a constant");
 
+// A change receipt's complete details live on the change's own `document.*` event row: found by
+// the reference a receipt prints, and kept as long as the receipt that names it.
+assert.ok((t("event").indexes ?? []).some((i) => /\(detail ->> 'details_ref'::text\)/.test(i) && /WHERE \(detail \? 'details_ref'::text\)/.test(i)),
+  "an event's details are found by an index on detail->>'details_ref', over the rows that carry one");
+assert.ok(/retention=[^;]*document\.\*[^;]* kept indefinitely/.test(t("event").comment ?? ""),
+  "zz.event's retention keeps document.* kinds indefinitely, like the audit kinds");
+assert.ok(/document\.\* row written in the transaction of the change it records, whose failed insert fails that change/.test(t("event").comment ?? ""),
+  "zz.event's comment says a document.* row written in its change's transaction fails the change when it fails");
+assert.ok(/details_ref and details/.test(t("event").columnComments?.detail ?? ""),
+  "zz.event.detail's comment names the details a document.* row may carry");
+
 assert.equal((SCHEMA_TARGET as { phase: number }).phase, 6,
   "the target says which phase it describes, and the rehearsal prints it");
 

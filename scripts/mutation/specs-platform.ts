@@ -56,10 +56,11 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     // The recorder every document write goes through. Removing a tool's own `recordAct` was the
     // plant until the first full run: it survived, correctly, because `saveDocument` had recorded
     // the write anyway. `void recordAct; void acts;` keeps the identifiers and drops the call — the
-    // check matches a call, not a name — and drops the one loop that records the document and its
-    // captured source alike, so the captured source's record cannot keep the check green.
-    find: "    for (const a of acts) recordAct(a.path, { user: w.by, action: a.action, path: a.path });",
-    replace: "    void recordAct; void acts;",
+    // check matches a call, not a name. It drops the post-commit record that a write without
+    // details relies on — an approval, a close — while the in-transaction one stays, so the check
+    // must hold both recorders to stay red.
+    find: "    if (!details) recordAct(w.relPath, { user: w.by, action, path: w.relPath });",
+    replace: "    if (!details) void recordAct;",
     planted: "the write every document tool goes through stops recording that it did, so no " +
       "document change can be recovered except by reading the state it made",
   },

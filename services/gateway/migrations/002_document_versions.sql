@@ -1,5 +1,5 @@
 -- 002_document_versions.sql — public versions, the content generation, cause links, request
--- records and the cause-link epoch.
+-- records, the cause-link epoch, and the activity record's details.
 --
 -- `zz.doc_revision.revision` stays the snapshot id every pin names (`doc_link`,
 -- `eval_assessment.doc_revision`, `eval_protocol_version.approved_doc_revision`, the approval
@@ -118,3 +118,14 @@ INSERT INTO zz.cause_link_epoch DEFAULT VALUES;
 COMMENT ON TABLE zz.cause_link_epoch IS 'class=current_state; authority=this; question=from which instant are sources filed in an initiative linked automatically as causes of the documents they support, so a source filed before automatic causes existed is never owed?';
 
 COMMENT ON COLUMN zz.cause_link_epoch.epoch IS 'class=current_state; authority=this; question=at what instant did automatic cause linking begin on this deployment?';
+
+-- zz.event: a change's complete details live on its own `document.*` row, under the
+-- `detail.details_ref` its receipt prints. The index finds that row; the table comment states that a
+-- `document.*` row is kept as long as the audit kinds, so a reference a receipt printed never
+-- dangles, and that a row written in its change's transaction fails the change when it fails; the
+-- column comment names what such a row's detail carries. None of it moves a row.
+CREATE INDEX event_details_ref ON zz.event USING btree (((detail ->> 'details_ref'::text))) WHERE (detail ? 'details_ref'::text);
+
+COMMENT ON TABLE zz.event IS 'class=immutable_history; authority=this; question=what did the platform do or get asked to do, one append-only timestamped act — a tool call at a door, an admin act, a document act, a knowledge-journal act or a sign-in — the only fallback being /data/events-unwritten.jsonl when a write fails, except a document.* row written in the transaction of the change it records, whose failed insert fails that change?; retention=audit kinds (admin.*, credential.*, console.*, team.*, bug.*, pkg.download) and document.* kinds, whose rows carry the complete details a change receipt names, are kept indefinitely; tool_call and knowledge.* may age out once volume requires it, except a row an evaluation cites';
+
+COMMENT ON COLUMN zz.event.detail IS 'class=immutable_history; authority=this; question=what open extra payload this act carries — the caller hash, client, argument names, ids, shapes and step_sha — now that run has moved to session and the ms and bytes keys have backfilled duration_ms and response_bytes, and on a document.* row the details_ref and details a change receipt names, the complete detail of that change to its document: section headings, cause paths, normalisations and diagnostics?';

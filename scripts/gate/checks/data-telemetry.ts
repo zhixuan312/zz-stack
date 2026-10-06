@@ -20,7 +20,7 @@ check("a tool that changes something records that it did", () => {
   // state it changed.
   const MUTATES = /\b(writeFileSync|appendFileSync|insert into|update zz\.|delete from)/i;
   // The recorders that exist: `recordAct` is the one a document tool calls (it writes the
-  // `zz.event` row `platformEvent` also writes), and `logActivity`/`commitStore` went with the
+  // `zz.event` row `platformEvent` also writes, through `insertEvent`), and `logActivity`/`commitStore` went with the
   // file store — keeping them here would let a tool that records nothing pass on a word that
   // no longer runs.
   const RECORDS = /\b(recordAct\(|auditAdmin\(|logEvent\(|platformEvent\()/;
@@ -37,14 +37,29 @@ check("a tool that changes something records that it did", () => {
   }
   // And the write every document tool goes through records itself. A tool body that calls
   // `saveDocument` mutates through it rather than through a statement the pattern above can see,
-  // so what makes those acts attributable is the `recordAct` inside it, after the commit. The
-  // mutation suite's first full run planted the removal of a tool's own `recordAct` and this
-  // stayed green — correctly, because `saveDocument` had recorded the write anyway. This is the
-  // recorder that removal can take away.
+  // so what makes those acts attributable is the record inside it. The mutation suite's first full
+  // run planted the removal of a tool's own `recordAct` and this stayed green — correctly, because
+  // `saveDocument` had recorded the write anyway. These are the recorders that removal can take away.
+  //
+  // COUPLED: it has two, and each records a class of write the other does not. A change carrying
+  // details (and a captured source) is recorded by `insertEvent` on the transaction's client,
+  // before the commit, so the row its receipt names commits with it; every other write by
+  // `recordAct`, after the commit. Either one gone leaves its class unrecorded, so both are held,
+  // and the in-transaction one is held to its side of the commit.
   const save = functionBody(readFileSync(join(root, "services/zz-core/src/document-save.ts"), "utf8"), "saveDocument");
   if (!save) bad.push("services/zz-core/src/document-save.ts no longer defines saveDocument — this cannot check its record");
-  else if (!/\brecordAct\(/.test(withoutComments(save))) {
-    bad.push("saveDocument, the write every document tool goes through, records nothing");
+  else {
+    const body = withoutComments(save);
+    const committed = body.lastIndexOf('client.query("commit")');
+    const inTransaction = body.search(/\binsertEvent\(client\b/);
+    if (!/\brecordAct\(/.test(body)) {
+      bad.push("saveDocument records nothing for a write without details — an approval, a close, an evaluation document");
+    }
+    if (inTransaction < 0) {
+      bad.push("saveDocument records nothing for a change carrying details, or for a captured source");
+    } else if (inTransaction > committed) {
+      bad.push("saveDocument records a change's details after its commit — the row its receipt names is no longer part of the write");
+    }
   }
   return bad.length ? bad.join("; ") : null;
 });

@@ -20,7 +20,15 @@
  *   - request records replay, conflict on a different digest, and record a keyed no-change;
  *   - a cause linked by the platform is upgraded when the writer names it;
  *   - version reads: a public version's approved snapshot, else its last, and the refusal for a
- *     version that does not exist lists the versions that do.
+ *     version that does not exist lists the versions that do;
+ *   - the activity record: a change's `document.*` event row, carrying its details, commits with the
+ *     change (and its captured source's row with it), is the change's only act row, and is absent
+ *     after a refusal or a failed insert of it; and every act `saveDocument` can record names a
+ *     kind `zz.event`'s own CHECK accepts (pure: read from the source and the schema target);
+ *   - set-based causes: 200 causes are one insert, and a change citing 200 runs as many statements
+ *     as one citing one — counted by wrapping `pg.Client.prototype.query`, as
+ *     `checks/document-body-whole.ts` counts through its stub;
+ *   - name reservation: two concurrent reserving creates of one taken stem file `-2` and `-3`.
  *
  * The only database it touches is the one it started.
  *
@@ -29,11 +37,14 @@
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
 import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { OUTCOMES } from "@zz/contracts";
 import pg from "pg";
 
+import { SCHEMA_TARGET } from "../schema-target.ts";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
@@ -53,7 +64,8 @@ const ok = (step: string): void => console.log(`  ${step}: ok`);
 const doc = (body: string, extra = ""): string => `---\ntitle: Notes\n${extra}---\n\n${body}`;
 
 type State = { generation: number; revision: number; writtenAt: string };
-type Saved = { id: string; revision: number; version: number; generation: number; newVersion: boolean; newRow: boolean };
+type Saved = { id: string; revision: number; version: number; generation: number; newVersion: boolean; newRow: boolean;
+               reserved?: string };
 type Save = (w: Record<string, unknown>) => Promise<Saved | { refusal: string } | { retry: true } | { replayed: Record<string, unknown> }>;
 
 async function seed(db: pg.Client): Promise<string> {
@@ -71,7 +83,34 @@ async function seed(db: pg.Client): Promise<string> {
   return i.rows[0].id;
 }
 
+/** Every act `saveDocument` can record, as the `zz.event.kind` it becomes, held to the table's own
+ *  CHECK — read from the target, not restated. An act recorded in the transaction fails the write
+ *  when its kind is refused, so an act name the table refuses is a write that can never land. The
+ *  acts are `saveDocument`'s defaults and every `act:` a caller under zz-core passes; a template
+ *  this does not know how to expand fails the case rather than going unchecked. */
+function actKinds(): void {
+  const check = ((SCHEMA_TARGET.tables.event as { checks: string[] }).checks).find((c) => /\bkind ~ '/.test(c)) ?? "";
+  const pattern = /kind ~ '([^']+)'::text/.exec(check)?.[1];
+  if (!pattern) fail("act kinds", "zz.event's kind CHECK is not in the schema target");
+  const KIND = new RegExp(pattern);
+  const acts = new Set(["write", "revise", "source"]);
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []);
+  for (const file of walk(join(root, "services/zz-core/src"))) {
+    const src = readFileSync(file, "utf8");
+    for (const m of src.matchAll(/\bact: "([^"]*)"/g)) acts.add(m[1]);
+    for (const m of src.matchAll(/\bact: `([^`]*)`/g)) {
+      if (m[1] !== "close_${record.outcome}") fail("act kinds", `${file} records an act this case cannot expand: ${m[1]}`);
+      for (const o of OUTCOMES) acts.add(`close_${o}`);
+    }
+  }
+  const refused = [...acts].filter((a) => !KIND.test(`document.${a}`));
+  if (acts.size < 6 || refused.length) fail("act kinds", `of ${[...acts].join(", ")}, zz.event refuses ${refused.join(", ")}`);
+  ok(`act kinds: all ${acts.size} acts saveDocument can record are kinds zz.event accepts`);
+}
+
 async function run(db: pg.Client, url: string): Promise<void> {
+  actKinds();
   const initiativeId = await seed(db);
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
@@ -276,13 +315,16 @@ async function cases(
     }
     const s = await state();
     const noChange = saved("no change", await saveDocument({ ...base, relPath: DOC, text: doc("mu\n"), mode: "rewrite", change: {
-      nextVersion: false, expect: s, request: { ...request("d3", { line: "no change" }), requestId: "req-2" } } }));
+      nextVersion: false, expect: s, request: { ...request("d3", { line: "no change" }), requestId: "req-2" },
+      details: { ref: "dr_nochangenochangenochangeno", text: "no change: nothing differs" } } }));
     if (noChange.newRow || noChange.revision !== first.revision || (await state()).writtenAt !== s.writtenAt) {
       fail("no change", `a keyed no-change wrote the document: ${JSON.stringify(noChange)}`);
     }
     const kept = await db.query("select 1 from zz.doc_request where request_id = 'req-2'");
     if (!kept.rowCount) fail("no change", "a keyed no-change was not recorded");
-    ok("requests: replay, conflict, and a recorded keyed no-change");
+    const noted = await db.query("select 1 from zz.event where detail->>'details_ref' = 'dr_nochangenochangenochangeno' and subject = $1", [DOC]);
+    if (noted.rowCount !== 1) fail("no change", "a keyed no-change's details row did not commit with its request");
+    ok("requests: replay, conflict, and a recorded keyed no-change with its details row");
   }
 
   // ── a read written back stores no rendered token ─────────────────────────────────────────────
@@ -349,6 +391,146 @@ async function cases(
     }
     ok("pin rule, approved without a resolved principal: a new row");
   }
+
+  await activity(db, change, saved);
+  await setBased(db, saveDocument, state, saved);
+  await reservations(db, saveDocument, saved);
+}
+
+/** The `zz.event` rows that carry one details reference. */
+const eventsOf = async (db: pg.Client, ref: string) => (await db.query<{ kind: string; subject: string; detail: Record<string, unknown> }>(
+  "select kind, subject, detail from zz.event where detail->>'details_ref' = $1", [ref])).rows;
+
+/** A change's own event row, written in its transaction: present the moment the write returns, with
+ *  the captured source's row beside it, and absent when the change is refused. */
+async function activity(
+  db: pg.Client,
+  change: (text: string, extra?: Record<string, unknown>) => ReturnType<Save>,
+  saved: (step: string, r: Awaited<ReturnType<Save>>) => Saved,
+): Promise<void> {
+  const cap = `${INIT}/sources/detailed.md`;
+  const sourceRows = async () => (await db.query("select 1 from zz.event where kind = 'document.source' and subject = $1", [cap])).rowCount;
+  const refused = await change(doc("rho\n"), {
+    details: { ref: "dr_refusedrefusedrefusedrefus", text: "complete details of a refused change" },
+    captured: { relPath: cap, text: "---\ntitle: Detailed\n---\n\nwords\n" },
+    causes: [{ path: cap, revision: 1, linked_by: "agent" }, { path: `${INIT}/sources/nowhere.md`, revision: 1, linked_by: "agent" }],
+  });
+  if (!("refusal" in refused)) fail("activity, refused", `a missing cause was not refused: ${JSON.stringify(refused)}`);
+  if ((await eventsOf(db, "dr_refusedrefusedrefusedrefus")).length || await sourceRows()) {
+    fail("activity, refused", "a refused change left its event rows behind");
+  }
+  ok("activity: a refused change leaves no event row");
+
+  const text = "complete details: every changed section, every cause, every normalisation";
+  const r = saved("activity", await change(doc("rho\n"), {
+    details: { ref: "dr_committedcommittedcommitt", text },
+    captured: { relPath: cap, text: "---\ntitle: Detailed\n---\n\nwords\n" },
+    causes: [{ path: cap, revision: 1, linked_by: "agent" }],
+  }));
+  // No wait: the row is the transaction's, so it is there when the write returns.
+  const rows = await eventsOf(db, "dr_committedcommittedcommitt");
+  if (rows.length !== 1 || rows[0].subject !== DOC || !/^document\./.test(rows[0].kind)
+      || rows[0].detail.details !== text || rows[0].detail.path !== DOC) {
+    fail("activity", `expected one document.* row for ${DOC} carrying the details, got ${JSON.stringify(rows)}`);
+  }
+  if (await sourceRows() !== 1) fail("activity", "the captured source's own row did not commit with the change");
+  // And it is the change's only act row: nothing records it a second time after the commit.
+  await new Promise((done) => setTimeout(done, 300));
+  const acts = (await db.query<{ n: number }>(
+    `select count(*)::int as n from zz.event where subject = $1 and kind like 'document.%'
+        and ts >= (select ts from zz.event where detail->>'details_ref' = $2)`, [DOC, "dr_committedcommittedcommitt"])).rows[0].n;
+  if (acts !== 1) fail("activity", `the change left ${acts} act rows, not its one`);
+  ok(`activity: the change's ${rows[0].kind} row carries its details, committed with r${r.revision}, and is its only act row`);
+
+  // A failed insert of that row fails the change: a receipt would otherwise name a row that never landed.
+  const before = (await db.query<{ g: string }>("select content_generation::text as g from zz.doc where path = 'notes.md'")).rows[0].g;
+  await db.query(`create function zz.inject_failure() returns trigger language plpgsql as $$
+                    begin raise exception 'injected at the event row'; end $$`);
+  try {
+    await db.query("create trigger inject_failure before insert on zz.event for each row when (new.detail ? 'details_ref') execute function zz.inject_failure()");
+    const failed = await change(doc("upsilon\n"), { details: { ref: "dr_failedfailedfailedfailedfa", text } });
+    if (!("refusal" in failed) || !/could not be written: injected at the event row/.test(failed.refusal)) {
+      fail("activity, failed insert", `the change was not refused: ${JSON.stringify(failed)}`);
+    }
+  } finally {
+    await db.query("drop trigger if exists inject_failure on zz.event");
+    await db.query("drop function zz.inject_failure()");
+  }
+  const after = (await db.query<{ g: string }>("select content_generation::text as g from zz.doc where path = 'notes.md'")).rows[0].g;
+  if (after !== before || (await eventsOf(db, "dr_failedfailedfailedfailedfa")).length) {
+    fail("activity, failed insert", "the change committed though its event row failed");
+  }
+  ok("activity: a failed insert of the event row refuses the change, and nothing commits");
+}
+
+/** Every statement the pool runs while `fn` does, by wrapping the query every client goes through. */
+async function counted<T>(fn: () => Promise<T>): Promise<{ result: T; statements: string[] }> {
+  const statements: string[] = [];
+  const original = pg.Client.prototype.query;
+  pg.Client.prototype.query = function query(this: pg.Client, ...args: unknown[]) {
+    const text = typeof args[0] === "string" ? args[0] : (args[0] as { text?: string } | undefined)?.text ?? "";
+    statements.push(text.replace(/\s+/g, " ").trim());
+    return (original as (...a: unknown[]) => unknown).apply(this, args);
+  } as typeof original;
+  try {
+    return { result: await fn(), statements };
+  } finally {
+    pg.Client.prototype.query = original;
+  }
+}
+
+/** 200 causes are one insert, and a change citing 200 runs the statements a change citing one does. */
+async function setBased(
+  db: pg.Client, saveDocument: Save, state: () => Promise<State>,
+  saved: (step: string, r: Awaited<ReturnType<Save>>) => Saved,
+): Promise<void> {
+  const MANY = 200;
+  const rels = Array.from({ length: MANY }, (_, i) => `${INIT}/sources/many-${i}.md`);
+  for (const rel of rels) {
+    saved("set-based, seed", await saveDocument({ team: TEAM, initiative: INIT, by: EMAIL, relPath: rel,
+      text: `---\ntitle: Many\n---\n\n${rel}\n`, type: "source", mode: "create" }));
+  }
+  const citing = async (n: number, body: string) => counted(async () => saved(`set-based, ${n}`,
+    await saveDocument({ team: TEAM, initiative: INIT, by: EMAIL, relPath: DOC, text: doc(body), mode: "rewrite",
+      change: { nextVersion: true, expect: await state(),
+                causes: rels.slice(0, n).map((path) => ({ path, revision: 1, linked_by: "platform" })) } })));
+  const one = await citing(1, "sigma\n");
+  const many = await citing(MANY, "tau\n");
+  const inserts = (s: string[]) => s.filter((q) => /^insert into zz\.doc_link\b/.test(q)).length;
+  if (inserts(many.statements) !== 1) fail("set-based", `${MANY} causes took ${inserts(many.statements)} inserts into zz.doc_link`);
+  if (many.statements.length !== one.statements.length) {
+    fail("set-based", `a change with ${MANY} causes ran ${many.statements.length} statements, one with 1 ran ${one.statements.length}`);
+  }
+  const filed = await db.query<{ n: number }>(
+    `select count(*)::int as n from zz.doc_link l join zz.doc d on d.id = l.from_doc_id
+      where d.path = 'notes.md' and l.from_revision = $1 and l.kind = 'cites' and l.linked_by = 'platform'`,
+    [many.result.revision]);
+  if (filed.rows[0].n !== MANY) fail("set-based", `${filed.rows[0].n} of ${MANY} causes were filed`);
+  ok(`set-based: ${MANY} causes are one insert, ${many.statements.length} statements either way`);
+}
+
+/** Two reserving creates of one stem whose plain name is taken, released together: -2 and -3. */
+async function reservations(
+  db: pg.Client, saveDocument: Save, saved: (step: string, r: Awaited<ReturnType<Save>>) => Saved,
+): Promise<void> {
+  const stem = `${INIT}/sources/reserved`;
+  const create = (words: string) => saveDocument({ team: TEAM, initiative: INIT, by: EMAIL, relPath: `${stem}.md`,
+    text: `---\ntitle: Reserved\n---\n\n${words}\n`, type: "source", mode: "create", act: "source", reserveName: true });
+  const plain = saved("reserve, plain", await create("first"));
+  if (plain.reserved !== `${stem}.md`) fail("reserve, plain", `a free stem reserved ${plain.reserved}`);
+  // Both queue behind the stem's lock, held here, and are let go together.
+  await db.query("begin");
+  await db.query("select pg_advisory_xact_lock(hashtext($1))", [`doc:${TEAM}/${stem}`]);
+  const both = Promise.all([create("second"), create("third")]);
+  await new Promise((r) => setTimeout(r, 700));
+  await db.query("commit");
+  const got = (await both).map((r) => saved("reserve, concurrent", r).reserved).sort();
+  if (got.join() !== `${stem}-2.md,${stem}-3.md`) fail("reserve, concurrent", `reserved ${JSON.stringify(got)}`);
+  const rows = await db.query<{ path: string }>("select path from zz.doc where path like 'sources/reserved%' order by path");
+  if (rows.rows.map((r) => r.path).join() !== "sources/reserved-2.md,sources/reserved-3.md,sources/reserved.md") {
+    fail("reserve, concurrent", `filed ${rows.rows.map((r) => r.path).join(", ")}`);
+  }
+  ok("reserve: two concurrent reservations of a taken stem file -2 and -3");
 }
 
 /** RFC 4648 base32, lowercase, no padding — the content revision's alphabet. */
@@ -374,7 +556,7 @@ async function main(): Promise<number> {
     console.error(err instanceof CaseFailure ? err.message : `document-store: ${String((err as Error)?.stack ?? err)}`);
     return 1;
   }
-  console.log("document-store: pin rule, generation, state compare, lock, rollback, requests and version reads: ok");
+  console.log("document-store: pin rule, generation, state compare, lock, rollback, requests, version reads, activity, set-based causes and reservations: ok");
   return 0;
 }
 

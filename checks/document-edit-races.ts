@@ -24,8 +24,8 @@
  *     `no_change`; a replay survives a restart of zz-core; a caller whose membership was removed
  *     is refused, not replayed;
  *   - an injected failure at each statement a change commits — the captured source, the document
- *     row, the cause links and the request row — leaves nothing committed, and the same keyed
- *     change lands once the failure is gone.
+ *     row, the cause links, the request row and the change's own `document.*` event row — leaves
+ *     nothing committed, and the same keyed change lands once the failure is gone.
  *
  * Races are staged with the order PostgreSQL grants one advisory lock: the check holds the
  * per-document key `saveDocument` takes, starts the first call, waits until `pg_locks` shows it
@@ -296,12 +296,15 @@ async function requests(c: Core, second: Mcp): Promise<string> {
   return firstReply;
 }
 
-/** The four statements a change commits after its document's lock, each failed in turn. */
+/** The five statements a change commits after its document's lock, each failed in turn. The event
+ *  trigger is scoped to `document.*` rows: the gateway's `tool_call` row for the call is not the
+ *  change's. */
 const INJECTED: { at: string; table: string; when: (docId: string) => string }[] = [
   { at: "the captured source", table: "zz.doc", when: () => "before insert on zz.doc for each row when (new.path like 'sources/%')" },
   { at: "the document row", table: "zz.doc", when: (id) => `before update on zz.doc for each row when (old.id = '${id}'::uuid)` },
   { at: "the cause links", table: "zz.doc_link", when: () => "before insert on zz.doc_link for each row when (new.kind = 'cites')" },
   { at: "the request row", table: "zz.doc_request", when: () => "before insert on zz.doc_request for each row" },
+  { at: "the event row", table: "zz.event", when: () => "before insert on zz.event for each row when (new.kind like 'document.%')" },
 ];
 
 async function injected(c: Core): Promise<void> {
@@ -330,6 +333,11 @@ async function injected(c: Core): Promise<void> {
       }
       if ((await facts(c, J)) !== before) c.fail(step, `committed:\n${before}\n${await facts(c, J)}`);
       if ((await bodyOf(c, step, j)) !== "# Notes\n\nalpha\n") c.fail(step, "the body moved");
+      // No edit of this initiative has committed yet, so any act row of one is the failed change's.
+      const acts = (await c.sql.query<{ n: number }>(
+        `select count(*)::int as n from zz.event e join zz.initiative i on i.id = e.initiative_id
+          where i.slug = $1 and e.kind in ('document.edit', 'document.source')`, [J])).rows[0].n;
+      if (acts) c.fail(step, `${acts} event rows of the failed change committed`);
       c.pass(step);
     }
   } finally {

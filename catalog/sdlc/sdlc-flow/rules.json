@@ -56,6 +56,39 @@
       "report": "node checks/write-guards.ts"
     },
     {
+      "rule_id": "documents.approval_rests_on_own_presentation",
+      "skill": "sdlc-method",
+      "locator": "## Who approves",
+      "claim": "An approval exists only once `document_approve` has recorded it, on exactly the snapshot your own `document_present` put in front of them — pass back the `review_context` and `expected_revision` that present named; another person's presentation, or the console's, is not yours.",
+      "enforcement_class": "platform",
+      "handler": "services/zz-core/src/attest.ts::approvalBasis, called by services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools (document_approve) at initiative-acts.ts:125 before the seal, which commits only with `expect` pinning the generation it read (a loss answers services/zz-core/src/attest.ts::approvalConflict); coverage is read through services/zz-core/src/review-context.ts::contextState, pagesOf and coverageOf, scoped to the caller's principal, team, document and `x-zz-via`",
+      "behavioural_test": "checks/attest-shown.ts — approvalBasis over fixture rows: whole coverage of the current snapshot in a context of the caller's is accepted; a gap, mixed targets, another principal's or credential's context, a passed context still mid-presentation or covering an earlier snapshot, and nothing presented are refused (PRESENTATION_REQUIRED or APPROVAL_CONFLICT); a failed read refuses. checks/approve-needs-present.ts drives the same function over the real presenter, and the handler order (basis before the seal). Confirmed against the live door by packages/tools/src/testing/chain-check.ts ('document_approve() refuses a document not presented since its last change', 'document_approve() refuses a revision the panel did not display', 'document_approve() records a verdict on the revision the panel displayed, in its review context')",
+      "test_drives": "services/zz-core/dist/attest.js",
+      "report": "node checks/attest-shown.ts",
+      "also_claimed_in": [
+        "sdlc-spec/SKILL.md",
+        "sdlc-plan/SKILL.md",
+        "sdlc-review/SKILL.md",
+        "sdlc-flow/SKILL.md"
+      ]
+    },
+    {
+      "rule_id": "documents.presentation_recorded_per_review_context",
+      "skill": "sdlc-plan",
+      "locator": "## Coming back from the audit, or from execution",
+      "claim": "Then show it again with `document_present(\"<initiative>/plan.md\", review_context: \"<the context its last present named>\")` — it shows only what changed since they last saw it",
+      "enforcement_class": "platform",
+      "handler": "services/zz-core/src/review-context.ts::resolvePresentation (which context, full or delta) and services/zz-core/src/review-context.ts::commitPresentation (the event, under the document's lock, committed before the text returns), called by services/zz-core/src/document-present.ts::present, which services/zz-core/src/tools/artifacts.ts::registerArtifactTools (document_present) calls per path",
+      "behavioural_test": "checks/document-parts.ts — parts count as presented only when they cover the body in one review context, a change set pages the same way, a continuation without a context joins the open presentation, and history records nothing; checks/approve-needs-present.ts — a context presents in full, then what changed, and a moved row covers nothing",
+      "test_drives": "services/zz-core/dist/document-present.js",
+      "report": "node checks/document-parts.ts",
+      "also_claimed_in": [
+        "sdlc-spec/SKILL.md",
+        "sdlc-review/SKILL.md",
+        "sdlc-explore/SKILL.md"
+      ]
+    },
+    {
       "rule_id": "spec.eight_headings_required_at_approval",
       "skill": "sdlc-spec",
       "locator": "### Phase B — the skeleton",
@@ -177,7 +210,7 @@
       "rule_id": "flow.close_refused_until_review_approved",
       "skill": "sdlc-flow",
       "locator": "### After review · the close is an act, not a stage",
-      "claim": "It is the closing document AND it carries a gate, so the platform refuses the close until `document_approve(\"<initiative>/review.md\")` is recorded",
+      "claim": "It is the closing document AND it carries a gate, so the platform refuses the close until its approval is recorded",
       "enforcement_class": "analytical_review",
       "verified_by": "the reviewer reading `closeCheck` against `flow.json`'s `closing`/`gate`/`requiredForClose` flags — there is no executing test of the platform's own guard",
       "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=review.md] — gate, closing, requiredForClose",

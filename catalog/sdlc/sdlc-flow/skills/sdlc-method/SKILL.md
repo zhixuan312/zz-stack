@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.21
+version: 1.22
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -303,8 +303,10 @@ every later initiative pays for and nobody can find.
 
 Not you, and not the worker. A worker proposes; a person decides. Report to them in their own
 words what the document says and what it calls "done", and let them answer. An approval exists
-only once `document_approve(path)` has recorded it — the platform stamps who and when from the session
-itself, so the one thing you must get right is calling it in the same turn they agreed. Your
+only once `document_approve` has recorded it, on exactly the snapshot your own `document_present`
+put in front of them — pass back the `review_context` and `expected_revision` that present named;
+another person's presentation, or the console's, is not yours. The platform stamps who and when
+from the session itself, so the one thing you must get right is calling it in the same turn they agreed. Your
 team's own name is not a person, and `on_behalf_of` exists for the rarer case where the verdict
 is someone else's.
 

@@ -1,6 +1,6 @@
 ---
 name: sdlc-explore
-version: 1.11
+version: 1.12
 description: Ground a raw idea before anyone designs it — capture the brain dump, fan out parallel workers across this system, the outside world and the ZZ knowledge base, wait for all of them, then synthesise one explore.md (Background · Current state · Rough direction). Main agent, with the fan-out dispatched.
 when_to_use: "Someone arrives with a raw idea, problem, feature request or brain dump and it needs grounding before it is designed. The question is exploratory — several directions to weigh, not one fact to look up. If it is one convergent question, that is a single sdlc-investigate, not this. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -84,7 +84,8 @@ new text, heading line first, as `content`, and what they said as `source_conten
 
 Then fetch it back with `document_present("<initiative>/explore.md")` and put what it returns
 in front of the person before they pick a direction to carry into `sdlc-spec`. A write that
-succeeded is not a direction anybody read.
+succeeded is not a direction anybody read. After a correction, present it with the
+`review_context` that reply named, so they are shown only what changed.
 
 Keep the top level at `##`: downstream stages read these sections by their `##` heading, and a
 deeper top level makes them see nothing.

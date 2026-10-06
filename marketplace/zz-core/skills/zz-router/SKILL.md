@@ -40,9 +40,10 @@ exactly — they are the method; this file is only the door.
 - Documents are created with `document_write` and changed with `document_edit`
   in your team's store — never in this repository. You send the BODY;
   the platform writes the frontmatter, and one you type never becomes it.
-- A gate passes only once `document_approve(path)` has recorded it. A "yes" in the
-  conversation is not an approval, and you cannot write one by hand — the
-  platform stamps who approved and when, and refuses the fields if you try.
+- A gate passes only once `document_approve` has recorded it, on the snapshot your own
+  `document_present` put in front of the person — pass back the `review_context` and
+  `expected_revision` that present named. A "yes" in the conversation is not an approval,
+  and you cannot write one by hand — the platform stamps who approved and when.
 - An approved document's body changes through `document_edit` with its cause, never by writing over it.
 - Tokens belong to the **ZZ Access** agent. Never ask anyone to paste one here.
 

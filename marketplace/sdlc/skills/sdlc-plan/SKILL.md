@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.23
+version: 1.24
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -66,8 +66,10 @@ is a record of what happened, not a forecast.
   (the first with tasks and no `### As built`) and that phase's waves.
 - **Approval is per phase, and quick.** Each phase's plan still passes the `plan.md` gate. Where
   the person has delegated it, the approval rests on the plan-audit round and the structural
-  report for that phase — record it under their delegation and carry on; do not re-present the
-  whole plan for a fresh verdict on phases already built.
+  report for that phase — record it under their delegation and carry on. Present it in the review
+  context you presented it in last, which shows only what changed (the new phase; a new conversation
+  without that context is shown it whole), and approve the snapshot that present names; never ask
+  a fresh verdict on phases already built.
 
 ## What the plan must express
 
@@ -479,8 +481,9 @@ document to draft, clears the stale approval and keeps the approved copy as the 
 add the tasks that undo anything an earlier round built that no longer belongs. Do not write a
 second plan; execution needs one document.
 
-Then show it again with `document_present("<initiative>/plan.md")`, say what changed and why, and
-get the approval recorded afresh — the gate is on the version they read, not on the one they
+Then show it again with `document_present("<initiative>/plan.md", review_context: "<the context its last
+present named>")` — it shows only what changed since they last saw it — say what changed and why, and
+get the approval recorded afresh: the gate is on the snapshot they were shown, not on the one they
 read last time.
 
 ## Skill contract

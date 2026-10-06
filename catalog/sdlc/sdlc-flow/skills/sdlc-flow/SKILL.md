@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 2.14
+version: 2.15
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -168,10 +168,10 @@ appends the team's ledger row. An initiative you do not close this way stays ope
 and never reaches the ledger.
 
 **`review.md` must exist and be approved first.** It is the closing document AND it carries a
-gate, so the platform refuses the close until `document_approve("<initiative>/review.md")` is
-recorded, so an initiative cannot close on an agreement written before any code existed. Ask
-for the approval the way stage 4 asks for the
-plan's, and write it down in the same turn.
+gate, so the platform refuses the close until its approval is recorded — `document_approve` on the
+snapshot of `review.md` you presented, passing what that present named — so an initiative cannot
+close on an agreement written before any code existed. Ask for the approval the way stage 4 asks
+for the plan's, and write it down in the same turn.
 
 **The close is terminal**, whatever the outcome — closing part-way through is a normal way for
 work to end, not a lesser one.

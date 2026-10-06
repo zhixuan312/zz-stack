@@ -42,27 +42,28 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the ten that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the eleven that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the ten checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the eleven checks that migrate a real PostgreSQL** — the schema inventory,
 the rehearsal, the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, the document write path (`checks/document-store.ts`), which drives
-`saveDocument` against one, and the six that run a real zz-core against one: the console's
+`saveDocument` against one, and the seven that run a real zz-core against one: the console's
 document reads, presentation and approval (`checks/console-versions.ts`), the document walking
 skeleton and every edit mode
 (`checks/document-edit.ts`), concurrent changes and keyed requests (`checks/document-edit-races.ts`),
 the version table and the acts racing an edit (`checks/document-version.ts`), the causes that
-link themselves (`checks/document-version-causes.ts`), and normalisation, counted receipts and
-detail pages (`checks/document-normalize.ts`). Each exits 2 when Docker is absent rather
+link themselves (`checks/document-version-causes.ts`), normalisation, counted receipts and
+detail pages (`checks/document-normalize.ts`), and presenting what changed and approving exactly
+what was shown (`checks/document-present-changes.ts`). Each exits 2 when Docker is absent rather
 than passing, because a throwaway database that could not be started is not a check that agreed.
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those ten commands never needs Docker.
+runs those eleven commands never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.8
+version: 2.9
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -25,9 +25,9 @@ Do not restate those criteria here: two auditors applying different standards is
 either standard.
 
 **You present nothing to the person.** A dispatched round hands its JSON envelope back to
-the main agent, and that agent decides what anybody is shown — so do not paste a document,
-or `document_present` output, into what you return. Presenting a document in full belongs
-to the gate the main agent is asking somebody to sign, and this round is not that.
+the main agent, and that agent decides what anybody is shown — so do not paste a document
+into what you return, and read it with `document_read`, never `document_present`. A presentation
+is what the gate the main agent asks somebody to sign rests on, and this round is not that.
 
 **Your round is recorded as a SOURCE supporting `plan.md`** — `source_add(..., supports:
 "plan.md", stage: "sdlc-plan-audit")`. It is the only thing standing between an unread plan and `sdlc-execute`
@@ -142,8 +142,8 @@ flow and changes nothing in the plan.
 **Required evidence:** every finding in one of the four evidence shapes, each opening with its
 source in square brackets. For a path claim, the tree at HEAD — verify the specific paths the plan
 names rather than enumerating the repository. For a runner claim, that the project actually has
-the entry point the `Run:` command names. And the plan version `document_present` stated when you
-opened it, quoted in the source you register — `sdlc-execute` dispatches from one revision of this
+the entry point the `Run:` command names. And the plan version the envelope stated when you
+read it, quoted in the source you register — `sdlc-execute` dispatches from one revision of this
 document, so a round that does not say which one it read cannot be matched to what was built.
 
 **Allowed unknowns:** whether the spec was right. It was agreed and already audited, and a plan

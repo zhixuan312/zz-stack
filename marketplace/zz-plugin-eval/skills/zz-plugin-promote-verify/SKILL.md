@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-promote-verify
-version: 1.1
+version: 1.2
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a built and gated candidate of an owned subject, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, then judge the release on real use — and roll it back if it measures worse.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE built and gated (valid) against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
@@ -50,7 +50,9 @@ base subject's owner teams (`not_owner`); a base subject with NO recorded
 ## The approval — a person, before anything real happens
 
 `document_present` it, put it in front of every required owner, and `document_approve` it the
-moment they agree — under their name, in the same turn. **`release_apply` reads the approved
+moment they agree — under their name, in the same turn, passing the `review_context` and
+`expected_revision` that present named. An approval rests only on the approver's own
+presentation: an owner approving from their own session presents it there, in a context of their own. **`release_apply` reads the approved
 document back and refuses without it**: the approval counts only when the document cites THIS
 `release_attempt_id` in its body and quotes the exact `patch_digest`, and only for the
 owner teams the approver is a MEMBER of. An approval of an earlier attempt's document, or by

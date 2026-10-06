@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.10
+version: 2.11
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -25,10 +25,11 @@ you find. An audit that edits the document destroys the caller's ability to deci
 to accept, and removes the evidence that anything was ever wrong.
 
 **Read the stored revision, and say which one it was.** Open the target with
-`document_present("<initiative>/<doc>")`, adding `version: N` when the caller named one. That
-call states the path it actually read, that copy's version and status, and the approvals it
-carries, and it refuses a version nobody filed instead of quietly handing you today's document
-under the number you asked for. Carry that version into your round's title and into the source
+`document_read("<initiative>/<doc>")`, adding `version: N` when the caller named one — a read,
+never `document_present`: a present records a presentation under the same name the main agent
+approves with, and this round shows nobody anything. The copy's envelope states its `version`,
+`status`, `content_revision` and the approval it carries, and the call refuses a version nobody
+filed instead of quietly handing you today's document under the number you asked for. Carry that version into your round's title and into the source
 you register. "The spec" is not something anybody can have audited; one stored revision is, and
 naming it is what lets a second reader reproduce your findings or disagree with them. Audit the
 revision you were given even when a newer one exists — a round that silently retargets the
@@ -254,7 +255,7 @@ both.
 internal-coherence — each opening with its source in square brackets: the nearest heading for a
 document, the file path with a line number where you have one for code. Anything else is
 speculation and belongs in the summary as "investigation needed", not in `findings`. Alongside
-them, the version `document_present` stated for the copy you read, carried into the source you
+them, the version the envelope stated for the copy you read, carried into the source you
 register, and the rename receipt the caller handed you — or `unavailable` where none was.
 
 **Allowed unknowns:** what the document's owner will choose to fix — severity is calibrated to

@@ -6,8 +6,9 @@
  * is to make the hand-off exact. A selection turns the reading pane's foot into two acts —
  * **Explain**, which asks the agent about exactly that passage, and **Note a change**, which files
  * it in a basket of notes, each anchored to its passage and section. The basket goes to the agent
- * as one message, with the instruction to revise and present again, so a review is one clear
- * request rather than a stream of vague ones.
+ * as one message, with the instruction to revise and present it in the panel's review context —
+ * so the agent shows only what changed — and a review is one clear request rather than a stream
+ * of vague ones.
  *
  * Notes are kept per public version of a document in the frame's own storage where the host allows it, so a
  * re-mounted panel still has them; a sandbox that refuses storage only loses them on reload.
@@ -124,7 +125,11 @@ export async function sendNotes(s: Slot): Promise<void> {
   ].join("\n"));
   await app.sendMessage({ role: "user", content: [{ type: "text", text: [
     `Review notes on ${s.doc.path} (v${s.doc.version}), from the document panel:`, "", ...items, "",
-    "Change the document for these with document_edit, then present it again so I can see what changed.",
+    // The panel's own review context, named so the next present shows what changed since this one.
+    s.doc.review_context
+      ? `Change the document for these with document_edit, then call document_present on it with review_context ` +
+        `"${s.doc.review_context}", so I am shown only what changed.`
+      : "Change the document for these with document_edit, then call document_present on it, so I can see the result.",
   ].join("\n") }] });
   s.sent = `${s.notes.length} note${s.notes.length === 1 ? "" : "s"} sent — the assistant will revise and show it again, with what changed marked.`;
   s.notes = [];

@@ -322,6 +322,20 @@ taken is filed under the next free suffix, reserved under the lock. Each normali
 reported line, and it runs before identity is compared, so a document read and sent back whole
 is a no-change and never a version.
 
+### An approval signs what was presented
+
+A presentation is recorded, and an approval rests on one. `document_present` works in a review
+context (`rc_…`) the server mints and the reply names; it belongs to one person, one document and
+one kind of credential, and a later present that passes it back shows only what changed since the
+context last covered the document (`full: true` for all of it). Each presented page is a
+`document.shown` or `document.shown_part` row naming its context, snapshot and span, committed
+under the document's lock before the text returns, so a snapshot once shown is kept. What it
+records is coverage delivered to the caller — never proof that a human read every character. An
+approval signs exactly the current snapshot, and only when a context of the caller's own covered
+it (`approvalBasis`, `attest.ts`): another person's or the console's never counts, a snapshot
+changed after display is `APPROVAL_CONFLICT`, and no covering context is `PRESENTATION_REQUIRED`.
+The console records and approves only what a browser session was shown.
+
 ### `entry` — the skill the agent opens first
 
 `entry` is orthogonal to shape. A flow needs a door — `stages` without `entry` is an error,

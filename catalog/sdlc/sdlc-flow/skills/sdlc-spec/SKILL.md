@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.16
+version: 1.17
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -24,8 +24,8 @@ worker to check. You are the writer, and the person is the gate.
 
 **2. Nothing proceeds until the person agrees.** The next stage is `sdlc-spec-audit`, and auditing
 a document nobody has agreed to audits your own guess. Tell them in their own words what the
-spec says ships and what it calls "done", and wait. An approval exists only once `document_approve(path)` has
-recorded it — the platform stamps `status`, `approved_by` and `approved_at` itself, refuses
+spec says ships and what it calls "done", and wait. An approval exists only once `document_approve` has
+recorded it, on the exact snapshot you presented to them — the platform stamps `status`, `approved_by` and `approved_at` itself, refuses
 those three written by hand, and refuses every later document in the chain until they are there.
 
 # Part one — brainstorm
@@ -543,8 +543,9 @@ either way. What the person decides about a finding, or a phase's as-built repor
 call. Every edit for that one input after the first names the source the first one filed, so
 the revision stays one version.
 
-Then `document_present("<initiative>/spec.md")` again, say what changed and why, and get the
-approval recorded afresh. The audit's next round is owed on the new version, and
+Then `document_present("<initiative>/spec.md", review_context: "<the context its last present named>")`,
+which shows only what changed since they last saw it; say what changed and why, and get the
+approval recorded afresh, on the snapshot that present names. The audit's next round is owed on the new version, and
 `initiative_status` routes it.
 
 ## Skill contract

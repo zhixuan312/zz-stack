@@ -1,21 +1,21 @@
 {
   "sdlc": {
     "version": "0.93.3",
-    "digest": "ca6bfabc",
+    "digest": "67279ddd",
     "skills": {
-      "sdlc-audit-criteria": "c97d4689d567",
+      "sdlc-audit-criteria": "1dd3486defaf",
       "sdlc-execute": "7ad65b288c84",
-      "sdlc-explore": "c683bf7057b8",
-      "sdlc-flow": "81d5f9222b77",
+      "sdlc-explore": "a5167b6fd398",
+      "sdlc-flow": "8e45dec9bd55",
       "sdlc-investigate": "15e674f6b8a1",
-      "sdlc-method": "39ce3c11a5ef",
-      "sdlc-plan": "fab756a04d4a",
-      "sdlc-plan-audit": "bd9d10a505f6",
+      "sdlc-method": "f80958b739b5",
+      "sdlc-plan": "ec44642f1078",
+      "sdlc-plan-audit": "3537273a35f6",
       "sdlc-recall": "29a2e6cd164d",
       "sdlc-research": "3acbabf13cb4",
-      "sdlc-review": "b58b337a582b",
-      "sdlc-spec": "ddd69f645311",
-      "sdlc-spec-audit": "dff66bd342a4"
+      "sdlc-review": "e8d5cbb28191",
+      "sdlc-spec": "5e5e9b4eda0b",
+      "sdlc-spec-audit": "b3125191c223"
     }
   },
   "zz-access": {
@@ -31,21 +31,21 @@
   },
   "zz-core": {
     "version": "0.93.3",
-    "digest": "e72e982d",
+    "digest": "1c2c3a84",
     "skills": {
       "zz-authoring": "a2c3a1684d0c",
       "zz-breakout": "593964bc3415",
       "zz-deck": "e59a9f79d685",
-      "zz-handover": "f0c457ccf4da",
-      "zz-platform": "e93b2ae03efd",
+      "zz-handover": "175b6d4fd997",
+      "zz-platform": "6919e805aae4",
       "zz-tldr": "0fa98d6ce832"
     }
   },
   "zz-plugin-eval": {
     "version": "0.93.3",
-    "digest": "281c6c8f",
+    "digest": "f5783937",
     "skills": {
-      "zz-plugin-define-qualify": "26884092250a",
+      "zz-plugin-define-qualify": "d184961ca05e",
       "zz-plugin-discover": "c37151a84a42",
       "zz-plugin-eval": "bcd63e18d6fb",
       "zz-plugin-evaluate": "04081b63abea",
@@ -53,7 +53,7 @@
       "zz-plugin-identify": "ce809f4918a9",
       "zz-plugin-improve": "681710337d79",
       "zz-plugin-observe": "ec07462fb5f8",
-      "zz-plugin-promote-verify": "9ed6a75bb55f"
+      "zz-plugin-promote-verify": "7ca48537bade"
     }
   }
 }

@@ -1,8 +1,8 @@
 /**
  * A real zz-core on a throwaway database, for the checks that drive document tools end to end
- * through the MCP door: `withThrowawayDb`'s container, one principal seeded in one team, the built
- * `services/zz-core/dist/server.js` started on a free port against it, and MCP clients carrying
- * that principal's identity headers.
+ * through the MCP door: `withThrowawayDb`'s container, one principal seeded in one team (a second
+ * on `member()`), the built `services/zz-core/dist/server.js` started on a free port against it,
+ * and MCP clients carrying that principal's identity headers.
  *
  * A helper, not a check: every `.ts` under `checks/` is a check the gate runs, so the harness
  * those checks share lives here, beside the throwaway database it starts from.
@@ -11,7 +11,9 @@
  * every table `zz.`), the zz-core child (`restart` kills it and starts another on the same
  * database), any number of MCP clients (`mcp`, `client()` for a second one whose calls run beside
  * the first's), the call helpers that turn a reply into a pass or a named failure, the order in
- * which PostgreSQL grants one advisory lock — what a race is staged with — and the built zz-core
+ * which PostgreSQL grants one advisory lock — what a race is staged with — a second principal of
+ * the same team (`member`) and clients under another credential kind (`client({ via })`), for a
+ * rule scoped to who is calling and how, and the built zz-core
  * modules loaded in this process against the same database (`inProcess`), for a rule no tool lets
  * a caller reach and for the statements a change issues, which only this process can count. A
  * check may hand the child a catalog of its own (`catalog`) — a copy carrying a fixture flow.
@@ -33,6 +35,8 @@ import { withThrowawayDb } from "./throwaway.ts";
 
 const EMAIL = "skeleton@example.test";
 const TEAM = "skeleton-team";
+/** The second principal `member()` seeds into the same team. */
+const MEMBER = "member@example.test";
 const START_TIMEOUT_MS = 30_000;
 /** How long a staged race waits for PostgreSQL to show the callers it was told to expect. */
 const WAIT_TIMEOUT_MS = 20_000;
@@ -55,6 +59,10 @@ interface InProcess {
 /** `initiative_status`'s `next_move`. */
 interface NextMove { action?: string; document?: string; why?: string }
 
+/** Who a client calls as: the principal's address, the credential kind the gateway stamps, and the
+ *  client it says it is (`x-zz-client`, asserted by the client and never trusted). */
+interface Caller { email?: string; via?: string; client?: string }
+
 /** What a check is handed. */
 export interface Core {
   /** The throwaway database, as one client with an empty `search_path`. */
@@ -65,9 +73,13 @@ export interface Core {
   email: string;
   /** The first MCP client. `restart` replaces it. */
   mcp: Mcp;
-  /** Another MCP client for the seeded principal, on its own session: two calls released
-   *  together run as two callers. */
-  client(): Mcp;
+  /** Another MCP client, on its own session: two calls released together run as two callers. The
+   *  seeded principal under `x-zz-via: forwarded`, as the check's own client, unless `as` names
+   *  another principal (`member()`), another credential kind (`pat`, `session`) or another client. */
+  client(as?: Caller): Mcp;
+  /** A second principal, a member of the same team, seeded on the first call: its address. Not
+   *  seeded before — a check that counts the principals this database holds sees one. */
+  member(): Promise<string>;
   freePort(): Promise<number>;
   /** Kill the zz-core child and start another on the same database, on a fresh port. */
   restart(): Promise<void>;
@@ -190,13 +202,13 @@ function stopCore(c: Child): Promise<void> {
   });
 }
 
-function mcpFor(port: number, name: string): Mcp {
+function mcpFor(port: number, name: string, as: Caller = {}): Mcp {
   return new Mcp(`http://127.0.0.1:${port}/mcp`, {
-    client: name,
+    client: as.client ?? name,
     timeoutMs: 60_000,
     headers: {
-      "x-zz-user-email": EMAIL, "x-zz-user-name": "Skeleton", "x-zz-user-id": "",
-      "x-zz-user-role": "user", "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "",
+      "x-zz-user-email": as.email ?? EMAIL, "x-zz-user-name": as.email ? "Member" : "Skeleton", "x-zz-user-id": "",
+      "x-zz-user-role": "user", "x-zz-via": as.via ?? "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "",
     },
   });
 }
@@ -242,7 +254,18 @@ export async function withThrowawayCore(
       const core: Core = {
         sql, url, team: TEAM, email: EMAIL,
         mcp: mcpFor(live().port, name),
-        client: () => mcpFor(live().port, name),
+        client: (as) => mcpFor(live().port, name, as),
+        member: async () => {
+          await sql.query(
+            `with p as (insert into zz.principal (email, display_name, role) values ($1, 'Member', 'member')
+                         on conflict (email) do nothing returning id),
+                  t as (select id from zz.team where slug = $2)
+             insert into zz.membership (team_id, principal_id, role, added_by)
+             select t.id, p.id, 'member', p.id from p, t`, [MEMBER, TEAM]);
+          await sql.query(
+            "update zz.principal set active_team_id = (select id from zz.team where slug = $2) where email = $1", [MEMBER, TEAM]);
+          return MEMBER;
+        },
         freePort,
         restart: async () => {
           await stopCore(live());

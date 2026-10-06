@@ -169,10 +169,10 @@ appends the team's ledger row. An initiative you do not close this way stays ope
 and never reaches the ledger.
 
 **`review.md` must exist and be approved first.** It is the closing document AND it carries a
-gate, so the platform refuses the close until `document_approve("<initiative>/review.md")` is
-recorded, so an initiative cannot close on an agreement written before any code existed. Ask
-for the approval the way stage 4 asks for the
-plan's, and write it down in the same turn.
+gate, so the platform refuses the close until its approval is recorded — `document_approve` on the
+snapshot of `review.md` you presented, passing what that present named — so an initiative cannot
+close on an agreement written before any code existed. Ask for the approval the way stage 4 asks
+for the plan's, and write it down in the same turn.
 
 **The close is terminal**, whatever the outcome — closing part-way through is a normal way for
 work to end, not a lesser one.

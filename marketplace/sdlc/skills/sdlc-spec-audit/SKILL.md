@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec-audit
-version: 2.7
+version: 2.8
 description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
@@ -25,9 +25,9 @@ Do not restate those criteria here: two auditors applying different standards is
 either standard.
 
 **You present nothing to the person.** A dispatched round hands its JSON envelope back to
-the main agent, and that agent decides what anybody is shown — so do not paste a document,
-or `document_present` output, into what you return. Presenting a document in full belongs
-to the gate the main agent is asking somebody to sign, and this round is not that.
+the main agent, and that agent decides what anybody is shown — so do not paste a document
+into what you return, and read it with `document_read`, never `document_present`. A presentation
+is what the gate the main agent asks somebody to sign rests on, and this round is not that.
 
 **Your round is recorded as a SOURCE supporting `spec.md`** — `source_add(..., supports:
 "spec.md", stage: "sdlc-spec-audit")`. It is what a planner has to go on when building from a spec you passed, what tells

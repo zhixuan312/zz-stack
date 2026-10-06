@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.83
+version: 3.84
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -52,11 +52,11 @@ platform stamps `flow` on every document; no write takes it, and a typed one is 
 | nothing | `document_write` | v1 — `status: draft` ONLY where the flow gates the document | the platform |
 | exists | `document_write` | **refused**, `TARGET_EXISTS` — it creates and never overwrites | — |
 | draft | `document_edit` | draft — the same `version`, or the next one when the change brings a cause new to this one | the platform |
-| draft | `document_approve(path)` | `status: approved`, plus `approved_by` and `approved_at` | the platform, from your session |
+| draft | `document_approve(path, expected_revision, review_context)` | `status: approved`, plus `approved_by` and `approved_at` | the platform, from your session |
 | approved | `document_edit`, body changed, no cause | **refused**, `CAUSE_REQUIRED` | — |
 | approved | `document_edit`, body changed, with its cause | draft again, the next `version`, the cause recorded; the approved version stays readable | the platform |
 | approved | `document_edit`, metadata only | a draft of the same `version`, awaiting its own approval | the platform |
-| any | `document_present(path)` | unchanged — a `shown` entry is appended to the activity log | the platform |
+| any | `document_present(path)` | unchanged — what it showed is recorded in a review context, and that snapshot is kept | the platform |
 | approved | `source_add(..., supports: <path>)` | approved, and flagged for refinement | the platform |
 
 `status` is exactly `draft` or `approved` — **and it exists only where the flow's manifest
@@ -157,37 +157,37 @@ the timing; getting this wrong costs a plan, not a refusal.
   `File:` line standing over a failed write is invisible here and costs the
   person a document they believe they have.
 - When you create or update a document deliverable, fetch it back with
-  `document_present(path)` and put what it returns in front of the person as
-  Markdown (the chat renders GFM and Mermaid) — `File: <path>`, a horizontal
-  rule, then the document. Never only a path. **What the platform holds is the
-  fetch, not the showing.** Every `document_present` call appends a `shown` entry
-  naming the path, the version and who asked, so "was this document fetched,
-  and at which version, before its gate was approved" is answerable from the
-  initiative's own activity log. Whether your reply then carried the content
-  is not something the platform can see — a tool result is your input, not a
-  display. **`document_approve` refuses a document whose current content was
-  never presented:** call `document_present` after the last write or
-  edit, in its own call, then approve.
+  `document_present(path)`, in its own call after the write returns, and put what
+  it returns in front of the person as Markdown — `File: <path>`, a horizontal rule,
+  then the document; never only a path. **Every present is part of a review
+  context**, named in its reply: `Review context: rc_… — full, target cr_…,
+  baseline none, covered`. Pass that `review_context` to the next present of the
+  document and it shows only what changed since the context last covered it —
+  each change named, then every added or edited section whole; `full: true`
+  shows it whole. A long document pages: each part ends `Next: offset N, with
+  review_context "rc_…"`, and a part asked for without it joins the open
+  presentation. The platform records coverage DELIVERED to you, not proof a
+  human read every character: a tool result is your input, not a display.
+- **An approval signs exactly the snapshot you presented, and rests only on your
+  own presentation** — another person's, or the console's, never counts, and
+  `on_behalf_of` changes whose name is signed, not whose presentation. Pass what
+  the present named: `document_approve(path, expected_revision: "cr_…",
+  review_context: "rc_…")`, its `target` and its context; left out, your most
+  recent context covering the current snapshot is used. `APPROVAL_CONFLICT`: it
+  changed after it was shown — present it in that context, which shows only the
+  change, and approve what that names. `PRESENTATION_REQUIRED`: no context of
+  yours covers the current snapshot — present it, or finish the one it names.
 
-  **A client that renders MCP Apps shows the result as a document panel** —
-  the whole document, whatever length, with its status and the approval. The
-  panel records the present itself through `document_shown`, a call that is
-  the panel's and never yours: it takes a ticket only the panel is handed. If
-  the person can see the panel, do not page the rest into your reply; an
-  approval they make there arrives as their message. The panel also tells you,
-  beside their next message, where they are reading — the section, how far
-  through, the passage on their screen and anything they selected. "This" in
-  their question means the selection, or else that passage: answer from it.
-  Review notes they send from the panel name each passage and what should
-  change: change it with `document_edit`, then present again — the panel marks
-  the sections that changed, so they re-read only those.
+  **A client that renders MCP Apps shows the result as a document panel** — the
+  whole document, marked against what its context last covered. The panel records
+  its own presentation (`document_shown`, with a ticket only it holds) and its
+  Approve sends what it showed; if the person can see it, do not page the rest
+  into your reply. Beside their next message it says where they are reading
+  and what they selected — "this" means that. For the review notes they send,
+  `document_edit`, then present with the panel's context so they re-read only that.
 
-  **A standing delegation waives their review, not the fetch.** "Approve
-  without checking with me" is the person declining to read it — theirs to
-  say, and it keeps standing. It is not a statement about the record, and the
-  fetch is the record: it is what lets anyone afterwards ask which bytes the
-  verdict was given on. Delegation is in fact the case where the fetch matters
-  MOST, because nobody else is looking. So fetch it, then approve.
+  **A standing delegation waives their review, not the presentation** — the record of
+  which bytes the verdict was given on, which matters MOST when nobody is looking.
 
 ## Gates and the envelope
 
@@ -201,7 +201,7 @@ the timing; getting this wrong costs a plan, not a refusal.
   agreed to — never as a ritual, and never to collect a better-worded
   version of a yes you already have.
 - **A gate is not passed until it is recorded**: the moment they agree, call
-  zz-core's `document_approve(path)` in that same turn, before moving on.
+  zz-core's `document_approve` — with what your last present named — in that same turn.
 
   **The document is the one THIS conversation is working on.** If you wrote it and
   asked for a verdict, their answer is about that document — approve it. Do not

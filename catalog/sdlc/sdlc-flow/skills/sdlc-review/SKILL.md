@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.14
+version: 1.15
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -78,8 +78,9 @@ round, the verdict — is `document_edit`. `document_read` the part you are chan
 send only it: `document_edit(path: "<initiative>/review.md", section: "Backlog", content:
 "## Backlog\n\n<the section as it now reads>")`, or `edits` for a line. Once it is approved, a
 change also names its cause in `sources` — the round or the stakeholder's source that prompted
-it — or is refused `CAUSE_REQUIRED`. Then `document_present` it in a separate call, and ask for
-the approval.
+it — or is refused `CAUSE_REQUIRED`. Then `document_present` it in a separate call — passing the
+`review_context` its last present named, so only what changed is shown — and ask for the approval,
+recorded on the snapshot that present names.
 
 ## B. Defect sweep — secondary, bounded
 

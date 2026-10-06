@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.13
+version: 0.14
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -203,7 +203,9 @@ stage that stopped before its approval, a `content_digest` to quote anew — cha
 document's body.** `protocol_affirm` refuses to bind an approval that does not carry it. Then
 `document_present` it and put what comes back in front of the person. They are approving this
 document, not your account of it. Record their agreement with `document_approve` the moment it
-arrives, under their name, in the same turn. Then call:
+arrives, under their name, in the same turn, passing the `review_context` and `expected_revision`
+that present named — after an edit, present it in that context again, which shows only what
+changed. Then call:
 
 ```
 protocol_affirm(protocol_version_id, initiative, idempotency_key)

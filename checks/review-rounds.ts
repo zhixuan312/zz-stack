@@ -13,10 +13,13 @@
  *   2. `reviewRoundOf` counts only the verifying document's own stage
  *   3. every reviewMove branch: round 1, fix, run_experiment, settled, out-of-scope, S1
  *      reproduced out of scope, a repeat, the budget on a non-converging review, a renewal, an accepted residual
- *   4. the approval rules: no round and no waiver, a stakeholder's waiver, no section, a missing row, a stray row, a bad status, no locator, no
- *      quote, deferred with and without a stakeholder source, the Backlog, and `unavailable`
- *   5. the readings: `no` refuses, `unclear` asks to sharpen, `unclear` again on new evidence
- *      goes to the stakeholder, whose source accepts it
+ *   4. the approval rules: no round and no waiver, a stakeholder's waiver, no section, a missing row, a stray row, a bad status, no locator,
+ *      a locator with a space after its colon, a table the gate cannot read, no quote, deferred
+ *      with and without a stakeholder source, the Backlog, and `unavailable`
+ *   5. the readings: a task's whole criterion, the plan's declared checks bound to the criteria
+ *      they verify and a row naming one asked only whether it passed, `no` refuses, `unclear`
+ *      asks to sharpen, `unclear` again on new evidence goes to the stakeholder, whose source
+ *      accepts it
  *   6. the replay of 2026-09-24-plugin-eval-next-version: fix, fix, fix (converging, so no
  *      budget stop), settled after Round 4; Rounds 5-6 (inferred) route to run_experiment
  *
@@ -140,7 +143,9 @@ const SPEC = "# Spec\n\n## Stakeholders & Work\n\n- [ ] **AC-1.1** An intake ema
 // executed — it routes to `sdlc-execute` and offers no round at all (the defect 0.83.2 fixes, proven
 // by checks/plan-waves-status.ts cases 5 and 6).
 const PLAN = "# Plan\n\n## Phase 1 — cases\n\n### Task I-1: Intake (← AC-1.1)\n\n**Technical acceptance " +
-             "criteria** (← AC-1.1): the intake check passes on a sample email.\n\n" +
+             "criteria** (← AC-1.1): the intake check passes on a sample email. It proves:\n" +
+             "- one email becomes one case\n\n**Checks:**\n- Check: `checks/intake.ts`\n" +
+             "- Run: `node checks/intake.ts`  Expected: PASS once implemented\n\n" +
              "### As built\n\nPhase 1 is built.\n\n## Full-suite gate\n\nnpm run gate\n";
 
 let n = 0;
@@ -300,7 +305,15 @@ const move = async (i: Fixture) =>
   got = await approval(e, table([ok1, "| AC-2.1 | done | check:x — `x` | |", okT]));
   is(/AC-2\.1: status "done"/.test(got.refusal ?? ""), `a bad status: ${got.refusal}`);
   got = await approval(e, table([ok1, "| AC-2.1 | blocked | waiting on the vendor | |", okT]));
-  is(/AC-2\.1 is blocked and its evidence names no kind-prefixed locator/.test(got.refusal ?? ""), `no locator: ${got.refusal}`);
+  is(/AC-2\.1's evidence names no kind-prefixed locator.*no space after the colon/.test(got.refusal ?? ""), `no locator: ${got.refusal}`);
+  got = await approval(e, table([ok1, "| AC-2.1 | established | run: `node checks/close.ts` — `close: ok` | |", okT]));
+  is(/AC-2\.1's locator has a space after the colon — write it with none, `run:<what ran>`/.test(got.refusal ?? ""),
+     `a locator with a space after its colon (bug 387648d1): ${got.refusal}`);
+  got = await approval(e, "# Review\n\n## Acceptance evidence\n\n| Item | Locator | Decisive line |\n|---|---|---|\n" +
+                          "| AC-1.1 intake works | check:intake | `intake: ok` |\n");
+  is(/table has no row the gate can read — it starts `\| Item \| Locator \| Decisive line \|`.*id alone in the first column/.test(got.refusal ?? "")
+     && !/no row for/.test(got.refusal ?? ""),
+     `a table the gate cannot read is said once, by its header (bug a568b3d8): ${got.refusal}`);
   got = await approval(e, table([ok1, "| AC-2.1 | established | check:close passed | |", okT]));
   is(/AC-2\.1 is established and quotes no output/.test(got.refusal ?? ""), `no quote: ${got.refusal}`);
   got = await approval(e, table([ok1, "| AC-2.1 | deferred | | next release |", okT]));
@@ -325,14 +338,35 @@ const move = async (i: Fixture) =>
   // 5. the readings
   const r = await fresh();
   round(r, ledger(1, []), "2026-09-26T00:30:00.000Z");
-  const texts = new Map(((await acc.declaredCriteriaOf(TEAM, r.name, ["spec.md", "plan.md"])) as Array<{ id: string; text: string }>)
-    .map((x) => [x.id, x.text]));
-  is(texts.get("I-1") === "the intake check passes on a sample email.", `a task's criterion is its technical AC: ${texts.get("I-1")}`);
+  type Criterion = { id: string; text: string; checks: string[] };
+  const criteria = new Map(((await acc.declaredCriteriaOf(TEAM, r.name, ["spec.md", "plan.md"])) as Criterion[])
+    .map((x) => [x.id, x]));
+  is(criteria.get("I-1")?.text === "the intake check passes on a sample email. It proves:\n- one email becomes one case",
+     `a task's criterion is its whole technical AC, up to the next label: ${JSON.stringify(criteria.get("I-1")?.text)}`);
+  is(JSON.stringify(criteria.get("I-1")?.checks) === '["checks/intake.ts"]' &&
+     JSON.stringify(criteria.get("AC-1.1")?.checks) === '["checks/intake.ts"]' &&
+     JSON.stringify(criteria.get("AC-2.1")?.checks) === "[]",
+     `a task's checks bind to it and to the criteria its heading cites, and to nothing else: ` +
+     JSON.stringify([...criteria.values()].map((c) => [c.id, c.checks])));
+  // A row naming the plan's declared check is asked only whether it passed (bug d5ab33bd); any
+  // other row is asked the criterion itself.
+  const bound = acc.questionOf(criteria.get("AC-1.1"), "run:node checks/intake.ts — `intake: ok`");
+  is(bound.bound.length === 1 && /^AC-1\.1 is verified by the check the approved plan declares for it, `checks\/intake\.ts`: that check was run and passed\.$/.test(bound.subject),
+     `a row naming the declared check: ${JSON.stringify(bound)}`);
+  is(acc.questionOf(criteria.get("AC-1.1"), "run:other/dir/intake.ts — `intake: ok`").bound.length === 1,
+     "the declared check run from another directory was not recognised by its file name");
+  const two = { id: "AC-9.1", text: "both halves hold", from: "spec.md", checks: ["checks/a.ts", "checks/b.ts"] };
+  is(acc.questionOf(two, "run:node checks/a.ts — `a: ok`").bound.length === 0 &&
+     acc.questionOf(two, "run:node checks/a.ts — `a: ok`; run:node checks/b.ts — `b: ok`").bound.length === 2,
+     "a row naming one of a criterion's two declared checks was read as resting on the plan");
+  const free = acc.questionOf(criteria.get("AC-1.1"), "check:intake — `intake: ok`");
+  is(free.bound.length === 0 && free.subject.startsWith("AC-1.1: "), `a row naming no declared check: ${JSON.stringify(free)}`);
   const evidenceOf = (row: string) => row.split("|")[3].trim();
-  // The memo key is `<doc>#<row>#<digest of the criterion and the evidence>`, so a reading taken
-  // on other evidence is not a reading of this one.
+  // The memo key is `<doc>#<row>#<digest of the subject asked and the evidence>`, so a reading
+  // taken on other evidence is not a reading of this one.
+  const digestOf = (id: string, row: string) => acc.questionOf(criteria.get(id), evidenceOf(row)).digest;
   const reading = (id: string, row: string, value: string, at: string) =>
-    recorded(r.name, `review.md#${id}#${acc.rowDigest(texts.get(id), evidenceOf(row))}`,
+    recorded(r.name, `review.md#${id}#${digestOf(id, row)}`,
              "evidence_relation", value, value === "no" ? 0.1 : 0.5, at);
   // A `no` taken under an earlier wording of the question is not a reading of this one: the
   // question was changed because it gave that answer to a passing check (bug 20d5fd6e), and reusing
@@ -341,7 +375,7 @@ const move = async (i: Fixture) =>
   {
     const q = await fresh();
     round(q, ledger(1, []), "2026-09-26T00:30:00.000Z");
-    recorded(q.name, `review.md#AC-1.1#${acc.rowDigest(texts.get("AC-1.1"), evidenceOf(ok1))}`,
+    recorded(q.name, `review.md#AC-1.1#${digestOf("AC-1.1", ok1)}`,
              "evidence_relation", "no", 0.1, "2026-09-26T00:45:00.000Z", "an-older-question");
     const stale = await approval(q, table([ok1, ok2, okT]));
     is(!/AC-1\.1: evidence_relation/.test(stale.refusal ?? ""),

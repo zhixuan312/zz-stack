@@ -35,7 +35,7 @@ import { decisionRows } from "@zz/indexing";
 import type pg from "pg";
 
 import type { DocRow } from "./indexing.js";
-import { readAcceptanceCache, rowDigest } from "./review-acceptance.js";
+import { locatorProblem, readAcceptanceCache, rowDigest } from "./review-acceptance.js";
 import { names, stakeholderSources } from "./review-rounds.js";
 import { assessFamily } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
@@ -43,7 +43,7 @@ import type { Chain } from "./write-guards.js";
 const PHASE_OUTLINE = "Phase outline";
 const CORE_STATEMENTS = "Core statements";
 const STATUSES = ["holds", "fails", "partial"] as const;
-const EVIDENCE_KIND = /^(check|run|test):\S+/;
+const KINDS = ["check", "run", "test"] as const;
 const QUOTED = /`[^`]+`|"[^"]+"|“[^”]+”/;
 const RESOLVED = /\bresolved-by-design-change\b/i;
 const AC_ID = /\bAC-\d+(?:\.\d+)*\b/g;
@@ -98,12 +98,13 @@ function statementProblems(rows: Statement[] | null, vouched: (id: string) => bo
   if (!rows.length) return [`\`## ${CORE_STATEMENTS}\` has no \`CS-N\` row`];
   const bad: string[] = [];
   for (const r of rows) {
+    const locator = locatorProblem(r.id, r.evidence, KINDS);
     if (!r.statement || !r.ifFalse) {
       bad.push(`${r.id} does not say ${r.statement ? "what breaks if it is false" : "what it states"}`);
     } else if (!STATUSES.includes(r.status as never)) {
       bad.push(`${r.id}: status "${r.status}" is not one of ${STATUSES.join(", ")}`);
-    } else if (!EVIDENCE_KIND.test(r.evidence)) {
-      bad.push(`${r.id}'s evidence names no kind-prefixed locator (check:, run:, test:) — run a spike and name it`);
+    } else if (locator) {
+      bad.push(locator);
     } else if (!QUOTED.test(r.evidence)) {
       bad.push(`${r.id} quotes no output — add the spike's decisive line, in backticks`);
     } else if (r.status !== "holds" && !RESOLVED.test(r.note) && !vouched(r.id)) {

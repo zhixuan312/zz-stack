@@ -62,12 +62,20 @@ export const FAMILY_INSTRUCTIONS: Readonly<Record<string, string>> = Object.free
   // passing check written for that exact criterion, because the one line cannot restate it (bug
   // 20d5fd6e). A model returns a conclusion and nothing else, so a conclusion that is not the one
   // wanted means the question was the wrong one.
+  //
+  // The last sentence is for the narrow subject review-acceptance.ts's `questionOf` sends when
+  // the evidence names a check the approved plan declares for the criterion (bug d5ab33bd): that
+  // the check verifies the criterion was settled at plan approval, so only the run is in question.
+  // Changing the wording also retires every reading taken under the old one, which is what keeps
+  // an old `unclear` from counting as the first of two.
   evidence_relation:
     "The SUBJECT is a claim and the CONTEXT is the evidence recorded for it: a named check, test or " +
     "command with the result it gave, or output quoted from a run. Does the CONTEXT report a result " +
     "in the claim's favour — a check, test or command named for what the claim says that passed, " +
     "or output that shows what the claim says? A failure, a skip, a result about something else, " +
-    "or no result at all is no. Judge what the CONTEXT reports; it need not restate the claim.",
+    "or no result at all is no. Judge what the CONTEXT reports; it need not restate the claim. " +
+    "When the SUBJECT says a check the approved plan declares was run and passed, judge only " +
+    "whether the CONTEXT shows that run passing.",
   requirement_coverage:
     "Does the SUBJECT fully cover the requirement stated in the CONTEXT? Partial coverage, " +
     "omission or an unclear answer is no.",
@@ -101,7 +109,7 @@ for (const f of QUESTION_FAMILIES) {
 }
 
 /** Bumped whenever an instruction's wording changes; the digest pins the exact bytes too. */
-const INSTRUCTION_VERSION = 2;
+const INSTRUCTION_VERSION = 3;
 
 export function questionDigest(family: string): string {
   return createHash("sha256").update(`${family}\n${FAMILY_INSTRUCTIONS[family] ?? ""}`)

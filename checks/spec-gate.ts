@@ -132,6 +132,10 @@ const stakeholder = (name: string, text: string) =>
     /no `CS-N` row/, "a Core statements section with no row was approved");
   await refused(SPEC.replace("run:relay-spike — ", "we believe so — "), /CS-1's evidence names no kind-prefixed locator/,
     "a statement with no evidence locator was approved");
+  // The shape bug 387648d1 wrote twice and was told the same sentence both times.
+  await refused(SPEC.replace("run:relay-spike — ", "run: `relay-spike` — "),
+    /CS-1's locator has a space after the colon — write it with none, `run:<what ran>`, then the decisive output in backticks/,
+    "a locator with a space after its colon was not told so");
   await refused(SPEC.replace("`delivered 1/1 to intake`", "it worked"), /CS-1 quotes no output/,
     "a statement quoting no output was approved");
   await refused(SPEC.replace("| No email becomes a case. |", "| |"), /what breaks if it is false/,

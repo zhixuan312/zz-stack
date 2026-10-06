@@ -443,8 +443,8 @@ exactly the phase that delivers it. The plan is written one phase at a time from
 
 ## Core statements
 [| ID | Statement | If false | Status | Evidence | Note | — one CS-N row per assumption the
-design rests on, each from a spike run while writing this spec: `run:<command>` and its decisive
-output in backticks. `fails`/`partial` rows carry `resolved-by-design-change: <what changed>` or
+design rests on, each from a spike run while writing this spec: `run:<command>`, no space after
+the colon, then its decisive output in backticks — run:curl -s localhost:8080/health — `ok`. `fails`/`partial` rows carry `resolved-by-design-change: <what changed>` or
 a recorded stakeholder decision.]
 ````
 

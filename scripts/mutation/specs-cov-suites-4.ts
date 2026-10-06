@@ -137,9 +137,9 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     subject: "services/zz-core/src/versions.ts",
     find: "    : snapshotOf(history, version);",
     replace: "    : snapshotOf(history, version) ?? history[history.length - 1] ?? null;",
-    planted: "opening an old approval is recorded as having opened the live document. " +
-      "shownSinceLastChange matches on path and ignores version, so reading v1 now attests " +
-      "the current draft nobody looked at, and an approval leans on exactly that answer",
+    planted: "opening an old version is answered with the live document's last snapshot, so " +
+      "reading v1 shows bytes that were never v1, and a presentation of it vouches for " +
+      "content the reader did not ask for",
   },
   {
     check: SUITES_SURFACE,

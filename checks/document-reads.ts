@@ -14,9 +14,9 @@
  *     a snapshot read cannot be combined with;
  *   - `writeGuard` and `safePath`, asked whether a mechanical record is still unwritable and
  *     whether a path that walks out is still refused;
- *   - `shownSinceLastChange` as the oracle for the per-document record — the same function an
- *     approval leans on has to answer "fetched" for both documents of a batch and for neither
- *     of them when history was what got opened;
+ *   - `approvalBasis` as the oracle for the per-document record — the same function an approval
+ *     leans on has to find a presentation of exactly the current snapshot for both documents of a
+ *     batch, and none when history was what got opened;
  *   - `document_present`'s handler refusing `review_context` with `version`, `section` or an array
  *     `path`, and `full` with `version` or `section` (`INVALID_MODE`), before anything is read.
  *
@@ -87,14 +87,8 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   }
   if (/from zz\.doc_link l\b/.test(sql)) return one([]);
   // DELIBERATE: the routes that decide this check come FIRST. The generic `from zz.doc d` arm
-  // matches the presented_at select's own text too — it has `d.path = $3` — and answering that
-  // with a document row, which carries no `presented_at`, reads as "nobody was shown it"
-  // whatever the fixture says. A router answers by first match.
-  if (/select r\.presented_at::text as presented_at/.test(sql)) {
-    if (values[0] !== TEAM || values[1] !== INIT || !d) return one([]);
-    const rev = d.revisions.find((r) => r.revision === d.current)!;
-    return one([{ presented_at: d.presented_at, written_at: rev.written_at }]);
-  }
+  // matches the row a presentation confirms too — it has `d.path = $3` — and a router answers by
+  // first match. `presented_at` is the pin rule's input, set on the row a presentation covered.
   if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) {
     // On the row the presentation names, by document id and revision. `now()` stands just past the
     // revision's own write, which is what a present made after a write is.
@@ -139,7 +133,7 @@ const who = { team: TEAM, email: "u@zz.test", credential: "pat", client: null };
 const present = async (_p: unknown, _team: string, rel: string, version?: number): Promise<string> =>
   (await presentIn(db()!, who, rel, version === undefined ? {} : { version }, false)).text;
 const { writeGuard, safePath } = await load("services/zz-core/dist/paths.js");
-const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
+const { approvalBasis } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 
 const fail: string[] = [];
@@ -300,8 +294,12 @@ is(tools.get("document_read")?.inputSchema?.content_revision?.safeParse("cr_x").
   is(events.length === before, "a refused document_present recorded a presentation");
 }
 
-// 3. The record, per document, with shownSinceLastChange as the oracle
-const shown = async (rel: string) => shownSinceLastChange(db()!, TEAM, rel);
+// 3. The record, per document, with approvalBasis as the oracle: does an approval of the current
+// snapshot have a presentation to rest on?
+const shown = async (rel: string): Promise<boolean> => {
+  const d = docs.get(rel.split("/")[1])!;
+  return !("refusal" in await approvalBasis(db()!, who, rel, contentRevision(d.id, Number(d.generation)), {}));
+};
 is(await shown(`${INIT}/spec.md`) === false, "written and never presented, and the approval would pass");
 const presented = await present(db()!, TEAM, `${INIT}/spec.md`);
 is(/# Spec/.test(presented) && /The current draft/.test(presented),
@@ -318,14 +316,16 @@ is(/^Review context: rc_[a-z2-7]{26} — full, target cr_\S+, baseline none, cov
    "a present without a context does not name the new one it presented in, in full");
 
 // Two documents, two records. One record for a batch would let an approval on the document nobody
-// opened read as attested, because shownSinceLastChange answers per document.
+// opened read as attested, because approvalBasis answers per document.
 await present(db()!, TEAM, `${INIT}/plan.md`);
 is(await shown(`${INIT}/spec.md`) === true && await shown(`${INIT}/plan.md`) === true,
    "after presenting both documents the record still says one of them was never fetched");
 
-// Opening history must not vouch for the present. The record is per REVISION, so a present of v1
-// is a present of v1 and says nothing about the draft the document points at now.
+// Opening history must not vouch for the present. The record is per SNAPSHOT, so a present of v1
+// is a present of v1 and says nothing about the draft the document points at now. spec.md's own
+// presentation is taken off the record first, so only what history writes could count.
 docs.get("spec.md")!.presented_at = null;
+events.splice(0, events.length, ...events.filter((e) => e.subject !== `${INIT}/spec.md`));
 const recorded = events.length;
 const historical = await present(db()!, TEAM, `${INIT}/spec.md`, 1);
 is(/The first approval/.test(historical) && !/The current draft/.test(historical),

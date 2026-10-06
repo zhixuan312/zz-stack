@@ -53,6 +53,8 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
         await call("document_edit", {
           path: `${freeName}/notes.md`, edits: [{ find: "hand-assembled", replace: "hand-assembled, then edited" }],
         }), false);
+      // Presented, then approved with no context named: the approval rests on the caller's most
+      // recent context covering the current snapshot, resolved by the platform.
       await call("document_present", { path: `${freeName}/notes.md` });
       check("a freeform initiative still records a gate",
         await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: signer }),

@@ -291,27 +291,38 @@ async function main(): Promise<number> {
       true, /carries no gate/);
   }
 
-  // An approval signs bytes somebody was shown: refused until the current content was presented.
+  // An approval signs exactly the bytes a review context of the caller's covered: refused until
+  // the current content was presented.
   check("document_approve() refuses a document not presented since its last change",
     await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: signer }),
-    true, /present it first/);
-  // Presented the way the document panel presents: the ticket arrives in the result's `_meta`,
-  // which no model is shown, and `document_shown` — the panel's own call — records it. The approval
-  // below then rests on the panel's present, which is the path a person in ChatGPT takes.
+    true, /PRESENTATION_REQUIRED/);
+  // Presented the way the document panel presents: the ticket and the review context arrive in the
+  // result's `_meta`, which no model is shown, and `document_shown` — the panel's own call —
+  // records it under that context. The approval below then sends what the panel sends: the
+  // revision it displayed and the context, which is the path a person in ChatGPT takes.
   //
-  // The forged ticket is tried while nothing has presented the document: once a present is on
-  // record, document_shown answers it without reading any ticket, and a forgery would pass unread.
+  // A panel's record names a review context of the caller's; one nobody presented is refused before
+  // any ticket is read.
   const gated = `${INIT}/${FIRST_GATED}`;
-  check("document_shown() refuses a ticket this deployment did not issue",
-    await call("document_shown", { path: gated, version: 1, ticket: "0.forged" }), true, /not valid/);
+  check("document_shown() refuses a panel whose review context is not the caller's",
+    await call("document_shown", { path: gated, version: 1, ticket: "0.forged", review_context: "rc_forgedforgedforgedforged" }),
+    true, /not one of yours/);
   const presented = await core.rpc("tools/call", { name: "document_present", arguments: { path: gated } });
-  const drawn = (presented.result?._meta?.["zz-core/documents"] as { version: number; ticket: string | null; body: string }[] | undefined)?.[0];
-  check("document_present hands the document panel the whole document and a ticket",
-    drawn && drawn.ticket && drawn.body.length > 0 ? "ok" : `ERROR: the panel was handed ${JSON.stringify(drawn)?.slice(0, 200)}`, false);
-  check("document_shown() accepts the ticket the panel was handed",
-    await call("document_shown", { path: gated, version: drawn?.version ?? 1, ticket: drawn?.ticket ?? "" }), false);
-  check("document_approve() records a verdict on a document that exists",
-    await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: signer }), false);
+  const drawn = (presented.result?._meta?.["zz-core/documents"] as
+    { version: number; ticket: string | null; body: string; content_revision: string | null; review_context: string | null }[]
+    | undefined)?.[0];
+  check("document_present hands the document panel the whole document, a ticket and its review context",
+    drawn && drawn.ticket && drawn.body.length > 0 && drawn.review_context && drawn.content_revision
+      ? "ok" : `ERROR: the panel was handed ${JSON.stringify(drawn)?.slice(0, 200)}`, false);
+  check("document_shown() accepts the ticket and the review context the panel was handed",
+    await call("document_shown", { path: gated, version: drawn?.version ?? 1, ticket: drawn?.ticket ?? "",
+                                   review_context: drawn?.review_context ?? "" }), false);
+  check("document_approve() refuses a revision the panel did not display",
+    await call("document_approve", { path: gated, on_behalf_of: signer, expected_revision: "cr_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                     review_context: drawn?.review_context ?? "" }), true, /APPROVAL_CONFLICT/);
+  check("document_approve() records a verdict on the revision the panel displayed, in its review context",
+    await call("document_approve", { path: gated, on_behalf_of: signer, expected_revision: drawn?.content_revision ?? "",
+                                     review_context: drawn?.review_context ?? "" }), false);
   check("document_approve() refuses a document that does not",
     await call("document_approve", { path: `${INIT}/nothing-here.md` }), true,
     /does not exist|not a document this flow declares/);

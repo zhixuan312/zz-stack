@@ -8,7 +8,8 @@
  *      refuses an absent or ambiguous heading by name;
  *   3. presenting that document in parts, in a review context: the first part names the context and
  *      the next offset to pass it with; parts continued without a context join that context, and
- *      the document counts as presented (shownSinceLastChange) only once they cover the body; pages
+ *      the document counts as presented — an approval has a basis (approvalBasis) — only once they
+ *      cover the body, and the context mid-presentation is told to finish rather than signed; pages
  *      of another snapshot — even one of the same length — and pages in another context never
  *      combine; a change set too long for one result is paged the same way, its continuation joins
  *      the open delta, and covering every delta page counts; a `section` read covers nothing; and
@@ -32,11 +33,12 @@
  *      text — while a cursor for another ref is INVALID_MODE and another path or an unknown ref is
  *      DETAILS_MISSING.
  *
- * COUPLED: the fact behind "counts as presented" is `doc_revision.presented_at`, set when a review
- * context's pages — `zz.event` rows carrying the context, the target snapshot and the span — cover
- * the current snapshot; so the fixture is a stubbed `pg.Pool` (and its `connect`, for the
- * presentation's transaction) that records what the presenter writes and answers what the reader
- * asks. Losing those rows makes a partly-presented document read as unpresented: it fails CLOSED.
+ * COUPLED: the fact behind "counts as presented" is what an approval asks (`approvalBasis`,
+ * attest.ts): a review context's pages — `zz.event` rows carrying the context, the target snapshot
+ * and the span — covering the current snapshot; so the fixture is a stubbed `pg.Pool` (and its
+ * `connect`, for the presentation's transaction) that records what the presenter writes and answers
+ * what the reader asks. Losing those rows makes a partly-presented document read as unpresented: it
+ * fails CLOSED.
  *
  * Run: node checks/document-parts.ts
  */
@@ -85,12 +87,7 @@ async function route(text: string, values: unknown[] = []) {
   }
   // `citationsOf`
   if (/from zz\.doc_link l\b/.test(sql)) return one([]);
-  // THE FACT
-  if (/select r\.presented_at::text as presented_at/.test(sql)) {
-    if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "review.md") return one([]);
-    return one([{ presented_at: doc.presented_at, written_at: doc.written_at }]);
-  }
-  // THE WRITE, on the row the presentation pinned
+  // `presented_at`, the pin rule's input, on the row the presentation pinned
   if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) {
     if (values[0] === DOC && values[1] === doc.current) doc.presented_at = new Date(Date.parse(doc.written_at) + 1000).toISOString();
     return { rows: [], rowCount: 1 };
@@ -107,8 +104,8 @@ async function route(text: string, values: unknown[] = []) {
                      kind: e.detail.kind, start: e.detail.start, end: e.detail.end, total: e.detail.total })));
   }
   // DELIBERATE: the routes that decide this check come FIRST. The generic `from zz.doc d` arm
-  // matches the presented_at select's own text too — it has `d.path = $3` — and a router answers
-  // by first match.
+  // matches the row a presentation confirms too — it has `d.path = $3` — and a router answers by
+  // first match.
   if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
     if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "review.md") return one([]);
     return one([{ id: DOC, initiative: INIT, path: "review.md", flow: "", type: "", status: "draft",
@@ -137,7 +134,7 @@ const { PART_LIMIT, locateSection, partHeader, replaceSection, sectionRange, sli
   await load("services/zz-core/dist/document-parts.js");
 const { present: presentIn } = await load("services/zz-core/dist/document-present.js");
 const { contentRevision } = await import("@zz/contracts");
-const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
+const { approvalBasis } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 
 const fail: string[] = [];
@@ -180,8 +177,14 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   const who = { team: TEAM, email: "u@zz.test", credential: "pat", client: null };
   const present = async (ask: Record<string, unknown> = {}): Promise<string> =>
     (await presentIn(db()!, who, REL, ask, false)).text;
-  const shown = () => shownSinceLastChange(db()!, TEAM, REL);
   const cr = (g: number) => contentRevision(DOC, g);
+  /** Whether the current snapshot counts as presented: an approval of it has a basis — the answer
+   *  `document_approve` asks, of the caller's contexts, or of the one passed. */
+  const basis = async (context?: string): Promise<string> => {
+    const b = await approvalBasis(db()!, who, REL, cr(doc.generation), context ? { context } : {});
+    return "refusal" in b ? b.refusal : b.context;
+  };
+  const shown = async (): Promise<boolean> => !(await basis()).startsWith("ERROR");
   /** A change: new bytes, a new generation, the row's write past any present. */
   const change = (body: string, pinned: boolean, version = cur().version) => {
     doc.generation += 1;
@@ -212,6 +215,8 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   is(/no `offset` argument.*refresh or reconnect/.test(first),
      "a first part does not tell a client without `offset` that its tool list is stale");
   is(await shown() === false, "one part of three counts as presented");
+  is((await basis(rc?.[1])).startsWith(`ERROR: PRESENTATION_REQUIRED — the review context ${rc?.[1]} has not covered ${cr(1)}`),
+     `an approval passing the context one part into its presentation is not told to finish it: ${await basis(rc?.[1])}`);
   const last = await pageOn(first, {});
   is(last.includes("counts as presented") && last.includes(`Review context: ${rc?.[1]} — full, target ${cr(1)}, baseline none, covered.`),
      `the last part, continued without a context, does not say the document now counts as presented: ${last.slice(0, 400)}`);
@@ -244,6 +249,8 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
      && /Part of .*: characters 0–\d+ of \d+ \(the changes from /.test(d1),
      `a long change set is not presented as the delta, in parts: ${d1.slice(0, 500)}`);
   is(await shown() === false, "one part of a delta counts as presented");
+  is((await basis(rc?.[1])).startsWith(`ERROR: PRESENTATION_REQUIRED — the review context ${rc?.[1]} has not covered ${cr(3)}`),
+     `an approval passing the context one part into its delta is not told to finish it: ${await basis(rc?.[1])}`);
   const dLast = await pageOn(d1, {});
   is(dLast.includes(`Review context: ${rc?.[1]} — delta`) && dLast.includes("covered.") && await shown() === true,
      `continuing the delta without a context did not join it and complete it: ${dLast.slice(0, 300)}`);
@@ -258,8 +265,9 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
      && /counts nothing towards approval/.test(section),
      "a section read after a change counts as presenting the whole document, or joins a review context");
 
-  // 3b. History is a read: it records nothing at all. `presented_at` is a column on the row the
-  // document points at, and a row for history would pin the CURRENT row, which nobody was shown.
+  // 3b. History is a read: it records nothing at all. `presented_at` — the pin rule's input — is a
+  // column on the row the document points at, and a row for history would pin the CURRENT row,
+  // which nobody was shown.
   doc.presented_at = null;
   const now = pages().length;
   const old = await present({ version: 1, offset: 0, limit: 999999 });

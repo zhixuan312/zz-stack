@@ -19,10 +19,11 @@
  *
  * Every write records its act — the `document.<act>` row of `zz.event`. A change carrying
  * `details` writes its row in its own transaction, last, with the complete details its receipt
- * names, and a captured source's row is written there too: the record and what it records commit
- * or roll back together, so a failed insert of either FAILS THE WRITE. Every other write — an
- * approval, a close, an evaluation document — records its act after its commit (`recordAct`). The
- * link, cause and request rows are `document-links.ts`.
+ * names; an approval writes its `record` there — the review context and snapshot it rests on — and
+ * a captured source's row is written there too: the record and what it records commit or roll back
+ * together, so a failed insert of any FAILS THE WRITE. Every other write — a close, an evaluation
+ * document — records its act after its commit (`recordAct`). The link, cause and request rows are
+ * `document-links.ts`.
  * A change's `receipt` is composed in the transaction too, on the client that sees the change and
  * once its captured source's name is settled; the request stores it and the act row its details.
  */
@@ -98,6 +99,10 @@ interface DocumentWrite {
   /** The approval sealed onto the revision in this same write, when this write IS the
    *  approval or a revision of a closed initiative. */
   seal?: { by: string; at: string } | null;
+  /** The act row's detail, written in this write's transaction as its only act row: an approval's
+   *  record of what it rests on (`approvalRecord`, attest.ts), which must stand exactly while the
+   *  seal does. */
+  record?: Record<string, string>;
   /** The revisions this one cites: `doc_link` rows of kind `cites`. */
   cites?: { path: string; revision: number }[];
   /**
@@ -529,12 +534,14 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     }
     // The acts recorded in the transaction, last: a captured source's, and the document's own when
     // the change carries details — the row its receipt's `details_ref` names, which must be there
-    // the moment the receipt is. DELIBERATE: a failed insert refuses the write; a details reference
-    // to a row that never landed is the dangling receipt this exists to prevent.
+    // the moment the receipt is — or the write carries its `record`, an approval's. DELIBERATE: a
+    // failed insert refuses the write; a details reference to a row that never landed is the
+    // dangling receipt this exists to prevent, and a seal whose record was lost rests on nothing.
     const action = w.act ?? (mode === "append" ? "revise" : "write");
     const details = composed?.details ?? change?.details;
+    const own = details ? { details_ref: details.ref, details: details.text } : w.record;
     const acts = [...(capturedWrite ? [{ path: capturedWrite.relPath, action: "source", extra: {} }] : []),
-                  ...(details ? [{ path: w.relPath, action, extra: { details_ref: details.ref, details: details.text } }] : [])];
+                  ...(own ? [{ path: w.relPath, action, extra: own }] : [])];
     for (const a of acts) {
       const recorded = await insertEvent(client, {
         actor: w.by, team: w.team, initiative: splitStorePath(a.path).initiative || null,
@@ -544,7 +551,7 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     }
     await client.query("commit");
     // Every other write's act, after its commit.
-    if (!details) recordAct(w.relPath, { user: w.by, action, path: w.relPath });
+    if (!own) recordAct(w.relPath, { user: w.by, action, path: w.relPath });
     return { id, revision, version, generation, newVersion: mode === "create" || mode === "append",
              newRow: mode !== "rewrite", ...(reserve ? { reserved: w.relPath } : {}),
              ...(capturedWrite ? { capturedPath: capturedWrite.relPath } : {}),

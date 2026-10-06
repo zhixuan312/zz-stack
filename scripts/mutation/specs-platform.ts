@@ -59,8 +59,8 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     // check matches a call, not a name. It drops the post-commit record that a write without
     // details relies on — an approval, a close — while the in-transaction one stays, so the check
     // must hold both recorders to stay red.
-    find: "    if (!details) recordAct(w.relPath, { user: w.by, action, path: w.relPath });",
-    replace: "    if (!details) void recordAct;",
+    find: "    if (!own) recordAct(w.relPath, { user: w.by, action, path: w.relPath });",
+    replace: "    if (!own) void recordAct;",
     planted: "the write every document tool goes through stops recording that it did, so no " +
       "document change can be recovered except by reading the state it made",
   },

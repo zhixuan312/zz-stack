@@ -12,7 +12,8 @@
  *     token the first left; two sending none — both land, in the order the lock granted them; an
  *     approval landing between an edit's read and its commit — the edit is computed again and
  *     answers CAUSE_REQUIRED; an edit landing between an approval's read and its write — the edit
- *     stands and the approval answers that the document changed after it was presented; an edit
+ *     stands and the approval is APPROVAL_CONFLICT, naming the snapshot it read and the current one,
+ *     and seals nothing; an edit
  *     landing between a close's read and its write — the edit stands, and the initiative's row is
  *     closed exactly when its closing document carries the outcome; two creates of one path — one
  *     document, the other TARGET_EXISTS; an A→B→A change — A's token is not revived;
@@ -156,17 +157,21 @@ async function races(c: Core, second: Mcp): Promise<void> {
   }
   c.pass(step);
 
-  step = "an edit landing between an approval's read and its write stands, and the approval answers that the document changed after it was presented";
+  step = "an edit landing between an approval's read and its write stands, and the approval is APPROVAL_CONFLICT naming both snapshots";
   const e = `${R}/edit-first.md`;
   await c.ok(step, "document_write", { path: e, content: body });
   await c.ok(step, "document_present", { path: e });
+  const read = await tokenOf(c, step, e);
   [a, b] = await staged(c, step, e,
     () => c.call(step, "document_edit", { path: e, edits: [{ find: "alpha", replace: "ALPHA" }] }),
     () => c.call(step, "document_approve", { path: e }, second));
   if (first(a) !== `edited: ${e} — v1`) c.fail(step, `edit: ${a}`);
-  if (b !== `ERROR: ${e} changed after it was presented — present it again`) c.fail(step, `approve: ${b}`);
-  const read = await c.ok(step, "document_read", { path: e });
-  if (documentBody(read) !== "# Race\n\nALPHA\n\nbeta\n" || /^status: approved$/m.test(read)) c.fail(step, read);
+  if (!new RegExp(`^ERROR: APPROVAL_CONFLICT — ${esc(e)} is at content revision ${esc(await tokenOf(c, step, e))} now, ` +
+                  `not ${read}, the snapshot this approval was for; nothing was approved`).test(b)) {
+    c.fail(step, `approve: ${b}`);
+  }
+  const after = await c.ok(step, "document_read", { path: e });
+  if (documentBody(after) !== "# Race\n\nALPHA\n\nbeta\n" || /^status: approved$/m.test(after)) c.fail(step, after);
   c.pass(step);
 
   step = "an edit landing between a close's read and its write stands, and the initiative is closed exactly when its closing document carries the outcome";

@@ -25,14 +25,13 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   {
     check: SUITES,
     target: "the record knows whether a document was fetched before its gate",
-    assertion: "a patch counts as a content change, so a fetch before it vouches for nothing",
+    assertion: "an approval rests only on a context that covered exactly the current snapshot",
     subject: "services/zz-core/src/attest.ts",
-    find: "    return row.presented_at !== null && Date.parse(row.presented_at) > Date.parse(row.written_at);",
-    replace: "    return row.presented_at !== null && Date.parse(row.presented_at) >= Date.parse(row.written_at);",
-    planted: "a present at the same instant as the write it attests stops being refused, so the " +
-      "one comparison that makes a fetch vouch for the bytes the approver read admits a " +
-      "presentation and a write that are the same moment — and nothing else in the record " +
-      "tells them apart",
+    find: "    const used = recent.find((c) => coverageOf(by.get(c)!).includes(target));",
+    replace: "    const used = recent.find((c) => coverageOf(by.get(c)!).length > 0);",
+    planted: "an approval with no context passed rests on any context of the caller's that covered " +
+      "anything, so a presentation of an earlier snapshot vouches for bytes the approver never " +
+      "saw — the one comparison that ties a signature to what was shown"
   },
   {
     check: SUITES,
@@ -215,8 +214,8 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     target: "the evaluation modules are on the evaluation side, and attest stays on the core one",
     assertion: "only the evaluation side and its door reach into the evaluation modules",
     subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: 'import { shownSinceLastChange } from "../attest.js";',
-    replace: 'import { shownSinceLastChange } from "../attest.js";\n' +
+    find: 'import { approvalBasis, approvalConflict, approvalRecord } from "../attest.js";',
+    replace: 'import { approvalBasis, approvalConflict, approvalRecord } from "../attest.js";\n' +
       'import { JUDGE_MODEL } from "../eval/judge-model.js";\nvoid JUDGE_MODEL;',
     planted: "a core document tool reaches into the evaluation flow's judge, so one flow's " +
       "judging machinery is loaded into every account's core door — and the directory the core " +

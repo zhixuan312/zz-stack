@@ -10,15 +10,17 @@
  *
  * Approval reads and writes `doc` and `doc_revision`: a document's identity and its status are
  * the `doc` row's, and the bytes it signs are the current `doc_revision`. Nothing is read from a
- * file — the row that retained the revision is the authority the act answers from. It signs only
- * the state it read: a change committed between its read and its write sends it back.
+ * file — the row that retained the revision is the authority the act answers from. It signs
+ * exactly one snapshot: the current one, when a review context of the caller's covered exactly it
+ * (`approvalBasis`, attest.ts) — and only the state it read, so a change committed between its read
+ * and its write is `APPROVAL_CONFLICT`, never a seal on bytes nobody presented.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentBody, parseCaller } from "@zz/contracts";
+import { contentRevision, documentBody, parseCaller } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { shownSinceLastChange } from "../attest.js";
+import { approvalBasis, approvalConflict, approvalRecord } from "../attest.js";
 import { chainFor, gateRefusal } from "../chain.js";
 import { PANEL_CALLABLE } from "../document-panel.js";
 import { NO_TEAM } from "../document-change.js";
@@ -32,7 +34,8 @@ import { db, teamFor } from "../platform-db.js";
 import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
 import { specApprovalRefusal } from "../spec-gate.js";
-import { loadDocument, NO_DB, principalId, recordAct } from "../versions.js";
+import { viewerOf } from "../review-context.js";
+import { loadDocument, NO_DB, principalId } from "../versions.js";
 import { documentState, saveDocument, STATE_CHANGED } from "../document-save.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
@@ -64,11 +67,22 @@ export function registerInitiativeActTools(server: McpServer): void {
         "the one who discovers that later. Do not ask them to confirm a second time, and do " +
         "not ask them to edit frontmatter. Use `on_behalf_of` only when the verdict is " +
         "someone else's and they are not this session — a stakeholder who said it elsewhere. " +
-        "Refused until the CURRENT content was presented: call `document_present` after the " +
-        "last write or edit, in its own call, then approve. A change that lands between the " +
-        "present and this call sends it back: present it again.",
+        "It signs EXACTLY the snapshot you presented: refused (`PRESENTATION_REQUIRED`) until a " +
+        "review context of yours covered the CURRENT content — call `document_present` after the " +
+        "last write or edit, in its own call, put every part in front of the person, then approve. " +
+        "Pass back what that present names: `expected_revision` (its target content revision) and " +
+        "`review_context`. Without them the most recent of your contexts covering the current " +
+        "snapshot is used. A change that lands after the present — content or metadata — is " +
+        "`APPROVAL_CONFLICT`, naming what changed: present again in the same context, which " +
+        "shows only that, and approve what it names.",
       inputSchema: {
         path: z.string().describe("e.g. '2026-08-23-sample-queue/spec.md'"),
+        expected_revision: z.string().optional().describe(
+          "The content revision (`cr_…`) the person was shown — the target document_present named. A " +
+          "document that is no longer at it is not approved: the answer is APPROVAL_CONFLICT."),
+        review_context: z.string().optional().describe(
+          "The review context (`rc_…`) document_present returned. Omit to use your most recent " +
+          "context that covered the current snapshot."),
         on_behalf_of: z.string().optional().describe(
           "The person whose decision this is, when that is not the caller. Omit for the " +
           "normal case: you acting with someone's authority IS their decision, under their name."),
@@ -76,7 +90,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // The document panel's Approve button calls this, through the client.
       _meta: PANEL_CALLABLE,
     },
-    async ({ path: relPath, on_behalf_of }) => {
+    async ({ path: relPath, expected_revision, review_context, on_behalf_of }) => {
       const who = parseCaller(requestHeaders());
       const p = db();
       if (!p) return text(NO_DB);
@@ -94,28 +108,23 @@ export function registerInitiativeActTools(server: McpServer): void {
       // The document is read from the row that retained it: its identity and status from
       // `doc`, its body from the current revision.
       const loaded = await loadDocument(team, relPath);
-      if (!loaded.ok) {
-        return text(loaded.why === "missing"
-          ? `ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`
-          : loaded.refusal);
+      if (!loaded.ok || !state) {
+        return text(!loaded.ok && loaded.why !== "missing" ? loaded.refusal
+          : `ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`);
       }
       const chain = await chainFor(p, team, relPath, loaded.text);
       const ungated = gateRefusal(chain, parts[1]);
       if (ungated) return text(ungated);
-      // The one step an approval holds for: the bytes it signs were put in front of somebody.
-      // Approval is delegated to agents, so nothing else stands between an unread revision and a
-      // verdict on it. `false` only — `null` is a record that cannot answer (no activity log, or
-      // no recorded change to be "since"), and a refusal invented from a missing record would
-      // stop an approval over the platform's own gap. Asked before anything is read or written.
-      const fetched = await shownSinceLastChange(p, team, relPath);
-      if (fetched === false) {
-        return text(
-          `ERROR: present it first — ${relPath} changed after it was last presented, so no ` +
-          "record shows anyone saw these bytes. Call `document_present` on it in its own call, " +
-          "put what it returns in front of the person, then approve. A long document comes back " +
-          "in parts; present every part. A standing \"approve without checking with me\" waives " +
-          "their review, not the present — the present is what the record keeps.");
-      }
+      // The one step an approval holds for: the bytes it signs were put in front of the caller,
+      // in a review context of theirs. Approval is delegated to agents, so nothing else stands
+      // between an unread revision and a verdict on it. The target is the generation `state` read —
+      // the one the seal's compare-and-swap pins — so coverage is read of exactly what is sealed,
+      // and a write between the two is a conflict, never a substitution. Asked before anything is
+      // written; a record that cannot answer refuses.
+      const caller = viewerOf(team);
+      const basis = await approvalBasis(p, caller, relPath, contentRevision(loaded.doc.id, state.generation),
+                                        { expected: expected_revision, context: review_context });
+      if ("refusal" in basis) return text(basis.refusal);
       const signer = (on_behalf_of ?? "").trim() || who.email;
       // DELIBERATE: the signer is resolved HERE rather than at the row. `zz.doc_revision.approved_by`
       // is a principal id and `doc_revision_approval_paired` holds it null exactly when
@@ -170,15 +179,15 @@ export function registerInitiativeActTools(server: McpServer): void {
       const sealed = await saveDocument({
         team, relPath, initiative: parts[0], text: fixed.content, by: who.email,
         flow: chain.name ?? undefined, type: chain.roles[parts[1]],
-        mode: "rewrite", act: "document_approve", seal: { by: signer, at: isoToday() },
-        ...(state ? { expect: state } : {}),
+        mode: "rewrite", act: "document_approve", seal: { by: signer, at: isoToday() }, expect: state,
+        record: approvalRecord({ caller: who.email, signer, context: basis.context, target: basis.target }),
       });
       if ("refusal" in sealed) {
-        return text(sealed.refusal.startsWith(STATE_CHANGED)
-          ? `ERROR: ${relPath} changed after it was presented — present it again`
-          : sealed.refusal);
+        if (!sealed.refusal.startsWith(STATE_CHANGED)) return text(sealed.refusal);
+        const now = await documentState(p, team, relPath);
+        return text(await approvalConflict(p, caller, relPath, basis.target,
+                                           now ? contentRevision(loaded.doc.id, now.generation) : "nothing"));
       }
-      recordAct(relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
       // An approval is a separate fact from the document: a gated step requires `1x document` and
       // `1x approval`, so recording only one leaves the step a requirement short or credits a
       // document nobody wrote.
@@ -189,6 +198,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       return text(
         `${relPath} approved — recorded under ${signer}` +
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +
+        `Signed: content revision ${basis.target}, as presented in review context ${basis.context}.\n` +
         (already ? "It was already approved; the record now carries this verdict instead.\n" : "") +
         (acceptance.note ? `${acceptance.note}\n` : "") +
         (foundation.note ? `${foundation.note}\n` : "") +

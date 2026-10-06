@@ -101,7 +101,7 @@ export function presentRefusal(path: string | string[], a: PresentAsk): string |
 /** Every page the viewer was shown of `rel` in a context — one context's, or all of them — in the
  *  order they were recorded. Scoped by the row itself: the principal it was shown to, the
  *  credential kind, and the document. */
-async function pagesOf(
+export async function pagesOf(
   c: Pick<pg.Pool, "query">, who: Viewer, rel: string, context: string | null,
 ): Promise<(Page & { context: string })[]> {
   const { initiative } = splitStorePath(rel);
@@ -124,7 +124,7 @@ async function pagesOf(
 }
 
 /** The targets a context covered, in the order each became covered: the last is its baseline. */
-function coverageOf(pages: Page[]): string[] {
+export function coverageOf(pages: Page[]): string[] {
   const spans = new Map<string, { kind: string; baseline: string; target: string; total: number; at: [number, number][] }>();
   const done: string[] = [];
   const reached = (g: { total: number; at: [number, number][] }): boolean => {

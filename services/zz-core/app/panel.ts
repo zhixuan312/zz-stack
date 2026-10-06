@@ -290,10 +290,16 @@ const show = (i: number): void => {
   requestAnimationFrame(() => void recordShown(state.slots[state.active]!));
 };
 
+/** Approve exactly what this panel showed: the snapshot it displayed and the review context it was
+ *  recorded under. A document changed since is a conflict, never a seal on bytes nobody saw here. */
 async function sign(s: Slot): Promise<void> {
   s.approval = "busy"; draw();
   try {
-    const r = answer(await app.callServerTool({ name: "document_approve", arguments: { path: s.doc.path } }));
+    const r = answer(await app.callServerTool({ name: "document_approve", arguments: {
+      path: s.doc.path,
+      ...(s.doc.content_revision ? { expected_revision: s.doc.content_revision } : {}),
+      ...(s.doc.review_context ? { review_context: s.doc.review_context } : {}),
+    } }));
     if (!r.ok) { s.approval = { failed: r.said }; draw(); return; }
     s.approval = "done";
     draw();

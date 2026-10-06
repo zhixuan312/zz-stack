@@ -22,9 +22,14 @@
  *     awaiting the correction's approval while reporting the outcome; a failure injected while the
  *     correction clears the approval commits nothing; a changed outcome is refused by the real
  *     `documentGuards`, called in this process; an ungated correction invents no status;
- *   - the act boundary: an approval meeting an edit committed after its read answers that the
- *     document changed; a close meeting one records on it; a close whose document moves twice
- *     answers that it changed while being closed, and commits nothing.
+ *   - the act boundary: an approval meeting an edit committed after its read is APPROVAL_CONFLICT,
+ *     naming the current revision and what changed; a close meeting one records on it; a close
+ *     whose document moves twice answers that it changed while being closed, and commits nothing;
+ *   - exact-target approval: presenting twice without a context and then approving rests on the
+ *     most recent context, and the approval's one act row records that context and the snapshot it
+ *     signed; a stale `expected_revision` — a metadata-only change after display included — is
+ *     APPROVAL_CONFLICT naming what changed, an approval without one is PRESENTATION_REQUIRED
+ *     naming the context to present in, and the delta presented in it is then approved.
  *
  * Races are staged with the order in which PostgreSQL grants one advisory lock — the per-document
  * key `saveDocument` takes; an injected failure is a trigger created for its case and dropped
@@ -390,10 +395,13 @@ async function closedCorrections(c: Core): Promise<void> {
 async function actRaces(c: Core): Promise<void> {
   const A = await c.open("act-races");
 
-  let step = "an approval meeting an edit committed after its read answers that the document changed";
+  let step = "an approval meeting an edit committed after its read is APPROVAL_CONFLICT, naming what changed";
   const r = `${A}/race.md`;
-  await c.ok(step, "document_write", { path: r, content: "# Race\n\nbefore\n" });
+  // A section the edit leaves alone, so what changed is shorter than the document and is named.
+  const kept = "## Kept\n\n" + "a line the edit never touches.\n".repeat(8);
+  await c.ok(step, "document_write", { path: r, content: `# Race\n\nbefore\n\n${kept}` });
   await c.ok(step, "document_present", { path: r });
+  const presentedAt = await tokenOf(c, r);
   const second = c.client();
   let key = c.docKey(r);
   await c.hold(key);
@@ -409,7 +417,10 @@ async function actRaces(c: Core): Promise<void> {
   }
   let [edited, answered] = await Promise.all([edit, act]);
   if (first(edited) !== `edited: ${r} — v1`) c.fail(step, `edit: ${edited}`);
-  if (answered !== `ERROR: ${r} changed after it was presented — present it again`) c.fail(step, `approve: ${answered}`);
+  if (!answered.startsWith(`ERROR: APPROVAL_CONFLICT — ${r} is at content revision ${await tokenOf(c, r)} now, not ${presentedAt}`)
+      || !answered.includes(`changed since ${presentedAt}`) || !answered.includes('edited "# Race"')) {
+    c.fail(step, `approve: ${answered}`);
+  }
   if ((await rowOf(c, r)).status === "approved" || !/after/.test(await c.ok(step, "document_read", { path: r }))) {
     c.fail(step, "the approval sealed, or the edit was lost");
   }
@@ -468,10 +479,65 @@ async function actRaces(c: Core): Promise<void> {
   c.pass(step);
 }
 
+async function exactTarget(c: Core): Promise<void> {
+  const X = await c.open("exact-target");
+  const ctxOf = (reply: string): string => /^Review context: (rc_[a-z2-7]{26})/m.exec(reply)?.[1] ?? "";
+
+  let step = "presenting twice without a context, then approving, rests on the most recent context, recorded on its one act row";
+  const t = `${X}/twice.md`;
+  await c.ok(step, "document_write", { path: t, content: "# Twice\n\nshown twice\n" });
+  const [one, two] = [ctxOf(await c.ok(step, "document_present", { path: t })), ctxOf(await c.ok(step, "document_present", { path: t }))];
+  const signed = await tokenOf(c, t);
+  if (!one || !two || one === two) c.fail(step, `two presents without a context gave ${one} and ${two}`);
+  const approved = await c.ok(step, "document_approve", { path: t });
+  if (!approved.includes(`Signed: content revision ${signed}, as presented in review context ${two}.`)) c.fail(step, approved);
+  const acts = (await c.sql.query<{ detail: Record<string, string> }>(
+    `select e.detail from zz.event e join zz.initiative i on i.id = e.initiative_id
+      where i.slug = $1 and e.subject = $2 and e.kind = 'document.document_approve'`, [X, t])).rows;
+  const d = acts[0]?.detail;
+  if (acts.length !== 1 || d.review_context !== two || d.content_revision !== signed || d.signer !== c.email || d.user !== c.email) {
+    c.fail(step, `the approval's act rows: ${JSON.stringify(acts)}`);
+  }
+  c.pass(step);
+
+  step = "a metadata-only change after display is APPROVAL_CONFLICT for the revision shown, PRESENTATION_REQUIRED without it, and the delta presented in its context is approved";
+  const m = `${X}/metadata.md`;
+  await c.ok(step, "document_write", { path: m, content: "---\ntitle: Shown\n---\n\n# Metadata\n\n" +
+                                                         "the body stays as it was shown.\n".repeat(8) });
+  const ctx = ctxOf(await c.ok(step, "document_present", { path: m }));
+  const shown = await tokenOf(c, m);
+  await c.ok(step, "document_edit", { path: m, title: "Renamed after display" });
+  const now = await tokenOf(c, m);
+  const stale = await c.call(step, "document_approve", { path: m, expected_revision: shown, review_context: ctx });
+  if (now === shown || !stale.startsWith(`ERROR: APPROVAL_CONFLICT — ${m} is at content revision ${now} now, not ${shown}`)
+      || !stale.includes('title: was "Shown"; now "Renamed after display"')) {
+    c.fail(step, `stale expected_revision: ${stale}`);
+  }
+  // The revision alone, with no context to fall back on: it is the revision that is refused.
+  const alone = await c.call(step, "document_approve", { path: m, expected_revision: shown });
+  if (!alone.startsWith(`ERROR: APPROVAL_CONFLICT — ${m} is at content revision ${now} now, not ${shown}`)) {
+    c.fail(step, `a stale expected_revision with no context: ${alone}`);
+  }
+  const implicit = await c.call(step, "document_approve", { path: m });
+  if (!implicit.startsWith(`ERROR: PRESENTATION_REQUIRED — no review context of yours covers ${now}`)
+      || !implicit.includes(`review_context: "${ctx}"`)) {
+    c.fail(step, `no covering context: ${implicit}`);
+  }
+  if ((await rowOf(c, m)).status === "approved") c.fail(step, "a refused approval sealed the document");
+  const delta = await c.ok(step, "document_present", { path: m, review_context: ctx });
+  if (!new RegExp(`^Review context: ${ctx} — delta \\(1 record\\), target ${now}, baseline ${shown}, covered\\.$`, "m").test(delta)) {
+    c.fail(step, `the delta after a metadata change: ${delta}`);
+  }
+  await c.ok(step, "document_approve", { path: m, expected_revision: now, review_context: ctx });
+  if ((await rowOf(c, m)).status !== "approved") c.fail(step, "the approval of the presented delta did not seal");
+  c.pass(step);
+}
+
 process.exitCode = await withThrowawayCore(NAME,
   `${NAME}: versions follow causes, signed snapshots stay as signed, and a closed record's correction is a draft: ok`,
   async (c) => {
     await versionTable(c);
     await closedCorrections(c);
     await actRaces(c);
+    await exactTarget(c);
   });

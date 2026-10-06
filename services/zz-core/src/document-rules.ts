@@ -102,27 +102,6 @@ export function fieldRefusal(fields: Record<string, unknown> | undefined): strin
   return null;
 }
 
-/** The envelope is the platform's; the body is yours.
- *
- * Every envelope field comes either from a fact the platform already holds — which flow governs
- * this initiative, what role the manifest gives this document, what day it is — or from an
- * explicit act: document_approve(), initiative_close(). There is no third
- * source, so frontmatter a caller wrote is refused on the way in rather than audited after the
- * fact. What a document says is the model's work; what a document is is a set of facts the
- * platform fills. */
-export function frontmatterRefusal(content: string, tool: string): string | null {
-  if (!/^\s*---[ \t]*\r?\n/.test(content)) return null;
-  return (
-    `ERROR: ${tool} takes the document's BODY — the frontmatter is written by the platform, ` +
-    "not by hand, and this content opens with one. Send the markdown starting at its first " +
-    "heading. `flow`, `type`, `status`, `version` and `updated_at` are stamped from what the " +
-    "platform already knows; `approved_by`, `approved_at`, `outcome` and `closed_by` come " +
-    "from document_approve() and initiative_close(); anything else the document needs — `stakeholder`, `tags`, " +
-    "`title` — is a named argument to this call, so it is recorded as something you were told " +
-    "rather than something you composed."
-  );
-}
-
 /** Anything written into a line-structured file — a frontmatter value, a markdown table cell,
  * a numbered line the tool re-parses later — must not be able to end that line.
  *

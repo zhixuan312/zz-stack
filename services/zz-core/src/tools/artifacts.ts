@@ -22,7 +22,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
-import { fieldRefusal, frontmatterRefusal } from "../document-rules.js";
+import { normalizeContent, normalizeRefs } from "../document-normalize.js";
+import { fieldRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { auditRoundOf, assessRound } from "../audit-rounds.js";
 import { docRows } from "../indexing.js";
@@ -37,7 +38,7 @@ import { registerSourceUploadTool } from "./source-upload.js";
 import { db, teamFor } from "../platform-db.js";
 import { documentAt, documentPaths, loadDocument, NO_DB, recordAct } from "../versions.js";
 import { saveDocument } from "../document-save.js";
-import { acceptanceLine, NO_TEAM, planCreate, replayFor, replayText } from "../document-change.js";
+import { acceptanceLine, filedAs, NO_TEAM, planCreate, replayFor, replayText } from "../document-change.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, panelDocument, PRESENT_META } from "../document-panel.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
@@ -73,7 +74,9 @@ export function registerArtifactTools(server: McpServer): void {
         "one. Paths are relative, e.g. '2026-08-20-sample-intake/spec.md'. " +
         "SEND THE BODY, starting at its first heading: the frontmatter is written by the " +
         "platform from what it already knows, and anything else the document needs — " +
-        "`stakeholder`, `tags`, `title` — is an argument here. The initiative must already " +
+        "`stakeholder`, `tags`, `title`, `fields` — is an argument here. Content that opens with " +
+        "an envelope anyway is taken apart and reported: its title, tags, stakeholder and flow " +
+        "fields read as those arguments, the fields the platform writes ignored. The initiative must already " +
         "exist: `initiative_open` creates one, and this does not. The FLOW is declared " +
         "there too, never here. What the document rests on is named in `sources`, or passed as " +
         "`source_content` (with `source_title`), which the platform files as a source; sources " +
@@ -83,7 +86,7 @@ export function registerArtifactTools(server: McpServer): void {
         "already landed returns its first reply instead of being refused as existing.",
       inputSchema: {
         path: z.string(),
-        content: z.string().describe("The document's BODY, starting at its first heading. No frontmatter — the platform writes that."),
+        content: z.string().describe("The document's BODY, starting at its first heading. The platform writes the frontmatter."),
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
@@ -97,7 +100,6 @@ export function registerArtifactTools(server: McpServer): void {
       },
     },
     async (args) => {
-      const { content, fields, tags } = args;
       const p = db();
       if (!p) return text(NO_DB);
       const who = parseCaller(requestHeaders()).email;
@@ -121,15 +123,20 @@ export function registerArtifactTools(server: McpServer): void {
       // an existence test.
       const unopened = await unopenedRefusal(p, team, path);
       if (unopened) return text(unopened);
-      // (2)
-      const refused = frontmatterRefusal(content, "document_write") ?? fieldRefusal(fields)
-        ?? tagRefusal(tags);
+      // (2) The content in the spelling the store keeps — its envelope, if it sent one, separated
+      // and read into the metadata it stands for — then the rules every write applies to the
+      // field names and tags that leaves.
+      const sent = normalizeContent(args.content,
+        { title: args.title, tags: args.tags, stakeholder: args.stakeholder, fields: args.fields });
+      if ("refusals" in sent) return text(sent.refusals.join("\n"));
+      const { fields, tags } = sent.metadata;
+      const refused = fieldRefusal(fields) ?? tagRefusal(tags);
       if (refused) return text(refused);
       // (3) onwards: an absent target, its envelope, its causes and its receipt. The flow is read
       // from the record `initiative_open` wrote, never from an argument here: an initiative that
       // acquired a manifest on its second document would have that manifest's gates land on
       // documents already written and unapproved.
-      const plan = await planCreate(p, team, who, path, args);
+      const plan = await planCreate(p, team, who, path, args, sent);
       if ("reply" in plan) return text(plan.reply);
       const gate = await documentGuards(plan.chain, path, plan.text, team);
       if (gate) return text(gate);
@@ -151,7 +158,7 @@ export function registerArtifactTools(server: McpServer): void {
       await noteDocument(plan.chain, path, "document", { version: written.version, revision: written.revision },
                          who, team);
       const assessed = await acceptanceLine(p, team, plan.chain, path, plan.text);
-      return text(plan.receipt +
+      return text(filedAs(plan.receipt, plan.write.change?.captured?.relPath, written.capturedPath) +
         (plan.renamed.length ? `\nRenamed to the heading this flow declares: ${plan.renamed.join(", ")}.` : "") +
         assessed + await nextMoveLine(p, team, initiative));
     },
@@ -431,8 +438,12 @@ export function registerArtifactTools(server: McpServer): void {
       // The string form is split on commas, so `supports: "intent.md, spec.md"` and the array
       // form mean the same thing. Unsplit it is one entry containing a comma, which the check
       // below refuses.
-      const list = (Array.isArray(supports) ? supports : supports ? supports.split(",") : [])
-        .map((x) => x.trim()).filter(Boolean);
+      // Each in its canonical spelling — `./spec`, `<initiative>/spec.md` and `spec` all name
+      // `spec.md` — so the link it declares is filed rather than waiting on a name nothing has.
+      const named = normalizeRefs((Array.isArray(supports) ? supports : supports ? supports.split(",") : [])
+        .map((x) => x.trim()).filter(Boolean), initiative.trim(), "supports entry");
+      if ("refusals" in named) return text(named.refusals.join("\n"));
+      const list = named.refs;
       // These are written into YAML and read back by a comma-splitter, so a separator inside
       // one becomes two entries and a bracket or newline ends the envelope. They name
       // documents — single path segments.
@@ -444,10 +455,12 @@ export function registerArtifactTools(server: McpServer): void {
       }
       const slug = titleSlug(title, "source");
       const date = isoToday();
-      const rel = `${initiative}/sources/${date}-${slug}.md`;
+      // The name asked for; a source already filed under it today makes the write take the first
+      // free suffix instead (`reserveName`), under the lock, and the reply says so.
+      const asked = `${initiative}/sources/${date}-${slug}.md`;
       // `initiative` is caller-supplied, so the assembled path is too. Cheap to check,
       // and it is what stops a tool added later from being the exception.
-      const blocked = writeGuard(rel, "source_add");
+      const blocked = writeGuard(asked, "source_add");
       if (blocked) return text(blocked);
       // The second creation path: `mkdirSync(..., {recursive:true})` below would build
       // `<initiative>/sources/` for an initiative nobody opened, leaving a half-initiative
@@ -456,14 +469,11 @@ export function registerArtifactTools(server: McpServer): void {
       if (!p0) return text(NO_DB);
       const team0 = await teamFor(who.email);
       if (!team0) return text(NO_TEAM);
-      const unopened = await unopenedRefusal(p0, team0, rel);
+      const unopened = await unopenedRefusal(p0, team0, asked);
       if (unopened) return text(unopened);
-      await safePath(rel);
+      await safePath(asked);
       const p = p0;
       const team = team0;
-      if (await documentAt(p, team, rel)) {
-        return text(`ERROR: ${rel} already exists — sources are immutable; add a new file`);
-      }
       // An audit round is a source that names the stage producing it and supports the document
       // that stage audits. Anything else is material, however it is titled: a stakeholder's
       // answers support spec.md too, and counting them as a round would let a spec pass its
@@ -487,7 +497,7 @@ export function registerArtifactTools(server: McpServer): void {
         { title, by: who.email, day: date, content, supports: list,
           stage: round ? round.stage : undefined, audits_version: auditsVersion });
       const wrote = await saveDocument({
-        team, relPath: rel, initiative, text: doc, by: who.email, flow: "",
+        team, relPath: asked, initiative, text: doc, by: who.email, flow: "", reserveName: true,
         // The stage is kept on the row's `type`: a source has no flow role, and the round it
         // was recorded as is the one fact about it the store states beside its title. A source
         // that is not a round of any stage is typed `source`.
@@ -500,7 +510,8 @@ export function registerArtifactTools(server: McpServer): void {
         supports: list.map((d) => `${initiative}/${d}`),
         mode: "create", act: "source",
       });
-      if ("refusal" in wrote) return text(wrote.refusal);
+      if (!("revision" in wrote)) return text("refusal" in wrote ? wrote.refusal : `ERROR: ${asked} could not be written`);
+      const rel = wrote.reserved ?? asked;
       recordAct(rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
       // which of the named documents were already approved when this landed? An audit round
       // lands on an approved document by design — the next move says what follows from it.
@@ -537,7 +548,9 @@ export function registerArtifactTools(server: McpServer): void {
         : "";
       return text(
         `source recorded: ${rel}` +
+        (rel !== asked ? `\nsource name: ${asked} was taken, so this was filed as ${rel}` : "") +
         (list.length ? `\nsupports: ${list.join(", ")}` : "") +
+        named.normalised.map((l) => `\nnormalised: ${l}`).join("") +
         (round ? `\nrecorded as a ${round.stage} round on ${round.document}` +
                  (auditsVersion ? ` v${auditsVersion}` : "") : "") +
         (assessed ? `\n${assessed}` : "") + stageNote +

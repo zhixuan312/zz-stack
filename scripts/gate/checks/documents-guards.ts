@@ -262,21 +262,29 @@ check("a tool that builds a path from an initiative name checks it first", () =>
 check("a refusal names a way out the tool it came from actually has", () => {
   // A guard reachable from more than one tool must not tell the caller to pass something only
   // some of them take: an agent told to pass an argument its tool does not have cannot follow
-  // the refusal. frontmatterRefusal gives that instruction about `stakeholder`, `tags` and
-  // `title`, and both its callers declare all three.
+  // the refusal. bodyEnvelopeRefusal (document-normalize.ts) tells the caller to send `title`,
+  // `tags`, `stakeholder` and `fields` as named arguments, and both write tools declare all four.
+  //
+  // The phrase was "argument to this call", which frontmatterRefusal said; that refusal is gone
+  // (an envelope a caller sends is normalised now, and only one opening a body an edit makes is
+  // refused), and the instruction moved with it. Still fails when no function says it.
   //
   // DELIBERATE: the subject is the phrase, not a named guard. Keyed to one guard's name, this
   // finds nothing the day a second guard gives the same instruction, and reports a pass.
-  const SAYS_IT = "argument to this call";
+  const SAYS_IT = "named argument";
   const src = zzCoreSource();
   const bad: string[] = [];
 
   // Every function whose text gives that instruction, and the arguments it names.
   const demands = new Map();
+  // Every function's text, so a guard reached through the change service a tool calls — planEdit,
+  // normalizeContent — binds that tool as surely as one it calls itself.
+  const functions = new Map<string, string>();
   // `export ` too — a function that moved into its own module is exported by definition,
   // and an extraction keyed to the unexported form finds nothing and reports a pass.
   for (const m of src.matchAll(/^(?:export )?(?:async )?function ([a-zA-Z_]\w*)\(/gm)) {
     const fn = between(src, m[0], "\n}");
+    if (fn.text) functions.set(m[1], fn.text);
     if (!fn.text || !fn.text.includes(SAYS_IT)) continue;
     const at = fn.text.indexOf(SAYS_IT);
     // The clause that names them, immediately before the phrase.
@@ -299,14 +307,22 @@ check("a refusal names a way out the tool it came from actually has", () => {
     const tool = /^registerTool\(\s*\n?\s*"([a-z0-9_]+)"/.exec(block)?.[1];
     if (!tool) continue;
     readTools++;
-    // A registration whose handler takes no argument object declares nothing, and there is nothing
-    // for the rule below to be about.
+    // What the handler declares: the names it destructures, or — a handler taking the whole
+    // `args`, as both write tools do — the keys of its input schema. A registration whose handler
+    // takes no argument declares nothing, and there is nothing for the rule below to be about.
     const sig = /\n    \},\n    async \(\{([^}]*)\}/.exec(block);
-    if (!sig) continue;
-    const declared = new Set(sig[1].split(",").map((a) => a.trim().split(":")[0].trim()).filter(Boolean));
+    const whole = /\basync \(args\) =>/.exec(block);
+    let declared: Set<string>;
+    if (sig) declared = new Set(sig[1].split(",").map((a) => a.trim().split(":")[0].trim()).filter(Boolean));
+    else if (whole && block.includes("inputSchema:")) {
+      const schema = block.slice(block.indexOf("inputSchema:"), whole.index);
+      declared = new Set([...schema.matchAll(/\b([a-z_]+): z\./g)].map((x) => x[1]));
+    } else continue;
     const body = zzCoreTools().find((t) => t.name === tool)?.body ?? "";
+    const reaches = (guard: string): boolean => body.includes(`${guard}(`)
+      || [...functions].some(([fn, text]) => fn !== guard && body.includes(`${fn}(`) && text.includes(`${guard}(`));
     for (const [guard, names] of demands) {
-      if (!body.includes(`${guard}(`)) continue;
+      if (!reaches(guard)) continue;
       for (const nm of names) {
         if (!declared.has(nm)) {
           bad.push(`${guard} tells the caller to pass \`${nm}\` "${SAYS_IT}", and ${tool} has no such argument`);

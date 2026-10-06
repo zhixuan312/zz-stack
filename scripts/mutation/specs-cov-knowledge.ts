@@ -433,15 +433,15 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     target: "a frontmatter field that will not appear is refused, never dropped",
     assertion: "every tool taking `fields` runs the refusal over what the caller actually sent",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "frontmatterRefusal(content, \"document_write\") ?? fieldRefusal(fields)",
-    replace: "frontmatterRefusal(content, \"document_write\") ?? fieldRefusal(undefined)",
+    find: "      const refused = fieldRefusal(fields) ?? tagRefusal(tags);",
+    replace: "      const refused = fieldRefusal(fields === undefined ? undefined : {}) ?? tagRefusal(tags);",
     planted: "document_write runs the frontmatter-name refusal over nothing, so it can no " +
       "longer see the names the caller sent — `buildingBlock` where the skill said " +
       "`building_block` is dropped in silence, and the call reports the document written " +
       "with the field the flow was told to carry absent from it",
-    caveat: "the natural form of this defect — deleting the call — orphans the import under " +
-      "`noUnusedLocals` in both of the two files that make it, so the row would come back " +
-      "`build_failed` and measure nothing. Called with nothing is the same defect the check " +
+    caveat: "the natural form of this defect — deleting the call — orphans the import and " +
+      "`fields` under `noUnusedLocals`, so the row would come back `build_failed` and measure " +
+      "nothing. Called over nothing while still reading `fields` is the same defect the check " +
       "describes (the refusal no longer sees what arrived) in the only shape that compiles",
   },
   {

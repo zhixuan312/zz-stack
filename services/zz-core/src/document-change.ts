@@ -30,12 +30,13 @@ import type pg from "pg";
 import { chainFor } from "./chain.js";
 import { applyEdits, type Edit, type EditRefusal, MAX_EDITS } from "./document-edits.js";
 import { changedSections, locateSection, replaceSection } from "./document-parts.js";
-import { frontmatterRefusal, oneLine, renderEnvelope } from "./document-rules.js";
+import { bodyEnvelopeRefusal, type Metadata, normalizeContent, normalizeRefs } from "./document-normalize.js";
+import { oneLine, renderEnvelope } from "./document-rules.js";
 import { contentIdentity, documentState, type saveDocument, targetExists } from "./document-save.js";
 import { sourceDocument } from "./indexing.js";
-import { DOC_REF, titleSlug } from "./paths.js";
+import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
-import { contentRevision, documentAt, loadDocument, principalId } from "./versions.js";
+import { contentRevision, documentAt, loadDocument, principalId, splitStorePath } from "./versions.js";
 import { type Chain, envelopeFor, isoToday, normalizeSections } from "./write-guards.js";
 
 /** A person the platform cannot place in a team has no store to act on. */
@@ -242,42 +243,65 @@ function malformedSource(sources: string[] | undefined): string | null {
 }
 
 /** The caller's causes, the one definition a create and a change share: the sources it names and
- *  the words it passes as `source_content`, filed as a new source — both the agent's. `already` is
- *  what the target's current version cites: named again, it is no new cause. `label` titles a
- *  captured source the caller gave no title. The platform's causes — owed sources — are added by
- *  each caller after these, so a named one wins. */
+ *  the words it passes as `source_content`, filed as a new source — both the agent's. `sources` is
+ *  in its canonical spelling (`normalizeRefs`). `already` is what the target's current version
+ *  cites: named again, it is no new cause. `label` titles a captured source the caller gave no
+ *  title. The platform's causes — owed sources — are added by each caller after these, so a named
+ *  one wins.
+ *
+ *  Every named source is resolved in ONE statement, however many there are, and every one that
+ *  names no document is reported. A captured source is asked for under its plain name: the write
+ *  files it under the first free one, under the lock (`reserveName`), and the receipt says when that
+ *  was a suffixed one (`filedAs`). */
 async function namedCauses(
   p: pg.Pool, team: string, who: string, path: string,
-  a: { sources?: string[]; source_content?: string; source_title?: string },
+  a: { sources: string[]; source_content?: string; source_title?: string },
   o: { already: Set<string>; label: string },
 ): Promise<{ reply: string } | { causes: Cause[]; captured?: { relPath: string; text: string } }> {
-  const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
-  const causes: Cause[] = [];
-  for (const src of [...new Set((a.sources ?? []).map((s) => s.trim()))]) {
-    const rel = `${initiative}/${src}`;
-    const at = await documentAt(p, team, rel);
-    if (!at || at.current_revision === null) {
-      return { reply: `ERROR: ${rel} is not a document in this team's store, so it cannot be named as ` +
-        `a cause of ${path}. source_add files new material, or pass the words themselves as ` +
-        "`source_content`." };
-    }
-    if (!o.already.has(rel)) causes.push({ path: rel, revision: at.current_revision, linked_by: "agent" });
+  const { initiative, name } = splitStorePath(path);
+  const wanted = [...new Set(a.sources)];
+  const { rows } = wanted.length
+    ? await p.query<{ path: string; revision: number | null }>(
+      `select distinct on (d.path) d.path, d.current_revision as revision
+         from zz.doc d
+         join zz.initiative i on i.id = d.initiative_id
+         join zz.team t on t.id = i.team_id
+        where t.slug = $1 and i.slug = $2 and d.path = any($3::text[])
+        order by d.path, d.updated_at desc`, [team, initiative, wanted])
+    : { rows: [] };
+  const found = new Map(rows.map((r) => [r.path, r.revision] as const));
+  const missing = wanted.filter((src) => (found.get(src) ?? null) === null).map((src) => `${initiative}/${src}`);
+  if (missing.length) {
+    return { reply: `ERROR: ${missing.join(", ")} ${missing.length > 1 ? "are not documents" : "is not a document"} ` +
+      `in this team's store, so ${missing.length > 1 ? "they" : "it"} cannot be named as a cause of ${path}. ` +
+      "source_add files new material, or pass the words themselves as `source_content`." };
   }
+  const causes: Cause[] = wanted
+    .filter((src) => !o.already.has(`${initiative}/${src}`))
+    .map((src) => ({ path: `${initiative}/${src}`, revision: found.get(src)!, linked_by: "agent" as const }));
   let captured: { relPath: string; text: string } | undefined;
   if (a.source_content?.trim()) {
     const title = (a.source_title || o.label).trim();
     const day = isoToday();
-    // Named exactly as source_add names one, and suffixed rather than refused when the name is
-    // taken: the change it explains must not fail over its label.
-    const stem = `${initiative}/sources/${day}-${titleSlug(title, "source")}`;
-    let rel = `${stem}.md`;
-    for (let n = 2; await documentAt(p, team, rel); n++) rel = `${stem}-${n}.md`;
-    captured = { relPath: rel, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(),
-                                                      supports: [name] }) };
-    causes.push({ path: rel, revision: 1, linked_by: "agent" });
+    // Named exactly as source_add names one; a name already taken is suffixed by the write, under
+    // its lock, rather than refused: the change it explains must not fail over its label.
+    const relPath = `${initiative}/sources/${day}-${titleSlug(title, "source")}.md`;
+    captured = { relPath, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(),
+                                                 supports: [name] }) };
+    causes.push({ path: relPath, revision: 1, linked_by: "agent" });
   }
   return { causes, captured };
 }
+
+/** A receipt naming the captured source by the name the write actually filed it under: the plain
+ *  name the plan asked for is replaced, and a line says why, when the write took a suffixed one. */
+export function filedAs(receipt: string, asked: string | undefined, filed: string | undefined): string {
+  if (!asked || !filed || filed === asked) return receipt;
+  return `${receipt.split(asked).join(filed)}\nsource name: ${asked} was taken, so the words were filed as ${filed}`;
+}
+
+/** The receipt's normalisation lines, one per thing done with what the caller sent. */
+const normalisedLines = (lines: string[]): string[] => lines.map((l) => `normalised: ${l}`);
 
 /** Which body mode a call sends, or the INVALID_MODE that says why it sends none or two. */
 function modeOf(a: EditArgs): "edits" | "section" | "content" | "metadata" | { refusal: string } {
@@ -385,10 +409,21 @@ export async function planEdit(
   // (5)
   const mode = modeOf(a);
   if (typeof mode !== "string") return { reply: mode.refusal };
-  const fm = mode === "content" ? frontmatterRefusal(a.content ?? "", "document_edit") : null;
-  if (fm) return { reply: fm };
-  const malformed = malformedSource(a.sources);
+  // What the call sends, in the spelling the platform stores: whole `content`'s envelope separated
+  // and read into the metadata it stands for, tags lower-cased, `sources` canonical. Before any
+  // identity is compared, so a normalisation never manufactures a version. From here on `a` is the
+  // call as the platform reads it; `asSent` is the call as sent, which is what a request key digests.
+  const sent = normalizeContent(mode === "content" ? a.content ?? "" : "", a);
+  if ("refusals" in sent) return { reply: sent.refusals.join("\n") };
+  const badTags = tagRefusal(sent.metadata.tags);
+  if (badTags) return { reply: badTags };
+  const refs = normalizeRefs(a.sources, initiative);
+  if ("refusals" in refs) return { reply: refs.refusals.join("\n") };
+  const malformed = malformedSource(refs.refs);
   if (malformed) return { reply: malformed };
+  const asSent = a;
+  a = { ...a, ...sent.metadata, ...(mode === "content" ? { content: sent.body } : {}) };
+  const normalised = normalisedLines([...sent.normalised, ...refs.normalised]);
   // (6)
   if (mode === "edits" && (!Array.isArray(a.edits) || a.edits.length < 1 || a.edits.length > MAX_EDITS)) {
     return { reply: batchRefusal(path, { code: "EDIT_COUNT" }) };
@@ -413,9 +448,10 @@ export async function planEdit(
   } else if (mode === "content") {
     next = a.content ?? "";
   }
-  // The body a batch or a section MAKES is held to the rule whole `content` is held to above: one
-  // that opens with a frontmatter block would be read back as the envelope, not as its body.
-  const opened = mode === "edits" || mode === "section" ? frontmatterRefusal(next, "document_edit") : null;
+  // The body a batch or a section MAKES may not open with a recognised envelope, which would read
+  // back as a second one; whole `content` is held to the same by `normalizeContent` above. A
+  // thematic break is markdown, and stays.
+  const opened = mode === "edits" || mode === "section" ? bodyEnvelopeRefusal(next) : null;
   if (opened) return { reply: opened };
   const governing = await chainFor(p, team, path, loaded.text);
   const gated = governing.documents.some((d) => d.name === name && d.gate);
@@ -433,17 +469,17 @@ export async function planEdit(
   // keyed one still goes to the write, which records the request and nothing else.
   if (contentIdentity(fixed.content, path) === contentIdentity(loaded.text, path)) {
     const lines = [`edited: ${path} — v${version} (no change)`, `content revision: ${token}`,
-                   `status: ${status(loaded.text)}`, "changed sections: none", "causes: none"];
+                   `status: ${status(loaded.text)}`, "changed sections: none", "causes: none", ...normalised];
     return { chain, text: fixed.content, renamed: [], noChange: true, receipt: lines.join("\n"),
              causes: [], replaced: null,
              write: { team, relPath: path, initiative, text: fixed.content, by: who, mode: "rewrite",
                       flow: chain.name ?? undefined, type: chain.roles[name], act: "edit",
                       change: { nextVersion: false, expect: state,
-                                request: requestOf(a, who, path, lines, { result: "no_change", version }) } } };
+                                request: requestOf(asSent, who, path, lines, { result: "no_change", version }) } } };
   }
   // The causes. Named sources and words captured as a new source are the caller's; owed sources
   // are the platform's, and a change that leaves the body alone owes none.
-  const named = await namedCauses(p, team, who, path, a, {
+  const named = await namedCauses(p, team, who, path, { ...a, sources: refs.refs }, {
     already: await citedByVersion(p, loaded.doc.id, version),
     label: `Input behind v${bodyChanged ? version + 1 : version}`,
   });
@@ -468,6 +504,7 @@ export async function planEdit(
     `status: ${status(fixed.content)}`,
     `changed sections: ${capped(changedSections(body, after))}`,
     `causes: ${capped(causes.map((c) => `${c.path} (${c.linked_by})`))}`,
+    ...normalised,
   ];
   // DELIBERATE: a change in the same version keeps the version's note when it sends none — the
   // note says what the version is, and a typo fix does not unsay it.
@@ -486,7 +523,7 @@ export async function planEdit(
         // be. Should the state compare then find the document moved, that is the generation it
         // asks about: still current means a retry, gone means BASE_CONFLICT.
         ...(a.base !== undefined ? { base: Number(loaded.doc.content_generation) } : {}),
-        request: requestOf(a, who, path, lines, { result: "applied", version: newVersion, new_version: nextVersion }),
+        request: requestOf(asSent, who, path, lines, { result: "applied", version: newVersion, new_version: nextVersion }),
       },
     },
   };
@@ -512,21 +549,27 @@ interface CreateArgs {
 }
 
 /** (3) onwards for a create: the absent target, its envelope and sections, its causes and its
- *  receipt — or the answer that stops it. `path` is canonical. The document's id is chosen here, so
- *  the receipt a keyed create records names the content revision it will have. */
+ *  receipt — or the answer that stops it. `path` is canonical; `sent` is the content as
+ *  `normalizeContent` separated it, which the tool asked before its field and tag rules. The
+ *  document's id is chosen here, so the receipt a keyed create records names the content revision
+ *  it will have. */
 export async function planCreate(
   p: pg.Pool, team: string, who: string, path: string, a: CreateArgs,
+  sent: { body: string; metadata: Metadata; normalised: string[] },
 ): Promise<{ reply: string } | Omit<Planned, "noChange" | "replaced">> {
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
   if (await documentAt(p, team, path)) return { reply: targetExists(path) };
-  const malformed = malformedSource(a.sources);
+  const refs = normalizeRefs(a.sources, initiative);
+  if ("refusals" in refs) return { reply: refs.refusals.join("\n") };
+  const malformed = malformedSource(refs.refs);
   if (malformed) return { reply: malformed };
-  // The chain from the caller's bytes and, failing that, the initiative's row — a first document
-  // is written before any other carries a `flow:`.
-  const chain = await chainFor(p, team, path, a.content);
-  const { stakeholder, tags, title, fields } = a;
-  const fixed = normalizeSections(chain, path, envelopeFor(chain, path, a.content, { stakeholder, tags, title, fields }));
-  const named = await namedCauses(p, team, who, path, a, { already: new Set(), label: "Input behind v1" });
+  // The chain from the body and, failing that, the initiative's row — a first document is written
+  // before any other carries a `flow:`. Never from an envelope the caller sent: that `flow` is
+  // ignored, and governing by it would let a caller choose its gates.
+  const chain = await chainFor(p, team, path, sent.body);
+  const fixed = normalizeSections(chain, path, envelopeFor(chain, path, sent.body, sent.metadata));
+  const named = await namedCauses(p, team, who, path, { ...a, sources: refs.refs },
+                                  { already: new Set(), label: "Input behind v1" });
   if ("reply" in named) return named;
   const { causes, captured } = named;
   for (const owed of await owedSources(p, team, initiative, name, null)) {
@@ -538,6 +581,7 @@ export async function planCreate(
     // A new document's content generation is 0 until its first change.
     `content revision: ${contentRevision(id, 0)}`,
     `causes: ${capped(causes.map((c) => `${c.path} (${c.linked_by})`))}`,
+    ...normalisedLines([...sent.normalised, ...refs.normalised]),
   ];
   return {
     chain, text: fixed.content, renamed: fixed.renamed, receipt: lines.join("\n"), causes,

@@ -18,7 +18,14 @@
  *     content revision as they were — the path guards, the field and tag rules, a missing target,
  *     `upload`/`file`, a call sending no mode or two, the edit count, a stale `base` (named with
  *     the current token), the batch's and the section's own refusals, a body an edit makes open
- *     with frontmatter, `no_change`, and the guards; where two steps apply, the earlier answers;
+ *     with a recognised envelope (one opening with a thematic break is markdown), `no_change` — a
+ *     document read back and sent whole among them — and the guards; where two steps apply, the
+ *     earlier answers;
+ *   - normalisation: an envelope in whole `content` separated from the body, its title taken and
+ *     every key the platform writes ignored, each reported; a conflicting or malformed key refused;
+ *     tags lower-cased; a `supports` entry spelled `./notes` linked as `notes.md`; a source name
+ *     already taken today suffixed, by `source_add` and by a captured `source_content` alike, and
+ *     the reply naming the name it was filed under;
  *   - Chinese, emoji and CRLF bodies kept byte for byte through a create, a batch, a section and a
  *     whole body;
  *   - a 128-edit receipt naming 45 causes stays under 16 KiB, each list capped at 40 entries.
@@ -204,9 +211,10 @@ async function precedence(c: Core): Promise<void> {
   step = "(2) a reserved or malformed field name, and a malformed tag, are refused";
   await refusedUnchanged(c, step, p, { title: "x", fields: { status: "approved" } }, /^ERROR: status is written by the platform/);
   await refusedUnchanged(c, step, p, { fields: { "Due Date": "x" } }, /^ERROR: "Due Date" is not a frontmatter name/);
-  await refusedUnchanged(c, step, p, { tags: ["Not A Tag"] }, /^ERROR: "Not A Tag" is not a tag/);
+  // Lower-cased first, so what is refused is what lower-casing cannot fix: the spaces.
+  await refusedUnchanged(c, step, p, { tags: ["Not A Tag"] }, /^ERROR: "not a tag" is not a tag/);
   // (2) before (3): the rules every write applies answer before the target is looked for.
-  await c.refused(step, "document_edit", { path: `${I}/absent.md`, content: "# x\n", tags: ["Bad"] }, /is not a tag/);
+  await c.refused(step, "document_edit", { path: `${I}/absent.md`, content: "# x\n", tags: ["Bad tag"] }, /is not a tag/);
   c.pass(step);
 
   step = "(3) a target that does not exist is TARGET_MISSING";
@@ -231,7 +239,14 @@ async function precedence(c: Core): Promise<void> {
   ]) {
     await refusedUnchanged(c, `${step}: ${JSON.stringify(args)}`, p, args, /^ERROR: INVALID_MODE — /);
   }
-  await refusedUnchanged(c, step, p, { content: "---\nflow: x\n---\n# Notes\n" }, /^ERROR: document_edit takes the document's BODY/);
+  c.pass(step);
+
+  step = "(5) an envelope in whole `content` with a malformed key, or a value the named argument contradicts, is refused, every key named";
+  let said = await refusedUnchanged(c, step, p, { content: "---\ndueDate: x\nDue-Date: y\n---\n# Notes\n" },
+    /^ERROR: UNSUPPORTED_METADATA — the content's envelope carries "dueDate", "Due-Date"/);
+  said = await refusedUnchanged(c, step, p, { content: "---\ntitle: Alpha\n---\n# Notes\n", title: "Beta" },
+    /^ERROR: METADATA_CONFLICT — title is "Alpha" in the content's envelope and "Beta" as the named argument/);
+  if (/opens with one/.test(said)) c.fail(step, said);
   c.pass(step);
 
   step = "(6) a batch of none, or of more than 128, is EDIT_COUNT";
@@ -278,17 +293,20 @@ async function precedence(c: Core): Promise<void> {
   await refusedUnchanged(c, step, d, { section: "End", content: "no heading line\n" }, /^ERROR: INVALID_EDIT — with `section`, `content` replaces the heading/);
   c.pass(step);
 
-  step = "(8) a body an edit batch or a section would make open with frontmatter is refused as whole content is";
+  step = "(8) a body an edit batch or a section would make open with a recognised envelope is refused; a thematic break is markdown";
   const f = `${I}/front.md`;
   await c.ok(step, "document_write", { path: f, content: "# Front\n\nbody\n" });
-  await refusedUnchanged(c, step, f, { edits: [{ find: "# Front", replace: "---\nflow: sdlc-flow\n---\n# Front" }] },
-    /^ERROR: document_edit takes the document's BODY/);
-  await refusedUnchanged(c, step, f, { edits: [{ find: "# Front\n", replace: "\n---\r\nstatus: approved\r\n---\r\n# Front\n" }] },
-    /^ERROR: document_edit takes the document's BODY/);
+  const opens = /^ERROR: UNSUPPORTED_METADATA — this body would open with a frontmatter envelope .*Send `title`, `tags`, `stakeholder` and `fields` as named arguments/;
+  said = await refusedUnchanged(c, step, f, { edits: [{ find: "# Front", replace: "---\nflow: sdlc-flow\n---\n# Front" }] }, opens);
+  if (/opens with one/.test(said)) c.fail(step, `the edit path says "opens with one" to an edits caller: ${said}`);
+  // After a blank line, in CRLF: recognised all the same.
+  await refusedUnchanged(c, step, f, { edits: [{ find: "# Front\n", replace: "\n---\r\nstatus: approved\r\n---\r\n# Front\n" }] }, opens);
   await refusedUnchanged(c, step, f, { section: "Front", content: "---\nflow: sdlc-flow\n---\n# Front\n" }, /^ERROR: /);
-  // Control: a rule further down the body is ordinary markdown.
+  // A thematic break at the top is markdown, and so is a rule further down.
+  await c.ok(step, "document_edit", { path: f, edits: [{ find: "# Front", replace: "---\n\n# Front" }] });
+  await bodyIs(c, step, f, "---\n\n# Front\n\nbody\n");
   await c.ok(step, "document_edit", { path: f, edits: [{ find: "body", replace: "body\n\n---\n\nafter a rule" }] });
-  await bodyIs(c, step, f, "# Front\n\nbody\n\n---\n\nafter a rule\n");
+  await bodyIs(c, step, f, "---\n\n# Front\n\nbody\n\n---\n\nafter a rule\n");
   c.pass(step);
 
   step = "(9) a change that changes nothing is no_change: nothing written, the content revision kept";
@@ -296,9 +314,16 @@ async function precedence(c: Core): Promise<void> {
   const rev = (await c.sql.query<{ r: number; at: string }>(
     `select d.current_revision as r, r.written_at::text as at from zz.doc d join zz.initiative i on i.id = d.initiative_id
        join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision where i.slug = $1 and d.path = 'notes.md'`, [I])).rows[0];
-  for (const args of [{ content: now.body }, { edits: [{ find: "alpha\n", replace: "alpha\n" }] }, { section: "Notes", content: now.body }]) {
+  // The document as a read returns it, envelope and all, is the same document: every key the read
+  // rendered is reported and none of them becomes a change.
+  const whole = await c.ok(step, "document_read", { path: p });
+  for (const args of [{ content: now.body }, { edits: [{ find: "alpha\n", replace: "alpha\n" }] }, { section: "Notes", content: now.body },
+                      { content: whole }]) {
     reply = await c.ok(step, "document_edit", { path: p, ...args });
     if (first(reply) !== `edited: ${p} — v1 (no change)` || !reply.includes(`content revision: ${now.token}`)) c.fail(step, reply);
+  }
+  for (const key of ["content_revision", "version", "updated_at"]) {
+    if (!new RegExp(`^normalised: ignored ${key} from the content's envelope`, "m").test(reply)) c.fail(step, `${key} is not reported: ${reply}`);
   }
   const after = (await c.sql.query<{ r: number; at: string }>(
     `select d.current_revision as r, r.written_at::text as at from zz.doc d join zz.initiative i on i.id = d.initiative_id
@@ -320,6 +345,65 @@ async function precedence(c: Core): Promise<void> {
   await c.ok(step, "document_write", { path: e, content: "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n" });
   await refusedUnchanged(c, step, e, { edits: [{ find: "## Current state\nx\n\n", replace: "" }] },
     /^ERROR: explore\.md is missing the section `## Current state`\. This flow's manifest declares/);
+  c.pass(step);
+}
+
+async function normalisation(c: Core): Promise<void> {
+  const I = await c.open("edit-normalise");
+  const n = `${I}/notes.md`;
+  await c.ok("write the normalised document", "document_write", { path: n, content: "# Notes\n\nold\n" });
+
+  let step = "an envelope in whole `content` is separated: its title taken, the keys the platform writes ignored, each reported";
+  let reply = await c.ok(step, "document_edit", { path: n,
+    content: "\r\n---\r\ntitle: From The Envelope\r\nstatus: approved\r\nflow: some-other-flow\r\n---\r\n\r\n# Notes\r\n\r\nnew\r\n" });
+  for (const line of ["normalised: took title from the content's envelope", "normalised: ignored status from the content's envelope",
+                      "normalised: ignored flow from the content's envelope"]) {
+    if (!reply.includes(line)) c.fail(step, `no \`${line}\` in: ${reply}`);
+  }
+  await bodyIs(c, step, n, "# Notes\r\n\r\nnew\r\n");
+  const read = await c.ok(step, "document_read", { path: n });
+  if (!/^title: From The Envelope$/m.test(read) || /^(status: approved|flow: some-other-flow)$/m.test(read)) c.fail(step, read);
+  c.pass(step);
+
+  step = "whole `content` opening with a thematic break is the body, every byte";
+  await c.ok(step, "document_edit", { path: n, content: "---\n\n# Notes\n\nafter a rule\n" });
+  await bodyIs(c, step, n, "---\n\n# Notes\n\nafter a rule\n");
+  c.pass(step);
+
+  step = "tags are lower-cased and reported";
+  reply = await c.ok(step, "document_edit", { path: n, tags: ["Alpha", "beta"] });
+  if (!reply.includes('normalised: tag "Alpha" lower-cased to "alpha"')) c.fail(step, reply);
+  if (!/^tags: alpha, beta$/m.test(await c.ok(step, "document_read", { path: n }))) c.fail(step, "the tags were not stored lower-cased");
+  c.pass(step);
+
+  step = "a keyed retry of a normalised call replays: the key is held to what was sent, not to what it read as";
+  for (const [tool, args] of [
+    ["document_edit", { path: n, tags: ["Gamma"], request_id: "norm-edit-1" }],
+    ["document_write", { path: `${I}/keyed.md`, content: "---\ntitle: Keyed\nstatus: approved\n---\n# Keyed\n", request_id: "norm-write-1" }],
+  ] as const) {
+    const once = await c.ok(step, tool, args);
+    const again = await c.ok(step, tool, args);
+    if (!/ \(replayed\)$/.test(first(again)) || first(again) !== `${first(once)} (replayed)`) c.fail(step, `${tool}: ${again}`);
+  }
+  c.pass(step);
+
+  step = "a `supports` entry spelled `./notes` is linked to notes.md, and a source name taken today is suffixed";
+  const one = await c.call(step, "source_add", { initiative: I, title: "Call notes", content: "first", supports: ["./notes"] });
+  if (!/^source recorded: \S+\/sources\/\d{4}-\d{2}-\d{2}-call-notes\.md$/m.test(one) || !one.includes('normalised: "./notes" read as "notes.md"')
+      || /NOT LINKED YET/.test(one)) c.fail(step, one);
+  const two = await c.call(step, "source_add", { initiative: I, title: "Call notes", content: "second" });
+  const taken = /^source recorded: (\S+)$/m.exec(one)?.[1] ?? "";
+  if (!two.includes(`source recorded: ${taken.replace(/\.md$/, "-2.md")}`) || !two.includes(`source name: ${taken} was taken`)) c.fail(step, two);
+  c.pass(step);
+
+  step = "a captured source whose name is taken is filed under the next one, and the receipt names it";
+  reply = await c.ok(step, "document_edit", { path: n, edits: [{ find: "after a rule", replace: "after a call" }],
+                                              source_content: "third", source_title: "Call notes" });
+  const third = taken.replace(/\.md$/, "-3.md");
+  if (!new RegExp(`^causes: .*${esc(third)} \\(agent\\)`, "m").test(reply) || !reply.includes(`was taken, so the words were filed as ${third}`)) {
+    c.fail(step, reply);
+  }
+  if ((await c.cites(n)).filter((x) => x.startsWith(third)).length !== 1) c.fail(step, `the cause is not linked to ${third}: ${(await c.cites(n)).join(" | ")}`);
   c.pass(step);
 }
 
@@ -388,6 +472,7 @@ process.exitCode = await withThrowawayCore(NAME,
     await skeleton(c);
     await modes(c);
     await precedence(c);
+    await normalisation(c);
     await fidelity(c);
     await bigReceipt(c);
   });

@@ -5,7 +5,7 @@
  * model may write one. Every check here is about that boundary holding in one place.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { contractsSource, gateOwnSource, root, sourceFiles, toolAtLine, unbuilt, zzCoreSource, withoutComments} from "../read.ts";
@@ -176,16 +176,49 @@ check("the envelope vocabulary is defined once", () => {
 check("the model writes the body and the platform writes the envelope", () => {
   // Every envelope field comes either from a fact the platform holds — which flow governs
   // this initiative, what role the manifest gives the document, what day it is — or from an
-  // explicit act. So document_write and document_edit refuse content that opens with
-  // frontmatter, and a skill still showing one in a fenced block teaches a call that fails on
-  // the first save. Both halves are checked together: the refusal without the templates
-  // breaks every flow, and the templates without the refusal drift back.
-  const src = zzCoreSource();
+  // explicit act. So content's envelope never becomes the stored envelope: document_write and
+  // document_edit take an envelope a caller sends apart, ignore and report every key the platform
+  // owns, refuse a malformed one, and render the envelope themselves; and a skill still showing
+  // one in a fenced block teaches a call whose envelope is thrown away. Both halves are checked
+  // together.
+  //
+  // REPLACES "document_write and document_edit refuse content that opens with frontmatter"
+  // (`frontmatterRefusal`, deleted): that refused a thematic break and a document read back and sent
+  // whole. Held now by running the built `normalizeContent` on what a read gives back — every key a
+  // read renders — and on a planted approval.
+  const src = withoutComments(zzCoreSource());
   const bad: string[] = [];
-  // The content argument is not pinned: document_edit asks it of `a.content ?? ""`.
-  for (const tool of ["document_write", "document_edit"]) {
-    if (!new RegExp(`frontmatterRefusal\\([^,]+, "${tool}"\\)`).test(src)) {
-      bad.push(`${tool} accepts frontmatter the model composed`);
+  for (const [tool, call] of [["document_write", "normalizeContent(args.content"],
+                              ["document_edit", "normalizeContent(mode === \"content\" ? a.content"]]) {
+    if (!src.includes(call)) bad.push(`${tool} does not normalise its content, so an envelope the model composed is stored`);
+  }
+  const mod = join(root, "services/zz-core/dist/document-normalize.js");
+  const readBack = ["---", "flow: sdlc-flow", "type: spec", "title: Spec", "tags: a, b", "version: 3",
+    "content_revision: cr_aaaaaaaaaaaaaaaaaaaaaaaaaa", "updated_at: 2026-10-06", "status: approved",
+    "approved_by: dana@example.com", "approved_at: 2026-10-06", "revision_note: planted", "sources: x/sources/a.md",
+    "outcome: delivered", "closed_by: dana@example.com", "---", "", "# Spec", ""].join("\n");
+  const probe = `
+    import { normalizeContent } from ${JSON.stringify(mod)};
+    process.stdout.write(JSON.stringify(normalizeContent(JSON.parse(process.argv[1]), {})));
+  `;
+  if (!existsSync(mod)) {
+    bad.push(`${mod} does not exist — this check runs the built normalisation and there is none`);
+  } else {
+    try {
+      const got = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", probe, JSON.stringify(readBack)],
+        { encoding: "utf8", cwd: root })) as { body?: string; metadata?: Record<string, unknown>; normalised?: string[]; refusals?: string[] };
+      const owned = ["flow", "type", "version", "content_revision", "updated_at", "status", "approved_by",
+                     "approved_at", "revision_note", "sources", "outcome", "closed_by"];
+      if (got.refusals) bad.push(`a document read back and sent whole is refused: ${got.refusals.join(" | ")}`);
+      else {
+        const leaked = owned.filter((k) => JSON.stringify(got.metadata ?? {}).includes(`"${k}"`));
+        if (leaked.length) bad.push(`${leaked.join(", ")} from a sent envelope reached the stored envelope`);
+        const silent = owned.filter((k) => !(got.normalised ?? []).some((l) => l.includes(`ignored ${k} `)));
+        if (silent.length) bad.push(`${silent.join(", ")} from a sent envelope ${silent.length > 1 ? "were" : "was"} not reported`);
+        if (got.body !== "# Spec\n" || got.metadata?.title !== "Spec") bad.push(`the read-back body or title was not kept: ${JSON.stringify(got)}`);
+      }
+    } catch (err) {
+      bad.push(`document-normalize.js could not be run: ${execStderr(err).slice(-300)}`);
     }
   }
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {

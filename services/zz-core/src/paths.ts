@@ -96,8 +96,11 @@ const TAG_TOKEN = /^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)?$/;
  * words a person typed and intersects them with the stored array, so a tag written `Booking`
  * is stored, indexed and unreachable.
  *
- * DELIBERATE: refused rather than folded to lowercase. A silent rewrite would succeed while
- * storing a value the caller did not send. */
+ * DELIBERATE: the two document tools lower-case a tag first (`normalizeTags`,
+ * document-normalize.ts) and say so in the receipt — case is the one thing about a tag that has a
+ * single reading — and ask this of what is left. What lower-casing cannot fix, a space or a
+ * comma, is refused here: rewriting it would store a value the caller did not send. knowledge_add
+ * refuses an upper-case tag as it always has. */
 export function tagRefusal(tags: string[] | undefined): string | null {
   const bad = (tags ?? []).map((t) => t.trim()).filter((t) => t && !TAG_TOKEN.test(t));
   return bad.length

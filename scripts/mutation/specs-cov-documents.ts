@@ -117,12 +117,12 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-guards.ts",
     target: "a refusal names a way out the tool it came from actually has",
-    subject: "services/zz-core/src/document-rules.ts",
-    find: "\"`title` — is a named argument",
-    replace: "\"`flow` — is a named argument",
-    planted: "the frontmatter refusal tells the caller to pass `flow` as an argument to the " +
-      "call it came from, and neither document_write nor document_revise takes one — the " +
-      "refusal that exists to teach the way out gives an instruction the tool cannot obey",
+    subject: "services/zz-core/src/document-normalize.ts",
+    find: "\"`stakeholder` and `fields` as named arguments",
+    replace: "\"`stakeholder` and `flow` as named arguments",
+    planted: "the edit path's envelope refusal tells the caller to send `flow` as a named " +
+      "argument, and neither write tool takes one — the refusal that exists to teach the way " +
+      "out gives an instruction the tool cannot obey",
   },
   {
     check: "scripts/gate/checks/documents-guards.ts",
@@ -161,13 +161,12 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
   },  {
     check: "scripts/gate/checks/documents-envelope.ts",
     target: "the model writes the body and the platform writes the envelope",
-    assertion: "document_edit refuses whole-body content that opens with frontmatter",
+    assertion: "document_edit separates an envelope sent in whole content",
     subject: "services/zz-core/src/document-change.ts",
-    find: "  const fm = mode === \"content\" ? frontmatterRefusal(a.content ?? \"\", \"document_edit\") : null;",
-    replace: "  void frontmatterRefusal;\n  const fm = null;",
-    planted: "document_edit accepts content that opens with frontmatter again, so every " +
-      "change is a chance for the model to type the envelope — the third source, back on " +
-      "the one path whose whole job is to rewrite an approved document",
+    find: "  const sent = normalizeContent(mode === \"content\" ? a.content ?? \"\" : \"\", a);",
+    replace: "  const sent = normalizeContent(\"\", a);",
+    planted: "document_edit stores whole content as it came, so an envelope the model typed " +
+      "lands in the body and reads back as the envelope",
   },
   {
     check: "scripts/gate/checks/documents-envelope.ts",

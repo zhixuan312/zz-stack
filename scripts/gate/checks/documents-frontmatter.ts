@@ -2,8 +2,16 @@
  * Frontmatter at the boundary: what a caller may send, and what is refused rather than quietly
  * dropped. A field a caller types that the platform silently discards is worse than a refusal — the
  * write succeeds, the document looks right, and the field the caller believes they set is absent.
+ *
+ * The rule an envelope a caller sends is held to: content's envelope never becomes the stored
+ * envelope — the keys the platform owns are ignored and reported, a malformed key is refused, and
+ * only the platform renders the envelope. It REPLACES "content that opens with frontmatter is
+ * refused" (`frontmatterRefusal`, deleted in Phase 2 of 2026-10-06-doc-write-and-update-paradigm):
+ * that rule refused a Markdown thematic break too, and a document read back and sent whole. The
+ * new one is run, not read — `normalizeContent` from the built zz-core, on planted envelopes.
  */
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import ts from "typescript";
@@ -11,6 +19,32 @@ import ts from "typescript";
 import { ONE_LINE, contractsSource, functionBody, root, sourceFiles, zzCoreSource, zzCoreTools, errMessage,
          withoutComments } from "../read.ts";
 import { check } from "../run.ts";
+
+/** What the built `normalizeContent` and `bodyEnvelopeRefusal` answer for each input, or why they
+ *  could not be run — a probe that cannot run is reported as that, never as a pass. Run from
+ *  `dist`: the module imports @zz/contracts and its siblings, so its text cannot be lifted out. */
+function normalized(inputs: { content: string; named?: Record<string, unknown> }[]):
+    { content: { body?: string; metadata?: Record<string, unknown>; normalised?: string[]; refusals?: string[] };
+      opened: string | null }[] | string {
+  const mod = join(root, "services/zz-core/dist/document-normalize.js");
+  if (!existsSync(mod)) return `${mod} does not exist — this check runs the built normalisation and there is none`;
+  const probe = `
+    import { bodyEnvelopeRefusal, normalizeContent } from ${JSON.stringify(mod)};
+    const inputs = JSON.parse(process.argv[1]);
+    process.stdout.write(JSON.stringify(inputs.map((i) =>
+      ({ content: normalizeContent(i.content, i.named ?? {}), opened: bodyEnvelopeRefusal(i.content) }))));
+  `;
+  try {
+    return JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", probe, JSON.stringify(inputs)],
+      { encoding: "utf8", cwd: root }));
+  } catch (err) {
+    return `document-normalize.js could not be run: ${errMessage(err).slice(-300)}`;
+  }
+}
+
+/** Every key the platform writes or renders that a caller might plant in an envelope it sends. */
+const PLANTED = ["flow", "type", "status", "version", "updated_at", "approved_by", "approved_at", "outcome",
+                 "closed_by", "accepted_by", "content_revision", "revision_note", "sources", "supports", "stage"];
 
 // A value somebody typed, inside hand-written YAML quotes.
 //
@@ -217,26 +251,23 @@ check("a caller's words cannot write a frontmatter field", () => {
 });
 
 check("nothing sends the platform a document with frontmatter in it", () => {
-  // document_write and document_edit take the body. The refusal says so — "takes the document's
-  // BODY — the frontmatter is written by the platform, not by hand" — and `flow`, the one thing a
-  // caller genuinely decides, is a named argument.
+  // document_write and document_edit take the body, and the platform renders the envelope. An
+  // envelope a caller sends anyway is taken apart rather than stored: `flow`, the field that
+  // decides which gates govern the initiative, is the platform's, and a planted one must be
+  // ignored and reported — never become the stored `flow`.
   //
-  // The rule is run, not read: frontmatterRefusal is lifted out of zz-core and asked about each
-  // builder's output, so this cannot drift from what the platform actually refuses.
-  const core = zzCoreSource();
-  const body = functionBody(core, "frontmatterRefusal");
-  if (!body) return "zz-core no longer defines frontmatterRefusal — this check cannot run";
-  let refuses;
-  try {
-    refuses = new Function("content", "tool", body);
-  } catch (err) {
-    return `frontmatterRefusal could not be evaluated: ${errMessage(err)}`;
+  // REPLACES "frontmatterRefusal refuses content that opens with frontmatter": that refusal is
+  // gone, and what holds now is that the planted keys never reach the metadata a write stores.
+  // Run on the built module, so this cannot drift from what the platform actually does.
+  const ran = normalized([{ content: "---\nflow: some-other-flow\ntype: guide\nstatus: approved\n---\n\n# x\n" }]);
+  if (typeof ran === "string") return ran;
+  const [{ content }] = ran;
+  if (content.refusals || content.body !== "# x\n") {
+    return `normalizeContent no longer separates a planted envelope from its body (${JSON.stringify(content)}) — ` +
+           "the rest of this check would pass by asking a question that has stopped mattering";
   }
-  // The rule itself, so a change that stopped refusing anything would be visible here rather
-  // than only as this check quietly passing.
-  if (!refuses("---\nflow: ops-flow\n---\n\n# x\n", "document_write")) {
-    return "frontmatterRefusal no longer refuses content that opens with frontmatter — the " +
-           "rest of this check would pass by asking a question that has stopped mattering";
+  if (/flow|type|status/.test(JSON.stringify(content.metadata))) {
+    return `a planted envelope reached the metadata a write stores: ${JSON.stringify(content.metadata)}`;
   }
 
   const bad: string[] = [];
@@ -259,8 +290,8 @@ check("nothing sends the platform a document with frontmatter in it", () => {
 
 check("no write path lets a caller type an envelope field", () => {
   // The envelope is the platform's and the body is the caller's; there is no third source.
-  // document_write, and document_edit's whole-body `content`, refuse content that opens with
-  // frontmatter. An edit batch has no content to inspect — it has a `find` and a `replace` — and
+  // document_write, and document_edit's whole-body `content`, separate an envelope a caller sends
+  // and never store it as one (below). An edit batch has no content to inspect — it has a `find` and a `replace` — and
   // `find: "flow: ops-flow"` would land in the envelope as readily as in a section, so document_edit
   // applies a batch, and a section, to the BODY alone, and composes the envelope itself from the
   // stored one and its named arguments. The envelope is not text an edit can reach.
@@ -333,16 +364,48 @@ check("no write path lets a caller type an envelope field", () => {
     }
   }
 
-  // And each route that takes a whole body has to consult the frontmatter refusal, or the rule
-  // holds on nothing.
-  for (const tool of ["document_write", "document_edit"]) {
-    if (!new RegExp(`frontmatterRefusal\\([^,]+, "${tool}"\\)`).test(withoutComments(core))) {
-      bad.push(`${tool} does not call frontmatterRefusal, so content that opens with an envelope ` +
-               "reaches the store");
-    }
+  // And each route that takes a whole body has to separate its envelope, or the rule holds on
+  // nothing: document_write's handler, and document_edit's whole `content` in the change service.
+  // A body an edit batch or a section MAKES is asked whether it opens with an envelope.
+  //
+  // REPLACES "each route consults frontmatterRefusal": content's envelope never becomes the stored
+  // envelope. The platform-owned keys are ignored and reported, a malformed key is refused, and a
+  // made body that opens with a recognised envelope is refused — run below, on planted envelopes.
+  const tools = zzCoreTools();
+  const write = tools.find((t) => t.name === "document_write")?.body ?? "";
+  if (!/normalizeContent\(args\.content\b/.test(withoutComments(write))) {
+    bad.push("document_write does not normalise its content, so an envelope a caller sent reaches the store as one");
   }
-  if (!/const fm = mode === "content" \? frontmatterRefusal\(a\.content/.test(code)) {
-    bad.push("document_edit's whole-body `content` is not asked frontmatterRefusal before it is written");
+  if (!/normalizeContent\(mode === "content" \? a\.content/.test(code)) {
+    bad.push("document_edit's whole-body `content` is not normalised before it is written");
+  }
+  if (!/bodyEnvelopeRefusal\(next\)/.test(code)) {
+    bad.push("document_edit no longer asks whether the body an edit batch or a section makes opens with an envelope");
+  }
+  const ran = normalized([
+    { content: `---\n${PLANTED.map((k) => `${k}: planted`).join("\n")}\ntitle: Kept\n---\n# Spec\n` },
+    { content: "---\r\nstatus: approved\r\ndueDate: soon\r\n---\r\n# Spec\r\n" },
+    { content: "---\n\n# Spec after a rule\n" },
+  ]);
+  if (typeof ran === "string") return [...bad, ran].join("; ");
+  const [owned, malformed, rule] = ran;
+  if (owned.content.refusals) {
+    bad.push(`an envelope of platform-owned keys was refused rather than ignored: ${owned.content.refusals.join(" | ")}`);
+  } else {
+    const leaked = PLANTED.filter((k) => JSON.stringify(owned.content.metadata ?? {}).includes(`"${k}"`));
+    const unreported = PLANTED.filter((k) => !(owned.content.normalised ?? []).some((l) => new RegExp(`\\b${k}\\b`).test(l)));
+    if (leaked.length) bad.push(`${leaked.join(", ")} planted in content reached the stored envelope`);
+    if (unreported.length) bad.push(`${unreported.join(", ")} planted in content ${unreported.length > 1 ? "were" : "was"} dropped without a word`);
+    if (owned.content.metadata?.title !== "Kept") bad.push("an envelope's editable `title` was not taken");
+  }
+  if (!(malformed.content.refusals ?? []).some((r) => /UNSUPPORTED_METADATA.*dueDate/.test(r))) {
+    bad.push(`a malformed key in a CRLF envelope is not refused by name: ${JSON.stringify(malformed.content)}`);
+  }
+  if (rule.content.body !== "---\n\n# Spec after a rule\n" || rule.opened !== null) {
+    bad.push("a thematic break at the top of a body is no longer kept as markdown");
+  }
+  if (owned.opened === null || malformed.opened === null) {
+    bad.push("a body that opens with a recognised envelope is not refused on the edit path");
   }
   return bad.length ? bad.join("; ") : null;
 });

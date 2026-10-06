@@ -41,9 +41,7 @@ refuses("a dot-entry is refused",             R.slugRefusal(".git"));
 refuses("a slug that is already dated is refused, or the name would carry two",
                                               R.slugRefusal("2026-09-11-sample-intake"));
 
-/* frontmatterRefusal — the platform writes the envelope, never the caller */
-refuses("content opening with --- is refused", R.frontmatterRefusal("---\nflow: sdlc-flow\n---\n\n# Spec\n", "document_write"));
-allows("a body starting at its title is fine", R.frontmatterRefusal("# Spec\n\nbody\n", "document_write"));
+/* An envelope a caller sends is normalisation's: checks/document-normalize-rules.ts. */
 
 /* fieldRefusal — a caller's own keys, bounded */
 allows("a plain field is allowed",             R.fieldRefusal({ proposed_team_nodes: "2" }));

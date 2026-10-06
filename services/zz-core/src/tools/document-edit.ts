@@ -16,9 +16,10 @@ import { parseCaller } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { acceptanceLine, MAX_ATTEMPTS, NO_TEAM, planEdit, replayFor, replayText,
+import { acceptanceLine, filedAs, MAX_ATTEMPTS, NO_TEAM, planEdit, replayFor, replayText,
          RETRYABLE_UNAVAILABLE } from "../document-change.js";
 import { MAX_EDITS } from "../document-edits.js";
+import { normalizeTags } from "../document-normalize.js";
 import { fieldRefusal } from "../document-rules.js";
 import { saveDocument } from "../document-save.js";
 import { documentGuards } from "../guards.js";
@@ -91,14 +92,17 @@ export function registerDocumentEditTool(server: McpServer): void {
       if (blocked) return text(blocked);
       const unopened = await unopenedRefusal(p, team, path);
       if (unopened) return text(unopened);
-      // (2) The rules every write applies to a caller's field names and tags.
-      const { fields, tags } = args;
+      // (2) The rules every write applies to a caller's field names and tags — the tags lower-cased
+      // first, as they will be stored. An envelope sent in whole `content` is the change service's
+      // to separate (5), and its tags are held to the same rule there.
+      const { fields } = args;
+      const { tags } = normalizeTags(args.tags);
       const malformed = fieldRefusal(fields) ?? tagRefusal(tags);
       if (malformed) return text(malformed);
       // (3)–(10)
       const plan = await planEdit(p, team, who, path, args);
       if ("reply" in plan) return text(plan.reply);
-      const finish = async (): Promise<string> => plan.receipt
+      const finish = async (filed?: string): Promise<string> => filedAs(plan.receipt, plan.write.change?.captured?.relPath, filed)
         + (plan.renamed.length ? `\nRenamed to the heading this flow declares: ${plan.renamed.join(", ")}.` : "")
         + (plan.noChange ? "" : await acceptanceLine(p, team, plan.chain, path, plan.text))
         + await nextMoveLine(p, team, initiative);
@@ -127,7 +131,7 @@ export function registerDocumentEditTool(server: McpServer): void {
       } else {
         await noteDocument(plan.chain, path, "document", at, who, team);
       }
-      return text(await finish());
+      return text(await finish(written.capturedPath));
     }
     return text(RETRYABLE_UNAVAILABLE);
   });

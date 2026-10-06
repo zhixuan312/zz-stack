@@ -6,8 +6,8 @@ const size = (name: string, map: Record<string, string>, want: number) => {
   const n = Object.keys(map).length;
   if (n !== want) fail.push(`${name} has ${n} entries, expected ${want}`);
 };
-// 17 entries, not the 16 renames: block_skills is a merge rather than a rename, and still
-// needs an entry so its history resolves.
+// 17 entries, not 14 renames: block_skills, patch_file and revise_document are merges rather
+// than renames, and each still needs an entry so its history resolves.
 size("TOOL_ALIAS", TOOL_ALIAS, 17);
 // A rename map resolves a tool's history, so an entry normally outlives the rename. The
 // third-party-server tools carry none: the name they would resolve to is on no door, and an
@@ -25,6 +25,8 @@ const resolves: [Record<string, string>, string, string][] = [
   [TOOL_ALIAS, "close", "initiative_close"],
   [TOOL_ALIAS, "reconcile", "knowledge_reconcile"],
   [TOOL_ALIAS, "block_skills", "skill_list"],
+  [TOOL_ALIAS, "patch_file", "document_edit"],
+  [TOOL_ALIAS, "revise_document", "document_edit"],
   [TOOL_ALIAS, "reindex_knowledge", "knowledge_reindex"],
   [MANAGE_ALIAS, "add_person", "person_add"],
   [MANAGE_ALIAS, "my_client_setup", "client_setup"],

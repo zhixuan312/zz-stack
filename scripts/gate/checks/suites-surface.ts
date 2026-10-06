@@ -23,8 +23,8 @@ check("every plugin declares what it is, what it ships, and what each stage leav
 check("the core door speaks noun-first, and no caller still says the old name",
       runsCheck("core-names.ts"));
 
-check("a revision names its cause — one route or the other, never neither and never both",
-      runsCheck("revise-cause.ts"));
+check("a change to an approved body names its cause — a source on the record or new words, never neither",
+      runsCheck("edit-cause.ts"));
 
 check("a document read takes a list and a version, and history never vouches for the present",
       runsCheck("document-reads.ts"));

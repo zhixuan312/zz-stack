@@ -90,7 +90,7 @@ const TAG_TOKEN = /^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)?$/;
 /** A tag this document or node may not carry, or null.
  *
  * One rule for all three write paths into `zz.doc.tags`: knowledge_add, document_write and
- * document_revise.
+ * document_edit.
  *
  * Lowercase, because a tag is matched by equality: knowledge_search's tag leg lowercases the
  * words a person typed and intersects them with the stored array, so a tag written `Booking`
@@ -170,7 +170,7 @@ const SYSTEM_FILES = /(^|\/)(_?activity\.jsonl|_ledger\.md|_knowledge\/log\.md)$
 
 /** Guards every mutation passes, whichever tool asks.
  *
- * COUPLED: document_write and document_patch both call this. One function, so a guard added
+ * COUPLED: document_write and document_edit both call this. One function, so a guard added
  * later cannot land on one path only. */
 export function writeGuard(rawPath: string, via: "source_add" | null = null): string | null {
   // Normalised first: the journal pattern below anchors at the start, so
@@ -196,8 +196,7 @@ export function writeGuard(rawPath: string, via: "source_add" | null = null): st
   // documentGuards short-circuits on `parts.length !== 2`. The overwrite would land with a
   // fresh envelope carrying no `contributed_by`, no `supports` and no `added_at`, taking the
   // source out of `source_list`'s attribution, out of
-  // `initiative_status.sources_after_approval`, and out of `document_revise`'s owed-sources
-  // check.
+  // `initiative_status.sources_after_approval`, and out of the owed sources a change links.
   //
   // `via` is how source_add reaches its own directory: the tool that mints a source passes
   // its name rather than being recognised by the path it built.
@@ -206,7 +205,7 @@ export function writeGuard(rawPath: string, via: "source_add" | null = null): st
       "register one with source_add(initiative, title, content|path, supports), which stamps " +
       "who contributed it, when, and which document it bears on. A source that changed after " +
       "a document cited it is not evidence. If the material itself changed, add the new " +
-      "version as a new source and revise the document with document_revise.";
+      "version as a new source and change the document with document_edit, naming it in `sources`.";
   }
   return null;
 }

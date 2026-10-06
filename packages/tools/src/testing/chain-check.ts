@@ -134,12 +134,21 @@ function doc(body: string, name = ""): string {
 }
 
 /** A write. The flow is not an argument here — it is declared once, to `initiative_open`, and
- * `document_write` refuses one outright.
+ * `document_write` refuses one outright. A write creates: on a path that exists it is refused, and
+ * the document changes through `changeDoc`.
  *
  * The document's name reaches `doc()` so the body can carry the sections that document is
  * declared to need. `path` is `<initiative>/<name>`, and the manifest keys on the name. */
 const writeDoc = (path: string, body: string): Promise<string> =>
   call("document_write", { path, content: doc(body, path.split("/").pop() ?? "") });
+
+/** The whole body of a document that exists, replaced — `document_edit` with `content` alone.
+ *  `cause` is what an approved body needs: the words, filed as a source. */
+const changeDoc = (path: string, body: string, cause?: { content: string; title: string }): Promise<string> =>
+  call("document_edit", {
+    path, content: doc(body, path.split("/").pop() ?? ""),
+    ...(cause ? { source_content: cause.content, source_title: cause.title } : {}),
+  });
 
 async function main(): Promise<number> {
   // Identity first, before anything is written or approved: the team is read from the platform
@@ -227,43 +236,51 @@ async function main(): Promise<number> {
            : `${OPENS_ON} carries no gate, so the platform stamps it no status`,
          opened);
 
-  // And it stays without one through a revision: document_revise leaves an ungated document with
-  // no status rather than putting it back to `draft`.
+  // And it stays without one through a change that opens a new version: a caused change leaves an
+  // ungated document with no status rather than putting it back to `draft`.
   if (!opensGated) {
-    check(`revising ${OPENS_ON} is accepted`,
-      await call("document_revise", {
-        path: `${INIT}/${OPENS_ON}`, content: doc("revised", OPENS_ON),
-        source_content: "chain-check revised the opening document to prove an ungated one stays ungated.",
-        source_title: "chain-check: revising an ungated document",
+    check(`a caused change to ${OPENS_ON} is accepted`,
+      await changeDoc(`${INIT}/${OPENS_ON}`, "revised", {
+        content: "chain-check changed the opening document to prove an ungated one stays ungated.",
+        title: "chain-check: changing an ungated document",
       }), false);
     const revised = await call("document_read", { path: `${INIT}/${OPENS_ON}` });
     // DELIBERATE: through parseEnvelope, the one reader of an envelope. A regex here would be a
     // second one, and the two disagree the first time a value repeats or a body line starts with
     // the same word.
     record(parseEnvelope(revised).status === undefined,
-           `${OPENS_ON} carries no gate, so a revision leaves it no status`, revised);
+           `${OPENS_ON} carries no gate, so a new version leaves it no status`, revised);
   }
 
   // The gated document, written here so the approval rules below have one to run on, in flow
-  // order — everything it requires is already on the record. The patch below runs on a draft,
-  // while `status: draft` is still in the file.
+  // order — everything it requires is already on the record. The hand-written approval below is
+  // tried on a draft, while the envelope still says `status: draft`.
   if (FIRST_GATED !== OPENS_ON) {
     check(`write ${FIRST_GATED}`, await writeDoc(`${INIT}/${FIRST_GATED}`, FIRST_GATED), false);
   }
+  // Two ways to write an approval by hand, and neither reaches the envelope: `fields` refuses a
+  // name the platform writes, and an edit batch matches the BODY only, where `status:` is not.
   check("an approval written by hand is refused",
-    await call("document_patch", { path: `${INIT}/${FIRST_GATED}`, find: "status: draft", replace: "status: approved" }),
-    true, /document_patch edits the document's BODY/);
+    await call("document_edit", { path: `${INIT}/${FIRST_GATED}`, fields: { status: "approved" } }),
+    true, /status is written by the platform/);
+  check("an edit batch cannot reach the envelope",
+    await call("document_edit", {
+      path: `${INIT}/${FIRST_GATED}`, edits: [{ find: "status: draft", replace: "status: approved" }],
+    }), true, /NO_MATCH/);
 
-  // A gated draft is rewritten by document_write, and the platform's own fields survive it: the
-  // rewrite's envelope carries no `status`, which ownershipCheck must not read as a hand removal,
-  // and `version` must not reset to 1 — a reset makes the next revise file a revision number the
-  // document already has.
-  check(`a gated draft is rewritten by document_write`,
-    await writeDoc(`${INIT}/${FIRST_GATED}`, `${FIRST_GATED} rewritten`), false);
+  // A write creates, and only creates: on a document that exists it is refused, and says what
+  // changes one.
+  check("document_write does not overwrite a document that exists",
+    await writeDoc(`${INIT}/${FIRST_GATED}`, `${FIRST_GATED} rewritten`), true, /TARGET_EXISTS/);
+  // A gated draft's whole body is replaced by document_edit, and the platform's own fields survive
+  // it: the change sends no `status`, which ownershipCheck must not read as a hand removal, and a
+  // change with no cause stays at version 1.
+  check(`a gated draft's whole body is replaced by document_edit`,
+    await changeDoc(`${INIT}/${FIRST_GATED}`, `${FIRST_GATED} rewritten`), false);
   const rewritten = parseEnvelope(await call("document_read", { path: `${INIT}/${FIRST_GATED}` }));
   record(rewritten.status === "draft" && (rewritten.version ?? "1") === "1",
-    "a rewrite keeps the platform's own fields",
-    `after the rewrite status was ${JSON.stringify(rewritten.status)} and version ` +
+    "a change keeps the platform's own fields",
+    `after the change status was ${JSON.stringify(rewritten.status)} and version ` +
     `${JSON.stringify(rewritten.version)}, expected draft and 1`);
 
   // An ungated document cannot be approved. It is finished by being written; there is no verdict
@@ -330,12 +347,14 @@ async function main(): Promise<number> {
       true, /the flow writes it first|approval gate has not been recorded/);
   }
 
-  // Write each document as a draft and approve it as a separate act. Documents already approved
-  // are skipped: writing over an approved gated document is refused, and `document_approve`
-  // refuses a document the manifest declares without a gate.
+  // Write each document as a draft and approve it as a separate act. Documents this walk already
+  // wrote are skipped: a write creates, and is refused on a path that exists. Those are the opening
+  // document, which carries no gate when it is not the first gated one, and the first gated one,
+  // approved above; `document_approve` refuses a document the manifest declares without a gate.
   const gatedName = new Set(status.documents.filter((d) => d.gate === true).map((d) => d.name));
+  const written = new Set([OPENS_ON, FIRST_GATED]);
   for (const name of docs) {
-    if (settled.has(name)) continue;
+    if (settled.has(name) || written.has(name)) continue;
     check(`write ${name}`, await writeDoc(`${INIT}/${name}`, name), false);
     if (gatedName.has(name)) {
       // A verifying document (review.md) approves only once its sweep has run a round: one
@@ -353,11 +372,11 @@ async function main(): Promise<number> {
     }
   }
 
-  // And the refusal the skip above relies on, asserted rather than assumed: an approved gated
-  // document does not change through document_write.
-  check("an approved document does not change through document_write",
-    await writeDoc(`${INIT}/${FIRST_GATED}`, "rewritten"),
-    true, /document_revise/);
+  // And the rule an approval rests on, asserted rather than assumed: an approved document's body
+  // does not change without its cause, and the refusal names the two fields that carry one.
+  check("an approved document's body does not change without its cause",
+    await changeDoc(`${INIT}/${FIRST_GATED}`, "rewritten"),
+    true, /CAUSE_REQUIRED — .*`sources`.*`source_content`/);
 
   // Which document closes is not in initiative_status's document list — only `next_move` names
   // it, and it is not necessarily the last one. A flow's audit rounds produce a source supporting
@@ -413,21 +432,13 @@ async function main(): Promise<number> {
   // check after this one reported the same missing document.
   const before = await call("initiative_status", { initiative: INIT });
 
-  // The close is an act. Writing `outcome` into frontmatter by hand is refused: a derived fact
-  // cannot be forged by choosing the cheaper word.
-  //
-  // DELIBERATE: either refusal is the answer, and both are correct. The closing document is
-  // APPROVED by the time this runs, so `document_patch` reaches the approval rule first — an
-  // approval is a verdict on bytes a person read, and patching them is what `document_revise` is
-  // for. The outcome rule is what refuses the same edit on a document nobody has approved, and
-  // this probe walks the governed close, where the document always has been. Pinning this to one
-  // reason made the check report a correct refusal as a failure.
+  // The close is an act. Writing `outcome` into the envelope by hand is refused: a derived fact
+  // cannot be forged by choosing the cheaper word. `fields` is the one way an edit names an
+  // envelope field, and the platform's own names are refused there before anything else is read.
   check("an outcome written by hand is refused",
-    await call("document_patch", {
-      path: `${INIT}/${closing}`,
-      find: "flow:",
-      replace: "flow:\noutcome: accepted\nclosed_by: Chain Check",
-    }), true, /edits the document's BODY|is approved, so document_patch refuses it/);
+    await call("document_edit", {
+      path: `${INIT}/${closing}`, fields: { outcome: "accepted", closed_by: "Chain Check" },
+    }), true, /outcome, closed_by are written by the platform/);
 
 
   // DELIBERATE: skipped, not inverted, when the team name is unknown. Asserting that a close
@@ -474,29 +485,28 @@ async function main(): Promise<number> {
   // by reading `outcome` off the document, so anything able to remove that field would reopen the
   // initiative and put a second ledger row against the same work.
   //
-  // DELIBERATE: the revision is asserted to be accepted, not refused — `outcome: accepted` and
-  // `closed_by` survive it. A revision must cite material; the platform refuses one that cites
-  // nothing.
-  check("a closed document may be revised, and the outcome survives it",
-    await call("document_revise", {
-      path: `${INIT}/${closing}`, content: doc("reopened", closing),
-      source_content: "chain-check rewrote its own closing document to prove the outcome survives a revision.",
-      source_title: "chain-check: revising a closed document",
+  // DELIBERATE: the correction is asserted to be accepted, not refused — `outcome: accepted` and
+  // `closed_by` survive it, and it lands as a draft correction while the close and its ledger row
+  // stand. The closing document is approved, so its body changes only with a cause.
+  check("a closed document may be corrected, and the outcome survives it",
+    await changeDoc(`${INIT}/${closing}`, "reopened", {
+      content: "chain-check corrected its own closing document to prove the outcome survives a correction.",
+      title: "chain-check: correcting a closed document",
     }), false);
-  // Two guards stand behind "closes once" after a revision, and each is walked. The revision
+  // Two guards stand behind "closes once" after a correction, and each is walked. The correction
   // withdrew the closing document's approval, so the control loop refuses the claim first; once
-  // the revised document is approved again, the kernel refuses the second close in its own words:
-  // `closeInitiative` words it "the disposition that closed the work is not written twice".
+  // the corrected document is approved again, the kernel refuses the second close in its own
+  // words: `closeInitiative` words it "the disposition that closed the work is not written twice".
   // DELIBERATE: the reason moved, and the assertion says what is true now. The close landed before
-  // this revision — that is what the block above walked — so a second close is refused because the
-  // work is closed, which is the stronger version of the same rule. Want of an approval was the
+  // this correction — that is what the block above walked — so a second close is refused because
+  // the work is closed, which is the stronger version of the same rule. Want of an approval was the
   // refusal when the approve above could not land at all; a check that pinned that word reported a
   // correct refusal as a failure.
-  check("revising the closing document withdraws its approval, so a second close is refused",
+  check("correcting the closing document withdraws its approval, so a second close is refused",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
     true, /needs 1 approval|closing record already exists/);
   await call("document_present", { path: `${INIT}/${closing}` });
-  check("the revised closing document can be approved again",
+  check("the corrected closing document can be approved again",
     await call("document_approve", { path: `${INIT}/${closing}`, on_behalf_of: signer }), false);
   check("re-approving the closing document does not let the initiative close twice",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
@@ -555,14 +565,14 @@ async function main(): Promise<number> {
   record(/\/upload\/source\?/.test(upload) || /GATEWAY_PUBLIC_URL/.test(upload),
     "source_upload answers with the upload command, or names the key it would build one from", upload);
 
-  // And a source cannot be rewritten afterwards. `document_write` into `sources/` has three path
-  // segments, so chainFor returns an empty chain and every documentGuards check short-circuits:
-  // the overwrite lands with a fresh envelope carrying no `contributed_by`, no `supports` and no
-  // `added_at`.
+  // And a source cannot be rewritten afterwards. A path in `sources/` has three segments, so
+  // chainFor returns an empty chain and every documentGuards check short-circuits: a change would
+  // land with a fresh envelope carrying no `contributed_by`, no `supports` and no `added_at`.
+  // `writeGuard` refuses it by path, before the document is looked up.
   const sourcePath = /(sources\/[^\s)]+\.md)/.exec(sourced)?.[1];
   if (sourcePath) {
-    check("a registered source cannot be overwritten by document_write",
-      await writeDoc(`${INIT}/${sourcePath}`, "rewritten evidence"), true, /immutable/);
+    check("a registered source cannot be changed by document_edit",
+      await changeDoc(`${INIT}/${sourcePath}`, "rewritten evidence"), true, /immutable/);
   } else {
     console.log("  skip  a registered source cannot be overwritten — source_list named no path");
   }

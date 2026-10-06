@@ -72,8 +72,8 @@ const EXPECTED = [
   // filed; the three operator ones are registered here behind `if (sup)`, so role decides who
   // sees them rather than which door serves them.
   "bug_report", "bug_list", "bug_resolve", "bug_delete", "knowledge_reindex",
-  "document_approve", "document_edit", "document_list", "document_patch", "document_present", "document_read",
-  "document_revise", "document_write", "initiative_close", "initiative_open",
+  "document_approve", "document_edit", "document_list", "document_present", "document_read",
+  "document_write", "initiative_close", "initiative_open",
   "initiative_status", "knowledge_add",
   "knowledge_reconcile", "knowledge_search", "knowledge_supersede",
   "session_whoami", "skill_list", "skill_read", "source_add", "source_list", "source_upload",

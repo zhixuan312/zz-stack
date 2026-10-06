@@ -81,7 +81,7 @@ export function slugify(slug: string): string {
  * `due_date`, or a key with a space in it). A dropped field returns a successful write
  * and a document missing the pointer the flow's skill asked for.
  *
- * COUPLED: this is the one rule both write paths call — envelopeFor and document_revise. */
+ * COUPLED: this is the one rule every write path calls — document_write and document_edit. */
 export function fieldRefusal(fields: Record<string, unknown> | undefined): string | null {
   const names = Object.keys(fields ?? {}).map((k) => k.trim());
   const clash = names.filter((k) => RESERVED_ENVELOPE.has(k));
@@ -106,7 +106,7 @@ export function fieldRefusal(fields: Record<string, unknown> | undefined): strin
  *
  * Every envelope field comes either from a fact the platform already holds — which flow governs
  * this initiative, what role the manifest gives this document, what day it is — or from an
- * explicit act: document_approve(), initiative_close(), document_revise. There is no third
+ * explicit act: document_approve(), initiative_close(). There is no third
  * source, so frontmatter a caller wrote is refused on the way in rather than audited after the
  * fact. What a document says is the model's work; what a document is is a set of facts the
  * platform fills. */
@@ -120,38 +120,6 @@ export function frontmatterRefusal(content: string, tool: string): string | null
     "from document_approve() and initiative_close(); anything else the document needs — `stakeholder`, `tags`, " +
     "`title` — is a named argument to this call, so it is recorded as something you were told " +
     "rather than something you composed."
-  );
-}
-
-/** A patch that reaches the envelope, or null.
- *
- * The counterpart to frontmatterRefusal, for the write path that edits text in place. That
- * one refuses content that opens with frontmatter; document_patch has no content to inspect —
- * it has a `find` and a `replace`, and `find: "flow: ops-flow"` lands in the envelope as
- * readily as in a section.
- *
- * Compared as a block, before and after, rather than field by field. ownershipCheck already
- * compares the fields the platform owns and it is not enough here: `flow` is not one of
- * them, and it is the field that decides which gates, which required documents and which
- * closing rule govern the initiative. `version` is the same shape — document_revise owns it,
- * stampEnvelope adds it only when absent, so a patched one stands and desynchronises the
- * document from its own revisions.
- *
- * There is no repair route through a patch: the flow is declared to `initiative_open` and
- * cannot be adopted afterwards. Every skill that teaches document_patch teaches it for
- * body content — filling a `<!-- brief: -->` marker, one section at a time. */
-export function envelopeEditRefusal(before: string, after: string): string | null {
-  const was = ENVELOPE_BLOCK.exec(before)?.[0] ?? "";
-  const now = ENVELOPE_BLOCK.exec(after)?.[0] ?? "";
-  if (was === now) return null;
-  return (
-    "ERROR: document_patch edits the document's BODY — this patch changes its frontmatter, which " +
-    "the platform writes. A gate is recorded by document_approve(); an outcome by initiative_close(); the flow, " +
-    "the title, the stakeholder and the tags are named arguments to document_write and " +
-    "document_revise, so they arrive as something you were told rather than something you " +
-    "composed. The FLOW is not among them: it is declared to initiative_open and cannot be " +
-    "adopted afterwards, so an initiative that declares none declares none deliberately and " +
-    "there is nothing here to repair."
   );
 }
 

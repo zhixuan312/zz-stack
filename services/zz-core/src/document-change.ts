@@ -16,8 +16,12 @@
  * The precedence a call is answered in — the first that applies answers — is numbered at each
  * step below as the plan numbers it, (0) and (3) to (10); (1), (2) and (11) — the path, the field
  * and tag rules every write applies, and the guards — are the tool's own.
+ *
+ * `document_write`'s create is computed here too (`planCreate`), on the same precedence: a request
+ * key first, then the target, which for a create must be absent. Its v1 records its causes as an
+ * edit's new version does — named, captured and owed by the one definition below.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
@@ -27,18 +31,12 @@ import { chainFor } from "./chain.js";
 import { applyEdits, type Edit, type EditRefusal, MAX_EDITS } from "./document-edits.js";
 import { changedSections, locateSection, replaceSection } from "./document-parts.js";
 import { frontmatterRefusal, oneLine, renderEnvelope } from "./document-rules.js";
-import { contentIdentity, documentState, type saveDocument } from "./document-save.js";
+import { contentIdentity, documentState, type saveDocument, targetExists } from "./document-save.js";
 import { sourceDocument } from "./indexing.js";
 import { DOC_REF, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
 import { contentRevision, documentAt, loadDocument, principalId } from "./versions.js";
-import { type Chain, isoToday, normalizeSections } from "./write-guards.js";
-
-/** A deployment with no database has no store left: the columns are where a document lives, and
- *  there is no file to fall back to. Said once, in the refusals that would otherwise reach a
- *  pool that is not there. */
-export const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
-  "nowhere to read or write this document.";
+import { type Chain, envelopeFor, isoToday, normalizeSections } from "./write-guards.js";
 
 /** A person the platform cannot place in a team has no store to act on. */
 export const NO_TEAM = "ERROR: you are not in a team — a team's documents live in the database under " +
@@ -142,11 +140,15 @@ function canonical(v: unknown): string {
   return JSON.stringify(v);
 }
 
+/** The tools a request key is recorded for. A key is held per path, so the tool's name in the
+ *  digest is what tells a create from a change sent under one key. */
+type RequestTool = "document_edit" | "document_write";
+
 /** What a request key is held to: the tool's name, a newline, and every argument but the key. */
-function requestDigest(args: EditArgs): string {
+function requestDigest(args: EditArgs, tool: RequestTool): string {
   const rest: Record<string, unknown> = { ...args };
   delete rest.request_id;
-  return createHash("sha256").update(`document_edit\n${canonical(rest)}`, "utf8").digest("hex");
+  return createHash("sha256").update(`${tool}\n${canonical(rest)}`, "utf8").digest("hex");
 }
 
 /** The receipt a committed request returns again, its first line marked as a replay. */
@@ -163,6 +165,7 @@ export function replayText(receipt: Record<string, unknown>): string {
  *  again under the lock, which is what makes two identical requests commit once. */
 export async function replayFor(
   p: Pick<pg.Pool, "query">, team: string, who: string, path: string, args: EditArgs,
+  tool: RequestTool = "document_edit",
 ): Promise<string | null> {
   if (args.request_id === undefined) return null;
   const principal = await principalId(p, who);
@@ -172,7 +175,7 @@ export async function replayFor(
       where t.slug = $1 and q.principal_id = $2::uuid and q.canonical_path = $3 and q.request_id = $4`,
     [team, principal, path, args.request_id]);
   if (!rows[0]) return null;
-  return rows[0].request_digest === requestDigest(args)
+  return rows[0].request_digest === requestDigest(args, tool)
     ? replayText(rows[0].receipt)
     : "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request";
 }
@@ -182,21 +185,29 @@ function receiptOf(lines: string[], facts: Record<string, unknown>): Record<stri
   return { text: lines.join("\n"), ...facts };
 }
 
-/** The sources a change to `doc` owes: sources in its initiative that declare they support it — a
- *  `supports` link to it, or a `supports` declaration on their current revision naming it — that no
- *  revision of any version of it cites yet, and whose current revision was filed at or after the
- *  cause-link epoch. "Filed" is that revision's `written_at`, compared inclusively; a null one is
- *  never owed, and a store with no epoch row has no lower bound. The one definition of an owed
- *  source, in ONE statement, however many sources the initiative holds. */
-async function owedSources(p: Pick<pg.Pool, "query">, docId: string): Promise<Cause[]> {
+/** The sources a change to a document owes: sources in its initiative that declare they support
+ *  it — a `supports` link to it, or a `supports` declaration on their current revision naming it —
+ *  that no revision of any version of it cites yet, and whose current revision was filed at or
+ *  after the cause-link epoch. "Filed" is that revision's `written_at`, compared inclusively; a null
+ *  one is never owed, and a store with no epoch row has no lower bound. The one definition of an
+ *  owed source, in ONE statement, however many sources the initiative holds.
+ *
+ *  The target is named by its path, and by its row when it has one: a create has none yet, so the
+ *  link and citation arms find nothing and a source filed before the target existed is owed by its
+ *  declaration alone — which is how v1 links it. */
+async function owedSources(
+  p: Pick<pg.Pool, "query">, team: string, initiative: string, name: string, docId: string | null,
+): Promise<Cause[]> {
   const { rows } = await p.query<{ path: string; revision: number }>(
-    `select i.slug || '/' || s.path as path, s.current_revision as revision
-       from zz.doc t
-       join zz.doc s on s.initiative_id = t.initiative_id and s.id <> t.id and s.path like 'sources/%'
-       join zz.initiative i on i.id = s.initiative_id
+    `with t as (select i.id as initiative_id, i.slug, $3::text as path, $4::uuid as id
+                  from zz.initiative i join zz.team tm on tm.id = i.team_id
+                 where tm.slug = $1 and i.slug = $2)
+     select t.slug || '/' || s.path as path, s.current_revision as revision
+       from t
+       join zz.doc s on s.initiative_id = t.initiative_id and s.id is distinct from t.id
+                    and s.path like 'sources/%'
        join zz.doc_revision r on r.doc_id = s.id and r.revision = s.current_revision
-      where t.id = $1::uuid
-        and r.written_at is not null
+      where r.written_at is not null
         and ((select e.epoch from zz.cause_link_epoch e limit 1) is null
              or r.written_at >= (select e.epoch from zz.cause_link_epoch e limit 1))
         and (exists (select 1 from zz.doc_link l
@@ -204,7 +215,7 @@ async function owedSources(p: Pick<pg.Pool, "query">, docId: string): Promise<Ca
              or t.path = any(string_to_array(replace(coalesce(r.fields->>'supports', ''), ' ', ''), ',')))
         and not exists (select 1 from zz.doc_link c
                          where c.from_doc_id = t.id and c.to_doc_id = s.id and c.kind = 'cites')
-      order by s.path`, [docId]);
+      order by s.path`, [team, initiative, name, docId]);
   return rows.map((r) => ({ path: r.path, revision: r.revision, linked_by: "platform" as const }));
 }
 
@@ -411,7 +422,7 @@ export async function planEdit(
     causes.push({ path: rel, revision: 1, linked_by: "agent" });
   }
   if (bodyChanged) {
-    for (const owed of await owedSources(p, loaded.doc.id)) {
+    for (const owed of await owedSources(p, team, initiative, name, loaded.doc.id)) {
       if (!causes.some((c) => c.path === owed.path)) causes.push(owed);
     }
   }
@@ -454,9 +465,77 @@ export async function planEdit(
 }
 
 /** The request record a keyed change commits with: the key, what it digests to, and its receipt. */
-function requestOf(a: EditArgs, who: string, path: string, lines: string[], facts: Record<string, unknown>) {
+function requestOf(a: EditArgs, who: string, path: string, lines: string[], facts: Record<string, unknown>,
+                   tool: RequestTool = "document_edit") {
   return a.request_id === undefined ? undefined : {
-    principalEmail: who, canonicalPath: path, requestId: a.request_id, digest: requestDigest(a),
+    principalEmail: who, canonicalPath: path, requestId: a.request_id, digest: requestDigest(a, tool),
     receipt: receiptOf(lines, { path, ...facts }),
+  };
+}
+
+
+/** What `document_write` is called with. */
+interface CreateArgs {
+  path: string;
+  content: string;
+  title?: string; tags?: string[]; stakeholder?: string; fields?: Record<string, string>;
+  sources?: string[]; source_content?: string; source_title?: string;
+  request_id?: string;
+}
+
+/** (3) onwards for a create: the absent target, its envelope and sections, its causes and its
+ *  receipt — or the answer that stops it. `path` is canonical. The document's id is chosen here, so
+ *  the receipt a keyed create records names the content revision it will have. */
+export async function planCreate(
+  p: pg.Pool, team: string, who: string, path: string, a: CreateArgs,
+): Promise<{ reply: string } | Omit<Planned, "noChange" | "replaced">> {
+  const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
+  if (await documentAt(p, team, path)) return { reply: targetExists(path) };
+  // The chain from the caller's bytes and, failing that, the initiative's row — a first document
+  // is written before any other carries a `flow:`.
+  const chain = await chainFor(p, team, path, a.content);
+  const { stakeholder, tags, title, fields } = a;
+  const fixed = normalizeSections(chain, path, envelopeFor(chain, path, a.content, { stakeholder, tags, title, fields }));
+  const causes: Cause[] = [];
+  for (const src of [...new Set((a.sources ?? []).map((x) => x.trim()))]) {
+    const rel = `${initiative}/${src}`;
+    const at = DOC_REF.test(src) ? await documentAt(p, team, rel) : null;
+    if (!at || at.current_revision === null) {
+      return { reply: `ERROR: ${rel} is not a document in this team's store, so it cannot be named as ` +
+        `a cause of ${path}. source_add files new material, or pass the words themselves as ` +
+        "`source_content`." };
+    }
+    causes.push({ path: rel, revision: at.current_revision, linked_by: "agent" });
+  }
+  let captured: { relPath: string; text: string } | undefined;
+  if (a.source_content?.trim()) {
+    const sourceTitle = (a.source_title || "Input behind v1").trim();
+    const day = isoToday();
+    // Named exactly as source_add names one, suffixed when the name is taken.
+    const stem = `${initiative}/sources/${day}-${titleSlug(sourceTitle, "source")}`;
+    let rel = `${stem}.md`;
+    for (let n = 2; await documentAt(p, team, rel); n++) rel = `${stem}-${n}.md`;
+    captured = { relPath: rel, text: sourceDocument({ title: sourceTitle, by: who, day,
+                                                      content: a.source_content.trim(), supports: [name] }) };
+    causes.push({ path: rel, revision: 1, linked_by: "agent" });
+  }
+  for (const owed of await owedSources(p, team, initiative, name, null)) {
+    if (!causes.some((c) => c.path === owed.path)) causes.push(owed);
+  }
+  const id = randomUUID();
+  const lines = [
+    `written: ${path} (${fixed.content.length} chars)`,
+    // A new document's content generation is 0 until its first change.
+    `content revision: ${contentRevision(id, 0)}`,
+    `causes: ${capped(causes.map((c) => `${c.path} (${c.linked_by})`))}`,
+  ];
+  return {
+    chain, text: fixed.content, renamed: fixed.renamed, receipt: lines.join("\n"), causes,
+    write: {
+      team, relPath: path, initiative, text: fixed.content, by: who, id, mode: "create", act: "write",
+      flow: chain.name ?? undefined, type: chain.roles[name],
+      change: { nextVersion: false, captured, causes,
+                request: requestOf(a, who, path, lines, { result: "created", version: 1 }, "document_write") },
+    },
   };
 }

@@ -62,7 +62,7 @@ interface DocIdentity {
   type: string;
   status: string;
   /** The close's verdict, on the document that carried it — a key of the current revision's
-   *  `fields` payload. `document_revise` reads it to know the initiative already closed. */
+   *  `fields` payload. The guards read it to know the initiative already closed. */
   outcome: string | null;
   current_revision: number | null;
   approved_revision: number | null;
@@ -113,8 +113,11 @@ function pool(): pg.Pool | null {
   return platformDb();
 }
 
+/** A deployment with no database has no store left: the columns are where a document lives, and
+ *  there is no file to fall back to. Said once, for every reader and writer that would otherwise
+ *  reach a pool that is not there. */
 export const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
-  "nowhere to write this document.";
+  "nowhere to read or write this document.";
 
 /** Every revision of a document, oldest first, each with the addresses its id columns name. `bodyOf`
  * is the one revision whose TEXT the caller will read: `body` is stored out of line and Postgres
@@ -352,7 +355,7 @@ export async function documentPaths(team: string, prefix?: string): Promise<stri
 
 /** The documents one revision cites, by the path each one is addressed by — the `cites` links
  * a source's `supports` list became. */
-export async function citationsOf(
+async function citationsOf(
   p: Pick<pg.Pool, "query">, docId: string, revision: number,
 ): Promise<string[]> {
   const { rows } = await p.query<{ initiative: string; path: string }>(
@@ -360,25 +363,6 @@ export async function citationsOf(
        join zz.doc t on t.id = l.to_doc_id
        join zz.initiative i on i.id = t.initiative_id
       where l.from_doc_id = $1::uuid and l.from_revision = $2 and l.kind = 'cites'
-      order by i.slug, t.path`, [docId, revision]);
-  return [...new Set(rows.map((r) => `${r.initiative}/${r.path}`))];
-}
-
-/** The documents one revision bears on, by the path each is addressed by — the `supports` links a
- *  source's own `supports` list became.
- *
- *  The sibling of `citationsOf` and deliberately not the same query: `cites` names an exact
- *  revision this one read, `supports` names a document it was written FOR, and the two lists differ
- *  on every source that records a round without reading a revision. A reader that wants "what was
- *  this written for" asks here; a reader that wants "what did it read" asks there. */
-export async function supportsOf(
-  p: Pick<pg.Pool, "query">, docId: string, revision: number,
-): Promise<string[]> {
-  const { rows } = await p.query<{ initiative: string; path: string }>(
-    `select i.slug as initiative, t.path from zz.doc_link l
-       join zz.doc t on t.id = l.to_doc_id
-       join zz.initiative i on i.id = t.initiative_id
-      where l.from_doc_id = $1::uuid and l.from_revision = $2 and l.kind = 'supports'
       order by i.slug, t.path`, [docId, revision]);
   return [...new Set(rows.map((r) => `${r.initiative}/${r.path}`))];
 }
@@ -416,8 +400,8 @@ export async function principalId(
  * than spelled here — the writer and the reader of this record must agree on it by construction,
  * because `document_approve` is refused by what the reader finds.
  *
- * `document_write`/`document_patch`/`document_revise` still name the acts they always named, so
- * a reader asking "what changed this document" reads the same words it read from the journal. */
+ * `document_write`/`document_edit` and the acts name what they did, so a reader asking "what
+ * changed this document" reads the tool's own name. */
 export function recordAct(relPath: string | null, entry: Record<string, unknown>): void {
   const initiative = relPath?.replace(/^\/+/, "").split("/")[0] || null;
   platformEvent({

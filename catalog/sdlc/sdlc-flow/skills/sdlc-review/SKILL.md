@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.13
+version: 1.14
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -62,7 +62,7 @@ of the flow end to end — run them and quote them. A criterion nothing can run 
 evidence is not.
 
 The platform asks `evidence_relation` of every established row when `review.md` is written or
-patched — the criterion as the claim, your evidence as the passage, or only "did it pass" for a
+edited — the criterion as the claim, your evidence as the passage, or only "did it pass" for a
 row naming every check the plan declares for it — and caches the answer per row. At approval:
 
 - a reading of `no` (the evidence does not support the criterion) refuses that row;
@@ -71,9 +71,15 @@ row naming every check the plan declares for it — and caches the answer per ro
   accepts it;
 - `unavailable` blocks nothing, and the approval says the row rests on the rules alone.
 
-Write `review.md` yourself: `document_read` it first if it exists, then
-`document_write(path: "<initiative>/review.md", content)` with the body — `## Acceptance evidence`,
-`## Backlog`, `## Verdict`. Then `document_present` it in a separate call, and ask for the approval.
+Write `review.md` yourself, once: `document_write(path: "<initiative>/review.md", content)` with
+the body — `## Acceptance evidence`, `## Backlog`, `## Verdict`. After that it exists, and
+`document_write` refuses it; every later change — a row sharpened, a backlog line from a later
+round, the verdict — is `document_edit`. `document_read` the part you are changing first, then
+send only it: `document_edit(path: "<initiative>/review.md", section: "Backlog", content:
+"## Backlog\n\n<the section as it now reads>")`, or `edits` for a line. Once it is approved, a
+change also names its cause in `sources` — the round or the stakeholder's source that prompted
+it — or is refused `CAUSE_REQUIRED`. Then `document_present` it in a separate call, and ask for
+the approval.
 
 ## B. Defect sweep — secondary, bounded
 

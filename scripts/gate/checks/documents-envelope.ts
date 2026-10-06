@@ -80,7 +80,7 @@ check("only an act may move the fields the platform owns", () => {
   // approved_at, outcome or closed_by — unless the caller passes `via`, saying it is the act
   // that legitimately moves them. `via` is a bypass, so it is only safe while the list of
   // callers holding it is exactly the list that should.
-  const ACTS = ["document_approve", "initiative_close", "document_revise", "document_edit"];
+  const ACTS = ["document_approve", "initiative_close", "document_edit"];
   const src = zzCoreSource();
   const lines = src.split("\n");
   const holders: { tool: string; via: string; line: number }[] = [];
@@ -176,14 +176,15 @@ check("the envelope vocabulary is defined once", () => {
 check("the model writes the body and the platform writes the envelope", () => {
   // Every envelope field comes either from a fact the platform holds — which flow governs
   // this initiative, what role the manifest gives the document, what day it is — or from an
-  // explicit act. So document_write and document_revise refuse content that opens with
+  // explicit act. So document_write and document_edit refuse content that opens with
   // frontmatter, and a skill still showing one in a fenced block teaches a call that fails on
   // the first save. Both halves are checked together: the refusal without the templates
   // breaks every flow, and the templates without the refusal drift back.
   const src = zzCoreSource();
   const bad: string[] = [];
-  for (const tool of ["document_write", "document_revise"]) {
-    if (!new RegExp(`frontmatterRefusal\\(content, "${tool}"\\)`).test(src)) {
+  // The content argument is not pinned: document_edit asks it of `a.content ?? ""`.
+  for (const tool of ["document_write", "document_edit"]) {
+    if (!new RegExp(`frontmatterRefusal\\([^,]+, "${tool}"\\)`).test(src)) {
       bad.push(`${tool} accepts frontmatter the model composed`);
     }
   }

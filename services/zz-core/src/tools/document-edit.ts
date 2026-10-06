@@ -16,7 +16,7 @@ import { parseCaller } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { acceptanceLine, MAX_ATTEMPTS, NO_DB, NO_TEAM, planEdit, replayFor, replayText,
+import { acceptanceLine, MAX_ATTEMPTS, NO_TEAM, planEdit, replayFor, replayText,
          RETRYABLE_UNAVAILABLE } from "../document-change.js";
 import { MAX_EDITS } from "../document-edits.js";
 import { fieldRefusal } from "../document-rules.js";
@@ -26,7 +26,7 @@ import { noteDocument, noteRevision } from "../host/observe.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { safePath, tagRefusal, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
-import { recordAct } from "../versions.js";
+import { NO_DB, recordAct } from "../versions.js";
 import { nextMoveLine } from "./initiative-status.js";
 
 export function registerDocumentEditTool(server: McpServer): void {

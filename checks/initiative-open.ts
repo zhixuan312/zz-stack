@@ -594,7 +594,7 @@ for (const p of swept) {
 // 8. "Freeform accepts every operation a governed one does"
 //
 // Three guards key off `chain.docs`, which is an empty set for a freeform initiative: the two
-// value guards below go quiet, and the membership tests in document_approve, document_revise
+// value guards below go quiet, and the membership tests in document_approve, document_edit
 // and initiative_close refuse outright unless written to allow it.
 
 // 8a. The value guards, driven. `statusCheck` and `outcomeCheck` are pure functions of a

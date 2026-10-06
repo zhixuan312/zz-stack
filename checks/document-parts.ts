@@ -9,10 +9,10 @@
  *   3. presenting that document in parts records `shown_part` rows, counts as presented
  *      (shownSinceLastChange) only once the parts cover the body, appends exactly one `shown`,
  *      and a rewrite after that makes it unpresented again;
- *   5. `replaceSection` — what `document_revise` with `section` writes — replaces one heading's
+ *   5. `replaceSection` — what `document_edit` with `section` writes — replaces one heading's
  *      section and keeps every other character of the body byte for byte, refuses an absent or
  *      ambiguous heading and a replacement that does not start with a heading, and a heading inside
- *      a code fence is not one; the real `document_revise` schema takes `section`;
+ *      a code fence is not one; the change service splices `content` into the current body;
  *   4. the real `document_read` and `document_present` schemas accept `section`, `offset` and
  *      `limit`;
  *   6. a heading's level and then its occurrence pick one of several same-named headings — the
@@ -265,17 +265,13 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   is("body" in fenced && fenced.body === "## Keep\n\nk\n\n## Swap\n\nnew\n\n## After\n\na\n",
      `a heading inside a code fence ended the section: ${JSON.stringify(fenced)}`);
 
-  interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
-  const tools = new Map<string, { inputSchema?: Record<string, ZodLike> }>();
-  const { registerInitiativeActTools } = await load("services/zz-core/dist/tools/initiative-acts.js");
-  registerInitiativeActTools({ registerTool: (name: string, def: { inputSchema?: Record<string, ZodLike> }) => tools.set(name, def) });
-  is(tools.get("document_revise")?.inputSchema?.section?.safeParse("Phase 5").success,
-     "document_revise takes no `section`, so a large document still has to be sent whole");
-  // And it splices rather than overwrites: a `section` accepted and then ignored would write one
-  // section's text over the whole document, which is the worst thing this argument could do.
-  const revise = readFileSync(join(process.cwd(), "services/zz-core/dist/tools/initiative-acts.js"), "utf8");
-  is(/replaceSection\(documentBody\(loaded\.text\), section, content\)/.test(revise),
-     "document_revise does not splice `content` into the current body when `section` is given");
+  // `document_edit` takes `section` — its schema is asserted in 6 — and splices rather than
+  // overwrites: a `section` accepted and then ignored would write one section's text over the whole
+  // document, which is the worst thing this argument could do.
+  const service = readFileSync(join(process.cwd(), "services/zz-core/dist/document-change.js"), "utf8");
+  is(/const body = documentBody\(loaded\.text\);/.test(service) && /sectionBody\(path, body, a\)/.test(service)
+     && /replaceSection\(body, section, a\.content \?\? "", pick\)/.test(service),
+     "document_edit does not splice `content` into the current body when `section` is given");
 }
 
 // 6. Selectors

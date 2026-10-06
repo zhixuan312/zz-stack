@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.21
+version: 1.22
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -16,10 +16,10 @@ when_to_use: "The spec is written, agreed and audited, and the work needs an ord
 never dispatched. Order, risk and scope are the person's judgement, and a dispatched plan is a
 plausible ordering nobody chose.
 
-**Write it with the platform's `document_write` into the initiative, as `plan.md`.** Never a local
-path. While the plan is a draft, `document_write` and `document_patch` work on it; once it is
-approved the platform refuses both, and the plan changes through `document_revise`. See *Coming back from the
-audit, or from execution* at the end of this skill.
+**Create it with the platform's `document_write` into the initiative, as `plan.md`.** Never a local
+path. Every change after that is `document_edit`, sending only what changed: on a draft it
+needs no cause; once the plan is approved a change to it names its cause and opens the next
+version. See *Coming back from the audit, or from execution* at the end of this skill.
 
 ## Role
 
@@ -56,9 +56,10 @@ is a record of what happened, not a forecast.
 - **Every later cycle:** read the last phase's `### As built` first. If it disproved a core
   statement from the spec, stop: this is not a planning problem, it goes back to `sdlc-spec`, and
   the person agrees the changed destination before any further phase is planned. Otherwise
-  `document_revise` the plan, citing the execution report as its source, and fill in the next
-  phase's tasks — with `section` naming that phase's heading, so only the phase is sent: a plan
-  that grows a phase at a time outgrows one tool call long before it is finished. Task ids
+  fill in the next phase's tasks with a section edit — `document_edit` with `section` naming
+  that phase's heading and `content` the phase as it now reads, heading line first — citing
+  the execution report in `sources`, so only the phase is sent: a plan that grows a phase at a
+  time outgrows one tool call long before it is finished. Task ids
   continue straight through: Phase 2's first task follows Phase 1's last.
 - **Only written phases are validated.** `validatePlan` checks every task written and lists a
   phase with no tasks as not yet planned; `initiative_status`'s `plan` reports the current phase
@@ -377,14 +378,14 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    methodology's skills; this flow executes its own plans.
 
    **The id in the marker is not decoration — it is what makes the next step possible.**
-   `document_patch` replaces a fragment that occurs EXACTLY ONCE and refuses one that repeats, so
+   An edit's `find` must occur EXACTLY ONCE, and one that repeats is refused, so
    a scaffold whose eleven tasks all say `<!-- enrich -->` can have its first task filled and
    not one of the other ten. Uniqueness is what does the work, which is why each marker carries
    its own task id.
 3. **Fill each task** one at a time (technical AC + Contract + any declared checks), in dependency
-   order, with `document_patch("<initiative>/plan.md", find: "<!-- enrich: I-N -->", replace: "<the
-   task's complete body>")` — the marker line is the `find`, and the task id is what makes it
-   unique. Never rewrite the whole file. Continue until zero `<!-- enrich` markers remain.
+   order, with `document_edit(path: "<initiative>/plan.md", edits: [{find: "<!-- enrich: I-N -->",
+   replace: "<the task's complete body>"}])` — the marker line is the `find`, and the task id is
+   what makes it unique. Never rewrite the whole file. Continue until zero `<!-- enrich` markers remain.
 4. **Close** with `## Integration hotspots` (or one line saying there are none), a whole-deliverable
    gate and a Spec-coverage traceability table mapping every spec
    AC to its task(s). The gate is whatever checks the FINISHED deliverable as a whole, rather than
@@ -434,39 +435,47 @@ The next thing that runs, once the approval is recorded, is `sdlc-execute` on th
 
 `sdlc-plan-audit` returns findings on a phase that is still a draft, and `sdlc-execute` sends an
 approved plan back when a task's contract turns out to be wrong against the real code. Answer
-both with `document_revise`: it records the round or the report as the cause. On an approved plan
-it is the only route — **`document_write` and `document_patch` are refused on it outright** —
-because `plan.md` carries `gate: true`, and writing over an approved document would leave the
+both with `document_edit`, naming the round or the report as the cause. On an approved plan the
+cause is not optional — a change with none is refused `CAUSE_REQUIRED` — because `plan.md`
+carries `gate: true`, and changing an approved document without its reason would leave the
 approver's name standing on bytes they never read.
 
-**Revise it with `document_revise`.** One call does all of it:
+**Change only the phase, or only the tasks, the finding is about.** A section edit sends that
+part and keeps the rest byte for byte:
 
 ```
-document_revise(
+document_edit(
   path: "<initiative>/plan.md",
-  content: "<the full revised plan>",
+  section: "Task I-4: <its title>",
+  content: "### Task I-4: <its title>\n\n<the task as it now reads>",
   sources: ["sources/<the audit round you are answering>.md"])
 ```
 
+Several tasks in one call is `edits`, one exact `{find, replace}` per fragment. Send the whole
+plan as `content` only when the change is not one section's.
+
 **The audit round is already a source.** `sdlc-plan-audit` registered it with `source_add`,
 supporting `plan.md` — so cite that file rather than pasting its findings back, which would put
-one round on the record twice. The platform refuses this revision until you do: a source that
-supports `plan.md` and is newer than the version you are replacing is, by its own declaration,
-what this revision answers. `document_list` on the initiative shows the sources.
+one round on the record twice. A round filed since the release that began cause links is linked
+by the platform to the next change of the plan's body even unnamed, and the reply says so; one
+filed before it is never linked automatically. Name it in `sources` either way: it is what this
+change answers. `document_list` on the initiative shows the sources.
 
 `source_content` is still right for a cause that exists nowhere else — an execution report, or
 something a person said:
 
 ```
-document_revise(
+document_edit(
   path: "<initiative>/plan.md",
-  content: "<the full revised plan>",
+  section: "Phase 2 — <what works at the end>",
+  content: "## Phase 2 — <what works at the end>\n\n<the phase as it now reads>",
   source_content: "<the execution report or the person's own words, verbatim>",
   source_title: "<what sent it back>")
 ```
 
-The platform bumps the version, returns the document to draft, clears any stale approval and
-keeps the approved copy as the sealed revision `document_read(<path>, version: N)` answers with. Mark every task `unchanged`, `changed` or `new`, and
+A cause new to the plan's version opens the next one; on an approved plan it returns the
+document to draft, clears the stale approval and keeps the approved copy as the sealed revision
+`document_read(<path>, version: N)` answers with. Mark every task `unchanged`, `changed` or `new`, and
 add the tasks that undo anything an earlier round built that no longer belongs. Do not write a
 second plan; execution needs one document.
 
@@ -508,9 +517,9 @@ scaffold in one write with a uniquely-id'd marker per task, fill one task at a t
 marker remains, close with the gate and the traceability table, dispatch the plan audit, answer
 its rounds, present, ask. The forward exit is `sdlc-execute`, once the approval is recorded. After `sdlc-execute` appends a phase's
 `### As built`, this stage runs again for the next phase; a phase that disproved a core statement
-exits back to `sdlc-spec` instead. The return exit is `document_revise` citing the
-source that sent it back — `document_write` and `document_patch` are refused on an approved plan,
-because writing over one leaves the approver's name standing on bytes they never read. Writing a
+exits back to `sdlc-spec` instead. The return exit is `document_edit` naming the
+source that sent it back — on an approved plan a change without its cause is refused,
+because changing one without its reason leaves the approver's name standing on bytes they never read. Writing a
 second plan is not an exit at all: execution needs one document.
 
 **Degraded behaviour:** the target genuinely has no suite, so the `## Full-suite gate` section

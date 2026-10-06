@@ -123,10 +123,21 @@ check("a record that is counted is a record that is written once", () => {
   // `closed_at is null`, which is the ROW refusing a second close rather than a file the close
   // chooses not to append to. A guard that reads the row it is about to write is stronger than
   // one that reads a ledger beside it, and the check follows it there rather than dropping it.
-  const closeBody = zzCoreTools().find((t) => t.name === "initiative_close")?.body ?? "";
-  if (!/i\.closed_at is null/.test(withoutComments(closeBody))) {
-    bad.push("initiative_close's anchor update is not guarded on `closed_at is null` — a second " +
-             "close would land, and the count a team's ledger derives would double");
+  //
+  // COUPLED: a close that writes its closing document hands the anchor update to `saveDocument`
+  // (`closeAnchor`), which runs it in the document's own transaction after the state compare, so
+  // the guard is read there; the abandon of an empty initiative still updates the row itself.
+  const closeBody = withoutComments(zzCoreTools().find((t) => t.name === "initiative_close")?.body ?? "");
+  const save = functionBody(readFileSync(join(root, "services/zz-core/src/document-save.ts"), "utf8"), "saveDocument") ?? "";
+  const anchor = /if \(w\.closeAnchor\) \{[\s\S]*?\n {4}\}/.exec(withoutComments(save))?.[0] ?? "";
+  if (!/\bcloseAnchor\b/.test(closeBody) || !/update zz\.initiative[\s\S]*closed_at is null/.test(anchor)) {
+    bad.push("initiative_close's anchor update is not guarded on `closed_at is null` inside the " +
+             "document's transaction — a second close would land, and the count a team's ledger " +
+             "derives would double");
+  }
+  if (!/i\.closed_at is null/.test(closeBody)) {
+    bad.push("initiative_close's abandon of an empty initiative updates the anchor row without " +
+             "`closed_at is null` — a second close would land");
   }
   // The refusal, in initiative_close() itself: read the outcome already on the document and
   // stop. Located through zzCoreTools(), which is format-independent.

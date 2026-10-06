@@ -21,7 +21,7 @@ import { moduleForFlow } from "../host/index.js";
 import { claimFor } from "../host/store.js";
 import { safeName, safePath, writeGuard } from "../paths.js";
 import { platformEvent, sealOf } from "../indexing.js";
-import { saveDocument } from "../document-save.js";
+import { documentState, saveDocument, STATE_CHANGED } from "../document-save.js";
 import { stampEnvelope } from "../write-guards.js";
 import { db, teamFor } from "../platform-db.js";
 import { packagedModules } from "../reviewed-modules.js";
@@ -277,18 +277,16 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // The document's own current revision, which is the text the close is recorded onto —
       // `zz.doc_revision` is the bytes a document IS now, and a path that names no row is a
       // document that does not exist.
-      const loaded = await loadDocument(team, relPath);
-      if (!loaded.ok) {
-        return text(`ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`);
-      }
-      let doc = loaded.text;
+      const missing = `ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`;
+      if (!(await loadDocument(team, relPath)).ok) return text(missing);
       // An initiative closes once. A second close overwrites `outcome` on the document while
       // ledgerOnClose returns early when one is already there, so the document says the new word and
       // the ledger goes on saying the first.
       //
       // Refused rather than reconciled: an outcome that can be revised months later is one nobody
       // can rely on having read. A close that was genuinely wrong is a journal node saying so.
-      const already = parseEnvelope(doc).outcome;
+      // Read off the document in each attempt below, with the state the close is recorded onto.
+      //
       // Closing is the sign-off, and the closer is the person who signed. Every call carries a
       // person's authority — a session is a principal, and an agent calls this under the authority
       // of whoever it works for — so `initiative_close(finished)` is somebody saying the work is
@@ -372,83 +370,80 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         }
       }
 
-      const record = closeInitiative({
-        disposition,
-        accepted_by: signedBy,
-        no_signoff_reason: reason || null,
-        already: Boolean(already),
-      });
-      if (!record.ok) {
-        // The kernel refused, and this puts back what it could not know: it holds no initiative
-        // name and no word already on the document. Its refusals are printed as it wrote them, and
-        // what this service adds is keyed on the fact it supplied rather than on the kernel's
-        // wording — a branch matching its prose would be a second copy of its rules and would go
-        // quiet the day one of them is reworded.
+      // The close commits only onto the state of the document it was composed from: the anchor row
+      // and the document land in one transaction, after the per-document lock and that compare, so
+      // an edit committed meanwhile, a refusal or a concurrent close commits neither. A moved
+      // document is read and judged again once; moved twice, the caller is asked to call again.
+      let outcome: string | null = null;
+      for (let attempt = 1; outcome === null; attempt++) {
+        // The state first, then the document — a document read can only be newer than the state
+        // it is compared as, never older.
+        const state = await documentState(p, team, relPath);
+        const loaded = await loadDocument(team, relPath);
+        if (!loaded.ok || !state) return text(missing);
+        let doc = loaded.text;
+        const already = parseEnvelope(doc).outcome;
+        const record = closeInitiative({
+          disposition,
+          accepted_by: signedBy,
+          no_signoff_reason: reason || null,
+          already: Boolean(already),
+        });
+        if (!record.ok) {
+          // The kernel refused, and this puts back what it could not know: it holds no initiative
+          // name and no word already on the document. Its refusals are printed as it wrote them, and
+          // what this service adds is keyed on the fact it supplied rather than on the kernel's
+          // wording — a branch matching its prose would be a second copy of its rules and would go
+          // quiet the day one of them is reworded.
+          //
+          // One fact, so one branch: `already` is the only thing this call tells the kernel that the
+          // kernel cannot say back in full.
+          return text(`ERROR: ${record.refusals.join("; ")}.` + (already
+            ? `\n\n${initiative} is already closed as \`${already}\`. The ledger row was appended ` +
+              "at that close and is what the team's counts read, so changing the document now " +
+              "would leave the two disagreeing. If that close was wrong, record WHY as a journal " +
+              "node against this initiative — a correction somebody can find beats an overwrite " +
+              "nobody can."
+            : ""));
+        }
+        // The kernel returns null rather than guessing at a disposition it does not know, and a null
+        // is one of the refusals above, so `ok` being true has already settled this. The schema
+        // refuses an unknown disposition before either of them. What is left is the compiler.
+        if (record.outcome === null) {
+          return text(`ERROR: no outcome can be derived from a disposition of ${JSON.stringify(disposition)}.`);
+        }
+        doc = putEnvelopeField(doc, "outcome", record.outcome);
+        doc = putEnvelopeField(doc, "closed_by", who.email);
+        if (signedBy) doc = putEnvelopeField(doc, "accepted_by", signedBy);
+        if (!signedBy && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
+        const bad = await documentGuards(chain, relPath, doc, team, "initiative_close");
+        if (bad) return text(bad);
+        // The ONE insert path: `saveDocument`, which stamps, files the row and its revision, and
+        // records the close on the anchor row in the same transaction. `accepted_by` and
+        // `no_signoff_reason` satisfy the two CHECKs the migration declares (an `accepted` outcome
+        // always names an accepted_by; the two are never both set) by construction of
+        // `signedBy`/`reason` above.
         //
-        // One fact, so one branch: `already` is the only thing this call tells the kernel that the
-        // kernel cannot say back in full.
-        return text(`ERROR: ${record.refusals.join("; ")}.` + (already
-          ? `\n\n${initiative} is already closed as \`${already}\`. The ledger row was appended ` +
-            "at that close and is what the team's counts read, so changing the document now " +
-            "would leave the two disagreeing. If that close was wrong, record WHY as a journal " +
-            "node against this initiative — a correction somebody can find beats an overwrite " +
-            "nobody can."
-          : ""));
+        // `sealOf` because the closing document is usually APPROVED — a close writes `outcome` onto
+        // the revision a person signed, and a rewrite of a sealed revision without its seal is
+        // refused by `zz.doc_revision`'s own check.
+        //
+        // The act is `close_<outcome>`: it becomes the event's kind, which `event_kind_check` holds to
+        // `[a-z_]` words — `close accepted` was refused there and every close's event was dropped.
+        const stamped = stampEnvelope(chain, relPath, doc);
+        const closed = await saveDocument({
+          team, relPath, initiative, text: stamped, by: who.email,
+          flow: chain.name ?? undefined, act: `close_${record.outcome}`, mode: "rewrite",
+          seal: sealOf(stamped), expect: state,
+          closeAnchor: { outcome: record.outcome, closedBy: who.email, acceptedBy: signedBy || null,
+                         noSignoffReason: (!signedBy && reason) ? reason : null },
+        });
+        if (!("refusal" in closed)) { outcome = record.outcome; break; }
+        if (!closed.refusal.startsWith(STATE_CHANGED)) return text(closed.refusal);
+        if (attempt === 2) {
+          return text(`ERROR: ${initiative} changed while it was being closed — call initiative_close again`);
+        }
       }
-      // The kernel returns null rather than guessing at a disposition it does not know, and a null
-      // is one of the refusals above, so `ok` being true has already settled this. The schema
-      // refuses an unknown disposition before either of them. What is left is the compiler.
-      const outcome = record.outcome;
-      if (outcome === null) {
-        return text(`ERROR: no outcome can be derived from a disposition of ${JSON.stringify(disposition)}.`);
-      }
-      doc = putEnvelopeField(doc, "outcome", outcome);
-      doc = putEnvelopeField(doc, "closed_by", who.email);
-      if (signedBy) doc = putEnvelopeField(doc, "accepted_by", signedBy);
-      if (!signedBy && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
-      const bad = await documentGuards(chain, relPath, doc, team, "initiative_close");
-      if (bad) return text(bad);
-      // The anchor row, before the document: `accepted_by`/`no_signoff_reason` satisfy the same
-      // two CHECKs the migration declares (an `accepted` outcome always names an accepted_by;
-      // the two are never both set) by construction of `signedBy`/`reason` above. Guarded on
-      // `closed_at is null` — the row, not `already` above, is what a genuinely concurrent
-      // second close is refused by; `already` (read from the document before this point) is
-      // what gives the refusal above its wording when the two calls are not concurrent.
-      //
-      // Not transactional with the document write below: the anchor update and the document write
-      // are two statements rather than one transaction, and a crash between them would leave the
-      // row closed and the document
-      // not yet carrying `outcome`. The row is treated as authoritative going forward
-      // (initiative-status.ts reads it first), so that order — row, then document — is chosen
-      // deliberately over the reverse.
-      const anchorClosed = (await p.query<{ closed_at: string }>(
-        `update zz.initiative i set closed_at = now(), outcome = $4,
-                closed_by = (select id from zz.principal where email = $3 and status = 'active'),
-                accepted_by = $5, no_signoff_reason = $6
-           from zz.team t
-          where i.team_id = t.id and t.slug = $1 and i.slug = $2 and i.closed_at is null
-          returning i.closed_at::text`,
-        [team, initiative, who.email, outcome, signedBy || null,
-         (!signedBy && reason) ? reason : null],
-      )).rows[0];
-      if (!anchorClosed) {
-        return text(
-          `ERROR: ${initiative} was closed on its own anchor row by a concurrent call — the ` +
-          "document was not written. Call initiative_status to see how it closed.");
-      }
-      // The ONE insert path: I-39's `saveDocument`, which stamps, files the row and its revision,
-      // and mirrors the bytes into the store. Not a second one here.
-      //
-      // `sealOf` because the closing document is usually APPROVED — a close writes `outcome` onto
-      // the revision a person signed, and a rewrite of a sealed revision without its seal is
-      // refused by `zz.doc_revision`'s own check.
-      const stamped = stampEnvelope(chain, relPath, doc);
-      const closed = await saveDocument({
-        team, relPath, initiative, text: stamped, by: who.email,
-        flow: chain.name ?? undefined, act: `close ${outcome}`, mode: "rewrite",
-        seal: sealOf(stamped),
-      });
-      if ("refusal" in closed) return text(closed.refusal);
       platformEvent({ actor: who.email, kind: "initiative_close", initiative, outcome,
                       accepted_by: signedBy || null });
       return text(

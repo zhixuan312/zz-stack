@@ -1,45 +1,72 @@
 /**
- * Approve, close, revise, show — the acts that move a document through its life, and the record
+ * Approve, close, edit, show — the acts that move a document through its life, and the record
  * each leaves. An act that happens without its entry is indistinguishable, afterwards, from one
  * that never happened.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, gatewaySource, root, sourceFiles, zzCoreSource, withoutComments } from "../read.ts";
+import ts from "typescript";
+
+import { contractsSource, errMessage, functionBody, gatewaySource, ONE_LINE, root, sourceFiles, zzCoreSource,
+         zzCoreTools, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 
-check("document_revise records the material behind every version", () => {
-  // Anchored on the logActivity payload, not on a word: searching forward from
+/** A function declared in `src`, compiled to JavaScript and returned as a factory taking `scope` —
+ *  the names it reads from its module — or null when it is not there. Compiled rather than stripped
+ *  by pattern: an annotation like `string | undefined` survives every pattern short of a parser. */
+function liftFunction(src: string, name: string, scope: string[]): ((...deps: unknown[]) => unknown) | null {
+  const file = ts.createSourceFile("lift.ts", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const decl = file.statements.find((n): n is ts.FunctionDeclaration =>
+    ts.isFunctionDeclaration(n) && n.name?.text === name);
+  if (!decl) return null;
+  const js = ts.transpileModule(decl.getText(file).replace(/^export\s+/, ""),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  return new Function(...scope, `${js}\nreturn ${name};`) as (...deps: unknown[]) => unknown;
+}
+
+check("document_edit records the material behind every version", () => {
+  // Anchored on the recordAct payload, not on a word: searching forward from
   // src.indexOf("explained") lands inside "unexplained" in a comment, outside the window.
   //
-  // `self_edit` must be absent and both remaining routes present: `sources` for material already
-  // on the record, `source_content` for words that are not yet. A content change names its
-  // material, whatever the edit was.
+  // `self_edit` must be absent and both routes present: `sources` for material already on the
+  // record, `source_content` for words that are not yet. A change to an approved body names its
+  // material, whatever the edit was — `checks/edit-cause.ts` executes that refusal; this reads that
+  // its text is the fixed one and that the platform links what it already knows.
+  //
+  // Removed with `document_revise`: the refusal that sent a caller back to cite a source filed
+  // since the version it replaced, and the rule that it suggest the whole `sources` list
+  // (bug 5913fa5b). The platform now links an owed source itself, as a `platform` cause, so there
+  // is no refusal left to word — what holds instead is that the link is made.
   const src = zzCoreSource();
   const bad: string[] = [];
-  // The field, not the word: the handler explains in a comment why the route was removed, and a
-  // check that cannot tell an explanation from a declaration fails on its own documentation.
+  // The field, not the word: a comment explaining why the route was removed is not a declaration,
+  // and a check that cannot tell the two apart fails on its own documentation.
   if (/self_edit:\s*z\./.test(src)) bad.push("self_edit is back; a content change names its material");
-  if (!/sources:\s*z\.array/.test(src)) bad.push("document_revise no longer takes `sources` — nothing can cite an audit round");
-  if (!/source_content:\s*z\.string\(\)/.test(src)) bad.push("document_revise no longer takes `source_content` — a cause with no file has nowhere to go");
-  if (!/ERROR: nothing says what caused this version/.test(src)) bad.push("no refusal for a revision that cites nothing");
-  // And the one it cannot invent: a source that already supports this document, newer than the
-  // version being replaced, must be cited rather than ignored.
-  if (!/supports/.test(src) || !/what this revision answers/.test(src)) {
-    bad.push("nothing requires a revision to cite the sources that already support the document");
+  const edit = zzCoreTools().find((t) => t.name === "document_edit")?.body ?? "";
+  if (!edit) return "document_edit is not registered";
+  if (!/sources:\s*z\.array/.test(edit)) bad.push("document_edit no longer takes `sources` — nothing can cite an audit round");
+  if (!/source_content:\s*z\.string\(\)/.test(edit)) bad.push("document_edit no longer takes `source_content` — a cause with no file has nowhere to go");
+  if (!/ERROR: CAUSE_REQUIRED — /.test(withoutComments(src))) bad.push("no refusal for a change to an approved body that cites nothing");
+  // And the cause it cannot invent but must not drop: a source that declares it supports this
+  // document, filed since the release and cited by no version of it yet, is linked by the
+  // platform on the next body change.
+  const owed = functionBody(src, "owedSources") ?? "";
+  const plan = withoutComments(functionBody(src, "planEdit") ?? "");
+  if (!/kind = 'supports'/.test(owed) || !/->>'supports'/.test(owed)) {
+    bad.push("owedSources no longer reads what a source declares it supports, so the platform links nothing it owes");
   }
-  // The `sources` it suggests is the whole list, the call's own included: suggesting only the
-  // missing one read as a replacement and sent a caller round between two sources (bug 5913fa5b).
-  if (!/\[\.\.\.\(sources \?\? \[\]\)\.map\(\(x\) => x\.trim\(\)\), \.\.\.owed\]/.test(src)) {
-    bad.push("the uncited-source refusal suggests only the missing sources, not the whole list to send");
+  if (!/if \(bodyChanged\) \{\s*for \(const owed of await owedSources\([^)]*\)\) \{[^}]*causes\.push\(owed\)/.test(plan)) {
+    bad.push("planEdit no longer adds the sources a body change owes to its causes — an audit round " +
+             "filed against the document would be answered by a version that does not name it");
   }
-  const at = src.indexOf('action: "document_revise"');
-  if (at < 0) { bad.push("the document_revise activity payload was not found"); }
+  const code = withoutComments(edit);
+  const at = code.indexOf('action: "document_edit"');
+  if (at < 0) { bad.push("the document_edit activity payload was not found"); }
   else {
-    const payload = withoutComments(src.slice(Math.max(0, at - 600), at + 600));
+    const payload = code.slice(Math.max(0, at - 600), at + 600);
     if (!/\bexplained\b/.test(payload) || !/\bsources\b/.test(payload)) {
-      bad.push("the document_revise activity payload does not carry both `explained` and `sources`, so the record cannot say what a version rests on");
+      bad.push("the document_edit activity payload does not carry both `explained` and `sources`, so the record cannot say what a version rests on");
     }
   }
   return bad.length ? bad.join("; ") : null;
@@ -118,8 +145,8 @@ check("nothing can clear the field that says an initiative already closed", () =
   // second row. Both guards are one field deep, so anything that removes the field reopens the
   // initiative and lets the close run again, and _ledger.md records the same work twice.
   //
-  // document_revise clears the governance fields so the gate goes back to a person; `outcome`
-  // must not be in that list. closeCheck fires only on content that has an outcome, so no guard
+  // document_edit takes the approval off a changed approved document so the gate goes back to a
+  // person; `outcome` must not go with it. closeCheck fires only on content that has an outcome, so no guard
   // sees its removal.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
@@ -132,28 +159,58 @@ check("nothing can clear the field that says an initiative already closed", () =
                "closed, so removing it lets the same work be closed and counted twice");
     });
   }
-  // And `document_revise` itself has to refuse the case, or the rule above is satisfied by a tool
-  // that writes the whole envelope back without the field.
-  const rev = between(zzCoreSource(),
-                      '"document_revise",', "server.registerTool(");
-  const code = (rev.text ?? "").split("\n")
-    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-  if (!rev.text) {
-    bad.push(`document_revise is no longer readable here: ${rev.why}`);
-  } else if (!/env\.outcome\s*=\s*closedOutcome/.test(code)
-             || !/const\s+closedOutcome\s*=\s*prevEnv\.outcome/.test(code)) {
-    // Carried forward, not refused. Requiring `if (prevEnv.outcome)` defends the ledger by
-    // making a closed report uncorrectable.
-    //
-    // The invariant is narrower: whatever a revision does to the prose, the field that says the
-    // initiative closed comes out the other side unchanged. initiative_close() still refuses a
-    // second close and ledgerOnClose still returns before appending, and the text can still be
-    // corrected as a revision against the sealed one the approval stands on.
-    bad.push("document_revise does not carry `outcome` forward from the previous envelope — " +
-             "read it into `closedOutcome` before the rebuild and write it back onto `env`. " +
-             "Leaving the field merely untouched is not the same guarantee: it is the field " +
-             "initiative_close() and ledgerOnClose both read to know an initiative already closed, and " +
-             "the next edit to this function inherits nothing from an accident");
+  // And the change path itself has to carry the field, or the rule above is satisfied by a tool
+  // that writes the whole envelope back without it. `document_edit` composes a candidate's
+  // envelope in `envelopeOf`; it is compiled out of zz-core and RUN here over a closed record.
+  //
+  // Carried forward, not refused. Refusing a change to a closed document defends the ledger by
+  // making a closed report uncorrectable. The invariant is narrower: whatever a correction does to
+  // the prose, the fields that say the initiative closed and who closed it come out the other side
+  // unchanged, while the approval comes off — the correction is a draft. initiative_close() still
+  // refuses a second close and ledgerOnClose still returns before appending.
+  const core = zzCoreSource();
+  const plan = withoutComments(functionBody(core, "planEdit") ?? "");
+  if (!/const env = envelopeOf\(loaded\.text, a, approved, gated\)/.test(plan)
+      || !/renderEnvelope\(env,/.test(plan)) {
+    bad.push("planEdit no longer composes the candidate's envelope from envelopeOf over the stored " +
+             "envelope, so what this check runs is not what document_edit writes");
+  }
+  const block = /export const ENVELOPE_BLOCK = (\/.*\/)[a-z]*;/.exec(contractsSource());
+  const parse = liftFunction(contractsSource(), "parseEnvelope", ["ENVELOPE_BLOCK"]);
+  const envelopeOf = liftFunction(core, "envelopeOf", ["parseEnvelope", "oneLine"]);
+  if (!block || !parse || !envelopeOf) {
+    bad.push("envelopeOf, parseEnvelope or ENVELOPE_BLOCK can no longer be read — the carry of " +
+             "`outcome` and `closed_by` on a correction is unchecked");
+  } else {
+    const parseEnvelope = parse(new Function(`return ${block[1]}`)());
+    const compose = envelopeOf(parseEnvelope, ONE_LINE) as
+      (current: string, a: Record<string, unknown>, approved: boolean, gated: boolean) => Record<string, string>;
+    const closed = ["---", "flow: sdlc-flow", "type: review", "title: Review", "status: approved",
+                    "approved_by: dana@example.com", "approved_at: 2026-10-01", "outcome: accepted",
+                    "closed_by: dana@example.com", "---", "", "# Review", ""].join("\n");
+    const cases: [string, Record<string, unknown>, boolean, boolean][] = [
+      ["a gated closed document's body", {}, true, true],
+      ["a gated closed document's title and fields", { title: "Review, corrected", fields: { due_date: "2026-11-01" } }, true, true],
+      ["an ungated closed document", { tags: ["x"] }, true, false],
+      ["a closed document not approved", { stakeholder: "Dana" }, false, false],
+    ];
+    for (const [what, args, approved, gated] of cases) {
+      let env: Record<string, string>;
+      try {
+        env = compose(closed, args, approved, gated);
+      } catch (err) {
+        bad.push(`envelopeOf could not be run: ${errMessage(err)}`);
+        break;
+      }
+      if (env.outcome !== "accepted" || env.closed_by !== "dana@example.com") {
+        bad.push(`a correction of ${what} does not carry \`outcome\` and \`closed_by\` forward ` +
+                 `(${JSON.stringify({ outcome: env.outcome, closed_by: env.closed_by })}) — they are the ` +
+                 "fields initiative_close() and ledgerOnClose read to know an initiative already closed");
+      }
+      if (approved && (env.approved_by || env.approved_at || env.status === "approved")) {
+        bad.push(`a correction of ${what} keeps its approval — a change is a draft until a person approves it again`);
+      }
+    }
   }
   return bad.join("\n");
 });
@@ -183,12 +240,12 @@ check("the closing document is resolved from the list the flow declared", () => 
 check("a document the flow does not declare can still record why it changed", () => {
   // The same test, the opposite action. `write-guards.ts` writes
   // `if (chain.documents.length && !chain.docs.has(parts[1])) return null;` at four guards: a
-  // document the flow does not declare is exempt from its rules, so `document_revise` must not
-  // run that test and refuse — an undeclared document would be creatable and rewritable forever
-  // by document_write and be the one document that can never record why it changed.
+  // document the flow does not declare is exempt from its rules, so `document_edit` must not run
+  // that test and refuse — an undeclared document would be creatable by document_write and then
+  // be the one document that can never change, or never record why it changed.
   //
   // Both halves: `document_approve` goes on refusing an undeclared document, because there is no
-  // gate on it and so no verdict to record. A revision is not a gate.
+  // gate on it and so no verdict to record. A change is not a gate.
   const src = readFileSync(join(root, "services/zz-core/src/tools/initiative-acts.ts"), "utf8");
   const bodyOf = (tool: string): string => {
     const at = src.indexOf(`"${tool}"`);
@@ -196,13 +253,14 @@ check("a document the flow does not declare can still record why it changed", ()
     const next = src.indexOf("\n  );", at);
     return next < 0 ? src.slice(at) : src.slice(at, next);
   };
-  const revise = withoutComments(bodyOf("document_revise"));
   const approve = withoutComments(bodyOf("document_approve"));
-  if (!revise || !approve) return "document_revise or document_approve is no longer registered here";
-  if (/is not a document this flow declares/.test(revise)) {
-    return "document_revise refuses a document the flow does not declare, so the one call that "
-         + "records WHY a document changed is unavailable on exactly the documents no flow is "
-         + "watching — while document_write creates and rewrites them freely";
+  const edit = withoutComments(zzCoreTools().find((t) => t.name === "document_edit")?.body ?? "");
+  const plan = withoutComments(functionBody(zzCoreSource(), "planEdit") ?? "");
+  if (!edit || !plan || !approve) return "document_edit, its planEdit or document_approve is no longer readable here";
+  if (/is not a document this flow declares|gateRefusal\(/.test(edit + plan)) {
+    return "document_edit refuses a document the flow does not declare, so the one call that "
+         + "changes a document and records WHY is unavailable on exactly the documents no flow is "
+         + "watching — while document_write creates them freely";
   }
   // The refusal itself is `gateRefusal`'s (chain.ts), which the document panel asks too.
   const gate = withoutComments(readFileSync(join(root, "services/zz-core/src/chain.ts"), "utf8"));

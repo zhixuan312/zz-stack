@@ -42,11 +42,12 @@ export function splitDocPath(relPath: string): { initiative: string; path: strin
  * Returns a fact; `document_approve` refuses on `false` — "present it first" — and approves on
  * `true` or `null`.
  *
- * Since the last content change, not "at this version". A `document_patch` does not bump
- * `version`, so a document can be shown at v1, patched eight times and approved while a
+ * Since the last content change, not "at this version". A `document_edit` of a draft does not bump
+ * `version`, so a document can be shown at v1, edited eight times and approved while a
  * version-comparison would still call it fetched. Filling a scaffold is exactly that shape. The
- * column makes the same distinction for free: a patch rewrites the current revision in place, so
- * its `written_at` moves forward while `presented_at` stays where the present left it.
+ * column makes the same distinction for free: an edit of an unshown draft rewrites the current
+ * revision in place, so its `written_at` moves forward while `presented_at` stays where the
+ * present left it.
  *
  * Returns null when the question cannot be answered — no such document, no current revision, a
  * path that is not `<initiative>/<document>`, or a caller this deployment cannot place. A warning

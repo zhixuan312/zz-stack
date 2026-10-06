@@ -60,18 +60,6 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/security-boundary.ts",
-    target: "no replacement string can be read as a pattern",
-    assertion: "a replacement carrying somebody's own words is a function, never a value",
-    subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      const result = body.replace(find, () => replace);",
-    replace: "      const result = body.replace(find, replace);",
-    planted: "document_patch puts the model's own replacement text straight into the second " +
-      "argument of String.replace, where $& and $' are read as patterns — a patch containing " +
-      "a shell example swallows its own line and injects the entire rest of the document " +
-      "after it, silently, in the call described as how a draft is filled in section by section",
-  },
-  {
-    check: "scripts/gate/checks/security-boundary.ts",
     target: "the gateway is authenticated by default, and the exceptions are the intended ones",
     assertion: "a path that must carry a token is not on the public list",
     subject: "services/gateway/src/server.ts",

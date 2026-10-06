@@ -87,15 +87,15 @@ check("no skill justifies itself by machinery this platform does not have", () =
 
 check("no skill writes a document with a local-file tool", () => {
   // `Write`/`Edit`/`MultiEdit`/`NotebookEdit` are the runtime's local file tools. The
-  // platform's documents live in the initiative store and are written with document_write /
-  // document_patch; a document written to a local path has no envelope, no version snapshot
+  // platform's documents live in the initiative store and are created with document_write and
+  // changed with document_edit; a document written to a local path has no envelope, no version snapshot
   // at approval and no telemetry, and it looks exactly like success.
   const LOCAL = /`(Write|Edit|MultiEdit|NotebookEdit)`/g;
   const bad: string[] = [];
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     readFileSync(join(root, rel), "utf8").split("\n").forEach((line, i) => {
       for (const m of line.matchAll(LOCAL)) {
-        bad.push(`${rel}:${i + 1} names \`${m[1]}\` — documents are written with document_write / document_patch`);
+        bad.push(`${rel}:${i + 1} names \`${m[1]}\` — documents are created with document_write and changed with document_edit`);
       }
     });
   }
@@ -333,9 +333,11 @@ check("no skill names a package file the packager does not emit", () => {
 });
 
 check("a re-entry section names the tool that can change an approved document", () => {
-  // An approved gated document changes through document_revise; document_write and
-  // document_patch are refused on it, because a signature has to cover the bytes it signed.
-  // A stage re-entered from verification is by definition working on such a document.
+  // An approved gated document changes through document_edit, with its cause — `sources` or
+  // `source_content` — because a signature has to cover the bytes it signed and a change to them
+  // with no cause is refused CAUSE_REQUIRED; document_write is refused on any existing document.
+  // A stage re-entered from verification is by definition working on such a document, so its
+  // section names the tool and the cause it must carry.
   //
   // Judged on the section heading, not on whether the prose contains the word "approved":
   // "**Not approved** -> amend the plan in place" is the draft case, where patching is right.
@@ -356,15 +358,18 @@ check("a re-entry section names the tool that can change an approved document", 
         if (!/\b(amend|revise|update|change)\b/i.test(sec)) continue;
         // Only when the section acts on a document that actually carries a gate.
         const docs = gated.filter((n: string) => sec.includes(n) || sec.includes(n.replace(/\.md$/, "")));
-        if (docs.length && !/document_revise/.test(sec)) {
-          bad.push(`${f.owner}/${f.flow}/${sk} re-entry touches ${docs.join(", ")} without naming document_revise`);
+        if (docs.length && !/document_edit/.test(sec)) {
+          bad.push(`${f.owner}/${f.flow}/${sk} re-entry touches ${docs.join(", ")} without naming document_edit`);
+        } else if (docs.length && !/`(sources|source_content)`/.test(sec)) {
+          bad.push(`${f.owner}/${f.flow}/${sk} re-entry touches ${docs.join(", ")} without naming the ` +
+                   "cause field — `sources` or `source_content` — its document_edit must carry");
         }
       }
     }
   }
   return bad.length
     ? `${bad.join("; ")} — a re-entered stage works on a document the stakeholder already ` +
-      "approved, and document_write and document_patch are refused there"
+      "approved, and a change to it is refused there without its cause"
     : null;
 });
 

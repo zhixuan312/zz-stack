@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.14
+version: 1.15
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no approved plan, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -183,11 +183,27 @@ they did not know. If two workers fail the same task the same way, the contract 
 ## When the phase is built — append what actually happened
 
 After the phase's last wave, its gate and its skeleton run, **append `### As built` under the
-phase's heading** in `plan.md` with `document_revise`, citing what happened as its
-`source_content` (the skeleton's output, the gate result, the deviations). It says, briefly and
-from the tree: which tasks landed, what differs from their contracts and why, decisions taken on
-the way, and the skeleton command's decisive output line. This is what the next phase is planned
-from, and what makes the finished plan the record of what was built.
+phase's heading** in `plan.md` with a section edit of that phase, citing what happened as its
+`source_content` (the skeleton's output, the gate result, the deviations):
+
+```
+document_edit(
+  path: "<initiative>/plan.md",
+  section: "Phase 1 — <what works at the end>",
+  content: "## Phase 1 — <what works at the end>\n\n<the phase as it reads>\n\n### As built\n\n<what landed>",
+  source_content: "<the skeleton's output, the gate result, the deviations>",
+  source_title: "Phase 1 execution report",
+  base: "<the content revision that read stated>")
+```
+
+`document_read("<initiative>/plan.md", section: "Phase 1 — <what works at the end>")` returns
+exactly the text the edit replaces and the plan's `content revision`; send the text back with the
+as-built appended and nothing else changed, and the revision as `base`, so a plan that moved
+since the read is refused rather than overwritten. The plan is approved, so the report is the
+cause that opens its next version — a change with none is refused. The as-built says, briefly
+and from the tree: which tasks landed, what differs from their contracts and why, decisions
+taken on the way, and the skeleton command's decisive output line. This is what the next phase is planned from, and what makes the finished
+plan the record of what was built.
 
 **A phase that disproves a spec core statement stops the loop.** If what was built shows an
 assumption in the spec's `## Core statements` is false, say so in the as-built and go back to

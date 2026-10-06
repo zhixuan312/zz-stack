@@ -366,11 +366,11 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "every envelope field the platform writes is one the schema declares",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "      if (closedOutcome) env.outcome = closedOutcome;",
-    replace: "      if (closedOutcome) env.closed_outcome = closedOutcome;",
-    planted: "document_revise writes an envelope field the published schema does not declare, " +
-      "so the close's outcome is carried under a name no reader looks for — and the name it " +
+    subject: "services/zz-core/src/tools/initiative-close.ts",
+    find: "        doc = putEnvelopeField(doc, \"closed_by\", who.email);",
+    replace: "        doc = putEnvelopeField(doc, \"closed_outcome_by\", who.email);",
+    planted: "initiative_close writes an envelope field the published schema does not declare, " +
+      "so who closed it is carried under a name no reader looks for — and the name it " +
       "uses is one a flow may claim for itself",
   },
   {
@@ -478,15 +478,12 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-frontmatter.ts",
     target: "no write path lets a caller type an envelope field",
-    assertion: "a patch that relabels the flow governing the initiative is refused",
-    subject: "services/zz-core/src/document-rules.ts",
-    find: "  if (was === now) return null;",
-    replace: "  const ownedOf = (b = \"\") => b.split(\"\\n\")\n" +
-      "    .filter((l) => /^(status|version|approved_by|approved_at|outcome):/.test(l)).join(\"\\n\");\n" +
-      "  if (ownedOf(was) === ownedOf(now)) return null;",
-    planted: "document_patch's envelope guard narrows to the five fields the platform is " +
-      "recorded as owning, and `flow` is not one of them — so a patch may relabel which flow " +
-      "governs an initiative, which is the third source of envelope fields this platform " +
-      "spent an initiative closing",
+    assertion: "an edit batch reaches the body and never the envelope",
+    subject: "services/zz-core/src/document-change.ts",
+    find: "  const body = documentBody(loaded.text);",
+    replace: "  const body = loaded.text;",
+    planted: "document_edit applies an edit batch to the whole stored text instead of the body, " +
+      "so `find: \"flow: ops-flow\"` relabels which flow governs an initiative — the third source " +
+      "of envelope fields this platform spent an initiative closing",
   },
 ];

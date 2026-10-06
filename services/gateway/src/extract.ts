@@ -1,7 +1,7 @@
 /**
  * What an uploaded file is worth as a source.
  *
- * A source is text: its body is what the knowledge index reads, what `document_revise` cites and
+ * A source is text: its body is what the knowledge index reads, what `document_edit` cites and
  * what a reader opens. So an upload is only useful once it is text — some files already are, the
  * two Office formats are a ZIP of XML, and everything else is refused by name with what to do
  * instead. Filing a file we could not read would write a source that says nothing, which is worse

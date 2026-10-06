@@ -297,7 +297,7 @@ export function stampEnvelope(chain: Chain, relPath: string, content: string): s
   if (gated && present.status === undefined) add.push("status: draft");
 
   // `version` too: the platform is the only thing that knows it. It starts at 1 and moves only
-  // through document_revise.
+  // when document_edit opens a new version.
   if (governed && present.version === undefined) add.push("version: 1");
 
   // updated_at is overwritten rather than merely added: the failure here is a confidently

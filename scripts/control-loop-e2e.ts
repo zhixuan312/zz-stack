@@ -8,14 +8,17 @@
  * and nothing about a run. The question here is whether a log the writer actually wrote replays
  * through the store into a grant, which no offline check can answer.
  *
- * The sequence it walks is the one the fix is about: a document written, approved, revised and
- * approved again. A revision withdraws the approval it replaced and nothing else, so the second
- * approval is a fact of its own and the close that waits on it is granted. The previous writer
- * recorded one approval id for every approval of a document, and a revision then withdrew every
- * approval of that path — the one it replaced and the one that answered it — so a re-approval
- * counted for nothing. This walks that out through the store rather than through the minting
- * function alone: the log is in a real database, replayed into a fresh kernel by `claimFor`, and
- * the answer read back is the one `initiative_close` gives.
+ * The sequence it walks is the one the fix is about: a document written, approved, changed and
+ * approved again — twice. The first change opens a new version; the second changes only metadata,
+ * which turns the approved snapshot into a draft of the SAME version. Each change withdraws the
+ * approval of the snapshot it displaced and nothing else, so every approval after it is a fact of
+ * its own and the close that waits on it is granted. Evidence ids name the snapshot,
+ * `@v<version>.<revision>`, because two approvals of one public version are two facts. The
+ * previous writer recorded one approval id for every approval of a document, and a revision then
+ * withdrew every approval of that path — the one it replaced and the one that answered it — so a
+ * re-approval counted for nothing. This walks that out through the store rather than through the
+ * minting function alone: the log is in a real database, replayed into a fresh kernel by
+ * `claimFor`, and the answer read back is the one `initiative_close` gives.
  *
  *   node scripts/control-loop-e2e.ts            stand a scratch deployment up, walk, tear it down
  *   node scripts/control-loop-e2e.ts --keep     leave it up afterwards, for reading
@@ -24,7 +27,7 @@
  *
  * Loopback only, and the allowlist is fail-closed: a deployment handed in by ZZ_E2E_URL,
  * ZZ_E2E_PAT and ZZ_E2E_DB is checked before anything is written, because this writes an
- * initiative, four documents, three sources and a close into whatever it is pointed at.
+ * initiative, four documents, four sources and a close into whatever it is pointed at.
  */
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -63,7 +66,7 @@ function refuseUnlessScratch(url: string, pat: string, db: string): string | nul
   }
   if (!LOOPBACK.test(url)) {
     return "REFUSED — the gateway is not a loopback address. This walk writes an initiative, " +
-           "four documents, three sources and a close; it runs against a scratch deployment on " +
+           "four documents, four sources and a close; it runs against a scratch deployment on " +
            "this machine and nothing else.";
   }
   if (!localDb(db)) {
@@ -126,11 +129,16 @@ async function call(url: string, pat: string, tool: string, args: Record<string,
   } catch { return { text: line }; }
 }
 
+/** A reply's first line — where a change's receipt says which version it landed in. */
+const firstLine = (text: string): string => text.split("\n")[0] ?? "";
+
 /** One expectation, stated before it is checked, so a reader of the output knows what was
  *  being asked rather than only what came back. */
-function expect(label: string, holds: boolean, saw: string): boolean {
+function expect(label: string, holds: boolean, saw: string | undefined): boolean {
   console.log(`  ${holds ? "PASS" : "FAIL"}  ${label}`);
-  if (!holds) console.log(`        saw: ${saw.slice(0, 400)}`);
+  // `saw` is often `JSON.stringify` of a row that was not found, which is undefined — a failure
+  // must still print, never end the walk.
+  if (!holds) console.log(`        saw: ${String(saw).slice(0, 400)}`);
   return holds;
 }
 
@@ -261,8 +269,9 @@ async function rowsOf<T>(dsn: string, text: string, values: readonly unknown[] =
 
 const evidence = (dsn: string, runId: string): Promise<Row[]> =>
   rowsOf<Row>(dsn,
+    // `ce.seq`, qualified: a bare `seq` names the text output column and sorts "10" before "2".
     `select seq::text, entry_id, step_id, kind, about, supersedes
-       from zz.control_evidence where run_id = $1 order by seq`, [runId]);
+       from zz.control_evidence ce where run_id = $1 order by ce.seq`, [runId]);
 
 const digestOf = async (dsn: string, runId: string): Promise<string> =>
   (await rowsOf<{ module_digest: string }>(dsn,
@@ -314,8 +323,8 @@ async function main(): Promise<void> {
 
     await doc("explore.md", "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n");
 
-    // The body is written twice: the same sections, with one line changed, because a revision takes
-    // content and the record has to say what moved.
+    // The body is written twice: the same sections, with one line changed, because a change to an
+    // approved body takes its cause and the record has to say what moved.
     const specBody = (line: string) =>
       `## Context\n${line}\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n` +
       "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
@@ -325,19 +334,34 @@ async function main(): Promise<void> {
       "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
     await doc("spec.md", specBody("x"));
     await sign("spec.md");
+    const spec = `${name}/spec.md`;
 
-    // THE SEQUENCE THIS WALK IS FOR. A revision withdraws the approval it replaced; the approval
-    // that answers it is a different fact with an id of its own, and nothing withdraws that one.
-    const revised = await callDoor("document_revise", {
-      path: `${name}/spec.md`,
+    // THE SEQUENCE THIS WALK IS FOR. A change withdraws the approval of the snapshot it displaced;
+    // the approval that answers it is a different fact with an id of its own, and nothing
+    // withdraws that one. Walked twice, once for each way an approved document becomes a draft.
+    //
+    // First, a body change with its cause: it opens the next public version.
+    const revised = await callDoor("document_edit", {
+      path: spec,
       content: specBody("the approval of the version this replaces no longer stands"),
-      source_content: "the loop's own probe: an approval must count again after a revision",
+      source_content: "the loop's own probe: an approval must count again after a new version",
       source_title: "why spec.md moved to v2",
     });
-    ok = expect("an approved document is revised", revised.text.includes("revised: v1 -> v2"), revised.text) && ok;
+    ok = expect("an approved document's body change opens v2",
+      firstLine(revised.text) === `edited: ${spec} — v2 (new version)`, revised.text) && ok;
     const reapproved = await sign("spec.md");
     ok = expect("and approved again — the log takes a second approval of the same document",
       reapproved.text.includes("approved") && !reapproved.text.includes("ERROR"), reapproved.text) && ok;
+
+    // Second, metadata alone: no body change, no cause, the SAME public version — and still a new
+    // snapshot, because the approved one is not rewritten under its signature. It is a draft again.
+    const retitled = await callDoor("document_edit", { path: spec, title: "Control loop probe" });
+    ok = expect("a metadata-only change of an approved document stays v2, as a draft",
+      firstLine(retitled.text) === `edited: ${spec} — v2` && /^status: draft$/m.test(retitled.text),
+      retitled.text) && ok;
+    const thirdApproval = await sign("spec.md");
+    ok = expect("and approved again — a second approval of the same public version",
+      thirdApproval.text.includes("approved") && !thirdApproval.text.includes("ERROR"), thirdApproval.text) && ok;
 
     await doc("plan.md", "## Full-suite gate\nx\n");
     await sign("plan.md");
@@ -372,47 +396,55 @@ async function main(): Promise<void> {
     await setDigest(db, runId, digest);
 
     // Every document the flow declares is written and approved and the audits never ran — and the
-    // spec's approval is the SECOND one, the one a revision withdrew under the old ids. So the
+    // spec's approval is the THIRD one, after two changes each withdrew the one before it. So the
     // refusal below names the audits and no approval: that is the fix, read off the loop's own
     // answer rather than off the log it was computed from.
     const early = await callDoor("initiative_close", { initiative: name, disposition: "finished" });
     ok = expect("a close is REFUSED when the documents are complete but the audits never ran",
       early.text.includes("cannot claim close:initiative") && early.text.includes("needs 1 audit"),
       early.text) && ok;
-    ok = expect("the re-approval after the revision counts — no approval is still outstanding",
+    ok = expect("the re-approval after each change counts — no approval is still outstanding",
       !/needs \d+ approval/.test(early.text), early.text) && ok;
 
     await callDoor("source_add", { initiative: name, title: "spec audit", content: "no blocking findings", supports: ["spec.md"], stage: "sdlc-spec-audit" });
     await callDoor("source_add", { initiative: name, title: "plan audit", content: "no blocking findings", supports: ["plan.md"], stage: "sdlc-plan-audit" });
 
     const rows = await evidence(db, runId);
-    const spec = `${name}/spec.md`;
     const ids = rows.map((r) => r.entry_id);
+    // The snapshots this walk made, `@v<version>.<revision>`. An approval seals the row it names in
+    // place, so only the two changes file a new row: v1 is row 1, the new version row 2, and the
+    // metadata-only draft row 3 of the same version.
+    const [v1, v2, v2Draft] = ["v1.1", "v2.2", "v2.3"];
     ok = expect("every fact in the run has its own id",
       new Set(ids).size === ids.length, JSON.stringify(ids)) && ok;
-    ok = expect("the document is recorded once per version, the first included",
-      ids.includes(`doc:${spec}@v1`) && ids.includes(`doc:${spec}@v2`), JSON.stringify(ids)) && ok;
+    ok = expect("the document is recorded once per snapshot, the first included",
+      [v1, v2, v2Draft].every((at) => ids.includes(`doc:${spec}@${at}`)), JSON.stringify(ids)) && ok;
     ok = expect("and so is each approval of it",
-      ids.includes(`approval:${spec}@v1`) && ids.includes(`approval:${spec}@v2`), JSON.stringify(ids)) && ok;
-    const revision = rows.find((r) => r.entry_id === `doc:${spec}@v2`);
-    ok = expect("the revision withdraws exactly the approval it replaced",
-      revision?.supersedes === `approval:${spec}@v1`, JSON.stringify(revision)) && ok;
-    ok = expect("and nothing withdraws the approval that came after it",
-      !rows.some((r) => r.supersedes === `approval:${spec}@v2`),
+      [v1, v2, v2Draft].every((at) => ids.includes(`approval:${spec}@${at}`)), JSON.stringify(ids)) && ok;
+    const newVersion = rows.find((r) => r.entry_id === `doc:${spec}@${v2}`);
+    ok = expect("the new version withdraws exactly the approval of the snapshot it displaced",
+      newVersion?.supersedes === `approval:${spec}@${v1}`, JSON.stringify(newVersion)) && ok;
+    const sameVersion = rows.find((r) => r.entry_id === `doc:${spec}@${v2Draft}`);
+    ok = expect("the metadata-only draft withdraws exactly the approval of the snapshot it displaced",
+      sameVersion?.supersedes === `approval:${spec}@${v2}`, JSON.stringify(sameVersion)) && ok;
+    ok = expect("and those are the only two withdrawals in the run",
+      rows.filter((r) => r.supersedes).length === 2, JSON.stringify(rows.filter((r) => r.supersedes))) && ok;
+    ok = expect("and nothing withdraws the approval that came after them",
+      !rows.some((r) => r.supersedes === `approval:${spec}@${v2Draft}`),
       JSON.stringify(rows.filter((r) => r.supersedes))) && ok;
     ok = expect("a fact the run already holds is recorded once, not twice",
-      ids.filter((id) => id === `approval:${name}/plan.md@v1`).length === 1,
+      ids.filter((id) => id === `approval:${name}/plan.md@v1.1`).length === 1,
       JSON.stringify(ids)) && ok;
     // The back-reference, checked as a shape rather than assumed from a passing grant. A grant can
     // be reached by a graph that is wrong in a way that happens not to matter yet.
     const approvals = rows.filter((r) => r.kind === "approval");
     const audits = rows.filter((r) => r.kind === "audit");
     ok = expect("every approval points at the ID of a document entry, not at a filename",
-      approvals.length === 4 && approvals.every((a) => a.about.startsWith(`doc:${name}/`)),
+      approvals.length === 5 && approvals.every((a) => a.about.startsWith(`doc:${name}/`)),
       JSON.stringify(approvals)) && ok;
-    ok = expect("and it names the version it approved — the one after the revision, for the second",
-      approvals.find((a) => a.entry_id === `approval:${spec}@v2`)?.about === `doc:${spec}@v2`
-      && approvals.find((a) => a.entry_id === `approval:${spec}@v1`)?.about === `doc:${spec}@v1`,
+    ok = expect("and each names the snapshot it approved — the one after each change, for the later two",
+      [v1, v2, v2Draft].every((at) =>
+        approvals.find((a) => a.entry_id === `approval:${spec}@${at}`)?.about === `doc:${spec}@${at}`),
       JSON.stringify(approvals)) && ok;
     ok = expect("source_add records the audit evidence, against the document it supports",
       audits.length === 2 && audits.every((a) => a.about.startsWith(`doc:${name}/`)),

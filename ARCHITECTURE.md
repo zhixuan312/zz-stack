@@ -295,11 +295,19 @@ rather than steps of the method.
 
 ### A version names the material behind it
 
-`document_revise` refuses a content change that cites nothing: pass `sources` for material
-already on the record, or `source_content` for words that are not yet. It also refuses a
-revision that ignores what already explains it — any source supporting this document, added
-after the version being replaced, must be cited. Approving, closing and the envelope are
-untouched by this rule: it is the body that may not change with the reason left off the record.
+Two tools write a document: `document_write` creates one, and refuses a path that exists
+(`TARGET_EXISTS`); `document_edit` makes every change after that — an edit batch, one section,
+the whole body, or the editable metadata alone. The version follows the cause: a body change
+that brings a source new to the current version (`sources` for material already on the record,
+`source_content` for words that are not yet) opens the next version, and one that brings none
+stays in the version it is in. An approved document's body does not change without a cause
+(`CAUSE_REQUIRED`), and the change is a draft of the next version while the approved one stays
+readable. The platform links what already explains a change itself: a source supporting the
+document, filed at or after the cause-link epoch (the release that began cause links) and
+cited by no version of it yet, becomes a cause of the next body change, named in the reply as
+linked by the platform; an older source is never linked automatically. Approving, closing and
+the envelope are untouched by this rule: it is the body that may not change with the reason
+left off the record.
 
 ### `entry` — the skill the agent opens first
 

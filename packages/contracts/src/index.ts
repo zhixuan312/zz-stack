@@ -228,7 +228,7 @@ export const Envelope = z.object({
   date: z.string().optional(),
   added_at: z.string().optional(),
   title: z.string().optional(),
-  /** Who attached a source. Written by source_add and document_revise, read by source_list
+  /** Who attached a source. Written by source_add and document_edit, read by source_list
    *  and the knowledge base. COUPLED: RESERVED_ENVELOPE derives from these keys, so declaring
    *  it here is what stops a flow claiming the name. */
   contributed_by: z.string().optional(),
@@ -239,7 +239,7 @@ export const Envelope = z.object({
   /** For an audit round: the version of the supported document the round read, written by
    *  source_add. A document revised past it owes the next round. */
   audits_version: z.string().optional(),
-  /** Why a document was revised, in one line, written by document_revise.
+  /** Why a document changed, in one line, written by document_edit.
    *  DELIBERATE: no code reads it. It is for a person reading the document's own history in
    *  the team's store. */
   revision_note: z.string().optional(),

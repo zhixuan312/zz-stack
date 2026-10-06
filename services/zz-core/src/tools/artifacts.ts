@@ -22,7 +22,7 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
-import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
+import { fieldRefusal, frontmatterRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { auditRoundOf, assessRound } from "../audit-rounds.js";
 import { docRows } from "../indexing.js";
@@ -35,15 +35,15 @@ import { registerDocumentEditTool } from "./document-edit.js";
 import { registerSourceListTool } from "./source-list.js";
 import { registerSourceUploadTool } from "./source-upload.js";
 import { db, teamFor } from "../platform-db.js";
-import { dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf } from "../versions.js";
+import { documentAt, documentPaths, loadDocument, NO_DB, recordAct } from "../versions.js";
 import { saveDocument } from "../document-save.js";
-import { acceptanceLine, NO_DB, NO_TEAM } from "../document-change.js";
+import { acceptanceLine, NO_TEAM, planCreate, replayFor, replayText } from "../document-change.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, panelDocument, PRESENT_META } from "../document-panel.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
 import { journalOrdinal, listJournalNodes, readJournalNode } from "./journal.js";
 
-import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
+import { isoToday } from "../write-guards.js";
 import { nextMoveLine } from "./initiative-status.js";
 
 /** The part of a long document to return. COUPLED: document-parts.ts slicePart reads these. */
@@ -67,14 +67,20 @@ export function registerArtifactTools(server: McpServer): void {
     {
       annotations: WRITES,
       description:
-        "Create or overwrite a document in your team's store (specs, plans, " +
-        "logs, records). The store is shared with your whole team if you belong to " +
+        "Create a document in your team's store (specs, plans, logs, records). It CREATES ONLY: " +
+        "a path that already holds a document is refused, and an existing document changes " +
+        "through document_edit. The store is shared with your whole team if you belong to " +
         "one. Paths are relative, e.g. '2026-08-20-sample-intake/spec.md'. " +
         "SEND THE BODY, starting at its first heading: the frontmatter is written by the " +
         "platform from what it already knows, and anything else the document needs — " +
         "`stakeholder`, `tags`, `title` — is an argument here. The initiative must already " +
         "exist: `initiative_open` creates one, and this does not. The FLOW is declared " +
-        "there too, never here.",
+        "there too, never here. What the document rests on is named in `sources`, or passed as " +
+        "`source_content` (with `source_title`), which the platform files as a source; sources " +
+        "filed since the release that declare they support this document are linked by the " +
+        "platform itself, and the reply names every cause. Send one `request_id` per document " +
+        "you mean to create and reuse it on every retry of that create: a retry of a create that " +
+        "already landed returns its first reply instead of being refused as existing.",
       inputSchema: {
         path: z.string(),
         content: z.string().describe("The document's BODY, starting at its first heading. No frontmatter — the platform writes that."),
@@ -83,80 +89,71 @@ export function registerArtifactTools(server: McpServer): void {
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
         fields: z.record(z.string()).optional()
           .describe("This FLOW's own frontmatter fields, e.g. {component: 'billing'}. Not envelope names."),
+        sources: z.array(z.string()).optional()
+          .describe("Sources this document rests on, as paths inside the initiative, e.g. 'sources/2026-10-06-call.md'."),
+        source_content: z.string().optional().describe("Words this document rests on, filed as a new source."),
+        source_title: z.string().optional().describe("The title of the source `source_content` files."),
+        request_id: z.string().optional().describe("One per document you mean to create, reused on every retry of it."),
       },
     },
-    async ({ path, content, stakeholder, tags, title, fields }) => {
-      const blocked = writeGuard(path);
-      if (blocked) return text(blocked);
-      const refused = frontmatterRefusal(content, "document_write") ?? fieldRefusal(fields)
-        ?? tagRefusal(tags);
-      if (refused) return text(refused);
+    async (args) => {
+      const { content, fields, tags } = args;
       const p = db();
       if (!p) return text(NO_DB);
       const who = parseCaller(requestHeaders()).email;
       const team = await teamFor(who);
       if (!team) return text(NO_TEAM);
-      // DELIBERATE: the path is resolved before the guards run, as approve, close,
-      // document_patch and document_revise all do. A bad path answered from behind the guards
-      // is answered with a complaint about the document's sections instead.
-      await safePath(path);
+      // DELIBERATE: the path is resolved before anything about it is judged, as approve, close and
+      // document_edit all do, and the canonical form is what the lock, the request key and every row
+      // are addressed by. A bad path answered from behind the guards is answered with a complaint
+      // about the document's sections instead.
+      const path = await safePath(args.path);
+      const initiative = path.split("/")[0];
+      // (0) A create already committed under this key answers as it did the first time — before
+      // the target is found to exist, because the document it made is the one that exists now.
+      const replay = await replayFor(p, team, who, path, args, "document_write");
+      if (replay) return text(replay + await nextMoveLine(p, team, initiative));
+      // (1)
+      const blocked = writeGuard(path);
+      if (blocked) return text(blocked);
       // This write does not create an initiative — `initiative_open` does, and the name shape,
       // the taken check and the flow declaration are asked there, once. What is left here is
       // an existence test.
       const unopened = await unopenedRefusal(p, team, path);
       if (unopened) return text(unopened);
-      // The flow is read from the record `initiative_open` wrote, never from an argument here:
-      // an initiative that acquired a manifest on its second document would have that
-      // manifest's gates land on documents already written and unapproved.
-      const chain = await chainFor(p, team, path, content);
-      // The document already there is read before it is overwritten: the overwrite half of
-      // "create or overwrite" has to preserve the fields the platform wrote on the previous
-      // copy — see envelopeFor's `carry`. Read from the rows, which are the authority: a
-      // document whose file is gone still carries its own verdicts.
-      const prev = await documentAt(p, team, path);
-      const carry: Record<string, string> = {};
-      if (prev) {
-        const rev = prev.current_revision === null
-          ? null : (await revisionsOf(p, prev.id)).find((r) => r.revision === prev.current_revision);
-        if (prev.status) carry.status = prev.status;
-        if (rev?.approved_by) carry.approved_by = rev.approved_by;
-        if (rev?.approved_at) carry.approved_at = dayOf(rev.approved_at);
-        if (prev.current_revision !== null) carry.version = String(prev.current_revision);
-      }
-      // An approved document is not overwritten by a write: the bytes a person signed would be
-      // replaced under their name. Asked of the row, which is where the verdict lives — the
-      // guard asks the file, and a store that has not been mirrored yet answers nothing.
-      if (prev?.status === "approved") {
-        return text(
-          `ERROR: ${path} is approved, so document_write does not overwrite it. An approval is a ` +
-          "verdict on bytes a person read: change it with document_revise, which files a new " +
-          "revision, names what caused the change and puts the gate back in front of them.");
-      }
-      content = envelopeFor(chain, path, content, { stakeholder, tags, title, fields, carry });
-      const fixed = normalizeSections(chain, path, content);
-      const gate = await documentGuards(chain, path, fixed.content, team);
+      // (2)
+      const refused = frontmatterRefusal(content, "document_write") ?? fieldRefusal(fields)
+        ?? tagRefusal(tags);
+      if (refused) return text(refused);
+      // (3) onwards: an absent target, its envelope, its causes and its receipt. The flow is read
+      // from the record `initiative_open` wrote, never from an argument here: an initiative that
+      // acquired a manifest on its second document would have that manifest's gates land on
+      // documents already written and unapproved.
+      const plan = await planCreate(p, team, who, path, args);
+      if ("reply" in plan) return text(plan.reply);
+      const gate = await documentGuards(plan.chain, path, plan.text, team);
       if (gate) return text(gate);
-      const written = await saveDocument({
-        team, relPath: path, initiative: path.split("/")[0], text: fixed.content, by: who,
-        flow: chain.name ?? undefined, type: chain.roles[path.split("/")[1] ?? ""],
-        mode: prev ? "rewrite" : "create", act: "write",
-      });
+      // The create takes the per-document lock and finds the path still absent under it, or
+      // answers TARGET_EXISTS; a key committed meanwhile replays.
+      const written = await saveDocument(plan.write);
+      if ("replayed" in written) return text(replayText(written.replayed) + await nextMoveLine(p, team, initiative));
       if (!("revision" in written)) {
         return text("refusal" in written ? written.refusal : `ERROR: ${path} could not be written`);
       }
-      recordAct(path, { user: who, action: "document_write", path, chars: fixed.content.length });
+      recordAct(path, { user: who, action: "document_write", path, chars: plan.text.length,
+                        sources: plan.causes.map((c) => c.path).join(",") });
       // The control loop is told after the write succeeded, never before. `noteDocument`
       // cannot refuse anything — `documentGuards` above has already decided — it only records
       // the fact the close is later derived from.
       //
       // DELIBERATE: awaited, not fired and forgotten. A write that returned before its
       // evidence landed would let a caller write a document and be told the step is unmet.
-      await noteDocument(chain, path, "document", { version: written.version, revision: written.revision },
+      await noteDocument(plan.chain, path, "document", { version: written.version, revision: written.revision },
                          who, team);
-      const assessed = await acceptanceLine(p, team, chain, path, fixed.content);
-      return text(`written: ${path} (${fixed.content.length} chars)` +
-        (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "") +
-        assessed + await nextMoveLine(p, team, path.split("/")[0]));
+      const assessed = await acceptanceLine(p, team, plan.chain, path, plan.text);
+      return text(plan.receipt +
+        (plan.renamed.length ? `\nRenamed to the heading this flow declares: ${plan.renamed.join(", ")}.` : "") +
+        assessed + await nextMoveLine(p, team, initiative));
     },
   );
 
@@ -182,7 +179,7 @@ export function registerArtifactTools(server: McpServer): void {
         version: z.number().int().positive().optional()
           .describe("Read the copy filed at approval N instead of the current document."),
         // DELIBERATE: `scope` is read-only and only on this tool. document_write and
-        // document_patch stay on the caller's own team; knowledge_add owns the writing side
+        // document_edit stay on the caller's own team; knowledge_add owns the writing side
         // of the shared journal and takes its own `scope`.
         scope: z.enum(["team", "platform"]).optional()
           .describe("Which shelf the path is on. Omit for your team's own store; " +
@@ -362,71 +359,6 @@ export function registerArtifactTools(server: McpServer): void {
       // `_meta`, never `structuredContent`: see document-panel.ts for what each client shows a model.
       return { ...text(out.join("\n\n────────\n\n")),
                _meta: { "zz-core/documents": panel, ...(reading ? { "zz-core/reading": true } : {}) } };
-    },
-  );
-
-  server.registerTool(
-    "document_patch",
-    {
-      annotations: WRITES,
-      description:
-        "Replace an exact text fragment (must occur exactly once) in a document. " +
-        "This is how a DRAFT is filled in section by section. It is refused on a gated " +
-        "document once that document is approved — an approved document changes through " +
-        "document_revise, which versions it and returns it to draft, because a signature " +
-        "has to cover the bytes it signed.",
-      inputSchema: { path: z.string(), find: z.string(), replace: z.string() },
-    },
-    async ({ path, find, replace }) => {
-      const blocked = writeGuard(path);
-      if (blocked) return text(blocked);
-      const p = db();
-      if (!p) return text(NO_DB);
-      const who = parseCaller(requestHeaders()).email;
-      const team = await teamFor(who);
-      if (!team) return text(NO_TEAM);
-      await safePath(path);
-      // The body is the current revision's, read from the row that retained it — the same
-      // bytes every other reader is answered with.
-      const loaded = await loadDocument(team, path);
-      if (!loaded.ok) {
-        return text(loaded.why === "missing" ? `ERROR: ${path} does not exist` : loaded.refusal);
-      }
-      if (loaded.doc.status === "approved") {
-        return text(
-          `ERROR: ${path} is approved, so document_patch refuses it. An approval is a verdict ` +
-          "on bytes a person read: change it with document_revise, which files a new revision, " +
-          "names what caused the change and puts the gate back in front of them.");
-      }
-      const body = loaded.text;
-      const n = body.split(find).length - 1;
-      if (n !== 1) return text(`ERROR: \`find\` occurs ${n} times, need exactly 1`);
-      // DELIBERATE: a function replacement, not a string one. `replace` is the model's own
-      // text, and a string replacement interprets `$$`, `$&`, `` $` `` and `$'` inside it.
-      const result = body.replace(find, () => replace);
-      // The envelope is not patchable: a patch edits text in place, so `find: "flow: x"` would
-      // otherwise reach the envelope, and ownershipCheck guards only PLATFORM_OWNED. Which
-      // fields, and what closing this route costs, are in envelopeEditRefusal's docstring.
-      const edited = envelopeEditRefusal(body, result);
-      if (edited) return text(edited);
-      // The chain comes from `result`, which is the same expression document_write uses.
-      const chain = await chainFor(p, team, path, result);
-      // Against the resulting document, not the replacement fragment: a fragment is a few
-      // lines with no frontmatter, and the guards have to see the whole thing.
-      const fixed = normalizeSections(chain, path, result);
-      const bad = await documentGuards(chain, path, fixed.content, team);
-      if (bad) return text(bad);
-      const written = await saveDocument({
-        team, relPath: path, initiative: path.split("/")[0], text: fixed.content, by: who,
-        flow: chain.name ?? undefined, type: chain.roles[path.split("/")[1] ?? ""],
-        mode: "rewrite", act: "patch",
-      });
-      if ("refusal" in written) return text(written.refusal);
-      recordAct(path, { user: who, action: "document_patch", path });
-      const assessed = await acceptanceLine(p, team, chain, path, fixed.content);
-      return text(`patched: ${path}`
-        + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
-        + assessed);
     },
   );
 
@@ -621,7 +553,7 @@ export function registerArtifactTools(server: McpServer): void {
             `${stale.length > 1 ? "were" : "was"} already approved before this material arrived, so ` +
             `the approval does not cover it. initiative_status reports this under ` +
             `sources_after_approval. Whether to change the document is the team's call — if they ` +
-            `decide to, document_revise bumps the version, links this source and re-opens the gate.`
+            `decide to, document_edit naming this source opens the next version and re-opens the gate.`
           : list.length && !round ? "\n\nNo approved document is affected." : "") +
         await nextMoveLine(p, team, initiative),
       );

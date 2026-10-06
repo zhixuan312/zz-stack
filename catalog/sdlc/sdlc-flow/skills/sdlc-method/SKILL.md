@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.19
+version: 1.20
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -264,13 +264,14 @@ grant you one. Opening WITHOUT one is a
 legitimate choice rather than a mistake: nothing is enforced on that initiative, and
 `initiative_status` says so by answering `next_move: null` instead of inventing a stage.
 
-**Documents** go in the initiative, written with `document_write` — never a local path. The
-initiative store is what gives a document its envelope, its version snapshot at approval, and
+**Documents** go in the initiative, created with `document_write` and changed with
+`document_edit` — never a local path. The initiative store is what gives a document its envelope, its version snapshot at approval, and
 its telemetry. A spec written to `./spec.md` is a file; a spec written to the initiative is a
 document someone can approve. This flow produces four: `explore.md`, `spec.md`, `plan.md`,
 `review.md` — and `review.md` is the one it closes on. The two audits produce SOURCES, not
-documents: an audit report is what makes the next version necessary, and the platform refuses
-that revision until the source is cited.
+documents: an audit report is what makes the next version necessary, and the change that
+answers it names it in `sources`. One filed since the release that began cause links is linked
+to that change by the platform even unnamed; one filed before it never is.
 
 **The journal** is the ZZ knowledge base, reached through zz-core: `knowledge_search` to read,
 `knowledge_add` to write. Not a local directory, and not this flow's own store. A journal on one

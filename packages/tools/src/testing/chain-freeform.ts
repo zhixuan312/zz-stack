@@ -57,18 +57,14 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
       check("a freeform initiative still records a gate",
         await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: signer }),
         false);
-      // And an approved freeform document is not patched afterwards. `document_approve` accepts
-      // any document in a freeform folder — a gate is a person saying yes, not a manifest — so
-      // a guard that asked the manifest whether the document was gated would abstain and leave
-      // the approver's name standing on bytes they never read.
-      check("an approved freeform document is not patched afterwards",
-        await call("document_patch", {
-          path: `${freeName}/notes.md`, find: "hand-assembled", replace: "quietly changed",
-        }), true, /document_revise/);
-      check("an approved freeform document is not edited afterwards either",
+      // And an approved freeform document's body does not change without its cause.
+      // `document_approve` accepts any document in a freeform folder — a gate is a person saying
+      // yes, not a manifest — so a rule that asked the manifest whether the document was gated
+      // would abstain and leave the approver's name standing on bytes they never read.
+      check("an approved freeform document is not edited afterwards without its cause",
         await call("document_edit", {
           path: `${freeName}/notes.md`, edits: [{ find: "then edited", replace: "quietly changed" }],
-        }), true, /NOT_YET|document_revise/);
+        }), true, /CAUSE_REQUIRED/);
       check("a freeform initiative still closes, on the document it names",
         await call("initiative_close", {
           initiative: freeName, disposition: "finished", accepted_by: "Chain Check",
@@ -97,19 +93,18 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
         const stoppedEnv = parseEnvelope(stoppedDoc);
         record(stoppedEnv.outcome === "abandoned" && stoppedEnv.accepted_by === undefined,
                "an abandoned close records no acceptor", stoppedDoc);
-        // And the closed record is not quietly overwritten. A closed document may be corrected
-        // — document_revise freezes the signed text, bumps the version and requires a cause —
-        // but document_write does none of that. Asserted on an abandoned close, which lands on
-        // the furthest document that exists and which nobody approved, because no other guard
-        // covers that case.
-        // DELIBERATE: either refusal is the answer, and the second is the better one. The rewrite
-        // would drop an outcome the platform wrote, so the rule it meets first is the outcome's
-        // own — "written by the platform, not by hand" — and `document_revise` is what that rule
-        // tells the caller to use. Pinning this to the word `document_revise` made the check report
-        // the stronger refusal as a failure.
+        // And the closed record is not quietly overwritten. A closed document may be corrected —
+        // document_edit carries the outcome forward and lands the change as a draft correction —
+        // but document_write only creates. Asserted on an abandoned close, which lands on the
+        // furthest document that exists and which nobody approved, because no other guard covers
+        // that case.
+        // DELIBERATE: either refusal is the answer, and both name document_edit. A write onto a
+        // path that exists is refused as one; were the closed-document guard asked first, it
+        // refuses the rewrite as the document this initiative closed on. Pinning this to one of the
+        // two made the check report a correct refusal as a failure.
         check("a closed document is not overwritten by document_write",
           await writeDoc(`${stoppedName}/notes.md`, "rewritten after the close"),
-          true, /document_revise|written by the platform, not by hand/);
+          true, /TARGET_EXISTS|is the document this initiative closed on/);
     }
   }
 

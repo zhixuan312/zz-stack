@@ -132,12 +132,11 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-prose.ts",
     target: "a re-entry section names the tool that can change an approved document",
     subject: `${SDLC}/sdlc-plan/SKILL.md`,
-    find: "document_revise",
-    replace: "document_patch",
+    find: "document_edit",
+    replace: "document_write",
     all: true,
-    planted: "the plan stage tells a re-entering agent to patch plan.md, which the platform " +
-      "refuses on an approved document — and the same file two lines above says so, so the " +
-      "skill routes the agent straight into a refusal it has already explained",
+    planted: "the plan stage tells a re-entering agent to write plan.md again, which the platform " +
+      "refuses with TARGET_EXISTS — so the skill routes the agent straight into a refusal"
   },
   {
     check: "scripts/gate/checks/skill-prose.ts",
@@ -301,8 +300,8 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-tools.ts",
     target: "every MCP tool description is well-formed",
     subject: ARTIFACTS,
-    find: "\"logs, records). The store is shared with your whole team if you belong to \"",
-    replace: "\"logs, records. The store is shared with your whole team if you belong to \"",
+    find: "\"Create a document in your team's store (specs, plans, logs, records). It CREATES ONLY: \" +",
+    replace: "\"Create a document in your team's store (specs, plans, logs, records. It CREATES ONLY: \" +",
     planted: "document_write's description loses the bracket that closed its parenthesis, so " +
       "the sentence a model reads before every write trails off mid-clause — the shape an " +
       "unfinished edit leaves behind",

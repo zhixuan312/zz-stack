@@ -163,15 +163,14 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   },
   {
     check: SUITES_SURFACE,
-    target: "a revision names its cause — one route or the other, never neither and never both",
-    assertion: "words passed as source_content are a cause on their own",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "      if (!causes.length) {",
-    replace: '      if (!causes.includes("sources")) {',
-    planted: "document_revise starts demanding a source already on the record, so the other " +
-      "half of the rule dies quietly: a wording fix that says in one line what was wrong is " +
-      "refused, and the refusal still tells the caller to send `source_content`, which the " +
-      "tool now ignores",
+    target: "a change to an approved body names its cause — a source on the record or new words, never neither",
+    assertion: "a single cause is enough",
+    subject: "services/zz-core/src/document-change.ts",
+    find: "  if (bodyChanged && approved && !causes.length) {",
+    replace: "  if (bodyChanged && approved && causes.length < 2) {",
+    planted: "document_edit starts demanding two causes, so the other half of the rule dies " +
+      "quietly: a wording fix that says in one line what was wrong is refused, and the refusal " +
+      "still tells the caller that one source or its words is enough",
   },
   {
     check: SUITES_SURFACE,

@@ -25,7 +25,7 @@
  * `findings.md`, and applicable when `release_mode` is `promotable` — the branch fact
  * `release_prepare` records before it calls this. `documentGuards` applies that manifest to this
  * write — its `requires` prerequisite and its declared sections — and refuses to write over a
- * document already approved (a revision is `document_revise`).
+ * document already approved (a change to one is `document_edit`'s).
  */
 
 import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";

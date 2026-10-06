@@ -1,6 +1,6 @@
 ---
 name: sdlc-explore
-version: 1.10
+version: 1.11
 description: Ground a raw idea before anyone designs it — capture the brain dump, fan out parallel workers across this system, the outside world and the ZZ knowledge base, wait for all of them, then synthesise one explore.md (Background · Current state · Rough direction). Main agent, with the fan-out dispatched.
 when_to_use: "Someone arrives with a raw idea, problem, feature request or brain dump and it needs grounding before it is designed. The question is exploratory — several directions to weigh, not one fact to look up. If it is one convergent question, that is a single sdlc-investigate, not this. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -78,6 +78,9 @@ The synthesis is yours. **Do not dump the raw worker reports back to the person*
 synthesis IS the output, and the reports are what you reasoned over.
 
 Write it into the initiative with `document_write` as `explore.md`. Never a local path.
+`document_write` creates it once and refuses it after. A later change — a section the person
+corrects once they have read it — is `document_edit`: the section's heading as `section`, its
+new text, heading line first, as `content`, and what they said as `source_content`.
 
 Then fetch it back with `document_present("<initiative>/explore.md")` and put what it returns
 in front of the person before they pick a direction to carry into `sdlc-spec`. A write that

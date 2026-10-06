@@ -26,6 +26,7 @@ import type pg from "pg";
 
 import { closingDocRuledOut, factsFor } from "./initiative-record.js";
 import { db } from "./platform-db.js";
+import { dayOf } from "./versions.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
 /** The document facts a guard judges. Deliberately small: a check asks whether a document is
@@ -71,7 +72,10 @@ async function documents(p: pg.Pool, team: string | null, initiative: string): P
       where i.slug = $1 and ($2::text is null or t.slug = $2)
       order by d.path`, [initiative, team]);
   for (const d of rows) {
-    out.set(d.path, { status: d.status, approved_by: d.approved_by, approved_at: d.approved_at,
+    // `approved_at` as the day the envelope states it (`documentText` renders it the same way), so
+    // a write carrying an approval forward unchanged is not read as changing it.
+    out.set(d.path, { status: d.status, approved_by: d.approved_by,
+                      approved_at: d.approved_at === null ? null : dayOf(d.approved_at),
                       outcome: d.outcome, closed_by: d.closed_by });
   }
   return out;
@@ -295,14 +299,15 @@ async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath
   }
   return null;
 }
-/** An approved gated document changes through `document_revise`, or it does not change.
+/** An approved document changes through `document_edit`, or it does not change.
  *
- * `document_revise` bumps the version, returns the document to draft, clears the approval and
- * stores what caused the change. `document_write` and `document_patch` are refused here
- * rather than taught to imitate it, because a signature has to cover the bytes it signed.
+ * `document_edit` opens a new version as a draft with its cause recorded, and leaves the approved
+ * version readable. A write that reaches the guards without `via` — an eval document's rewrite — is
+ * refused here rather than taught to imitate it, because a signature has to cover the bytes it
+ * signed.
  *
- * Gated documents only, and only while approved. A flow may mark an ungated document
- * `approved` as a working state, and editing that is ordinary work, as is editing a draft. */
+ * Only while approved and signed. A flow may mark an ungated document `approved` as a working
+ * state, and editing that is ordinary work, as is editing a draft. */
 async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
                                      via: string | null): Promise<string | null> {
   if (via) return null;                       // the acts that pass `via` own their writes, document_edit among them
@@ -320,37 +325,29 @@ async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | nu
   const gated = chain.documents.some((d) => d.name === parts[1] && d.gate);
   return (
     `ERROR: ${relPath} is approved${gated ? " and carries a gate" : ""}, so it changes through ` +
-    `document_revise(path: "${relPath}", content: …) — not document_write or document_patch. ` +
-    "That call bumps the version, returns the document to draft, clears the approval and " +
-    "keeps the approved revision. Writing over it here would leave the approver's " +
-    "name standing on bytes they never read. If somebody's words are what changed it, pass " +
-    "them as `source_content` in the same call and the record explains itself."
+    `document_edit(path: "${relPath}", …) with its cause in \`sources\` or \`source_content\` — ` +
+    "the change opens a new version as a draft and the approved version stays readable"
   );
 }
-/** A document an initiative closed on changes only through `document_revise`.
+/** A document an initiative closed on changes only through `document_edit`.
  *
  * Its own guard, because neither of the other two covers it. `ownershipCheck` passes: the
  * envelope is carried forward, so `outcome` matches. `approvedDocumentGuard` abstains: an
  * abandoned close lands on the furthest document that exists, which on sdlc-flow is usually
  * the ungated `explore.md`, approved by nobody.
  *
- * `document_revise` freezes the signed text, bumps the version, carries the outcome forward
- * and requires a source or `source_content`; `document_write` does none of that. A closed
- * record may be corrected, and a correction says what caused it. */
+ * `document_edit` files the correction as a draft beside the signed revision and carries the
+ * outcome forward; a write without `via` does neither. A closed record may be corrected; it may
+ * not be quietly overwritten. */
 async function closedDocumentGuard(p: pg.Pool, team: string | null, relPath: string,
                                    via: string | null): Promise<string | null> {
   if (via) return null;                       // the acts that pass `via` own their writes, document_edit among them
   const { doc } = await held(p, team, relPath);
   if (!doc?.outcome) return null;
   return (
-    `ERROR: ${relPath} is the document this initiative CLOSED on (outcome: ${doc.outcome}), so it ` +
-    `changes through document_revise(path: "${relPath}", content: …) — not document_write or ` +
-    "document_patch. The close itself is untouched either way: the platform carries the " +
-    "outcome forward and the ledger row stands. What document_revise adds is the part that " +
-    "matters here — it " +
-    "freezes the signed revision, bumps the version, and requires you to " +
-    "say what caused the change, as `sources` or `source_content`. A closed record may be " +
-    "corrected; it may not be quietly overwritten."
+    `ERROR: ${relPath} is the document this initiative closed on (outcome: ${doc.outcome}), so it ` +
+    `changes through document_edit(path: "${relPath}", …) — the change is a draft correction, ` +
+    "and the close and its ledger row stand"
   );
 }
 /** Whether a closed initiative has settled its prerequisite, whichever document it landed on.
@@ -369,7 +366,7 @@ async function closedOnSomeDocument(p: pg.Pool, team: string | null, initiative:
  *  it has always gotten.
  *
  *  `not_applicable`: the branch has ruled this document out, and a document ruled out is never
- *  written — there is nothing to revise it into either, so this refuses `document_revise` the
+ *  written — there is nothing to change it into either, so this refuses `document_edit` the
  *  same as `document_write`.
  *  `undetermined`: the branch has not resolved yet; the contract calls this "not writable yet",
  *  not a refusal about approval or ownership. */
@@ -478,7 +475,8 @@ async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath:
  * being true without anything failing.
  *
  * `document_approve()` and `initiative_close()` stamp these fields from the session and the
- * clock, and pass `via` to say so. document_write, document_patch and document_revise reach
+ * clock, and pass `via` to say so; `document_edit` passes it because it composes them itself —
+ * carrying a close forward, taking an approval off. document_write and the eval documents reach
  * this function with `via` unset and are refused the moment they introduce or change one.
  *
  * Change is the test, not presence: re-sending an unchanged approval line while patching a
@@ -508,13 +506,12 @@ async function ownershipCheck(p: pg.Pool, team: string | null, relPath: string, 
       (a ? `change it from \`${a}\` to \`${b || "(removed)"}\`` : `set it to \`${b}\``) + ". " +
       (field === "outcome" || field === "closed_by"
         ? "Use `initiative_close(initiative, disposition)`: you say finished or abandoned and who accepted it, and the outcome follows from that."
-        // An approved document being rewritten needs document_revise, not document_approve:
+        // An approved document being rewritten needs document_edit, not document_approve:
         // the caller has already approved it, and what they are asking for is a new version.
         : a === "approved"
-          ? "That document is approved. Use `document_revise(path, content, because|source)` to " +
-            "supersede it — it opens a new version, records what caused it, and returns the " +
-            "document to draft so it can be approved again. `document_write` is for a document " +
-            "nobody has approved yet."
+          ? "That document is approved. Use `document_edit(path, …)` with its cause in `sources` " +
+            "or `source_content` — it opens a new version as a draft, records what caused it, and " +
+            "the approved version stays readable. `document_write` only creates a document."
           : "Use `document_approve(path)` the moment the person agrees: it stamps status, approved_by and approved_at from who you are and what time it is.") +
       " A field the platform can fill is never a field you should be asked to."
     );

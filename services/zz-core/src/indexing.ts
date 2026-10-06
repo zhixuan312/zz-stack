@@ -190,7 +190,7 @@ export async function docRows(p: pg.Pool, team: string | null, initiative: strin
 }
 /** The approval a write carries forward, as `saveDocument` takes it.
  *
- *  `document_approve` and `document_revise` seal the revision they write, and a close rewrites
+ *  `document_approve` seals the revision it writes, and a close rewrites
  *  the current revision of a document that is usually approved — a rewrite of a sealed revision
  *  without its seal is refused by `zz.doc_revision`'s own check, and rightly, because a
  *  signature has to cover the bytes it signed. A document carrying no approval returns null, and
@@ -200,7 +200,7 @@ export function sealOf(stamped: string): { by: string; at: string } | null {
   const at = env.approved_at && /^\d{4}-\d{2}-\d{2}/.test(env.approved_at) ? env.approved_at : null;
   return env.status === "approved" && env.approved_by && at ? { by: env.approved_by, at } : null;
 }
-/** A source document, written by source_add and by document_revise — same `type: source`,
+/** A source document, written by source_add and by a captured `source_content` — same `type: source`,
  * same fields, same readers, so one builder rather than two hand-built envelopes.
  *
  * Through renderEnvelope, so every value is folded to one line whatever a caller sends. A

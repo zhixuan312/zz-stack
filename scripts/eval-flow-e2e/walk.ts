@@ -117,12 +117,13 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
   ].join("\n") });
   await c.call("core", "document_present", { path });
   await c.call("core", "document_approve", { path });
-  // The revision step, and the reason this walk exists in this phase: an approval seals the
-  // revision it names, `document_revise` files a NEW one beside it and moves `current_revision`
-  // to it, and the approved revision stays on the record untouched. Nothing else in the tree
-  // exercises that, and the deferred current-revision key, the two-table split and the
-  // one-time seal are all only true together.
-  const revised = await c.call("core", "document_revise", {
+  // The new-version step, and the reason this walk exists in this phase: an approval seals the
+  // revision it names, a caused change to the approved body (`document_edit`) files a NEW one
+  // beside it as the next public version and moves `current_revision` to it, and the approved
+  // revision stays on the record untouched. Nothing else in the tree exercises that, and the
+  // deferred current-revision key, the two-table split and the one-time seal are all only true
+  // together.
+  const revised = await c.call("core", "document_edit", {
     path,
     content: [
       "## The plugin under evaluation",
@@ -141,9 +142,10 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
     source_content: "The operator read the protocol back before approving it and changed nothing.",
     source_title: "Protocol re-read before affirmation",
     note: "re-read before qualification",
-  }, { note: (r) => `revised: ${String(r.text ?? "").split("\n")[0]?.slice(0, 80)}` });
-  if (!/v\d+ -> v\d+/.test(String(revised.text ?? ""))) {
-    throw new Error(`document_revise did not file a revision: ${String(revised.text ?? "").slice(0, 300)}`);
+  }, { note: (r) => `edited: ${String(r.text ?? "").split("\n")[0]?.slice(0, 80)}` });
+  // The receipt's first line says which version the change landed in: `edited: <path> — v2 (new version)`.
+  if (!/^edited: \S+ — v2 \(new version\)$/m.test(String(revised.text ?? ""))) {
+    throw new Error(`document_edit did not open a new version: ${String(revised.text ?? "").slice(0, 300)}`);
   }
   // Both revisions read back, each as itself: the revision just filed is the current one and is
   // DRAFT again — a revision returns the gate to a person — and the one the first approval

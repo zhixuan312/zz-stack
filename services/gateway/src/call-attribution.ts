@@ -24,7 +24,7 @@ interface CallArgs {
  *
  *  `document_approve` is here because the manifest answers for an approval exactly as it does
  *  for a write: the stage that owes the document. The control loop records it the same way. */
-const ABOUT_A_DOCUMENT = /^(document_write|document_revise|document_patch|document_edit|document_approve)$/;
+const ABOUT_A_DOCUMENT = /^(document_write|document_edit|document_approve)$/;
 
 /**
  * The stage this call completes, or undefined when the manifest names none — which is the

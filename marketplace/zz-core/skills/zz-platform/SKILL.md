@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.81
+version: 3.82
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -31,7 +31,7 @@ read the table to know what you can do, read the prose to know what will stop yo
 | From | The act | To | Refused when |
 |---|---|---|---|
 | nothing | `initiative_open(slug)`, or `initiative_open(slug, flow)` | open | you typed a date into the slug — the platform prepends its own |
-| open | `document_write`, `document_approve`, `source_add` | open | see the document table |
+| open | `document_write`, `document_edit`, `document_approve`, `source_add` | open | see the document table |
 | open | `initiative_close(initiative, disposition)` | closed, with an `outcome` | a declared document is missing or its gate was never recorded |
 | closed | — | nothing reopens it | a closed initiative is a finished record, and a record's value is that it is not edited afterwards |
 
@@ -48,11 +48,13 @@ afterwards, deliberately: the gates it declares would land on documents already 
 
 | From | The act | To | Who writes the envelope |
 |---|---|---|---|
-| nothing | `document_write` | `status: draft` — ONLY where the flow gates the document | the platform |
-| draft | `document_edit`, `document_patch`, `document_write` | draft | the platform |
+| nothing | `document_write` | v1 — `status: draft` ONLY where the flow gates the document | the platform |
+| exists | `document_write` | **refused**, `TARGET_EXISTS` — it creates and never overwrites | — |
+| draft | `document_edit` | draft — the same `version`, or the next one when the change brings a cause new to this one | the platform |
 | draft | `document_approve(path)` | `status: approved`, plus `approved_by` and `approved_at` | the platform, from your session |
-| approved | `document_edit`, `document_patch`, `document_write` | **refused**, pointing you at `document_revise` | — |
-| approved | `document_revise` | draft again, a new `version`, the cause recorded | the platform |
+| approved | `document_edit`, body changed, no cause | **refused**, `CAUSE_REQUIRED` | — |
+| approved | `document_edit`, body changed, with its cause | draft again, the next `version`, the cause recorded; the approved version stays readable | the platform |
+| approved | `document_edit`, metadata only | a draft of the same `version`, awaiting its own approval | the platform |
 | any | `document_present(path)` | unchanged — a `shown` entry is appended to the activity log | the platform |
 | approved | `source_add(..., supports: <path>)` | approved, and flagged for refinement | the platform |
 
@@ -80,7 +82,7 @@ and why. These are the situations it distinguishes:
 | an outcome is recorded and nothing is owed: an abandoned close, or a finished one whose handover is approved | nobody |
 | nothing declared a chain: freeform, `next_move: null`, and `next_move_absent` says so | nobody |
 
-**You are told it without asking, too.** `document_write`, `document_approve`, `document_revise`
+**You are told it without asking, too.** `document_write`, `document_edit`, `document_approve`
 and `source_add` end their result with a `Next move:` line computed the same way, so the step
 after an approval — the audit round it owes, or the close — reaches you in the answer to the
 call that made it due.
@@ -136,7 +138,7 @@ the timing; getting this wrong costs a plan, not a refusal.
 
 - The store is on the PLATFORM, not on any machine you can reach. The
   artifact tools are the only way in: `document_list`, `document_read`,
-  `document_write`, `document_patch`. Paths are relative to your team's store, e.g.
+  `document_write`, `document_edit`. Paths are relative to your team's store, e.g.
   `2026-08-19-sample-intake/spec.md`. Where your client also gives you a shell (Claude Code,
   the one client this platform packages), it reaches your own disk and never the team's
   store, so the rule is the same one.
@@ -165,8 +167,8 @@ the timing; getting this wrong costs a plan, not a refusal.
   initiative's own activity log. Whether your reply then carried the content
   is not something the platform can see — a tool result is your input, not a
   display. **`document_approve` refuses a document whose current content was
-  never presented:** call `document_present` after the last write, patch or
-  revise, in its own call, then approve.
+  never presented:** call `document_present` after the last write or
+  edit, in its own call, then approve.
 
   **A client that renders MCP Apps shows the result as a document panel** —
   the whole document, whatever length, with its status and the approval. The
@@ -178,7 +180,7 @@ the timing; getting this wrong costs a plan, not a refusal.
   through, the passage on their screen and anything they selected. "This" in
   their question means the selection, or else that passage: answer from it.
   Review notes they send from the panel name each passage and what should
-  change: revise with `document_revise`, then present again — the panel marks
+  change: change it with `document_edit`, then present again — the panel marks
   the sections that changed, so they re-read only those.
 
   **A standing delegation waives their review, not the fetch.** "Approve
@@ -289,14 +291,15 @@ the timing; getting this wrong costs a plan, not a refusal.
   which is the only kind there is.
 - **An initiative closes once. A closed record may be corrected; what closed it may
   not.** A second `initiative_close` is refused, and the `outcome`, `closed_by` and the
-  ledger row that went with it are fixed for good. The document itself is not:
-  `document_revise` works on a closed document, carries the outcome forward, files the
-  signed text as the revision the approval stands on and records what caused the change — so a wrong
-  number in a closed `review.md` is corrected where somebody reading the report will
-  see it. What changed is what the report SAYS, not what it concluded. If the VERDICT
-  was wrong, that is a different thing and not a revision: `knowledge_add` it against
-  the initiative, `scope: "team"` unless the mistake is itself a fact about a registry
-  entry, in which case `scope: "platform"`.
+  ledger row that went with it are fixed for good. The document itself is not: `document_edit`
+  works on a closed document, with its cause like any approved one. The correction is a draft
+  — the next version, awaiting its own approval — while the close, its outcome and its ledger
+  row stand, and the approved revision the close rested on stays readable by version. So a
+  wrong number in a closed `review.md` is corrected where somebody reading the report will see
+  it. What changed is what the report SAYS, not what it concluded. If the VERDICT was wrong,
+  that is a different thing and not a revision: `knowledge_add` it against the initiative,
+  `scope: "team"` unless the mistake is itself a fact about a registry entry, in which case
+  `scope: "platform"`.
 - **A finished close owes the handover; an abandoned one does not.**
   `initiative_close` is terminal, and it may be called at ANY point: an
   initiative that ran to its last stage and one that stopped halfway are both
@@ -445,78 +448,74 @@ The knowledge store is the team's, not one agent's session:
 
 ### The law: what changes a document is stored with it
 
-**If someone's input changes a required document, that input becomes a
-source and the document goes to the next version.** The same knowledge model
-on every harness — because the
-knowledge is the same knowledge.
+**If someone's input changes a required document, that input becomes a source and the document
+goes to the next version.** The same knowledge model on every harness — because the knowledge is
+the same knowledge.
 
-**Half of that the platform enforces and half of it is yours.** Once a gated
-document is approved, `document_write` and `document_patch` are refused on it outright
-and `document_revise` is the only way through, so on an approved document the
-version bump cannot be skipped.
+**Half of that the platform enforces and half of it is yours.** Once a document is approved,
+a change to its body without a cause is refused — `ERROR: CAUSE_REQUIRED` — so on an approved
+document the version bump cannot be skipped. **On an approved document even a wording fix has a
+cause worth one line**, and that line IS the material: the next reader cannot otherwise tell a
+decision taken elsewhere from a second thought.
 
-**A revision without a cause is refused.** `document_revise` takes `sources` (files
-already registered) or `source_content` (the material itself, captured in the same
-call), and a revision supplying neither is refused by name: *nothing says what caused
-this version*. A document changes because of evidence or it does not change — that is
-the rule, and it holds for a draft, an ungated document and a freeform one alike. If a
-source you registered says it supports this document and you do not cite it, that is
-refused too.
+**Versions follow causes.** `document_edit` takes `sources` (files already registered) or
+`source_content` (the material itself, filed as a source in the same call). A change bringing a
+cause new to the current version opens the next one — several causes in one call open one. A
+change bringing none — a typo, a second edit for the same input — stays in its version, and on a
+draft or an ungated document needs no cause at all. After the first call for one input, name the
+source its reply filed in `sources` rather than resending the words, so its edits stay one version.
 
-What is NOT checked is whether the cause you gave is a good one. Attaching it is what
-makes the record explain itself.
+**The platform links what already explains a change.** A source declaring `supports: <this
+document>`, cited by no version of it yet and filed since the release that began cause links —
+the cause-link epoch — is linked as the cause of the next body change, and the reply names it
+`(platform)`. **A source filed before that epoch is never linked automatically**, so a change
+that answers one names it in `sources`. A platform link says the source came before the change,
+not that the change answered it. What is NOT checked is whether a cause is a good one.
 
-The commonest case is not a meeting note; it is the second brain dump. A
-person describes what they want, you write `intent.md`, and then they say
-more — a correction, an extra constraint, a change of mind. That second
-message is not chat: it is **the reason intent v2 differs from v1**, and it
-is stored.
-
-One call does all of it:
+The commonest case is not a meeting note; it is the second brain dump. A person describes what
+they want, you write `intent.md`, and then they say more — a correction, an extra constraint, a
+change of mind. That second message is not chat: it is **the reason intent v2 differs from
+v1**, and it is stored. One call does all of it:
 
 ```
-document_revise(
+document_edit(
   path: "<initiative>/intent.md",
-  content: "<the full revised document>",
+  section: "Scope",
+  content: "## Scope\n\n<the section as it now reads>",
   source_content: "<what they just said, verbatim>",
   source_title: "Second brain dump — <what it was about>")
 ```
 
-The platform then bumps `version` (v1 → v2), sets `status` back to `draft`
-so the gate returns to a human, clears the stale approval, writes their
-words into `sources/`, and links it from the document. The v1 that was
-approved stays as the sealed revision `document_read(path, version: 1)` answers with. Two things end up in the record: **the
-source (what they said) and v2 (what it made us change)** — and anyone
-reading later can see one caused the other.
+The platform writes their words into `sources/`, links them as the cause and opens v2 — on an
+approved document as a `draft`, the stale approval cleared, and the approved v1 stays as the
+sealed revision `document_read(path, version: 1)` answers with. **The source (what they said)
+and v2 (what it made us change)** are both on the record, and a later reader sees one caused the other.
 
-- Never overwrite an approved document with `document_write`.
-- **To change part of a draft, send only what changes:** `document_edit(path: "<initiative>/spec.md",
-  edits: [{find: "<the text as it is>", replace: "<what it becomes>"}])` takes up to 128 exact
-  pairs and applies them together or not at all; each `find` must occur exactly once in the
-  document as it is now, and the refusal names the edit and the lines when it does not. An
-  approved document still changes through `document_revise`.
-- **A large document is revised one section at a time:** `document_revise(..., section: "Phase 5",
-  content: "## Phase 5\n\n…")` replaces that heading and everything under it and keeps the rest byte
-  for byte. `document_read(path, section: "Phase 5")` returns exactly what it replaces. Send the
-  whole body only when the change is not one section's.
-- Quote them, do not paraphrase: the source is their words, the document is
-  your writing. **[convention]** The platform stores whatever you send as
-  `source_content` and never saw what the person actually said, so it cannot
-  tell a quotation from a summary of one. A paraphrase filed as a source is a
-  record that looks like evidence and is not.
-- **A version names the material behind it, and a revision that names none is
-  refused.** `document_revise(..., sources: ["sources/<file>.md"])` cites what
-  is already on the record — an audit round, a decision written down;
-  `document_revise(..., source_content: "<their words>")` passes material that
-  is not, and the platform stores it as a source and links it. A revision that
-  ignores what already explains it is refused too: any source declaring
-  `supports: <this document>` and added after the version being replaced has to
-  be cited.
-  **Even a wording fix has a cause worth one line**, and that line IS the
-  material — there is no route that records a content change with the reason
-  left off, because the next reader cannot then tell a decision taken elsewhere
-  from a second thought. The ENVELOPE is untouched by this: approving, closing
-  and presenting change no content and name no source.
+- **`document_write` creates and never overwrites** — on a path that exists it answers
+  `TARGET_EXISTS`. **Every change is `document_edit`, sending only what changed**, ONE body
+  change per call:
+  - **`edits`** — up to 128 exact `{find, replace}` pairs, all or nothing; each `find` occurs
+    exactly once in the document as it is now, or the refusal names the edit and its lines.
+    This is how a draft's scaffold is filled:
+    `document_edit(path: "<initiative>/spec.md", edits: [{find: "<the text as it is>", replace: "<what it becomes>"}])`.
+  - **`section` with `content`** — `section: "Phase 5", content: "## Phase 5\n\n…"` replaces that
+    heading and everything under it, byte for byte elsewhere; `document_read(path, section:
+    "Phase 5")` returns exactly what it replaces. When headings share the text, `section_level`
+    and `section_occurrence` pick one — `SECTION_AMBIGUOUS` lists each candidate's pair.
+  - **`content` alone** — the whole body, only when the change is not one section's.
+  - **Metadata alone** — `title`, `tags`, `stakeholder`, `fields`: no cause, same version; on an
+    approved document, a draft of that version awaiting its own approval.
+- **Send the `content revision` you read as `base`.** Every read and every edit's reply states
+  one (`cr_…`); with it, a document that moved since is refused `BASE_CONFLICT` instead of taking
+  your change on text you never saw. Without it a whole-body `content` replaces whatever is there.
+- **One `request_id` per intended change, reused on every retry of it.** A change that already
+  landed answers with its first reply, marked `(replayed)`, instead of landing twice; the same key
+  on different arguments is `REQUEST_ID_CONFLICT`. A call that changes nothing says `no change`.
+- Quote them, do not paraphrase: the source is their words, the document is your writing.
+  **[convention]** The platform stores whatever you send as `source_content` and never saw what
+  the person actually said, so it cannot tell a quotation from a summary of one. A paraphrase
+  filed as a source is a record that looks like evidence and is not. The ENVELOPE is untouched
+  by causes: approving, closing and presenting change no content and name no source.
 - `source_list(initiative)` shows what evidence exists and what each piece
   supports. Read it before judging any document.
 - **Feedback is material too.** A reviewer's objection, an auditor's note, a
@@ -539,7 +538,7 @@ reading later can see one caused the other.
 
   | | door | |
   |---|---|---|
-  | documents | `/core/mcp` | `document_write` `document_edit` `document_read` `document_present` `document_patch` `document_list` `document_revise` `document_shown` |
+  | documents | `/core/mcp` | `document_write` `document_edit` `document_read` `document_present` `document_list` `document_shown` |
   | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
   | gates | `/core/mcp` | `document_approve` |
   | sources | `/core/mcp` | `source_add` `source_upload` `source_list` |
@@ -655,11 +654,11 @@ the discussion as its source, so it reaches you as a source on that initiative, 
 that document. `source_list` shows sources; `sources_after_approval` in `initiative_status`
 names the ones that arrived after a gate closed.
 
-Addressing a source is not a flag you set. You read it, you revise the document
-with `document_revise`, and you cite it — the next version, and the source it
-names, ARE the record that it was addressed. A source you did not act on
-stays visible, which is the point: nothing lets you mark it handled without
-the document moving.
+Addressing a source is not a flag you set. You read it, you change the document with
+`document_edit`, and you name it in `sources` — the next version, and the source it names, ARE
+the record that it was addressed. Name it even when the platform would link it itself: its own
+link says only that the source came before the change. A source you did not act on stays
+visible, which is the point: nothing lets you mark it handled without the document moving.
 
 ## A team cannot change what a skill says
 

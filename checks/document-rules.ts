@@ -52,11 +52,6 @@ refuses("a field name with a capital is refused", R.fieldRefusal({ Status: "x" }
 refuses("a field name with a dash is refused", R.fieldRefusal({ "my-field": "x" }));
 allows("no fields at all is allowed",          R.fieldRefusal(undefined));
 
-/* envelopeEditRefusal — the governance fields are the platform's */
-const base = "---\nflow: sdlc-flow\ntype: spec\nstatus: draft\n---\n\n# Spec\n\nbody\n";
-allows("an unchanged envelope is allowed",     R.envelopeEditRefusal(base, base));
-refuses("hand-writing status is refused",      R.envelopeEditRefusal(base, base.replace("status: draft", "status: approved")));
-
 /* renderEnvelope — one writer, and it never drops a field */
 // The declared order first, then everything else the caller set: `order` is not a filter, and
 // a field outside it is still written, at the end.

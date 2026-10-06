@@ -33,8 +33,9 @@ import { ENVELOPE_COLUMN_KEYS, NO_DB, contentRevision, principalId, recordAct, s
 interface DocumentChange {
   /** A new public version: a cause new to the current version was named, captured or owed. */
   nextVersion: boolean;
-  /** The state the change was computed from, as `documentState` read it. */
-  expect: DocumentState;
+  /** The state the change was computed from, as `documentState` read it. Absent only on a create,
+   *  which has no state to compare: a change naming none never lands on an existing document. */
+  expect?: DocumentState;
   /** The content generation the caller's `base` token named, when it sent one. */
   base?: number;
   /** A source captured from the caller's words, filed as its own document first. */
@@ -92,7 +93,31 @@ interface DocumentWrite {
    *  a person was shown never lands on an edit committed after it. */
   expect?: DocumentState;
   change?: DocumentChange;
+  /** The id a create files the document under, chosen by its caller so the receipt it records can
+   *  name the document's content revision before the commit. */
+  id?: string;
+  /** The close this write records on the initiative's anchor row, in the document's own
+   *  transaction: after the lock and the state compare, so a moved document, a refused write or a
+   *  concurrent close commits neither the row nor the document. */
+  closeAnchor?: CloseAnchor;
 }
+
+/** What `initiative_close` records on `zz.initiative`. */
+interface CloseAnchor {
+  outcome: string;
+  /** The closer, by address; a principal that is not active records no `closed_by`. */
+  closedBy: string;
+  acceptedBy: string | null;
+  noSignoffReason: string | null;
+}
+
+/** The refusal a write answers when its `expect` no longer holds; `document_approve` and
+ *  `initiative_close` recognise it by this prefix. */
+export const STATE_CHANGED = "ERROR: STATE_CHANGED";
+
+/** A create on a path that already names a document. */
+export const targetExists = (relPath: string): string =>
+  `ERROR: TARGET_EXISTS — ${relPath} exists; change it with document_edit`;
 
 /** The three facts every write moves at least one of: an edit moves the generation, and every
  *  write — an approval and a close included — files a new row or stamps `written_at`. */
@@ -337,12 +362,12 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
         now.generation !== e.generation || now.revision !== e.revision || now.writtenAt !== e.writtenAt;
       if (!change && w.expect && moved(w.expect)) {
         return await bail({ refusal:
-          `ERROR: STATE_CHANGED — ${w.relPath} changed after it was read (now revision ` +
+          `${STATE_CHANGED} — ${w.relPath} changed after it was read (now revision ` +
           `${now.revision}, content revision ${contentRevision(existing.id, now.generation)}); read ` +
           "it again and decide on what it says now." });
       }
       if (change) {
-        if (moved(change.expect)) {
+        if (!change.expect || moved(change.expect)) {
           if (change.base !== undefined && change.base !== now.generation) {
             return await bail({ refusal:
               `ERROR: BASE_CONFLICT — ${w.relPath} is at content revision ` +
@@ -367,7 +392,27 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
         ? (change.nextVersion ? "append" : existing.pinned ? "pinned" : "rewrite")
         : (w.mode === "append" ? "append" : "rewrite");
     } else if (existing) {
-      return await bail({ refusal: `ERROR: ${w.relPath} already exists` });
+      // A source is immutable and has no change to send instead; every other document has one.
+      return await bail({ refusal: w.act === "source" ? `ERROR: ${w.relPath} already exists`
+                                                      : targetExists(w.relPath) });
+    }
+
+    // The close, on the anchor row, once the document it is recorded on is known not to have
+    // moved. Guarded on `closed_at is null`: the row, not the caller's earlier read, is what a
+    // second concurrent close is refused by, and the refusal rolls the document back with it.
+    if (w.closeAnchor) {
+      const a = w.closeAnchor;
+      const { rowCount } = await client.query(
+        `update zz.initiative set closed_at = now(), outcome = $2,
+                closed_by = (select id from zz.principal where email = $3 and status = 'active'),
+                accepted_by = $4, no_signoff_reason = $5
+          where id = $1::uuid and closed_at is null`,
+        [initiativeId, a.outcome, a.closedBy, a.acceptedBy, a.noSignoffReason]);
+      if (!rowCount) {
+        return await bail({ refusal:
+          `ERROR: ${w.initiative} was closed on its own anchor row by a concurrent call — the ` +
+          "document was not written. Call initiative_status to see how it closed." });
+      }
     }
 
     // A captured source is filed first, as its own document under its own lock, so the target's
@@ -422,8 +467,8 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       if (existing!.approved_revision === revision && prep.status !== "approved") {
         return await bail({ refusal:
           `ERROR: ${w.relPath} v${version} is approved — an approved revision is not ` +
-          "rewritten. Call document_revise to file a new revision beside it, which keeps the " +
-          "text the person signed." });
+          "rewritten. Change it with document_edit, which files the change beside it and keeps " +
+          "the text the person signed." });
       }
       const approved = prep.status === "approved" ? revision : null;
       await client.query(
@@ -505,12 +550,12 @@ async function createRows(
   const ins = await client.query<{ id: string }>(
     `insert into zz.doc (initiative_id, path, type, status, updated_at, body, title, tags,
                          content_hash, analyzer_version, body_tsv, current_revision,
-                         approved_revision, current_version)
+                         approved_revision, current_version, id)
      values ($1::uuid, $2, $3, $4, now(), $5, $6, $7::text[], $8, $9,
-             ${bodyTsvSql(10)}, 1, $18, 1)
+             ${bodyTsvSql(10)}, 1, $18, 1, coalesce($19::uuid, gen_random_uuid()))
      returning id::text as id`,
     [initiativeId, splitStorePath(w.relPath).name, prep.type, prep.status, prep.body, prep.title,
-     prep.tags, prep.hash, prep.analyzer, ...prep.tsv, approved]);
+     prep.tags, prep.hash, prep.analyzer, ...prep.tsv, approved, w.id ?? null]);
   const id = ins.rows[0]?.id ?? "";
   if (!id) return "";
   await insertRevision(client, id, 1, 1, w, prep, writer, seal);

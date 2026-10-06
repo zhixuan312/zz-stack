@@ -6,8 +6,9 @@
 // would collide. Every entry is written out rather than derived from a `<verb>_<noun>` →
 // `<noun>_<verb>` pattern, because a pattern misses the mergers and exceptions.
 
-/** `/core`'s renames, plus `block_skills` (merged into `skill_list`, aliased so its history
- * resolves).
+/** `/core`'s renames, plus three merges aliased so their history resolves: `block_skills` into
+ * `skill_list`, and `patch_file` and `revise_document` into `document_edit`, the one tool that
+ * changes an existing document.
  *
  * `get_my_info` becomes `session_whoami`, not `whoami` — `/manage` already registers a bare
  * `whoami`, and two doors sharing that name is the ambiguity this rename avoids.
@@ -23,8 +24,8 @@ export const TOOL_ALIAS: Record<string, string> = Object.freeze({
   read_file: "document_read",
   show_document: "document_present",
   write_file: "document_write",
-  patch_file: "document_patch",
-  revise_document: "document_revise",
+  patch_file: "document_edit",
+  revise_document: "document_edit",
   approve: "document_approve",
   add_source: "source_add",
   list_sources: "source_list",

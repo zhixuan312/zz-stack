@@ -22,12 +22,12 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/documents-lifecycle.ts",
-    target: "document_revise records the material behind every version",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: '          "ERROR: nothing says what caused this version. Content does not change without " +',
-    replace: '          "ERROR: this revision was not accepted. Try again with more detail. " +',
-    planted: "the refusal for a revision that cites nothing stops naming what is missing, so " +
-      "a caller is turned away without being told that material is what the record needs",
+    target: "document_edit records the material behind every version",
+    subject: "services/zz-core/src/document-change.ts",
+    find: '    return { reply: `ERROR: CAUSE_REQUIRED — ${path} is approved, so a change to its body opens a new ` +',
+    replace: '    return { reply: `ERROR: this change was not accepted. Try again with more detail. ` +',
+    planted: "the refusal for a change to an approved body that names no cause stops naming what " +
+      "is missing, so a caller is turned away without being told that a cause is what the record needs",
   },
   {
     check: "scripts/gate/checks/documents-schema.ts",

@@ -6,7 +6,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ONE_LINE, contractsSource, functionBody, root, sourceFiles, zzCoreSource, zzCoreTools, errMessage } from "../read.ts";
+import ts from "typescript";
+
+import { ONE_LINE, contractsSource, functionBody, root, sourceFiles, zzCoreSource, zzCoreTools, errMessage,
+         withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 
 // A value somebody typed, inside hand-written YAML quotes.
@@ -160,7 +163,8 @@ check("a caller's words cannot write a frontmatter field", () => {
     if ("outcome" in after) bad.push(`${why} wrote an outcome the platform never derived`);
   }
 
-  // The third writer. A source document is written by source_add and by document_revise.
+  // The third writer. A source document is written by source_add and by document_edit's
+  // `source_content`.
   // `supports` is what initiative_status reads to flag an approved document for refinement, and
   // `type` is what knowledge_search filters on — so a title carrying a newline could file a source
   // as a spec, or point it at somebody else's document.
@@ -213,7 +217,7 @@ check("a caller's words cannot write a frontmatter field", () => {
 });
 
 check("nothing sends the platform a document with frontmatter in it", () => {
-  // document_write and document_revise take the body. The refusal says so — "takes the document's
+  // document_write and document_edit take the body. The refusal says so — "takes the document's
   // BODY — the frontmatter is written by the platform, not by hand" — and `flow`, the one thing a
   // caller genuinely decides, is a named argument.
   //
@@ -255,65 +259,90 @@ check("nothing sends the platform a document with frontmatter in it", () => {
 
 check("no write path lets a caller type an envelope field", () => {
   // The envelope is the platform's and the body is the caller's; there is no third source.
-  // document_write and document_revise refuse content that opens with frontmatter. document_patch
-  // has no content to inspect — it has a `find` and a `replace` — and `find: "flow: ops-flow"` lands
-  // in the envelope as readily as in a section.
+  // document_write, and document_edit's whole-body `content`, refuse content that opens with
+  // frontmatter. An edit batch has no content to inspect — it has a `find` and a `replace` — and
+  // `find: "flow: ops-flow"` would land in the envelope as readily as in a section, so document_edit
+  // applies a batch, and a section, to the BODY alone, and composes the envelope itself from the
+  // stored one and its named arguments. The envelope is not text an edit can reach.
   //
   // ownershipCheck is not enough on that path: it compares the fields in PLATFORM_OWNED, and
   // `flow` is not one of them. `flow` decides which gates, which required documents and which
-  // closing rule govern the initiative, and stampEnvelope only ever adds it, so a patched one stands.
-  // `version` is the same shape.
+  // closing rule govern the initiative, and stampEnvelope only ever adds it, so an edited one would
+  // stand. `version` is the same shape.
   //
-  // Run over the four edits that matter and the one the tool exists for, because the property is
-  // about what the guard concludes, not how it is spelled.
-  const src = zzCoreSource();
-  const body = functionBody(src, "envelopeEditRefusal");
-  if (!body) return "zz-core no longer defines envelopeEditRefusal — this check cannot run";
+  // Run over the four edits that matter and the one the tool exists for, through the primitive
+  // document_edit applies — `applyEdits`, compiled from zz-core — on the text it applies it to, the
+  // document's body as @zz/contracts' `documentBody` cuts it. The property is about what an edit
+  // can reach, not how the refusal is spelled.
+  //
+  // Removed with `document_patch`, which edited the whole stored text and so had to compare the
+  // envelope block before and after (`envelopeEditRefusal`): an edit that never sees the envelope
+  // has nothing to compare.
+  const core = zzCoreSource();
+  const plan = functionBody(core, "planEdit");
+  if (!plan) return "zz-core no longer defines planEdit — this check cannot run";
+  const code = plan.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  const bad: string[] = [];
+  if (!/const body = documentBody\(loaded\.text\);/.test(code)
+      || !/applyEdits\(body, a\.edits/.test(code) || !/sectionBody\(path, body, a\)/.test(code)) {
+    bad.push("document_edit no longer applies an edit batch and a section to the body alone — an " +
+             "edit that can reach the stored envelope can retype the flow, the version or a gate");
+  }
+  if (!/`\$\{renderEnvelope\(env, \[[^\]]*\]\)\}\\n\$\{next\}`/.test(code)) {
+    bad.push("document_edit's candidate is no longer its own rendered envelope followed by the " +
+             "edited body, so this check no longer knows where an edit's text lands");
+  }
+
   const contracts = contractsSource();
   const pattern = /export const ENVELOPE_BLOCK = (\/.*\/)[a-z]*;/.exec(contracts);
   if (!pattern) return "ENVELOPE_BLOCK cannot be read from @zz/contracts";
-
-  let refuse;
+  const cut = functionBody(contracts, "documentBody");
+  if (!cut) return "@zz/contracts no longer defines documentBody — this check cannot run";
+  let documentBody: (text: string) => string;
+  let applyEdits: (body: string, edits: { find: string; replace: string }[]) => { body?: string; code?: string };
   try {
-    refuse = new Function("ENVELOPE_BLOCK", "before", "after", body)
+    documentBody = new Function("ENVELOPE_BLOCK", "content", cut)
       .bind(null, new Function(`return ${pattern[1]}`)());
+    const mod: Record<string, unknown> = {};
+    const js = ts.transpileModule(readFileSync(join(root, "services/zz-core/src/document-edits.ts"), "utf8"),
+      { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    new Function("exports", js)(mod);
+    applyEdits = mod.applyEdits as typeof applyEdits;
   } catch (err) {
-    return `envelopeEditRefusal could not be evaluated: ${errMessage(err)}`;
+    return `documentBody or applyEdits could not be evaluated: ${errMessage(err)}`;
   }
 
   const doc = [
     "---", "flow: ops-flow", "type: spec", "title: Enquiries", "status: draft",
     "version: 1", "updated_at: 2026-08-30", "---", "", "# Spec", "", "<!-- brief: context -->", "",
   ].join("\n");
-  const patched = (find: string, replace: string): string => doc.replace(find, () => replace);
-  const bad: string[] = [];
   const cases: [string, string, boolean, string][] = [
     ["flow: ops-flow", "flow: some-other-flow", true, "relabels which flow governs the initiative"],
-    ["version: 1", "version: 99", true, "rewrites the version document_revise owns"],
+    ["version: 1", "version: 99", true, "rewrites the version the platform derives from the causes"],
     ["status: draft", "status: approved", true, "signs a gate by hand"],
     ["title: Enquiries", "title: Enquiries\noutcome: accepted", true, "adds an outcome nobody derived"],
     ["<!-- brief: context -->", "The service takes 400 enquiries a week.", false,
-     "fills a section, which is what document_patch is for"],
+     "fills a section, which is what an edit is for"],
   ];
   for (const [find, replace, shouldRefuse, why] of cases) {
-    const got = Boolean(refuse(doc, patched(find, replace)));
-    if (got !== shouldRefuse) {
-      bad.push(`a patch that ${why} is ${got ? "refused" : "allowed"} and should be ` +
-               `${shouldRefuse ? "refused" : "allowed"}`);
+    const got = applyEdits(documentBody(doc), [{ find, replace }]);
+    const refused = !("body" in got);
+    if (refused !== shouldRefuse) {
+      bad.push(`an edit that ${why} is ${refused ? `refused (${got.code})` : "applied"} and should be ` +
+               `${shouldRefuse ? "refused" : "applied"}`);
     }
   }
 
-  // And each write path has to consult its own refusal, or the rule holds on nothing.
-  for (const t of zzCoreTools()) {
-    if (t.name === "document_patch" && !/envelopeEditRefusal\(/.test(t.body)) {
-      bad.push("document_patch does not call envelopeEditRefusal — it edits text in place, so it " +
-               "is the one path with no content to inspect for frontmatter");
+  // And each route that takes a whole body has to consult the frontmatter refusal, or the rule
+  // holds on nothing.
+  for (const tool of ["document_write", "document_edit"]) {
+    if (!new RegExp(`frontmatterRefusal\\([^,]+, "${tool}"\\)`).test(withoutComments(core))) {
+      bad.push(`${tool} does not call frontmatterRefusal, so content that opens with an envelope ` +
+               "reaches the store");
     }
-    if ((t.name === "document_write" || t.name === "document_revise") &&
-        !/frontmatterRefusal\(content/.test(t.body)) {
-      bad.push(`${t.name} does not call frontmatterRefusal, so content that opens with an ` +
-               "envelope reaches the store");
-    }
+  }
+  if (!/const fm = mode === "content" \? frontmatterRefusal\(a\.content/.test(code)) {
+    bad.push("document_edit's whole-body `content` is not asked frontmatterRefusal before it is written");
   }
   return bad.length ? bad.join("; ") : null;
 });

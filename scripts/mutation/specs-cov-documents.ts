@@ -26,12 +26,12 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-guards.ts",
     target: "every document write runs the guards",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      const bad = await documentGuards(chain, path, fixed.content, team);\n" +
-      "      if (bad) return text(bad);",
+    find: "      const gate = await documentGuards(plan.chain, path, plan.text, team);\n" +
+      "      if (gate) return text(gate);",
     replace: "      void documentGuards;",
-    planted: "document_patch writes through saveDocument without asking documentGuards first, " +
-      "so a patch that moves a platform-owned field lands — the guard that would refuse it is " +
-      "called and its answer thrown away, which is the same as never asking",
+    planted: "document_write creates through saveDocument without asking documentGuards first, " +
+      "so a document that sets a platform-owned field lands — the guard that would refuse it is " +
+      "never asked"
   },
   {
     check: "scripts/gate/checks/documents-guards.ts",
@@ -65,36 +65,23 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-guards.ts",
     target: "a guard's answer is never discarded",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      const edited = envelopeEditRefusal(body, result);\n" +
-      "      if (edited) return text(edited);",
-    replace: "      envelopeEditRefusal(body, result);",
-    planted: "document_patch still calls the guard that stops a patch reaching the frontmatter " +
-      "and throws away what it says, so `find: \"flow: ops-flow\"` edits the envelope again — " +
-      "the third source the platform closed, re-opened by a line that compiles and reads as " +
+    find: "      const blocked = writeGuard(path);\n" +
+      "      if (blocked) return text(blocked);",
+    replace: "      writeGuard(path);",
+    planted: "document_write still calls the shared write guard and throws away what it says, " +
+      "so a write into a path the guard refuses lands — a line that compiles and reads as " +
       "protection",
   },
   {
     check: "scripts/gate/checks/documents-guards.ts",
     target: "nothing is written before the guards that would refuse it",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "        pendingSource = {\n" +
-      "          rel,\n" +
-      "          doc: sourceDocument({ title, by: who.email, day,\n" +
-      "                                content: source_content.trim() }),\n" +
-      "        };",
-    replace: "        pendingSource = {\n" +
-      "          rel,\n" +
-      "          doc: sourceDocument({ title, by: who.email, day,\n" +
-      "                                content: source_content.trim() }),\n" +
-      "        };\n" +
-      "        await saveDocument({\n" +
-      "          team, relPath: rel, initiative: parts[0], text: pendingSource.doc,\n" +
-      "          by: who.email, flow: \"\", type: \"source\", mode: \"create\", act: \"source\",\n" +
-      "        });",
-    planted: "document_revise files the source that explains the revision before the guards " +
-      "run, so a revision the platform then refuses leaves that source filed, indexed and " +
-      "logged while the caller is told the write failed — the store keeps material for a " +
-      "version that never happened",
+    subject: "services/zz-core/src/tools/artifacts.ts",
+    find: "      const gate = await documentGuards(plan.chain, path, plan.text, team);",
+    replace: "      await saveDocument(plan.write);\n" +
+      "      const gate = await documentGuards(plan.chain, path, plan.text, team);",
+    planted: "document_write files the document before the guards run, so a create the platform " +
+      "then refuses leaves it filed, indexed and logged while the caller is told the write " +
+      "failed — the store keeps a document that never happened",
   },
   {
     check: "scripts/gate/checks/documents-guards.ts",
@@ -154,9 +141,8 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     target: "a path is resolved before the document at it is judged",
     assertion: "a tool that judges a document and never resolves its path at all",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      await safePath(path);\n" +
-      "      // The body is the current revision's, read from the row that retained it — the same",
-    replace: "      // The body is the current revision's, read from the row that retained it — the same",
+    find: "      const path = await safePath(args.path);",
+    replace: "      const path = args.path;",
     planted: "document_patch judges a document without resolving its path first, so a caller " +
       "who wrote a path the store would never accept is answered about the document instead — " +
       "and the refusal that teaches the path form never reaches the caller who needs it",
@@ -166,23 +152,21 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-envelope.ts",
     target: "only an act may move the fields the platform owns",
     assertion: "an act that passes a `via` that is not its own name",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "      const bad = await documentGuards(chain, relPath, fixed.content, team, \"document_revise\");",
-    replace: "      const bad = await documentGuards(chain, relPath, fixed.content, team, \"document_approve\");",
-    planted: "document_revise tells the guard it is the approval act, so the bypass that lets " +
+    subject: "services/zz-core/src/tools/document-edit.ts",
+    find: "      const bad = plan.noChange ? null : await documentGuards(plan.chain, path, plan.text, team, \"document_edit\");",
+    replace: "      const bad = plan.noChange ? null : await documentGuards(plan.chain, path, plan.text, team, \"document_approve\");",
+    planted: "document_edit tells the guard it is the approval act, so the bypass that lets " +
       "an act move status, approved_by and the rest is held by a caller claiming somebody " +
       "else's name — and whichever act is named is the one the record will show",
   },  {
     check: "scripts/gate/checks/documents-envelope.ts",
     target: "the model writes the body and the platform writes the envelope",
-    assertion: "document_revise refuses content that opens with frontmatter",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "      const refusedFm = frontmatterRefusal(content, \"document_revise\") ?? fieldRefusal(fields)\n" +
-      "        ?? tagRefusal(tags);",
-    replace: "      void frontmatterRefusal;\n" +
-      "      const refusedFm = fieldRefusal(fields) ?? tagRefusal(tags);",
-    planted: "document_revise accepts content that opens with frontmatter again, so every " +
-      "revision is a chance for the model to type the envelope — the third source, back on " +
+    assertion: "document_edit refuses whole-body content that opens with frontmatter",
+    subject: "services/zz-core/src/document-change.ts",
+    find: "  const fm = mode === \"content\" ? frontmatterRefusal(a.content ?? \"\", \"document_edit\") : null;",
+    replace: "  void frontmatterRefusal;\n  const fm = null;",
+    planted: "document_edit accepts content that opens with frontmatter again, so every " +
+      "change is a chance for the model to type the envelope — the third source, back on " +
       "the one path whose whole job is to rewrite an approved document",
   },
   {
@@ -230,12 +214,11 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-lifecycle.ts",
     target: "a document the flow does not declare can still record why it changed",
-    assertion: "document_revise does not refuse an undeclared document",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "      // is no gate on it, so there is no verdict to record. A revision is not a gate.",
-    replace: "      // is no gate on it, so there is no verdict to record. A revision is not a gate.\n" +
-      "      if (chain.documents.length && !chain.docs.has(parts[1]))\n" +
-      "        return text(`ERROR: ${parts[1]} is not a document this flow declares`);",
+    assertion: "document_edit does not refuse an undeclared document",
+    subject: "services/zz-core/src/document-change.ts",
+    find: "  const gated = governing.documents.some((d) => d.name === name && d.gate);",
+    replace: "  const gated = governing.documents.some((d) => d.name === name && d.gate);\n" +
+      "  if (governing.documents.length && !governing.docs.has(name)) return { reply: `ERROR: ${name} is not a document this flow declares` };",
     planted: "the refusal returns, so on a governed initiative an undeclared document can be " +
       "created and rewritten by document_write forever and is the one document that can never " +
       "record why it changed — the platform's own law inverted on exactly the documents no " +
@@ -266,10 +249,10 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-lifecycle.ts",
     target: "nothing can clear the field that says an initiative already closed",
     assertion: "no write path removes `outcome`",
-    subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "        delete env.approved_by; delete env.approved_at; delete env.status;",
-    replace: "        delete env.approved_by; delete env.approved_at; delete env.status; delete env.outcome;",
-    planted: "revising an ungated closing document clears the field that says the initiative " +
+    subject: "services/zz-core/src/document-change.ts",
+    find: "    delete env.approved_at;",
+    replace: "    delete env.approved_at;\n    delete env.outcome;",
+    planted: "correcting an approved closing document clears the field that says the initiative " +
       "closed, so the close can run a second time and append a second ledger row for the same " +
       "work",
   },

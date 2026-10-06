@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.14
+version: 2.15
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has recorded the close on the initiative.  Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -247,7 +247,10 @@ enough to close, it closes by implementing the read-back — not by a sentence h
 already exists. A skill that describes a safety net nobody built is worse than one that admits
 there is none, because the first stops people looking.
 
-Write the document with `document_write` once, with all three sections filled in as above. It is
+Write the document with `document_write` once, with all three sections filled in as above.
+`document_write` creates and refuses a path that exists, so anything changed after that — a
+section the approval found missing, a count corrected — is `document_edit`, sending only the
+section or the line that changed. It is
 gated like every other document this platform hands to a person: a team member reads it and
 calls `document_approve("<initiative>/handover.md")` when they agree with what it says, including
 where it says nothing was worth recording. Nothing about that review is this skill's to

@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.15
+version: 1.16
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -290,7 +290,7 @@ eight; `## Phase outline` and `## Core statements` follow them, and are not comp
 
 Write the spec in two passes, because a long single-pass document comes out uneven and can truncate before the last section. First create the spec file as a **complete skeleton**: the title and ALL EIGHT `##` component headings, each `###` section within them, each `####` sub-part, with a single one-line **brief** immediately under each `###` section stating what that section will contain (drawn from the confirmed decisions). Write this skeleton in ONE `document_write` call into the initiative — `document_write(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
 
-**`document_write` and `document_patch`, not your runtime's local-file tools.** A spec written to a local path is a file on your disk: no envelope, no version snapshot at approval, no telemetry, and nothing the person can approve or the auditor can read. It also looks exactly like success.
+**`document_write` to create it and `document_edit` to change it, not your runtime's local-file tools.** A spec written to a local path is a file on your disk: no envelope, no version snapshot at approval, no telemetry, and nothing the person can approve or the auditor can read. It also looks exactly like success.
 
 Each brief is one HTML-comment line placed directly under its `###` heading:
 
@@ -465,9 +465,9 @@ Component catalog).
 
 These labels are the specification standard for this flow, and they are read by people and by the next two stages: `sdlc-spec-audit` checks that the eight components are present under these exact headings, and `sdlc-plan` lifts `Alternatives` and the acceptance criteria straight out of them. Different heading levels or different labels break both.
 
-### Phase C — Enrich each section (one `document_patch` per section)
+### Phase C — Enrich each section (one `document_edit` per section)
 
-Now fill the skeleton in, **one `###` section at a time, in document order**, using `document_patch("<initiative>/spec.md", find: "<!-- brief: … -->", replace: "<the section's complete final content>")` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document whose unreached sections you can name. Continue until **zero `<!-- brief:` markers remain.**
+Now fill the skeleton in, **one `###` section at a time, in document order**, using `document_edit(path: "<initiative>/spec.md", edits: [{find: "<!-- brief: … -->", replace: "<the section's complete final content>"}])` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document whose unreached sections you can name. Continue until **zero `<!-- brief:` markers remain.**
 
 Each section you enrich must satisfy the Constraints above.
 
@@ -509,6 +509,43 @@ conversation stops the flow at its next step.
 skill's** — judge it rather than matching phrases, record it under their name in the same
 turn, and never send a decision back to somebody who already made it. It is written once,
 there, because it holds for every flow.
+
+## Coming back from the audit, or from a phase
+
+`sdlc-spec-audit` audits the spec once it is approved and files each round as a source
+supporting `spec.md`; a built phase that disproves a core statement sends it back from
+`sdlc-execute`. Either way the spec is approved, so it changes through `document_edit` with its
+cause — a change to its body with none is refused `CAUSE_REQUIRED`. The cause opens the next
+version as a draft, clears the approval, and keeps the approved one as the sealed revision
+`document_read("<initiative>/spec.md", version: N)` answers with.
+
+**Revise only the sections the finding is about.** One section is a section edit:
+
+```
+document_edit(
+  path: "<initiative>/spec.md",
+  section: "Problem",
+  section_level: 3,
+  content: "### Problem\n\n<the section as it now reads>",
+  sources: ["sources/<the audit round you are answering>.md"])
+```
+
+`section_level` is there because `## Problem` and `### Problem` share their text; a heading that
+repeats is refused `SECTION_AMBIGUOUS` with each candidate's `section_level` and
+`section_occurrence` listed. A finding that touches several sections is one call of `edits`, or
+one section edit each — never the whole spec resent for it.
+
+**Name the cause, even when the platform would find it.** An audit round filed since the release
+that began cause links is linked to the next change of the spec's body by the platform, and the
+reply names it; a round filed before that is never linked automatically. Name it in `sources`
+either way. What the person decides about a finding, or a phase's as-built report, is
+`source_content` — their words, verbatim, with a `source_title` — filed and linked in the same
+call. Every edit for that one input after the first names the source the first one filed, so
+the revision stays one version.
+
+Then `document_present("<initiative>/spec.md")` again, say what changed and why, and get the
+approval recorded afresh. The audit's next round is owed on the new version, and
+`initiative_status` routes it.
 
 ## Skill contract
 

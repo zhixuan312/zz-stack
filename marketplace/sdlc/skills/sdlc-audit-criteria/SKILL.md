@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.8
+version: 2.9
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -37,7 +37,7 @@ newest copy answers a question nobody asked.
 **The `##` headings on that revision are not necessarily the ones its author typed.** Where this
 flow's manifest declares the sections a document must carry, the platform renames a heading that
 already says everything a declared heading says to the declared wording, and does it on every
-write path — first write, patch, revision and approval alike. Here that reaches `explore.md`,
+write path — first write, edit and approval alike. Here that reaches `explore.md`,
 `spec.md` and `plan.md`. `review.md` declares no sections, so nothing is ever renamed in it.
 
 Three consequences, and every one of them lands on this round:
@@ -71,8 +71,11 @@ source_add(
   stage: "sdlc-spec-audit")       # sdlc-plan-audit for a plan round
 ```
 
-`supports` is what makes it findable: the platform refuses the next revision of that document
-until this source is cited, so the version that answers your round says so on its own face.
+`supports` is what makes it findable: the platform links this source as the cause of the next
+change to that document's body and names it in that change's reply, so the version that answers
+your round says so on its own face. That holds for a source filed since the release that began
+cause links — the cause-link epoch. **A source filed before the epoch is never linked
+automatically**, so the change that answers an older round names it in `sources`.
 `stage` is what makes it a ROUND: without it the source is recorded as material, the audit step
 stays unmet, and the next move keeps asking for the round. The platform records which version of
 the document your round read, asks whether it reopens anything the person already agreed, and

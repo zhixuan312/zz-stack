@@ -37,13 +37,13 @@ exactly — they are the method; this file is only the door.
 
 ## What holds regardless
 
-- Documents are written through `document_write` / `document_patch` / `document_revise`
-  into your team's store — never into this repository. You send the BODY;
+- Documents are created with `document_write` and changed with `document_edit`
+  in your team's store — never in this repository. You send the BODY;
   the platform writes the frontmatter, and content that opens with one is refused.
 - A gate passes only once `document_approve(path)` has recorded it. A "yes" in the
   conversation is not an approval, and you cannot write one by hand — the
   platform stamps who approved and when, and refuses the fields if you try.
-- An approved document changes through `document_revise`, never by writing over it.
+- An approved document's body changes through `document_edit` with its cause, never by writing over it.
 - Tokens belong to the **ZZ Access** agent. Never ask anyone to paste one here.
 
 Outside a flow you are yourself. This skill is not a personality.

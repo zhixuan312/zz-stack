@@ -405,7 +405,7 @@ export async function recordProtocolVersion(
  *  The affirmation names a DOCUMENT and, beside it, the exact revision it read — not a revision
  *  chosen by proximity in time. `approved_doc_revision` is the pin `eval_protocol_version`'s own
  *  composite key is `(approved_doc_id, approved_doc_revision)` against, so a version stays joined
- *  to the bytes it was affirmed over after `document_revise` moves the document on. A version
+ *  to the bytes it was affirmed over after `document_edit` moves the document on. A version
  *  affirmed against a timestamp-nearest guess would name a revision nobody read, and the key
  *  would hold it as exact.
  *

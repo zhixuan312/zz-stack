@@ -260,7 +260,7 @@ export function platformSurface(): PlatformSurface {
   for (const t of served) for (const seg of t.split("_").slice(1)) verbs.add(seg);
 
   // And what those registrations call their arguments. `source_content` is a parameter of
-  // `document_revise` and is named in backticks by zz-platform — which reads as the noun
+  // `document_edit` and `document_write` and is named in backticks by zz-platform — which reads as the noun
   // `source` in call shape, and would otherwise be reported as a tool the platform does not
   // serve.
   //

@@ -121,13 +121,20 @@ for (const stage of STAGES) {
     }
   }
   if (!isSource) {
-    if (!/document_write/.test(reach)) fail.push(`${where} does not write its document`);
+    // Created once, then changed: `document_write` creates and refuses a path that exists
+    // (TARGET_EXISTS), so a stage that names only it can write its first round and none after.
+    // Every later round, row and verdict is a `document_edit` of what is there. A source needs
+    // none of this — `source_add` writes a new file every time.
+    if (!/document_write/.test(reach)) fail.push(`${where} does not create its document`);
+    if (!/document_edit/.test(reach)) {
+      fail.push(`${where} creates ${doc} and never says to change it with document_edit, so a later ` +
+                "round has no way onto the record but a write the platform refuses");
+    }
     if (/you write no file|write no file/i.test(reach)) fail.push(`${where} still says it writes no file`);
-    // `document_write` is create-or-overwrite and there is no append tool, so a second round
-    // through a bare write destroys the first; the read is what makes it an append. A source
-    // needs none of this — `source_add` writes a new file every time.
+    // An edit names text the document holds now — an exact `find`, a heading — so the read comes
+    // first; an edit composed from memory lands NO_MATCH, or on text the earlier rounds replaced.
     if (!/document_read/.test(reach)) {
-      fail.push(`${where} writes ${doc} without reading it first, so a later round overwrites the earlier ones`);
+      fail.push(`${where} changes ${doc} without reading it first, so a later round edits text it never saw`);
     }
   }
 

@@ -51,9 +51,11 @@ spec core statement goes back to `sdlc-spec` (see `sdlc-method`).
 | 7 | `sdlc-review` | `review.md` — and it closes the initiative — plus a SOURCE per sweep round | **main agent** for the evidence; subagent per round, sequential, rounds routed by evidence |
 
 Four documents, and the audits produce none of them. An audit report is a SOURCE: it is the
-material that makes the next version of somebody else's document necessary, and the platform
-refuses that revision until the source is cited — so a round is on the record, findable from
-the document it changed, without being a document of its own that says the same thing twice.
+material that makes the next version of somebody else's document necessary, and it becomes the
+cause of the change that answers it — named in `sources`, and linked by the platform itself when
+it was filed since the release that began cause links (one filed before that never is) — so a
+round is on the record, findable from the document it changed, without being a document of its
+own that says the same thing twice.
 `review.md` is gated, because shipping is a
 decision a person owns; it is also this flow's **closing** document, so nothing closes until it
 is written and approved.

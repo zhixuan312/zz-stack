@@ -13,17 +13,18 @@ const { ownTools, surfaceCoverage, pluginTraces } =
   await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/plugin-profile.js")).href);
 
 // -- surface: a cross-door fixture -------------------------------------------------------------
-const namedBySkills = ["document_write", "knowledge_search", "session_whoami", "team_switch"];
-const coreDoor = ["assess", "bug_report", "document_write", "knowledge_search", "session_whoami"];
+const namedBySkills = ["document_edit", "document_write", "knowledge_search", "session_whoami", "team_switch"];
+const coreDoor = ["assess", "bug_report", "document_edit", "document_write", "knowledge_search", "session_whoami"];
 const own = ownTools(namedBySkills, coreDoor);
-assert.deepEqual(own, ["document_write", "knowledge_search", "session_whoami"], "a tool another door serves is not this plugin's");
-// Called: two of its own, one served by the door but named by no skill, one from /manage.
-const surface = surfaceCoverage(["core:document_write", "core:session_whoami", "core:assess", "manage:team_switch"], own);
-assert.deepEqual(surface, { observed: 2, total: 3 });
+assert.deepEqual(own, ["document_edit", "document_write", "knowledge_search", "session_whoami"], "a tool another door serves is not this plugin's");
+// Called: three of its own, one served by the door but named by no skill, one from /manage.
+const surface = surfaceCoverage(
+  ["core:document_write", "core:document_edit", "core:session_whoami", "core:assess", "manage:team_switch"], own);
+assert.deepEqual(surface, { observed: 3, total: 4 });
 assert.ok(surface.observed <= surface.total, "observed never exceeds total");
 // A plugin with no door of its own keeps its skill-named set.
 assert.deepEqual(ownTools(namedBySkills, null), namedBySkills);
-assert.deepEqual(surfaceCoverage(["core:team_switch", "core:other_tool"], ownTools(namedBySkills, null)), { observed: 1, total: 4 });
+assert.deepEqual(surfaceCoverage(["core:team_switch", "core:other_tool"], ownTools(namedBySkills, null)), { observed: 1, total: 5 });
 
 // -- run ids -----------------------------------------------------------------------------------
 const seen: string[] = [];

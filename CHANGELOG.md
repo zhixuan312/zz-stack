@@ -33,6 +33,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.93.2] — 2026-10-06
+
+Four open bug reports, all from people approving a flow's documents and being refused for the
+wrong reason, or told too little to fix it.
+
+### zz-stack 0.93.2
+
+- **A review row that cites the plan's own check is judged by whether that check passed.** The
+  plan's `- Check:` files are the executable form of each task's criterion, approved with the
+  plan, and `document_approve` still asked `evidence_relation` whether `check_i2_fixtures.py →
+  PASS` supported the criterion it was written for, with the script name as the only context.
+  It said no (p=0.17), and the review could not be approved without another round of rewriting
+  evidence. A row naming every check the plan declares for its criterion is now asked only
+  whether the run passed: the same model reads that row at 0.96, a partial failure at 0.12 and a
+  skip at 0.04. Rows that cite something else are asked about the criterion, as before.
+- **A plan task's criterion is read whole.** The reader was handed only the line after
+  `**Technical acceptance criteria**:`, so a task whose criterion is a list arrived as "The worker
+  runs, in this order:" and was judged on that.
+- **A table the gate cannot read is refused once, by what it says.** A review whose acceptance
+  table was `| Item | Locator | Decisive line |` was refused with "no row for" all 37 criteria,
+  which reads as a missing table rather than a wrong one. It now quotes the header it found and
+  the one it needs.
+- **A locator written `run: <command>` is told about the space.** Both the review gate and the
+  spec gate repeated "names no kind-prefixed locator" over evidence that plainly named one; they
+  now say there is a space after the colon and show the shape.
+- **An initiative opened by mistake can be abandoned while naming a document.**
+  `initiative_close(abandoned)` on an initiative with no document already closed it on its own
+  record, but naming the first document of its flow sent it down the document path and refused
+  with "write it first".
+
+### Upgrade notes
+
+- **Installed clients should re-pull** for the `sdlc-review` (1.13) and `sdlc-spec` (1.15) text:
+  `claude plugin marketplace update zz-stack`, then `claude plugin update sdlc@zz-stack`.
+- Every acceptance row is read again the next time its review is written or approved: the
+  `evidence_relation` instruction gained a sentence, and readings taken under the old wording no
+  longer count. Nothing to do; it costs a few typed-service calls per review.
+- No migration, no env key.
+
 ## [0.93.1] — 2026-10-06
 
 One migration, found by rehearsing the schema fold against a real backup rather than a fresh

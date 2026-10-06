@@ -40,16 +40,16 @@
     "sha": "3acbabf13cb4"
   },
   "sdlc-review": {
-    "version": "1.12",
-    "sha": "875923b6570c"
+    "version": "1.13",
+    "sha": "e58c0f634e55"
   },
   "sdlc-spec-audit": {
     "version": "2.7",
     "sha": "dff66bd342a4"
   },
   "sdlc-spec": {
-    "version": "1.14",
-    "sha": "af6753234fb7"
+    "version": "1.15",
+    "sha": "feabcaba0fe1"
   },
   "zz-access": {
     "version": "2.7",

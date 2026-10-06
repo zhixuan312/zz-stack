@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.9
+version: 2.10
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -42,12 +42,13 @@ write path — first write, edit and approval alike. Here that reaches `explore.
 
 Three consequences, and every one of them lands on this round:
 
-- **The rename is reported once, to whoever made the call, and then it is gone.** Nothing keeps
-  it: the revision the write filed, the one before it, and the event log all hold the normalized
-  wording, and no row carries what the caller actually sent. If the caller passed you that report,
-  quote it as the rename receipt. If they did not, record the normalization history as
-  `unavailable` and audit the text in front of you. The caller's wording was normalized on its way
-  in and never stored, so it is not something to reconstruct from context either.
+- **The rename is reported to whoever made the call, and kept nowhere a reader looks.** The
+  revision the write filed and the one before it hold the normalized wording; what the caller sent
+  survives only in that reply's `Renamed …` line and, for a write or an edit, in the details the
+  reply names. If the caller passed you the line, or its `dr_…` ref for
+  `document_read(path, details_ref)`, quote it as the rename receipt. If they did not, record the
+  normalization history as `unavailable` and audit the text in front of you — the caller's
+  wording is not something to reconstruct from context.
 - **A declared heading is not evidence that its author chose it.** Never read section wording as
   authorial intent, never attribute a section to somebody on the strength of its label, and never
   raise a finding whose entire content is that a heading matches the manifest.
@@ -91,8 +92,8 @@ knows this round happened at all. Both, every round.
 **Each round is its own source.** `source_add` writes a new file every time, so three rounds
 leave three sources and none overwrites another — nothing to read first and nothing to append
 to. Title yours so the order is readable at a glance (`<stage> round 2 — …`), and send the
-findings as the body: the platform writes the envelope and refuses content that opens with
-frontmatter.
+findings as the body, and no envelope: the platform writes a source's, and stores what you
+send as the words you sent.
 
 **A source is immutable and ungated.** Nobody approves your round — evidence is not agreed to —
 and nothing edits it afterwards. If a later round changes what you concluded, that is the later

@@ -209,24 +209,24 @@ function malformedSources(sources: string[]): string[] {
     "e.g. `sources/2026-10-06-call-notes.md` — letters, digits, dot, dash, underscore and / only.");
 }
 
-/** The caller's causes, the one definition a create and a change share: the sources it names and
- *  the words it passes as `source_content`, filed as a new source — both the agent's. `sources` is
- *  in its canonical spelling (`normalizeRefs`) and well formed. `already` is what the target's
- *  current version cites: named again, it is no new cause. `label` titles a captured source the
- *  caller gave no title. The platform's causes — owed sources — are added by each caller after
- *  these, so a named one wins.
- *
- *  Every named source is resolved in ONE statement, however many there are, and every one that
- *  names no document is reported, counted. A captured source is asked for under its plain name and
- *  is NOT among `causes`: the write files it under the first free name, under the lock, and records
- *  its cause under the name it took — a named source asking for the same name stays itself. */
-async function namedCauses(
-  p: pg.Pool, team: string, who: string, path: string,
-  a: { sources: string[]; source_content?: string; source_title?: string },
-  o: { already: Set<string>; label: string },
-): Promise<{ missing: Line } | { causes: Cause[]; captured?: { relPath: string; text: string } }> {
-  const { initiative, name } = splitStorePath(path);
-  const wanted = [...new Set(a.sources)];
+/** The `sources` entries that can be looked up — each in its canonical spelling, well formed —
+ *  whatever the others are: a missing source is reported beside a malformed one, never instead. */
+function wellFormed(sources: string[] | undefined, initiative: string): string[] {
+  return (sources ?? []).flatMap((src) => {
+    const read = normalizeRefs([src], initiative);
+    return "refs" in read ? read.refs.filter((r) => DOC_REF.test(r.trim())) : [];
+  });
+}
+
+/** The sources a call names, the one definition a create and a change share: every one resolved
+ *  in ONE statement, however many there are — the agent's causes they are, and every one that
+ *  names no document, counted. Asked with the call's other independent faults, before anything is
+ *  compared: a named cause that does not exist is an error whatever the body did. */
+async function namedSources(
+  p: pg.Pool, team: string, path: string, sources: string[],
+): Promise<{ found: Cause[]; missing: Line | null }> {
+  const { initiative } = splitStorePath(path);
+  const wanted = [...new Set(sources)];
   const { rows } = wanted.length
     ? await p.query<{ path: string; revision: number | null }>(
       `select distinct on (d.path) d.path, d.current_revision as revision
@@ -236,27 +236,32 @@ async function namedCauses(
         where t.slug = $1 and i.slug = $2 and d.path = any($3::text[])
         order by d.path, d.updated_at desc`, [team, initiative, wanted])
     : { rows: [] };
-  const found = new Map(rows.map((r) => [r.path, r.revision] as const));
-  const missing = wanted.filter((src) => (found.get(src) ?? null) === null).map((src) => `${initiative}/${src}`);
-  if (missing.length) {
-    return { missing: { lead: "ERROR: ", label: "named sources that are not documents in this team's store",
+  const at = new Map(rows.map((r) => [r.path, r.revision] as const));
+  const missing = wanted.filter((src) => (at.get(src) ?? null) === null).map((src) => `${initiative}/${src}`);
+  return {
+    found: wanted.filter((src) => (at.get(src) ?? null) !== null)
+      .map((src) => ({ path: `${initiative}/${src}`, revision: at.get(src)!, linked_by: "agent" as const })),
+    missing: missing.length ? { lead: "ERROR: ", label: "named sources that are not documents in this team's store",
       items: missing, tail: ` — none can be named as a cause of ${path}. source_add files new material, or ` +
-        "pass the words themselves as `source_content`." } };
-  }
-  const causes: Cause[] = wanted
-    .filter((src) => !o.already.has(`${initiative}/${src}`))
-    .map((src) => ({ path: `${initiative}/${src}`, revision: found.get(src)!, linked_by: "agent" as const }));
-  let captured: { relPath: string; text: string } | undefined;
-  if (a.source_content?.trim()) {
-    const title = (a.source_title || o.label).trim();
-    const day = isoToday();
-    // Named exactly as source_add names one; a name already taken is suffixed by the write, under
-    // its lock, rather than refused: the change it explains must not fail over its label.
-    const relPath = `${initiative}/sources/${day}-${titleSlug(title, "source")}.md`;
-    captured = { relPath, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(),
-                                                 supports: [name] }) };
-  }
-  return { causes, captured };
+        "pass the words themselves as `source_content`." } : null,
+  };
+}
+
+/** The words a caller passes as `source_content`, as the source the write files — the agent's
+ *  cause. Asked for under its plain name and NOT among the named causes: the write files it under
+ *  the first free name, under the lock, and records its cause under the name it took, so a named
+ *  source asking for the same name stays itself. `label` titles one the caller gave no title. */
+function capturedOf(
+  a: { source_content?: string; source_title?: string }, who: string, path: string, label: string,
+): { relPath: string; text: string } | undefined {
+  if (!a.source_content?.trim()) return undefined;
+  const { initiative, name } = splitStorePath(path);
+  const title = (a.source_title || label).trim();
+  const day = isoToday();
+  // Named exactly as source_add names one; a name already taken is suffixed by the write, under
+  // its lock, rather than refused: the change it explains must not fail over its label.
+  const relPath = `${initiative}/sources/${day}-${titleSlug(title, "source")}.md`;
+  return { relPath, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(), supports: [name] }) };
 }
 
 /** The receipt lines a change's causes, normalisations and diagnostics make: each list counted,
@@ -288,7 +293,7 @@ export function envelopeOnlyRefusal(content: string, body: string, tool: "docume
  *  was only an envelope, and every `sources` entry that is malformed. Asks nothing of the store. */
 function readSent(
   sent: ReturnType<typeof normalizeContent>, a: EditArgs, whole: boolean, initiative: string,
-): { refusals: string[] } | { body: string; metadata: Metadata; refs: string[]; normalised: string[] } {
+): { refusals: string[] } | { body: string; metadata: Metadata; normalised: string[] } {
   const refusals: string[] = [];
   if ("refusals" in sent) refusals.push(...sent.refusals);
   else {
@@ -300,7 +305,7 @@ function readSent(
   const refs = normalizeRefs(a.sources, initiative);
   refusals.push(...("refusals" in refs ? refs.refusals : malformedSources(refs.refs)));
   if (refusals.length || "refusals" in sent || "refusals" in refs) return { refusals };
-  return { body: sent.body, metadata: sent.metadata, refs: refs.refs, normalised: [...sent.normalised, ...refs.normalised] };
+  return { body: sent.body, metadata: sent.metadata, normalised: [...sent.normalised, ...refs.normalised] };
 }
 
 /** The refusals reading a `document_edit` call gives before its document is looked at — asked by
@@ -434,11 +439,13 @@ export async function planEdit(
   }
   // (8) Every fault of the call that does not depend on another, in ONE answer: what it sends —
   // whole `content`'s envelope separated and read into the metadata it stands for, tags
-  // lower-cased, `sources` canonical — and every edit of a batch, or the section, that cannot
-  // apply. Before any identity is compared, so a normalisation never manufactures a version.
+  // lower-cased, `sources` canonical — every named source that names no document, and every edit
+  // of a batch, or the section, that cannot apply. Before any identity is compared, so a
+  // normalisation never manufactures a version and a missing source is never a no_change.
   const sent = normalizeContent(mode === "content" ? a.content ?? "" : "", a);
   const read = readSent(sent, a, mode === "content", initiative);
-  const issues: Line[] = "refusals" in read ? [...read.refusals] : [];
+  const named = await namedSources(p, team, path, wellFormed(a.sources, initiative));
+  const issues: Line[] = ["refusals" in read ? read.refusals : [], named.missing ? [named.missing] : []].flat();
   const body = documentBody(loaded.text);
   let next = body;
   if (mode === "edits") {
@@ -487,16 +494,13 @@ export async function planEdit(
                                 receipt: async (c) => composeReceipt(lines(), ref, await moveOf(c)),
                                 request: requestOf(asSent, who, path, { result: "no_change", version }) } } };
   }
-  // The causes. Named sources and words captured as a new source are the caller's; owed sources
-  // are the platform's, and a change that leaves the body alone owes none.
-  const named = await namedCauses(p, team, who, path, { ...a, sources: read.refs }, {
-    already: await citedByVersion(p, loaded.doc.id, version),
-    label: `Input behind v${bodyChanged ? version + 1 : version}`,
-  });
-  if ("missing" in named) return refused(p, who, team, path, [named.missing]);
-  const { captured } = named;
+  // The causes. Named sources and words captured as a new source are the caller's — a named one
+  // the current version already cites is no new cause; owed sources are the platform's, and a
+  // change that leaves the body alone owes none.
+  const already = await citedByVersion(p, loaded.doc.id, version);
+  const captured = capturedOf(a, who, path, `Input behind v${bodyChanged ? version + 1 : version}`);
   const capturedCause: Cause | null = captured ? { path: captured.relPath, revision: 1, linked_by: "agent" } : null;
-  const causes: Cause[] = [...named.causes, ...(capturedCause ? [capturedCause] : [])];
+  const causes: Cause[] = [...named.found.filter((c) => !already.has(c.path)), ...(capturedCause ? [capturedCause] : [])];
   // A named source an owed one repeats wins; the captured source does not, though it asks for a
   // name an owed source may hold — it will be filed under another.
   if (bodyChanged) {
@@ -576,22 +580,19 @@ export async function planCreate(
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
   if (await documentAt(p, team, path)) return { reply: targetExists(path) };
   const refs = normalizeRefs(a.sources, initiative);
-  if ("refusals" in refs) return refused(p, who, team, path, refs.refusals);
-  const malformed = malformedSources(refs.refs);
+  const named = await namedSources(p, team, path, wellFormed(a.sources, initiative));
+  const malformed = "refusals" in refs ? refs.refusals : malformedSources(refs.refs);
+  if ("refusals" in refs || malformed.length || named.missing) {
+    return refused(p, who, team, path, [...malformed, ...(named.missing ? [named.missing] : [])]);
+  }
   // The chain from the body and, failing that, the initiative's row — a first document is written
   // before any other carries a `flow:`. Never from an envelope the caller sent: that `flow` is
   // ignored, and governing by it would let a caller choose its gates.
   const chain = await chainFor(p, team, path, sent.body);
   const fixed = normalizeSections(chain, path, envelopeFor(chain, path, sent.body, sent.metadata));
-  const named = await namedCauses(p, team, who, path,
-                                  { ...a, sources: refs.refs.filter((r) => DOC_REF.test(r.trim())) },
-                                  { already: new Set(), label: "Input behind v1" });
-  if (malformed.length || "missing" in named) {
-    return refused(p, who, team, path, [...malformed, ...("missing" in named ? [named.missing] : [])]);
-  }
-  const { captured } = named;
+  const captured = capturedOf(a, who, path, "Input behind v1");
   const capturedCause: Cause | null = captured ? { path: captured.relPath, revision: 1, linked_by: "agent" } : null;
-  const causes: Cause[] = [...named.causes, ...(capturedCause ? [capturedCause] : [])];
+  const causes: Cause[] = [...named.found, ...(capturedCause ? [capturedCause] : [])];
   for (const owed of await owedSources(p, team, initiative, name, null)) {
     if (!causes.some((c) => c !== capturedCause && c.path === owed.path)) causes.push(owed);
   }

@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.20
+version: 1.21
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -179,13 +179,13 @@ wrong.
 stored revision you want audited — `plan.md` at version 3, not "the plan" — because otherwise a
 round picks whatever is current when it happens to run, and two rounds then disagree without
 either being wrong. Alongside it, pass on any `Renamed to the heading this flow declares:` line
-the platform handed back when that document was written, patched, revised or approved. The
-platform normalizes a near-miss `##` heading to the wording the manifest declares and tells the
-caller it did, and that reply is the only place it is ever said: the stored document, its frozen
-copy and the activity log all carry the new wording and nothing else. You made those calls, so
-you are the only party who can still see those lines — keep them for the initiative's life. Where
-there is none to pass, say `rename_receipt: unavailable` rather than leaving the auditor to
-decide whether you forgot.
+the platform handed back when that document was written, edited or approved. The platform
+normalizes a near-miss `##` heading to the wording the manifest declares and tells the caller it
+did; the stored document and its frozen copy carry the new wording and nothing else. A write's or
+an edit's line is also in the details its reply names (``details: `dr_…` ``), which
+`document_read(path, details_ref)` reads back; an approval's is in its reply alone. Keep those
+lines, or the refs, for the initiative's life. Where there is none to pass, say
+`rename_receipt: unavailable` rather than leaving the auditor to decide whether you forgot.
 
 **How a loaded stage reaches the record.** The platform attributes a step from the last skill
 loaded, and it must see the load to do that. In Claude Code the baseline `zz-core` plugin
@@ -238,10 +238,12 @@ document someone builds on. That is the reason the checks above are not optional
 ## Where things live — all of it on the platform, none of it local
 
 **Every document carries an envelope, and the platform writes all of it.** You send the
-document's BODY — markdown starting at its first heading — and content that opens with
-frontmatter is refused. `flow`, `type`, `status`, `version` and `updated_at` are stamped from
-what the platform already knows; `approved_by`, `approved_at`, `outcome` and `closed_by` come
-from `document_approve()` and `initiative_close()`.
+document's BODY — markdown starting at its first heading. An envelope sent at the top of the
+content never becomes the stored envelope: its title, tags, stakeholder and flow fields are read
+as the named arguments, every key the platform writes is ignored and reported, and any other key
+is refused by name — `zz-platform` has the whole rule. `flow`, `type`, `status`, `version` and
+`updated_at` are stamped from what the platform already knows; `approved_by`, `approved_at`,
+`outcome` and `closed_by` come from `document_approve()` and `initiative_close()`.
 
 What the document needs beyond those facts is a NAMED ARGUMENT to the write, not a line you
 type: `stakeholder`, `tags`, `title`, and `fields` for this flow's own keys.

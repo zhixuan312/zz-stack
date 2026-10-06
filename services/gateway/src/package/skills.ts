@@ -201,7 +201,7 @@ export function routerSkill(flows: ShelfFlow[]): string {
     "",
     "- Documents are created with `document_write` and changed with `document_edit`",
     "  in your team's store — never in this repository. You send the BODY;",
-    "  the platform writes the frontmatter, and content that opens with one is refused.",
+    "  the platform writes the frontmatter, and one you type never becomes it.",
     "- A gate passes only once `document_approve(path)` has recorded it. A \"yes\" in the",
     "  conversation is not an approval, and you cannot write one by hand — the",
     "  platform stamps who approved and when, and refuses the fields if you try.",

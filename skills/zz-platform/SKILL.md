@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.82
+version: 3.83
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -42,7 +42,8 @@ from your disposition: `finished` is `accepted`, because closing it is saying so
 `flow` is decided at open and only at open. Pass it and the platform tells you what comes next;
 leave it out and it answers `next_move: null` with `next_move_absent` saying why — a freeform
 initiative, which is a supported shape and not a degraded one. There is no way to adopt a flow
-afterwards, deliberately: the gates it declares would land on documents already written.
+afterwards, deliberately: the gates it declares would land on documents already written. The
+platform stamps `flow` on every document; no write takes it, and a typed one is ignored.
 
 **A document.**
 
@@ -59,13 +60,12 @@ afterwards, deliberately: the gates it declares would land on documents already 
 | approved | `source_add(..., supports: <path>)` | approved, and flagged for refinement | the platform |
 
 `status` is exactly `draft` or `approved` — **and it exists only where the flow's manifest
-declares a GATE on that document.** A status records a gate verdict: it says a person was
-asked and answered. An ungated document is finished by being written, there is nobody to ask,
-so it carries no `status` at all and `document_approve` refuses it by name. Reading a fresh
-`explore.md` and finding no status means the platform did its job, not that the write failed.
+declares a GATE on that document**, because it records that a person was asked and answered. An
+ungated document is finished by being written: it carries no `status`, `document_approve`
+refuses it by name, and a fresh `explore.md` without one means the write did its job.
 
-**You write neither it nor any other envelope field by hand; every one of them is refused.**
-The body is yours, the envelope is the platform's.
+**The body is yours, the envelope is the platform's.** An envelope field sent as an argument is
+refused by name; one typed into an envelope at the top of `content` is ignored and reported.
 
 **What comes next is computed, never guessed.** `initiative_status(initiative)` answers a
 `next_move` carrying four things: an action, the document it is about, who it is waiting on,
@@ -156,7 +156,6 @@ the timing; getting this wrong costs a plan, not a refusal.
   platform sees the write and its result and never sees your reply, so a
   `File:` line standing over a failed write is invisible here and costs the
   person a document they believe they have.
-- Dates come from the system — never guessed, never asked.
 - When you create or update a document deliverable, fetch it back with
   `document_present(path)` and put what it returns in front of the person as
   Markdown (the chat renders GFM and Mermaid) — `File: <path>`, a horizontal
@@ -213,7 +212,7 @@ the timing; getting this wrong costs a plan, not a refusal.
 
   The platform writes
   `status`, `approved_by` and `approved_at` from who you are and what time it
-  is — **you write none of the three, and writing them by hand is refused.**
+  is — **you write none of the three**, and naming one in `fields` is refused.
   A field the platform can fill is never a field a person should be asked to. An approval that
   exists only in the chat does not exist, and the person must never be the
   one who discovers that later. **The gate constrains YOU, not them.** It
@@ -246,22 +245,15 @@ the timing; getting this wrong costs a plan, not a refusal.
   source to one. Send the SLUG alone — a few words in the stakeholder's own
   language, hyphenated — and use the name the tool hands back: **the platform
   prepends today's date from its own clock, and you never type a date into a
-  folder name.** A folder name cannot be renamed afterwards.
-- **Pass `flow` to `initiative_open` when a flow governs the work — and leaving it
-  out is a choice, not an omission.** A freeform initiative takes every document,
-  approval and close a governed one does; what it gives up is the platform saying
-  what comes next, so `initiative_status` answers `next_move: null` and says why.
-  Do not go looking for a way to adopt a flow later — there is none, deliberately,
-  because the gates a flow declares would land on documents already written and
-  unapproved. Decide when you open.
+  folder name.** A folder name cannot be renamed afterwards. Pass `flow` to it when a
+  flow governs the work, and decide then: leaving it out is a choice, not an omission.
 - **Today's date is `today` from `session_whoami`. Nothing else is today's date.**
   Not the newest row in the store, not a number inside a run tag, not the date
   on the last document somebody wrote. You have no clock, so read it before you
   write a date anywhere. The platform overwrites `updated_at` for you.
-- Every document carries the envelope: `flow`, `type`, `version`, `updated_at` — plus
-  `status` and the approvals where the flow gates it, and on close `outcome` with
-  `accepted_by` naming who accepted.
-  The platform's telemetry, index and audits read only these.
+- Every document carries the envelope — `flow`, `type`, `version`, `updated_at`, plus `status`
+  and the approvals where gated, and on close `outcome` and `accepted_by` — and the platform's
+  telemetry, index and audits read only these.
 - **A close is an ACT: zz-core's `initiative_close(initiative, disposition)`** — never a
   plugin's own close. You say the one thing you
   know — the work is `finished` or `abandoned` — and the platform derives the rest.
@@ -324,13 +316,6 @@ the timing; getting this wrong costs a plan, not a refusal.
   document you wrote that carries a gate must be approved before the initiative
   can close — whatever order it came in, whether or not anything else depended on
   it. A gate left open is not a gate passed.
-- **`flow:` is the one that must be right, and you never type it.** It says which
-  manifest's gates govern this initiative, and it is declared ONCE, to
-  `initiative_open(slug, flow)` — the one moment the choice is meaningful. The
-  platform stamps it onto every document afterwards. `document_write` has no
-  `flow` argument, and a body that opens with frontmatter of any kind is refused
-  outright, so writing `flow:` yourself is the refusal, not the cure. There is no
-  way to adopt a flow after an initiative exists.
 - **Every date this platform writes is `YYYY-MM-DD`** — in frontmatter and in the
   initiative's folder name, which are the same date and must not disagree. The
   index normalises either form, so nothing catches a drift between them — and ISO
@@ -378,11 +363,8 @@ turn into an investigation. Read the store again when something says the ground
 moved — they name another initiative, or a write is refused — not as a habit.
 
 - **Before continuing anything that already exists, call
-  `initiative_status(initiative)`.** It computes, from the flow's manifest
-  and the documents' frontmatter, which documents exist, which gates are
-  recorded, and what the next move is — including whether it waits on a
-  human or on you. That answer is the same in every harness; your memory of
-  the conversation is not.
+  `initiative_status(initiative)`.** Its answer — the documents, the gates recorded, the
+  next move — is the same in every harness; your memory of the conversation is not.
 - `initiative_status()` with no argument lists every open initiative and its
   next move. Use it when someone says "continue", "where were we", or names
   work without saying which.
@@ -495,7 +477,7 @@ and v2 (what it made us change)** are both on the record, and a later reader see
   `TARGET_EXISTS`. **Every change is `document_edit`, sending only what changed**, ONE body
   change per call:
   - **`edits`** — up to 128 exact `{find, replace}` pairs, all or nothing; each `find` occurs
-    exactly once in the document as it is now, or the refusal names the edit and its lines.
+    exactly once in the document as it is now, or the refusal names every edit that does not.
     This is how a draft's scaffold is filled:
     `document_edit(path: "<initiative>/spec.md", edits: [{find: "<the text as it is>", replace: "<what it becomes>"}])`.
   - **`section` with `content`** — `section: "Phase 5", content: "## Phase 5\n\n…"` replaces that
@@ -525,6 +507,32 @@ and v2 (what it made us change)** are both on the record, and a later reader see
   goes to the next version because of it.
 - A document changes only through the flow that owns it, and only in the
   order the manifest declares. That is what makes the record trustworthy.
+
+## What the platform reads, and what it tells you back
+
+**What the platform can read only one way it takes that way and reports, one line each under
+`normalised (<n>)`; what it cannot, it refuses by name.**
+
+- **An envelope at the top of whole `content`** — after any blank lines, `---`, only `key: value`
+  lines, `---` — is taken off the body. `title`, `tags`, `stakeholder` and the flow's own fields
+  read as the arguments they stand for, and one that differs from an argument you also sent is
+  `METADATA_CONFLICT`. Every key the platform writes — `flow`, `status`, `version`, the approvals,
+  `sources` and the rest — is ignored and reported; any other key is `UNSUPPORTED_METADATA`, each
+  named. So a document read and sent back whole is a `no change`. Content that is only an
+  envelope is refused, and so is a body `edits` or a `section` would make open with one. A
+  thematic break (`---`, then a blank line) is body, byte for byte.
+- **A document's tags** are lower-cased, then held to the tag rule. **A `sources` or `supports`
+  entry** loses a leading `./` or `<initiative>/` and gains `.md` when it has no extension; one
+  leaving the initiative is refused. **A source name already taken** is filed under the next free
+  suffix (`-2`, …), and the reply says `source name: … was taken, so … filed as …`.
+
+**Every list in a reply is counted, and nothing cut short passes for whole.** A list reads
+`<label> (<total>): <preview>` — `changed sections (2): Scope, Risks`, `causes (0): none` — and a
+receipt names its complete details, ``details: `dr_…` (complete)`` or, with a preview cut,
+``details: `dr_…` — 12 entries not shown above``. Read them with `document_read(path, details_ref)`
+for the path the reply was about, then `document_read(path, details_ref, cursor)` with the cursor
+each page ends on, until one ends `complete`. A refusal names every independent fault at once, one
+`ERROR:` line each — fix them all before the retry — and names details only when it cut a list.
 
 ## The platform's own tools, and every other plugin's
 
@@ -561,12 +569,9 @@ is the count of plugins that declare one. `zz-core` declares `/core/mcp`, `zz-pl
 declares `/eval/mcp`, `zz-access` declares `/manage/mcp`. `sdlc` declares none, because it has
 no MCP tools of its own, and that is the normal case rather than a deficiency.
 
-**Some of these are probably not on your list, for two different reasons.** `/eval/mcp` arrives
-only with `zz-plugin-eval`, which declares it — so if that plugin is not installed, those tools
-are not on your surface at all, and calling one answers "tool not found" rather than refusing
-you. `bug_list`, `bug_resolve`, `bug_delete` and `knowledge_reindex` are on a door everyone has
-but are registered to superadmins only, so unless you are one they answer the same "tool not
-found". In every case they are still the platform's tools; what varies is who can reach them.
+**Some of these are probably not on your list.** `/eval/mcp` arrives only with `zz-plugin-eval`,
+and the superadmin tools above only with that role; either way a call answers "tool not found"
+rather than refusing you. They are still the platform's tools; what varies is who can reach them.
 
 **`knowledge_reindex` re-derives a team's search index from the database rows**, which are the
 source of truth — the answer to a release that changed what an index row means, or to a store
@@ -614,14 +619,9 @@ next — a judge that varied with the conversation would make every number incom
   records a gate on a document, while a scheduling plugin's `approve_slot` approves somebody's
   appointment. Same verb, different subject, and only one of them is a gate.
 - **Every tool in this skill and in a flow's skills is THE PLATFORM'S tool of that name** —
-  zz-core's, but for the `/manage` ones the gateway serves. Read `document_approve(path)` as *zz-core's
-  `document_approve`*, and so on for every one of them. Say it to yourself that way before you
-  call it, because that is the whole question — not what the verb sounds like, but which server
-  it comes from.
-- **Find it by server, not by verb.** Clients qualify tool names differently and none of those
-  spellings is worth learning: whatever yours does, the tool you want is the one whose server
-  is `zz-core`. If two tools share a verb, the one from another plugin is never the one a skill
-  meant.
+  zz-core's, but for the `/manage` ones the gateway serves: read `document_approve(path)` as
+  *zz-core's `document_approve`*. Find it by server, not by verb, however your client qualifies
+  the name; of two tools sharing a verb, the other plugin's is never the one a skill meant.
 - The platform's tools are how the work is recorded. They are never a solution and never
   selected as one.
 - **Every other capability is another plugin**, and a plugin is installed rather than
@@ -635,7 +635,9 @@ next — a judge that varied with the conversation would make every number incom
   hand you tool names first and their schemas only when you ask — so a name you can see is not
   a shape you know. Before the FIRST call to any tool you have not used, have its schema in
   front of you. One read costs less than one refusal, and a refused call teaches that plugin's
-  team nothing while costing you the turn.
+  team nothing while costing you the turn. A client that caches schemas — ChatGPT does — keeps
+  the old ones after a release until the person refreshes or reconnects the connector; when a
+  reply names an argument the schema you hold lacks, ask them to, since nothing you call can.
 - **If a tool refuses twice with the same message, stop calling it and say so.** Vary one thing
   and try once more; if the message does not change, that is a finding about that plugin, not a
   puzzle to solve by permutation. Record what you sent and what came back, and carry on with
@@ -656,9 +658,8 @@ names the ones that arrived after a gate closed.
 
 Addressing a source is not a flag you set. You read it, you change the document with
 `document_edit`, and you name it in `sources` — the next version, and the source it names, ARE
-the record that it was addressed. Name it even when the platform would link it itself: its own
-link says only that the source came before the change. A source you did not act on stays
-visible, which is the point: nothing lets you mark it handled without the document moving.
+the record that it was addressed, even where the platform would link it itself. A source you did
+not act on stays visible: nothing lets you mark it handled without the document moving.
 
 ## A team cannot change what a skill says
 

@@ -13,7 +13,8 @@
  * the first's), the call helpers that turn a reply into a pass or a named failure, the order in
  * which PostgreSQL grants one advisory lock — what a race is staged with — and the built zz-core
  * modules loaded in this process against the same database (`inProcess`), for a rule no tool lets
- * a caller reach.
+ * a caller reach and for the statements a change issues, which only this process can count. A
+ * check may hand the child a catalog of its own (`catalog`) — a copy carrying a fixture flow.
  *
  * DELIBERATE: everything it starts is stopped on every exit path — the child killed, every client
  * and pool it opened ended, the container removed by `withThrowawayDb` — and the only database it
@@ -44,6 +45,10 @@ class CaseFailure extends Error {}
 interface InProcess {
   documentGuards: typeof import("../../services/zz-core/dist/guards.js").documentGuards;
   chainFor: typeof import("../../services/zz-core/dist/chain.js").chainFor;
+  /** The change service and the write path, as `document_edit` calls them: a statement this
+   *  process issues is one `pg`'s `Client.prototype.query` sees, so a check can count them. */
+  planEdit: typeof import("../../services/zz-core/dist/document-change.js").planEdit;
+  saveDocument: typeof import("../../services/zz-core/dist/document-save.js").saveDocument;
   pool: pg.Pool;
 }
 
@@ -125,8 +130,15 @@ async function seed(db: pg.Client): Promise<void> {
 /** A running zz-core child and what it has said, its tail kept for a failure to print. */
 interface Child { proc: ChildProcess; port: number; output: () => string }
 
+/** What a check may change about the zz-core it is given. */
+interface CoreOptions {
+  /** The catalog the child reads its flows from, in place of the checkout's own `catalog/`: a
+   *  copy carrying a fixture flow no shipped catalog declares. */
+  catalog?: string;
+}
+
 /** Starts zz-core and resolves once it says it is listening on `port`. */
-function startCore(name: string, url: string, port: number): Promise<Child> {
+function startCore(name: string, url: string, port: number, catalog: string): Promise<Child> {
   return new Promise((resolve, reject) => {
     const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port)], {
       cwd: root,
@@ -134,7 +146,7 @@ function startCore(name: string, url: string, port: number): Promise<Child> {
         ...process.env,
         TEAM_DB_URL: url,
         TRUSTED_PEERS: "localhost",
-        ZZ_CATALOG_DIR: `${root}/catalog`,
+        ZZ_CATALOG_DIR: catalog,
         ZZ_SKILLS_DIR: `${root}/skills`,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -195,8 +207,9 @@ function mcpFor(port: number, name: string): Mcp {
  * "<case>": …`, then zz-core's last output), 2 when Docker is not available — which is not a pass.
  */
 export async function withThrowawayCore(
-  name: string, done: string, fn: (core: Core) => Promise<void>,
+  name: string, done: string, fn: (core: Core) => Promise<void>, opts: CoreOptions = {},
 ): Promise<number> {
+  const catalog = opts.catalog ?? `${root}/catalog`;
   let url = "";
   let child: Child | null = null;
   let holder: pg.Client | null = null;
@@ -207,7 +220,7 @@ export async function withThrowawayCore(
   try {
     await withThrowawayDb(async (sql) => {
       await seed(sql);
-      child = await startCore(name, url, await freePort());
+      child = await startCore(name, url, await freePort(), catalog);
       const live = (): Child => child ?? fail("zz-core", "not running");
       const call = async (step: string, tool: string, args: unknown, via?: Mcp): Promise<string> => {
         let reply = "";
@@ -234,7 +247,7 @@ export async function withThrowawayCore(
         restart: async () => {
           await stopCore(live());
           child = null;
-          child = await startCore(name, url, await freePort());
+          child = await startCore(name, url, await freePort(), catalog);
           core.mcp = mcpFor(child.port, name);
         },
         call,
@@ -322,10 +335,13 @@ export async function withThrowawayCore(
           const load = (p: string) => import(pathToFileURL(join(root, "services/zz-core/dist", p)).href);
           const guards = (await load("guards.js")) as typeof import("../../services/zz-core/dist/guards.js");
           const chain = (await load("chain.js")) as typeof import("../../services/zz-core/dist/chain.js");
+          const change = (await load("document-change.js")) as typeof import("../../services/zz-core/dist/document-change.js");
+          const save = (await load("document-save.js")) as typeof import("../../services/zz-core/dist/document-save.js");
           const pdb = (await load("platform-db.js")) as typeof import("../../services/zz-core/dist/platform-db.js");
           const pool = pdb.db();
           if (!pool) return fail("in-process zz-core", "platform-db.js opened no pool on the throwaway database");
-          inProc = { documentGuards: guards.documentGuards, chainFor: chain.chainFor, pool };
+          inProc = { documentGuards: guards.documentGuards, chainFor: chain.chainFor, planEdit: change.planEdit,
+                     saveDocument: save.saveDocument, pool };
           return inProc;
         },
       };

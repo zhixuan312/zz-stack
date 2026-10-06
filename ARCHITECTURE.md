@@ -309,6 +309,19 @@ linked by the platform; an older source is never linked automatically. Approving
 the envelope are untouched by this rule: it is the body that may not change with the reason
 left off the record.
 
+What a write is sent is read before it is compared, and content's envelope never becomes the
+stored envelope. An envelope at the top of whole `content` — the platform's own block shape,
+`ENVELOPE_BLOCK`, holding nothing but `key: value` lines — is separated from the body by
+`document-normalize.ts`: its `title`, `tags`, `stakeholder` and flow fields are taken as the
+named arguments they stand for, every key the platform writes is ignored and reported, and any
+other key, or a value a named argument contradicts, is refused by name. A thematic break, SQL or
+a YAML document that is not such a block is body, byte for byte; a body an edit batch or a
+section would make open with an envelope is refused. Tags are lower-cased, a reference to a
+document of the same initiative is put in its canonical spelling, and a source name already
+taken is filed under the next free suffix, reserved under the lock. Each normalisation is one
+reported line, and it runs before identity is compared, so a document read and sent back whole
+is a no-change and never a version.
+
 ### `entry` — the skill the agent opens first
 
 `entry` is orthogonal to shape. A flow needs a door — `stages` without `entry` is an error,
@@ -351,7 +364,13 @@ What that leaves, in the four shapes a reader has to know:
   `supports` and the link is filed when that document is first written;
 - a knowledge node is `zz.knowledge_node`, on a shelf named by its `team_id`, addressed as
   `_knowledge/nodes/<node_ordinal>-<slug>.md`, and what it cites is `zz.knowledge_node_evidence`;
-- what the platform did is `zz.event`, one row per call, written by the door that served it.
+- what the platform did is `zz.event`, one row per call, written by the door that served it. A
+  document change's own `document.*` row is written inside the change's transaction, so it fails
+  the change rather than the fallback file, and carries `details_ref` (`dr_…`) and `details`: the
+  complete receipt, every list whole. A refusal that had to cut a list writes a `document.refused`
+  row before it replies. The reply itself counts every list and previews what fits 16 KiB, and
+  `document_read(path, details_ref, cursor)` pages the rest back; these rows are kept as long as
+  the audit kinds, so a printed ref never dangles.
 
 The deployment backs up three tarballs and not four (`deploy/backup.sh`): the database dump, the
 credentials proxy's data, and the compose configuration. The store's own tarball is gone with the

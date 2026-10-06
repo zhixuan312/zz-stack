@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.22
+version: 1.23
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -367,7 +367,7 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    then the options, then the recommendation. Name the method you chose and why it fits this
    deliverable — a plan whose phases follow no stated method is a list, not a method.
 2. **Skeleton in one write.** Send the BODY only — the platform writes the whole envelope,
-   and content that opens with frontmatter is refused. Start at the title, then
+   and one typed at the top of the content never becomes it. Start at the title, then
    a one-line **execution note** (`> **Execution:** implemented by \`sdlc-execute\`, one
    subagent per task and one wave at a time; each task's declared checks gate it and the Phase 0
    skeleton runs at every phase end.`), then Goal, Architecture, Tech Stack, Ground truth at HEAD,

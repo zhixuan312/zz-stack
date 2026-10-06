@@ -35,6 +35,7 @@ import { bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "@z
 
 import { DOCUMENT_EVENT_PREFIX } from "./attest.js";
 import { chainFor } from "./chain.js";
+import { baseConflict } from "./stale-base.js";
 import {
   type Cause, insertCauses, insertLinks, recordRequest, REQUEST_ID_CONFLICT, type RequestRecord, storedRequest,
 } from "./document-links.js";
@@ -361,10 +362,9 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       if (change) {
         if (!change.expect || moved(change.expect)) {
           if (change.base !== undefined && change.base !== now.generation) {
-            return await bail({ refusal:
-              `ERROR: BASE_CONFLICT — ${w.relPath} is at content revision ` +
-              `${contentRevision(existing.id, now.generation)} now, not the one \`base\` names; read it ` +
-              "again and apply the change to what it says now." });
+            await bail(null);
+            const [base, current] = [change.base, now.generation].map((g) => contentRevision(existing.id, g));
+            return { refusal: await baseConflict(p, w.by, w.team, w.relPath, base, current) };
           }
           return await bail({ retry: true as const });
         }
@@ -440,6 +440,12 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       if (!id) return await bail({ refusal: `ERROR: ${w.relPath} could not be written — no row came back` });
     } else if (mode === "append" || mode === "pinned") {
       const from = revision;
+      // The row this one supersedes keeps the identity it was read under. A current row written
+      // before generations were stored per row is named by the document's (`generationOf`,
+      // versions.ts), read here under the lock: exact, both describe the same content.
+      await client.query(`update zz.doc_revision set content_generation = $3
+                           where doc_id = $1::uuid and revision = $2 and content_generation is null`,
+                         [id, from, Number(existing!.generation)]);
       revision += 1;
       if (mode === "append") version += 1;
       // A document changed after an approval is draft again while its last approved revision

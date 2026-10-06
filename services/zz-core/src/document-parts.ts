@@ -32,7 +32,7 @@ export const asksPart = (ask: PartAsk): boolean =>
 
 /** Every markdown heading with the character it starts at. Lines inside ``` or ~~~ fences are
  *  code, not headings — a plan quoting a shell comment would otherwise grow a section. */
-function headings(text: string): Heading[] {
+export function headings(text: string): Heading[] {
   const out: Heading[] = [];
   let fence: string | null = null;
   let at = 0;

@@ -43,6 +43,7 @@ import { contentIdentity, documentState, type saveDocument, targetExists } from 
 import { sourceDocument } from "./indexing.js";
 import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
+import { baseConflict } from "./stale-base.js";
 import { documentAt, loadDocument, principalId, splitStorePath } from "./versions.js";
 import { type Chain, envelopeFor, isoToday, normalizeSections } from "./write-guards.js";
 
@@ -433,10 +434,7 @@ export async function planEdit(
   }
   // (7)
   const token = contentRevision(loaded.doc.id, Number(loaded.doc.content_generation));
-  if (a.base !== undefined && a.base !== token) {
-    return { reply: `ERROR: BASE_CONFLICT — ${path} is at content revision ${token} now, not the one ` +
-      "`base` names; read it again and apply the change to what it says now." };
-  }
+  if (a.base !== undefined && a.base !== token) return { reply: await baseConflict(p, who, team, path, a.base, token) };
   // (8) Every fault of the call that does not depend on another, in ONE answer: what it sends —
   // whole `content`'s envelope separated and read into the metadata it stands for, tags
   // lower-cased, `sources` canonical — every named source that names no document, and every edit

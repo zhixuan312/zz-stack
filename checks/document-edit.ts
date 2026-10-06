@@ -36,7 +36,14 @@
  *   - a 128-edit receipt naming 45 causes stays under 16 KiB with its totals, its previews cut and
  *     its details line saying how many entries it left out, and `document_read(path, details_ref)`
  *     returns every one of them, page by page; a details read combined with another mode is
- *     INVALID_MODE, and a ref on another path DETAILS_MISSING.
+ *     INVALID_MODE, and a ref on another path DETAILS_MISSING;
+ *   - a stale `base` names what changed since it, at both sites — (7), and the compare-and-swap a
+ *     change queued behind another meets — as the change set's records when the base snapshot is
+ *     retained (it was presented, so the change filed a new row), and says it is not retained when
+ *     the change rewrote it in place;
+ *   - a current row written before generations were stored per row keeps the identity it was read
+ *     under when a change supersedes it — by a new version or a new row beside a presented one — so
+ *     its token still reads its bytes, and a stale `base` naming it lists what changed.
  *
  * The request key's conflict, step (0), is `checks/document-edit-races.ts`'s, with the races, the
  * replays and the injected failures.
@@ -86,6 +93,24 @@ async function refusedUnchanged(c: Core, step: string, path: string, args: Recor
 async function bodyIs(c: Core, step: string, path: string, want: string): Promise<void> {
   const got = await bodyOf(c, step, path);
   if (got !== want) c.fail(step, `expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+}
+
+/** Two calls on one document, granted its lock in the order they are started: the first queues
+ *  behind the check's hold, the second — computed before it queued — behind the first. */
+async function staged(c: Core, step: string, path: string, one: () => Promise<string>,
+                      two: () => Promise<string>): Promise<[string, string]> {
+  const key = c.docKey(path);
+  await c.hold(key);
+  let a: Promise<string>, b: Promise<string>;
+  try {
+    a = one();
+    await c.waiters(step, key, 1);
+    b = two();
+    await c.waiters(step, key, 2);
+  } finally {
+    await c.release(key);
+  }
+  return Promise.all([a, b]);
 }
 
 async function skeleton(c: Core): Promise<void> {
@@ -557,6 +582,80 @@ async function bigReceipt(c: Core): Promise<void> {
   c.pass(modes);
 }
 
+const para = Array.from({ length: 30 }, (_, i) => `w${i}`).join(" ");
+const planned = `# Plan\n\n${para}\n\n## Old\n\nkept ${para}\n\n## Gone\n\ngone ${para}\n`;
+/** A change of `planned`: one section edited, one renamed over the same body. */
+const replanned = { edits: [{ find: "# Plan\n\nw0", replace: "# Plan\n\nW0" }, { find: "## Old", replace: "## New" }] };
+const AGAIN = "Read it again and apply the change to what it says now.";
+const stale = (p: string, now: string) =>
+  `ERROR: BASE_CONFLICT — ${p} is at content revision ${now} now, not the one \`base\` names`;
+/** The reply to a stale `base` whose snapshot is retained: what changed, as records. */
+const listed = (p: string, now: string) => new RegExp(`^${esc(`${stale(p, now)}; changed since \`base\` (2): ` +
+  `edited "# Plan" at section 1; renamed "## Old" to "## New" at section 2. ${AGAIN}`)}$`);
+/** The reply to a stale `base` whose snapshot was rewritten in place. */
+const unretained = (p: string, now: string, base: string) => new RegExp(`^${esc(`${stale(p, now)}, and what changed ` +
+  `since it cannot be named: ${base} was a working state that is not retained. ${AGAIN}`)}$`);
+
+async function staleBase(c: Core): Promise<void> {
+  const I = await c.open("stale-base");
+  const second = c.client();
+  for (const presented of [true, false]) {
+    let step = `(7) a stale \`base\` ${presented ? "names the records of what changed since its retained snapshot"
+                                                   : "says its snapshot was not retained"}`;
+    let p = `${I}/planned-${presented}.md`;
+    await c.ok(step, "document_write", { path: p, content: planned });
+    let base = await tokenOf(c, step, p);
+    if (presented) await c.ok(step, "document_present", { path: p });
+    await c.ok(step, "document_edit", { path: p, ...replanned });
+    let now = await tokenOf(c, step, p);
+    await refusedUnchanged(c, step, p, { base, edits: [{ find: "## Gone", replace: "## Went" }] },
+      presented ? listed(p, now) : unretained(p, now, base));
+    c.pass(step);
+
+    step = `the compare-and-swap: a change computed on \`base\` and queued behind another ${presented
+      ? "names the records of what the other changed" : "says its base snapshot was not retained"}`;
+    p = `${I}/raced-${presented}.md`;
+    await c.ok(step, "document_write", { path: p, content: planned });
+    base = await tokenOf(c, step, p);
+    if (presented) await c.ok(step, "document_present", { path: p });
+    const [a, b] = await staged(c, step, p,
+      () => c.call(step, "document_edit", { path: p, ...replanned }),
+      () => c.call(step, "document_edit", { path: p, base, edits: [{ find: "## Gone", replace: "## Went" }] }, second));
+    now = await tokenOf(c, step, p);
+    if (first(a) !== `edited: ${p} — v1`) c.fail(step, `the first change did not land: ${a}`);
+    if (!(presented ? listed(p, now) : unretained(p, now, base)).test(b)) c.fail(step, `the queued change: ${b}`);
+    c.pass(step);
+  }
+}
+
+/** The current row of `path` made a row written before generations were stored per row. */
+async function legacy(c: Core, path: string): Promise<void> {
+  await c.sql.query(
+    `update zz.doc_revision r set content_generation = null from zz.doc d join zz.initiative i on i.id = d.initiative_id
+      where r.doc_id = d.id and r.revision = d.current_revision and i.slug = $1 and d.path = $2`,
+    [path.split("/")[0], path.split("/").slice(1).join("/")]);
+}
+
+async function legacyRows(c: Core): Promise<void> {
+  const I = await c.open("legacy-rows");
+  for (const route of ["a new version", "a new row beside a presented one"]) {
+    const step = `a legacy current row superseded by ${route} keeps the identity it was read under`;
+    const p = `${I}/${route.startsWith("a new version") ? "versioned" : "pinned"}.md`;
+    await c.ok(step, "document_write", { path: p, content: planned });
+    await legacy(c, p);
+    const old = await tokenOf(c, step, p);
+    const cause = route.startsWith("a new version") ? { source_content: "Why the plan changed." } : {};
+    if (!route.startsWith("a new version")) await c.ok(step, "document_present", { path: p });
+    const edited = await c.ok(step, "document_edit", { path: p, ...replanned, ...cause });
+    if (first(edited) !== `edited: ${p} — ${route.startsWith("a new version") ? "v2 (new version)" : "v1"}`) c.fail(step, edited);
+    const read = await c.call(step, "document_read", { path: p, content_revision: old });
+    if (documentBody(read) !== planned) c.fail(step, `the old token reads: ${read}`);
+    await refusedUnchanged(c, step, p, { base: old, edits: [{ find: "## Gone", replace: "## Went" }] },
+      listed(p, await tokenOf(c, step, p)));
+    c.pass(step);
+  }
+}
+
 process.exitCode = await withThrowawayCore(NAME,
   `${NAME}: the skeleton, every mode, every refusal in its order, byte fidelity and the receipt's bounds: ok`,
   async (c) => {
@@ -566,4 +665,6 @@ process.exitCode = await withThrowawayCore(NAME,
     await normalisation(c);
     await fidelity(c);
     await bigReceipt(c);
+    await staleBase(c);
+    await legacyRows(c);
   });

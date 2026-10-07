@@ -33,7 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.94.0] — 2026-10-07
 
 Changing a document costs what changed. Two tools change documents now: `document_write` creates
 and `document_edit` changes. The platform works out the version from the cause, links owed sources
@@ -42,7 +42,7 @@ from any client without a model retyping it. Every rule an approval rests on sta
 This release changes tool names and arguments, migrates the schema, and cannot be rolled back
 by image. Read the upgrade notes before deploying.
 
-### zz-stack
+### zz-stack 0.94.0
 
 - **`document_patch` and `document_revise` are gone. `document_edit` replaces both, and
   `document_write` only creates.** An agent used to choose among three tools to change a
@@ -191,7 +191,7 @@ by image. Read the upgrade notes before deploying.
   - Step 6 no longer claims a rollback when the host was already on this version before the
     release; there is nothing earlier to roll back to, and it says so.
 
-### zz-stack-dashboard
+### zz-stack-dashboard 0.25.0
 
 - **A document's history shows public versions.** The version chain used to list one entry
   per revision, so a correction looked like a new version. It now lists one entry per public

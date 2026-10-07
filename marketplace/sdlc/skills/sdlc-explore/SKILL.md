@@ -1,6 +1,6 @@
 ---
 name: sdlc-explore
-version: 1.12
+version: 1.13
 description: Ground a raw idea before anyone designs it — capture the brain dump, fan out parallel workers across this system, the outside world and the ZZ knowledge base, wait for all of them, then synthesise one explore.md (Background · Current state · Rough direction). Main agent, with the fan-out dispatched.
 when_to_use: "Someone arrives with a raw idea, problem, feature request or brain dump and it needs grounding before it is designed. The question is exploratory — several directions to weigh, not one fact to look up. If it is one convergent question, that is a single sdlc-investigate, not this. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -25,6 +25,12 @@ that is a single `sdlc-investigate` and you should not be here.
 
 Let them describe the idea. Do not interrupt, and do not start solving. Capture everything —
 this is the raw material for both the fan-out and the exploration's `## Background`.
+
+If some of it arrives as a file — their notes, a draft, an export — read it, and file it as it is
+rather than retyping it: stage it with `upload_start(filename)` as `zz-platform` teaches, then
+`source_add(initiative: "<initiative>", title: "<what it is>", upload: "<the id>", supports:
+["explore.md"], request_id: "<one per file, reused on every retry>")`. Your retyped copy on the
+record would be your words, not theirs.
 
 ## Phase 2 — size the fan-out, then ask once
 

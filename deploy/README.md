@@ -203,15 +203,25 @@ role at the door, not by what their shelf lists.
 
 `client_setup` on `/manage/mcp` prints these steps with the person's own values.
 
-**Attaching a file.** Supporting material is text, and an agent attaching one normally has to
-produce every byte of it as its own output — which a PDF makes impossible, and which a long report
-makes expensive. `source_upload` on `/core/mcp` answers with one command instead: the shell reads
-the file and sends it to `PUT /upload/source` on this gateway, so nothing about the file passes
-through the model. Markdown, plain text, CSV, JSON, YAML, XML, SQL, HTML and the two Office
-formats (`.docx`, `.odt`) are read; anything else is refused, naming the formats it does read.
-`GATEWAY_PUBLIC_URL` is what the command's address is built from.
+**Attaching a file.** An agent that sends a file's text as an argument has to produce every byte
+of it as its own output, which makes a long report expensive. `upload_start(filename)` on
+`/core/mcp` answers with an `upload` id and two ways in, so nothing about the file passes through
+the model: `shell`, a curl command that sends the file to `PUT /upload/<id>` on this gateway with
+the person's own token, for an agent with a shell; and `link`, a `/u/<secret>` page on this
+gateway where the person picks the file, for one without. The link stages that one upload and
+nothing else — it cannot write, read or approve anything. The agent then passes `upload` to
+`document_write`, `document_edit` or `source_add`, which consumes it inside the write; a retry
+with the same `request_id` returns the first result, even once the upload is used or expired.
+Only UTF-8 plain text of at most 8 MiB is taken — `.md`, `.markdown`, `.txt`, `.text`, `.csv`,
+`.tsv`, `.json`, `.yaml`, `.yml`, `.toml`, `.xml`, `.sql`, `.log`, `.ini`, `.conf`, `.rst`, `.adoc`
+— and nothing is extracted or shortened; anything else, a PDF or an Office file included, is
+refused, naming the formats it does take. An upload is open for 15 minutes and used once.
+`GATEWAY_PUBLIC_URL` is what both addresses are built from. A file attached in ChatGPT can
+instead arrive as `file`, fetched by zz-core itself; that route stays off until
+`OPENAI_FILE_HOSTS` (above) lists its hosts.
 
-Claude Code is the only client.
+Claude Code and Codex install these plugins from the shelf; ChatGPT reaches `/core/mcp` as a
+connector, signing in through this gateway.
 
 People authenticate with a PAT (`pat_issue`), and get the same identity, the same
 team knowledge store and the same gates — enforced in zz-core, so no client can bypass them.

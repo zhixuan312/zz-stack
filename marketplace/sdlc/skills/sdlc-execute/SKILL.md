@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.15
+version: 1.16
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no approved plan, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -195,6 +195,13 @@ document_edit(
   source_title: "Phase 1 execution report",
   base: "<the content revision that read stated>")
 ```
+
+When the report is already a file — the gate log, the workers' reports on disk — do not retype it.
+Stage it with `upload_start(filename)` as `zz-platform` teaches, file it with
+`source_add(initiative: "<initiative>", title: "Phase 1 execution report", upload: "<the id>",
+supports: ["plan.md"], request_id: "<one per report, reused on every retry>")`, and make the same
+section edit with `sources: ["sources/<the name that reply filed>"]` in place of `source_content`
+and `source_title`. `upload` on `document_edit` itself would replace the whole plan.
 
 `document_read("<initiative>/plan.md", section: "Phase 1 — <what works at the end>")` returns
 exactly the text the edit replaces and the plan's `content revision`; send the text back with the

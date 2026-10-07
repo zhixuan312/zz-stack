@@ -207,6 +207,8 @@ export function routerSkill(flows: ShelfFlow[]): string {
     "  `expected_revision` that present named. A \"yes\" in the conversation is not an approval,",
     "  and you cannot write one by hand — the platform stamps who approved and when.",
     "- An approved document's body changes through `document_edit` with its cause, never by writing over it.",
+    "- A file you already have is never typed out as an argument: `upload_start` stages it, and the",
+    "  write takes the `upload` it answers. `zz-platform` has the routes and the formats.",
     "- Tokens belong to the **ZZ Access** agent. Never ask anyone to paste one here.",
     "",
     "Outside a flow you are yourself. This skill is not a personality.",

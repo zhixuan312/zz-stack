@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.85
+version: 3.86
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -400,20 +400,21 @@ The knowledge store is the team's, not one agent's session:
 
   Open what you find. **Knowledge you can see and do not open is worse than
   knowledge you do not have**, because the store looks like it is working.
-- **`source_add` is how information reaches work in flight.** Minutes, an
-  email, a decision taken in a corridor — attach it to the initiative and
-  name in `supports` every document it bears on (one or several). It is
-  ungated and immutable; anyone on the team may add one at any time from
-  any harness. A round names its `stage`; a malformed review ledger is refused by name.
-- **When the material is a file you already have, upload it — do not transcribe
-  it.** `upload_start(filename)` answers with an `upload` id, a `shell` command
-  and a `link`: run `shell` where you have one (it PUTs the file to `/upload/<id>`
-  on the gateway with the person's own token), or give the person `link` where
-  you have none — it stages that one file and nothing else. Then pass `upload` to
-  `source_add`, `document_write` or `document_edit` in place of `content`. Text
-  you produce as an argument costs its own length in output tokens, twice over
-  once you read it back; a staged file costs none. Plain text only (`.md`, `.txt`,
-  `.csv`, `.json`, `.yaml` and the rest), at most 8 MiB, open 15 minutes, used once.
+- **`source_add` is how information reaches work in flight.** Minutes, an email, a decision
+  taken in a corridor — attach it to the initiative and name in `supports` every document it
+  bears on (one or several). It is ungated and immutable; anyone on the team may add one at any
+  time from any harness. A round names its `stage`; a malformed review ledger is refused by name.
+- **When the material is a file you already have, upload it — do not transcribe it**: an
+  argument costs its whole length in output tokens, a staged file none. `upload_start(filename)`
+  answers `upload`, `shell` and `link`. Run `shell` where you have a shell (a curl PUT to
+  `/upload/<id>` with the person's own token), or give the person `link` where you have none — a
+  page that stages that one file and can write, read or approve nothing. Then pass `upload` to
+  `source_add`, `document_write` or `document_edit` in place of `content` (`UPLOAD_MISSING`: not
+  staged yet). On `document_edit` it is the whole body, so a file that CAUSES a change is
+  `source_add`ed, then named in `sources`. Plain UTF-8 text up to 8 MiB — `.md` `.markdown` `.txt`
+  `.text` `.csv` `.tsv` `.json` `.yaml` `.yml` `.toml` `.xml` `.sql` `.log` `.ini` `.conf` `.rst`
+  `.adoc`; a PDF or Office file is refused. Open 15 minutes, used once. ChatGPT's own attached
+  `file` is taken only once the deployment lists its hosts — until then, `upload_start` there too.
 - **The platform is a tenant too.** Its TEAM slug is also `zz-platform` —
   the same word as this skill's name and a different thing: a team shelf in
   the store, not a skill you can load. No tenant may claim it. That shelf has
@@ -484,15 +485,15 @@ and v2 (what it made us change)** are both on the record, and a later reader see
     heading and everything under it, byte for byte elsewhere; `document_read(path, section:
     "Phase 5")` returns exactly what it replaces. When headings share the text, `section_level`
     and `section_occurrence` pick one — `SECTION_AMBIGUOUS` lists each candidate's pair.
-  - **`content` alone** — the whole body, only when the change is not one section's.
+  - **`content` or `upload` alone** — the whole body, only when the change is not one section's.
   - **Metadata alone** — `title`, `tags`, `stakeholder`, `fields`: no cause, same version; on an
     approved document, a draft of that version awaiting its own approval.
 - **Send the `content revision` you read as `base`.** Every read and every edit's reply states
   one (`cr_…`); with it, a document that moved since is refused `BASE_CONFLICT` instead of taking
   your change on text you never saw. Without it a whole-body `content` replaces whatever is there.
-- **One `request_id` per intended change, reused on every retry of it.** A change that already
-  landed answers with its first reply, marked `(replayed)`, instead of landing twice; the same key
-  on different arguments is `REQUEST_ID_CONFLICT`. A call that changes nothing says `no change`.
+- **One `request_id` per intended change or source, reused on every retry of it.** One that
+  landed answers its first reply, marked `(replayed)`, even after its upload is spent; the same
+  key on different arguments is `REQUEST_ID_CONFLICT`. A call that changes nothing says `no change`.
 - Quote them, do not paraphrase: the source is their words, the document is your writing.
   **[convention]** The platform stores whatever you send as `source_content` and never saw what
   the person actually said, so it cannot tell a quotation from a summary of one. A paraphrase

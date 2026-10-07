@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.17
+version: 1.18
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -541,7 +541,12 @@ reply names it; a round filed before that is never linked automatically. Name it
 either way. What the person decides about a finding, or a phase's as-built report, is
 `source_content` — their words, verbatim, with a `source_title` — filed and linked in the same
 call. Every edit for that one input after the first names the source the first one filed, so
-the revision stays one version.
+the revision stays one version. When that input is already a file — their notes, minutes, an
+as-built report on disk — it is not retyped: stage it with `upload_start(filename)` as
+`zz-platform` teaches, file it with `source_add(initiative: "<initiative>", title: "<what it
+is>", upload: "<the id>", supports: ["spec.md"], request_id: "<one per file, reused on every
+retry>")`, and name that source in `sources`. `upload` on `document_edit` itself would replace
+the whole spec.
 
 Then `document_present("<initiative>/spec.md", review_context: "<the context its last present named>")`,
 which shows only what changed since they last saw it; say what changed and why, and get the

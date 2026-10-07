@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.24
+version: 1.25
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -463,8 +463,8 @@ by the platform to the next change of the plan's body even unnamed, and the repl
 filed before it is never linked automatically. Name it in `sources` either way: it is what this
 change answers. `document_list` on the initiative shows the sources.
 
-`source_content` is still right for a cause that exists nowhere else — an execution report, or
-something a person said:
+`source_content` is still right for a cause that exists nowhere else — something a person said,
+or a report you are writing now:
 
 ```
 document_edit(
@@ -474,6 +474,12 @@ document_edit(
   source_content: "<the execution report or the person's own words, verbatim>",
   source_title: "<what sent it back>")
 ```
+
+A cause that is already a file — a worker's execution report, a gate log — is not retyped.
+`upload_start(filename)` stages it the way `zz-platform` teaches, `source_add(initiative:
+"<initiative>", title: "<what sent it back>", upload: "<the id>", supports: ["plan.md"],
+request_id: "<one per report, reused on every retry>")` files it, and the section edit names that
+source in `sources`. `upload` on `document_edit` itself would replace the whole plan.
 
 A cause new to the plan's version opens the next one; on an approved plan it returns the
 document to draft, clears the stale approval and keeps the approved copy as the sealed revision

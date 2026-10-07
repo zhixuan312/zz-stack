@@ -207,7 +207,15 @@ async function main() {
     tick(`  sources  ${sent + skipped + failed.length + 1}/${sources.length}  ${src.key}`);
     if (DRY) { sent++; continue; }
     try {
-      await core.call("source_add", { initiative, title: src.title, content: src.content });
+      // DELIBERATE: `content`, not `upload_start` and `upload`. An upload is how a file reaches a
+      // write without the model writing it out; this script is not a model, so an argument costs
+      // it nothing, and the gateway bounds staging at 60 attempts a minute per client address
+      // (services/gateway/src/upload.ts), which an archive of several hundred would hit. The key is what an upload's retry needs too: the
+      // ledger records a send only after it succeeds, so a run cut off between the two sends it
+      // again, and the same `request_id` returns the source filed first rather than a second one.
+      await core.call("source_add", {
+        initiative, title: src.title, content: src.content, request_id: `mma:${src.key}`,
+      });
       remember(key, true); sent++;
     } catch (e) { failed.push([src.key, errMessage(e)]); }
   }

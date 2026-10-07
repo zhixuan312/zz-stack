@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.15
+version: 1.16
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -54,7 +54,8 @@ declared, is refused by name.
   the row. That the check verifies the criterion was settled when the plan was approved, so such a
   row is read only for whether the run passed.
 - **Deferred** needs the stakeholder's word on the record: `source_add(initiative, title,
-  content, supports: ["review.md"])` with no `stage`, naming the criterion's id.
+  content | upload, supports: ["review.md"])` with no `stage`, naming the criterion's id —
+  `upload` when their word arrives as a file, so it is filed as they wrote it.
 
 **Establish by running, not by reading.** The plan's checks, the full-suite gate, a probe, a walk
 of the flow end to end — run them and quote them. A criterion nothing can run is
@@ -145,11 +146,13 @@ implement, or a change that quietly does what no task asked for, is a finding.
 Record the round as a SOURCE — never in `review.md`, which is the main agent's:
 
 ```
-source_add(initiative: "<initiative>", title: "Review round <n>", content: "<summary, then the ledger>", supports: ["review.md"], stage: "sdlc-review")
+source_add(initiative: "<initiative>", title: "Review round <n>", content: "<summary, then the ledger>", supports: ["review.md"], stage: "sdlc-review", request_id: "<one per round, reused on every retry>")
 ```
 
-`content` carries one fenced `json` ledger, and the platform refuses a malformed one by name
-before anything is written:
+The `request_id` makes a retried call file the round once. A round you already hold as a file
+goes as `upload` in place of `content` — staged with `upload_start(filename)` as `zz-platform`
+teaches — and is checked the same way. `content` carries one fenced `json` ledger, and the
+platform refuses a malformed one by name before anything is written:
 
 ```json
 {"round": 2, "scope": {"base": "d9ad12a", "head": "7599bec"},

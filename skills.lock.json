@@ -4,12 +4,12 @@
     "sha": "1dd3486defaf"
   },
   "sdlc-execute": {
-    "version": "1.15",
-    "sha": "7ad65b288c84"
+    "version": "1.16",
+    "sha": "6a020ff169fc"
   },
   "sdlc-explore": {
-    "version": "1.12",
-    "sha": "a5167b6fd398"
+    "version": "1.13",
+    "sha": "3ba3c323ae8a"
   },
   "sdlc-flow": {
     "version": "2.15",
@@ -28,8 +28,8 @@
     "sha": "3537273a35f6"
   },
   "sdlc-plan": {
-    "version": "1.24",
-    "sha": "ec44642f1078"
+    "version": "1.25",
+    "sha": "51eba7c9a427"
   },
   "sdlc-recall": {
     "version": "1.12",
@@ -40,16 +40,16 @@
     "sha": "3acbabf13cb4"
   },
   "sdlc-review": {
-    "version": "1.15",
-    "sha": "e8d5cbb28191"
+    "version": "1.16",
+    "sha": "bec116e9be19"
   },
   "sdlc-spec-audit": {
     "version": "2.8",
     "sha": "b3125191c223"
   },
   "sdlc-spec": {
-    "version": "1.17",
-    "sha": "5e5e9b4eda0b"
+    "version": "1.18",
+    "sha": "88ade1b10c5e"
   },
   "zz-access": {
     "version": "2.7",
@@ -124,8 +124,8 @@
     "sha": "175b6d4fd997"
   },
   "zz-platform": {
-    "version": "3.85",
-    "sha": "aae15284a3f3"
+    "version": "3.86",
+    "sha": "bbee2fd1ffb5"
   },
   "zz-tldr": {
     "version": "1.3",

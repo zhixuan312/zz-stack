@@ -59,7 +59,9 @@ Two routes on the gateway are not doors and not the console: `PUT /upload/<id>` 
 bytes with the person's own token, and `/u/<secret>` is the staging page a link opens
 (`services/gateway/src/upload.ts`). Both only stage a plain-text file for an upload `upload_start`
 began; the write that consumes it is zz-core's, so there is no second idea of what a document or a
-source is.
+source is. A file attached in ChatGPT takes neither route: zz-core fetches that `file` itself
+(`services/zz-core/src/file-fetch.ts`), only from a host `OPENAI_FILE_HOSTS` lists — none by
+default, so the route is off and the write answers with `upload_start` instead.
 
 **Every tool says what it does to the world.** Each `registerTool` passes one of `READS`, `WRITES`
 or `DESTROYS` from `@zz/mcp-http` as its annotations. A client decides confirmation from them —

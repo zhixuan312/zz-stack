@@ -44,6 +44,7 @@ import { sourceDocument } from "./indexing.js";
 import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
 import { baseConflict } from "./stale-base.js";
+import { type Consumption, type Staged, stagedUpload, uploadContent, uploadLines } from "./upload-consume.js";
 import { documentAt, loadDocument, principalId, splitStorePath } from "./versions.js";
 import { type Chain, envelopeFor, isoToday, normalizeSections } from "./write-guards.js";
 
@@ -122,13 +123,18 @@ function canonical(v: unknown): string {
   return JSON.stringify(v);
 }
 
-/** The tools a request key is recorded for. A key is held per path, so the tool's name in the
- *  digest is what tells a create from a change sent under one key. */
-type RequestTool = "document_edit" | "document_write";
+/** The tools a request key is recorded for. A key is held per path — a source's per
+ *  `<initiative>/sources` — so the tool's name in the digest is what tells a create from a change
+ *  sent under one key. */
+type RequestTool = "document_edit" | "document_write" | "source_add";
 
-/** What a request key is held to: the tool's name, a newline, and every argument but the key. */
-function requestDigest(args: EditArgs, tool: RequestTool): string {
-  const rest: Record<string, unknown> = { ...args };
+/** A call as a request key holds it: its key, and the upload it consumes, if any. */
+type Keyed = { request_id?: string; upload?: string };
+
+/** What a request key is held to: the tool's name, a newline, and every argument but the key —
+ *  with, for a call consuming an upload, the upload's digest beside its id (`upload_sha256`). */
+function requestDigest(args: Keyed, tool: RequestTool, uploaded?: string): string {
+  const rest: Record<string, unknown> = { ...args, ...(uploaded !== undefined ? { upload_sha256: uploaded } : {}) };
   delete rest.request_id;
   return createHash("sha256").update(`${tool}\n${canonical(rest)}`, "utf8").digest("hex");
 }
@@ -137,9 +143,14 @@ function requestDigest(args: EditArgs, tool: RequestTool): string {
  *  none — and when the caller has no request key, or is no principal a key could be held for.
  *  Asked once the caller's identity and team resolved, before anything about the document is: a
  *  replay answers what the first call did, whatever the document says now. `saveDocument` asks
- *  again under the lock, which is what makes two identical requests commit once. */
+ *  again under the lock, which is what makes two identical requests commit once.
+ *
+ *  DELIBERATE: asked before the upload a call names is read, so a keyed write replays after its
+ *  upload was used, expired or swept. The digest it compares binds the upload's digest too, taken
+ *  from the receipt the first call recorded — the one an upload id was bound to: staging binds an
+ *  id's bytes once and never again, so the same id is the same digest. */
 export async function replayFor(
-  p: Pick<pg.Pool, "query">, team: string, who: string, path: string, args: EditArgs,
+  p: Pick<pg.Pool, "query">, team: string, who: string, path: string, args: Keyed,
   tool: RequestTool = "document_edit",
 ): Promise<{ replayed: Record<string, unknown> } | { refusal: string } | null> {
   if (args.request_id === undefined) return null;
@@ -150,9 +161,16 @@ export async function replayFor(
       where t.slug = $1 and q.principal_id = $2::uuid and q.canonical_path = $3 and q.request_id = $4`,
     [team, principal, path, args.request_id]);
   if (!rows[0]) return null;
-  return rows[0].request_digest === requestDigest(args, tool)
+  const uploaded = args.upload !== undefined && typeof rows[0].receipt.upload_sha256 === "string"
+    ? rows[0].receipt.upload_sha256 : undefined;
+  return rows[0].request_digest === requestDigest(args, tool, uploaded)
     ? { replayed: rows[0].receipt }
     : { refusal: "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request" };
+}
+
+/** The upload a write consumes, bound to the digest of the call that consumes it — keyed or not. */
+export function consumptionOf(args: Keyed, tool: RequestTool, s: Staged | undefined): Consumption | undefined {
+  return s && { id: s.id, sha256: s.sha256, tool, digest: requestDigest(args, tool, s.sha256) };
 }
 
 /** The sources a change to a document owes: sources in its initiative that declare they support
@@ -293,14 +311,14 @@ export function envelopeOnlyRefusal(content: string, body: string, tool: "docume
  *  the envelope `normalizeContent` separated, the tags it leaves held to TAG_TOKEN, a content that
  *  was only an envelope, and every `sources` entry that is malformed. Asks nothing of the store. */
 function readSent(
-  sent: ReturnType<typeof normalizeContent>, a: EditArgs, whole: boolean, initiative: string,
+  sent: ReturnType<typeof normalizeContent>, a: EditArgs, whole: string | null, initiative: string,
 ): { refusals: string[] } | { body: string; metadata: Metadata; normalised: string[] } {
   const refusals: string[] = [];
   if ("refusals" in sent) refusals.push(...sent.refusals);
   else {
     const badTags = tagRefusal(sent.metadata.tags);
     if (badTags) refusals.push(badTags);
-    const empty = whole ? envelopeOnlyRefusal(a.content ?? "", sent.body, "document_edit") : null;
+    const empty = whole !== null ? envelopeOnlyRefusal(whole, sent.body, "document_edit") : null;
     if (empty) refusals.push(empty);
   }
   const refs = normalizeRefs(a.sources, initiative);
@@ -314,7 +332,9 @@ function readSent(
 export function callRefusals(a: EditArgs, initiative: string): string[] {
   const mode = modeOf(a);
   if (typeof mode !== "string") return [];
-  const read = readSent(normalizeContent(mode === "content" ? a.content ?? "" : "", a), a, mode === "content", initiative);
+  // An upload is read once its document is found, so only what the call says can be asked here.
+  const read = readSent(normalizeContent(mode === "content" ? a.content ?? "" : "", a), a,
+                        mode === "content" ? a.content ?? "" : null, initiative);
   return "refusals" in read ? read.refusals : [];
 }
 
@@ -324,8 +344,11 @@ async function refused(p: pg.Pool, who: string, team: string, path: string, line
 }
 
 /** Which body mode a call sends, or the INVALID_MODE that says why it sends none or two. */
-function modeOf(a: EditArgs): "edits" | "section" | "content" | "metadata" | { refusal: string } {
+function modeOf(a: EditArgs): "edits" | "section" | "content" | "upload" | "metadata" | { refusal: string } {
   const invalid = (why: string) => ({ refusal: `ERROR: INVALID_MODE — ${why}` });
+  if (a.upload !== undefined && (a.edits !== undefined || a.section !== undefined || a.content !== undefined)) {
+    return invalid("send ONE body change: an `upload` is the whole body, and comes without `edits`, `section` or `content`.");
+  }
   if (a.section === undefined && (a.section_level !== undefined || a.section_occurrence !== undefined)) {
     return invalid("`section_level` and `section_occurrence` choose among headings `section` names; send `section` with them.");
   }
@@ -341,6 +364,7 @@ function modeOf(a: EditArgs): "edits" | "section" | "content" | "metadata" | { r
   if (a.section_occurrence !== undefined && a.section_occurrence < 1) {
     return invalid("`section_occurrence` counts from 1.");
   }
+  if (a.upload !== undefined) return "upload";
   if (a.edits !== undefined) return "edits";
   if (a.section !== undefined) return "section";
   if (a.content !== undefined) return "content";
@@ -419,15 +443,21 @@ export async function planEdit(
         "document_list shows the paths there are."
       : loaded.refusal };
   }
-  // (4)
-  for (const n of ["upload", "file"] as const) {
-    if (a[n] !== undefined) {
-      return { reply: `ERROR: NOT_YET — \`${n}\` arrives in Phase 4 of ${INITIATIVE}; send the text as \`content\` until then` };
-    }
+  // (4) `file`, not served yet.
+  if (a.file !== undefined) {
+    return { reply: `ERROR: NOT_YET — \`file\` arrives in Phase 4 of ${INITIATIVE}; send the text as \`content\` until then` };
   }
   // (5)
   const mode = modeOf(a);
   if (typeof mode !== "string") return { reply: mode.refusal };
+  // (4) An upload — the whole body, sent alone — read and checked before its body is decoded
+  // (upload-consume.ts); from (8) on it is planned as whole `content` is.
+  let staged: Staged | undefined;
+  if (mode === "upload") {
+    const got = await stagedUpload(p, team, who, a.upload ?? "");
+    if ("refusal" in got) return { reply: got.refusal };
+    staged = got;
+  }
   // (6)
   if (mode === "edits" && (!Array.isArray(a.edits) || a.edits.length < 1 || a.edits.length > MAX_EDITS)) {
     return { reply: batchRefusal(path, { code: "EDIT_COUNT" }) as string };
@@ -440,8 +470,9 @@ export async function planEdit(
   // lower-cased, `sources` canonical — every named source that names no document, and every edit
   // of a batch, or the section, that cannot apply. Before any identity is compared, so a
   // normalisation never manufactures a version and a missing source is never a no_change.
-  const sent = normalizeContent(mode === "content" ? a.content ?? "" : "", a);
-  const read = readSent(sent, a, mode === "content", initiative);
+  const sent = staged ? uploadContent(staged, a) : normalizeContent(mode === "content" ? a.content ?? "" : "", a);
+  const whole = staged ? staged.text : mode === "content" ? a.content ?? "" : null;
+  const read = readSent(sent, a, whole, initiative);
   const named = await namedSources(p, team, path, wellFormed(a.sources, initiative));
   const issues: Line[] = ["refusals" in read ? read.refusals : [], named.missing ? [named.missing] : []].flat();
   const body = documentBody(loaded.text);
@@ -464,8 +495,10 @@ export async function planEdit(
   // From here on `a` is the call as the platform reads it; `asSent` is the call as sent, which is
   // what a request key digests.
   const asSent = a;
-  a = { ...a, ...read.metadata, ...(mode === "content" ? { content: read.body } : {}) };
-  if (mode === "content") next = a.content ?? "";
+  a = { ...a, ...read.metadata, ...(whole !== null ? { content: read.body } : {}) };
+  if (whole !== null) next = a.content ?? "";
+  const upload = consumptionOf(asSent, "document_edit", staged);
+  const fromFile = staged ? uploadLines(staged) : [];
   const governing = await chainFor(p, team, path, loaded.text);
   const gated = governing.documents.some((d) => d.name === name && d.gate);
   const approved = loaded.doc.status === "approved";
@@ -483,14 +516,15 @@ export async function planEdit(
   // keyed one still goes to the write, which records the request and nothing else.
   if (contentIdentity(fixed.content, path) === contentIdentity(loaded.text, path)) {
     const lines = (): Line[] => [`edited: ${path} — v${version} (no change)`, `content revision: ${token}`,
-      `status: ${status(loaded.text)}`, { label: "changed sections", items: [] }, ...causeLines([], null, undefined, read.normalised)];
+      `status: ${status(loaded.text)}`, { label: "changed sections", items: [] }, ...causeLines([], null, undefined, read.normalised),
+      ...fromFile];
     return { chain, text: fixed.content, renamed: [], noChange: true, lines, ref,
              causes: [], replaced: null,
              write: { team, relPath: path, initiative, text: fixed.content, by: who, mode: "rewrite",
                       flow: chain.name ?? undefined, type: chain.roles[name], act: "edit",
-                      change: { nextVersion: false, expect: state,
+                      change: { nextVersion: false, expect: state, upload,
                                 receipt: async (c) => composeReceipt(lines(), ref, await moveOf(c)),
-                                request: requestOf(asSent, who, path, { result: "no_change", version }) } } };
+                                request: requestOf(asSent, who, path, { result: "no_change", version }, "document_edit", staged) } } };
   }
   // The causes. Named sources and words captured as a new source are the caller's — a named one
   // the current version already cites is no new cause; owed sources are the platform's, and a
@@ -521,6 +555,7 @@ export async function planEdit(
     { label: "changed sections", items: changedSections(body, after) },
     ...causeLines(causes, capturedCause, filed, read.normalised),
     ...(fixed.renamed.length ? [`Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.`] : []),
+    ...fromFile,
   ];
   // DELIBERATE: a change in the same version keeps the version's note when it sends none — the
   // note says what the version is, and a typo fix does not unsay it.
@@ -535,32 +570,34 @@ export async function planEdit(
       flow: chain.name ?? undefined, type: chain.roles[name], act: "edit",
       change: {
         // The captured source's cause is the write's to record, under the name it files it as.
-        nextVersion, expect: state, captured, causes: causes.filter((c) => c !== capturedCause),
+        nextVersion, expect: state, captured, causes: causes.filter((c) => c !== capturedCause), upload,
         // The generation the caller's token named — the document's as read, which (7) found it to
         // be. Should the state compare then find the document moved, that is the generation it
         // asks about: still current means a retry, gone means BASE_CONFLICT.
         ...(a.base !== undefined ? { base: Number(loaded.doc.content_generation) } : {}),
         receipt: async (c, filed) => composeReceipt(lines(filed), ref, await moveOf(c)),
-        request: requestOf(asSent, who, path, { result: "applied", version: newVersion, new_version: nextVersion }),
+        request: requestOf(asSent, who, path, { result: "applied", version: newVersion, new_version: nextVersion },
+                           "document_edit", staged),
       },
     },
   };
 }
 
 /** The request record a keyed change commits with: the key, what it digests to, and the facts its
- *  receipt states — the text and the next move are the write's to compose, in its transaction. */
-function requestOf(a: EditArgs, who: string, path: string, facts: Record<string, unknown>,
-                   tool: RequestTool = "document_edit") {
+ *  receipt states — the text and the next move are the write's to compose, in its transaction. An
+ *  upload's id and digest are among the facts: what a replay's digest is compared with. */
+export function requestOf(a: Keyed, who: string, path: string, facts: Record<string, unknown>,
+                          tool: RequestTool, s?: Staged) {
   return a.request_id === undefined ? undefined : {
-    principalEmail: who, canonicalPath: path, requestId: a.request_id, digest: requestDigest(a, tool),
-    receipt: { path, ...facts },
+    principalEmail: who, canonicalPath: path, requestId: a.request_id, digest: requestDigest(a, tool, s?.sha256),
+    receipt: { path, ...facts, ...(s ? { upload: s.id, upload_sha256: s.sha256 } : {}) },
   };
 }
 
 /** What `document_write` is called with. */
 interface CreateArgs {
   path: string;
-  content: string;
+  content?: string; upload?: string;
   title?: string; tags?: string[]; stakeholder?: string; fields?: Record<string, string>;
   sources?: string[]; source_content?: string; source_title?: string;
   request_id?: string;
@@ -573,7 +610,7 @@ interface CreateArgs {
  *  it will have. Every malformed and every missing named source come back together. */
 export async function planCreate(
   p: pg.Pool, team: string, who: string, path: string, a: CreateArgs,
-  sent: { body: string; metadata: Metadata; normalised: string[] }, moveOf: MoveOf = noMove,
+  sent: { body: string; metadata: Metadata; normalised: string[] }, moveOf: MoveOf = noMove, staged?: Staged,
 ): Promise<{ reply: string } | Omit<Planned, "noChange" | "replaced">> {
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
   if (await documentAt(p, team, path)) return { reply: targetExists(path) };
@@ -602,6 +639,7 @@ export async function planCreate(
     `content revision: ${contentRevision(id, 0)}`,
     ...causeLines(causes, capturedCause, filed, [...sent.normalised, ...refs.normalised]),
     ...(fixed.renamed.length ? [`Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.`] : []),
+    ...(staged ? uploadLines(staged) : []),
   ];
   return {
     chain, text: fixed.content, renamed: fixed.renamed, lines, ref, causes,
@@ -609,8 +647,9 @@ export async function planCreate(
       team, relPath: path, initiative, text: fixed.content, by: who, id, mode: "create", act: "write",
       flow: chain.name ?? undefined, type: chain.roles[name],
       change: { nextVersion: false, captured, causes: causes.filter((c) => c !== capturedCause),
+                upload: consumptionOf(a, "document_write", staged),
                 receipt: async (c, filed) => composeReceipt(lines(filed), ref, await moveOf(c)),
-                request: requestOf(a, who, path, { result: "created", version: 1 }, "document_write") },
+                request: requestOf(a, who, path, { result: "created", version: 1 }, "document_write", staged) },
     },
   };
 }

@@ -469,7 +469,7 @@ check("the server-held LLM client stays off the console", () => {
  * skills and catalog entries the platform ships. Leaving any one out reports live routes as dead.
  *
  * The fifth set is the instructions rather than the code: a skill tells an agent to run a
- * command, and `/upload/source` is reached by the curl line `source_upload` answers with and
+ * command, and `/upload/<id>` is reached by the curl line `upload_start` answers with and
  * `zz-platform` tells the agent to run. Same reasoning as `deploy/` below — prose somebody
  * follows against this gateway is a caller, and it is read the same way.
  *

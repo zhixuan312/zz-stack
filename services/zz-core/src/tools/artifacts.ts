@@ -34,11 +34,12 @@ import { unopenedRefusal } from "../initiative-record.js";
 import { PLAIN_TOKEN, safeName, safePath, tagRefusal, titleSlug, writeGuard } from "../paths.js";
 import { registerDocumentEditTool } from "./document-edit.js";
 import { registerSourceListTool } from "./source-list.js";
-import { registerSourceUploadTool } from "./source-upload.js";
+import { registerUploadStartTool } from "./upload-start.js";
 import { db, teamFor } from "../platform-db.js";
 import { documentAt, documentPaths, loadDocument, loadSnapshot, NO_DB, recordAct } from "../versions.js";
 import { saveDocument } from "../document-save.js";
-import { acceptanceLine, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor } from "../document-change.js";
+import { acceptanceLine, consumptionOf, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor, requestOf } from "../document-change.js";
+import { oneBody, stagedUpload, uploadContent, uploadLines } from "../upload-consume.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, PRESENT_META } from "../document-panel.js";
 import { CONTEXT_INPUT, presentRefusal, viewerOf } from "../review-context.js";
@@ -60,9 +61,9 @@ const PART_INPUT = {
 
 export function registerArtifactTools(server: McpServer): void {
   // The source subject, past what this file holds: `source_add` stays here with the document
-  // tools, and the read-back and the upload's other half are each their own file beside it.
+  // tools, and the read-back and the start of an upload are each their own file beside it.
   registerSourceListTool(server);
-  registerSourceUploadTool(server);
+  registerUploadStartTool(server);
   registerDocumentEditTool(server);
   server.registerTool(
     "document_write",
@@ -82,14 +83,17 @@ export function registerArtifactTools(server: McpServer): void {
         "there too, never here. What the document rests on is named in `sources`, or passed as " +
         "`source_content` (with `source_title`), which the platform files as a source; sources " +
         "filed since the release that declare they support this document are linked by the " +
-        "platform itself, and the reply names every cause. Send one `request_id` per document " +
+        "platform itself, and the reply names every cause. A long file you already have is sent as " +
+        "`upload` — the id upload_start answered, once its file is staged — in place of `content`. " +
+        "Send one `request_id` per document " +
         "you mean to create and reuse it on every retry of that create: a retry of a create that " +
         "already landed returns its first reply instead of being refused as existing. Every list " +
         "in the reply is counted, and the reply names its complete details as `details: dr_…`, " +
         "which `document_read(path, details_ref)` returns in full.",
       inputSchema: {
         path: z.string(),
-        content: z.string().describe("The document's BODY, starting at its first heading. The platform writes the frontmatter."),
+        content: z.string().optional().describe("The document's BODY, starting at its first heading. The platform writes the frontmatter."),
+        upload: z.string().optional().describe("In place of `content`: the id upload_start answered, once its file is staged."),
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
@@ -127,15 +131,20 @@ export function registerArtifactTools(server: McpServer): void {
       // an existence test.
       const unopened = await unopenedRefusal(p, team, path);
       if (unopened) return text(unopened);
+      const twice = oneBody(args); // and an upload read and checked before its bytes are
+      if (twice) return text(twice);
+      const staged = args.upload === undefined ? undefined : await stagedUpload(p, team, who, args.upload);
+      if (staged && "refusal" in staged) return text(staged.refusal);
       // (2) The content in the spelling the store keeps — its envelope, if it sent one, separated
-      // and read into the metadata it stands for — then the rules every write applies to the
-      // field names and tags that leaves. Collected, not chained: each fault depends on no other,
-      // so every one comes back in one answer.
-      const sent = normalizeContent(args.content,
-        { title: args.title, tags: args.tags, stakeholder: args.stakeholder, fields: args.fields });
+      // and read into the metadata it stands for; an uploaded file read as the file it is — then the
+      // rules every write applies to the field names and tags that leaves. Collected, not chained:
+      // each fault depends on no other, so every one comes back in one answer.
+      const named = { title: args.title, tags: args.tags, stakeholder: args.stakeholder, fields: args.fields };
+      const sent = staged ? uploadContent(staged, named) : normalizeContent(args.content ?? "", named);
       const { fields, tags } = "refusals" in sent ? { fields: args.fields, tags: normalizeTags(args.tags).tags } : sent.metadata;
       const ruled = [fieldRefusal(fields), tagRefusal(tags)];
-      const read = "refusals" in sent ? sent.refusals : [envelopeOnlyRefusal(args.content, sent.body, "document_write")];
+      const read = "refusals" in sent ? sent.refusals
+        : [envelopeOnlyRefusal(staged?.text ?? args.content ?? "", sent.body, "document_write")];
       const refused = [...read, ...ruled].filter((r): r is string => r !== null);
       const settle = (reply: string) => settleRefusal(p, { who, team, path }, reply);
       if (refused.length || "refusals" in sent) return text(await settle(refusalText(refused)));
@@ -144,7 +153,7 @@ export function registerArtifactTools(server: McpServer): void {
       // acquired a manifest on its second document would have that manifest's gates land on
       // documents already written and unapproved.
       const plan = await planCreate(p, team, who, path, args, sent,
-                                    (c) => nextMoveLine(c as pg.Pool, team, initiative));
+                                    (c) => nextMoveLine(c as pg.Pool, team, initiative), staged);
       if ("reply" in plan) return text(plan.reply);
       const gate = await documentGuards(plan.chain, path, plan.text, team);
       if (gate) return text(await settle(gate));
@@ -436,11 +445,15 @@ export function registerArtifactTools(server: McpServer): void {
         "one at any time, from any harness, including while the work is in flight. Name in " +
         "`supports` every document this material bears on: each of those documents is then " +
         "flagged for refinement if it was already approved, and initiative_status reports it as " +
-        "the next move. This is how information reaches work without editing around the gates.",
+        "the next move. This is how information reaches work without editing around the gates. A file " +
+        "you have goes as `upload` (upload_start's id, once staged) in place of `content`, kept as it is. " +
+        "Reuse one `request_id` on every retry of a source: a retry returns the one filed first, any day.",
       inputSchema: {
         initiative: z.string(),
         title: z.string(),
-        content: z.string(),
+        content: z.string().optional(),
+        upload: z.string().optional().describe("In place of `content`: the id upload_start answered, once its file is staged."),
+        request_id: z.string().optional().describe("One per source you mean to add, reused on every retry of it."),
         supports: z.union([z.string(), z.array(z.string())]).optional()
           .describe("Document(s) this material bears on, e.g. 'spec.md' or ['spec.md','plan.md']."),
         stage: z.string().optional()
@@ -450,7 +463,7 @@ export function registerArtifactTools(server: McpServer): void {
                     "ledger in `content`. Only a source naming its stage counts as that stage's round."),
       },
     },
-    async ({ initiative, title, content, supports, stage }) => {
+    async ({ initiative, title, content, upload, supports, stage, request_id }) => {
       // The same guard the other initiative-taking tools apply. safePath below only
       // stops a path leaving the store, which is a different question from whether the name
       // is an initiative — and `join(root, initiative, d)` further down asks the second one.
@@ -495,7 +508,17 @@ export function registerArtifactTools(server: McpServer): void {
       const p = p0;
       const team = team0;
       const settle = (reply: string) => settleRefusal(p, { who: who.email, team, path: asked }, reply);
+      // (1) A source this key already filed answers as it did — on any later day, before the upload
+      // is looked at. The key is held in `<initiative>/sources`, not at the path a day names.
+      const keyed = { initiative, title, content, upload, supports, stage, request_id };
+      const replay = await replayFor(p, team, who.email, `${initiative}/sources`, keyed, "source_add");
+      if (replay) return text("refusal" in replay ? replay.refusal : replayText(replay.replayed, await nextMoveLine(p, team, initiative)));
       if (badSupports.length) return text(await settle(refusalText(badSupports)));
+      const twice = oneBody({ content, upload });
+      if (twice) return text(twice);
+      const staged = upload === undefined ? undefined : await stagedUpload(p, team, who.email, upload);
+      if (staged && "refusal" in staged) return text(staged.refusal);
+      const words = staged ? staged.text : content ?? ""; // literally, whatever its extension
       // An audit round is a source that names the stage producing it and supports the document
       // that stage audits. Anything else is material, however it is titled: a stakeholder's
       // answers support spec.md too, and counting them as a round would let a spec pass its
@@ -507,7 +530,7 @@ export function registerArtifactTools(server: McpServer): void {
       if (review) {
         const earlier = reviewRounds(await docRows(p, team, initiative), review.stage, review.document)
           .map((r) => r.ledger);
-        const refused = ledgerRefusal(content, earlier, review.document);
+        const refused = ledgerRefusal(words, earlier, review.document);
         if (refused) return text(await settle(refused));
       }
       const round = auditRoundOf(governing, stage, list) ?? review;
@@ -516,7 +539,7 @@ export function registerArtifactTools(server: McpServer): void {
       const auditsVersion = round && !review && cited?.current_version != null
         ? String(cited.current_version) : undefined;
       const doc = sourceDocument(
-        { title, by: who.email, day: date, content, supports: list,
+        { title, by: who.email, day: date, content: words, supports: list,
           stage: round ? round.stage : undefined, audits_version: auditsVersion });
       // Which of the named documents were already approved when this landed? An audit round lands
       // on an approved document by design — the next move says what follows from it. And which do
@@ -533,7 +556,8 @@ export function registerArtifactTools(server: McpServer): void {
       // source's own act row.
       const ref = mintRef();
       const lines = (rel: string): Line[] => sourceReceipt({ rel, asked, list, normalised, round, auditsVersion,
-                                                            stage, review: !!review, unwritten, stale });
+                                                            stage, review: !!review, unwritten, stale,
+                                                            upload: staged ? uploadLines(staged) : [] });
       const wrote = await saveDocument({
         team, relPath: asked, initiative, text: doc, by: who.email, flow: "", reserveName: true,
         // The stage is kept on the row's `type`: a source has no flow role, and the round it
@@ -547,8 +571,11 @@ export function registerArtifactTools(server: McpServer): void {
         // two are different facts: `cites` is what the source read, `supports` is what it is for.
         supports: list.map((d) => `${initiative}/${d}`),
         mode: "create", act: "source",
-        change: { nextVersion: false, receipt: async (_c, _captured, filed) => composeReceipt(lines(filed), ref, "") },
+        change: { nextVersion: false, receipt: async (_c, _captured, filed) => composeReceipt(lines(filed), ref, ""),
+                  request: requestOf(keyed, who.email, `${initiative}/sources`, { result: "created" }, "source_add", staged),
+                  upload: consumptionOf(keyed, "source_add", staged) },
       });
+      if ("replayed" in wrote) return text(replayText(wrote.replayed, await nextMoveLine(p, team, initiative)));
       if (!("revision" in wrote)) return text("refusal" in wrote ? wrote.refusal : `ERROR: ${asked} could not be written`);
       const rel = wrote.reserved ?? asked;
       recordAct(rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
@@ -569,7 +596,7 @@ export function registerArtifactTools(server: McpServer): void {
       // finding it introduces.
       const assessed = review
         ? await assessReviewRound(p, team, initiative, rel, review.stage, review.document, who.email)
-        : round ? await assessRound(p, team, initiative, rel, round.document, content, who.email) : null;
+        : round ? await assessRound(p, team, initiative, rel, round.document, words, who.email) : null;
       return text(receiptReply(wrote.receipt ?? composeReceipt(lines(rel), ref, ""), assessed ? `\n${assessed}` : "") +
         await nextMoveLine(p, team, initiative));
     },
@@ -583,11 +610,13 @@ export function registerArtifactTools(server: McpServer): void {
 function sourceReceipt(o: {
   rel: string; asked: string; list: string[]; normalised: string[]; round: { stage: string; document: string } | null;
   auditsVersion: string | undefined; stage: string | undefined; review: boolean; unwritten: string[]; stale: string[];
+  upload: Line[];
 }): Line[] {
   const n = o.unwritten.length;
   return [
     `source recorded: ${o.rel}`,
     ...(o.rel !== o.asked ? [`source name: ${o.asked} was taken, so this was filed as ${o.rel}`] : []),
+    ...o.upload,
     ...(o.list.length ? [{ label: "supports", items: o.list }] : []),
     { label: "normalised", items: o.normalised, sep: "; " },
     ...(o.round ? [`recorded as a ${o.round.stage} round on ${o.round.document}` + (o.auditsVersion ? ` v${o.auditsVersion}` : "")] : []),

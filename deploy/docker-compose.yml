@@ -42,10 +42,10 @@ services:
       # The deployment's own timezone: every date the platform stamps is local to it. Under UTC
       # a morning east of Greenwich lands under yesterday's date.
       - ZZ_TZ=${ZZ_TZ:-}
-      # Where a client reaches this platform. zz-core needs it for one thing: `source_upload`
-      # answers with the command that sends a file to /upload/source on the gateway, and that
-      # command needs an address a laptop can dial. Unset, the tool refuses and says so rather
-      # than printing a URL that resolves nowhere.
+      # Where a client reaches this platform. zz-core needs it for one thing: `upload_start`
+      # answers with the command that sends a file to /upload/<id> on the gateway and the /u/ link
+      # that stages one, and both need an address a laptop can dial. Unset, the tool refuses and
+      # says so rather than printing a URL that resolves nowhere.
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
       # The reading judge — failure_discover's critic proposes a description through it.
       # DELIBERATE: a different model from the one the flows' agents run on; a critic exactly as

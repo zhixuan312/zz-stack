@@ -16,7 +16,8 @@
  *     `section_level`, then `section_occurrence`; the whole body as `content`; metadata alone;
  *   - every step of the precedence a call is answered in, each refusal leaving the body and its
  *     content revision as they were — the path guards, the field and tag rules, a missing target,
- *     `upload`/`file`, a call sending no mode or two, the edit count, a stale `base` (named with
+ *     an `upload` sent beside another body change, nobody's or unstaged, and `file`, a call sending
+ *     no mode or two, the edit count, a stale `base` (named with
  *     the current token), the batch's and the section's own refusals, a body an edit makes open
  *     with a recognised envelope (one opening with a thematic break is markdown), `no_change` — a
  *     document read back and sent whole among them — and the guards; where two steps apply, the
@@ -46,7 +47,7 @@
  *     its token still reads its bytes, and a stale `base` naming it lists what changed.
  *
  * The request key's conflict, step (0), is `checks/document-edit-races.ts`'s, with the races, the
- * replays and the injected failures.
+ * replays, the injected failures and an upload's consumption.
  *
  * Exit 0: every case held — one line per case, then the final line.
  * Exit 1: a case failed — the case and what was found, then zz-core's last output.
@@ -57,6 +58,8 @@ import { documentBody } from "@zz/contracts";
 import { type Core, withThrowawayCore } from "../scripts/schema/throwaway-core.ts";
 
 const NAME = "document-edit";
+// `upload_start` builds its routes on the address a client dials; the child inherits it.
+process.env.GATEWAY_PUBLIC_URL ??= "https://api.example.test";
 
 const first = (reply: string): string => reply.split("\n")[0];
 const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -268,11 +271,17 @@ async function precedence(c: Core): Promise<void> {
     new RegExp(`^ERROR: TARGET_MISSING — ${esc(I)}/absent\\.md does not exist\\. document_write creates`));
   c.pass(step);
 
-  step = "(4) `upload` and `file` are NOT_YET, naming Phase 4";
-  for (const arg of [{ upload: "up_x" }, { file: { path: "x.md" } }]) {
-    await refusedUnchanged(c, step, p, { ...arg, content: "# x\n" },
-      /^ERROR: NOT_YET — `(upload|file)` arrives in Phase 4 of 2026-10-06-doc-write-and-update-paradigm; send the text as `content` until then$/);
-  }
+  step = "(4) an `upload` sent with another body change is INVALID_MODE; one that is nobody's, or not staged, is refused";
+  const unknown = `up_${"a".repeat(26)}`;
+  await refusedUnchanged(c, step, p, { upload: unknown, content: "# x\n" }, /^ERROR: INVALID_MODE — send ONE body change/);
+  await refusedUnchanged(c, step, p, { upload: unknown }, /^ERROR: FORBIDDEN — /);
+  const minted = JSON.parse(await c.ok(step, "upload_start", { filename: "notes.md" })) as { upload: string };
+  await refusedUnchanged(c, step, p, { upload: minted.upload }, /^ERROR: UPLOAD_MISSING — /);
+  c.pass(step);
+
+  step = "(4) `file` is NOT_YET, naming Phase 4";
+  await refusedUnchanged(c, step, p, { file: { path: "x.md" }, content: "# x\n" },
+    /^ERROR: NOT_YET — `file` arrives in Phase 4 of 2026-10-06-doc-write-and-update-paradigm; send the text as `content` until then$/);
   c.pass(step);
 
   step = "(5) a call sending no change, or two body changes, or a malformed selector or source, is INVALID_MODE";

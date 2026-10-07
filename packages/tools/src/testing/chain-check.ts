@@ -562,19 +562,17 @@ async function main(): Promise<number> {
   record(!sourced.trim().toUpperCase().startsWith("ERROR") && sourced.includes("chain-check source"),
     "source_list reads back what source_add just wrote", sourced);
 
-  // The same subject reached the other way round: `source_upload` answers with the command that
-  // sends a file, rather than taking its text. Its names are checked where every other tool's are,
-  // so the refusal is assertable here; the command itself needs a public address, which a
+  // The same subject reached the other way round: `upload_start` mints an upload a file is staged
+  // to, rather than taking its text. A format the platform does not take is refused before anything
+  // is minted, so that is assertable here; the routes it answers need a public address, which a
   // deployment may or may not have set, and both answers are the tool working.
-  check("source_upload refuses a supports entry that is not a document name",
-    await call("source_upload", {
-      initiative: INIT, title: "chain-check upload", filename: "notes.txt", supports: "not a name",
-    }), true, /must be a document name/);
-  const upload = await call("source_upload", {
-    initiative: INIT, title: "chain-check upload", filename: "notes.txt",
-  });
-  record(/\/upload\/source\?/.test(upload) || /GATEWAY_PUBLIC_URL/.test(upload),
-    "source_upload answers with the upload command, or names the key it would build one from", upload);
+  check("upload_start refuses a file that is not plain text",
+    await call("upload_start", { filename: "minutes.pdf" }), true, /UNSUPPORTED_FORMAT/);
+  const upload = await call("upload_start", { filename: "notes.txt" });
+  const started = (upload.startsWith("{") ? JSON.parse(upload) : {}) as { shell?: string; link?: string };
+  record((/^curl --fail-with-body -T 'notes\.txt' .*\/upload\/up_[a-z2-7]{26}$/.test(started.shell ?? "")
+          && /\/u\/us_[a-z2-7]{52}$/.test(started.link ?? "")) || /GATEWAY_PUBLIC_URL/.test(upload),
+    "upload_start answers with the PUT to /upload/<id> and the /u/ link, or names the key it would build them from", upload);
 
   // And a source cannot be rewritten afterwards. A path in `sources/` has three segments, so
   // chainFor returns an empty chain and every documentGuards check short-circuits: a change would

@@ -28,7 +28,19 @@
  *     replays that name, never the one it asked for;
  *   - an injected failure at each statement a change commits — the captured source, the document
  *     row, the cause links, the request row and the change's own `document.*` event row — leaves
- *     nothing committed, and the same keyed change lands once the failure is gone.
+ *     nothing committed, and the same keyed change lands once the failure is gone;
+ *   - an upload (AC-4.1, AC-4.2): `upload_start` answers its id, a `curl --fail-with-body` PUT to
+ *     `/upload/<id>` and a `/u/<secret>` link, and refuses with no GATEWAY_PUBLIC_URL; a staged
+ *     `.md` becomes a document by the rules typed content follows, a `.csv` and a non-envelope
+ *     `.yaml` are stored byte for byte (a BOM removed and said), an envelope-shaped `.yaml` is
+ *     refused into a document with its way out and taken as a source, and `document_edit` takes one
+ *     as the whole body; one used, another principal's or team's, expired or unstaged is refused
+ *     and writes nothing; a refused write, a fault in the commit and a body over the stored limit
+ *     leave it unconsumed; of two writes consuming one, one lands; a keyed consumption replays after
+ *     the upload expired, while an independent one is refused; an unkeyed no_change consumes
+ *     nothing and a keyed one consumes and records; `source_add` takes one literally, its receipt
+ *     naming file, digest and route, and with a `request_id` files one source — on a retry, after
+ *     the first was filed on another day, and for two identical calls in flight.
  *
  * Races are staged with the order PostgreSQL grants one advisory lock: the check holds the
  * per-document key `saveDocument` takes, starts the first call, waits until `pg_locks` shows it
@@ -40,12 +52,16 @@
  * Exit 1: a case failed — the case and what was found, then zz-core's last output.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
+import { createHash } from "node:crypto";
+
 import { documentBody } from "@zz/contracts";
 import type { Mcp } from "@zz/mcp-client";
 
 import { type Core, withThrowawayCore } from "../scripts/schema/throwaway-core.ts";
 
 const NAME = "document-edit-races";
+// `upload_start` builds its routes on the address a client dials; the child inherits it.
+process.env.GATEWAY_PUBLIC_URL ??= "https://api.example.test";
 
 const first = (reply: string): string => reply.split("\n")[0];
 const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -386,18 +402,278 @@ async function injected(c: Core): Promise<void> {
   c.pass(step);
 }
 
+/** What `upload_start` answers. */
+interface Started { upload: string; shell: string; link: string }
+
+async function startUpload(c: Core, step: string, filename: string, via?: Mcp): Promise<Started> {
+  const reply = await c.ok(step, "upload_start", { filename }, via);
+  try { return JSON.parse(reply) as Started; } catch { return c.fail(step, `upload_start did not answer JSON: ${reply}`); }
+}
+
+/** Bytes bound to an upload as the gateway's staging route binds them: once, with who staged them
+ *  (the owner for a token staging, nobody for a link). Answers their sha256. */
+async function stageBytes(c: Core, id: string, bytes: Buffer | string, via: "token" | "link" = "token"): Promise<string> {
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes, "utf8");
+  const sha = createHash("sha256").update(buf).digest("hex");
+  await c.sql.query(`update zz.upload set byte_count = $2, sha256 = $3, body = $4, staged_via = $5::text,
+                            staged_by = case when $5::text = 'token' then principal_id end
+                      where id = $1`, [id, buf.length, sha, buf, via]);
+  return sha;
+}
+
+/** Started through the door and staged: the id and the digest. */
+async function upload(c: Core, step: string, filename: string, bytes: Buffer | string,
+                      via: "token" | "link" = "token"): Promise<{ id: string; sha: string }> {
+  const { upload: id } = await startUpload(c, step, filename);
+  return { id, sha: await stageBytes(c, id, bytes, via) };
+}
+
+/** An upload's consumption, as the write that consumed it left it. */
+async function usedOf(c: Core, id: string): Promise<{ consumed: boolean; body: boolean; operation: string | null; digest: string | null }> {
+  return (await c.sql.query(
+    `select consumed_at is not null as consumed, body is not null as body, consumed_by_operation as operation,
+            consumed_digest as digest from zz.upload where id = $1`, [id])).rows[0];
+}
+
+async function unconsumed(c: Core, step: string, id: string): Promise<void> {
+  const u = await usedOf(c, id);
+  if (u.consumed || !u.body) c.fail(step, `${id} was consumed: ${JSON.stringify(u)}`);
+}
+
+/** The window an upload is staged in, moved into the past. */
+const expire = (c: Core, id: string) => c.sql.query(
+  "update zz.upload set created_at = now() - interval '20 minutes', expires_at = now() - interval '5 minutes' where id = $1", [id]);
+
+async function uploads(c: Core, second: Mcp): Promise<void> {
+  const U = await c.open("uploads");
+  const url = process.env.GATEWAY_PUBLIC_URL ?? "";
+  let said: string;
+
+  let step = "upload_start answers its id, a `curl --fail-with-body` PUT to /upload/<id> with the person's token, and a /u/<secret> link";
+  const started = await startUpload(c, step, "it's notes.md");
+  if (!/^up_[a-z2-7]{26}$/.test(started.upload)) c.fail(step, JSON.stringify(started));
+  if (!started.shell.startsWith("curl --fail-with-body -T 'it'\\''s notes.md' -H \"Authorization: Bearer $")
+      || !started.shell.endsWith(` ${url}/upload/${started.upload}`)) c.fail(step, started.shell);
+  const secret = new RegExp(`^${esc(url)}/u/(us_[a-z2-7]{52})$`).exec(started.link)?.[1] ?? c.fail(step, started.link);
+  const row = (await c.sql.query(
+    `select u.filename, u.link_secret_hash, extract(epoch from u.expires_at - u.created_at)::int as window, p.email,
+            t.slug, u.sha256 from zz.upload u join zz.principal p on p.id = u.principal_id join zz.team t on t.id = u.team_id
+      where u.id = $1`, [started.upload])).rows[0];
+  if (row?.filename !== "it's notes.md" || row.link_secret_hash !== createHash("sha256").update(secret).digest("hex")
+      || row.window !== 900 || row.email !== c.email || row.slug !== c.team || row.sha256 !== null) c.fail(step, JSON.stringify(row));
+  await c.refused(step, "upload_start", { filename: "dir/notes.md" }, /^ERROR: "dir\/notes\.md" is not a filename/);
+  await c.refused(step, "upload_start", { filename: "minutes.pdf" }, /^ERROR: UNSUPPORTED_FORMAT — /);
+  c.pass(step);
+
+  step = "a staged .md upload becomes a document by the rules typed content follows, consumed in its commit, the receipt naming the file";
+  const md = await upload(c, step, "notes.md", "---\ntitle: From a file\n---\n# Uploaded\n\nbody line\n");
+  const d = `${U}/from-file.md`;
+  said = await c.ok(step, "document_write", { path: d, upload: md.id });
+  if ((await bodyOf(c, step, d)) !== "# Uploaded\n\nbody line\n") c.fail(step, await bodyOf(c, step, d));
+  for (const want of [`upload: ${md.id} — "notes.md", 49 bytes, sha256 ${md.sha}, staged via token by ${c.email}`, "took title"]) {
+    if (!said.includes(want)) c.fail(step, `no "${want}" in: ${said}`);
+  }
+  let used = await usedOf(c, md.id);
+  if (!used.consumed || used.body || used.operation !== `document_write ${d}` || !/^[0-9a-f]{64}$/.test(used.digest ?? "")) {
+    c.fail(step, JSON.stringify(used));
+  }
+  c.pass(step);
+
+  step = "a .csv and a .yaml opening with `---` that is no envelope are stored byte for byte, a BOM removed and said; the CSV takes an edit";
+  const csvText = "name,score\r\nada,3\r\n\r\n";
+  const csv = await upload(c, step, "scores.csv", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(csvText)]));
+  const t = `${U}/scores.md`;
+  said = await c.ok(step, "document_write", { path: t, upload: csv.id });
+  if ((await bodyOf(c, step, t)) !== csvText || !said.includes('removed the byte-order mark "scores.csv" opened with')) c.fail(step, said);
+  const yamlText = "---\n- one\n- two\n";
+  const yaml = await upload(c, step, "list.yaml", yamlText);
+  await c.ok(step, "document_write", { path: `${U}/list.md`, upload: yaml.id });
+  if ((await bodyOf(c, step, `${U}/list.md`)) !== yamlText) c.fail(step, await bodyOf(c, step, `${U}/list.md`));
+  await c.ok(step, "document_edit", { path: t, edits: [{ find: "ada,3", replace: "ada,4" }] });
+  if ((await bodyOf(c, step, t)) !== csvText.replace("ada,3", "ada,4")) c.fail(step, await bodyOf(c, step, t));
+  c.pass(step);
+
+  step = "an envelope-shaped non-Markdown upload is refused into a document by name, with its way out, and taken as a source";
+  const shaped = await upload(c, step, "config.yaml", "---\nkey: value\n---\nrest: here\n");
+  await c.refused(step, "document_write", { path: `${U}/config.md`, upload: shaped.id },
+    /^ERROR: UNSUPPORTED_METADATA — "config\.yaml" opens with .*source_add.*another line/s);
+  await unconsumed(c, step, shaped.id);
+  const shapedSource = await c.ok(step, "document_read", { path: await c.source(step, { initiative: U, title: "Config", upload: shaped.id }) });
+  if (!documentBody(shapedSource).startsWith("---\nkey: value\n---\nrest: here\n")) c.fail(step, shapedSource);
+  c.pass(step);
+
+  step = "document_edit takes a staged upload as the whole body, beside metadata";
+  const next = await upload(c, step, "notes.md", "# Replaced\n\nfrom a file\n");
+  said = await c.ok(step, "document_edit", { path: d, upload: next.id, title: "Replaced by upload" });
+  if (first(said) !== `edited: ${d} — v1` || (await bodyOf(c, step, d)) !== "# Replaced\n\nfrom a file\n"
+      || !(await usedOf(c, next.id)).consumed) c.fail(step, said);
+  c.pass(step);
+
+  step = "an upload used, another principal's, another team's, expired or unstaged is refused and writes nothing";
+  let before = await facts(c, U);
+  await c.refused(step, "document_write", { path: `${U}/again.md`, upload: md.id }, /^ERROR: UPLOAD_USED — /);
+  const theirs = await startUpload(c, step, "theirs.md", c.client({ email: await c.member() }));
+  await stageBytes(c, theirs.upload, "# Theirs\n");
+  await c.refused(step, "document_write", { path: `${U}/theirs.md`, upload: theirs.upload }, /^ERROR: FORBIDDEN — /);
+  const otherTeam = await upload(c, step, "other.md", "# Other\n");
+  await c.sql.query(`with t as (insert into zz.team (slug, name, created_by)
+                                select 'other-team', 'Other', id from zz.principal where email = $1 returning id)
+                     update zz.upload set team_id = (select id from t) where id = $2`, [c.email, otherTeam.id]);
+  await c.refused(step, "document_write", { path: `${U}/other.md`, upload: otherTeam.id }, /^ERROR: FORBIDDEN — /);
+  const late = await upload(c, step, "late.md", "# Late\n");
+  await expire(c, late.id);
+  await c.refused(step, "document_write", { path: `${U}/late.md`, upload: late.id }, /^ERROR: UPLOAD_EXPIRED — /);
+  const unstaged = await startUpload(c, step, "unstaged.md");
+  await c.refused(step, "source_add", { initiative: U, title: "Unstaged", upload: unstaged.upload }, /^ERROR: UPLOAD_MISSING — /);
+  await c.refused(step, "source_add", { initiative: U, title: "Both", upload: unstaged.upload, content: "x" }, /^ERROR: INVALID_MODE — /);
+  if ((await facts(c, U)) !== before) c.fail(step, "a refused upload wrote");
+  for (const id of [theirs.upload, otherTeam.id]) await unconsumed(c, step, id);
+  c.pass(step);
+
+  step = "a refused write, a fault in the write's commit, and a body over the stored limit each leave the upload unconsumed";
+  const kept = await upload(c, step, "kept.md", "# Kept\n");
+  await c.refused(step, "document_write", { path: d, upload: kept.id }, /^ERROR: TARGET_EXISTS — /);
+  await unconsumed(c, step, kept.id);
+  const k = `${U}/kept.md`;
+  await c.sql.query(`create function zz.upload_fault() returns trigger language plpgsql as $$
+                       begin raise exception 'injected at %', tg_argv[0]; end $$`);
+  try {
+    for (const [at, when] of [["the consumption", "before update on zz.upload for each row"],
+                              ["the event row", "before insert on zz.event for each row when (new.kind like 'document.%')"]]) {
+      await c.sql.query(`create trigger upload_fault ${when} execute function zz.upload_fault('${at}')`);
+      try {
+        await c.refused(`${step}: ${at}`, "document_write", { path: k, upload: kept.id },
+          new RegExp(`^ERROR: ${esc(k)} could not be written: injected at ${at}`));
+      } finally {
+        await c.sql.query(`drop trigger upload_fault on ${when.split(" ")[3]}`);
+      }
+      await unconsumed(c, `${step}: ${at}`, kept.id);
+    }
+  } finally {
+    await c.sql.query("drop function zz.upload_fault()");
+  }
+  await c.ok(step, "document_write", { path: k, upload: kept.id });
+  const big = await upload(c, step, "big.txt", Buffer.alloc(8 * 1024 * 1024, 0x61));
+  await c.refused(step, "document_write", { path: `${U}/big.md`, upload: big.id }, /^ERROR: SIZE_LIMIT — /);
+  await unconsumed(c, step, big.id);
+  c.pass(step);
+
+  step = "two writes consuming one upload, released together: one lands, the other is UPLOAD_USED";
+  const once = await upload(c, step, "once.md", "# Once\n");
+  const [pa, pb] = [`${U}/once-a.md`, `${U}/once-b.md`];
+  for (const p of [pa, pb]) await c.hold(c.docKey(p));
+  let calls: Promise<string>[];
+  try {
+    calls = [c.call(step, "document_write", { path: pa, upload: once.id }),
+             c.call(step, "document_write", { path: pb, upload: once.id }, second)];
+    for (const p of [pa, pb]) await c.waiters(step, c.docKey(p), 1);
+  } finally {
+    for (const p of [pa, pb]) await c.release(c.docKey(p));
+  }
+  const replies = await Promise.all(calls);
+  if (replies.filter((r) => !r.startsWith("ERROR")).length !== 1
+      || replies.filter((r) => /^ERROR: UPLOAD_USED — /.test(r)).length !== 1) c.fail(step, replies.join("\n---\n"));
+  c.pass(step);
+
+  step = "a keyed consumption replays its first receipt after the upload expired, while an independent one is refused";
+  const keyedUp = await upload(c, step, "keyed.md", "# Keyed\n");
+  const keyed = { path: `${U}/keyed.md`, upload: keyedUp.id, request_id: "upload-1" };
+  const landed = await c.ok(step, "document_write", keyed);
+  await expire(c, keyedUp.id);
+  said = await c.ok(step, "document_write", keyed);
+  if (first(said) !== `${first(landed)} (replayed)`) c.fail(step, `first:\n${landed}\nagain:\n${said}`);
+  await c.refused(step, "document_write", { ...keyed, path: `${U}/keyed-2.md`, request_id: "upload-2" }, /^ERROR: UPLOAD_EXPIRED — /);
+  await c.refused(step, "document_write", { ...keyed, upload: (await upload(c, step, "keyed.md", "# Keyed\n")).id }, CONFLICT);
+  c.pass(step);
+
+  step = "an upload that changes nothing consumes nothing unkeyed, and is consumed and recorded keyed";
+  const same = await upload(c, step, "same.md", await bodyOf(c, step, d));
+  said = await c.ok(step, "document_edit", { path: d, upload: same.id });
+  if (first(said) !== `edited: ${d} — v1 (no change)`) c.fail(step, said);
+  await unconsumed(c, step, same.id);
+  said = await c.ok(step, "document_edit", { path: d, upload: same.id, request_id: "same-upload-1" });
+  used = await usedOf(c, same.id);
+  const recorded = (await c.sql.query<{ n: number }>(
+    "select count(*)::int as n from zz.doc_request where request_id = 'same-upload-1'")).rows[0].n;
+  if (first(said) !== `edited: ${d} — v1 (no change)` || !used.consumed || recorded !== 1) c.fail(step, `${said}; ${recorded} request rows`);
+  c.pass(step);
+
+  step = "source_add takes a staged upload literally, its receipt naming the file, its digest and the route that staged it";
+  const minutes = await upload(c, step, "minutes.txt", "  Minutes\n\n- agreed\n", "link");
+  said = await c.ok(step, "source_add", { initiative: U, title: "Minutes", upload: minutes.id });
+  const minutesAt = /^source recorded: (\S+)$/m.exec(said)?.[1] ?? c.fail(step, said);
+  if (!said.includes(`upload: ${minutes.id} — "minutes.txt", 20 bytes, sha256 ${minutes.sha}, staged via link`)
+      || (await usedOf(c, minutes.id)).operation !== `source_add ${minutesAt}`) c.fail(step, said);
+  const minutesRead = await c.ok(step, "document_read", { path: minutesAt });
+  if (!documentBody(minutesRead).startsWith("  Minutes\n\n- agreed\n")) c.fail(step, minutesRead);
+  c.pass(step);
+}
+
+/** How many sources of `initiative` a title slugs to, whatever day they were filed on. */
+async function sourcesNamed(c: Core, initiative: string, slug: string): Promise<number> {
+  return (await c.sql.query<{ n: number }>(
+    `select count(*)::int as n from zz.doc d join zz.initiative i on i.id = d.initiative_id
+      where i.slug = $1 and d.path ~ ('^sources/\\d{4}-\\d{2}-\\d{2}-' || $2 || '(-\\d+)?\\.md$')`, [initiative, slug])).rows[0].n;
+}
+
+async function sourceRequests(c: Core, second: Mcp): Promise<void> {
+  const S = await c.open("source-requests");
+  let step = "source_add with a request_id files one source: a retry replays it, after it was filed on another day too";
+  const keyed = { initiative: S, title: "Keyed source", content: "said once", request_id: "source-1" };
+  const filed = await c.source(step, keyed);
+  let again = await c.ok(step, "source_add", keyed);
+  if (first(again) !== `source recorded: ${filed} (replayed)`) c.fail(step, again);
+  await c.sql.query(
+    `update zz.doc d set path = regexp_replace(d.path, '^sources/\\d{4}-\\d{2}-\\d{2}-', 'sources/2026-01-01-')
+       from zz.initiative i where i.id = d.initiative_id and i.slug = $1 and d.path = $2`, [S, filed.slice(S.length + 1)]);
+  again = await c.ok(step, "source_add", keyed);
+  if (first(again) !== `source recorded: ${filed} (replayed)` || (await sourcesNamed(c, S, "keyed-source")) !== 1) c.fail(step, again);
+  await c.refused(step, "source_add", { ...keyed, content: "said differently" }, CONFLICT);
+  c.pass(step);
+
+  // COUPLED: the request's own lock, as saveDocument takes it for a source — `req:<team>/<principal
+  // id>/<initiative>/sources/<request_id>` — held here so both calls are seen queued on it.
+  step = "two identical keyed source_add calls in flight file one source";
+  const twin = { initiative: S, title: "Twin source", content: "once", request_id: "source-2" };
+  const principal = (await c.sql.query<{ id: string }>("select id::text as id from zz.principal where email = $1", [c.email])).rows[0].id;
+  const key = `req:${c.team}/${principal}/${S}/sources/source-2`;
+  await c.hold(key);
+  let a: Promise<string>;
+  let b: Promise<string>;
+  try {
+    a = c.call(step, "source_add", twin);
+    await c.waiters(step, key, 1);
+    b = c.call(step, "source_add", twin, second);
+    await c.waiters(step, key, 2);
+  } finally {
+    await c.release(key);
+  }
+  const replies = (await Promise.all([a, b])).map(first).sort();
+  if (!/^source recorded: \S+$/.test(replies[0]) || replies[1] !== `${replies[0]} (replayed)`
+      || (await sourcesNamed(c, S, "twin-source")) !== 1) c.fail(step, replies.join("\n"));
+  c.pass(step);
+}
+
 async function afterRestart(c: Core, firstReply: string): Promise<void> {
   const keyed = { path: firstReply.split("\n")[0].replace(/^edited: (\S+) — .*$/, "$1"),
                   edits: [{ find: "one", replace: "ONE" }], request_id: "replay-1" };
   let step = "a keyed edit replays after zz-core is restarted";
+  // Restarted without the address a client dials, so the upload's refusal is asked of it too.
+  const address = process.env.GATEWAY_PUBLIC_URL;
+  delete process.env.GATEWAY_PUBLIC_URL;
   await c.restart();
+  process.env.GATEWAY_PUBLIC_URL = address;
   const again = await c.ok(step, "document_edit", keyed);
   if (first(again) !== `${first(firstReply)} (replayed)` || receipt(again)[1] !== receipt(firstReply)[1]) {
     c.fail(step, `first:\n${firstReply}\nagain:\n${again}`);
   }
   c.pass(step);
 
-  // Last: the one principal this database holds is in no team afterwards. The restart empties the
+  step = "upload_start refuses on a deployment with no GATEWAY_PUBLIC_URL, naming the key";
+  await c.refused(step, "upload_start", { filename: "notes.md" }, /^ERROR: .*GATEWAY_PUBLIC_URL/);
+  c.pass(step);
+
+  // Last: the seeded principal is in no team afterwards. The restart empties the
   // short cache zz-core keeps of who is in which team, so the removal is what it reads.
   step = "a caller whose membership was removed is refused, not replayed";
   await c.sql.query("delete from zz.membership where principal_id = (select id from zz.principal where email = $1)", [c.email]);
@@ -407,11 +683,13 @@ async function afterRestart(c: Core, firstReply: string): Promise<void> {
 }
 
 process.exitCode = await withThrowawayCore(NAME,
-  `${NAME}: concurrent changes never overwrite each other, keyed requests replay once, and a failed commit leaves nothing: ok`,
+  `${NAME}: concurrent changes never overwrite each other, keyed requests replay once, a failed commit leaves nothing, and an upload is consumed once, in its write: ok`,
   async (c) => {
     const second = c.client();
     await races(c, second);
     const replayed = await requests(c, second);
     await injected(c);
+    await uploads(c, second);
+    await sourceRequests(c, second);
     await afterRestart(c, replayed);
   });

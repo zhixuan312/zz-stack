@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.84
+version: 3.85
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -406,14 +406,14 @@ The knowledge store is the team's, not one agent's session:
   ungated and immutable; anyone on the team may add one at any time from
   any harness. A round names its `stage`; a malformed review ledger is refused by name.
 - **When the material is a file you already have, upload it — do not transcribe
-  it.** `source_upload` checks the names and answers with one command to run;
-  the shell sends the file from the machine it sits on, so its bytes never pass
-  through you. That is the whole point of it: text you produce as an argument
-  costs its own length in output tokens, twice over once you read it back to
-  check, and a PDF's bytes cannot be produced that way at all. The command PUTs
-  to `/upload/source` on the gateway, and the answer names the formats the
-  platform can read when yours is one it cannot. `source_add` stays the tool for
-  words you have; reach for `source_upload` for anything long, and for any file.
+  it.** `upload_start(filename)` answers with an `upload` id, a `shell` command
+  and a `link`: run `shell` where you have one (it PUTs the file to `/upload/<id>`
+  on the gateway with the person's own token), or give the person `link` where
+  you have none — it stages that one file and nothing else. Then pass `upload` to
+  `source_add`, `document_write` or `document_edit` in place of `content`. Text
+  you produce as an argument costs its own length in output tokens, twice over
+  once you read it back; a staged file costs none. Plain text only (`.md`, `.txt`,
+  `.csv`, `.json`, `.yaml` and the rest), at most 8 MiB, open 15 minutes, used once.
 - **The platform is a tenant too.** Its TEAM slug is also `zz-platform` —
   the same word as this skill's name and a different thing: a team shelf in
   the store, not a skill you can load. No tenant may claim it. That shelf has
@@ -549,7 +549,7 @@ each page ends on, until one ends `complete`. A refusal names every independent 
   | documents | `/core/mcp` | `document_write` `document_edit` `document_read` `document_present` `document_list` `document_shown` |
   | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
   | gates | `/core/mcp` | `document_approve` |
-  | sources | `/core/mcp` | `source_add` `source_upload` `source_list` |
+  | sources | `/core/mcp` | `source_add` `upload_start` `source_list` |
   | knowledge | `/core/mcp` | `knowledge_search` `knowledge_add` `knowledge_supersede` `knowledge_reindex` |
   | skills | `/core/mcp` | `skill_list` `skill_read` |
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |

@@ -43,7 +43,8 @@ export function registerDocumentEditTool(server: McpServer): void {
       "and a replacement never becomes another edit's target); or `section` with `content` — the " +
       "section's new text, heading line first, with `section_level` and `section_occurrence` to pick " +
       "among headings of the same name; or `content` alone — the whole body, only when the change " +
-      "is not one section's. Metadata — `title`, `tags`, `stakeholder`, `fields` — may come with any " +
+      "is not one section's; or `upload` — the whole body from a file you have, the id upload_start " +
+      "answered, once its file is staged. Metadata — `title`, `tags`, `stakeholder`, `fields` — may come with any " +
       "of them, or ALONE: a metadata-only call changes no body and never needs a cause. " +
       "An APPROVED document's body changes only with its cause: name an existing source in " +
       "`sources`, or pass the words that caused it as `source_content` (with `source_title`), which " +
@@ -66,7 +67,9 @@ export function registerDocumentEditTool(server: McpServer): void {
         .describe("1-based: which of the headings left after `section` and `section_level`."),
       content: z.string().optional()
         .describe("With `section`: the section's new text, heading line first. Alone: the whole body."),
-      upload: z.string().optional(), file: z.record(z.unknown()).optional(),
+      upload: z.string().optional()
+        .describe("The whole body from a file: the id upload_start answered, once its file is staged."),
+      file: z.record(z.unknown()).optional(),
       sources: z.array(z.string()).optional()
         .describe("Sources that caused this change, as paths inside the initiative, e.g. 'sources/2026-10-06-call.md'."),
       source_content: z.string().optional().describe("The words that caused this change, filed as a new source."),
@@ -116,7 +119,8 @@ export function registerDocumentEditTool(server: McpServer): void {
       const plan = await planEdit(p, team, who, path, args, moveOf);
       if ("reply" in plan) return text(plan.reply);
       // An unkeyed no_change writes no document row, only the record its receipt's details_ref
-      // names — awaited, so the ref the reply prints names a row that is there.
+      // names — awaited, so the ref the reply prints names a row that is there — and consumes no
+      // upload: nothing was written that it could be the body of.
       if (plan.noChange && args.request_id === undefined) {
         const receipt = composeReceipt(plan.lines(), plan.ref, await now());
         const recorded = await insertEvent(p, { actor: who, team, initiative, kind: "document.edit", subject: path,

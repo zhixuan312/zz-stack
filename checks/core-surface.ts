@@ -76,7 +76,7 @@ const EXPECTED = [
   "document_write", "initiative_close", "initiative_open",
   "initiative_status", "knowledge_add",
   "knowledge_reconcile", "knowledge_search", "knowledge_supersede",
-  "session_whoami", "skill_list", "skill_read", "source_add", "source_list", "source_upload",
+  "session_whoami", "skill_list", "skill_read", "source_add", "source_list", "upload_start",
   // The semantic-assessment checkpoints a flow's skills cite are asked here.
   "assess",
 ];

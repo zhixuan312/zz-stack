@@ -65,7 +65,7 @@ export function assertWithinInputLimit(bytes: number, opts: { readonly imported?
 export function inputLimitRefusal(what: string, err: unknown): string | null {
   if (!(err instanceof InputTooLargeError)) return null;
   const mib = (n: number) => (n / 1024 / 1024).toFixed(1);
-  return `ERROR: ${what} is ${mib(err.actualBytes)} MiB, over the ${mib(err.allowedBytes)} MiB a ` +
+  return `ERROR: SIZE_LIMIT — ${what} is ${mib(err.actualBytes)} MiB, over the ${mib(err.allowedBytes)} MiB a ` +
     "stored body may be — nothing was written. Split it into documents that cite each other.";
 }
 

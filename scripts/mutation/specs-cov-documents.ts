@@ -163,8 +163,8 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     target: "the model writes the body and the platform writes the envelope",
     assertion: "document_edit separates an envelope sent in whole content",
     subject: "services/zz-core/src/document-change.ts",
-    find: "  const sent = normalizeContent(mode === \"content\" ? a.content ?? \"\" : \"\", a);",
-    replace: "  const sent = normalizeContent(\"\", a);",
+    find: "  const sent = staged ? uploadContent(staged, a) : normalizeContent(mode === \"content\" ? a.content ?? \"\" : \"\", a);",
+    replace: "  const sent = staged ? uploadContent(staged, a) : normalizeContent(\"\", a);",
     planted: "document_edit stores whole content as it came, so an envelope the model typed " +
       "lands in the body and reads back as the envelope",
   },

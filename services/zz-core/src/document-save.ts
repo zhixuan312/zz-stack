@@ -38,7 +38,7 @@ import { DOCUMENT_EVENT_PREFIX } from "./attest.js";
 import { chainFor } from "./chain.js";
 import { baseConflict } from "./stale-base.js";
 import {
-  type Cause, insertCauses, insertLinks, recordRequest, REQUEST_ID_CONFLICT, type RequestRecord, storedRequest,
+  type Cause, insertCauses, insertLinks, lockRequest, recordRequest, REQUEST_ID_CONFLICT, type RequestRecord, storedRequest,
 } from "./document-links.js";
 import type { Composed } from "./document-details.js";
 import { RESERVED_ENVELOPE } from "./document-rules.js";
@@ -46,6 +46,7 @@ import { insertEvent } from "./indexing.js";
 import { currentRow, type CurrentRow, landing, lockPath, reservePath } from "./document-snapshot.js";
 import { stampEnvelope } from "./write-guards.js";
 import { db as platformDb } from "./platform-db.js";
+import { type Consumption, consumeUpload } from "./upload-consume.js";
 import { ENVELOPE_COLUMN_KEYS, NO_DB, principalId, recordAct, splitStorePath } from "./versions.js";
 
 /** What a change service adds to a write: the state it computed from, and what commits with it. */
@@ -66,6 +67,10 @@ interface DocumentChange {
   causes?: Cause[];
   /** The caller's request key, recorded with the change so a retry replays the receipt. */
   request?: RequestRecord;
+  /** The staged upload the change's body came from: consumed under the lock, in this transaction —
+   *  marked used by this write, with the call's digest, and its body removed — so a refused or
+   *  failed write leaves it as it was (upload-consume.ts). A keyed no-change consumes it too. */
+  upload?: Consumption;
   /** The change's complete details, carried on its own event row as `detail.details_ref` and
    *  `detail.details`: what a receipt names when its lists were cut. */
   details?: { ref: string; text: string };
@@ -332,6 +337,13 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
   try {
     await client.query("begin");
     const reserve = w.reserveName === true && w.mode === "create";
+    // A keyed source: the key's own lock, and the lookup again under it, before a name is chosen —
+    // so a retry, on any day, or two identical calls in flight, return the source filed first.
+    if (reserve && change?.request) {
+      await lockRequest(client, w.team, asker!, change.request);
+      const stored = await storedRequest(client, w.team, asker!, change.request);
+      if (stored) return await bail(stored);
+    }
     if (reserve) {
       const rel = await reservePath(client, w.team, w.relPath);
       if (rel !== w.relPath) {
@@ -343,9 +355,14 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     } else {
       await lockPath(client, w.team, w.relPath);
     }
-    if (change?.request) {
+    if (change?.request && !reserve) {
       const stored = await storedRequest(client, w.team, asker!, change.request);
       if (stored) return await bail(stored);
+    }
+    // After a replay is ruled out, so a twin request never touches the upload its first consumed.
+    if (change?.upload) {
+      const refused = await consumeUpload(client, change.upload, w.relPath);
+      if (refused) return await bail({ refusal: refused });
     }
     const existing = await currentRow(client, w.team, w.relPath);
     let id = existing?.id ?? "";

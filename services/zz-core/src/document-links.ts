@@ -110,6 +110,17 @@ export async function storedRequest(
   return rows[0].request_digest === r.digest ? { replayed: rows[0].receipt } : { refusal: REQUEST_ID_CONFLICT };
 }
 
+/** A keyed request's own lock, held to the end of the transaction, for a write whose path is chosen
+ *  under it — a source's, which takes the first free name of its day's stem: the key is looked up
+ *  under it and the name chosen after, so the two are one step.
+ *
+ *  COUPLED: checks/document-edit-races.ts holds this key, spelled as here, to stage two calls. */
+export async function lockRequest(
+  c: Pick<pg.Pool, "query">, team: string, principal: string, r: RequestRecord,
+): Promise<void> {
+  await c.query("select pg_advisory_xact_lock(hashtext($1))", [`req:${team}/${principal}/${r.canonicalPath}/${r.requestId}`]);
+}
+
 /** The request row, last of the change's own rows in the transaction. False when the key was
  *  already taken. */
 export async function recordRequest(

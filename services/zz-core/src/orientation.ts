@@ -46,7 +46,8 @@ const CORE_INSTRUCTIONS =
   "  knowledge_*   search what earlier initiatives settled, and add to it — search first\n" +
   "  session_*     who you are, which team you act for, and today's date\n" +
   "  skill_*       which skills are installed, who owns each, and what each one is for\n" +
-  "  source_*      register the material a document cites, so a reader can follow it\n\n" +
+  "  source_*      register the material a document cites, so a reader can follow it\n" +
+  "  upload_*      send a file you have to a write, instead of its text as an argument\n\n" +
   "NOT FOR: source code, builds, tickets, or files of any other kind. This door holds a " +
   "team's documents and its knowledge store and nothing else, and it has no clock but " +
   "`today`.";

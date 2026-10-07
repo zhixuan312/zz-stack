@@ -127,10 +127,14 @@ export function uploadContent(s: Staged, named: Metadata): ReturnType<typeof nor
 
 /** The receipt's lines for a consumed upload: which file, its digest, and how it was staged. */
 export function uploadLines(s: Staged): Line[] {
+  const blank = (/^(?:[ \t]*\r?\n)+/.exec(s.text)?.[0].match(/\n/g) ?? []).length;
   return [
     `${s.via}: ${s.id} — ${JSON.stringify(s.filename)}, ${s.bytes} bytes, sha256 ${s.sha256}, ` +
       `staged via ${s.stagedVia}${s.stagedBy ? ` by ${s.stagedBy}` : ""}`,
     ...(s.bom ? [`removed the byte-order mark ${JSON.stringify(s.filename)} opened with`] : []),
+    // A stored body cannot begin with a blank line: the separator under the envelope is removed
+    // whatever its count (documentBody), so the lines a file opened with go too, and are said.
+    ...(blank ? [`removed the ${blank} blank line${blank === 1 ? "" : "s"} ${JSON.stringify(s.filename)} opened with`] : []),
   ];
 }
 

@@ -388,6 +388,18 @@ export async function stagingRules(c: Core, g: Gateway): Promise<void> {
   await exact(c, g, step, `${I}/table.md`, text);
   c.pass(step);
 
+  // A stored body cannot begin with a blank line: the line between the envelope and the body is
+  // removed whatever its count (checks/document-body-roundtrip.ts). So the lines are said, as a BOM is.
+  step = "blank lines a file opens with are removed and said, in the receipt and its details, and the rest is stored byte for byte";
+  const opened = await staged(c, g, step, "spaced.csv", utf8("\n  \na,b\n1,2\n"));
+  const told = await c.ok(step, "document_write", { path: `${I}/spaced.md`, upload: opened.id });
+  const toldDetails = await c.ok(step, "document_read", { path: `${I}/spaced.md`, details_ref: /details: `(dr_[a-z2-7]{26})`/.exec(told)?.[1] ?? "" });
+  for (const where of [told, toldDetails]) {
+    if (!where.includes('removed the 2 blank lines "spaced.csv" opened with')) c.fail(step, `no blank-line line in: ${where}`);
+  }
+  await exact(c, g, step, `${I}/spaced.md`, utf8("a,b\n1,2\n"));
+  c.pass(step);
+
   step = "a staged file's digest is immutable: the same bytes again answer the binding, other bytes are UPLOAD_CONTENT_CONFLICT, and the write stores the first";
   const firstBytes = utf8("first: true\n");
   const once = await staged(c, g, step, "pinned.yaml", firstBytes);

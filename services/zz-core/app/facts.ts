@@ -9,11 +9,17 @@ import type { Approval, PanelDocument } from "./state.ts";
 export const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c] ?? c);
 
-/** A date as the reader's locale writes it; what the store said when it is no date. */
+/** A platform day (`YYYY-MM-DD`, `dayOf` in src/versions.ts) as the reader's locale writes it; what
+ *  the store said when it is no date. Read in UTC because that is how a bare date parses: in the
+ *  reader's own zone, a reader west of UTC would read every approval a day early.
+ *
+ *  DELIBERATE: every date the panel draws is sent as the platform's day, never an instant, so the
+ *  header and the history say one day for one approval whatever zone the reader is in. */
 export const day = (iso: string | null): string => {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return Number.isNaN(d.getTime()) ? iso
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 };
 
 /** What the header's pill says, and in which of the three reserved tones. A closed initiative's
@@ -29,11 +35,12 @@ export function standing(d: Pick<PanelDocument, "latest" | "status" | "gate" | "
 
 /** Every public version, oldest first: who approved it and when, or that it was filed unsigned —
  *  and, under a version read as a later unsigned row, the approved snapshot that row superseded,
- *  named by the `content_revision` that reads it. The version drawn is marked.
+ *  named by the `content_revision` that reads it. The version drawn is marked; `open` is the state
+ *  the reader left the list in, which a redraw keeps.
  *
  *  COUPLED: `versionsLine` in src/document-present.ts and the console's version history say the
  *  same per version, by the same rule (`supersededApproval`). */
-export function versionHistory(d: Pick<PanelDocument, "version" | "history">): string {
+export function versionHistory(d: Pick<PanelDocument, "version" | "history">, open = false): string {
   if (!d.history.length) return "";
   const by = (who: string, at: string | null) => `by ${esc(who)}${at ? ` on ${esc(day(at))}` : ""}`;
   const items = d.history.map((h) => {
@@ -46,6 +53,6 @@ export function versionHistory(d: Pick<PanelDocument, "version" | "history">): s
     return `<li${h.version === d.version ? ' aria-current="true"' : ""}><span class="v-num">v${h.version}</span>` +
       `<span class="v-what">${what}${sealed}</span></li>`;
   });
-  return `<details class="versions"><summary>${d.history.length} version${d.history.length === 1 ? "" : "s"}</summary>` +
+  return `<details class="versions"${open ? " open" : ""}><summary>${d.history.length} version${d.history.length === 1 ? "" : "s"}</summary>` +
     `<ol>${items.join("")}</ol></details>`;
 }

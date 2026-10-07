@@ -101,7 +101,10 @@ by image. Read the upgrade notes before deploying.
   then approve it.
 - **What an approval signs is shown with the body.** A full presentation, and a `version` or
   `section` read, now name the review metadata an approval signs beside the body: the title,
-  tags, stakeholder and the flow's own fields. The document panel draws them in its header.
+  tags, stakeholder and the flow's own fields. The document panel draws them in its header,
+  with the document's version history — who approved each version and when, and an approved
+  snapshot a later change superseded, by its `content_revision` — and, on a closed initiative's
+  correction, "Closed · correction awaiting approval".
 - **Receipts and refusals are counted, and complete.** A reply's lists were not counted, and a
   refusal named fewer of its problems than it had. Every list is now counted (`causes (3): …`),
   previews shrink to fit 16 KiB but totals never do, and every reply names its full details as

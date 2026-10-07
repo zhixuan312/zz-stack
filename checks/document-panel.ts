@@ -16,8 +16,9 @@
  *      edited one — and a deeper change marks the section it sits in, a heading inside a footnote
  *      moving none and a heading with no text marked like any other; only the document's own
  *      `##` starts a section, never one quoted, listed or in a footnote; the version history names
- *      each version's approval and a superseded approved snapshot by its token, escaped, and a
- *      closed initiative's correction stands as one;
+ *      each version's approval and a superseded approved snapshot by its token, escaped, keeps the
+ *      open state it is handed, and draws a platform day as that day west of UTC too; and a closed
+ *      initiative's correction stands as one;
  *   6. a ticket is good for one person, one team, one path, one content revision, and one day;
  *   7. driven through the real door, as a person, against a stubbed store:
  *      - `document_present` names the panel, and its result carries the WHOLE body in `_meta`
@@ -26,7 +27,8 @@
  *        payload's size;
  *      - the panel speaks PUBLIC versions: one history entry per version, naming the approved
  *        snapshot a later row of its version superseded, and the current version read by number
- *        is its last snapshot;
+ *        is its last snapshot; every approval's day, the header's and the history's, is the
+ *        platform's day;
  *      - an earlier version carries no ticket and no context, and a part the model asks for draws
  *        no panel;
  *      - `document_shown` is app-only, records full coverage under the panel's context with a
@@ -40,8 +42,9 @@
  *      - a present passing the panel's context back after a change draws `previous` as the
  *        context's baseline, with the change set the panel marks;
  *      - `document_read` records no presentation;
- *      - once the initiative closes, a draft written since this document's approval is handed to
- *        the panel as the correction `initiative_status` names, with the outcome.
+ *      - while the initiative is open, no present computes its state; once it closes, a draft
+ *        written since this document's approval is handed to the panel as the correction
+ *        `initiative_status` names, with the outcome, reading the initiative's row once.
  *
  * Run: node checks/document-panel.ts   (also run by scripts/gate.ts)
  */
@@ -203,7 +206,7 @@ const { deltaOf } = await load("services/zz-core/dist/document-delta.js");
 // the approved snapshot a later row of its version superseded, named by the token that reads it;
 // and a closed initiative's correction, awaiting its own approval, in the standing.
 {
-  const { esc, standing, versionHistory } = await load("services/zz-core/app/facts.ts");
+  const { day, esc, standing, versionHistory } = await load("services/zz-core/app/facts.ts");
   const doc = { version: 2, current: 2, latest: true, status: "draft", gate: null, correction: null,
     history: [{ version: 1, approvedBy: "a<b>@zz.test", approvedAt: "2026-09-29", superseded: null },
               { version: 2, approvedBy: null, approvedAt: null,
@@ -217,6 +220,16 @@ const { deltaOf } = await load("services/zz-core/dist/document-delta.js");
      && standing({ ...closed, latest: false }, "idle").label === "Earlier version"
      && standing(doc, "idle").label === "Awaiting approval",
      `a closed initiative's correction does not stand as one: ${JSON.stringify(standing(closed, "idle"))}`);
+  // Open, it stays open across a redraw: the panel hands back the state the reader left it in.
+  is(drawn.startsWith('<details class="versions"><summary>') && versionHistory(doc, true).startsWith('<details class="versions" open>'),
+     `the version history does not draw the open state it is handed: ${versionHistory(doc, true).slice(0, 60)}`);
+  // An approval's day is the platform's, the same to every reader: a reader west of UTC still
+  // reads the day the header and the history were both sent.
+  const tz = process.env.TZ;
+  process.env.TZ = "America/Los_Angeles";
+  const read = day("2026-09-30");
+  if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+  is(/\b30\b/.test(read) && !/\b29\b/.test(read), `a platform day reads as another day west of UTC: 2026-09-30 → ${read}`);
 }
 const r = renderMarkdown([
   "# The title", "", "<script>alert(1)</script>", "", "[run](javascript:alert(1)) and [site](https://example.org)",
@@ -259,16 +272,19 @@ const revs: { revision: number; version: number; body: string; approved_by: stri
 const doc = { current: 2, version: 2, generation: 1, written_at: "2026-09-30T00:00:00.000Z", presented: 0 };
 const events: { kind: string; detail: Record<string, unknown> }[] = [];
 let closedAs: { flow: string; at: string; outcome: string } | null = null;
+/** Every statement the store was asked, in order. */
+const asked: string[] = [];
 const cr = (g: number) => contentRevision(DOC, g);
 const route = async (sql0: string, values: unknown[] = []) => {
   const sql = String(sql0).replace(/\s+/g, " ");
+  asked.push(sql);
   const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
   if (/CASE WHEN t\.status = 'active' THEN t\.slug END AS slug/.test(sql)) return one([{ slug: TEAM, role: "admin", active_slug: TEAM }]);
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
     return one(revs.map((r) => ({ revision: r.revision, version: r.version, content_state: "retained", title: "Spec",
       body: r.body, tags: ["alpha", "beta"], content_hash: `h${r.revision}`, revision_note: null,
       fields: { stakeholder: "Ana", component: "billing" }, written_by: "u@zz.test",
-      written_at: doc.written_at, approved_by: r.approved_by, approved_at: r.approved_by ? "2026-09-29" : null,
+      written_at: doc.written_at, approved_by: r.approved_by, approved_at: r.approved_by ? "2026-09-29 17:00:00+00" : null,
       content_generation: r.own })));
   }
   if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) { doc.presented += 1; return { rows: [], rowCount: 1 }; }
@@ -343,7 +359,9 @@ const as = async (email: string, via = "pat") => {
 };
 type Result = { content: { text: string }[]; structuredContent?: unknown; _meta?: Record<string, unknown> };
 type Drawn = { body: string; metadata: unknown; ticket: string | null; version: number; current: number | null; latest: boolean;
-  history: { version: number; approvedBy: string | null; superseded: { approvedBy: string; content_revision: string | null } | null }[];
+  approvedAt: string | null;
+  history: { version: number; approvedBy: string | null; approvedAt: string | null;
+             superseded: { approvedBy: string; approvedAt: string | null; content_revision: string | null } | null }[];
   correction: { outcome: string } | null; review_context: string | null; content_revision: string | null;
   previous: { version: number; content_revision: string; changes: { kind: string; heading?: string; at?: number }[] | null } | null };
 const said = (res: Result) => res.content.map((c) => c.text).join("\n");
@@ -391,6 +409,10 @@ try {
   const old = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL, version: 1 } }) as Result);
   is(old[0]?.ticket === null && old[0]?.review_context === null,
      "an earlier version is handed a ticket or a review context, so opening it could vouch for the present");
+  // One approval, one day: the header's and the history's, both the platform's day (17:00 UTC on
+  // the 29th is the 30th in Singapore), so no reader's zone can split them.
+  is(old[0]?.approvedAt === "2026-09-30" && old[0]?.history[0]?.approvedAt === old[0]?.approvedAt,
+     `the header and the history send one approval as two days: ${old[0]?.approvedAt} / ${old[0]?.history[0]?.approvedAt}`);
 
   const ticket = drawn[0]?.ticket ?? "";
   const shownWith = (c: typeof me, args: Record<string, unknown>) =>
@@ -480,7 +502,7 @@ try {
   // v2's signed r2, superseded inside v2 by r3, is named in the history by the token that reads it,
   // as `document_present`'s versions line and the console's history name it.
   const superseded = byNumber[0]?.history.find((h) => h.version === 2)?.superseded;
-  is(superseded?.approvedBy === "bo@zz.test" && superseded.content_revision === cr(1),
+  is(superseded?.approvedBy === "bo@zz.test" && superseded.content_revision === cr(1) && superseded.approvedAt === "2026-09-30",
      `the panel's history does not name v2's superseded approved snapshot: ${JSON.stringify(byNumber[0]?.history)}`);
   revs[1]!.approved_by = null;
   // A new public version: named as the change.
@@ -494,10 +516,16 @@ try {
   await me.callTool({ name: "document_read", arguments: { path: REL } });
   await settle();
   is(events.length === reads, "document_read recorded a presentation");
+  // Open, the initiative's state is never computed for the panel: no present so far read its documents.
+  is(!asked.some((q) => /from zz\.doc d\b/.test(q) && /order by d\.path/.test(q)),
+     "a present in an open initiative computed the initiative's whole state for the panel");
   // The initiative closes, and this document — approved at r1, a draft written since — is the
   // correction `initiative_status` names: the panel is handed it, with what the initiative closed with.
   closedAs = { flow: "sdlc-flow", at: "2026-09-29 12:00:00+00", outcome: "delivered" };
+  const from = asked.length;
   const corrected = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL } }) as Result);
+  const anchors = asked.slice(from).filter((q) => /select i\.slug, i\.flow, i\.closed_at::text/.test(q)).length;
+  is(anchors === 1, `a correction's present read the initiative's row ${anchors} times, not once`);
   is(JSON.stringify(corrected[0]?.correction) === '{"outcome":"delivered"}',
      `a closed initiative's correction awaiting approval is not handed to the panel: ${JSON.stringify(corrected[0]?.correction)}`);
   closedAs = null;

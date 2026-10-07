@@ -82,7 +82,7 @@ function header(s: Slot): string {
     <div class="title-row"><h1 class="title">${esc(title)}</h1><span class="pill pill-${pill.tone}">${pill.label}</span></div>
     <p class="facts">${facts.join('<span class="sep">·</span>')}</p>
     ${metadata(d)}
-    ${versionHistory(d)}
+    ${versionHistory(d, s.historyOpen)}
     ${tabs}
   </header>`;
 }
@@ -198,6 +198,8 @@ function draw(): void {
     read.scrollTop = s.scroll;
     read.addEventListener("scroll", () => { s.scroll = read.scrollTop; follow(); }, { passive: true });
   }
+  root.querySelector<HTMLDetailsElement>("details.versions")
+    ?.addEventListener("toggle", (e) => { s.historyOpen = (e.currentTarget as HTMLDetailsElement).open; });
   follow();
 }
 
@@ -391,7 +393,7 @@ app.ontoolresult = (result) => {
   state.slots = docs.map((doc) => {
     const view = renderMarkdown(doc.body);
     const cmp = marksOf(view, doc.previous?.changes ?? []);
-    const slot: Slot = { doc, view, shown: "pending" as Shown, approval: "idle" as Approval, scroll: 0,
+    const slot: Slot = { doc, view, shown: "pending" as Shown, approval: "idle" as Approval, scroll: 0, historyOpen: false,
       marks: cmp.marks, removed: cmp.removed, other: cmp.other, onlyChanges: false,
       notes: [], sent: null, noting: null };
     loadNotes(slot);

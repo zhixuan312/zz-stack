@@ -50,8 +50,8 @@ import { db, teamFor } from "./platform-db.js";
 import { commitPresentation, contextState, mintContext, presentedBody, snapshotRevision, type Viewer,
          viewerOf } from "./review-context.js";
 import { changeSnapshot } from "./stale-base.js";
-import { initiativeState } from "./tools/initiative-status.js";
-import { loadDocument, publicVersions, supersededApproval } from "./versions.js";
+import { anchorsFor, initiativeState } from "./tools/initiative-status.js";
+import { dayOf, loadDocument, publicVersions, supersededApproval } from "./versions.js";
 
 type Loaded = Extract<Awaited<ReturnType<typeof loadDocument>>, { ok: true }>;
 /** One record of the change set the panel marks sections by. */
@@ -96,6 +96,8 @@ export interface PanelDocument {
   latest: boolean;
   status: string | null;
   approvedBy: string | null;
+  /** Every `approvedAt` here, the header's and the history's, is the platform's day (`dayOf`), so the
+   *  panel draws one day for one approval in any reader's zone. */
   approvedAt: string | null;
   /** Null when the document can be approved; otherwise why not, in `document_approve`'s words. */
   gate: string | null;
@@ -154,14 +156,22 @@ export function ticketValid(ticket: string, team: string, path: string, contentR
 /** The close this document is a correction of, or null: `initiative_status`'s own `corrections`
  *  (`correctionsOf` in tools/initiative-closed.ts), so the panel and the status never disagree,
  *  every correction is named, and the handover a finished close owes never is. Asked only of a
- *  document that could be one — approved before, not approved now — so a present pays for the
- *  initiative's state only then. */
+ *  document that could be one — approved before, not approved now — and, of those, only in an
+ *  initiative that has closed: the initiative's own row is read first, one indexed query, and its
+ *  state is computed only when the row says it closed — the normal revise-after-approval of an
+ *  open initiative pays for nothing more.
+ *
+ *  The initiative's row is read by `anchorsFor` and handed to `initiativeState` as its anchor, so
+ *  it is read once. `correctionsOf` names nothing without a `closed_at`, so an initiative whose
+ *  row has none has no correction. */
 async function correctionOf(
   p: pg.Pool, team: string, at: { initiative: string; path: string }, chain: Awaited<ReturnType<typeof chainFor>>,
   doc: Loaded["doc"],
 ): Promise<PanelDocument["correction"]> {
   if (doc.status === "approved" || doc.approved_revision == null) return null;
-  const state = await initiativeState(p, team, at.initiative, chain, chain.documents);
+  const anchor = (await anchorsFor(p, team, [at.initiative])).get(at.initiative);
+  if (!anchor?.closed_at) return null;
+  const state = await initiativeState(p, team, at.initiative, chain, chain.documents, anchor);
   return state.outcome && state.corrections?.includes(at.path) ? { outcome: state.outcome } : null;
 }
 
@@ -186,9 +196,11 @@ export async function panelDocument(
     approvedBy: env.approved_by ?? null,
     approvedAt: env.approved_at ?? null,
     gate: gateRefusal(chain, at.path),
-    history: publicVersions(loaded.history).map((r) => ({ version: r.version, approvedBy: r.approved_by ?? null,
-                                                          approvedAt: r.approved_at ?? null,
-                                                          superseded: supersededApproval(loaded.doc.id, loaded.history, r) })),
+    history: publicVersions(loaded.history).map((r) => {
+      const superseded = supersededApproval(loaded.doc.id, loaded.history, r);
+      return { version: r.version, approvedBy: r.approved_by ?? null, approvedAt: r.approved_at ? dayOf(r.approved_at) : null,
+               superseded: superseded && { ...superseded, approvedAt: superseded.approvedAt && dayOf(superseded.approvedAt) } };
+    }),
     correction: await correctionOf(p, team, at, chain, loaded.doc),
     body: presentedBody(loaded.text),
     metadata: { title, tags, stakeholder, fields },

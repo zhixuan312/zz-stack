@@ -54,10 +54,16 @@ export function registerSourceListTool(server: McpServer): void {
           group by d.path, d.type, r.title, r.written_at, w.email, r.fields
           order by d.path`,
         [team, initiative]);
+      // The documents the initiative holds, so a declared target is named plainly once it exists,
+      // linked or not: a source and its target written at the same moment can leave no link.
+      const written = new Set((await p.query<{ path: string }>(
+        `select d.path from zz.doc d join zz.initiative i on i.id = d.initiative_id
+           join zz.team tm on tm.id = i.team_id where tm.slug = $1 and i.slug = $2`, [team, initiative])).rows
+        .map((r) => r.path));
       const sources = rows.map((row) => ({
         path: `${initiative}/${row.path}`,
         title: row.title || row.path.split("/").pop() || row.path,
-        supports: supportsOf(row.declared, row.supports),
+        supports: supportsOf(row.declared, row.supports, written),
         // A source has no flow role, and the round it was recorded as is kept on the row's `type`.
         stage: !row.type || row.type === "source" ? "" : row.type,
         contributed_by: row.written_by ?? "",
@@ -68,14 +74,17 @@ export function registerSourceListTool(server: McpServer): void {
   );
 }
 
-/** What a source supports, in the order it declared them. A link needs its target's row, so a
- *  document not written yet has none until `saveDocument` files it at the document's first write;
- *  reading the links alone answered an empty `supports` for a source whose own text named one
- *  (bug e9d91c40). Such a target is named as not written yet; a link with no declaration behind it
- *  (a source filed before declarations were kept) is still named. */
-function supportsOf(declared: string | null, linked: string | null): string {
+/** What a source supports, in the order it declared them, each named once. A link needs its
+ *  target's row, so a document not written yet has none until `saveDocument` files it at the
+ *  document's first write; reading the links alone answered an empty `supports` for a source whose
+ *  own text named one (bug e9d91c40). A declared target the initiative does not hold is named as
+ *  not written yet; one it holds is named plainly, linked or not. A name is spelled as the store
+ *  spells it — `.md` when it has no extension — so `spec` and `spec.md` are one document. A link
+ *  with no declaration behind it (a source filed before declarations were kept) is still named. */
+function supportsOf(declared: string | null, linked: string | null, written: Set<string>): string {
   const links = (linked ?? "").split(", ").filter(Boolean);
-  const named = (declared ?? "").split(",").map((n) => n.trim()).filter(Boolean);
-  return [...named.map((n) => (links.includes(n) ? n : `${n} (not written yet)`)),
+  const named = [...new Set((declared ?? "").split(",").map((n) => n.trim()).filter(Boolean)
+    .map((n) => (/\.[^/]+$/.test(n) ? n : `${n}.md`)))];
+  return [...named.map((n) => (written.has(n) || links.includes(n) ? n : `${n} (not written yet)`)),
           ...links.filter((l) => !named.includes(l))].join(", ");
 }

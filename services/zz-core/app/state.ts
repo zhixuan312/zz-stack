@@ -48,6 +48,8 @@ export interface Slot {
   approval: Approval;
   /** Where the reader was, so a redraw or a tab switch keeps their place. */
   scroll: number;
+  /** Whether the reader left the version history open, which a redraw keeps as it keeps `scroll`. */
+  historyOpen: boolean;
   /** Sections that differ from the context's baseline, by heading id; `removed` by heading; `other`
    *  names what changed outside the sections — the opening, the trailing text, a metadata field. */
   marks: Map<string, "changed" | "new">;

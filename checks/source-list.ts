@@ -37,4 +37,21 @@ process.exitCode = await withThrowawayCore(NAME,
     const after = await listed();
     if (after !== "spec.md, plan.md (not written yet)") c.fail(step, `supports: ${JSON.stringify(after)}`);
     c.pass(step);
+
+    // A source and its target written at the same moment can leave the source without its link
+    // while the target exists: the target is named plainly all the same, never as not written.
+    step = "a target that exists is named plainly even where no link was filed";
+    await c.sql.query(
+      `delete from zz.doc_link l using zz.doc s, zz.initiative i
+        where l.from_doc_id = s.id and s.initiative_id = i.id and i.slug = $1 and s.path = $2 and l.kind = 'supports'`,
+      [I, filed.slice(I.length + 1)]);
+    const unlinked = await listed();
+    if (unlinked !== "spec.md, plan.md (not written yet)") c.fail(step, `supports: ${JSON.stringify(unlinked)}`);
+    c.pass(step);
+
+    step = "a document named twice, with and without its extension, is listed once";
+    const twice = await c.source(step, { initiative: I, title: "Named twice", content: "Twice over.", supports: ["spec", "spec.md"] });
+    const once = (JSON.parse(await c.ok(step, "source_list", { initiative: I })) as Listed).sources.find((s) => s.path === twice)?.supports;
+    if (once !== "spec.md") c.fail(step, `supports: ${JSON.stringify(once)}`);
+    c.pass(step);
   });

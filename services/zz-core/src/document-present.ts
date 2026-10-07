@@ -36,7 +36,7 @@ import { PART_LIMIT, asksPart, partHeader, slicePart } from "./document-parts.js
 import { commitPresentation, presentedBody, type PresentAsk, resolvePresentation, snapshotRevision,
          type Viewer } from "./review-context.js";
 import { changeSnapshot } from "./stale-base.js";
-import { loadDocument, loadSnapshot, publicVersions, supersededApproval } from "./versions.js";
+import { dayOf, loadDocument, loadSnapshot, publicVersions, supersededApproval } from "./versions.js";
 
 type Loaded = Extract<Awaited<ReturnType<typeof loadDocument>>, { ok: true }>;
 type Shown = { text: string; panel: PanelDocument | null };
@@ -188,7 +188,7 @@ function versionsLine(l: Loaded): string {
   const history = entries.map(({ r, sealed }) =>
     `v${r.version} ${r.approved_by ? "approved" : "filed"}` +
     (r.approved_by ? ` by ${r.approved_by}` : "") +
-    (r.approved_at ? ` on ${r.approved_at}` : "") +
+    (r.approved_at ? ` on ${dayOf(r.approved_at)}` : "") +
     (sealed ? ` (${supersededSeal(sealed)})` : "") +
     (r.revision_note ? ` — ${r.revision_note}` : ""));
   return history.length
@@ -199,7 +199,7 @@ function versionsLine(l: Loaded): string {
 
 /** An approved snapshot a later row of its version superseded, as the versions line says it. */
 function supersededSeal(s: NonNullable<ReturnType<typeof supersededApproval>>): string {
-  const by = `by ${s.approvedBy}${s.approvedAt ? ` on ${s.approvedAt}` : ""}`;
+  const by = `by ${s.approvedBy}${s.approvedAt ? ` on ${dayOf(s.approvedAt)}` : ""}`;
   return s.content_revision == null
     ? `an approved snapshot ${by} superseded inside it, with no content revision retained`
     : `approved snapshot \`${s.content_revision}\` ${by} superseded inside it`;

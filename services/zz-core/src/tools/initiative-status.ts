@@ -520,7 +520,7 @@ const chainArgs = async (p: pg.Pool, team: string | null, name: string): Promise
 /** The anchor row for every named initiative, in one query — never one query per initiative.
  *  Null (no database, no team, or the row does not exist) reads as "no anchor", which is
  *  `initiativeState`'s cue to answer from the documents' own envelopes. */
-async function anchorsFor(
+export async function anchorsFor(
   p: pg.Pool, team: string | null, names: readonly string[],
 ): Promise<Map<string, InitiativeAnchor>> {
   const out = new Map<string, InitiativeAnchor>();

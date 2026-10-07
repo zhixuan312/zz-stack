@@ -14,16 +14,21 @@
  *      renders a GFM table, and gives each heading a unique id; `marksOf` marks the sections the
  *      real change set's records name — by position, so of two sections with one title only the
  *      edited one — and a deeper change marks the section it sits in, a heading inside a footnote
- *      moving none;
+ *      moving none and a heading with no text marked like any other; only the document's own
+ *      `##` starts a section, never one quoted, listed or in a footnote; the version history names
+ *      each version's approval and a superseded approved snapshot by its token, escaped, and a
+ *      closed initiative's correction stands as one;
  *   6. a ticket is good for one person, one team, one path, one content revision, and one day;
  *   7. driven through the real door, as a person, against a stubbed store:
  *      - `document_present` names the panel, and its result carries the WHOLE body in `_meta`
  *        with a ticket even when the text half is a part, the review context its reply names, the
  *        snapshot's content revision, and no `structuredContent`; its row records the panel
  *        payload's size;
- *      - the panel speaks PUBLIC versions: one history entry per version, and the current version
- *        read by number is its last snapshot;
- *      - history carries no ticket and no context, and a part the model asks for draws no panel;
+ *      - the panel speaks PUBLIC versions: one history entry per version, naming the approved
+ *        snapshot a later row of its version superseded, and the current version read by number
+ *        is its last snapshot;
+ *      - an earlier version carries no ticket and no context, and a part the model asks for draws
+ *        no panel;
  *      - `document_shown` is app-only, records full coverage under the panel's context with a
  *        valid ticket, answers a second call from the context's coverage, and records nothing with a
  *        forged ticket, another person's, once the row it drew is rewritten in place or the
@@ -34,7 +39,9 @@
  *        `x-zz-via` `pat` or `forwarded` it is refused and records nothing;
  *      - a present passing the panel's context back after a change draws `previous` as the
  *        context's baseline, with the change set the panel marks;
- *      - `document_read` records no presentation.
+ *      - `document_read` records no presentation;
+ *      - once the initiative closes, a draft written since this document's approval is handed to
+ *        the panel as the correction `initiative_status` names, with the outcome.
  *
  * Run: node checks/document-panel.ts   (also run by scripts/gate.ts)
  */
@@ -47,6 +54,8 @@ import { contentRevision } from "@zz/contracts";
 import pg from "pg";
 
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+// The repository's own flow manifests, so a closed initiative's flow resolves as it does deployed.
+process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
 
 const cwd = process.cwd();
 const load = (p: string) => import(pathToFileURL(join(cwd, p)).href);
@@ -177,7 +186,37 @@ const { deltaOf } = await load("services/zz-core/dist/document-delta.js");
     const got = notedMarks(noted.replace(`${what} text`, `${what} text, edited`));
     is(got === want, `an edit to ${what}, after a heading inside a footnote, marks ${got}`);
   }
-  is(!/<!--/.test(renderMarkdown(noted).html), "the line marks are left in the rendered page");
+  // A heading with no text — only a closing sequence — is still a heading the change set counts.
+  const blank = "# Doc\n\n## Alpha\n\nalpha text\n\n## ##\n\nblank text\n\n## Beta\n\nbeta text\n";
+  const blankDelta = deltaOf(snap(blank), snap(blank.replace("blank text", "blank text, edited")));
+  const blankMarks = JSON.stringify([...marksOf(renderMarkdown(blank), blankDelta.kind === "delta" ? blankDelta.records : []).marks]);
+  is(blankMarks === '[["section","changed"]]', `an edit under a heading with no text marks ${blankMarks}`);
+  is(![noted, blank].some((b) => /<!--/.test(renderMarkdown(b).html)), "the line marks are left in the rendered page");
+  // A section is the document's own: a `##` quoted or listed is part of the section it sits in, and
+  // never cuts the page's markup open to start one.
+  const nested = renderMarkdown("# D\n\n## A\n\na\n\n> ## q\n\n- ## l\n\n## B\n\nb\n");
+  const secs = JSON.stringify([...nested.html.matchAll(/data-sec="([^"]+)"/g)].map((m) => m[1]));
+  is(secs === '["a","b"]' && !/<(blockquote|li)>(?:(?!<\/\1>)[\s\S])*<\/section>/.test(nested.html),
+     `a quoted or listed heading starts a section: ${secs} ${JSON.stringify(nested.html)}`);
+}
+// What the panel says beside the body: the version history, every version's approval or filing and
+// the approved snapshot a later row of its version superseded, named by the token that reads it;
+// and a closed initiative's correction, awaiting its own approval, in the standing.
+{
+  const { esc, standing, versionHistory } = await load("services/zz-core/app/facts.ts");
+  const doc = { version: 2, current: 2, latest: true, status: "draft", gate: null, correction: null,
+    history: [{ version: 1, approvedBy: "a<b>@zz.test", approvedAt: "2026-09-29", superseded: null },
+              { version: 2, approvedBy: null, approvedAt: null,
+                superseded: { approvedBy: "bo@zz.test", approvedAt: "2026-09-30", content_revision: "cr_aaaaaaaaaaaaaaaaaaaaaaaaaa" } }] };
+  const drawn: string = versionHistory(doc);
+  is(drawn.includes(esc("a<b>@zz.test")) && !drawn.includes("a<b>") && /v1\b[\s\S]*Approved by/.test(drawn)
+     && /v2\b[\s\S]*Filed[\s\S]*cr_aaaaaaaaaaaaaaaaaaaaaaaaaa[\s\S]*bo@zz\.test[\s\S]*superseded/.test(drawn),
+     `the version history does not name each version's approval and the superseded snapshot, escaped: ${drawn}`);
+  const closed = { ...doc, correction: { outcome: "shipped" } };
+  is(JSON.stringify(standing(closed, "idle")) === '{"label":"Closed · correction awaiting approval","tone":"amber"}'
+     && standing({ ...closed, latest: false }, "idle").label === "Earlier version"
+     && standing(doc, "idle").label === "Awaiting approval",
+     `a closed initiative's correction does not stand as one: ${JSON.stringify(standing(closed, "idle"))}`);
 }
 const r = renderMarkdown([
   "# The title", "", "<script>alert(1)</script>", "", "[run](javascript:alert(1)) and [site](https://example.org)",
@@ -219,6 +258,7 @@ const revs: { revision: number; version: number; body: string; approved_by: stri
 ];
 const doc = { current: 2, version: 2, generation: 1, written_at: "2026-09-30T00:00:00.000Z", presented: 0 };
 const events: { kind: string; detail: Record<string, unknown> }[] = [];
+let closedAs: { flow: string; at: string; outcome: string } | null = null;
 const cr = (g: number) => contentRevision(DOC, g);
 const route = async (sql0: string, values: unknown[] = []) => {
   const sql = String(sql0).replace(/\s+/g, " ");
@@ -247,6 +287,21 @@ const route = async (sql0: string, values: unknown[] = []) => {
     return one([{ id: DOC, initiative: INIT, path: "spec.md", flow: "", type: "", status: "draft", outcome: null,
                   current_revision: doc.current, approved_revision: 1, current_version: doc.version,
                   content_generation: String(doc.generation), updated_at: doc.written_at }]);
+  }
+  // Closed, once the check closes it: the initiative's anchor, its flow, and its documents' rows —
+  // what `initiative_status` reads a correction off.
+  if (closedAs && /select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
+    return one([{ slug: INIT, flow: closedAs.flow, closed_at: closedAs.at, closed_by: "ada@zz.test", outcome: closedAs.outcome }]);
+  }
+  if (closedAs && /select i\.flow, to_char\(i\.opened_at/.test(sql)) {
+    return one([{ flow: closedAs.flow, opened_at: "2026-09-25", opened_by: "ada@zz.test" }]);
+  }
+  if (closedAs && /from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
+    return one([{ id: DOC, path: "spec.md", initiative: INIT, flow: closedAs.flow, type: "", status: "draft",
+                  outcome: closedAs.outcome, approved_by: null, approved_at: null, closed_by: "ada@zz.test",
+                  updated_at: doc.written_at, title: "Spec", body, tags: [], current_revision: doc.current,
+                  approved_revision: 1, approved_outcome: closedAs.outcome, current_version: doc.version,
+                  fields: null, supports: [] }]);
   }
   if (/insert into zz\.event\b/.test(sql)) {
     events.push({ kind: String(values[3] ?? ""), detail: JSON.parse(String(values[5] ?? "{}")) });
@@ -288,7 +343,8 @@ const as = async (email: string, via = "pat") => {
 };
 type Result = { content: { text: string }[]; structuredContent?: unknown; _meta?: Record<string, unknown> };
 type Drawn = { body: string; metadata: unknown; ticket: string | null; version: number; current: number | null; latest: boolean;
-  history: { version: number; approvedBy: string | null; superseded?: { approvedBy: string; content_revision: string | null } | null }[]; review_context: string | null; content_revision: string | null;
+  history: { version: number; approvedBy: string | null; superseded: { approvedBy: string; content_revision: string | null } | null }[];
+  correction: { outcome: string } | null; review_context: string | null; content_revision: string | null;
   previous: { version: number; content_revision: string; changes: { kind: string; heading?: string; at?: number }[] | null } | null };
 const said = (res: Result) => res.content.map((c) => c.text).join("\n");
 const drawnOf = (res: Result) => (res._meta?.["zz-core/documents"] ?? []) as Drawn[];
@@ -316,7 +372,8 @@ try {
   is(res.structuredContent === undefined, "document_present returns structuredContent, which Claude Code shows instead of the text");
   is(drawn.length === 1 && drawn[0]!.body === body.trim() && drawn[0]!.version === 2 && drawn[0]!.latest
      && !!drawn[0]!.ticket, "the panel is not handed the whole current body with a ticket");
-  is(!!rc && drawn[0]?.review_context === rc && drawn[0]?.content_revision === cr(1) && drawn[0]?.previous === null,
+  is(!!rc && drawn[0]?.review_context === rc && drawn[0]?.content_revision === cr(1) && drawn[0]?.previous === null
+     && drawn[0]?.correction === null,
      `the panel is not handed the review context the reply names and the snapshot's identity: ${JSON.stringify({ ...drawn[0], body: undefined })}`);
   // The review metadata an approval signs with the body is shown with it, in the text and the panel.
   const metadata = 'Review metadata, which an approval signs with the body: title "Spec"; tags "alpha, beta"; ' +
@@ -333,7 +390,7 @@ try {
   is(said(paged).includes(metadata), "a later part of a full presentation does not show the review metadata");
   const old = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL, version: 1 } }) as Result);
   is(old[0]?.ticket === null && old[0]?.review_context === null,
-     "history is handed a ticket or a review context, so opening it could vouch for the present");
+     "an earlier version is handed a ticket or a review context, so opening it could vouch for the present");
 
   const ticket = drawn[0]?.ticket ?? "";
   const shownWith = (c: typeof me, args: Record<string, unknown>) =>
@@ -437,6 +494,13 @@ try {
   await me.callTool({ name: "document_read", arguments: { path: REL } });
   await settle();
   is(events.length === reads, "document_read recorded a presentation");
+  // The initiative closes, and this document — approved at r1, a draft written since — is the
+  // correction `initiative_status` names: the panel is handed it, with what the initiative closed with.
+  closedAs = { flow: "sdlc-flow", at: "2026-09-29 12:00:00+00", outcome: "delivered" };
+  const corrected = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL } }) as Result);
+  is(JSON.stringify(corrected[0]?.correction) === '{"outcome":"delivered"}',
+     `a closed initiative's correction awaiting approval is not handed to the panel: ${JSON.stringify(corrected[0]?.correction)}`);
+  closedAs = null;
 } catch (err) {
   fail.push(`the door could not be driven: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
 } finally {

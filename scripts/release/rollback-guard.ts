@@ -22,24 +22,28 @@
  * absorbed (`-- absorbs: <file>`): a deployment ran each absorbed file under its own name before
  * the fold, so a file absorbed since the earlier release is as new to that release's code as one
  * still on disk. Its text is read from the newest tag whose tree still has it; one that no tag has
- * is the guard's error, never "nothing to see".
+ * is the guard's error, never "nothing to see". The line is read in any case and indented, and a
+ * migration a release since the earlier one shipped that the live release neither carries nor
+ * absorbs — a fold that forgot its line — is the guard's error too.
  *
  * Two reasons refuse:
  *
  *   - a migration that DECLARES it, with a header line `-- rollback: refused — <reason>`. What
  *     breaks an old writer — a new NOT NULL column, a new CHECK, a column whose meaning changed —
  *     is not reliably visible in DDL, so the migration that knows says so, and this reads it;
- *   - destructive DDL — a dropped column, table, type, schema, view or function, a column whose
- *     type changed (`ALTER [COLUMN] c [SET DATA] TYPE`), or a rename of something the earlier
+ *   - destructive DDL — a dropped column, table, type, schema, view, function or procedure, a
+ *     column whose type changed (`ALTER [COLUMN] c [SET DATA] TYPE`), a relation, type or routine
+ *     moved to another schema (`SET SCHEMA`), or a rename of something the earlier
  *     release's code still names: a column (`RENAME [COLUMN] a TO b`, `COLUMN` optional), a table
  *     or view (`RENAME TO`), a type or one of its values, a function or a schema. That code still
  *     SELECTs what was dropped or renamed, and every request that resolves an identity then
  *     answers 500 while `/health` stays green, because /health resolves nobody. A rename the old
  *     code cannot see does not refuse: an index, sequence, trigger or constraint (this platform's
  *     code names none of them — no `ON CONFLICT ON CONSTRAINT`, no `nextval('…')`), or a table or
- *     view one of the new migrations itself created. The pattern reads comments too, so a comment
- *     that names such DDL refuses — the safe way to be wrong. A change that breaks the old code
- *     some other way is the declaration's to say.
+ *     view one of the new migrations itself created: with a plain `CREATE` statement, outside any
+ *     comment, string or function body, of a name the earlier release's tree never creates. The
+ *     destructive patterns read comments too, so a comment that names such DDL refuses — the safe
+ *     way to be wrong. A change that breaks the old code some other way is the declaration's to say.
  *
  * Deploying before verifying rests on being able to undo it. For a release carrying either, that
  * is false, so the callers say so and leave the new version running rather than performing a
@@ -58,8 +62,10 @@ const INIT = "001_init.sql";
 const REL = String.raw`(?:"[^"]+"|[\w$]+)(?:\.(?:"[^"]+"|[\w$]+))?`;
 
 /** DDL that cannot be undone by putting the old image back, renames of relations aside. */
-const IRREVERSIBLE = new RegExp(String.raw`\b(drop\s+(column|table|type|schema|view|materialized\s+view|function)` +
+const IRREVERSIBLE = new RegExp(String.raw`\b(drop\s+(column|table|type|schema|view|materialized\s+view|function|procedure)` +
   String.raw`|alter\s+(column\s+)?\S+\s+(set\s+data\s+)?type` +
+  // A relation, type or routine moved to another schema: the old code still names it where it was.
+  String.raw`|alter\s+(table|view|materialized\s+view|foreign\s+table|type|domain|function|procedure)\s[^;]*?\bset\s+schema` +
   String.raw`|alter\s+(type|domain|function|procedure|schema)\s[^;]*?\brename)\b`, "i");
 
 /** A table or view renamed, or one of its columns — `COLUMN` optional, `ONLY` and `IF EXISTS`
@@ -67,16 +73,28 @@ const IRREVERSIBLE = new RegExp(String.raw`\b(drop\s+(column|table|type|schema|v
 const RENAMED = new RegExp(String.raw`\balter\s+(?:table|view|materialized\s+view|foreign\s+table)\s+` +
   String.raw`(?:if\s+exists\s+)?(?:only\s+)?(${REL})\s+rename\s+(?!constraint\b)`, "gi");
 
-/** A table or view a migration creates, capturing its name. */
-const CREATED = new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?(?:(?:temp|temporary|unlogged)\s+)?` +
+/** A table or view a migration creates, capturing its name, in any spelling, comments included — what
+ *  the earlier release's tree reads as created, where over-reading only takes an exemption away. */
+const MENTIONS_CREATE = new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?(?:(?:temp|temporary|unlogged)\s+)?` +
   String.raw`(?:table|view|materialized\s+view|foreign\s+table)\s+(?:if\s+not\s+exists\s+)?(${REL})`, "gi");
+
+/** A plain `CREATE [TEMP|UNLOGGED] TABLE|VIEW|…` statement, capturing its name — never `OR REPLACE`,
+ *  which redefines a view that exists, nor `IF NOT EXISTS`, a no-op on a table that does. Matched
+ *  only at a statement's start, in text `code` has blanked. */
+const CREATES = new RegExp(String.raw`(?:^|;)\s*create\s+(?:(?:temp|temporary|unlogged)\s+)?` +
+  String.raw`(?:table|view|materialized\s+view|foreign\s+table)\s+(?!if\s+not\s+exists\b)(${REL})`, "gi");
+
+/** Comments, string literals and dollar-quoted bodies — what the server never runs as a statement of
+ *  the migration itself. */
+const NOT_CODE = /--[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^']|'')*'|\$(\w*)\$[\s\S]*?\$\1\$/g;
 
 /** A migration's own declaration that the release before it cannot run on what it builds — in any
  *  case and indented or not, because a declaration this misread would permit the rollback. */
 const DECLARED = /^[ \t]*--[ \t]*rollback:[ \t]*refused\b[ \t]*(?:—[ \t]*)?(.*?)[ \t]*$/im;
 
-/** The names a `001_init.sql` records as absorbed. */
-const ABSORBS = /^--[ \t]*absorbs:[ \t]*(\S+)[ \t]*$/gm;
+/** The names a `001_init.sql` records as absorbed — in any case and indented or not, because a line
+ *  this misread hides the absorbed migration and permits the rollback. */
+export const ABSORBS = /^[ \t]*--[ \t]*absorbs:[ \t]*(\S+)[ \t]*$/gim;
 
 /** One migration that refuses a rollback across it, and why. */
 export interface Refusal { file: string; reason: string }
@@ -92,6 +110,11 @@ const stderrOf = (err: unknown): string =>
  *  written. */
 const relName = (spelled: string): string =>
   spelled.split(".").map((p) => (p.startsWith('"') ? p.slice(1, -1) : p.toLowerCase())).join(".");
+
+/** A migration's text with what `NOT_CODE` matches blanked. DELIBERATE: crude — a nested comment
+ *  or an odd identifier can blank more than a comment — and blanking more only removes a CREATE,
+ *  which takes an exemption away: the safe way to be wrong. */
+const code = (text: string): string => text.replace(NOT_CODE, " ");
 
 /** Whether `text` drops, retypes or renames what the earlier release's code still reads — a rename
  *  of a relation in `created`, one a new migration made, is not that. */
@@ -122,12 +145,7 @@ function knownAt(repo: string, tag: string | null): Known {
   const git = gitIn(repo);
   const files = new Map<string, () => string>();
   if (tag) {
-    // DELIBERATE: the tree and a path filter, not `<tag>:<dir>`. A tag from before the gateway had
-    // migrations has none, which is a true answer (every migration is new to it), not a failure.
-    for (const line of git(["ls-tree", "--name-only", tag, "--", `${MIGRATIONS}/`]).split("\n")) {
-      const file = basename(line.trim());
-      if (file.endsWith(".sql")) files.set(file, () => git(["show", `${tag}:${MIGRATIONS}/${file}`]));
-    }
+    for (const file of filesAt(repo, tag)) files.set(file, () => git(["show", `${tag}:${MIGRATIONS}/${file}`]));
   } else {
     const dir = join(repo, MIGRATIONS);
     for (const file of existsSync(dir) ? readdirSync(dir) : []) {
@@ -136,6 +154,14 @@ function knownAt(repo: string, tag: string | null): Known {
   }
   const init = files.get(INIT);
   return { files, absorbed: new Set(init ? [...init().matchAll(ABSORBS)].map((m) => m[1]!) : []) };
+}
+
+/** The migration files release `tag`'s tree carries. */
+function filesAt(repo: string, tag: string): string[] {
+  // DELIBERATE: the tree and a path filter, not `<tag>:<dir>`. A tag from before the gateway had
+  // migrations has none, which is a true answer (every migration is new to it), not a failure.
+  return gitIn(repo)(["ls-tree", "--name-only", tag, "--", `${MIGRATIONS}/`]).split("\n")
+    .map((line) => basename(line.trim())).filter((file) => file.endsWith(".sql"));
 }
 
 /** The text of a migration a fold deleted: from the newest `v*` tag whose tree still has it. */
@@ -164,6 +190,18 @@ export function refusalsSince(version: string, live: string | null, repo: string
     const then = knownAt(repo, tag);
     const now = knownAt(repo, live);
     const isNew = (file: string) => !then.files.has(file) && !then.absorbed.has(file);
+    // Every migration a release since `version` shipped on the way to the live one is either still a
+    // file or absorbed. One that is neither went into a fold that did not record it, and asked about
+    // only what it recorded the guard would permit what it forbids. DELIBERATE: by ancestry, not by
+    // version order, so a release on another line is no part of it.
+    const since = gitIn(repo)(["tag", "--list", "v*", "--merged", live ?? "HEAD", "--no-merged", tag]).split("\n").filter(Boolean);
+    for (const shipped of since) {
+      const lost = filesAt(repo, shipped).find((file) => isNew(file) && !now.files.has(file) && !now.absorbed.has(file));
+      if (lost) {
+        return { error: `${live ?? "this checkout"} neither carries nor absorbs ${lost}, which ${shipped} shipped — a fold ` +
+                        `that did not record it with an \`-- absorbs:\` line in ${INIT}, so whether it refuses the rollback cannot be told` };
+      }
+    }
     const texts: [string, string][] = [];
     for (const file of [...new Set([...now.files.keys(), ...now.absorbed])].filter(isNew).sort()) {
       const text = now.files.get(file)?.() ?? absorbedText(repo, file);
@@ -173,7 +211,12 @@ export function refusalsSince(version: string, live: string | null, repo: string
       }
       texts.push([file, text]);
     }
-    const created = new Set(texts.flatMap(([, text]) => [...text.matchAll(CREATED)].map((m) => relName(m[1]!))));
+    // A relation the new migrations create with a plain CREATE statement, and the earlier release's
+    // tree never creates. That tree builds a fresh install's whole schema, so it creates every
+    // relation the earlier code can name.
+    const before = new Set([...then.files.values()].flatMap((read) => [...read().matchAll(MENTIONS_CREATE)].map((m) => relName(m[1]!))));
+    const created = new Set(texts.flatMap(([, text]) => [...code(text).matchAll(CREATES)].map((m) => relName(m[1]!)))
+      .filter((name) => !before.has(name)));
     const refusals: Refusal[] = [];
     for (const [file, text] of texts) {
       const declared = DECLARED.exec(text);

@@ -3,8 +3,9 @@
  * The edit primitive: an exact batch applied to one original body, or EVERY reason it cannot be —
  * each failing edit named by its index, in the order sent — and the refusal text a repeated `find`
  * gets: its lines counted, at most 40 shown, the rest left to the detail. Occurrences are counted
- * exactly, overlapping ones included, in one pass whatever the `find` repeats; an edit keeps the
- * lines of its first 1,000 (document-edits.ts), and the detail says what it omitted.
+ * exactly, overlapping ones included, in one pass whatever the `find` repeats, and once per batch
+ * however many edits share it; an edit keeps the lines of its first 1,000 (document-edits.ts), and
+ * the detail says what it omitted.
  * Run: node checks/document-edits.ts   (also run by scripts/gate.ts)
  */
 import { join } from "node:path";
@@ -121,6 +122,20 @@ const long = applyEdits(run, Array.from({ length: 16 }, () => ({ find: "a".repea
 const longTook = performance.now() - t2;
 is(longTook < 1500 && "refusals" in long && long.refusals.every((r: { match_count: number }) => r.match_count === 1_190_001),
    `16 edits of a 10,000-character self-overlapping find take one pass each: ${Math.round(longTook)} ms`);
+
+// A `find` the batch repeats is counted once: every edit sharing it scans the body once between
+// them. 128 edits of "aa" on 8 MiB took 6.2 s when each counted again, on the one event loop
+// every team shares; each refusal still carries its exact count and its own index.
+const huge = "a".repeat(8 * 1024 * 1024);
+const t3 = performance.now();
+const shared = applyEdits(huge, Array.from({ length: 128 }, (_, i) => ({ find: i % 2 ? "aaa" : "aa", replace: "" })));
+const sharedTook = performance.now() - t3;
+const sharedRefusals = "refusals" in shared ? shared.refusals : [];
+is(sharedTook < 1500 && sharedRefusals.length === 128
+   && sharedRefusals.every((r: { edit_index: number; match_count: number; lines: number[] }, i: number) =>
+     r.edit_index === i && r.match_count === huge.length - (i % 2 ? 2 : 1) && r.lines.length === 1000),
+   `128 edits sharing two finds on 8 MiB do not scan the body once per find: ${Math.round(sharedTook)} ms, ` +
+   `${JSON.stringify(sharedRefusals.slice(0, 2).map((r: { edit_index: number; match_count: number }) => [r.edit_index, r.match_count]))}`);
 
 if (fail.length) {
   console.error(`document-edits: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);

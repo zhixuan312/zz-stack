@@ -71,13 +71,14 @@ function fixture(): { repo: string; dir: string; g: (...a: string[]) => string; 
 
 /** The guard over a fixture repository at 1.1.0 with v1.0.0 its only tag — release step 6's shape,
  *  read from the working tree: a declaration, in any case and indented, destructive DDL of every
- *  kind it names and the renames the old code cannot see, neither, no tag, and a host on a version
- *  that has no tag and is not this checkout's. */
+ *  kind it names and the renames the old code cannot see — a relation counts as new only from a
+ *  plain CREATE of a name v1.0.0 never creates — neither, no tag, and a host on a version that has
+ *  no tag and is not this checkout's. */
 export function guardCases(): void {
   const { repo, dir, g, done } = fixture();
   try {
     writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "1.1.0" }));
-    writeFileSync(join(dir, "001_init.sql"), "CREATE TABLE zz.t (a integer);\n");
+    writeFileSync(join(dir, "001_init.sql"), "CREATE TABLE zz.t (a integer);\nCREATE VIEW zz.v AS SELECT 1 AS a;\n");
     g("add", ".");
     g("commit", "-q", "-m", "one");
     g("tag", "v1.0.0");
@@ -106,7 +107,9 @@ export function guardCases(): void {
     pass(step);
 
     step = "a rename the old code still names — a column with or without COLUMN, ONLY or IF EXISTS, a table, view, type, " +
-      "enum value, function or schema — a retype without COLUMN or with SET DATA, and a dropped view or function each refuse";
+      "enum value, function or schema — a retype without COLUMN or with SET DATA, and a dropped view or function each refuse, " +
+      "and so does a rename of a relation the release only re-creates (OR REPLACE, IF NOT EXISTS), names in a comment or a " +
+      "function body, or that v1.0.0 already creates";
     rmSync(join(dir, "002_declared.sql"));
     rmSync(join(dir, "003_destructive.sql"));
     for (const ddl of ["ALTER TABLE zz.t RENAME COLUMN a TO b;", "ALTER TABLE zz.t RENAME a TO b;", "ALTER TABLE ONLY zz.t RENAME a TO b;",
@@ -115,7 +118,17 @@ export function guardCases(): void {
                        "ALTER FUNCTION zz.f(integer) RENAME TO g;", "ALTER SCHEMA zz RENAME TO yy;",
                        "CREATE TABLE zz.n (a integer);\nALTER TABLE zz.t RENAME TO n_old;", "alter table zz.t alter a type text;",
                        "ALTER TABLE zz.t ALTER COLUMN a SET DATA TYPE text;", "DROP VIEW zz.v;", "DROP MATERIALIZED VIEW zz.m;",
-                       "DROP FUNCTION zz.f();"]) {
+                       "DROP FUNCTION zz.f();", "DROP PROCEDURE zz.p();", "ALTER TABLE zz.t SET SCHEMA archive;",
+                       "ALTER VIEW zz.v SET SCHEMA archive;", "ALTER FUNCTION zz.f() SET SCHEMA archive;",
+                       // None of these proves the relation new: a redefinition, a no-op, prose, a body never run, or
+                       // a name v1.0.0 already creates.
+                       "CREATE OR REPLACE VIEW zz.v AS SELECT 1 AS a, 1 AS b;\nALTER VIEW zz.v RENAME TO w;",
+                       "CREATE TABLE IF NOT EXISTS zz.t (a integer);\nALTER TABLE zz.t RENAME a TO b;",
+                       "-- 001 did: create table zz.t (a integer)\nALTER TABLE zz.t RENAME a TO b;",
+                       "/* as 001 did:\ncreate table zz.t (a integer) */\nALTER TABLE zz.t RENAME a TO b;",
+                       "CREATE FUNCTION zz.f() RETURNS void LANGUAGE sql AS $$ SELECT 1; CREATE TABLE zz.k (a integer) $$;\n" +
+                         "ALTER TABLE zz.k RENAME a TO b;",
+                       "CREATE TABLE zz.t (a integer);\nALTER TABLE zz.t RENAME a TO b;"]) {
       writeFileSync(join(dir, "005_ddl.sql"), `${ddl}\n`);
       got = rollbackGuard("1.0.0", "1.1.0", repo);
       if (!("refusals" in got) || got.refusals.map((r) => r.file).join(",") !== "005_ddl.sql") fail(step, `${ddl} → ${json(got)}`);
@@ -123,11 +136,11 @@ export function guardCases(): void {
     pass(step);
 
     step = "a rename the old code cannot see permits: an index, sequence, trigger or constraint, and a table or column of a " +
-      "table a new migration created";
+      "table a new migration's plain CREATE made and v1.0.0 never created";
     for (const ddl of ["ALTER INDEX zz.t_a_idx RENAME TO t_b_idx;", "ALTER SEQUENCE zz.t_a_seq RENAME TO t_b_seq;",
                        "ALTER TRIGGER t_touch ON zz.t RENAME TO t_stamp;", "ALTER TABLE ONLY zz.t RENAME CONSTRAINT t_a_key TO t_b_key;",
                        "CREATE TABLE zz.n (a integer);\nALTER TABLE zz.n RENAME TO m;",
-                       "CREATE TABLE IF NOT EXISTS zz.n (a integer);\nALTER TABLE ONLY zz.n RENAME a TO b;"]) {
+                       "-- a new table\nCREATE UNLOGGED TABLE zz.n (a integer);\nALTER TABLE ONLY zz.n RENAME a TO b;"]) {
       writeFileSync(join(dir, "005_ddl.sql"), `${ddl}\n`);
       got = rollbackGuard("1.0.0", "1.1.0", repo);
       if (json(got) !== json({ refusals: [] })) fail(step, `${ddl} → ${json(got)}`);
@@ -171,7 +184,8 @@ export function guardCases(): void {
  *  v1.1.0 (a declared refusal): the live release is read from its tag, so a migration master
  *  carries and no release shipped refuses nothing, and a fold made after the tag — without a
  *  version bump — still refuses what the release applied; an absorbed migration counts as new to a
- *  release that predates it, and one no tag carries is the guard's error. */
+ *  release that predates it, its absorbs line read in any case and indented, and one no tag
+ *  carries, or a released one a fold did not record, is the guard's error. */
 export function foldCases(): void {
   const { repo, dir, g, done } = fixture();
   const declared = "the old writer cannot fill b";
@@ -232,6 +246,28 @@ export function foldCases(): void {
     writeFileSync(join(dir, "005_next.sql"), "ALTER TABLE zz.t DROP COLUMN b;\n");
     expect(step, rollbackGuard("1.0.1", "1.2.0", repo), ["003_declared.sql"]);
     expect(step, rollbackGuard("1.1.0", "1.2.0", repo), []);
+    rmSync(join(dir, "005_next.sql"));
+    pass(step);
+
+    step = "an absorbs line in another case, or indented, records the absorbed migration all the same";
+    for (const spelled of ["-- Absorbs: ", "  -- absorbs: "]) {
+      writeFileSync(join(dir, "001_init.sql"), folded.replaceAll("-- absorbs: ", spelled));
+      expect(step, rollbackGuard("1.0.1", "1.3.0", repo), ["003_declared.sql"]);
+    }
+    pass(step);
+
+    step = "a fold that does not record a released migration it absorbed — no absorbs line, or one of two — is the guard's " +
+      "error naming it and the release that shipped it, never a permit";
+    for (const kept of ["", "-- absorbs: 002_plain.sql\n"]) {
+      writeFileSync(join(dir, "001_init.sql"), kept + folded.replace(/^-- absorbs: .*\n/gm, ""));
+      const unrecorded = rollbackGuard("1.0.1", "1.3.0", repo);
+      if (!("error" in unrecorded) || !unrecorded.error.includes("003_declared.sql, which v1.1.0 shipped")
+          || unrecorded.error.includes("002_plain.sql")) fail(step, `${json(kept)} → ${json(unrecorded)}`);
+      if (!refusalLines("1.3.0", "1.0.1", unrecorded).some((l) => l.includes("is refused: ") && l.includes("003_declared.sql"))) {
+        fail(step, "refusalLines does not print it");
+      }
+    }
+    writeFileSync(join(dir, "001_init.sql"), folded);
     pass(step);
   } finally {
     done();

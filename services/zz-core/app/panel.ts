@@ -18,7 +18,8 @@
 import { marksOf, minutesOf, renderMarkdown } from "./render.ts";
 import { schedule, tellModel } from "./context.ts";
 import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
-import { answer, app, current, esc, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
+import { day, esc, standing, versionHistory } from "./facts.ts";
+import { answer, app, current, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
 import approvedArt from "./brand/state-approved.png";
 import wordmark from "./brand/wordmark.png";
 
@@ -31,20 +32,6 @@ const humanName = (name: string): string => {
   const base = name.replace(/\.md$/, "").replace(/[-_]+/g, " ");
   return base.charAt(0).toUpperCase() + base.slice(1);
 };
-const day = (iso: string | null): string => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-};
-
-/** What the header's pill says, and in which of the three reserved tones. */
-function standing(s: Slot): { label: string; tone: "green" | "amber" | "neutral" } {
-  const d = s.doc;
-  if (!d.latest) return { label: "Earlier version", tone: "neutral" };
-  if (s.approval === "done" || d.status === "approved") return { label: "Approved", tone: "green" };
-  if (d.gate) return { label: "Written", tone: "neutral" };
-  return { label: "Awaiting approval", tone: "amber" };
-}
 
 /** What moved since the review context's baseline, in one line of the header's facts. */
 function changeFact(s: Slot): string | null {
@@ -70,7 +57,7 @@ function metadata(d: PanelDocument): string {
 
 function header(s: Slot): string {
   const d = s.doc;
-  const pill = standing(s);
+  const pill = standing(d, s.approval);
   const title = s.view.title ?? humanName(d.name);
   const sections = s.view.outline.filter((o) => o.level === 2).length;
   // The file's name, unless the tabs below already say it.
@@ -79,6 +66,7 @@ function header(s: Slot): string {
   if (sections) facts.push(`${sections} section${sections === 1 ? "" : "s"}`);
   const change = changeFact(s);
   if (change) facts.push(change);
+  if (d.correction) facts.push(`initiative closed: ${esc(d.correction.outcome)}`);
   const tabs = state.slots.length > 1
     ? `<nav class="tabs" aria-label="Documents">${state.slots.map((t, i) =>
         `<button class="tab" data-tab="${i}" aria-current="${i === state.active}">${esc(t.doc.name)}</button>`).join("")}</nav>`
@@ -94,6 +82,7 @@ function header(s: Slot): string {
     <div class="title-row"><h1 class="title">${esc(title)}</h1><span class="pill pill-${pill.tone}">${pill.label}</span></div>
     <p class="facts">${facts.join('<span class="sep">·</span>')}</p>
     ${metadata(d)}
+    ${versionHistory(d)}
     ${tabs}
   </header>`;
 }

@@ -65,9 +65,11 @@ by image. Read the upgrade notes before deploying.
   the next version as a draft, and the approved version stays readable. A change to a draft
   with no new cause stays in its version as a new revision. A source filed since this release
   that declares it supports a document is linked by the platform itself and named in the
-  reply. A correction to a closed initiative's document is a draft awaiting approval. `base` (the
-  `content revision` your last read returned) refuses a change to a document that moved since
-  that read. `request_id` makes a retry return the first reply instead of landing twice.
+  reply. A correction to a closed initiative's document is a draft awaiting approval;
+  `initiative_status` lists every correction a closed initiative waits on as `corrections`, and
+  its next move names the first. `base` (the `content revision` your last read returned)
+  refuses a change to a document that moved since that read. `request_id` makes a retry return
+  the first reply instead of landing twice.
   `document_approve` and `initiative_close` now commit only onto the state they read, so
   neither can overwrite an edit that landed after it.
 - **Versions are public versions, and evidence ids name the snapshot.** Until now every
@@ -153,6 +155,10 @@ by image. Read the upgrade notes before deploying.
 - **`source_add` takes `request_id`.** It had no request key, so a retry could not tell that
   its first call had landed. With one, a retry returns the first reply, and two identical
   calls in flight file one source.
+- **`source_list` names a supported document that is not written yet.** A source filed for a
+  document nobody had written yet listed an empty `supports` until that document existed, though
+  the source itself named it. It now lists it as `spec.md (not written yet)`, and plainly once
+  the document is written.
 - **A source reads back exactly as it was sent.** A typed `source_add` `content` used to gain
   a trailing newline on the way into storage.
 - **A rollback cannot cross a migration that declares it unsafe.** The rollback guard used to
@@ -164,16 +170,21 @@ by image. Read the upgrade notes before deploying.
   the release live to be fixed forward instead of rolling it back. The compose header and
   `.env.example` no longer describe editing the image version by hand as a rollback.
   - The guard reads both releases' migrations from their git tags, the host's `ZZ_VERSION` and
-    the version it would go back to, counting each file a later `001_init.sql` absorbed. So
-    `--rollback` gives the same answer from any checkout. The one release with no tag yet, the
-    one step 6 is verifying, is read from the checkout step 1 pinned to it; an untagged host
-    version in any other checkout is refused.
+    the version it would go back to, counting each file a later `001_init.sql` absorbed; it reads
+    an `-- absorbs:` line in any case and indented. A migration a release since then shipped,
+    that the host's release neither carries nor absorbs, is refused as unknown, never passed
+    over. So `--rollback` gives the same answer from any checkout. The one release with no tag
+    yet, the one step 6 is verifying, is read from the checkout step 1 pinned to it; an
+    untagged host version in any other checkout is refused.
   - The guard also refuses a migration that renames a column (with or without `COLUMN`), a
     table, a view, a type or one of its values, a domain, a function, a procedure or a schema;
-    that changes a column's type; or that drops a view, a materialized view or a function. A
-    rename the previous code cannot see does not refuse: an index, a sequence, a trigger, a
-    constraint, or a table one of the new migrations created. It reads the declaration in any
-    case and indented.
+    that moves a table, view, type or routine to another schema; that changes a column's type;
+    or that drops a view, a materialized view, a function or a procedure. A rename the previous
+    code cannot see does not refuse: an index, a sequence, a trigger, a constraint, or a table
+    or view that one of the new migrations created with a plain `CREATE` statement, under a
+    name the release it goes back to never created — `CREATE OR REPLACE`, `CREATE … IF NOT
+    EXISTS`, and a `CREATE` in a comment, a string or a function body do not count. It reads
+    the declaration in any case and indented.
   - Step 6 no longer claims a rollback when the host was already on this version before the
     release; there is nothing earlier to roll back to, and it says so.
 

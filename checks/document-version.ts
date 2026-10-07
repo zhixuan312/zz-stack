@@ -423,6 +423,14 @@ async function closedCorrections(c: Core): Promise<void> {
   }
   c.pass(step);
 
+  step = "two corrections waiting at once are both named, not only the one the next move awaits";
+  await c.ok(step, "document_edit", { path: `${K}/plan.md`, edits: [{ find: "Run the gate.", replace: "Run the gate twice." }],
+                                      source_content: "the plan missed a run", source_title: "Plan correction input" });
+  const both = await c.status(K) as { corrections?: string[] };
+  if (JSON.stringify(both.corrections) !== '["plan.md","review.md"]') c.fail(step, JSON.stringify(both));
+  await c.sign(`${K}/plan.md`);
+  c.pass(step);
+
   step = "a changed outcome is refused by the real documentGuards";
   const core = await c.inProcess();
   const text = await c.ok(step, "document_read", { path: review });

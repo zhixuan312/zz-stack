@@ -14,7 +14,8 @@
  * re-mounted panel still has them; a sandbox that refuses storage only loses them on reload.
  */
 import { clip, schedule, selected } from "./context.ts";
-import { app, current, esc, root, state, type Note, type Slot } from "./state.ts";
+import { esc } from "./facts.ts";
+import { app, current, root, state, type Note, type Slot } from "./state.ts";
 
 const QUOTE_MAX = 600;
 const SEEN = "The assistant sees this passage — you can also just ask about it in the chat.";

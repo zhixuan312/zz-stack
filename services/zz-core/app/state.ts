@@ -1,6 +1,6 @@
 /**
  * What every part of the document panel shares: the documents it was handed, which one is open,
- * the host connection, and the two helpers everything that writes HTML or reads a tool result uses.
+ * the host connection, and the helper everything that reads a tool result uses.
  */
 import { App } from "@modelcontextprotocol/ext-apps";
 
@@ -23,8 +23,11 @@ export interface PanelDocument {
   version: number; current: number | null; latest: boolean;
   status: string | null; approvedBy: string | null; approvedAt: string | null;
   gate: string | null;
+  /** One entry per public version, with the approved snapshot a later row of it superseded. */
   history: { version: number; approvedBy: string | null; approvedAt: string | null;
              superseded: { approvedBy: string; approvedAt: string | null; content_revision: string | null } | null }[];
+  /** Set when the initiative has closed and this document is a correction awaiting its own approval. */
+  correction: { outcome: string } | null;
   body: string;
   /** The review metadata an approval signs with the body. */
   metadata: { title: string; tags: string[]; stakeholder: string; fields: Record<string, string> };
@@ -82,11 +85,6 @@ export const root = document.getElementById("panel") as HTMLElement;
 /** The platform version this page was built at, put in by the build. */
 declare const PANEL_VERSION: string;
 export const app = new App({ name: "zz-document-panel", version: PANEL_VERSION }, {}, { autoResize: true });
-
-/** Escape text for an HTML context. Everything a person or a document supplies goes through here,
- *  except the body, which `renderMarkdown` has already made safe. */
-export const esc = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c] ?? c);
 
 /** A tool result's text, and whether the platform refused. Every refusal on this platform starts
  *  with `ERROR`; anything else is an answer. */

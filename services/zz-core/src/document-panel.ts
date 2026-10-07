@@ -50,6 +50,7 @@ import { db, teamFor } from "./platform-db.js";
 import { commitPresentation, contextState, mintContext, presentedBody, snapshotRevision, type Viewer,
          viewerOf } from "./review-context.js";
 import { changeSnapshot } from "./stale-base.js";
+import { initiativeState } from "./tools/initiative-status.js";
 import { loadDocument, publicVersions, supersededApproval } from "./versions.js";
 
 type Loaded = Extract<Awaited<ReturnType<typeof loadDocument>>, { ok: true }>;
@@ -98,9 +99,13 @@ export interface PanelDocument {
   approvedAt: string | null;
   /** Null when the document can be approved; otherwise why not, in `document_approve`'s words. */
   gate: string | null;
-  /** One entry per public version. */
+  /** One entry per public version, and the approved snapshot a later row of it superseded — what
+   *  `document_present`'s versions line says, drawn as the panel's version history. */
   history: { version: number; approvedBy: string | null; approvedAt: string | null;
              superseded: ReturnType<typeof supersededApproval> }[];
+  /** Set when the initiative has closed and this document is the correction awaiting its own
+   *  approval that `initiative_status` names, with the outcome the initiative closed with. */
+  correction: { outcome: string } | null;
   body: string;
   /** The review metadata an approval signs with the body — the snapshot's title, tags, stakeholder
    *  and flow fields, as its content identity is taken over — drawn beside it. */
@@ -146,6 +151,20 @@ export function ticketValid(ticket: string, team: string, path: string, contentR
   return want.length === got.length && timingSafeEqual(want, got);
 }
 
+/** The close this document is a correction of, or null: `initiative_status`'s own `corrections`
+ *  (`correctionsOf` in tools/initiative-closed.ts), so the panel and the status never disagree,
+ *  every correction is named, and the handover a finished close owes never is. Asked only of a
+ *  document that could be one — approved before, not approved now — so a present pays for the
+ *  initiative's state only then. */
+async function correctionOf(
+  p: pg.Pool, team: string, at: { initiative: string; path: string }, chain: Awaited<ReturnType<typeof chainFor>>,
+  doc: Loaded["doc"],
+): Promise<PanelDocument["correction"]> {
+  if (doc.status === "approved" || doc.approved_revision == null) return null;
+  const state = await initiativeState(p, team, at.initiative, chain, chain.documents);
+  return state.outcome && state.corrections?.includes(at.path) ? { outcome: state.outcome } : null;
+}
+
 /** What the panel draws for one loaded snapshot of `relPath`, in review context `context`, marked
  *  against `previous`; null when the path is not `<initiative>/<document>`. */
 export async function panelDocument(
@@ -159,16 +178,18 @@ export async function panelDocument(
   const latest = loaded.rev.revision === loaded.doc.current_revision;
   const drawn = snapshotRevision(loaded);
   const { title, tags, stakeholder, fields } = changeSnapshot(loaded.text);
+  const chain = await chainFor(p, team, relPath, loaded.text);
   return {
     path: relPath, initiative: at.initiative, name: at.path,
     version: loaded.rev.version, current: loaded.doc.current_version, latest,
     status: env.status ?? null,
     approvedBy: env.approved_by ?? null,
     approvedAt: env.approved_at ?? null,
-    gate: gateRefusal(await chainFor(p, team, relPath, loaded.text), at.path),
+    gate: gateRefusal(chain, at.path),
     history: publicVersions(loaded.history).map((r) => ({ version: r.version, approvedBy: r.approved_by ?? null,
                                                           approvedAt: r.approved_at ?? null,
                                                           superseded: supersededApproval(loaded.doc.id, loaded.history, r) })),
+    correction: await correctionOf(p, team, at, chain, loaded.doc),
     body: presentedBody(loaded.text),
     metadata: { title, tags, stakeholder, fields },
     content_revision: drawn,

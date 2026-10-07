@@ -13,7 +13,8 @@
  *
  * A repeated `find` is counted exactly, and the lines of its first KEPT_MATCHES occurrences are
  * kept: a short `find` on a long body occurs once per character, and holding every line ran the
- * one process every team shares out of heap.
+ * one process every team shares out of heap. The count is a full pass of the body, so each
+ * distinct `find` is counted once per batch, however many edits share it.
  */
 
 export interface Edit { find: string; replace: string }
@@ -87,6 +88,16 @@ export function applyEdits(body: string, edits: Edit[]): { body: string; changed
   }
   const spans: { start: number; end: number; replace: string }[] = [];
   const refusals: EditRefusal[] = [];
+  const counted = new Map<string, { count: number; at: number[]; lines: number[] }>();
+  const countOf = (find: string) => {
+    let c = counted.get(find);
+    if (!c) {
+      const { count, at } = occurrences(body, find, KEPT_MATCHES);
+      c = { count, at, lines: count > 1 ? linesOf(body, at) : [] };
+      counted.set(find, c);
+    }
+    return c;
+  };
   // In index order, every edit judged: the refusals come back in the order the edits were sent.
   for (let i = 0; i < edits.length; i++) {
     const e = edits[i];
@@ -94,10 +105,10 @@ export function applyEdits(body: string, edits: Edit[]): { body: string; changed
       refusals.push({ code: "INVALID_EDIT", edit_index: i });
       continue;
     }
-    const { count, at } = occurrences(body, e.find, KEPT_MATCHES);
+    const { count, at, lines } = countOf(e.find);
     if (count === 0) { refusals.push({ code: "NO_MATCH", edit_index: i, match_count: 0 }); continue; }
     if (count > 1) {
-      refusals.push({ code: "MULTIPLE_MATCHES", edit_index: i, match_count: count, lines: linesOf(body, at) });
+      refusals.push({ code: "MULTIPLE_MATCHES", edit_index: i, match_count: count, lines });
       continue;
     }
     const span = { start: at[0], end: at[0] + e.find.length, replace: e.replace };

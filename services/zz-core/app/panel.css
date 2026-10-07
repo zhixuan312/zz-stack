@@ -127,6 +127,18 @@ body {
 .meta dd { margin: 0; color: var(--ink-soft); overflow-wrap: anywhere; }
 .chip { font-size: 12px; background: var(--surface-2); color: var(--ink-soft); padding: 1px 6px; border-radius: var(--r-sm); }
 
+/* The version history: folded to one line until asked for, a row per version when open. A token
+   is long and unbroken, so it may wrap anywhere rather than widen the panel. */
+.versions { margin: 6px 0 0; font-size: 12px; color: var(--ink-soft); }
+.versions summary { width: fit-content; cursor: pointer; color: var(--ink-faint); border-radius: var(--r-sm); }
+.versions summary:focus-visible { outline: none; box-shadow: var(--ring); }
+.versions ol { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.versions li { display: flex; gap: 8px; min-width: 0; }
+.versions li[aria-current] .v-num { color: var(--ink); font-weight: 600; }
+.v-num { flex: none; min-width: 2.5ch; font-variant-numeric: tabular-nums; color: var(--ink-faint); }
+.v-what { min-width: 0; overflow-wrap: anywhere; }
+.v-sealed { display: block; color: var(--ink-faint); }
+
 /* Standing. Three tones, and they mean what they mean in the console: approved, waiting, neither. */
 .pill {
   flex: none; margin-top: 3px; padding: 3px 10px; border-radius: var(--r-pill);

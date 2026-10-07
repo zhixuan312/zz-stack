@@ -68,16 +68,18 @@ function countedLines(text: string): number[] {
   return out;
 }
 
-/** Each heading's source line, written as a comment where its text starts — the post-pass reads it
- *  and strips it. DELIBERATE: carried by the heading itself, not paired by order: GFM moves footnote
- *  definitions, and any heading inside one, to the end of the page. Nothing else writes `<!--`:
- *  raw HTML in a document is escaped. */
+/** Each heading's source line, written as a comment — the post-pass reads it and strips it. An ATX
+ *  heading's goes just before its `<hN>`, written when the heading starts, which a heading with no
+ *  text (`## ##`) has too; a setext heading's goes where its text starts, since micromark writes its
+ *  `<hN>` only once the underline gives its level. DELIBERATE: carried by the heading itself, not
+ *  paired by order: GFM moves footnote definitions, and any heading inside one, to the end of the
+ *  page. Nothing else writes `<!--`: raw HTML in a document is escaped. */
 const LINE = /<!--line:(\d+)-->/;
 function markLine(this: { raw(s: string): void }, token: { start: { line: number } }): undefined {
   this.raw(`<!--line:${token.start.line}-->`);
   return undefined;
 }
-const lineMarks = { enter: { atxHeadingText: markLine, setextHeadingText: markLine } };
+const lineMarks = { enter: { atxHeading: markLine, setextHeadingText: markLine } };
 
 export function renderMarkdown(body: string): Rendered {
   const src = body.replace(/\r\n/g, "\n");
@@ -87,8 +89,10 @@ export function renderMarkdown(body: string): Rendered {
   const rendered: { level: number; id: string; line: number }[] = [];
   let title: string | null = null;
   const html = raw
-    .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (_m, level: string, marked: string) => {
-      const line = Number(LINE.exec(marked)?.[1] ?? 0);
+    // An ATX mark is followed by the line ending micromark writes before the `<hN>`; both go.
+    .replace(/(?:<!--line:(\d+)-->\n?)?<h([1-6])>([\s\S]*?)<\/h\2>/g,
+             (_m, atx: string | undefined, level: string, marked: string) => {
+      const line = Number(atx ?? LINE.exec(marked)?.[1] ?? 0);
       const inner = marked.replace(LINE, "");
       const text = plain(inner);
       const id = slug(text);
@@ -109,11 +113,18 @@ export function renderMarkdown(body: string): Rendered {
   });
   // Every second-level section wrapped in its own element, so one can be marked as changed, or
   // hidden when the reader asks for the changes alone. What comes before the first stays as it is.
-  const tops = [...html.matchAll(/<h2 id="([^"]+)">([\s\S]*?)<\/h2>/g)];
-  const sections = tops.map((m, i) => ({ id: m[1]!, title: plain(m[2]!),
+  // Only a heading of the document's own is a section: one quoted, listed or in a footnote belongs
+  // to the section it sits in, and cutting there would close the section inside its container.
+  const tops: { index: number; id: string; title: string }[] = [];
+  let depth = 0;
+  for (const m of html.matchAll(/<(\/?)(?:blockquote|li|section)\b[^>]*>|<h2 id="([^"]+)">([\s\S]*?)<\/h2>/g)) {
+    if (m[2] === undefined) depth += m[1] ? -1 : 1;
+    else if (depth === 0) tops.push({ index: m.index, id: m[2], title: m[3]! });
+  }
+  const sections = tops.map((m, i) => ({ id: m.id, title: plain(m.title),
     text: plain(html.slice(m.index, tops[i + 1]?.index ?? html.length)) }));
   const wrapped = !tops.length ? html : html.slice(0, tops[0]!.index) + tops.map((m, i) =>
-    `<section class="sec" data-sec="${m[1]}">${html.slice(m.index, tops[i + 1]?.index ?? html.length)}</section>`).join("");
+    `<section class="sec" data-sec="${m.id}">${html.slice(m.index, tops[i + 1]?.index ?? html.length)}</section>`).join("");
   const heads = countedLines(src).map((line) => {
     const h = rendered.find((r) => r.line === line);
     return h ? { level: h.level, id: h.id } : null;

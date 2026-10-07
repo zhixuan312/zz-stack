@@ -20,6 +20,22 @@ interface ClosedDoc {
 
 export interface Move { action: string; document?: string; stage?: string; waiting_on: string; why: string }
 
+/** A closed initiative's corrections, in flow order: each gated document approved before, a draft
+ *  now, written after the close. Each awaits its own approval while the close and its ledger row
+ *  stand. A stop waives the gate of the document it lands on, so a draft it closed on is not one; a
+ *  stop owes a correction only on the document it stamped while approved — its approved revision
+ *  carries the outcome — whichever document that is. */
+export function correctionsOf(
+  outcome: string, closedAt: string | null, states: ClosedDoc[], rows: Map<string, DocRow>,
+): ClosedDoc[] {
+  return states.filter((d) => {
+    const row = rows.get(d.name);
+    return d.gate && d.status !== "approved" && !isHandover(d) && row?.approved_revision != null &&
+      !!closedAt && Date.parse(row.updated_at) > Date.parse(closedAt) &&
+      (outcome !== OUTCOME_STOPPED || !!row.approved_outcome);
+  });
+}
+
 /** What a closed initiative waits on, if anything.
  *
  * The platform appends the handover to every flow, so what gets captured does not depend on the
@@ -36,18 +52,7 @@ export function closedMove(
 ): Move {
   const handover = states.find(isHandover);
   const owed = outcome !== OUTCOME_STOPPED && handover !== undefined && handover.status !== "approved";
-  // A correction: a gated document approved before, a draft now, written after the close. It
-  // awaits its own approval while the close and its ledger row stand. A stop waives the gate of the
-  // document it lands on, so a draft it closed on is not one; a stop owes a correction only on the
-  // document it stamped while approved — its approved revision carries the outcome — whichever
-  // document that is.
-  const corrected = (d: ClosedDoc): boolean => {
-    const row = rows.get(d.name);
-    return d.gate && d.status !== "approved" && !isHandover(d) && row?.approved_revision != null &&
-      !!closedAt && Date.parse(row.updated_at) > Date.parse(closedAt) &&
-      (outcome !== OUTCOME_STOPPED || !!row.approved_outcome);
-  };
-  const correction = states.find(corrected);
+  const correction = correctionsOf(outcome, closedAt, states, rows)[0];
   if (correction) {
     return { action: "await_approval", document: correction.name, waiting_on: "stakeholder",
              why: `closed with outcome: ${outcome}, and ${correction.name} ` +

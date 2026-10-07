@@ -32,7 +32,7 @@ import { platformEvent } from "../indexing.js";
 import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
 
-import { closedMove, type Move } from "./initiative-closed.js";
+import { closedMove, correctionsOf, type Move } from "./initiative-closed.js";
 import { registerKnowledgeReconcileTool } from "./knowledge-reconcile.js";
 
 
@@ -492,11 +492,15 @@ export async function initiativeState(
     next.why += planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null);
   }
   const { sourceFiles, needsRefinement } = sourceReport(rows);
+  const corrections = outcome ? correctionsOf(outcome, own?.closed_at ?? null, states, rows).map((d) => d.name) : [];
   return { initiative: name,
            // The chain already knows which flow governs this initiative — it was resolved
            // to build `docs`. The row answers only when it does not.
            flow: chain.name ?? own?.flow ?? null,
            documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
+           // Every correction a closed initiative waits on, in flow order; the next move names the
+           // first. Omitted when there is none.
+           corrections: corrections.length ? corrections : undefined,
            // reported, never enforced: material that landed after an approval may warrant
            // a new version — the team decides, and document_edit with its cause is how
            sources_after_approval: needsRefinement,

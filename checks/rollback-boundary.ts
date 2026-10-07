@@ -13,14 +13,17 @@
  *     drop, a retype with or without COLUMN, a dropped view or function, a rename of a column
  *     (COLUMN optional), table, view, type, enum value, function or schema — refuses with its
  *     existing reason, and a rename the old code cannot see (an index, sequence, trigger or
- *     constraint, or a table a new migration created) permits; a migration with neither permits; a
- *     version with no tag is the guard's error, never "every migration is new"; and a host on an
- *     untagged version that is not the checkout's is the guard's error;
+ *     constraint, or a table a new migration's plain CREATE made and the earlier release never
+ *     created) permits, while one the release only re-creates (OR REPLACE, IF NOT EXISTS), names
+ *     in a comment or a function body, or the earlier release creates refuses; a migration with
+ *     neither permits; a version with no tag is the guard's error, never "every migration is
+ *     new"; and a host on an untagged version that is not the checkout's is the guard's error;
  *   - the guard over a fixture repository of three tagged releases: the live release is read from
  *     its tag, so an unreleased migration in the checkout refuses nothing and a fold committed
  *     without a version bump still refuses what the release applied; a migration absorbed since the
- *     target release refuses as if it were still a file, read from the tag that has it, and one no
- *     tag carries is the guard's error;
+ *     target release refuses as if it were still a file, read from the tag that has it, with its
+ *     absorbs line in any case and indented; and one no tag carries, or a released one a fold did
+ *     not record, is the guard's error;
  *   - this checkout as the release it would become, back to the derived previous release: the
  *     refusing set is exactly {002_document_versions.sql}, with its declared reason; and between
  *     that release and the one before it, from their tags, it is no part of the answer;

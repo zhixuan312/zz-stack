@@ -38,10 +38,10 @@ export function registerSourceListTool(server: McpServer): void {
       // the history as well. COUPLED: the shape this prints, which callers already read.
       const { rows } = await p.query<{
         path: string; type: string | null; title: string | null;
-        written_at: string | null; written_by: string | null; supports: string | null;
+        written_at: string | null; written_by: string | null; supports: string | null; declared: string | null;
       }>(
         `select d.path, d.type, r.title, r.written_at::text as written_at, w.email as written_by,
-                string_agg(distinct t.path, ', ') as supports
+                string_agg(distinct t.path, ', ') as supports, r.fields->>'supports' as declared
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team tm on tm.id = i.team_id
@@ -51,13 +51,13 @@ export function registerSourceListTool(server: McpServer): void {
                                  and l.kind = 'supports'
            left join zz.doc t on t.id = l.to_doc_id
           where tm.slug = $1 and i.slug = $2 and d.path like 'sources/%' and d.path like '%.md'
-          group by d.path, d.type, r.title, r.written_at, w.email
+          group by d.path, d.type, r.title, r.written_at, w.email, r.fields
           order by d.path`,
         [team, initiative]);
       const sources = rows.map((row) => ({
         path: `${initiative}/${row.path}`,
         title: row.title || row.path.split("/").pop() || row.path,
-        supports: row.supports ?? "",
+        supports: supportsOf(row.declared, row.supports),
         // A source has no flow role, and the round it was recorded as is kept on the row's `type`.
         stage: !row.type || row.type === "source" ? "" : row.type,
         contributed_by: row.written_by ?? "",
@@ -66,4 +66,16 @@ export function registerSourceListTool(server: McpServer): void {
       return text(JSON.stringify({ initiative, sources }, null, 2));
     },
   );
+}
+
+/** What a source supports, in the order it declared them. A link needs its target's row, so a
+ *  document not written yet has none until `saveDocument` files it at the document's first write;
+ *  reading the links alone answered an empty `supports` for a source whose own text named one
+ *  (bug e9d91c40). Such a target is named as not written yet; a link with no declaration behind it
+ *  (a source filed before declarations were kept) is still named. */
+function supportsOf(declared: string | null, linked: string | null): string {
+  const links = (linked ?? "").split(", ").filter(Boolean);
+  const named = (declared ?? "").split(",").map((n) => n.trim()).filter(Boolean);
+  return [...named.map((n) => (links.includes(n) ? n : `${n} (not written yet)`)),
+          ...links.filter((l) => !named.includes(l))].join(", ");
 }

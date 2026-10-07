@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { REMOTE, root, run, ssh } from "../../deployment.ts";
+import { ABSORBS } from "../../release/rollback-guard.ts";
 import { layer, probe } from "../run.ts";
 
 layer("data", "is the data the shape this checkout expects", ["services/gateway/migrations", "catalog"]);
@@ -34,12 +35,12 @@ probe("every migration is applied, and every applied migration still exists", ()
   // nobody has run yet.
   const inDb = new Set(applied), onDisk = new Set(files);
   const unapplied = files.filter((f) => !inDb.has(f));
-  // COUPLED: `-- absorbs: <file>` lines in a migration name the files it replaced (001_init.sql
+  // `-- absorbs: <file>` lines in a migration name the files it replaced (001_init.sql
   // holds the squash). A deployment that ran those files keeps their rows, and each one is covered
   // by the file that absorbed it.
   const absorbed = new Set(files.flatMap((f) =>
     [...readFileSync(join(root, "services/gateway/migrations", f), "utf8")
-      .matchAll(/^--\s*absorbs:\s*(\S+)\s*$/gm)].map((m) => m[1])));
+      .matchAll(ABSORBS)].map((m) => m[1])));
   const orphaned = applied.filter((a) => !onDisk.has(a) && !absorbed.has(a));
 
   // A migration may be unapplied on purpose. `services/gateway/src/db.ts` defers a migration

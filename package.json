@@ -29,8 +29,6 @@
     "release-rollback": "node packages/tools/dist/release/rollback.js",
     "check:sql": "node packages/tools/dist/testing/sql-check.js",
     "check:identity": "node services/gateway/dist/identity-check.js",
-    "check:extract": "node services/gateway/dist/extract-check.js",
-    "check:upload": "node services/gateway/dist/upload-check.js",
     "check:scope": "node services/gateway/dist/scope-check.js",
     "check:redaction": "node services/gateway/dist/redact-check.js",
     "plugin-surface": "node packages/tools/dist/ops/plugin-surface.js",

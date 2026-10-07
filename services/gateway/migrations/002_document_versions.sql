@@ -1,5 +1,6 @@
 -- 002_document_versions.sql — public versions, the content generation and each snapshot's own,
--- cause links, request records, the cause-link epoch, and the activity record's details.
+-- cause links, request records, the cause-link epoch, the activity record's details, and staged
+-- uploads.
 --
 -- `zz.doc_revision.revision` stays the snapshot id every pin names (`doc_link`,
 -- `eval_assessment.doc_revision`, `eval_protocol_version.approved_doc_revision`, the approval
@@ -138,3 +139,88 @@ CREATE INDEX event_details_ref ON zz.event USING btree (((detail ->> 'details_re
 COMMENT ON TABLE zz.event IS 'class=immutable_history; authority=this; question=what did the platform do or get asked to do, one append-only timestamped act — a tool call at a door, an admin act, a document act, a knowledge-journal act or a sign-in — the only fallback being /data/events-unwritten.jsonl when a write fails, except a document.* row written in the transaction of the change it records, whose failed insert fails that change?; retention=audit kinds (admin.*, credential.*, console.*, team.*, bug.*, pkg.download) and document.* kinds, whose rows carry the complete details a change receipt names, are kept indefinitely; tool_call and knowledge.* may age out once volume requires it, except a row an evaluation cites';
 
 COMMENT ON COLUMN zz.event.detail IS 'class=immutable_history; authority=this; question=what open extra payload this act carries — the caller hash, client, argument names, ids, shapes and step_sha — now that run has moved to session and the ms and bytes keys have backfilled duration_ms and response_bytes, and on a document.* row the details_ref and details a change receipt names, the complete detail of that change to its document: section headings, cause paths, normalisations and diagnostics; and on a document.shown or document.shown_part row the review_context, target and baseline content revisions, kind, page span, credential, text_chars and meta_bytes a presentation''s coverage is computed from?';
+
+-- zz.upload: one file on its way into a document or a source. zz-core's upload_start mints the row,
+-- the gateway's staging route binds the bytes once (`where sha256 is null`), and zz-core's consuming
+-- write marks it consumed and removes the body in its own commit. A row is kept without its body, so
+-- a consumed id is never new again; the gateway's hourly sweep removes the body of one that expired unused.
+CREATE TABLE zz.upload (
+    id text NOT NULL,
+    team_id uuid NOT NULL,
+    principal_id uuid NOT NULL,
+    filename text NOT NULL,
+    link_secret_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone DEFAULT (now() + '00:15:00'::interval) NOT NULL,
+    byte_count integer,
+    sha256 text,
+    body bytea,
+    staged_via text,
+    staged_by uuid,
+    consumed_at timestamp with time zone,
+    consumed_by_operation text,
+    consumed_digest text,
+    CONSTRAINT upload_body_staged CHECK (((body IS NULL) OR ((sha256 IS NOT NULL) AND (consumed_at IS NULL)))),
+    CONSTRAINT upload_byte_count_check CHECK (((byte_count >= 0) AND (byte_count <= 8388608))),
+    CONSTRAINT upload_expires_after_created CHECK ((expires_at > created_at)),
+    CONSTRAINT upload_filename_check CHECK (((length(filename) >= 1) AND (length(filename) <= 255) AND (strpos(filename, '/'::text) = 0))),
+    CONSTRAINT upload_id_check CHECK ((id ~ '^up_[a-z2-7]{26}$'::text)),
+    CONSTRAINT upload_link_secret_hash_check CHECK ((link_secret_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT upload_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT upload_staged_by_follows CHECK (((staged_by IS NULL) = ((staged_via IS NULL) OR (staged_via = 'link'::text)))),
+    CONSTRAINT upload_staged_via_check CHECK ((staged_via = ANY (ARRAY['token'::text, 'link'::text]))),
+    CONSTRAINT upload_staged_whole CHECK ((((sha256 IS NULL) = (byte_count IS NULL)) AND ((sha256 IS NULL) = (staged_via IS NULL)))),
+    CONSTRAINT upload_consumed_staged CHECK (((consumed_at IS NULL) OR (sha256 IS NOT NULL))),
+    CONSTRAINT upload_consumed_whole CHECK ((((consumed_at IS NULL) = (consumed_by_operation IS NULL)) AND ((consumed_at IS NULL) = (consumed_digest IS NULL))))
+);
+
+ALTER TABLE zz.upload OWNER TO zz;
+
+ALTER TABLE ONLY zz.upload
+    ADD CONSTRAINT upload_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY zz.upload
+    ADD CONSTRAINT upload_link_secret_hash_key UNIQUE (link_secret_hash);
+
+ALTER TABLE ONLY zz.upload
+    ADD CONSTRAINT upload_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES zz.principal(id);
+
+ALTER TABLE ONLY zz.upload
+    ADD CONSTRAINT upload_staged_by_fkey FOREIGN KEY (staged_by) REFERENCES zz.principal(id);
+
+ALTER TABLE ONLY zz.upload
+    ADD CONSTRAINT upload_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+CREATE INDEX upload_sweep ON zz.upload USING btree (expires_at) WHERE (body IS NOT NULL);
+
+COMMENT ON TABLE zz.upload IS 'class=state_machine; authority=this; question=which plain-text file has a principal begun to upload for which team, which bytes were staged for it and through which route, and which write consumed it?; transitions=minted->staged, staged->consumed, minted->expired, staged->expired; retention=kept without its body after consumption or expiry, so a consumed id is never new again; the consuming write removes the body in its own commit, and the gateway''s hourly sweep removes the body of an upload that expired unused; the staging window is 15 minutes';
+
+COMMENT ON COLUMN zz.upload.id IS 'class=state_machine; authority=this; question=what is this upload''s opaque identity, up_ and 26 base32 characters of 128 random bits, the id upload_start answers and a write consumes?';
+
+COMMENT ON COLUMN zz.upload.team_id IS 'class=relation; authority=this; question=which team was the upload started for, the only team a write may consume it in?';
+
+COMMENT ON COLUMN zz.upload.principal_id IS 'class=relation; authority=this; question=which principal started the upload, the only one whose token may stage it or whose write may consume it?';
+
+COMMENT ON COLUMN zz.upload.filename IS 'class=state_machine; authority=this; question=what filename did upload_start record, the one whose extension decides the plain-text family and governs every staging?';
+
+COMMENT ON COLUMN zz.upload.link_secret_hash IS 'class=ephemeral; authority=this; question=what is the sha256 of this upload''s staging link secret, the capability that stages this one upload and nothing else?';
+
+COMMENT ON COLUMN zz.upload.created_at IS 'class=state_machine; authority=this; question=when was the upload started?';
+
+COMMENT ON COLUMN zz.upload.expires_at IS 'class=state_machine; authority=this; question=when does this upload''s fifteen-minute window end, after which it is neither staged nor newly consumed?';
+
+COMMENT ON COLUMN zz.upload.byte_count IS 'class=state_machine; authority=this; question=how many bytes did the first staging bind, null until staged?';
+
+COMMENT ON COLUMN zz.upload.sha256 IS 'class=state_machine; authority=this; question=what is the sha256 hex of the bytes the first staging bound, which no later staging may change, null until staged?';
+
+COMMENT ON COLUMN zz.upload.body IS 'class=ephemeral; authority=this; question=what bytes are staged and not yet consumed, removed by the consuming write or once the upload expires unused?';
+
+COMMENT ON COLUMN zz.upload.staged_via IS 'class=state_machine; authority=this; question=which route staged the bytes — token (the person''s own token) or link (the staging link) — null until staged?';
+
+COMMENT ON COLUMN zz.upload.staged_by IS 'class=relation; authority=this; question=which principal''s credential staged the bytes, null for a link staging, which authenticates nobody, and until staged?';
+
+COMMENT ON COLUMN zz.upload.consumed_at IS 'class=state_machine; authority=this; question=when did a write consume this upload, null until consumed?';
+
+COMMENT ON COLUMN zz.upload.consumed_by_operation IS 'class=state_machine; authority=this; question=which operation consumed this upload — the tool and the path it wrote — null until consumed?';
+
+COMMENT ON COLUMN zz.upload.consumed_digest IS 'class=state_machine; authority=this; question=which request digest did the consuming write carry, so its keyed replay is the same consumption rather than a second one, null until consumed?';

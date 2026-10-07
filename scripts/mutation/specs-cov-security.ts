@@ -63,8 +63,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "the gateway is authenticated by default, and the exceptions are the intended ones",
     assertion: "a path that must carry a token is not on the public list",
     subject: "services/gateway/src/server.ts",
-    find: 'const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/"];',
-    replace: 'const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/", "/eval/"];',
+    find: 'const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/", "/u/"];',
+    replace: 'const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/", "/u/", "/eval/"];',
     planted: "the evaluation door becomes reachable with no token at all, on a gateway " +
       "that answers from the internet — the exception list is the one thing standing between " +
       "a deny-by-default middleware and a public MCP surface",

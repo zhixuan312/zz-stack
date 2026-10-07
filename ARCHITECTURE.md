@@ -55,13 +55,11 @@ A package may not import a service. A service may import any package.
 `gateway` (HTTP, MCP mounts, console, admin) and `zz-core` (the platform's own MCP tools).
 There are two, and adding a third needs a reason written down before the directory is made.
 
-One route on the gateway is not a door and not the console: `PUT /upload/source`
-(`services/gateway/src/upload.ts`) takes a file's bytes so an agent can attach a document it
-already has without spending its own output tokens on every byte — which for a PDF is not a cost
-but a wall. It is mounted beside the doors rather than under `/api/console`, because a member's own
-token is who uploads and the console's handler refuses one. What it does with the bytes is
-`services/gateway/src/extract.ts`'s question, and the write it ends in is `source_add`'s, so there
-is no second idea of what a source is.
+Two routes on the gateway are not doors and not the console: `PUT /upload/<id>` takes a file's
+bytes with the person's own token, and `/u/<secret>` is the staging page a link opens
+(`services/gateway/src/upload.ts`). Both only stage a plain-text file for an upload `upload_start`
+began; the write that consumes it is zz-core's, so there is no second idea of what a document or a
+source is.
 
 **Every tool says what it does to the world.** Each `registerTool` passes one of `READS`, `WRITES`
 or `DESTROYS` from `@zz/mcp-http` as its annotations. A client decides confirmation from them —

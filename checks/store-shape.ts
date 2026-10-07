@@ -96,6 +96,28 @@ assert.ok(/document\.\* row written in the transaction of the change it records,
 assert.ok(/details_ref and details/.test(t("event").columnComments?.detail ?? ""),
   "zz.event.detail's comment names the details a document.* row may carry");
 
+// An upload is staging, not authority: minted by upload_start, its bytes bound once by the
+// gateway, consumed once by a write, and kept without its body so a used id is never new again.
+assert.deepEqual(names("upload"), ["id", "team_id", "principal_id", "filename", "link_secret_hash", "created_at",
+  "expires_at", "byte_count", "sha256", "body", "staged_via", "staged_by", "consumed_at", "consumed_by_operation", "consumed_digest"],
+  "zz.upload carries the minted, staged and used columns, in the order its three writers fill them");
+assert.deepEqual(t("upload").primaryKey, ["id"], "an upload is keyed by its id");
+assert.ok((t("upload").uniques ?? []).some((u) => u.join() === "link_secret_hash"), "and found by its link secret's hash");
+assert.deepEqual(col("upload", "body")?.slice(1, 3), ["bytea", true], "the staged body is nullable bytes, removed after use or expiry");
+assert.equal(col("upload", "expires_at")?.[3], "(now() + '00:15:00'::interval)", "the staging window is 15 minutes");
+for (const [re, why] of [
+  [/staged_via = ANY \(ARRAY\['token'::text, 'link'::text\]\)/, "staged_via is token or link"],
+  [/\(sha256 IS NULL\) = \(byte_count IS NULL\)\) AND \(\(sha256 IS NULL\) = \(staged_via IS NULL\)/, "a staging is bound whole"],
+  [/\(staged_by IS NULL\) = \(\(staged_via IS NULL\) OR \(staged_via = 'link'::text\)\)/, "a link staging names no principal"],
+  [/body IS NULL\) OR \(\(sha256 IS NOT NULL\) AND \(consumed_at IS NULL\)/, "a body exists only while staged and unused"],
+  [/id ~ '\^up_\[a-z2-7\]\{26\}\$'/, "the id is up_ and 26 base32 characters"],
+] as [RegExp, string][]) {
+  assert.ok((t("upload").checks ?? []).some((c) => re.test(c)), why);
+}
+assert.ok((t("upload").indexes ?? []).some((i) => /upload_sweep .*\(expires_at\) WHERE \(body IS NOT NULL\)/.test(i)),
+  "the hourly sweep finds the bodies still held by expiry");
+assert.ok(/retention=.*hourly sweep/.test(t("upload").comment ?? ""), "zz.upload's retention names the hourly sweep");
+
 assert.equal((SCHEMA_TARGET as { phase: number }).phase, 6,
   "the target says which phase it describes, and the rehearsal prints it");
 

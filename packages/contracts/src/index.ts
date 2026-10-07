@@ -30,6 +30,11 @@ export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
          FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
          resolveToolKey, resolveStep } from "./alias.js";
 
+// The plain-text family every upload route decodes through, and the names an upload goes by: the
+// gateway stages with these and zz-core consumes with them, so both read one file alike.
+export { UPLOAD_EXTENSIONS, UPLOAD_ID, UPLOAD_MAX_BYTES, UPLOAD_SECRET, mintUploadId, mintUploadSecret,
+         uploadSecretHash, uploadText, type UploadRefusal, type UploadedText } from "./upload-text.js";
+
 export { BANDS, NOT_MEASURABLE, band,
          HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
 

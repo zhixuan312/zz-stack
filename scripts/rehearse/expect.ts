@@ -171,7 +171,7 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
   // The document-versions release. It reshapes three tables by adding columns and deletes no row,
   // so each keeps its count and hashes unchanged over the columns it had before — the added ones
   // (`version`, both `content_generation`s, `current_version`, `linked_by`) are this file's own and are
-  // left out of the digest. The two tables it creates are declared added. On `zz.event` it adds an
+  // left out of the digest. The three tables it creates are declared added. On `zz.event` it adds an
   // index and restates the table's comment, which move no row, so `event` is deliberately not named
   // here: its default — count and every column hashed unchanged — is exactly what the file claims.
   // This entry leaves with the file when it folds into `001_init.sql`.
@@ -192,6 +192,7 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       },
       doc_request: { added: true },
       cause_link_epoch: { added: true },
+      upload: { added: true },
     },
     joins: [
       // The backfill copies a value every row already has under a new name: until this file every
@@ -223,6 +224,11 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       {
         name: "cause_link_epoch holds exactly one row",
         violatingCount: `select abs(count(*) - 1)::int as n from zz.cause_link_epoch`,
+      },
+      // Nothing was ever staged before the table existed: upload_start is the only writer of a row.
+      {
+        name: "zz.upload starts empty",
+        violatingCount: `select count(*)::int as n from zz.upload`,
       },
     ],
   },

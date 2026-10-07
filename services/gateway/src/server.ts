@@ -25,7 +25,7 @@ import { mountPasskey, sweepSessions } from "./passkey.js";
 import { CORE_URL, EVAL_URL, passThrough } from "./relay.js";
 import { reconcileRuns } from "./runs.js";
 import { mountSettings } from "./settings.js";
-import { mountUpload } from "./upload.js";
+import { mountUpload, sweepUploads } from "./upload.js";
 import { doorSurface, toolCallTelemetry } from "./tool-telemetry.js";
 
 const app = express();
@@ -43,16 +43,6 @@ const app = express();
  */
 const PROXY_HOPS = 1;
 app.set("trust proxy", PROXY_HOPS);
-app.use(express.json({ limit: "20mb" }));
-// The OAuth token endpoint is form-encoded, and only this line makes ours one: RFC 6749
-// §4.1.3 requires `application/x-www-form-urlencoded` there, and the MCP SDK sends it. With
-// json() alone `req.body` is empty for every exchange and the endpoint answers
-// `unsupported_grant_type`.
-//
-// Body parsers are content-type gated, so this only runs on a form-encoded request and
-// changes nothing about the JSON routes. `extended: false` because these bodies are flat
-// key-value pairs.
-app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
 /** Authenticated by default; public only by exception. Anything not named here demands a
  * token, so a route added later without touching this list costs a 401 rather than an
@@ -76,7 +66,10 @@ const PUBLIC_PATHS = new Set(["/", "/health"]);
 // /oauth/register is how it introduces itself; /oauth/authorize is reached by a browser
 // before its person has signed in; /oauth/token is presented a code and a PKCE verifier,
 // which are its credential.
-const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/"];
+//
+// `/u/` is an upload's staging link: whoever holds one has no token, and its secret authorises
+// staging that one upload and nothing else (upload.ts).
+const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/", "/u/"];
 const requireIdentity = identityMiddleware();
 app.use((req, res, next) => {
   if (PUBLIC_PATHS.has(req.path) || PUBLIC_PREFIXES.some((p) => req.path.startsWith(p))) {
@@ -84,6 +77,22 @@ app.use((req, res, next) => {
   }
   requireIdentity(req, res, next);
 });
+// A file's bytes, without a model carrying them: the person's own token on /upload/, a staging
+// link's secret on /u/ — see upload.ts. Behind the gate above, which authenticates /upload/ and
+// exempts /u/, and before the body parsers below, which would consume a file sent as JSON or as a
+// form before the route could read it. The gate reads headers only, so it needs no parsed body.
+mountUpload(app);
+app.use(express.json({ limit: "20mb" }));
+// The OAuth token endpoint is form-encoded, and only this line makes ours one: RFC 6749
+// §4.1.3 requires `application/x-www-form-urlencoded` there, and the MCP SDK sends it. With
+// json() alone `req.body` is empty for every exchange and the endpoint answers
+// `unsupported_grant_type`.
+//
+// Body parsers are content-type gated, so this only runs on a form-encoded request and
+// changes nothing about the JSON routes. `extended: false` because these bodies are flat
+// key-value pairs.
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+
 // What each door means, filed under the path it is mounted at. Unauthenticated by design: it
 // reveals the shape of the platform, never anything inside it.
 //
@@ -247,9 +256,6 @@ mountPasskey(app);
 mountConsole(app);
 mountConsoleWrite(app);
 mountConsoleAsk(app);
-// A file's bytes, without a model carrying them. Beside the doors rather than under
-// /api/console, because a member's own token is who uploads — see upload.ts.
-mountUpload(app);
 // DELIBERATE: the `my_*` functions are handed over as a dependency object rather than
 // imported by settings.ts. They live in credentials.ts so /manage/mcp's tools and
 // settings.ts's browser routes call the same function, and a value import there would make
@@ -307,6 +313,9 @@ initPlatformDb()
     setInterval(() => {
       void sweepSessions()
         .catch((err) => console.error("console_session sweep failed:", err));
+      // An upload that expired unused loses its body; the row stays, so its id is never new again.
+      void sweepUploads()
+        .catch((err: unknown) => console.error("upload sweep failed:", err instanceof Error ? err.message : err));
     }, 60 * 60_000).unref();
     // zz.run recomputed from the event log, on start and every few minutes. It is derived
     // data with no writer — see runs.ts — so nothing else keeps it current. Set-based and

@@ -231,7 +231,11 @@ export function sealOf(stamped: string): { by: string; at: string } | null {
  *
  * Through renderEnvelope, so every value is folded to one line whatever a caller sends. A
  * title carrying a newline otherwise adds fields to the envelope: `type` is what
- * knowledge_search filters on and what `source_list` reads a source's stage from. */
+ * knowledge_search filters on and what `source_list` reads a source's stage from.
+ *
+ * DELIBERATE: the content follows the envelope as it was sent, with nothing appended. A source is
+ * material someone else wrote — an uploaded file is read back byte for byte, its last line ending
+ * where the file's did — and a newline added here was a byte the file never had. */
 export function sourceDocument(
   opts: { title: string; by: string; day: string; content: string;
           /** The flow stage this source is the output of — an audit round names its audit stage. */
@@ -262,5 +266,5 @@ export function sourceDocument(
   if (opts.supports?.length) env.supports = opts.supports.join(", ");
   return renderEnvelope(
     env, ["type", "title", "contributed_by", "date", "added_at", "stage", "audits_version", "supports"],
-  ) + `\n${opts.content}\n`;
+  ) + `\n${opts.content}`;
 }

@@ -226,6 +226,7 @@ check("Phase 3's acceptance through a real zz-core: a complete delta advances th
 check("the plain-text family is FR-16's exactly, decoded strictly, and nothing but a reported BOM changes", runsCheck("upload-text.ts"));
 check("staging binds once, refuses what it must, and a link stages only its own upload", runsCheck("upload-staging.ts"));
 check("a ChatGPT file is fetched over https from listed hosts only, from the address checked, every redirect re-checked, within 30 seconds and 8 MiB", runsCheck("file-fetch.ts"));
+check("Phase 4's acceptance through a real zz-core and the gateway's own staging routes: a plain-text file becomes a document, a whole body or a source by the shell, the link and the ChatGPT file route, byte for byte, consumed once inside its write, and a link stages only", runsCheck("document-upload.ts"));
 check("the console lists one entry per public version, fetches a snapshot by revision, reads a pending correction as closed with the correction named, and presents and approves exactly the snapshot it showed, through a real zz-core on a throwaway database", runsCheck("console-versions.ts"));
 check("every row of the version table holds through a real zz-core: causes move versions once, signed snapshots stay as signed, a closed record's correction is a draft and the acts meet a concurrent edit safely", runsCheck("document-version.ts"));
 check("owed sources link by themselves from the cause-link epoch on, once per target, never lost to a racing create and never settling an audit", runsCheck("document-version-causes.ts"));

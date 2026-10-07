@@ -3,7 +3,10 @@
  * checks/document-upload.ts — Phase 4's acceptance, through a real zz-core on a throwaway database
  * and the gateway's own built staging routes driven in this process: a plain-text file becomes a
  * document, a whole-body change or a source by the shell route, the link page and the ChatGPT
- * `file` route, held to every rule typed content is (AC-4.1, AC-4.2).
+ * `file` route, held to the request key, the format, size and envelope rules, the guards and the
+ * write's own records; the field and tag rules, named metadata and a source's supports/stage are
+ * typed content's cases, not repeated for a file (AC-4.1, AC-4.2). The handlers' order — a keyed
+ * retry replays before a `file` is fetched — is held by the gate's documents-guards rule.
  *
  *   node checks/document-upload.ts   # needs Docker, curl, openssl and a built tree (`npm run build`)
  *

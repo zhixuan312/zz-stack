@@ -142,7 +142,8 @@ for (const c of CASES) {
     // dressed as an instruction, and this one is reached by a caller whose change is legitimate.
     let said: unknown;
     try {
-      said = new Function("path", `return (${firing[0].message});`)(PATH);
+      // Nothing named was dropped as already cited, so the fixed text is what is said.
+      said = new Function("path", "recited", "version", `return (${firing[0].message});`)(PATH, [], 1);
     } catch (err) {
       fail.push(`the no-cause refusal cannot be evaluated (${err instanceof Error ? err.message : String(err)}): ` +
                 firing[0].message);

@@ -32,11 +32,17 @@ function occurrences(body: string, find: string): number[] {
   return at;
 }
 
-/** 1-based line of an offset, counted by `\n` — a CRLF body counts the same way. */
-function lineOf(body: string, offset: number): number {
+/** 1-based line of each ascending offset, counted by `\n` — a CRLF body counts the same way. One
+ *  forward pass: recounting from offset 0 per occurrence is quadratic on a short repeated `find`. */
+function linesOf(body: string, offsets: number[]): number[] {
+  const out: number[] = [];
   let n = 1;
-  for (let i = body.indexOf("\n"); i >= 0 && i < offset; i = body.indexOf("\n", i + 1)) n++;
-  return n;
+  let nl = body.indexOf("\n");
+  for (const o of offsets) {
+    for (; nl >= 0 && nl < o; nl = body.indexOf("\n", nl + 1)) n++;
+    out.push(n);
+  }
+  return out;
 }
 
 export function applyEdits(body: string, edits: Edit[]): { body: string; changed: number } | { refusals: EditRefusal[] } {
@@ -56,7 +62,7 @@ export function applyEdits(body: string, edits: Edit[]): { body: string; changed
     if (at.length === 0) { refusals.push({ code: "NO_MATCH", edit_index: i, match_count: 0 }); continue; }
     if (at.length > 1) {
       refusals.push({ code: "MULTIPLE_MATCHES", edit_index: i, match_count: at.length,
-                      lines: at.map((o) => lineOf(body, o)) });
+                      lines: linesOf(body, at) });
       continue;
     }
     const span = { start: at[0], end: at[0] + e.find.length, replace: e.replace };

@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { contractsSource, gateOwnSource, root, sourceFiles, toolAtLine, unbuilt, zzCoreSource, withoutComments} from "../read.ts";
+import { contractsSource, functionBody, gateOwnSource, root, sourceFiles, toolAtLine, unbuilt, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
@@ -186,11 +186,19 @@ check("the model writes the body and the platform writes the envelope", () => {
   // (`frontmatterRefusal`, deleted): that refused a thematic break and a document read back and sent
   // whole. Held now by running the built `normalizeContent` on what a read gives back — every key a
   // read renders — and on a planted approval.
-  const src = withoutComments(zzCoreSource());
+  //
+  // Each anchor is looked for in the code that WRITES: document_write's handler, and `planEdit`,
+  // whose plan `document_edit` saves. The same text in `callRefusals`, which only gathers
+  // refusals, must not stand in for the write path.
   const bad: string[] = [];
-  for (const [tool, call] of [["document_write", "normalizeContent(args.content"],
-                              ["document_edit", "normalizeContent(mode === \"content\" ? a.content"]]) {
-    if (!src.includes(call)) bad.push(`${tool} does not normalise its content, so an envelope the model composed is stored`);
+  const planEdit = functionBody(readFileSync(join(root, "services/zz-core/src/document-change.ts"), "utf8"), "planEdit");
+  const writer = zzCoreTools().find((t) => t.name === "document_write")?.body ?? null;
+  for (const [tool, where, call] of [["document_write", writer, "normalizeContent(args.content"],
+                                     ["document_edit", planEdit, "normalizeContent(mode === \"content\" ? a.content"]] as const) {
+    if (where === null) bad.push(`${tool}'s write path cannot be located, so its normalisation cannot be read`);
+    else if (!withoutComments(where).includes(call)) {
+      bad.push(`${tool} does not normalise its content, so an envelope the model composed is stored`);
+    }
   }
   const mod = join(root, "services/zz-core/dist/document-normalize.js");
   const readBack = ["---", "flow: sdlc-flow", "type: spec", "title: Spec", "tags: a, b", "version: 3",

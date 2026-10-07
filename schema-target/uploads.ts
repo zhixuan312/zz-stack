@@ -8,8 +8,10 @@
  * write produced is the authority for the text; this row only says which bytes arrived and which
  * write took them.
  *
- * Rows are kept without their body after consumption or expiry, so a consumed id is never new again.
- * The gateway's hourly sweep removes the body of an upload that expired unused.
+ * A consumed row is kept without its body, so a used id is never new again. The gateway's hourly
+ * sweep removes the body of an upload that expired unused, and deletes a row no write consumed once
+ * its window has been over a day: it backs no write and no request history, and a 128-bit id is not
+ * minted twice, so nothing is lost with it.
  */
 import type { TableTarget } from "../scripts/schema/types.ts";
 
@@ -172,7 +174,7 @@ export const UPLOADS: Record<string, TableTarget> = {
     indexes: [
       "CREATE INDEX upload_sweep ON zz.upload USING btree (expires_at) WHERE (body IS NOT NULL)",
     ],
-    comment: "class=state_machine; authority=this; question=which plain-text file has a principal begun to upload for which team, which bytes were staged for it and through which route, and which write consumed it?; transitions=minted->staged, staged->consumed, minted->expired, staged->expired; retention=kept without its body after consumption or expiry, so a consumed id is never new again; the consuming write removes the body in its own commit, and the gateway's hourly sweep removes the body of an upload that expired unused; the staging window is 15 minutes",
+    comment: "class=state_machine; authority=this; question=which plain-text file has a principal begun to upload for which team, which bytes were staged for it and through which route, and which write consumed it?; transitions=minted->staged, staged->consumed, minted->expired, staged->expired; retention=a consumed row is kept without its body, so a used id is never new again; the consuming write removes the body in its own commit, and the gateway's hourly sweep removes the body of an upload that expired unused and deletes a row no write consumed once its window has been over a day; the staging window is 15 minutes",
     columnComments: {
       id: "class=state_machine; authority=this; question=what is this upload's opaque identity, up_ and 26 base32 characters of 128 random bits, the id upload_start answers and a write consumes?",
       team_id: "class=relation; authority=this; question=which team was the upload started for, the only team a write may consume it in?",

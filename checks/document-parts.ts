@@ -14,12 +14,13 @@
  *      combine; a change set too long for one result is paged the same way, its continuation joins
  *      the open delta, and covering every delta page counts; a `section` read covers nothing; and
  *      history is a read that records nothing;
+ *   4. the real `document_read` and `document_present` schemas accept `section`, `offset` and
+ *      `limit`;
  *   5. `replaceSection` — what `document_edit` with `section` writes — replaces one heading's
  *      section and keeps every other character of the body byte for byte, refuses an absent or
  *      ambiguous heading and a replacement that does not start with a heading, and a heading inside
- *      a code fence is not one; the change service splices `content` into the current body;
- *   4. the real `document_read` and `document_present` schemas accept `section`, `offset` and
- *      `limit`;
+ *      a code fence is not one (that the change service splices `content` into the current body is
+ *      asserted by behaviour, through a real zz-core, in checks/document-edit.ts);
  *   6. a heading's level and then its occurrence pick one of several same-named headings — the
  *      selectors `document_edit` takes — while the read path's ambiguity still sends a reader to
  *      `offset`; the edit path's candidates carry the level and occurrence that pick each one; the
@@ -42,7 +43,6 @@
  *
  * Run: node checks/document-parts.ts
  */
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -323,14 +323,6 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
                               "Swap", "## Swap\r\n\r\nMID\r\n\r\n");
   is("body" in crlf && crlf.body === "## Keep\r\n\r\nk\r\n\r\n## Swap\r\n\r\nMID\r\n\r\n## After\r\n\r\na\r\n",
      `a section edit on a CRLF body mixed in an LF line ending: ${JSON.stringify(crlf)}`);
-
-  // `document_edit` takes `section` — its schema is asserted in 6 — and splices rather than
-  // overwrites: a `section` accepted and then ignored would write one section's text over the whole
-  // document, which is the worst thing this argument could do.
-  const service = readFileSync(join(process.cwd(), "services/zz-core/dist/document-change.js"), "utf8");
-  is(/const body = documentBody\(loaded\.text\);/.test(service) && /sectionBody\(path, body, a\)/.test(service)
-     && /replaceSection\(body, section, a\.content \?\? "", pick\)/.test(service),
-     "document_edit does not splice `content` into the current body when `section` is given");
 }
 
 // 6. Selectors

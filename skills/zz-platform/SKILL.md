@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.86
+version: 3.87
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -59,10 +59,10 @@ platform stamps `flow` on every document; no write takes it, and a typed one is 
 | any | `document_present(path)` | unchanged — what it showed is recorded in a review context, and that snapshot is kept | the platform |
 | approved | `source_add(..., supports: <path>)` | approved, and flagged for refinement | the platform |
 
-`status` is exactly `draft` or `approved` — **and it exists only where the flow's manifest
-declares a GATE on that document**, because it records that a person was asked and answered. An
-ungated document is finished by being written: it carries no `status`, `document_approve`
-refuses it by name, and a fresh `explore.md` without one means the write did its job.
+`status` is exactly `draft` or `approved` — **and in a flow it exists only where the manifest
+declares a GATE on that document**, because it records that a person was asked and answered. A
+document its flow declares without a gate is finished by being written: it carries no `status`,
+`document_approve` refuses it by name, and a fresh `explore.md` without one means it is done.
 
 **The body is yours, the envelope is the platform's.** An envelope field sent as an argument is
 refused by name; one typed into an envelope at the top of `content` is ignored and reported.
@@ -75,7 +75,7 @@ and why. These are the situations it distinguishes:
 |---|---|
 | the next document the flow declares is not there, or is there and still draft | you |
 | a gated document is written and nobody has recorded a verdict on it | the stakeholder |
-| a round is owed: none yet, a revision after the last audit round, or a review round left a shown S1/S2 finding to `fix` or an inferred one to reproduce (`run_experiment`). The plan's audit is owed on the draft, before its approval; the spec's once it is approved | you |
+| a round is owed: none yet, a new version after the last audit round, or a review round left a shown S1/S2 finding to `fix` or an inferred one to reproduce (`run_experiment`). The plan's audit is owed on the draft, before its approval; the spec's once it is approved | you |
 | an audit round reopened an agreement, or the round budget is spent with the work still unaudited or blocked | the stakeholder |
 | a finished close's handover is not written yet, or is written and awaiting its verdict — run `zz-handover`, then the person approves handover.md | you, then the person |
 | the chain's last document is ready and the initiative can be closed | you |
@@ -406,9 +406,9 @@ The knowledge store is the team's, not one agent's session:
   time from any harness. A round names its `stage`; a malformed review ledger is refused by name.
 - **When the material is a file you already have, upload it — do not transcribe it**: an
   argument costs its whole length in output tokens, a staged file none. `upload_start(filename)`
-  answers `upload`, `shell` and `link`. Run `shell` where you have a shell (a curl PUT to
-  `/upload/<id>` with the person's own token), or give the person `link` where you have none — a
-  page that stages that one file and can write, read or approve nothing. Then pass `upload` to
+  answers `upload`, `shell`, `link` and `note`. Run `shell` (a curl PUT to `/upload/<id>` with the
+  person's own token) in the file's own directory, or with its path in place of the quoted name;
+  with no shell, give the person `link` — a page that stages that one file and nothing else. Then pass `upload` to
   `source_add`, `document_write` or `document_edit` in place of `content` (`UPLOAD_MISSING`: not
   staged yet). On `document_edit` it is the whole body, so a file that CAUSES a change is
   `source_add`ed, then named in `sources`. Plain UTF-8 text up to 8 MiB — `.md` `.markdown` `.txt`
@@ -445,7 +445,7 @@ decision taken elsewhere from a second thought.
 `source_content` (the material itself, filed as a source in the same call). A change bringing a
 cause new to the current version opens the next one — several causes in one call open one. A
 change bringing none — a typo, a second edit for the same input — stays in its version, and on a
-draft or an ungated document needs no cause at all. After the first call for one input, name the
+document that is not approved needs no cause at all. After the first call for one input, name the
 source its reply filed in `sources` rather than resending the words, so its edits stay one version.
 
 **The platform links what already explains a change.** A source declaring `supports: <this
@@ -493,7 +493,7 @@ and v2 (what it made us change)** are both on the record, and a later reader see
   your change on text you never saw. Without it a whole-body `content` replaces whatever is there.
 - **One `request_id` per intended change or source, reused on every retry of it.** One that
   landed answers its first reply, marked `(replayed)`, even after its upload is spent; the same
-  key on different arguments is `REQUEST_ID_CONFLICT`. A call that changes nothing says `no change`.
+  key on different arguments is `REQUEST_ID_CONFLICT`. A call that changes nothing says `(no change)`.
 - Quote them, do not paraphrase: the source is their words, the document is your writing.
   **[convention]** The platform stores whatever you send as `source_content` and never saw what
   the person actually said, so it cannot tell a quotation from a summary of one. A paraphrase

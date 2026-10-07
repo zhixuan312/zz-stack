@@ -232,6 +232,12 @@ export async function everyChange(c: Core): Promise<void> {
               { title: "Reviewed", tags: ["alpha", "beta"], stakeholder: "Ana", fields: { component: "billing" } },
               ['title: was "doc"; now "Reviewed"', 'tags: was ""; now "alpha, beta"', 'stakeholder: was ""; now "Ana"',
                'fields.component: was ""; now "billing"']);
+
+  const step = "a new context's full presentation shows the review metadata an approval signs with the body";
+  const { reply: fresh } = await presented(c, step, { path: d }, { kind: "full", covered: true });
+  if (!fresh.includes('Review metadata, which an approval signs with the body: title "Reviewed"; tags "alpha, beta"; ' +
+                      'stakeholder "Ana"; fields.component "billing".')) c.fail(step, fresh.slice(0, 1200));
+  c.pass(step);
 }
 
 /** A partial presentation pins the snapshot it cut, pages of two snapshots never combine, a
@@ -279,15 +285,15 @@ export async function contextsAndPins(c: Core): Promise<void> {
   const m = `${I}/mixed.md`;
   await c.ok(step, "document_write", { path: m, content: body("alpha") });
   const t1 = await tokenOf(c, m);
-  const { reply: half, facts: first } = await presented(c, step, { path: m, limit: 300 }, { target: t1, covered: false });
+  const { reply: half, facts: firstPart } = await presented(c, step, { path: m, limit: 300 }, { target: t1, covered: false });
   const rest2 = nextOffset(c, step, half);
   await c.ok(step, "document_edit", { path: m, edits: [{ find: "alpha", replace: "omega" }] });
   const t2 = await tokenOf(c, m);
   // The rest of the document — but of the new snapshot, which is exactly as long.
-  await presented(c, step, { path: m, review_context: first.context, full: true, offset: rest2 },
-                  { context: first.context, kind: "full", target: t2, covered: false });
-  await c.refused(step, "document_approve", { path: m, review_context: first.context },
-                  new RegExp(`^ERROR: PRESENTATION_REQUIRED — the review context ${first.context} has not covered ${t2}`));
+  await presented(c, step, { path: m, review_context: firstPart.context, full: true, offset: rest2 },
+                  { context: firstPart.context, kind: "full", target: t2, covered: false });
+  await c.refused(step, "document_approve", { path: m, review_context: firstPart.context },
+                  new RegExp(`^ERROR: PRESENTATION_REQUIRED — the review context ${firstPart.context} has not covered ${t2}`));
   await c.refused(step, "document_approve", { path: m }, new RegExp(`^ERROR: PRESENTATION_REQUIRED — no review context of yours covers ${t2}`));
   if (await statusOf(c, m) === "approved") c.fail(step, "a refused approval sealed the document");
   c.pass(step);

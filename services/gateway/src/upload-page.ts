@@ -1,9 +1,9 @@
 /**
  * The staging page a link from `upload_start` opens: where a person whose agent has no shell picks
- * the file on their own device. Its four states are ready (the form), staged (what was bound),
- * expired, and not a link at all; a refusal of the file itself — another format, too large, not
- * UTF-8, different bytes from the ones already staged — comes back from the PUT and is shown in
- * place by the page's script, as text.
+ * the file on their own device. Its states are ready (the form), staged (what was bound), consumed
+ * (a write already took it), expired, not a link at all, and too many tries; a refusal of the file
+ * itself — another format, too large, not UTF-8, different bytes from the ones already staged —
+ * comes back from the PUT and is shown in place by the page's script, as text.
  *
  * Rendered through `oauth-page.ts`'s `html` and `page`, so every value the page shows — the
  * filename is the caller's own choice — is escaped by the one tag `checks/consent-page.ts` proves,
@@ -16,6 +16,8 @@
  * file and PUTs its raw bytes, so the gateway's body parsers never see them.
  */
 import { createHash } from "node:crypto";
+
+import { uploadExtension } from "@zz/contracts";
 
 import { html, page } from "./oauth-page.js";
 
@@ -54,10 +56,10 @@ const SCRIPT = html`<script>(function () {
 type UploadPageState =
   | { kind: "ready"; filename: string }
   | { kind: "staged"; filename: string; bytes: number; sha256: string }
+  | { kind: "consumed"; filename: string }
   | { kind: "expired"; filename: string }
-  | { kind: "invalid" };
-
-const extOf = (filename: string): string => /^.+\.([^.]+)$/.exec(filename)?.[1].toLowerCase() ?? "";
+  | { kind: "invalid" }
+  | { kind: "busy" };
 
 /** The page for one state, and the HTTP status it is served with. */
 export function uploadPage(state: UploadPageState): { status: number; body: string } {
@@ -66,7 +68,7 @@ export function uploadPage(state: UploadPageState): { status: number; body: stri
       return { status: 200, body: page("Send a file to ZZ", html`<p class="eyebrow">File upload</p>
 <h1>Send ${state.filename}<span class="dot">.</span></h1>
 <p class="lede">Choose the file on this device. It is held for the agent that asked for it, and nothing else happens until that agent writes it — this link cannot read, change or approve anything.</p>
-<form id="stage"><input type="file" id="file" accept=".${extOf(state.filename)}" required>
+<form id="stage"><input type="file" id="file" accept=".${uploadExtension(state.filename)}" required>
 <button class="allow" type="submit">Send</button></form>
 <p id="status" class="warn" role="status" aria-live="polite"></p>
 ${SCRIPT}`) };
@@ -79,6 +81,10 @@ ${SCRIPT}`) };
 <div class="row"><dt>Bytes</dt><dd>${state.bytes}</dd></div>
 <div class="row key"><dt>sha256</dt><dd><code>${state.sha256}</code></dd></div>
 </dl></div>`) };
+    case "consumed":
+      return { status: 410, body: page("Upload already written", html`<p class="eyebrow">File upload · written</p>
+<h1>This file was already written<span class="dot">.</span></h1>
+<p class="refusal">The agent has written ${state.filename} into the document or source it asked for, and an upload is used once. Ask the agent for a new upload if you need to send another file.</p>`) };
     case "expired":
       return { status: 410, body: page("Upload expired", html`<p class="eyebrow">File upload · expired</p>
 <h1>This link has expired<span class="dot">.</span></h1>
@@ -87,6 +93,10 @@ ${SCRIPT}`) };
       return { status: 404, body: page("Not an upload link", html`<p class="eyebrow">File upload</p>
 <h1>This is not a link ZZ issued<span class="dot">.</span></h1>
 <p class="refusal">Check that the whole link was copied, or ask the agent for a new one.</p>`) };
+    case "busy":
+      return { status: 429, body: page("Too many tries", html`<p class="eyebrow">File upload</p>
+<h1>Too many tries<span class="dot">.</span></h1>
+<p class="refusal">This device has opened or sent to upload links too often in the last minute. Wait a minute, then reload this page.</p>`) };
   }
 }
 

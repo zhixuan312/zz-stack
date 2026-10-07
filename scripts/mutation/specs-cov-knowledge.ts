@@ -234,9 +234,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "a closed initiative owes nothing, and can still be handed over",
     assertion: "initiative_status reports no state after the close",
-    subject: "services/zz-core/src/tools/initiative-status.ts",
-    find: "    next = { action: \"closed\", waiting_on: \"nobody\",",
-    replace: "    next = { action: \"handover\", waiting_on: \"agent\",",
+    subject: "services/zz-core/src/tools/initiative-closed.ts",
+    find: "  return { action: \"closed\", waiting_on: \"nobody\",",
+    replace: "  return { action: \"handover\", waiting_on: \"agent\",",
     planted: "a closed initiative is reported as still owing a handover, which reopens the " +
       "state the close was made terminal to remove — work that stopped halfway is described " +
       "as unfinished forever, and an initiative abandoned before its closing document is " +

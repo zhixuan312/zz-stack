@@ -48,9 +48,10 @@ npm run doctor                                   # where a deployment stops matc
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the fourteen checks that migrate a real PostgreSQL** — the schema inventory,
-the rehearsal, the evaluation readers, which EXPLAINs every evaluation statement against a database
-migrated from `001_init.sql`, the document write path (`checks/document-store.ts`), which drives
+**Docker is needed by the fourteen gate checks that migrate a real PostgreSQL** — the schema inventory,
+the evaluation readers, which EXPLAINs every evaluation statement against a database
+migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
+which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
 `saveDocument` against one, upload staging (`checks/upload-staging.ts`), which drives the
 gateway's upload routes against one, and the eight that run a real zz-core against one: the console's
 document reads, presentation and approval (`checks/console-versions.ts`), the document walking
@@ -64,10 +65,11 @@ the link and the ChatGPT file route (`checks/document-upload.ts`); and the rollb
 (`checks/rollback-boundary.ts`), which fills new-format data through a real zz-core and runs the
 previous release's own statements against it. Each exits 2 when Docker is absent rather
 than passing, because a throwaway database that could not be started is not a check that agreed.
+The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, not a gate check.
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those fourteen commands never needs Docker.
+runs those fourteen checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

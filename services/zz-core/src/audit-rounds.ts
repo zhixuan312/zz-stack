@@ -82,8 +82,8 @@ function decidedSince(sources: readonly DocRow[], document: string, since: strin
  * recorded as such and the deterministic rule routes alone.
  *
  * DELIBERATE: `repeats_finding` is not asked. No move depends on it: a round on the current
- * version that reopens nothing already settles, and a revision after the last round owes a round
- * whether or not that round repeated the one before — its findings are what the revision answered.
+ * version that reopens nothing already settles, and a new version after the last round owes a round
+ * whether or not that round repeated the one before — its findings are what the version answered.
  */
 export async function assessRound(p: pg.Pool, team: string, initiative: string,
                                   rel: string, document: string, content: string, by: string): Promise<string> {
@@ -139,12 +139,12 @@ export function auditMove(initiative: string, stage: string, document: string,
       // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.
       return { action: "add_source", document, waiting_on: "agent",
                why: `${document} is v${version}; round ${n} read v${last.version}. ` +
-                    `Round ${n + 1} checks the revision — dispatch it, then ${call}.` };
+                    `Round ${n + 1} checks the new version — dispatch it, then ${call}.` };
     }
     if (!decided) {
       return { action: "decide", document, waiting_on: "stakeholder",
                why: `${ROUND_BUDGET} rounds of ${stage} are spent and ${document} v${version} — the ` +
-                    `revision after round ${n} — has not been audited. The budget is a resource ` +
+                    `version after round ${n} — has not been audited. The budget is a resource ` +
                     "limit, not a pass: the stakeholder decides whether v" + version + " proceeds " +
                     `unaudited or ${document} goes back to its stage. Record the decision with ` +
                     `source_add(supports: ["${document}"]).` };

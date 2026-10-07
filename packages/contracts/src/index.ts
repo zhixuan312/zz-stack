@@ -19,6 +19,7 @@ export { actingTeam, addressResolver, internalAddress, mintPat, parseCaller, PAT
 // FlowDoc's own shape, rather than merely re-exported — see the field.
 export { WHEN_FACT_NAMES, documentApplies,
          type WhenFactName, type FlowDocWhen, type Applicability } from "./flow-when.js";
+import { base32 } from "./base32.js";
 import { FlowDocWhen } from "./flow-when.js";
 
 // The one write path a platform access token goes through — pat_issue and pat_revoke call
@@ -30,10 +31,13 @@ export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
          FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
          resolveToolKey, resolveStep } from "./alias.js";
 
+// The one base32 every opaque token is minted with — a leaf, so upload-text.ts imports it directly.
+export { base32, unbase32 } from "./base32.js";
+
 // The plain-text family every upload route decodes through, and the names an upload goes by: the
 // gateway stages with these and zz-core consumes with them, so both read one file alike.
 export { UPLOAD_EXTENSIONS, UPLOAD_ID, UPLOAD_MAX_BYTES, UPLOAD_SECRET, mintUploadId, mintUploadSecret,
-         uploadSecretHash, uploadText, type UploadRefusal, type UploadedText } from "./upload-text.js";
+         uploadExtension, uploadSecretHash, uploadText, type UploadRefusal, type UploadedText } from "./upload-text.js";
 
 export { BANDS, NOT_MEASURABLE, band,
          HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
@@ -76,25 +80,13 @@ export function documentBody(content: string): string {
   return m ? content.slice(m[0].length).replace(/^(?:[ \t]*\r?\n)+/, "") : content;
 }
 
-const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
-
 /** The opaque token naming one content generation of one document: `cr_` and the first 26
  *  characters of the RFC 4648 lowercase base32, unpadded, of sha256(doc id + ":" + generation). It
  *  binds the document and the generation, never a row number, so A -> B -> A does not hand A's old
  *  token back. zz-core and the gateway derive it here, so both name a snapshot alike. Callers
  *  compare it for equality and never parse it. */
 export function contentRevision(docId: string, generation: number): string {
-  const bytes = createHash("sha256").update(`${docId}:${generation}`, "utf8").digest();
-  let bits = 0, value = 0, out = "";
-  for (const b of bytes) {
-    value = ((value << 8) | b) & 0xffff;
-    bits += 8;
-    while (bits >= 5) {
-      out += BASE32[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  return `cr_${out.slice(0, 26)}`;
+  return `cr_${base32(createHash("sha256").update(`${docId}:${generation}`, "utf8").digest()).slice(0, 26)}`;
 }
 
 /** A document's frontmatter envelope, or {} when there is none. Later keys win, and a value's

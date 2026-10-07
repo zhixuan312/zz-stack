@@ -13,6 +13,7 @@
  *   - a source filed before its target existed is linked to v1 by the create, and the sources a
  *     create names and the words it captures are linked to v1 as the agent's;
  *   - a malformed `sources` entry is `INVALID_MODE` on a create as on an edit;
+ *   - an empty source is refused by name, by `source_add` and as `source_content`, and files nothing;
  *   - a source filed after the epoch is linked by the next body change, as the platform's, and
  *     opens the next version;
  *   - a metadata-only call and a `no_change` call consume no owed source — the body change after
@@ -54,6 +55,23 @@ async function run(c: Core): Promise<void> {
     if (!new RegExp(`^causes \\(1\\): ${esc(early)} \\(platform\\)$`, "m").test(created)) c.fail(step, `receipt: ${created}`);
     const cited = await c.cites(a);
     if (!cited.includes(`${early} platform v1`)) c.fail(step, `v1 cites ${JSON.stringify(cited)}`);
+    c.pass(step);
+  }
+
+  // ---- an empty source is no cause
+  {
+    const step = "an empty source is refused by name — by source_add, and as source_content — and nothing is filed";
+    const sources = async (): Promise<number> => (await c.sql.query<{ n: number }>(
+      `select count(*)::int as n from zz.doc d join zz.initiative i on i.id = d.initiative_id
+        where i.slug = $1 and d.path like 'sources/%'`, [I])).rows[0].n;
+    const before = await sources();
+    await c.refused(step, "source_add", { initiative: I, title: "Nothing", content: " \n\t ", supports: "a.md" },
+                    /^ERROR: the source is empty — /);
+    await c.refused(step, "document_edit", { path: a, edits: [{ find: "alpha", replace: "ALPHA" }], source_content: "  " },
+                    /^ERROR: `source_content` holds nothing but whitespace/);
+    if ((await sources()) !== before || /ALPHA/.test(await c.ok(step, "document_read", { path: a }))) {
+      c.fail(step, "an empty source was filed, or the edit landed");
+    }
     c.pass(step);
   }
 

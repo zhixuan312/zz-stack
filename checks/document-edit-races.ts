@@ -575,14 +575,14 @@ async function uploads(c: Core, second: Mcp): Promise<void> {
       || replies.filter((r) => /^ERROR: UPLOAD_USED — /.test(r)).length !== 1) c.fail(step, replies.join("\n---\n"));
   c.pass(step);
 
-  step = "a keyed consumption replays its first receipt after the upload expired, while an independent one is refused";
+  step = "a keyed consumption replays its first receipt after the upload expired, while an independent one is refused UPLOAD_USED — consumed before expired";
   const keyedUp = await upload(c, step, "keyed.md", "# Keyed\n");
   const keyed = { path: `${U}/keyed.md`, upload: keyedUp.id, request_id: "upload-1" };
   const landed = await c.ok(step, "document_write", keyed);
   await expire(c, keyedUp.id);
   said = await c.ok(step, "document_write", keyed);
   if (first(said) !== `${first(landed)} (replayed)`) c.fail(step, `first:\n${landed}\nagain:\n${said}`);
-  await c.refused(step, "document_write", { ...keyed, path: `${U}/keyed-2.md`, request_id: "upload-2" }, /^ERROR: UPLOAD_EXPIRED — /);
+  await c.refused(step, "document_write", { ...keyed, path: `${U}/keyed-2.md`, request_id: "upload-2" }, /^ERROR: UPLOAD_USED — /);
   await c.refused(step, "document_write", { ...keyed, upload: (await upload(c, step, "keyed.md", "# Keyed\n")).id }, CONFLICT);
   c.pass(step);
 

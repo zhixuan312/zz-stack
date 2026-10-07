@@ -238,7 +238,7 @@ async function open(flow: string, facts: Record<string, string> | null) {
   j.write("plan.md", APPROVED);
   j.write("review.md", { status: "draft", ...FINISHED });
   const handover = await j.edit("handover.md", { status: "draft" });
-  is(handover === null || !/review\.md is status: draft/.test(handover),
+  is(handover === null,
      `handover.md was refused while the closed review.md is a draft correction: ${JSON.stringify(handover)}`);
   // ...and an open initiative's draft review.md still holds handover.md back.
   const k = await open("sdlc-flow", null);
@@ -249,6 +249,15 @@ async function open(flow: string, facts: Record<string, string> | null) {
   const early = await k.edit("handover.md", { status: "draft" });
   is(typeof early === "string" && /review\.md is status: draft/.test(early),
      `handover.md was written over an open initiative's draft review.md: ${JSON.stringify(early)}`);
+
+  // ...and the waiver is the handover's alone: a stop that landed on a draft spec.md settles it for
+  // nothing else, so plan.md, which requires it gated, is still owed spec.md's approval.
+  const s = await open("sdlc-flow", null);
+  s.write("explore.md", {});
+  s.write("spec.md", { status: "draft", ...STOPPED });
+  const plan = await s.edit("plan.md", { status: "draft" });
+  is(typeof plan === "string" && /spec\.md is status: draft/.test(plan),
+     `plan.md was written over a stopped initiative's never-approved spec.md: ${JSON.stringify(plan)}`);
 
   // Ungated: an abandon that landed on explore.md is corrected the same way.
   const u = await open("sdlc-flow", null);

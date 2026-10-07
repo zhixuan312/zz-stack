@@ -32,7 +32,9 @@
  * release whose migrations declare `-- rollback: refused`, whose schema the earlier image cannot
  * write. Such a release is not rolled back by editing the version on the host either. The guarded
  * route is `node scripts/release.ts --rollback`, which refuses it with the migrations' reasons and
- * leaves the new version running, as step 6 does: recovery is fixing forward.
+ * leaves the new version running, as step 6 does: recovery is fixing forward. It reads the
+ * migrations from this checkout, so it is run from a checkout of the version the host runs; any
+ * other checkout is refused before the host is touched.
  *
  *   1. gate            everything provable without touching the server
  *   2. build + smoke   build both images locally, start every service from them
@@ -508,14 +510,16 @@ if (problems.length) {
   // failures and the statement of what is running with a stack trace.
   let rolledBack = true;
   // DELIBERATE: asked before the `try`, and only when the host was on another version — a
-  // same-version re-run has nothing to roll back to, and rollback() says so. A refusal (a
+  // same-version re-run has nothing to roll back to, and the `else` below says so. A refusal (a
   // migration since `previous` that declares one, or destructive DDL) or a guard that cannot tell
   // (no tag) leaves this release running: putting `previous` back on a schema its code cannot write
-  // is a worse outage than the one verification found. The guard never throws; rollback()'s own
-  // refusal is die(), which inside the `try` would end the release before this report.
-  const refusal = previous && previous !== version ? refusalLines(version, previous, rollbackGuard(previous), problems) : [];
+  // is a worse outage than the one verification found. The host runs `version` now and step 1
+  // pinned this checkout to it, which is the guard's own precondition. The guard never throws;
+  // rollback()'s own refusal is die(), which inside the `try` would end the release before this
+  // report.
+  const refusal = previous && previous !== version ? refusalLines(version, previous, rollbackGuard(previous, version), problems) : [];
   if (refusal.length) die(refusal.join("\n        "));
-  if (previous) {
+  if (previous && previous !== version) {
     try {
       rollback(previous);
       execSync("sleep 10");
@@ -532,8 +536,11 @@ if (problems.length) {
       log("  then `docker compose up -d --remove-orphans`. The failures are listed below.");
     }
   } else {
+    // A same-version re-run moves nothing, so it must not be reported as rolled back.
     rolledBack = false;
-    log(`  \x1b[33mNo previous version recorded — cannot roll back automatically.\x1b[0m`);
+    log(previous
+      ? `  \x1b[33m${HOST} was already on ${version} before this release — there is no earlier version to roll back to.\x1b[0m`
+      : `  \x1b[33mNo previous version recorded — cannot roll back automatically.\x1b[0m`);
   }
   // `rolledBack`, not `previous`: a recorded previous version is a different claim from the
   // rollback having worked.

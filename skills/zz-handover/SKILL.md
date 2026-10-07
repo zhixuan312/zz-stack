@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.16
+version: 2.17
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has recorded the close on the initiative.  Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -23,9 +23,10 @@ anything, as the signal this cycle is actually done.
 
 ## Inputs — read all of them before writing anything
 
-- Every document the flow declared, in order, and every revision of each: what changed between
+- Every document the flow declared, in order, and every version of each: what changed between
   one approval and the next is where the disagreements are. `document_read(<path>)` gives the
-  current one; `document_read(<path>, version: N)` gives the revision filed at approval N, and
+  current one; `document_read(<path>, version: N)` gives public version N's last retained
+  state — an approved snapshot a later one superseded is read by its `content_revision` — and
   it lists the versions it holds.
 - `initiative_status(<initiative>)` — the close: its outcome, who closed it, its date, and the
   next move the platform computes from the record. Written by the platform and not by the agent,

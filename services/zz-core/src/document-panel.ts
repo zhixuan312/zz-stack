@@ -20,10 +20,11 @@
  * DELIBERATE: `document_shown` takes a ticket, and the ticket travels only in `_meta`. A client that
  * ignores `visibility: ["app"]` lists the tool to its model, and a model that could call it with a
  * path would be approving what nobody read — a fail-OPEN path on the one gate agents are delegated.
- * The ticket is an HMAC over the team, the path, the revision and the person, so a model holding
- * none of `_meta` cannot mint one, and one ticket vouches for exactly one revision to one person.
- * The REVISION, not the public version a person is shown: several snapshots can share one version,
- * and a ticket for one of them must not vouch for the next.
+ * The ticket is an HMAC over the team, the path, the content revision drawn and the person, so a
+ * model holding none of `_meta` cannot mint one, and one ticket vouches for exactly one snapshot to
+ * one person. The CONTENT REVISION, not the public version a person is shown nor the row number:
+ * several snapshots can share one version, and a row rewritten in place keeps its number while its
+ * content moves — a ticket for what was drawn must vouch for nothing else.
  * Every record the panel writes rests on it. The key is drawn per process, so a restart ends every
  * ticket — which costs nothing for a document already covered in the panel's context, answered
  * before the ticket is read, and asks the person to open anything else again.
@@ -48,6 +49,7 @@ import type { deltaOf } from "./document-delta.js";
 import { db, teamFor } from "./platform-db.js";
 import { commitPresentation, contextState, mintContext, presentedBody, snapshotRevision, type Viewer,
          viewerOf } from "./review-context.js";
+import { changeSnapshot } from "./stale-base.js";
 import { loadDocument, publicVersions } from "./versions.js";
 
 type Loaded = Extract<Awaited<ReturnType<typeof loadDocument>>, { ok: true }>;
@@ -81,8 +83,8 @@ export const PANEL_CALLABLE = { "openai/widgetAccessible": true };
  *  context the present minted or continued, the same one its reply names; null for a `version` read.
  *
  *  Versions are PUBLIC versions — what a person is shown and approves by. `latest` says whether the
- *  snapshot drawn is the document's current one: a version's approved snapshot can be shown while
- *  a newer draft of the same version is current, and only the current one can be approved. */
+ *  snapshot drawn is the document's current one: only the current snapshot can be approved, and an
+ *  earlier version is drawn as history. */
 export interface PanelDocument {
   path: string;
   initiative: string;
@@ -99,6 +101,9 @@ export interface PanelDocument {
   /** One entry per public version. */
   history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
   body: string;
+  /** The review metadata an approval signs with the body — the snapshot's title, tags, stakeholder
+   *  and flow fields, as its content identity is taken over — drawn beside it. */
+  metadata: { title: string; tags: string[]; stakeholder: string; fields: Record<string, string> };
   /** The snapshot drawn, by its content revision; null for a superseded row that has none. */
   content_revision: string | null;
   review_context: string | null;
@@ -118,24 +123,24 @@ const KEY = randomBytes(32);
  *  ticket stops mattering. */
 const TICKET_TTL_MS = 24 * 3600 * 1000;
 
-function signed(team: string, path: string, version: number, user: string, expires: number): string {
+function signed(team: string, path: string, contentRevision: string, user: string, expires: number): string {
   return createHmac("sha256", KEY)
-    .update([team, path, String(version), user.toLowerCase(), String(expires)].join("\n"))
+    .update([team, path, contentRevision, user.toLowerCase(), String(expires)].join("\n"))
     .digest("base64url");
 }
-/** A ticket for one person to record one revision as shown. */
-export function ticketFor(team: string, path: string, version: number, user: string,
+/** A ticket for one person to record one snapshot, named by its content revision, as shown. */
+export function ticketFor(team: string, path: string, contentRevision: string, user: string,
                           now = Date.now()): string {
   const expires = now + TICKET_TTL_MS;
-  return `${expires}.${signed(team, path, version, user, expires)}`;
+  return `${expires}.${signed(team, path, contentRevision, user, expires)}`;
 }
-/** Whether `ticket` was issued by this process to `user` for exactly this revision, and is live. */
-export function ticketValid(ticket: string, team: string, path: string, version: number,
+/** Whether `ticket` was issued by this process to `user` for exactly this content revision, and is live. */
+export function ticketValid(ticket: string, team: string, path: string, contentRevision: string,
                             user: string, now = Date.now()): boolean {
   const [exp, sig] = ticket.split(".");
   const expires = Number(exp);
   if (!sig || !Number.isFinite(expires) || expires < now) return false;
-  const want = Buffer.from(signed(team, path, version, user, expires));
+  const want = Buffer.from(signed(team, path, contentRevision, user, expires));
   const got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got);
 }
@@ -150,8 +155,9 @@ export async function panelDocument(
   if (!at) return null;
   const { team, email: user } = who;
   const env = parseEnvelope(loaded.text);
-  const shown = loaded.rev.revision;
-  const latest = shown === loaded.doc.current_revision;
+  const latest = loaded.rev.revision === loaded.doc.current_revision;
+  const drawn = snapshotRevision(loaded);
+  const { title, tags, stakeholder, fields } = changeSnapshot(loaded.text);
   return {
     path: relPath, initiative: at.initiative, name: at.path,
     version: loaded.rev.version, current: loaded.doc.current_version, latest,
@@ -162,10 +168,11 @@ export async function panelDocument(
     history: publicVersions(loaded.history).map((r) => ({ version: r.version, approvedBy: r.approved_by ?? null,
                                                           approvedAt: r.approved_at ?? null })),
     body: presentedBody(loaded.text),
-    content_revision: snapshotRevision(loaded),
+    metadata: { title, tags, stakeholder, fields },
+    content_revision: drawn,
     review_context: context,
     previous,
-    ticket: latest ? ticketFor(team, relPath, shown, user) : null,
+    ticket: latest && drawn ? ticketFor(team, relPath, drawn, user) : null,
   };
 }
 
@@ -252,7 +259,8 @@ export function registerDocumentPanel(server: McpServer): void {
       }
       // The same rule every present keeps: only the revision the document points at can be
       // vouched for, so a panel left open across a rewrite records nothing. A new version is named
-      // here; a new snapshot of the same version is caught by the ticket, which binds the revision.
+      // here; a new snapshot of the same version, or the row rewritten in place, is caught by the
+      // ticket, which binds the content revision drawn.
       if (loaded.doc.current_version !== version) {
         return text(`ERROR: ${path} changed since the panel opened it (now v${loaded.doc.current_version}) ` +
                     "— open it again with document_present");
@@ -273,8 +281,8 @@ export function registerDocumentPanel(server: McpServer): void {
       if (state.covered.includes(target)) {
         return text(`Already recorded: ${path} v${version} was shown in full under ${review_context}. It counts as presented.`);
       }
-      // Every record the panel writes rests on the ticket, and the ticket on the current revision.
-      if (!ticketValid(ticket, team, path, loaded.rev.revision, user)) {
+      // Every record the panel writes rests on the ticket, and the ticket on the current snapshot.
+      if (!ticketValid(ticket, team, path, target, user)) {
         return text("ERROR: this panel's ticket is not valid for you and this revision — open the " +
                     "document again with document_present");
       }

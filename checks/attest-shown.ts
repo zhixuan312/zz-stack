@@ -47,11 +47,13 @@ const delta = (context: string, baseline: string, target: string): Page =>
 let pages: Page[] = [];
 let broken = false;
 const asked: unknown[][] = [];
+const askedSql: string[] = [];
 
 pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
   const sql = String(text).replace(/\s+/g, " ").trim();
   if (!/e\.detail->>'review_context' as context/.test(sql)) return { rows: [], rowCount: 0 };
   asked.push(values);
+  askedSql.push(sql);
   if (broken) throw new Error("connection terminated");
   const rows = pages.filter((p) => values[5] === null || p.context === values[5]);
   return { rows, rowCount: rows.length };
@@ -68,7 +70,9 @@ const basis = async (target: string, a: { context?: string } = {}): Promise<stri
 };
 
 let failed = 0;
+let ran = 0;
 const is = (ok: boolean, name: string, got: unknown) => {
+  ran += 1;
   if (!ok) failed += 1;
   console.log(`  ${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : `  (got ${JSON.stringify(got)})`}`);
 };
@@ -120,6 +124,9 @@ pages = [full(A, G1)];
 await basis(G1);
 is(asked.length > 0 && asked.every((v) => v[0] === TEAM && v[1] === INIT && v[2] === REL && v[3] === me.email && v[4] === "pat"),
    "the coverage read is scoped to the caller's team, document, principal and credential", asked);
+is(askedSql.length > 0 && askedSql.every((q) => /lower\(e\.detail->>'user'\) = lower\(\$4\)/.test(q)
+     && /coalesce\(e\.detail->>'credential', ''\) = \$5/.test(q) && /e\.subject = \$3/.test(q)),
+   "the coverage statement's WHERE constrains the principal, the credential and the document by the bound values", askedSql);
 
 // Fail-closed: a read that cannot answer refuses, found or passed.
 broken = true;
@@ -180,4 +187,4 @@ if (failed) {
   console.error(`\nattest-shown: ${failed} case(s) failed`);
   process.exit(1);
 }
-console.log(`\nattest-shown: ${cases.length + 6} cases passed`);
+console.log(`\nattest-shown: ${ran} cases passed`);

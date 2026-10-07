@@ -119,14 +119,21 @@ const hostAddress = (raw: string): string => raw.replace(/^::ffff:/, "");
 
 /** Addresses an outbound fetch of a caller's URL must never reach: loopback, private,
  *  carrier-grade NAT, link-local (cloud metadata lives there), benchmark, multicast and reserved
- *  space, and unique-local IPv6 (a metadata address there too), in both families. */
+ *  space, and unique-local IPv6 (a metadata address there too), in both families.
+ *
+ *  And every IPv6 prefix that carries an IPv4 address inside it, whatever that address is: the
+ *  unspecified, loopback and IPv4-compatible `::/96`, the NAT64 prefixes (well-known `64:ff9b::/96`
+ *  and local-use `64:ff9b:1::/48`), and 6to4 `2002::/16`. Each reaches the embedded IPv4 host
+ *  wherever a translator or relay is routed, and none is where a file host lives — 6to4 is
+ *  deprecated (RFC 7526) — so they are refused whole rather than decoded and judged. (IPv4-mapped
+ *  `::ffff:0:0/96` needs no entry: a BlockList judges it by the IPv4 rules itself.) */
 const INTERNAL = new BlockList();
 for (const [net, bits] of [
   ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
   ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3],
 ] as const) INTERNAL.addSubnet(net, bits, "ipv4");
 for (const [net, bits] of [
-  ["::", 127], ["64:ff9b::", 96], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
+  ["::", 96], ["64:ff9b::", 96], ["64:ff9b:1::", 48], ["2002::", 16], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
 ] as const) INTERNAL.addSubnet(net, bits, "ipv6");
 
 /** An address a fetch of a caller's URL must not reach — the one rule for a git source

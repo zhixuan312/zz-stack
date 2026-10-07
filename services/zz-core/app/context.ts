@@ -86,7 +86,10 @@ function compose(): void {
     "Scrolled past is not the same as read carefully.",
   ];
   const prev = s.doc.previous;
-  if (prev && (s.marks.size || s.removed.length || s.other.length)) {
+  if (prev && prev.changes === null) {
+    lines.push(`Since v${prev.version} (${prev.content_revision}, the snapshot review context ${s.doc.review_context} last covered): ` +
+               "changed throughout — the panel shows it whole, with nothing marked.");
+  } else if (prev && (s.marks.size || s.removed.length || s.other.length)) {
     const of = (kind: "changed" | "new") => [...s.marks].filter(([, m]) => m === kind).map(([id]) => titleOf(s, id));
     lines.push(`Since v${prev.version} (${prev.content_revision}, the snapshot review context ${s.doc.review_context} last covered): ` +
                `changed — ${of("changed").join("; ") || "none"}; new — ${of("new").join("; ") || "none"}` +

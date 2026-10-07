@@ -141,14 +141,21 @@ COMMENT ON COLUMN zz.cause_link_epoch.epoch IS 'class=current_state; authority=t
 -- column comment names what such a row's detail carries. None of it moves a row.
 CREATE INDEX event_details_ref ON zz.event USING btree (((detail ->> 'details_ref'::text))) WHERE (detail ? 'details_ref'::text);
 
+-- zz.event: a document's presentations, by initiative and document. A review context's coverage
+-- (`pagesOf`, review-context.ts) and the pin rule's shown-event lookups (`currentRow`,
+-- document-snapshot.ts) read only the two presentation kinds of one document; without this they
+-- scan the whole table. It moves no row.
+CREATE INDEX event_shown_subject ON zz.event USING btree (initiative_id, subject) WHERE (kind = ANY (ARRAY['document.shown'::text, 'document.shown_part'::text]));
+
 COMMENT ON TABLE zz.event IS 'class=immutable_history; authority=this; question=what did the platform do or get asked to do, one append-only timestamped act — a tool call at a door, an admin act, a document act, a knowledge-journal act or a sign-in — the only fallback being /data/events-unwritten.jsonl when a write fails, except a document.* row written in the transaction of the change it records, whose failed insert fails that change?; retention=audit kinds (admin.*, credential.*, console.*, team.*, bug.*, pkg.download) and document.* kinds, whose rows carry the complete details a change receipt names, are kept indefinitely; tool_call and knowledge.* may age out once volume requires it, except a row an evaluation cites';
 
 COMMENT ON COLUMN zz.event.detail IS 'class=immutable_history; authority=this; question=what open extra payload this act carries — the caller hash, client, argument names, ids, shapes and step_sha — now that run has moved to session and the ms and bytes keys have backfilled duration_ms and response_bytes, and on a document.* row the details_ref and details a change receipt names, the complete detail of that change to its document: section headings, cause paths, normalisations and diagnostics; and on a document.shown or document.shown_part row the review_context, target and baseline content revisions, kind, page span, credential, text_chars and meta_bytes a presentation''s coverage is computed from?';
 
 -- zz.upload: one file on its way into a document or a source. zz-core's upload_start mints the row,
 -- the gateway's staging route binds the bytes once (`where sha256 is null`), and zz-core's consuming
--- write marks it consumed and removes the body in its own commit. A row is kept without its body, so
--- a consumed id is never new again; the gateway's hourly sweep removes the body of one that expired unused.
+-- write marks it consumed and removes the body in its own commit. A consumed row is kept without its
+-- body, so a used id is never new again; the gateway's hourly sweep removes the body of one that expired
+-- unused and deletes a row no write consumed once its window has been over a day.
 CREATE TABLE zz.upload (
     id text NOT NULL,
     team_id uuid NOT NULL,
@@ -198,7 +205,7 @@ ALTER TABLE ONLY zz.upload
 
 CREATE INDEX upload_sweep ON zz.upload USING btree (expires_at) WHERE (body IS NOT NULL);
 
-COMMENT ON TABLE zz.upload IS 'class=state_machine; authority=this; question=which plain-text file has a principal begun to upload for which team, which bytes were staged for it and through which route, and which write consumed it?; transitions=minted->staged, staged->consumed, minted->expired, staged->expired; retention=kept without its body after consumption or expiry, so a consumed id is never new again; the consuming write removes the body in its own commit, and the gateway''s hourly sweep removes the body of an upload that expired unused; the staging window is 15 minutes';
+COMMENT ON TABLE zz.upload IS 'class=state_machine; authority=this; question=which plain-text file has a principal begun to upload for which team, which bytes were staged for it and through which route, and which write consumed it?; transitions=minted->staged, staged->consumed, minted->expired, staged->expired; retention=a consumed row is kept without its body, so a used id is never new again; the consuming write removes the body in its own commit, and the gateway''s hourly sweep removes the body of an upload that expired unused and deletes a row no write consumed once its window has been over a day; the staging window is 15 minutes';
 
 COMMENT ON COLUMN zz.upload.id IS 'class=state_machine; authority=this; question=what is this upload''s opaque identity, up_ and 26 base32 characters of 128 random bits, the id upload_start answers and a write consumes?';
 

@@ -259,6 +259,31 @@ check("a tool that builds a path from an initiative name checks it first", () =>
     : null;
 });
 
+/** The keys of the first object literal in `text`, at its own depth only — nested objects,
+ *  calls and arrays skipped, and strings read past so a bracket or a colon in a description
+ *  counts for nothing. A computed key (`[PATCHSET]:`) is not read, as the regex before this did
+ *  not read it: no tool a "named argument" guard reaches declares one. */
+function topLevelKeys(text: string): Set<string> {
+  const keys = new Set<string>();
+  let depth = 0;
+  for (let i = text.indexOf("{"); i >= 0 && i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      for (i++; i < text.length && text[i] !== ch; i++) if (text[i] === "\\") i++;
+      continue;
+    }
+    if ("{([".includes(ch)) depth++;
+    else if ("})]".includes(ch) && --depth === 0) break;
+    else if (depth === 1 && /[a-z_]/.test(ch) && !/[\w$.]/.test(text[i - 1])) {
+      const key = /^([a-z_]+)\s*:/.exec(text.slice(i));
+      if (key) keys.add(key[1]);
+      i += (key?.[0].length ?? 1) - 1;
+      while (i + 1 < text.length && /[\w$]/.test(text[i + 1]) && !key) i++;
+    }
+  }
+  return keys;
+}
+
 check("a refusal names a way out the tool it came from actually has", () => {
   // A guard reachable from more than one tool must not tell the caller to pass something only
   // some of them take: an agent told to pass an argument its tool does not have cannot follow
@@ -315,8 +340,9 @@ check("a refusal names a way out the tool it came from actually has", () => {
     let declared: Set<string>;
     if (sig) declared = new Set(sig[1].split(",").map((a) => a.trim().split(":")[0].trim()).filter(Boolean));
     else if (whole && block.includes("inputSchema:")) {
-      const schema = block.slice(block.indexOf("inputSchema:"), whole.index);
-      declared = new Set([...schema.matchAll(/\b([a-z_]+): z\./g)].map((x) => x[1]));
+      // Only the schema object's own keys: `find` inside `edits`, or a `file` object's fields,
+      // are no argument a caller can pass by name.
+      declared = topLevelKeys(block.slice(block.indexOf("inputSchema:"), whole.index));
     } else continue;
     const body = zzCoreTools().find((t) => t.name === tool)?.body ?? "";
     const reaches = (guard: string): boolean => body.includes(`${guard}(`)
@@ -391,4 +417,37 @@ check("a path is resolved before the document at it is judged", () => {
     }
   }
   return bad.join("\n");
+});
+
+check("a keyed retry with a ChatGPT `file` replays before the file is fetched", () => {
+  // A ChatGPT `file` is a signed URL that may not answer twice, so a keyed retry of a committed
+  // call must be answered from its request record without fetching — fetched first, the retry is
+  // FILE_UNAVAILABLE where the first call succeeded. Each write tool that takes a `file` asks
+  // `replayFor` before anything fetches it: `FILES(` in `document_write` and `source_add`, and in
+  // `document_edit` any use of its lazy `fileOf` (handed to `planEdit` inside the attempt loop),
+  // whose one definition is the only mention allowed above the lookup.
+  //
+  // COUPLED: `checks/document-upload.ts` drives the `file` cases through `inProcess().fileWrite`
+  // (scripts/schema/throwaway-core.ts), a copy of this order; this rule is what holds the handlers
+  // to it, so a reordering of the `file` arm alone cannot pass behind the copy.
+  const LAZY = /const fileOf = \(\) => \(fetched \?\?= files\(args\.file[^)]*\)\);/;
+  const bad: string[] = [];
+  const tools = new Map(zzCoreTools().map((t) => [t.name, withoutComments(t.body)]));
+  for (const name of ["document_write", "source_add", "document_edit"]) {
+    const body = tools.get(name);
+    if (body === undefined) { bad.push(`${name} is not registered, so its order cannot be read`); continue; }
+    const lookup = body.indexOf("replayFor(");
+    if (lookup < 0) { bad.push(`${name} never asks replayFor for its request key`); continue; }
+    const before = body.slice(0, lookup);
+    if (name === "document_edit") {
+      if (!LAZY.test(body)) { bad.push("document_edit no longer fetches its `file` through one lazy `fileOf`"); continue; }
+      const early = /\bfileOf\b|\bfiles\(|\bFILES\(/.exec(before.replace(LAZY, ""));
+      if (early) bad.push(`document_edit reaches its \`file\` (\`${early[0]}\`) before replayFor`);
+      if (!/\bfileOf\b/.test(body.slice(lookup))) bad.push("document_edit never hands `fileOf` on after replayFor");
+    } else {
+      if (!body.includes("FILES(")) { bad.push(`${name} no longer fetches a \`file\` through FILES`); continue; }
+      if (/\bFILES\(/.test(before)) bad.push(`${name} fetches its \`file\` before replayFor`);
+    }
+  }
+  return bad.join("; ") || null;
 });

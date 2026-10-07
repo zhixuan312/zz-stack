@@ -169,15 +169,27 @@ export function registerInitiativeActTools(server: McpServer): void {
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);
       doc = putEnvelopeField(doc, "approved_at", isoToday());
-      const fixed = normalizeSections(chain, relPath, doc);
-      const bad = await documentGuards(chain, relPath, fixed.content, team, "document_approve");
+      // DELIBERATE: a heading the flow would rename is refused, not renamed. Every write renames a
+      // near miss as it lands, so one here was stored before the flow's declared sections changed —
+      // and renaming it now changes the content identity, so the seal would land on a new snapshot
+      // nobody was shown while the record named the one they were.
+      const { renamed } = normalizeSections(chain, relPath, doc);
+      if (renamed.length) {
+        return text(
+          `ERROR: ${relPath} has ${renamed.length === 1 ? "a heading" : "headings"} this flow now declares ` +
+          `differently (${renamed.join(", ")}), and an approval signs exactly the snapshot presented — ` +
+          "renaming here would seal bytes nobody was shown, so nothing was approved. Rename " +
+          `${renamed.length === 1 ? "it" : "them"} with document_edit(path: "${relPath}", edits: ` +
+          '[{ find: "## <old>", replace: "## <new>" }, …]), present the result with document_present, then approve it.');
+      }
+      const bad = await documentGuards(chain, relPath, doc, team, "document_approve");
       if (bad) return text(await settle(bad));
       // The seal, the status and the revision move together, in one statement's worth of write:
       // `doc_current_revision_required` holds that `status: approved` is true exactly when
       // `approved_revision` is the current revision, so a writer that set one without the other
       // would leave a document nobody can read.
       const sealed = await saveDocument({
-        team, relPath, initiative: parts[0], text: fixed.content, by: who.email,
+        team, relPath, initiative: parts[0], text: doc, by: who.email,
         flow: chain.name ?? undefined, type: chain.roles[parts[1]],
         mode: "rewrite", act: "document_approve", seal: { by: signer, at: isoToday() }, expect: state,
         record: approvalRecord({ caller: who.email, signer, context: basis.context, target: basis.target }),
@@ -199,10 +211,8 @@ export function registerInitiativeActTools(server: McpServer): void {
         `${relPath} approved — recorded under ${signer}` +
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +
         `Signed: content revision ${basis.target}, as presented in review context ${basis.context}.\n` +
-        (already ? "It was already approved; the record now carries this verdict instead.\n" : "") +
         (acceptance.note ? `${acceptance.note}\n` : "") +
         (foundation.note ? `${foundation.note}\n` : "") +
-        (fixed.renamed.length ? `Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.\n` : "") +
         // True only of the flip. The seal lands on the revision the approval names, and a
         // revision already approved is updated in place rather than filed a second time.
         (already

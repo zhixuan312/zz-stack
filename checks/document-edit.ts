@@ -528,14 +528,19 @@ async function fidelity(c: Core): Promise<void> {
   await bodyIs(c, `${step} (whole)`, z, body);
   c.pass(step);
 
-  step = "CRLF line endings, through a create, a batch and a whole body, byte for byte";
+  step = "CRLF line endings, through a create, a batch, a section and a whole body, byte for byte";
   const r = `${I}/crlf.md`;
-  body = "# Notes\r\n\r\nalpha 中文\r\n\r\n## Next\r\n\r\nbeta 🙂\r\n";
+  body = "# Notes\r\n\r\nalpha 中文\r\n\r\n## Next\r\n\r\nbeta 🙂\r\n\r\n## Last\r\n\r\nomega\r\n";
   await c.ok(step, "document_write", { path: r, content: body });
   await bodyIs(c, `${step} (create)`, r, body);
   await c.ok(step, "document_edit", { path: r, edits: [{ find: "alpha", replace: "ALPHA" }, { find: "beta 🙂\r\n", replace: "beta 🙂\r\ngamma\r\n" }] });
-  body = "# Notes\r\n\r\nALPHA 中文\r\n\r\n## Next\r\n\r\nbeta 🙂\r\ngamma\r\n";
+  body = "# Notes\r\n\r\nALPHA 中文\r\n\r\n## Next\r\n\r\nbeta 🙂\r\ngamma\r\n\r\n## Last\r\n\r\nomega\r\n";
   await bodyIs(c, `${step} (batch)`, r, body);
+  // A section with a section after it, sent with no final line ending: the blank line the splice
+  // adds before `## Last` is the body's own CRLF, never an LF.
+  await c.ok(step, "document_edit", { path: r, section: "Next", content: "## Next\r\n\r\nsection 🎉" });
+  body = "# Notes\r\n\r\nALPHA 中文\r\n\r\n## Next\r\n\r\nsection 🎉\r\n\r\n## Last\r\n\r\nomega\r\n";
+  await bodyIs(c, `${step} (section)`, r, body);
   body = "# Whole\r\n\r\nline one\r\nline two\r\n";
   await c.ok(step, "document_edit", { path: r, content: body });
   await bodyIs(c, `${step} (whole)`, r, body);

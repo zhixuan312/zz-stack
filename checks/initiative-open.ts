@@ -621,12 +621,23 @@ is(wg.statusCheck(GOVERNED, `${GOV}/stray.md`, "---\nstatus: nearly\n---\n") ===
 // 8b. The three membership tests, source-level and labelled. Each handler resolves through
 // `userRoot()`, so the condition is read rather than run — after comments are stripped, and
 // asserted on its exact shape rather than on a word.
+// Every file a handler of the three lives in: document_approve's, document_edit's (its tool and
+// the plan it computes) and initiative_close's.
 const acts = stripped("services/zz-core/src/tools/initiative-acts.ts");
-const bare = [...acts.matchAll(/if \(\s*!chain\.docs\.has\(/g)].length;
-is(bare === 0,
-   `initiative-acts.ts has ${bare} membership test written as a bare \`!chain.docs.has(...)\` ` +
-   "— a freeform initiative resolves to EMPTY_CHAIN, whose docs Set is empty, so every " +
-   "approval or revision on one is refused with an error naming a flow that does not exist");
+const close = stripped("services/zz-core/src/tools/initiative-close.ts");
+const handlers: [string, string][] = [
+  ["tools/initiative-acts.ts", acts],
+  ["tools/document-edit.ts", stripped("services/zz-core/src/tools/document-edit.ts")],
+  ["document-change.ts", stripped("services/zz-core/src/document-change.ts")],
+  ["tools/initiative-close.ts", close],
+];
+for (const [file, src] of handlers) {
+  const bare = [...src.matchAll(/if \(\s*!chain\.docs\.has\(/g)].length;
+  is(bare === 0,
+     `${file} has ${bare} membership test written as a bare \`!chain.docs.has(...)\` ` +
+     "— a freeform initiative resolves to EMPTY_CHAIN, whose docs Set is empty, so every " +
+     "approval, edit or close on one is refused with an error naming a flow that does not exist");
+}
 // document_approve's membership test is `gateRefusal`'s, in chain.ts, shared with the document
 // panel — so the narrowed test is looked for there, and the approval must still go through it.
 const gate = stripped("services/zz-core/src/chain.ts");
@@ -636,7 +647,7 @@ is(/chain\.documents\.length && !chain\.docs\.has\(/.test(gate) && /gateRefusal\
    "longer refuses one it never declared");
 // initiative_close must not refuse a freeform close outright, and must ask which document
 // records it rather than picking one.
-is(!/if \(!chain\.closingDoc\) \{/.test(acts),
+is(!/if \(!chain\.closingDoc\) \{/.test(close),
    "initiative_close still refuses outright when no flow declares a closing document — " +
    "EMPTY_CHAIN's closingDoc is the empty string, so no freeform initiative can ever close");
 const closeDef = tools.get("initiative_close")?.inputSchema ?? {};

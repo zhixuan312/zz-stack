@@ -29,6 +29,8 @@ import { join } from "node:path";
 import { mock } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { internalAddress } from "@zz/contracts";
+
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { fetchFile } = await load("services/zz-core/dist/file-fetch.js");
 const { fileSource } = await load("services/zz-core/dist/upload-consume.js");
@@ -37,8 +39,8 @@ const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
 // ── the certificate, for every test hostname ───────────────────────────────────────────────────
-const NAMES = ["files", "inside", "loop", "meta", "link", "six", "mapped", "mixed", "rebind", "rehop", "offlist",
-               "nowhere"]
+const NAMES = ["files", "inside", "loop", "meta", "link", "six", "mapped", "nat64", "compat", "sixto4", "mixed", "rebind",
+               "rehop", "offlist", "nowhere"]
   .map((n) => `${n}.example.test`);
 const dir = mkdtempSync(join(tmpdir(), "zz-file-fetch-"));
 let key: Buffer, cert: Buffer;
@@ -102,6 +104,9 @@ const ANSWERS: Record<string, string[] | (() => string[])> = {
   "link.example.test": ["fe80::1"],
   "six.example.test": ["fd00:ec2::254"],
   "mapped.example.test": ["::ffff:10.0.0.7"],
+  "nat64.example.test": ["64:ff9b:1::7f00:1"],
+  "compat.example.test": ["::7f00:1"],
+  "sixto4.example.test": ["2002:a9fe:a9fe::1"],
   "mixed.example.test": ["203.0.113.11", "192.168.1.9"],
   "offlist.example.test": ["203.0.113.13"],
 };
@@ -171,6 +176,9 @@ await refused(`https://meta.example.test/ok?${SIG}`, "FORBIDDEN", /169\.254\.169
 await refused(`https://link.example.test/ok?${SIG}`, "FORBIDDEN", /fe80::1/, "an IPv6 link-local address");
 await refused(`https://six.example.test/ok?${SIG}`, "FORBIDDEN", /fd00:ec2::254/, "an IPv6 unique-local metadata address");
 await refused(`https://mapped.example.test/ok?${SIG}`, "FORBIDDEN", /10\.0\.0\.7/, "an IPv4-mapped private address");
+await refused(`https://nat64.example.test/ok?${SIG}`, "FORBIDDEN", /64:ff9b:1::7f00:1/, "a local-use NAT64 address embedding loopback");
+await refused(`https://compat.example.test/ok?${SIG}`, "FORBIDDEN", /::7f00:1/, "an IPv4-compatible loopback address");
+await refused(`https://sixto4.example.test/ok?${SIG}`, "FORBIDDEN", /2002:a9fe:a9fe::1/, "a 6to4 address embedding the metadata address");
 await refused(`https://mixed.example.test/ok?${SIG}`, "FORBIDDEN", /192\.168\.1\.9/,
               "one private address among public ones");
 await refused(`https://127.0.0.1/ok?${SIG}`, "FORBIDDEN", /127\.0\.0\.1/, "a listed host that is itself a loopback literal");
@@ -240,6 +248,17 @@ is("refusal" in slow && /^ERROR: FORBIDDEN — /.test(slow.refusal) && /30 secon
    `a download that does not finish in 30 seconds is stopped: ${text(slow).slice(0, 200)}`);
 
 // ── no URL anywhere ─────────────────────────────────────────────────────────────────────────────
+// The rule itself, over the spellings an IPv6 address can hide an internal IPv4 in: every one
+// refused, and a public address in each family, and a 6to4 or NAT64 neighbour that is not one of
+// those prefixes, still allowed.
+for (const a of ["::ffff:127.0.0.1", "::ffff:7f00:1", "0:0:0:0:0:ffff:7f00:1", "::ffff:a9fe:a9fe", "fe80::1%eth0", "::1", "::",
+                 "::7f00:1", "::127.0.0.1", "::a00:5", "64:ff9b::a9fe:a9fe", "64:ff9b:1::7f00:1", "64:ff9b:1:ffff::1",
+                 "2002:7f00:1::", "2002:a9fe:a9fe::1", "2002:c0a8:101::1", "2002:808:808::1", "fd00:ec2::254"]) {
+  is(internalAddress(a), `${a} is internal`);
+}
+for (const a of ["198.51.100.7", "203.0.113.10", "2001:db8::8888", "2003::1", "64:ff9a::1"]) {
+  is(!internalAddress(a), `${a} is a public address`);
+}
 for (const r of refusals) is(!r.includes(SIG) && !r.includes("/ok") && !r.includes("https://"), `a refusal carries the URL: ${r}`);
 for (const l of logged) is(!l.includes(SIG) && !l.includes("example.test/"), `the console was handed a URL: ${l}`);
 

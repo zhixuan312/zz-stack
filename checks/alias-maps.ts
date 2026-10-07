@@ -6,9 +6,9 @@ const size = (name: string, map: Record<string, string>, want: number) => {
   const n = Object.keys(map).length;
   if (n !== want) fail.push(`${name} has ${n} entries, expected ${want}`);
 };
-// 17 entries, not 14 renames: block_skills, patch_file and revise_document are merges rather
-// than renames, and each still needs an entry so its history resolves.
-size("TOOL_ALIAS", TOOL_ALIAS, 17);
+// 15 entries, not 14 renames: block_skills is a merge rather than a rename, and still needs an
+// entry so its history resolves.
+size("TOOL_ALIAS", TOOL_ALIAS, 15);
 // A rename map resolves a tool's history, so an entry normally outlives the rename. The
 // third-party-server tools carry none: the name they would resolve to is on no door, and an
 // alias pointing at a 404 turns "no such tool" into a call the client accepts and the
@@ -25,8 +25,6 @@ const resolves: [Record<string, string>, string, string][] = [
   [TOOL_ALIAS, "close", "initiative_close"],
   [TOOL_ALIAS, "reconcile", "knowledge_reconcile"],
   [TOOL_ALIAS, "block_skills", "skill_list"],
-  [TOOL_ALIAS, "patch_file", "document_edit"],
-  [TOOL_ALIAS, "revise_document", "document_edit"],
   [TOOL_ALIAS, "reindex_knowledge", "knowledge_reindex"],
   [MANAGE_ALIAS, "add_person", "person_add"],
   [MANAGE_ALIAS, "my_client_setup", "client_setup"],
@@ -47,6 +45,11 @@ for (const gone of ["issue_my_access_token", "my_access_tokens", "revoke_my_acce
 for (const gone of ["plugin_ruler", "plugin_ruler_record", "plugin_affirm",
                     "plugin_judge", "round_recommend", "plugin_scores"]) {
   if (EVAL_ALIAS[gone]) fail.push(`${gone} was deleted and must have no alias`);
+}
+// document_patch and document_revise were deleted, and document_edit, with another argument shape,
+// replaced them: neither they nor the names they were renamed from may resolve onto it.
+for (const gone of ["patch_file", "revise_document", "document_patch", "document_revise"]) {
+  if (TOOL_ALIAS[gone]) fail.push(`${gone} was deleted and must have no alias`);
 }
 // An unchanged tool must not resolve either.
 for (const same of ["initiative_status", "knowledge_add", "knowledge_supersede"]) {

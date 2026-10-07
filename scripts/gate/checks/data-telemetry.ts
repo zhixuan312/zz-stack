@@ -45,20 +45,36 @@ check("a tool that changes something records that it did", () => {
   // details (and a captured source) is recorded by `insertEvent` on the transaction's client,
   // before the commit, so the row its receipt names commits with it; every other write by
   // `recordAct`, after the commit. Either one gone leaves its class unrecorded, so both are held,
-  // and the in-transaction one is held to its side of the commit.
+  // and every in-transaction one is held to its side of the commit.
+  //
+  // There are two `insertEvent(client` sites, each before its own commit: the keyed no-change
+  // branch's and the main path's `for (const a of acts)` loop. The main path's is named, because
+  // it is the one every detailed change and captured source goes through — the rarely used
+  // no-change site must not keep the rule green alone. And each site is held to ITS commit: the
+  // next `client.query("commit")` after it, with no successful `return {` between them, which
+  // would mean that commit belongs to another path and the site runs after its own; and no commit
+  // before it that is not followed by a `return` first, which would be its own transaction ending
+  // before it runs.
   const save = functionBody(readFileSync(join(root, "services/zz-core/src/document-save.ts"), "utf8"), "saveDocument");
   if (!save) bad.push("services/zz-core/src/document-save.ts no longer defines saveDocument — this cannot check its record");
   else {
     const body = withoutComments(save);
-    const committed = body.lastIndexOf('client.query("commit")');
-    const inTransaction = body.search(/\binsertEvent\(client\b/);
+    const COMMIT = 'client.query("commit")';
     if (!/\brecordAct\(/.test(body)) {
       bad.push("saveDocument records nothing for a write without details — an approval, a close, an evaluation document");
     }
-    if (inTransaction < 0) {
-      bad.push("saveDocument records nothing for a change carrying details, or for a captured source");
-    } else if (inTransaction > committed) {
-      bad.push("saveDocument records a change's details after its commit — the row its receipt names is no longer part of the write");
+    if (!/for \(const a of acts\) \{\s*const recorded = await insertEvent\(client\b/.test(body)) {
+      bad.push("saveDocument's main path records nothing for a change carrying details, or for a captured source " +
+               "— its `for (const a of acts)` loop no longer inserts each act's row on the transaction's client");
+    }
+    for (const site of body.matchAll(/\binsertEvent\(client\b/g)) {
+      const commit = body.indexOf(COMMIT, site.index);
+      const before = body.lastIndexOf(COMMIT, site.index);
+      if (commit < 0 || /\breturn \{/.test(body.slice(site.index, commit))
+          || (before >= 0 && !/\breturn\b/.test(body.slice(before, site.index)))) {
+        bad.push(`saveDocument records an act after its commit (at ${JSON.stringify(body.slice(site.index, site.index + 40))}) ` +
+                 "— the row its receipt names is no longer part of the write");
+      }
     }
   }
   return bad.length ? bad.join("; ") : null;

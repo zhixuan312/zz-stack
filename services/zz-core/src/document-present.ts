@@ -10,13 +10,17 @@
  * shorter than the document. The reply names the context to pass back.
  *
  * A reader is shown PUBLIC versions: `version` is the one a change's cause opened, and several
- * stored snapshots can share it. `version: N` reads the snapshot `loadDocument` reads N as — its
- * approved one, else its last — and the history lists each version once.
+ * stored snapshots can share it. `version: N` reads the version's last snapshot, as `loadDocument`
+ * reads it, and the history lists each version once.
  *
  * DELIBERATE: an unasked present is ONE part when the text is longer than a client can carry — the
  * body of a full presentation, the change set of a delta. The old store version returned the whole
  * body unasked, which a client then truncated, silently, with the reader never learning there was
  * more. `present` decides that here rather than at the tool, so a second caller cannot forget.
+ *
+ * Wherever the body is shown whole or in parts — a full presentation, a `version` or `section` read
+ * — every reply also names the snapshot's review metadata, which its content identity and so an
+ * approval cover beside the body; a delta names a change to it as a record of its own.
  *
  * DELIBERATE: a `version` or `section` present is a read beside the review, not a step in one. It
  * covers nothing towards approval; when it shows the current snapshot it is recorded, so the bytes
@@ -82,6 +86,7 @@ export async function present(
     meta_bytes: panel ? Buffer.byteLength(JSON.stringify(panel)) : 0,
   }, (covered) => {
     const lines = [factsOf(rel, target)];
+    if (kind === "full") lines.push(metadataLine(target.text));
     if (plan.note) lines.push(`${plan.note}.`);
     if (!isCurrent) {
       lines.push(`This continues ${ctx}'s presentation of ${plan.target}, which is no longer the current snapshot — ` +
@@ -127,7 +132,7 @@ async function presentRead(p: pg.Pool, who: Viewer, rel: string, ask: PresentAsk
     : "A `version` or `section` present is a read outside any review context: it counts nothing towards " +
       "approval. Present the document without them to record a presentation.";
   const compose = (): string =>
-    `${factsOf(rel, loaded)}\n${standing}\n` +
+    `${factsOf(rel, loaded)}\n${metadataLine(loaded.text)}\n${standing}\n` +
     (paged ? `${partHeader(rel, part, "the body, frontmatter excluded", body)}\n\n` : `${versionsLine(loaded)}\n\n`) +
     `${part.text}\n`;
   const panel = draw ? await panelDocument(p, who, rel, loaded, null, null) : null;
@@ -155,6 +160,16 @@ function factsOf(rel: string, l: Loaded): string {
       `${l.doc.current_version} at content revision ${contentRevision(l.doc.id, Number(l.doc.content_generation))}`);
   const signed = env.approved_by ? ` Approved by ${env.approved_by}${env.approved_at ? ` on ${env.approved_at}` : ""}.` : "";
   return `${facts.join(", ")}.${signed}`;
+}
+
+/** The review metadata line: title, tags, stakeholder, then each flow field by name — the fields and
+ *  the names a delta's metadata records use (`deltaOf`). */
+function metadataLine(text: string): string {
+  const m = changeSnapshot(text);
+  const q = JSON.stringify;
+  const fields = Object.keys(m.fields).sort().map((k) => `; fields.${k} ${q(m.fields[k])}`).join("");
+  return `Review metadata, which an approval signs with the body: title ${q(m.title)}; tags ${q(m.tags.join(", "))}; ` +
+    `stakeholder ${q(m.stakeholder)}${fields}.`;
 }
 
 /** One entry per public version, each the snapshot it is read as, with the note that says why it

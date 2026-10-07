@@ -14,19 +14,20 @@
  *      renders a GFM table, and gives each heading a unique id; `marksOf` marks the sections the
  *      real change set's records name — by position, so of two sections with one title only the
  *      edited one — and a deeper change marks the section it sits in;
- *   6. a ticket is good for one person, one team, one path, one revision, and one day;
+ *   6. a ticket is good for one person, one team, one path, one content revision, and one day;
  *   7. driven through the real door, as a person, against a stubbed store:
  *      - `document_present` names the panel, and its result carries the WHOLE body in `_meta`
  *        with a ticket even when the text half is a part, the review context its reply names, the
  *        snapshot's content revision, and no `structuredContent`; its row records the panel
  *        payload's size;
- *      - the panel speaks PUBLIC versions: one history entry per version, and an earlier snapshot
- *        of the current version is drawn as history, with no ticket;
+ *      - the panel speaks PUBLIC versions: one history entry per version, and the current version
+ *        read by number is its last snapshot;
  *      - history carries no ticket and no context, and a part the model asks for draws no panel;
  *      - `document_shown` is app-only, records full coverage under the panel's context with a
  *        valid ticket, answers a second call from the context's coverage, and records nothing with a
- *        forged ticket, another person's, once the document has a new snapshot of the same version
- *        (the ticket binds the revision), or once it has a new version;
+ *        forged ticket, another person's, once the row it drew is rewritten in place or the
+ *        document has a new snapshot of the same version (the ticket binds the content revision),
+ *        or once it has a new version;
  *      - without a ticket it records only for a console session (`x-zz-via: session`), minting and
  *        returning the console's context, and refuses a snapshot that is not current; with
  *        `x-zz-via` `pat` or `forwarded` it is refused and records nothing;
@@ -147,6 +148,23 @@ const { deltaOf } = await load("services/zz-core/dist/document-delta.js");
   is(JSON.stringify([...deepMarks.marks]) === '[["deep","changed"],["scope-1","changed"]]',
      `a third-level change does not mark its section: ${JSON.stringify([...deepMarks.marks])}`);
   is(/<section class="sec" data-sec="kept">/.test(view.html), "a second-level section is not wrapped, so it cannot be marked or hidden");
+  // Headings markdown renders but the change set's line scan does not count — quoted, listed,
+  // indented, underlined — shift nothing: the edited section is marked, not its neighbour. A
+  // formatted heading is still found, and a later `#` part is named, not called the opening.
+  const odd = "# Doc\n\n> ## Quoted\n\n- ## Listed\n\n   ## Indented\n\nUnderlined\n----------\n\n" +
+    "## Alpha\n\nalpha text\n\n## **Bold** `code`\n\nbold text\n\n## Beta\n\nbeta text\n\n# Part 2\n\npart text\n\n## Gamma\n\ngamma text\n";
+  const oddMarks = (to: string) => {
+    const d = deltaOf(snap(odd), snap(to));
+    return marksOf(renderMarkdown(to), d.kind === "delta" ? d.records : []);
+  };
+  const beta = oddMarks(odd.replace("beta text", "beta text, edited"));
+  is(JSON.stringify([...beta.marks]) === '[["beta","changed"]]',
+     `an edit to Beta, under headings the change set does not count, marks ${JSON.stringify([...beta.marks])}`);
+  const bold = oddMarks(odd.replace("bold text", "bold text, edited"));
+  is(JSON.stringify([...bold.marks]) === '[["bold-code","changed"]]', `an edit under a formatted heading marks ${JSON.stringify([...bold.marks])}`);
+  const part = oddMarks(odd.replace("part text", "part text, edited"));
+  is(!part.marks.size && JSON.stringify(part.other) === '["Part 2"]',
+     `an edit under a second \`#\` part marks ${JSON.stringify([...part.marks])}, other ${JSON.stringify(part.other)}`);
 }
 const r = renderMarkdown([
   "# The title", "", "<script>alert(1)</script>", "", "[run](javascript:alert(1)) and [site](https://example.org)",
@@ -163,15 +181,16 @@ is(JSON.stringify(r.outline.map((o: { id: string }) => o.id)) === JSON.stringify
 
 // 6. Tickets
 {
-  const t = ticketFor("t1", "i/spec.md", 3, "U@zz.test", 1_000);
-  is(ticketValid(t, "t1", "i/spec.md", 3, "u@zz.test", 2_000), "a ticket is refused for the person it was made for");
+  const [A, B] = ["cr_aaaaaaaaaaaaaaaaaaaaaaaaaa", "cr_bbbbbbbbbbbbbbbbbbbbbbbbbb"];
+  const t = ticketFor("t1", "i/spec.md", A, "U@zz.test", 1_000);
+  is(ticketValid(t, "t1", "i/spec.md", A, "u@zz.test", 2_000), "a ticket is refused for the person it was made for");
   for (const [why, ok] of [
-    ["another person", ticketValid(t, "t1", "i/spec.md", 3, "v@zz.test", 2_000)],
-    ["another revision", ticketValid(t, "t1", "i/spec.md", 4, "u@zz.test", 2_000)],
-    ["another team", ticketValid(t, "t2", "i/spec.md", 3, "u@zz.test", 2_000)],
-    ["another document", ticketValid(t, "t1", "i/plan.md", 3, "u@zz.test", 2_000)],
-    ["a day later", ticketValid(t, "t1", "i/spec.md", 3, "u@zz.test", 1_000 + 24 * 3600 * 1000 + 1)],
-    ["a forged signature", ticketValid(t.replace(/.$/, (c: string) => (c === "A" ? "B" : "A")), "t1", "i/spec.md", 3, "u@zz.test", 2_000)],
+    ["another person", ticketValid(t, "t1", "i/spec.md", A, "v@zz.test", 2_000)],
+    ["another content revision", ticketValid(t, "t1", "i/spec.md", B, "u@zz.test", 2_000)],
+    ["another team", ticketValid(t, "t2", "i/spec.md", A, "u@zz.test", 2_000)],
+    ["another document", ticketValid(t, "t1", "i/plan.md", A, "u@zz.test", 2_000)],
+    ["a day later", ticketValid(t, "t1", "i/spec.md", A, "u@zz.test", 1_000 + 24 * 3600 * 1000 + 1)],
+    ["a forged signature", ticketValid(t.replace(/.$/, (c: string) => (c === "A" ? "B" : "A")), "t1", "i/spec.md", A, "u@zz.test", 2_000)],
   ] as const) is(!ok, `a ticket is accepted for ${why}`);
 }
 
@@ -194,7 +213,8 @@ const route = async (sql0: string, values: unknown[] = []) => {
   if (/CASE WHEN t\.status = 'active' THEN t\.slug END AS slug/.test(sql)) return one([{ slug: TEAM, role: "admin", active_slug: TEAM }]);
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
     return one(revs.map((r) => ({ revision: r.revision, version: r.version, content_state: "retained", title: "Spec",
-      body: r.body, tags: [], content_hash: `h${r.revision}`, revision_note: null, fields: null, written_by: "u@zz.test",
+      body: r.body, tags: ["alpha", "beta"], content_hash: `h${r.revision}`, revision_note: null,
+      fields: { stakeholder: "Ana", component: "billing" }, written_by: "u@zz.test",
       written_at: doc.written_at, approved_by: r.approved_by, approved_at: r.approved_by ? "2026-09-29" : null,
       content_generation: r.own })));
   }
@@ -254,7 +274,7 @@ const as = async (email: string, via = "pat") => {
   return c;
 };
 type Result = { content: { text: string }[]; structuredContent?: unknown; _meta?: Record<string, unknown> };
-type Drawn = { body: string; ticket: string | null; version: number; current: number | null; latest: boolean;
+type Drawn = { body: string; metadata: unknown; ticket: string | null; version: number; current: number | null; latest: boolean;
   history: { version: number; approvedBy: string | null }[]; review_context: string | null; content_revision: string | null;
   previous: { version: number; content_revision: string; changes: { kind: string; heading?: string; at?: number }[] | null } | null };
 const said = (res: Result) => res.content.map((c) => c.text).join("\n");
@@ -285,12 +305,19 @@ try {
      && !!drawn[0]!.ticket, "the panel is not handed the whole current body with a ticket");
   is(!!rc && drawn[0]?.review_context === rc && drawn[0]?.content_revision === cr(1) && drawn[0]?.previous === null,
      `the panel is not handed the review context the reply names and the snapshot's identity: ${JSON.stringify({ ...drawn[0], body: undefined })}`);
+  // The review metadata an approval signs with the body is shown with it, in the text and the panel.
+  const metadata = 'Review metadata, which an approval signs with the body: title "Spec"; tags "alpha, beta"; ' +
+    'stakeholder "Ana"; fields.component "billing".';
+  is(said(res).includes(metadata), `a full presentation does not show the review metadata: ${said(res).slice(0, 600)}`);
+  is(JSON.stringify(drawn[0]?.metadata) === '{"title":"Spec","tags":["alpha","beta"],"stakeholder":"Ana","fields":{"component":"billing"}}',
+     `the panel is not handed the review metadata: ${JSON.stringify(drawn[0]?.metadata)}`);
   await settle();
   is(events[0]?.detail.meta_bytes === Buffer.byteLength(JSON.stringify(drawn[0])) && events[0]?.detail.text_chars === said(res).length,
      `the present's row does not record the panel payload's and the text's sizes: ${JSON.stringify(events[0]?.detail)}`);
   const paged = await me.callTool({ name: "document_present", arguments: { path: REL, offset: 60000 } }) as Result;
   is(drawnOf(paged).length === 0 && paged._meta?.["zz-core/reading"] === true,
      "a part the model asked for draws the whole document again, in another panel under the last");
+  is(said(paged).includes(metadata), "a later part of a full presentation does not show the review metadata");
   const old = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL, version: 1 } }) as Result);
   is(old[0]?.ticket === null && old[0]?.review_context === null,
      "history is handed a ticket or a review context, so opening it could vouch for the present");
@@ -315,6 +342,15 @@ try {
     is(/^ERROR: document_shown records a presentation only with the ticket/.test(said(agent)) && unchanged(),
        `a ticketless document_shown under x-zz-via ${via} was not refused, or recorded something: ${said(agent)}`);
   }
+  // A rewrite in place: the same row, a new generation — a snapshot the panel never drew. The
+  // ticket binds the content revision it was cut for, so it vouches for nothing here.
+  const drawnBody = revs[1]!.body;
+  revs[1]!.body = body.replace("Line 3 of part 2,", "Line 3 of part 2, rewritten,"); revs[1]!.own = "9"; doc.generation = 9;
+  const rewritten = await shownWith(me, { version: 2, ticket, review_context: rc });
+  await settle();
+  is(/^ERROR: this panel's ticket is not valid/.test(said(rewritten)) && unchanged(),
+     `a ticket recorded a snapshot rewritten in place since the panel drew it: ${said(rewritten)}`);
+  revs[1]!.body = drawnBody; revs[1]!.own = "1"; doc.generation = 1;
   const ok = await shownWith(me, { version: 2, ticket, review_context: rc });
   await settle();
   const panelRow = events[events.length - 1];
@@ -362,15 +398,15 @@ try {
      `a present in the panel's context after a change does not draw the change set from its baseline: ` +
      `${said(changed).split("\n").slice(0, 2).join(" | ")} ${JSON.stringify(marked?.previous)}`);
   // One entry per public version, though three snapshots are stored; and the current version read
-  // by number is its earlier snapshot only when that one is signed — here it is not, so it is r3.
+  // by number is its last snapshot, signed or not — r3, the current one, drawn with a ticket.
   const now = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL } }) as Result);
   is(JSON.stringify(now[0]?.history.map((h) => h.version)) === "[1,2]" && now[0]?.history[0]?.approvedBy === "ada@zz.test",
      `the panel's history is not one entry per public version: ${JSON.stringify(now[0]?.history)}`);
   revs[1]!.approved_by = "bo@zz.test";
-  const signedSnapshot = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL, version: 2 } }) as Result);
-  is(signedSnapshot[0]?.version === 2 && signedSnapshot[0]?.current === 2 && signedSnapshot[0]?.latest === false
-     && signedSnapshot[0]?.ticket === null && signedSnapshot[0]?.body === body.trim(),
-     `v2's signed snapshot, behind a newer draft of v2, is drawn as current or with a ticket: ${JSON.stringify({ ...signedSnapshot[0], body: undefined })}`);
+  const byNumber = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL, version: 2 } }) as Result);
+  is(byNumber[0]?.version === 2 && byNumber[0]?.latest === true && !!byNumber[0]?.ticket
+     && byNumber[0]?.content_revision === now[0]?.content_revision,
+     `v2 read by number is not its last snapshot: ${JSON.stringify({ ...byNumber[0], body: undefined })}`);
   revs[1]!.approved_by = null;
   // A new public version: named as the change.
   doc.version = 3;

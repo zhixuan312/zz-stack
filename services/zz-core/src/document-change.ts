@@ -39,6 +39,7 @@ import { applyEdits, type Edit, MAX_EDITS } from "./document-edits.js";
 import { changedSections, locateSection, replaceSection } from "./document-parts.js";
 import { bodyEnvelopeRefusal, type Metadata, normalizeContent, normalizeRefs } from "./document-normalize.js";
 import { oneLine, renderEnvelope } from "./document-rules.js";
+import { storedRequest } from "./document-links.js";
 import { contentIdentity, documentState, type saveDocument, targetExists } from "./document-save.js";
 import { sourceDocument } from "./indexing.js";
 import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
@@ -160,16 +161,11 @@ export async function replayFor(
   if (args.request_id === undefined) return null;
   const principal = await principalId(p, who);
   if (!principal) return null;
-  const { rows } = await p.query<{ request_digest: string; receipt: Record<string, unknown> }>(
-    `select q.request_digest, q.receipt from zz.doc_request q join zz.team t on t.id = q.team_id
-      where t.slug = $1 and q.principal_id = $2::uuid and q.canonical_path = $3 and q.request_id = $4`,
-    [team, principal, path, args.request_id]);
-  if (!rows[0]) return null;
-  const recorded = rows[0].receipt[args.file ? "file_sha256" : "upload_sha256"];
-  const uploaded = (args.file ?? args.upload) !== undefined && typeof recorded === "string" ? recorded : undefined;
-  return rows[0].request_digest === requestDigest(args, tool, uploaded)
-    ? { replayed: rows[0].receipt }
-    : { refusal: "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request" };
+  return storedRequest(p, team, principal, { canonicalPath: path, requestId: args.request_id, digest: (receipt) => {
+    const recorded = receipt[args.file ? "file_sha256" : "upload_sha256"];
+    const uploaded = (args.file ?? args.upload) !== undefined && typeof recorded === "string" ? recorded : undefined;
+    return requestDigest(args, tool, uploaded);
+  } });
 }
 
 /** The upload a write consumes, bound to the digest of the call that consumes it — keyed or not. A
@@ -312,9 +308,19 @@ export function envelopeOnlyRefusal(content: string, body: string, tool: "docume
         "fields as named arguments.");
 }
 
+/** Words passed as `source_content` that hold nothing, refused by name rather than dropped: they
+ *  were sent as the change's cause, and a cause that says nothing explains nothing. */
+function emptySourceRefusal(words: string | undefined): string | null {
+  return words !== undefined && !words.trim()
+    ? "ERROR: `source_content` holds nothing but whitespace, and it is the words behind this change. " +
+      "Pass those words, or name an existing source in `sources`; nothing was written."
+    : null;
+}
+
 /** What a call sends, in the spelling the platform stores, or every refusal that reading it gives:
  *  the envelope `normalizeContent` separated, the tags it leaves held to TAG_TOKEN, a content that
- *  was only an envelope, and every `sources` entry that is malformed. Asks nothing of the store. */
+ *  was only an envelope, every `sources` entry that is malformed, and an empty `source_content`.
+ *  Asks nothing of the store. */
 function readSent(
   sent: ReturnType<typeof normalizeContent>, a: EditArgs, whole: string | null, initiative: string,
 ): { refusals: string[] } | { body: string; metadata: Metadata; normalised: string[] } {
@@ -328,6 +334,8 @@ function readSent(
   }
   const refs = normalizeRefs(a.sources, initiative);
   refusals.push(...("refusals" in refs ? refs.refusals : malformedSources(refs.refs)));
+  const emptyCause = emptySourceRefusal(a.source_content);
+  if (emptyCause) refusals.push(emptyCause);
   if (refusals.length || "refusals" in sent || "refusals" in refs) return { refusals };
   return { body: sent.body, metadata: sent.metadata, normalised: [...sent.normalised, ...refs.normalised] };
 }
@@ -548,10 +556,14 @@ export async function planEdit(
     }
   }
   // (10) An approved body changes only with a cause new to its version, which opens the next one.
+  // A source named and dropped because this version already cites it is said so: the caller did
+  // name a source, and the rule is that the cause is new to the version.
+  const recited = named.found.filter((c) => already.has(c.path)).map((c) => c.path);
   if (bodyChanged && approved && !causes.length) {
     return { reply: `ERROR: CAUSE_REQUIRED — ${path} is approved, so a change to its body opens a new ` +
-      "version and needs its cause: name an existing source in `sources` or pass the words as " +
-      "`source_content`" };
+      "version and needs its cause" +
+      (recited.length ? `, one new to it — ${recited.join(", ")} already ${recited.length === 1 ? "is a cause" : "are causes"} of v${version}` : "") +
+      ": name an existing source in `sources` or pass the words as `source_content`" };
   }
   const nextVersion = bodyChanged && causes.length > 0;
   const newVersion = nextVersion ? version + 1 : version;
@@ -623,7 +635,8 @@ export async function planCreate(
   if (await documentAt(p, team, path)) return { reply: targetExists(path) };
   const refs = normalizeRefs(a.sources, initiative);
   const named = await namedSources(p, team, path, wellFormed(a.sources, initiative));
-  const malformed = "refusals" in refs ? refs.refusals : malformedSources(refs.refs);
+  const emptyCause = emptySourceRefusal(a.source_content);
+  const malformed = [...("refusals" in refs ? refs.refusals : malformedSources(refs.refs)), ...(emptyCause ? [emptyCause] : [])];
   if ("refusals" in refs || malformed.length || named.missing) {
     return refused(p, who, team, path, [...malformed, ...(named.missing ? [named.missing] : [])]);
   }

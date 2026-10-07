@@ -14,7 +14,7 @@ import { z } from "zod";
 
 import { closingDocRuledOut, factsFor } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
-import { documentPaths, loadDocument } from "../versions.js";
+import { documentAt, documentPaths, loadDocument } from "../versions.js";
 import { oneLine, putEnvelopeField } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { moduleForFlow } from "../host/index.js";
@@ -275,11 +275,11 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       const blocked = writeGuard(relPath);
       if (blocked) return text(blocked);
       await safePath(relPath);
-      // The document's own current revision, which is the text the close is recorded onto —
-      // `zz.doc_revision` is the bytes a document IS now, and a path that names no row is a
-      // document that does not exist.
+      // A close is recorded onto the document's current revision, and a path that names no row is
+      // a document that does not exist — said before the grant is asked. Existence only: each
+      // attempt below loads the text it records onto, so a body read here would be read twice.
       const missing = `ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`;
-      if (!(await loadDocument(team, relPath)).ok) return text(missing);
+      if (!(await documentAt(p, team, relPath))) return text(missing);
       // An initiative closes once. A second close overwrites `outcome` on the document while
       // ledgerOnClose returns early when one is already there, so the document says the new word and
       // the ledger goes on saying the first.

@@ -60,6 +60,15 @@ is(two === "ERROR: MULTIPLE_MATCHES — edit 1 (0-based): `find` occurs 2 times 
           "Send a longer `find` that includes enough surrounding text to occur exactly once.",
    `an uncut refusal prints its whole list and no details line: ${two}`);
 
+// A short repeated `find` in a long body numbers every occurrence in one forward pass. Counting
+// each line from offset 0 again is quadratic: 14.7 s here, on the one event loop every team shares.
+const big = Array.from({ length: 40_000 }, (_, i) => `line ${i} the quick brown fox`).join("\n");
+const t0 = performance.now();
+const slow = applyEdits(big, [{ find: "the", replace: "a" }]);
+const took = performance.now() - t0;
+is(took < 1500 && "refusals" in slow && slow.refusals[0].match_count === 40_000 && slow.refusals[0].lines[39_999] === 40_000,
+   `40,000 occurrences are numbered in linear time: ${Math.round(took)} ms`);
+
 if (fail.length) {
   console.error(`document-edits: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);

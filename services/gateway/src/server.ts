@@ -313,7 +313,8 @@ initPlatformDb()
     setInterval(() => {
       void sweepSessions()
         .catch((err) => console.error("console_session sweep failed:", err));
-      // An upload that expired unused loses its body; the row stays, so its id is never new again.
+      // An upload that expired unused loses its body, and its row goes a day later; a consumed row
+      // stays, so a used id is never new again.
       void sweepUploads()
         .catch((err: unknown) => console.error("upload sweep failed:", err instanceof Error ? err.message : err));
     }, 60 * 60_000).unref();

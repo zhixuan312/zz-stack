@@ -12,14 +12,19 @@
  * headers the gateway's middleware stamps on a console session (identity.ts): `x-zz-via: session`,
  * `x-zz-user-email`, `x-zz-session-team`. What it establishes:
  *
- *   - a document's `versions` holds one entry per public version, each the version's approved
- *     snapshot when it has one and else its last, with `version` the public number and `revision`
- *     the snapshot to fetch; `current_version` is the document's own;
+ *   - a document's `versions` holds one entry per public version, each the version's last
+ *     retained state — an approved snapshot a later one superseded inside its version is not it —
+ *     with `version` the public number and `revision` the snapshot to fetch; `current_version` is
+ *     the document's own;
+ *   - the document read carries the review metadata an approval signs: `stakeholder`, and
+ *     `fields`, every envelope field the platform does not reserve, sorted by name;
  *   - `?revision=` returns that one snapshot's text and names its public version;
  *   - a closed initiative whose closing document is a pending correction reads as closed and
  *     complete, with `correction` naming the document and its version, on the initiative and on
- *     the list; a close that was approved and never corrected carries no correction; and a close
- *     recorded on a draft (an abandoned close) is not a correction and still reads as incomplete;
+ *     the list; after a finished close, an approved document that is not the closing one, revised
+ *     after the close, is a correction too (initiative_status's rule); a close that was approved
+ *     and never corrected carries no correction; and a close recorded on a draft (an abandoned
+ *     close) is not a correction and still reads as incomplete;
  *   - the bell (`?waiting=1`) lists a closed initiative's pending correction, and no other closed one;
  *   - the document read names the displayed snapshot's `content_revision`, the token zz-core states;
  *   - opening a document records a full presentation of that snapshot under the console's own
@@ -47,14 +52,15 @@ const VERSIONS = "2026-10-06-versions";
 const CORRECTED = "2026-10-06-corrected";
 const SIGNED = "2026-10-06-signed";
 const DROPPED = "2026-10-06-dropped";
+const REVISED = "2026-10-06-revised";
 
 const NAME = "console-versions";
 const DONE = "console-versions: public versions, snapshot reads, pending corrections, and the console's " +
   "presentation and approval: ok";
 
-/** One snapshot as seeded: its public version, whether it was presented or approved, and the
- *  `outcome` its fields carry when a close stamped one. */
-type Snap = { version: number; approved?: boolean; presented?: boolean; outcome?: string };
+/** One snapshot as seeded: its public version, whether it was presented or approved, the
+ *  `outcome` its fields carry when a close stamped one, and any other envelope payload. */
+type Snap = { version: number; approved?: boolean; presented?: boolean; outcome?: string; fields?: Record<string, string> };
 
 async function seed(db: pg.Client): Promise<{ principal: string; team: string }> {
   const p = await db.query<{ id: string }>(
@@ -95,7 +101,7 @@ async function document(db: pg.Client, principal: string, initiativeId: string, 
      VALUES ($1, $2, $3, 'draft', now(), $2, $4, $5, $6) RETURNING id`,
     [initiativeId, path, type, `body of r${current}`, current, last.version]);
   for (const [i, s] of snaps.entries()) {
-    const fields = s.outcome ? { outcome: s.outcome, closed_by: EMAIL } : {};
+    const fields = { ...s.fields, ...(s.outcome ? { outcome: s.outcome, closed_by: EMAIL } : {}) };
     await db.query(
       `INSERT INTO zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
                                     written_by, written_at, approved_by, approved_at, presented_at, fields)
@@ -111,10 +117,12 @@ async function document(db: pg.Client, principal: string, initiativeId: string, 
 }
 
 /** Every document sdlc-flow gates (handover.md included), approved, with the closing document's
- *  snapshots given. */
-async function closedFlow(db: pg.Client, principal: string, initiativeId: string, review: Snap[]): Promise<void> {
+ *  snapshots given, and spec.md's when they are not one approved snapshot. */
+async function closedFlow(db: pg.Client, principal: string, initiativeId: string, review: Snap[],
+                          spec: Snap[] = [{ version: 1, approved: true }]): Promise<void> {
   await document(db, principal, initiativeId, "explore.md", "ground", [{ version: 1 }]);
-  for (const [path, type] of [["spec.md", "agreement"], ["plan.md", "plan"], ["handover.md", "handover"]]) {
+  await document(db, principal, initiativeId, "spec.md", "agreement", spec);
+  for (const [path, type] of [["plan.md", "plan"], ["handover.md", "handover"]]) {
     await document(db, principal, initiativeId, path, type, [{ version: 1, approved: true }]);
   }
   await document(db, principal, initiativeId, "review.md", "verification", review);
@@ -296,11 +304,13 @@ async function run(c: Core): Promise<void> {
   const ok = c.pass;
   const db = c.sql;
   const { principal, team } = await seed(db);
-  // v1 is presented as r1 and approved as r2; v2 is presented as r3 and is now r4, unapproved.
+  // v1 is approved as r1 and changed with no new cause as r2; v2 is presented as r3 and is now r4,
+  // unapproved, carrying a stakeholder, two flow fields and a key the platform reserves.
   const plain = await initiative(db, team, principal, VERSIONS, null, null);
   await document(db, principal, plain, "notes.md", "note", [
-    { version: 1, presented: true }, { version: 1, approved: true },
-    { version: 2, presented: true }, { version: 2 },
+    { version: 1, approved: true }, { version: 1 },
+    { version: 2, presented: true },
+    { version: 2, fields: { stakeholder: "Ada", risk: "low", audience: "ops", stage: "spec-audit" } },
   ]);
   // Closed on an approved review.md (r1, v1), then corrected: r2 is v2, a draft carrying the outcome.
   await closedFlow(db, principal, await initiative(db, team, principal, CORRECTED, "sdlc-flow", "accepted"),
@@ -308,6 +318,10 @@ async function run(c: Core): Promise<void> {
   // Closed on an approved review.md and never corrected.
   await closedFlow(db, principal, await initiative(db, team, principal, SIGNED, "sdlc-flow", "accepted"),
     [{ version: 1, approved: true, outcome: "accepted" }]);
+  // Closed on an approved review.md, then spec.md — approved, not the closing document — revised
+  // after the close: a correction of a finished close.
+  await closedFlow(db, principal, await initiative(db, team, principal, REVISED, "sdlc-flow", "accepted"),
+    [{ version: 1, approved: true, outcome: "accepted" }], [{ version: 1, approved: true }, { version: 2 }]);
   // Approved once, revised, and then abandoned on the unapproved revision: a close that stopped
   // short, not a correction.
   await closedFlow(db, principal, await initiative(db, team, principal, DROPPED, "sdlc-flow", "abandoned"),
@@ -340,10 +354,15 @@ async function run(c: Core): Promise<void> {
     if (d.status !== 200) fail("document detail", `answered ${d.status}: ${JSON.stringify(d.body)}`);
     const versions = d.body.versions as { version: number; revision: number; status: string }[];
     const got = versions.map((v) => `v${v.version}@r${v.revision}:${v.status}`).join(", ");
-    if (got !== "v1@r2:approved, v2@r4:draft") {
-      fail("one entry per public version", `versions were ${got}, not v1@r2:approved, v2@r4:draft`);
+    if (got !== "v1@r2:draft, v2@r4:draft") {
+      fail("one entry per public version", `versions were ${got}, not v1@r2:draft, v2@r4:draft`);
     }
-    ok("one entry per public version, its approved snapshot else its last");
+    ok("one entry per public version, its last snapshot");
+    if (d.body.stakeholder !== "Ada" || JSON.stringify(d.body.fields) !== '{"audience":"ops","risk":"low"}') {
+      fail("review metadata", `stakeholder ${JSON.stringify(d.body.stakeholder)}, fields ${JSON.stringify(d.body.fields)} — ` +
+        'expected "Ada" and {"audience":"ops","risk":"low"}');
+    }
+    ok("the document read carries the stakeholder and the flow's own fields, sorted, no reserved key");
     if (d.body.current_version !== 2 || d.body.current_revision !== 4) {
       fail("current version", `current_version ${String(d.body.current_version)}, ` +
         `current_revision ${String(d.body.current_revision)} — expected 2 and 4`);
@@ -381,6 +400,12 @@ async function run(c: Core): Promise<void> {
       fail("abandoned on a draft", `correction ${JSON.stringify(a.body.correction)}, complete ${String(a.body.complete)}`);
     }
     ok("an approved close carries no correction, and a close on a draft is no correction");
+    const r = await call(initiativeRoute, { team: TEAM, slug: REVISED });
+    if (JSON.stringify(r.body.correction) !== JSON.stringify({ path: "spec.md", version: 2 }) || r.body.complete !== true) {
+      fail("finished close, spec revised", `correction ${JSON.stringify(r.body.correction)}, complete ${String(r.body.complete)} — ` +
+        "expected spec.md v2, complete");
+    }
+    ok("after a finished close, an approved document revised after it is a correction, as initiative_status says");
 
     const list = await call(listRoute, {}, { team: TEAM });
     const rows = list.body.initiatives as { slug: string; correction: unknown; complete: boolean }[];
@@ -398,7 +423,8 @@ async function run(c: Core): Promise<void> {
     const bell = await call(listRoute, {}, { team: TEAM, waiting: "1" });
     const waiting = bell.body.waiting as { id: string; gate: string }[];
     const ids = waiting.map((w) => w.id);
-    if (!ids.includes(`${TEAM}/${CORRECTED}/review.md`) || ids.some((x) => x.includes(SIGNED) || x.includes(DROPPED))) {
+    if (!ids.includes(`${TEAM}/${CORRECTED}/review.md`) || !ids.includes(`${TEAM}/${REVISED}/spec.md`)
+        || ids.some((x) => x.includes(SIGNED) || x.includes(DROPPED))) {
       fail("waiting list", `the bell lists ${JSON.stringify(waiting)}`);
     }
     ok("the bell lists a pending correction and no other closed initiative");

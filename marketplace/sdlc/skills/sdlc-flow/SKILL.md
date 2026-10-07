@@ -111,10 +111,10 @@ the `Next move:` line every document call ends with — computes it from the rec
 | The record | Next move |
 |---|---|
 | no round yet | round 1 is owed |
-| the document was revised after the last round read it | the next round checks the revision |
+| the document reached a new version after the last round read it | the next round checks the new version |
 | the last round read the current version | the audit is settled; move on |
 | the last round reopens something the person agreed (the platform asks `changes_commitment` the moment the round lands) | the stakeholder decides |
-| three rounds are spent and the latest revision was never audited | the stakeholder decides |
+| three rounds are spent and the latest version was never audited | the stakeholder decides |
 
 Three is a resource limit, never a pass: a spent budget does not mean the document is fine, so
 the person decides whether it proceeds unaudited or goes back to the stage that wrote it. Their

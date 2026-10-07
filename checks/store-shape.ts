@@ -89,6 +89,9 @@ assert.ok((t("cause_link_epoch").indexes ?? []).some((i) => /UNIQUE INDEX .*\(\(
 // the reference a receipt prints, and kept as long as the receipt that names it.
 assert.ok((t("event").indexes ?? []).some((i) => /\(detail ->> 'details_ref'::text\)/.test(i) && /WHERE \(detail \? 'details_ref'::text\)/.test(i)),
   "an event's details are found by an index on detail->>'details_ref', over the rows that carry one");
+// A review context's coverage and the pin rule read one document's presentations, not the log.
+assert.ok((t("event").indexes ?? []).some((i) => /event_shown_subject .*\(initiative_id, subject\) WHERE .*'document\.shown'::text, 'document\.shown_part'::text/.test(i)),
+  "a document's presentations are found by a partial index on (initiative_id, subject) over the two shown kinds");
 assert.ok(/retention=[^;]*document\.\*[^;]* kept indefinitely/.test(t("event").comment ?? ""),
   "zz.event's retention keeps document.* kinds indefinitely, like the audit kinds");
 assert.ok(/document\.\* row written in the transaction of the change it records, whose failed insert fails that change/.test(t("event").comment ?? ""),

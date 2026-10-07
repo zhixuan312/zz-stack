@@ -39,7 +39,9 @@ export function registerUploadStartTool(server: McpServer): void {
         "Start sending a FILE you already have — a report, minutes, a CSV — instead of writing its " +
         "text out as an argument, which costs its whole length in output tokens. Answers JSON: " +
         "`upload` (the id), `shell` (one command that PUTs the file from the machine it is on, with " +
-        "the person's own token — run it where you have a shell) and `link` (a page where the person " +
+        "the person's own token — run it where you have a shell, in the file's own directory, since it " +
+        "names the file without its path; elsewhere, put the file's path in place of the quoted name), " +
+        "`note` (that same rule) and `link` (a page where the person " +
         "picks the file — give it to them where you have no shell; it stages this one file and " +
         "nothing else). Once it is staged, pass `upload` to document_write, document_edit or " +
         "source_add in place of `content`. The file must be UTF-8 plain text of at most 8 MiB, named " +
@@ -84,6 +86,8 @@ export function registerUploadStartTool(server: McpServer): void {
       return text(JSON.stringify({
         upload: id,
         shell: `curl --fail-with-body -T ${quoted(name)} -H "Authorization: Bearer ${TOKEN}" ${publicUrl}/upload/${id}`,
+        note: `shell reads ${quoted(name)} from the directory it runs in: run it in the file's own directory, ` +
+              "or put the file's path in place of the quoted name.",
         link: `${publicUrl}/u/${secret}`,
       }));
     },

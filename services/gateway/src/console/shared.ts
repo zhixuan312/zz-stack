@@ -164,11 +164,12 @@ export interface StageDoc {
   /** Which documents this one bears on, comma-joined — a source's own declaration. It
    *  evidences a stage that produces evidence rather than a deliverable. */
   supports?: string | null;
-  /** The public version of a pending correction, else null: the initiative is closed, this
-   *  document's current snapshot is unapproved and carries the close's outcome, and an earlier
-   *  snapshot carrying the outcome was approved. A close on an unapproved draft (an abandoned
-   *  close) is not one. COUPLED: computed in SQL by every console/initiatives.ts statement that
-   *  feeds stageOf. */
+  /** The public version of a pending correction, else null: the initiative is closed, and this
+   *  document — not the handover — was approved before, is unapproved now, and was written after
+   *  the close. After an abandoned close it counts only when its approved snapshot carries the
+   *  outcome (the stop stamped it while approved); a stop on an unapproved draft is not one.
+   *  COUPLED: computed in SQL by every console/initiatives.ts statement that feeds stageOf, by
+   *  closedMove's rule in services/zz-core/src/tools/initiative-closed.ts. */
   correction?: number | null;
 }
 
@@ -262,15 +263,15 @@ export function stageOf(
   /** One of `accepted` | `delivered` | `abandoned`, or null while the initiative is open.
    *  All three mean closed — see @zz/contracts OUTCOMES for what each says. */
   outcome: string | null;
-  /** The closing document's correction awaiting approval, on a closed initiative: which
-   *  document and its public version. The close stands while it waits, so its gate counts as
+  /** A correction awaiting approval, on a closed initiative: which document and its public
+   *  version. The close stands while it waits, so its gate counts as
    *  held for `complete`, and the gate itself still reads as waiting on a person. */
   correction: { path: string; version: number } | null;
 } {
   // Every row is a live document. A version is a `doc_revision` row now, so no row is a frozen
   // copy of another carrying the same type, and nothing has to be dropped before counting.
   const live = docs;
-  // At most one document carries the close's outcome, so the first correction found is the one.
+  // The first correction found is the one named, as initiative_status names one at a time.
   const pending = lifecycle.closed ? live.find((d) => d.correction != null) : undefined;
   const correction = pending ? { path: pending.path, version: Number(pending.correction) } : null;
 

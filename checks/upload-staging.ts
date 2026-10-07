@@ -14,15 +14,21 @@
  *   - the first staging binds byte_count, sha256, body, staged_via and staged_by; the same bytes again
  *     answer that binding; different bytes answer UPLOAD_CONTENT_CONFLICT and change nothing; two
  *     different first stagings racing bind exactly one;
- *   - nothing stages after expiry (UPLOAD_EXPIRED), with someone else's token, in another team, with
- *     no identity, past 8 MiB (SIZE_LIMIT), as invalid UTF-8 or as a file of another extension;
+ *   - nothing stages after expiry (UPLOAD_EXPIRED), once written (UPLOAD_USED), with someone else's
+ *     token, in another team, with no identity, past 8 MiB (SIZE_LIMIT), as invalid UTF-8 or as a
+ *     file of another extension;
  *   - the link page escapes a hostile filename, loads nothing, never prints its secret, sends no
  *     referrer, cannot be framed, and runs one script, the one its CSP hash allows; its PUT stages
  *     that one upload and no other, as `link` with no principal; a malformed or unknown secret is
- *     refused, and an upload id is not a secret;
- *   - staging is bounded at 10 attempts per upload and 60 per client address a minute, answering
- *     `ERROR: RATE_LIMITED — try again in a minute`;
- *   - the sweep removes the body of an expired, unused upload and keeps the row;
+ *     refused, and an upload id is not a secret; a written or expired upload's page says so, never
+ *     "staged";
+ *   - staging is bounded at 10 attempts per upload and 60 per client a minute — an IPv6 client by
+ *     its /64, the page's GETs counted, an upload's attempts only once the caller may stage it —
+ *     answering `ERROR: RATE_LIMITED — try again in a minute`; past its table of counters a new
+ *     client is refused; bodies arriving at once are bounded per client and in all, and an owner's
+ *     staged, unwritten bytes are bounded;
+ *   - the sweep removes the body of an expired, unused upload, deletes a row no write consumed a day
+ *     after its window, and keeps a consumed row;
  *   - no HTML, Office or PDF reader remains in the gateway.
  *
  * The only database it touches is the one it started.
@@ -105,9 +111,26 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   process.env.TEAM_DB_URL = url;
   const dbModule = (await load("services/gateway/dist/db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
   await dbModule.initPlatformDb();
+  // Opened from here on, so everything opened is closed whatever fails.
+  const servers: Server[] = [];
+  try {
+    await cases(sql, dbModule.platformDb(), servers, mint, rowOf, expire, owner);
+  } finally {
+    for (const l of servers) { l.closeAllConnections(); l.close(); }
+    await dbModule.platformDb().end();
+    delete process.env.TEAM_DB_URL;
+  }
+}
+
+type Limits = { perUpload?: number; perAddress?: number; keys?: number; inFlight?: number; inFlightTotal?: number; stagedBytes?: number };
+
+async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
+                     mint: (filename?: string, by?: string) => Promise<{ id: string; secret: string }>,
+                     rowOf: (id: string) => Promise<{ byte_count: number | null; sha256: string | null; body: Buffer | null;
+                                                      staged_via: string | null; staged_by: string | null }>,
+                     expire: (id: string) => Promise<unknown>, owner: string): Promise<void> {
   const { mountUpload, sweepUploads } = (await load("services/gateway/dist/upload.js")) as
-    { mountUpload: (app: unknown, opts?: { limits?: { perUpload: number; perAddress: number } }) => void;
-      sweepUploads: () => Promise<number> };
+    { mountUpload: (app: unknown, opts?: { limits?: Limits }) => void; sweepUploads: () => Promise<number> };
   const express = (await import("express")).default;
 
   const routes: string[] = [];
@@ -119,7 +142,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
 
   /** An app as the gateway builds one: the identity this check stamps in place of the gate, the
    *  staging routes, and then the global body parsers, which must never see a staged file. */
-  const appWith = async (limits?: { perUpload: number; perAddress: number }): Promise<Server> => {
+  const appWith = async (limits?: Limits): Promise<Server> => {
     const app = express();
     // Behind one proxy hop, as the gateway is, so a case can arrive from an address of its own.
     app.set("trust proxy", 1);
@@ -138,14 +161,17 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     // on the same port — a throwaway database's published port, under the gate's concurrency — and
     // the check then talks to it.
     const server = app.listen(0, "127.0.0.1");
+    servers.push(server);
     await new Promise<void>((resolve) => server.once("listening", () => resolve()));
     return server;
   };
-  // Every case but the bounds stages more often than a minute allows; the bounds get production's.
-  const listener = await appWith({ perUpload: 1_000, perAddress: 100_000 });
-  const bounded = await appWith();
-  const port = (listener.address() as { port: number }).port;
-  const boundedPort = (bounded.address() as { port: number }).port;
+  // Every case but the bounds stages more often than a minute allows; the attempt bounds get
+  // production's; the byte and table bounds get figures a case can reach.
+  const portOf = (s: Server) => (s.address() as { port: number }).port;
+  const port = portOf(await appWith({ perUpload: 1_000, perAddress: 100_000 }));
+  const boundedPort = portOf(await appWith());
+  const tightPort = portOf(await appWith({ perUpload: 1_000, perAddress: 100_000, inFlight: 1, inFlightTotal: 2, stagedBytes: 64 }));
+  const crowdedPort = portOf(await appWith({ keys: 2 }));
   let n = 0;
   const call = async (method: string, path: string, body?: Uint8Array, headers: Record<string, string> = {},
                       to = port): Promise<Answer> => {
@@ -164,39 +190,63 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     }
   };
 
+  /** The gateway's own pool, watched for one upload: `read` settles once a staging's row read for
+   *  it has answered — that staging then waits on its body — and `binds` records each bind tried on
+   *  it with the rows it bound. The order of two stagings is then certain rather than slept for. */
+  const watch = (id: string) => {
+    const real = pool.query.bind(pool) as (...a: unknown[]) => Promise<pg.QueryResult>;
+    let rowRead = () => {};
+    const read = new Promise<void>((resolve) => { rowRead = resolve; });
+    const binds: { body: string; rows: number | null }[] = [];
+    (pool as unknown as { query: unknown }).query = async (...a: unknown[]) => {
+      const got = await real(...a);
+      const [text, values] = a as [unknown, unknown[] | undefined];
+      if (typeof text === "string" && values?.[0] === id) {
+        if (/^\s*select u\.id/.test(text)) rowRead();
+        if (/^\s*update zz\.upload u set byte_count/.test(text)) binds.push({ body: String(values[3]), rows: got.rowCount });
+      }
+      return got;
+    };
+    return { read, binds, stop: () => { delete (pool as unknown as { query?: unknown }).query; } };
+  };
+
+  // Binding, the same bytes again, and different bytes.
+  const first = await mint();
+  const bytes = utf8("# Notes\n\nline one\r\n");
+  const bound = await call("PUT", `/upload/${first.id}`, bytes, as());
+  expect("first staging", bound, 200);
+  const want = { upload: first.id, filename: "notes.md", bytes: bytes.length, sha256: sha(bytes) };
+  if (JSON.stringify(bound.json) !== JSON.stringify(want)) fail("first staging", `answered ${bound.text}, not ${JSON.stringify(want)}`);
+  const r = await rowOf(first.id);
+  if (r.byte_count !== bytes.length || r.sha256 !== sha(bytes) || !r.body?.equals(bytes) || r.staged_via !== "token" || r.staged_by !== owner) {
+    fail("first staging", `the row holds ${JSON.stringify({ ...r, body: r.body?.toString() })}`);
+  }
+  ok("the first staging binds byte_count, sha256, the bytes, staged_via token and the staging principal");
+  const again = await call("PUT", `/upload/${first.id}`, bytes, as());
+  expect("same bytes", again, 200);
+  if (JSON.stringify(again.json) !== JSON.stringify(want)) fail("same bytes", `answered ${again.text}`);
+  ok("the same bytes again answer the binding");
+  const changed = await call("PUT", `/upload/${first.id}`, utf8("# Other\n"), as());
+  expect("different bytes", changed, 409, "UPLOAD_CONTENT_CONFLICT");
+  if (!String(changed.json.error).includes("staged with your token")) fail("different bytes", `the refusal does not say how: ${changed.text}`);
+  if ((await rowOf(first.id)).sha256 !== sha(bytes)) fail("different bytes", "the binding moved");
+  ok("different bytes answer UPLOAD_CONTENT_CONFLICT and leave the binding as it was");
+  const race = await mint();
+  const [x, y] = await Promise.all([call("PUT", `/upload/${race.id}`, utf8("one\n"), as()), call("PUT", `/upload/${race.id}`, utf8("two\n"), as())]);
+  const won = [x, y].filter((a) => a.status === 200);
+  const lost = [x, y].filter((a) => a.status === 409);
+  if (won.length !== 1 || lost.length !== 1 || (await rowOf(race.id)).sha256 !== won[0].json.sha256) {
+    fail("racing stagings", `answered ${x.status} and ${y.status}; the row holds ${(await rowOf(race.id)).sha256}`);
+  }
+  ok("two different first stagings racing bind exactly one, and the other is a conflict");
+  // The bind itself is the guard: a staging that read the row unstaged and is still receiving its
+  // bytes when another binds must not overwrite that binding when it finishes. The gateway's own
+  // pool is watched, so the order is certain rather than slept for: the competing staging starts
+  // only once the late one's row read has answered (it then waits on its body), and the late one's
+  // bind is seen to run and to bind nothing.
+  const slow = await mint();
+  const w = watch(slow.id);
   try {
-    // Binding, the same bytes again, and different bytes.
-    const first = await mint();
-    const bytes = utf8("# Notes\n\nline one\r\n");
-    const bound = await call("PUT", `/upload/${first.id}`, bytes, as());
-    expect("first staging", bound, 200);
-    const want = { upload: first.id, filename: "notes.md", bytes: bytes.length, sha256: sha(bytes) };
-    if (JSON.stringify(bound.json) !== JSON.stringify(want)) fail("first staging", `answered ${bound.text}, not ${JSON.stringify(want)}`);
-    const r = await rowOf(first.id);
-    if (r.byte_count !== bytes.length || r.sha256 !== sha(bytes) || !r.body?.equals(bytes) || r.staged_via !== "token" || r.staged_by !== owner) {
-      fail("first staging", `the row holds ${JSON.stringify({ ...r, body: r.body?.toString() })}`);
-    }
-    ok("the first staging binds byte_count, sha256, the bytes, staged_via token and the staging principal");
-    const again = await call("PUT", `/upload/${first.id}`, bytes, as());
-    expect("same bytes", again, 200);
-    if (JSON.stringify(again.json) !== JSON.stringify(want)) fail("same bytes", `answered ${again.text}`);
-    ok("the same bytes again answer the binding");
-    const changed = await call("PUT", `/upload/${first.id}`, utf8("# Other\n"), as());
-    expect("different bytes", changed, 409, "UPLOAD_CONTENT_CONFLICT");
-    if (!String(changed.json.error).includes("staged with your token")) fail("different bytes", `the refusal does not say how: ${changed.text}`);
-    if ((await rowOf(first.id)).sha256 !== sha(bytes)) fail("different bytes", "the binding moved");
-    ok("different bytes answer UPLOAD_CONTENT_CONFLICT and leave the binding as it was");
-    const race = await mint();
-    const [x, y] = await Promise.all([call("PUT", `/upload/${race.id}`, utf8("one\n"), as()), call("PUT", `/upload/${race.id}`, utf8("two\n"), as())]);
-    const won = [x, y].filter((a) => a.status === 200);
-    const lost = [x, y].filter((a) => a.status === 409);
-    if (won.length !== 1 || lost.length !== 1 || (await rowOf(race.id)).sha256 !== won[0].json.sha256) {
-      fail("racing stagings", `answered ${x.status} and ${y.status}; the row holds ${(await rowOf(race.id)).sha256}`);
-    }
-    ok("two different first stagings racing bind exactly one, and the other is a conflict");
-    // The bind itself is the guard: a staging that read the row unstaged and is still receiving its
-    // bytes when another binds must not overwrite that binding when it finishes.
-    const slow = await mint();
     const late = request({ port, method: "PUT", path: `/upload/${slow.id}`,
       headers: { ...as(), "x-forwarded-for": "10.9.9.9", "content-length": "8" } });
     const lateAnswer = new Promise<{ status: number; body: string }>((resolve, reject) => {
@@ -204,157 +254,269 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       late.on("error", reject);
     });
     late.write("late");
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await w.read;
     expect("bind while another reads", await call("PUT", `/upload/${slow.id}`, utf8("first\n"), as()), 200);
     late.end("r!\n\n");
     const second = await lateAnswer;
     if (second.status !== 409 || (await rowOf(slow.id)).sha256 !== sha(utf8("first\n"))) {
       fail("bind is guarded", `the late staging answered ${second.status} ${second.body.slice(0, 200)}; the row holds ${(await rowOf(slow.id)).sha256}`);
     }
-    ok("a staging still receiving its bytes when another binds answers a conflict and never overwrites the binding");
-
-    // What never stages.
-    const old = await mint();
-    await expire(old.id);
-    expect("expired", await call("PUT", `/upload/${old.id}`, bytes, as()), 410, "UPLOAD_EXPIRED");
-    if ((await rowOf(old.id)).sha256 !== null) fail("expired", "an expired upload was staged");
-    ok("a staging after expires_at answers UPLOAD_EXPIRED and binds nothing");
-    const mine = await mint();
-    expect("foreign token", await call("PUT", `/upload/${mine.id}`, bytes, as("other@example.test")), 403, "FORBIDDEN");
-    expect("other team", await call("PUT", `/upload/${mine.id}`, bytes, as("owner@example.test", "away-team")), 403, "FORBIDDEN");
-    expect("unknown id", await call("PUT", `/upload/${mintUploadId()}`, bytes, as()), 403, "FORBIDDEN");
-    expect("malformed id", await call("PUT", "/upload/source", bytes, as()), 403, "FORBIDDEN");
-    expect("no identity", await call("PUT", `/upload/${mine.id}`, bytes), 401);
-    if ((await rowOf(mine.id)).sha256 !== null) fail("foreign token", "someone else staged the owner's upload");
-    ok("someone else's token, another team, an unknown or malformed id and no identity stage nothing");
-    const big = await mint("big.txt");
-    expect("over 8 MiB", await call("PUT", `/upload/${big.id}`, new Uint8Array(8 * 1024 * 1024 + 1).fill(0x61), as()), 413, "SIZE_LIMIT");
-    if ((await rowOf(big.id)).sha256 !== null) fail("over 8 MiB", "an oversized body was staged");
-    const full = new Uint8Array(8 * 1024 * 1024).fill(0x62);
-    const exact = await call("PUT", `/upload/${big.id}`, full, as());
-    expect("exactly 8 MiB", exact, 200);
-    if ((await rowOf(big.id)).byte_count !== full.length) fail("exactly 8 MiB", "the full-size body was not bound whole");
-    ok("one byte past 8 MiB answers SIZE_LIMIT, and exactly 8 MiB is bound whole");
-    const text = await mint();
-    expect("invalid UTF-8", await call("PUT", `/upload/${text.id}`, new Uint8Array([0x61, 0xff, 0x62]), as()), 422, "INVALID_ENCODING");
-    expect("another extension", await call("PUT", `/upload/${text.id}`, bytes, { ...as(), "x-filename": "minutes.pdf" }), 415, "UNSUPPORTED_FORMAT");
-    const pdf = await mint("minutes.pdf");
-    expect("unsupported row", await call("PUT", `/upload/${pdf.id}`, utf8("%PDF-1.7"), as()), 415, "UNSUPPORTED_FORMAT");
-    // A curl that names no type sends a form type; a browser sends a .json file as JSON. The global
-    // parsers mounted after the routes see neither.
-    const json = await mint("data.json");
-    const raw = utf8('{"a": 1}');
-    expect("typed bytes", await call("PUT", `/upload/${json.id}`, raw, { ...as(), "content-type": "application/json" }), 200);
-    if (!(await rowOf(json.id)).body?.equals(raw)) fail("typed bytes", "a JSON-typed file was not staged byte for byte");
-    const form = await mint("pairs.txt");
-    const pairs = utf8("a=1&b=2\n");
-    expect("form-typed bytes", await call("PUT", `/u/${form.secret}`, pairs, { "content-type": "application/x-www-form-urlencoded" }), 200);
-    if (!(await rowOf(form.id)).body?.equals(pairs)) fail("form-typed bytes", "a form-typed file was not staged byte for byte");
-    ok("invalid UTF-8, another extension and an unsupported filename are refused by name; a typed body is staged raw");
-
-    // The link.
-    const hostile = `"><img src=x onerror=alert(1)><b>&'.md`;
-    const link = await mint(hostile);
-    const neighbour = await mint();
-    const page = await call("GET", `/u/${link.secret}`);
-    expect("link page", page, 200);
-    if (/<img src=x/.test(page.text) || !/&lt;img src=x onerror=alert\(1\)&gt;&lt;b&gt;&amp;&#39;\.md/.test(page.text)) {
-      fail("hostile filename", "the filename reached the page unescaped, or not at all");
+    if (JSON.stringify(w.binds) !== JSON.stringify([{ body: "first\n", rows: 1 }, { body: "later!\n\n", rows: 0 }])) {
+      fail("bind is guarded", `the late staging did not reach its guarded bind: the binds were ${JSON.stringify(w.binds)}`);
     }
-    if (/(src|href)="https?:/i.test(page.text) || /url\(\s*['"]?https?:/i.test(page.text) || /@import/i.test(page.text)) {
-      fail("self-contained", "the page requests something from the network");
-    }
-    if (page.text.includes(link.secret)) fail("secret", "the page prints its own secret");
-    const scripts = [...page.text.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-    const csp = page.headers.get("content-security-policy") ?? "";
-    const hash = scripts[0] === undefined ? "" : createHash("sha256").update(scripts[0], "utf8").digest("base64");
-    const allowed = /script-src ([^;]*)/.exec(csp)?.[1].trim();
-    if (scripts.length !== 1 || /<script[^>]+src=/i.test(page.text) || allowed !== `'sha256-${hash}'`) {
-      fail("one script", `${scripts.length} inline script(s); script-src is ${allowed ?? "absent"}`);
-    }
-    const styles = [...page.text.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
-    const styleHash = styles[0] === undefined ? "" : createHash("sha256").update(styles[0], "utf8").digest("base64");
-    if (styles.length !== 1 || /style-src ([^;]*)/.exec(csp)?.[1].trim() !== `'sha256-${styleHash}'`) {
-      fail("one stylesheet", `${styles.length} inline stylesheet(s); the policy is ${csp}`);
-    }
-    if (/unsafe-inline|unsafe-eval|https?:/.test(csp)) fail("CSP", `the policy allows more than its own hashes: ${csp}`);
-    for (const part of ["default-src 'none'", "img-src data:", "frame-ancestors 'none'", "form-action 'none'", "base-uri 'none'", "connect-src 'self'"]) {
-      if (!csp.includes(part)) fail("CSP", `the policy lacks ${part}: ${csp}`);
-    }
-    for (const [h, v] of [["referrer-policy", "no-referrer"], ["x-frame-options", "DENY"], ["cache-control", "no-store"]]) {
-      if (page.headers.get(h) !== v) fail("headers", `${h} is ${page.headers.get(h)}, not ${v}`);
-    }
-    if (/method="post"|<form[^>]+action=/i.test(page.text)) fail("no post", "the page's form posts somewhere");
-    ok("the link page escapes a hostile filename, loads nothing, prints no secret, sends no referrer, cannot be framed, runs one hashed script");
-    const linkBytes = utf8("staged through the page\n");
-    const viaLink = await call("PUT", `/u/${link.secret}`, linkBytes, { "x-filename": encodeURIComponent("anything.md") });
-    expect("link staging", viaLink, 200);
-    const lr = await rowOf(link.id);
-    if (viaLink.json.upload !== link.id || viaLink.json.filename !== hostile || lr.staged_via !== "link" || lr.staged_by !== null
-        || !lr.body?.equals(linkBytes)) {
-      fail("link staging", `answered ${viaLink.text}; the row holds ${lr.staged_via}/${lr.staged_by}`);
-    }
-    if (viaLink.headers.get("referrer-policy") !== "no-referrer") fail("link staging", "the PUT's answer sends a referrer");
-    if ((await rowOf(neighbour.id)).sha256 !== null) fail("one upload only", "a link staged an upload it does not name");
-    const linkConflict = await call("PUT", `/u/${link.secret}`, utf8("other\n"));
-    expect("link conflict", linkConflict, 409, "UPLOAD_CONTENT_CONFLICT");
-    if (!String(linkConflict.json.error).includes("staged through its link")) fail("link conflict", `the refusal does not say how: ${linkConflict.text}`);
-    const staged = await call("GET", `/u/${link.secret}`);
-    if (staged.status !== 200 || !staged.text.includes(sha(linkBytes)) || /<script>/.test(staged.text) || /<form/.test(staged.text)) {
-      fail("staged page", `the page after staging answered ${staged.status} without the digest, or still offers the form`);
-    }
-    ok("a link stages its one upload as link with no principal, the governing filename is the row's, and the page then shows the binding");
-    const expiredLink = await mint();
-    await expire(expiredLink.id);
-    const gone = await call("GET", `/u/${expiredLink.secret}`);
-    if (gone.status !== 410 || !/expired/.test(gone.text)) fail("expired page", `answered ${gone.status}`);
-    expect("expired link", await call("PUT", `/u/${expiredLink.secret}`, bytes), 410, "UPLOAD_EXPIRED");
-    for (const bad of ["garbage", `${link.secret}x`, neighbour.id, mintUploadSecret()]) {
-      const g = await call("GET", `/u/${bad}`);
-      if (g.status !== 404 || g.text.includes("notes.md")) fail("malformed secret", `GET /u/${bad.slice(0, 12)}… answered ${g.status}`);
-      expect("malformed secret", await call("PUT", `/u/${bad}`, bytes), 404, "FORBIDDEN");
-    }
-    if ((await call("POST", `/u/${neighbour.secret}`, bytes)).status !== 404) fail("staging only", "a link answers POST");
-    expect("secret as id", await call("PUT", `/upload/${neighbour.secret}`, bytes, as()), 403, "FORBIDDEN");
-    if ((await rowOf(neighbour.id)).sha256 !== null) fail("staging only", "the neighbour was staged");
-    ok("an expired link says so; a malformed or unknown secret, an upload id as a secret and a secret as an id stage nothing");
-
-    // The bounds. Ten attempts on one upload from ten addresses, then an eleventh.
-    const busy = await mint();
-    for (let i = 0; i < 10; i++) expect(`attempt ${i + 1}`, await call("PUT", `/upload/${busy.id}`, bytes, as(), boundedPort), 200);
-    const eleventh = await call("PUT", `/upload/${busy.id}`, bytes, as(), boundedPort);
-    if (eleventh.status !== 429 || eleventh.json.error !== "ERROR: RATE_LIMITED — try again in a minute") {
-      fail("per upload", `the eleventh attempt answered ${eleventh.status} ${eleventh.text}`);
-    }
-    const linked = await mint();
-    for (let i = 0; i < 10; i++) await call("PUT", `/u/${linked.secret}`, bytes, {}, boundedPort);
-    expect("per upload, link", await call("PUT", `/u/${linked.secret}`, bytes, {}, boundedPort), 429, "RATE_LIMITED");
-    // Sixty attempts from one address, on sixty different ids, then a sixty-first on either route.
-    const from = { "x-forwarded-for": "192.0.2.7" };
-    for (let i = 0; i < 60; i++) expect(`address ${i + 1}`, await call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), ...from }, boundedPort), 403);
-    expect("per address", await call("PUT", `/upload/${(await mint()).id}`, bytes, { ...as(), ...from }, boundedPort), 429, "RATE_LIMITED");
-    expect("per address, link", await call("PUT", `/u/${(await mint()).secret}`, bytes, from, boundedPort), 429, "RATE_LIMITED");
-    ok("staging is bounded at 10 attempts per upload and 60 per client address a minute, on both routes");
-
-    // The sweep: an expired, unused body goes; a live one stays; every row stays.
-    const live = await mint();
-    expect("live staging", await call("PUT", `/upload/${live.id}`, bytes, as()), 200);
-    const stale = await mint();
-    expect("stale staging", await call("PUT", `/upload/${stale.id}`, bytes, as()), 200);
-    await expire(stale.id);
-    const swept = await sweepUploads();
-    const after = await sql.query<{ id: string; body: Buffer | null; sha256: string | null }>(
-      "select id, body, sha256 from zz.upload where id = any($1)", [[live.id, stale.id]]);
-    const of = (id: string) => after.rows.find((x) => x.id === id);
-    if (swept !== 1 || of(stale.id)?.body !== null || of(stale.id)?.sha256 !== sha(bytes) || !of(live.id)?.body) {
-      fail("sweep", `swept ${swept}; stale body ${of(stale.id)?.body ? "kept" : "gone"}, live body ${of(live.id)?.body ? "kept" : "gone"}`);
-    }
-    ok("the sweep removes an expired, unused body, keeps a live one, and keeps every row");
   } finally {
-    for (const l of [listener, bounded]) { l.closeAllConnections(); l.close(); }
-    await dbModule.platformDb().end();
-    delete process.env.TEAM_DB_URL;
+    w.stop();
   }
+  ok("a staging still receiving its bytes when another binds reaches its bind, binds nothing, and answers a conflict");
+
+  // What never stages.
+  const old = await mint();
+  await expire(old.id);
+  expect("expired", await call("PUT", `/upload/${old.id}`, bytes, as()), 410, "UPLOAD_EXPIRED");
+  if ((await rowOf(old.id)).sha256 !== null) fail("expired", "an expired upload was staged");
+  ok("a staging after expires_at answers UPLOAD_EXPIRED and binds nothing");
+  const mine = await mint();
+  expect("foreign token", await call("PUT", `/upload/${mine.id}`, bytes, as("other@example.test")), 403, "FORBIDDEN");
+  expect("other team", await call("PUT", `/upload/${mine.id}`, bytes, as("owner@example.test", "away-team")), 403, "FORBIDDEN");
+  expect("unknown id", await call("PUT", `/upload/${mintUploadId()}`, bytes, as()), 403, "FORBIDDEN");
+  expect("malformed id", await call("PUT", "/upload/source", bytes, as()), 403, "FORBIDDEN");
+  expect("no identity", await call("PUT", `/upload/${mine.id}`, bytes), 401);
+  if ((await rowOf(mine.id)).sha256 !== null) fail("foreign token", "someone else staged the owner's upload");
+  ok("someone else's token, another team, an unknown or malformed id and no identity stage nothing");
+  const big = await mint("big.txt");
+  expect("over 8 MiB", await call("PUT", `/upload/${big.id}`, new Uint8Array(8 * 1024 * 1024 + 1).fill(0x61), as()), 413, "SIZE_LIMIT");
+  if ((await rowOf(big.id)).sha256 !== null) fail("over 8 MiB", "an oversized body was staged");
+  const full = new Uint8Array(8 * 1024 * 1024).fill(0x62);
+  const exact = await call("PUT", `/upload/${big.id}`, full, as());
+  expect("exactly 8 MiB", exact, 200);
+  if ((await rowOf(big.id)).byte_count !== full.length) fail("exactly 8 MiB", "the full-size body was not bound whole");
+  ok("one byte past 8 MiB answers SIZE_LIMIT, and exactly 8 MiB is bound whole");
+  const text = await mint();
+  expect("invalid UTF-8", await call("PUT", `/upload/${text.id}`, new Uint8Array([0x61, 0xff, 0x62]), as()), 422, "INVALID_ENCODING");
+  expect("another extension", await call("PUT", `/upload/${text.id}`, bytes, { ...as(), "x-filename": "minutes.pdf" }), 415, "UNSUPPORTED_FORMAT");
+  const pdf = await mint("minutes.pdf");
+  expect("unsupported row", await call("PUT", `/upload/${pdf.id}`, utf8("%PDF-1.7"), as()), 415, "UNSUPPORTED_FORMAT");
+  // A curl that names no type sends a form type; a browser sends a .json file as JSON. The global
+  // parsers mounted after the routes see neither.
+  const json = await mint("data.json");
+  const raw = utf8('{"a": 1}');
+  expect("typed bytes", await call("PUT", `/upload/${json.id}`, raw, { ...as(), "content-type": "application/json" }), 200);
+  if (!(await rowOf(json.id)).body?.equals(raw)) fail("typed bytes", "a JSON-typed file was not staged byte for byte");
+  const form = await mint("pairs.txt");
+  const pairs = utf8("a=1&b=2\n");
+  expect("form-typed bytes", await call("PUT", `/u/${form.secret}`, pairs, { "content-type": "application/x-www-form-urlencoded" }), 200);
+  if (!(await rowOf(form.id)).body?.equals(pairs)) fail("form-typed bytes", "a form-typed file was not staged byte for byte");
+  ok("invalid UTF-8, another extension and an unsupported filename are refused by name; a typed body is staged raw");
+
+  // The link.
+  const hostile = `"><img src=x onerror=alert(1)><b>&'.md`;
+  const link = await mint(hostile);
+  const neighbour = await mint();
+  const page = await call("GET", `/u/${link.secret}`);
+  expect("link page", page, 200);
+  if (/<img src=x/.test(page.text) || !/&lt;img src=x onerror=alert\(1\)&gt;&lt;b&gt;&amp;&#39;\.md/.test(page.text)) {
+    fail("hostile filename", "the filename reached the page unescaped, or not at all");
+  }
+  if (/(src|href)="https?:/i.test(page.text) || /url\(\s*['"]?https?:/i.test(page.text) || /@import/i.test(page.text)) {
+    fail("self-contained", "the page requests something from the network");
+  }
+  if (page.text.includes(link.secret)) fail("secret", "the page prints its own secret");
+  const scripts = [...page.text.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const csp = page.headers.get("content-security-policy") ?? "";
+  const hash = scripts[0] === undefined ? "" : createHash("sha256").update(scripts[0], "utf8").digest("base64");
+  const allowed = /script-src ([^;]*)/.exec(csp)?.[1].trim();
+  if (scripts.length !== 1 || /<script[^>]+src=/i.test(page.text) || allowed !== `'sha256-${hash}'`) {
+    fail("one script", `${scripts.length} inline script(s); script-src is ${allowed ?? "absent"}`);
+  }
+  const styles = [...page.text.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
+  const styleHash = styles[0] === undefined ? "" : createHash("sha256").update(styles[0], "utf8").digest("base64");
+  if (styles.length !== 1 || /style-src ([^;]*)/.exec(csp)?.[1].trim() !== `'sha256-${styleHash}'`) {
+    fail("one stylesheet", `${styles.length} inline stylesheet(s); the policy is ${csp}`);
+  }
+  if (/unsafe-inline|unsafe-eval|https?:/.test(csp)) fail("CSP", `the policy allows more than its own hashes: ${csp}`);
+  for (const part of ["default-src 'none'", "img-src data:", "frame-ancestors 'none'", "form-action 'none'", "base-uri 'none'", "connect-src 'self'"]) {
+    if (!csp.includes(part)) fail("CSP", `the policy lacks ${part}: ${csp}`);
+  }
+  for (const [h, v] of [["referrer-policy", "no-referrer"], ["x-frame-options", "DENY"], ["cache-control", "no-store"]]) {
+    if (page.headers.get(h) !== v) fail("headers", `${h} is ${page.headers.get(h)}, not ${v}`);
+  }
+  if (/method="post"|<form[^>]+action=/i.test(page.text)) fail("no post", "the page's form posts somewhere");
+  ok("the link page escapes a hostile filename, loads nothing, prints no secret, sends no referrer, cannot be framed, runs one hashed script");
+  const linkBytes = utf8("staged through the page\n");
+  const viaLink = await call("PUT", `/u/${link.secret}`, linkBytes, { "x-filename": encodeURIComponent("anything.md") });
+  expect("link staging", viaLink, 200);
+  const lr = await rowOf(link.id);
+  if (viaLink.json.upload !== link.id || viaLink.json.filename !== hostile || lr.staged_via !== "link" || lr.staged_by !== null
+      || !lr.body?.equals(linkBytes)) {
+    fail("link staging", `answered ${viaLink.text}; the row holds ${lr.staged_via}/${lr.staged_by}`);
+  }
+  if (viaLink.headers.get("referrer-policy") !== "no-referrer") fail("link staging", "the PUT's answer sends a referrer");
+  if ((await rowOf(neighbour.id)).sha256 !== null) fail("one upload only", "a link staged an upload it does not name");
+  const linkConflict = await call("PUT", `/u/${link.secret}`, utf8("other\n"));
+  expect("link conflict", linkConflict, 409, "UPLOAD_CONTENT_CONFLICT");
+  if (!String(linkConflict.json.error).includes("staged through its link")) fail("link conflict", `the refusal does not say how: ${linkConflict.text}`);
+  const staged = await call("GET", `/u/${link.secret}`);
+  if (staged.status !== 200 || !staged.text.includes(sha(linkBytes)) || /<script>/.test(staged.text) || /<form/.test(staged.text)) {
+    fail("staged page", `the page after staging answered ${staged.status} without the digest, or still offers the form`);
+  }
+  ok("a link stages its one upload as link with no principal, the governing filename is the row's, and the page then shows the binding");
+  const expiredLink = await mint();
+  await expire(expiredLink.id);
+  const gone = await call("GET", `/u/${expiredLink.secret}`);
+  if (gone.status !== 410 || !/expired/.test(gone.text)) fail("expired page", `answered ${gone.status}`);
+  expect("expired link", await call("PUT", `/u/${expiredLink.secret}`, bytes), 410, "UPLOAD_EXPIRED");
+  // A staged upload that then expired, or that a write consumed, is not "staged": its body is
+  // gone, and a write naming it is refused. The page says what the write would say.
+  const stagedThenExpired = await mint();
+  expect("staged then expired", await call("PUT", `/u/${stagedThenExpired.secret}`, bytes), 200);
+  await expire(stagedThenExpired.id);
+  const lapsed = await call("GET", `/u/${stagedThenExpired.secret}`);
+  if (lapsed.status !== 410 || !/expired/.test(lapsed.text) || /Staged\./.test(lapsed.text)) {
+    fail("staged then expired page", `answered ${lapsed.status} ${lapsed.text.replace(/<style>[\s\S]*?<\/style>/, "").slice(0, 400)}`);
+  }
+  const consumed = await mint();
+  expect("staged then consumed", await call("PUT", `/u/${consumed.secret}`, bytes), 200);
+  await sql.query(`update zz.upload set consumed_at = now(), consumed_by_operation = 'document_write a/b.md',
+                     consumed_digest = $2, body = null where id = $1`, [consumed.id, sha(bytes)]);
+  const written = await call("GET", `/u/${consumed.secret}`);
+  if (written.status !== 410 || !/already written/.test(written.text) || /Staged\./.test(written.text)) {
+    fail("consumed page", `answered ${written.status} ${written.text.replace(/<style>[\s\S]*?<\/style>/, "").slice(0, 400)}`);
+  }
+  expect("consumed link", await call("PUT", `/u/${consumed.secret}`, bytes), 410, "UPLOAD_USED");
+  ok("a staged upload that expired, or that a write consumed, says so on its page and refuses a staging");
+  for (const bad of ["garbage", `${link.secret}x`, neighbour.id, mintUploadSecret()]) {
+    const g = await call("GET", `/u/${bad}`);
+    if (g.status !== 404 || g.text.includes("notes.md")) fail("malformed secret", `GET /u/${bad.slice(0, 12)}… answered ${g.status}`);
+    expect("malformed secret", await call("PUT", `/u/${bad}`, bytes), 403, "FORBIDDEN");
+  }
+  if ((await call("POST", `/u/${neighbour.secret}`, bytes)).status !== 404) fail("staging only", "a link answers POST");
+  expect("secret as id", await call("PUT", `/upload/${neighbour.secret}`, bytes, as()), 403, "FORBIDDEN");
+  if ((await rowOf(neighbour.id)).sha256 !== null) fail("staging only", "the neighbour was staged");
+  ok("an expired link says so; a malformed or unknown secret, an upload id as a secret and a secret as an id stage nothing");
+
+  // The bounds. Ten attempts on one upload from ten addresses, then an eleventh.
+  const busy = await mint();
+  for (let i = 0; i < 10; i++) expect(`attempt ${i + 1}`, await call("PUT", `/upload/${busy.id}`, bytes, as(), boundedPort), 200);
+  const eleventh = await call("PUT", `/upload/${busy.id}`, bytes, as(), boundedPort);
+  if (eleventh.status !== 429 || eleventh.json.error !== "ERROR: RATE_LIMITED — try again in a minute") {
+    fail("per upload", `the eleventh attempt answered ${eleventh.status} ${eleventh.text}`);
+  }
+  const linked = await mint();
+  for (let i = 0; i < 10; i++) await call("PUT", `/u/${linked.secret}`, bytes, {}, boundedPort);
+  expect("per upload, link", await call("PUT", `/u/${linked.secret}`, bytes, {}, boundedPort), 429, "RATE_LIMITED");
+  // Sixty attempts from one address, on sixty different ids, then a sixty-first on either route.
+  const from = { "x-forwarded-for": "192.0.2.7" };
+  for (let i = 0; i < 60; i++) expect(`address ${i + 1}`, await call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), ...from }, boundedPort), 403);
+  expect("per address", await call("PUT", `/upload/${(await mint()).id}`, bytes, { ...as(), ...from }, boundedPort), 429, "RATE_LIMITED");
+  expect("per address, link", await call("PUT", `/u/${(await mint()).secret}`, bytes, from, boundedPort), 429, "RATE_LIMITED");
+  ok("staging is bounded at 10 attempts per upload and 60 per client address a minute, on both routes");
+  // An upload's ten are spent only by callers who may stage it: another member trying the owner's
+  // id is refused as a stranger every time, and the owner then stages.
+  const coveted = await mint();
+  for (let i = 0; i < 12; i++) expect(`stranger ${i + 1}`, await call("PUT", `/upload/${coveted.id}`, bytes, as("other@example.test"), boundedPort), 403, "FORBIDDEN");
+  expect("owner after strangers", await call("PUT", `/upload/${coveted.id}`, bytes, as(), boundedPort), 200);
+  // One IPv6 /64 is one client; the next /64 is another.
+  for (let i = 1; i <= 60; i++) {
+    expect(`/64 ${i}`, await call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), "x-forwarded-for": `2001:db8:1:2::${i.toString(16)}` }, boundedPort), 403);
+  }
+  expect("same /64", await call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), "x-forwarded-for": "2001:db8:1:2:ffff:ffff:ffff:fffe" }, boundedPort), 429, "RATE_LIMITED");
+  expect("next /64", await call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), "x-forwarded-for": "2001:db8:1:3::1" }, boundedPort), 403, "FORBIDDEN");
+  // The page's GETs count against the client like its PUTs.
+  const looked = await mint();
+  const viewer = { "x-forwarded-for": "192.0.2.8" };
+  for (let i = 0; i < 60; i++) {
+    const g = await call("GET", `/u/${looked.secret}`, undefined, viewer, boundedPort);
+    if (g.status !== 200) fail("page bound", `GET ${i + 1} answered ${g.status}`);
+  }
+  const tooMany = await call("GET", `/u/${looked.secret}`, undefined, viewer, boundedPort);
+  if (tooMany.status !== 429 || !/Too many tries/.test(tooMany.text) || tooMany.text.includes("notes.md")) {
+    fail("page bound", `the sixty-first GET answered ${tooMany.status}`);
+  }
+  expect("page bound, PUT", await call("PUT", `/u/${looked.secret}`, bytes, viewer, boundedPort), 429, "RATE_LIMITED");
+  ok("an upload's attempts count only once the caller may stage it, an IPv6 client is its /64, and the page's GETs count");
+
+  // Past its table of counters, a client not yet counted is refused; one already counted is not.
+  const crowd = (ip: string) => call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), "x-forwarded-for": ip }, crowdedPort);
+  expect("first client", await crowd("203.0.113.1"), 403, "FORBIDDEN");
+  expect("second client", await crowd("203.0.113.2"), 403, "FORBIDDEN");
+  expect("a client past the table", await crowd("203.0.113.3"), 429, "RATE_LIMITED");
+  expect("a client already counted", await crowd("203.0.113.1"), 403, "FORBIDDEN");
+  ok("past its table of counters a new client is refused, and a counted one is still served");
+
+  // Bytes: one body arriving per client and two in all, and 64 staged bytes per owner — a person of
+  // their own, so the earlier cases' staged files count for nobody here.
+  const third = (await sql.query<{ id: string }>(
+    "insert into zz.principal (email, display_name, role) values ('third@example.test', 'third', 'member') returning id")).rows[0].id;
+  await sql.query("insert into zz.membership (team_id, principal_id, role, added_by) select id, $1, 'member', $1 from zz.team where slug = 'home-team'", [third]);
+  const asThird = (ip: string) => ({ ...as("third@example.test"), "x-forwarded-for": ip });
+  const held = async (ip: string) => {
+    const up = await mint("held.md", third);
+    const w = watch(up.id);
+    const req = request({ port: tightPort, method: "PUT", path: `/upload/${up.id}`, headers: { ...asThird(ip), "content-length": "8" } });
+    const answer = new Promise<number>((resolve, reject) => {
+      req.on("response", (res) => { res.resume(); res.on("end", () => resolve(res.statusCode ?? 0)); });
+      req.on("error", reject);
+    });
+    req.write("late");
+    await w.read;
+    w.stop();
+    return { finish: () => { req.end("r!\n\n"); return answer; } };
+  };
+  const one = await held("198.51.100.1");
+  expect("a second body from one client", await call("PUT", `/upload/${(await mint("q.md", third)).id}`, bytes, asThird("198.51.100.1"), tightPort), 429, "RATE_LIMITED");
+  const two = await held("198.51.100.2");
+  expect("a third body in all", await call("PUT", `/upload/${(await mint("q.md", third)).id}`, bytes, asThird("198.51.100.3"), tightPort), 429, "RATE_LIMITED");
+  if (await one.finish() !== 200 || await two.finish() !== 200) fail("arriving bodies", "a held body did not stage once sent whole");
+  const after = await mint("q.md", third);
+  expect("room again", await call("PUT", `/upload/${after.id}`, bytes, asThird("198.51.100.1"), tightPort), 200);
+  // 8 + 8 + 20 bytes held now; 30 more is past 64, until a write consumes one.
+  const over = await mint("over.md", third);
+  const thirty = utf8("x".repeat(29) + "\n");
+  const quota = await call("PUT", `/upload/${over.id}`, thirty, asThird("198.51.100.4"), tightPort);
+  expect("staged bytes", quota, 429, "RATE_LIMITED");
+  if (!String(quota.json.error).includes("staged and not yet written") || (await rowOf(over.id)).sha256 !== null) {
+    fail("staged bytes", `answered ${quota.text}`);
+  }
+  await sql.query(`update zz.upload set consumed_at = now(), consumed_by_operation = 'document_write a/q.md',
+                     consumed_digest = sha256, body = null where id = $1`, [after.id]);
+  expect("staged bytes after a write", await call("PUT", `/upload/${over.id}`, thirty, asThird("198.51.100.4"), tightPort), 200);
+  ok("bodies arriving at once are bounded per client and in all, and an owner's staged, unwritten bytes are bounded");
+
+  // The sweep: an expired body goes and its row stays; a row no write consumed goes a day after its
+  // window, staged or not; a recently expired row and a consumed row stay.
+  const longAgo = (id: string) => sql.query(
+    "update zz.upload set created_at = now() - interval '2 days 1 minute', expires_at = now() - interval '2 days' where id = $1", [id]);
+  const live = await mint();
+  expect("live staging", await call("PUT", `/upload/${live.id}`, bytes, as()), 200);
+  const stale = await mint();
+  expect("stale staging", await call("PUT", `/upload/${stale.id}`, bytes, as()), 200);
+  await expire(stale.id);
+  const recent = await mint();
+  await expire(recent.id);
+  const abandoned = await mint();
+  await longAgo(abandoned.id);
+  const forgotten = await mint();
+  expect("forgotten staging", await call("PUT", `/upload/${forgotten.id}`, bytes, as()), 200);
+  await longAgo(forgotten.id);
+  const usedLongAgo = await mint();
+  expect("used staging", await call("PUT", `/upload/${usedLongAgo.id}`, bytes, as()), 200);
+  await sql.query(`update zz.upload set consumed_at = now(), consumed_by_operation = 'document_write a/u.md',
+                     consumed_digest = sha256, body = null where id = $1`, [usedLongAgo.id]);
+  await longAgo(usedLongAgo.id);
+  const due = (await sql.query<{ n: number }>(
+    `select ((select count(*) from zz.upload where body is not null and expires_at < now())
+           + (select count(*) from zz.upload where consumed_at is null and expires_at < now() - interval '1 day'))::int as n`)).rows[0].n;
+  const swept = await sweepUploads();
+  const rows = await sql.query<{ id: string; body: Buffer | null; sha256: string | null }>(
+    "select id, body, sha256 from zz.upload where id = any($1)", [[live.id, stale.id, recent.id, abandoned.id, forgotten.id, usedLongAgo.id]]);
+  const of = (id: string) => rows.rows.find((x) => x.id === id);
+  const state = { swept, due, live: !!of(live.id)?.body, stale: of(stale.id) ? (of(stale.id)?.body ? "body" : "row") : "gone",
+                  recent: !!of(recent.id), abandoned: !!of(abandoned.id), forgotten: !!of(forgotten.id), used: !!of(usedLongAgo.id) };
+  if (swept !== due || due < 4 || !state.live || state.stale !== "row" || of(stale.id)?.sha256 !== sha(bytes) || !state.recent
+      || state.abandoned || state.forgotten || !state.used) {
+    fail("sweep", JSON.stringify(state));
+  }
+  ok("the sweep removes an expired body and keeps its row, deletes a row no write consumed a day after its window, and keeps a consumed one");
 }
 
 let url = "";

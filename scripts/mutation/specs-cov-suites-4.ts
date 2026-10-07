@@ -133,13 +133,13 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
   {
     check: SUITES_SURFACE,
     target: "a document read takes a list and a version, and history never vouches for the present",
-    assertion: "a fetch of an old version is recorded against the bytes it returned",
+    assertion: "a version that does not exist is refused, never answered with another",
     subject: "services/zz-core/src/versions.ts",
     find: "    : snapshotOf(history, version);",
     replace: "    : snapshotOf(history, version) ?? history[history.length - 1] ?? null;",
-    planted: "opening an old version is answered with the live document's last snapshot, so " +
-      "reading v1 shows bytes that were never v1, and a presentation of it vouches for " +
-      "content the reader did not ask for",
+    planted: "asking for a version that does not exist is answered with the live document's last " +
+      "snapshot instead of refused, so a reader who asked for v9 is shown bytes that were never " +
+      "v9, and a presentation of them vouches for content the reader did not ask for",
   },
   {
     check: SUITES_SURFACE,
@@ -217,11 +217,11 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-calls.ts",
     target: "every tool call a skill writes names only the tool's arguments, and every one it requires",
     subject: "skills/zz-platform/SKILL.md",
-    // The worked document_revise call every agent reads first. This file had no plant at all
+    // The worked document_edit call every agent reads first. This file had no plant at all
     // until the first full run recorded it as never measured.
     find: '  source_title: "Second brain dump — <what it was about>")',
     replace: '  source_heading: "Second brain dump — <what it was about>")',
-    planted: "the platform skill's worked example calls document_revise with an argument the tool " +
-      "does not take, so an agent copying it is refused by the schema on its first revision",
+    planted: "the platform skill's worked example calls document_edit with an argument the tool " +
+      "does not take, so an agent copying it is refused by the schema on its first edit",
   },
 ];

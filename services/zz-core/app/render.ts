@@ -10,7 +10,7 @@
  *     stands in its place, which says what the author meant rather than showing a broken icon;
  *   - a heading gets an id, so the outline can take a reader to it.
  */
-import { micromark } from "micromark";
+import { compile, parse, postprocess, preprocess } from "micromark";
 import { gfm, gfmHtml } from "micromark-extension-gfm";
 
 import type { Change } from "./state.ts";
@@ -29,8 +29,9 @@ export interface Rendered {
   words: number;
   /** Each second-level section's heading and plain text, in order. */
   sections: { id: string; title: string; text: string }[];
-  /** Every heading, in order, with its level and id: what a change record's position names. */
-  heads: { level: number; id: string }[];
+  /** Every heading the change set counts, in its order — the heading markdown renders on that line,
+   *  or null where it renders none: what a change record's position names. */
+  heads: ({ level: number; id: string } | null)[];
 }
 
 /** Reading time at 220 words a minute, never under one. */
@@ -52,17 +53,38 @@ function slugger(): (text: string) => string {
   };
 }
 
+/** The lines, from 1, of the headings a change record counts: a `#` heading at the start of a line,
+ *  outside a fence. COUPLED: `headings` in src/document-parts.ts, the scan `deltaOf` numbers its
+ *  positions by — markdown also renders a heading quoted, listed, indented or underlined, which that
+ *  scan does not count, so the panel numbers by the same scan rather than by what it renders. */
+function countedLines(text: string): number[] {
+  const out: number[] = [];
+  let fence: string | null = null;
+  text.split("\n").forEach((line, i) => {
+    const f = /^\s*(```|~~~)/.exec(line);
+    if (f) fence = fence === null ? f[1]! : fence === f[1] ? null : fence;
+    else if (fence === null && /^(#{1,6})\s+(.+?)\s*#*\s*$/.test(line)) out.push(i + 1);
+  });
+  return out;
+}
+
 export function renderMarkdown(body: string): Rendered {
-  const raw = micromark(body.replace(/\r\n/g, "\n"), { extensions: [gfm()], htmlExtensions: [gfmHtml()] });
+  const src = body.replace(/\r\n/g, "\n");
+  // micromark's own steps, so the line each rendered heading starts on can be read off its events.
+  const options = { extensions: [gfm()], htmlExtensions: [gfmHtml()] };
+  const events = postprocess(parse(options).document().write(preprocess()(src, undefined, true)));
+  const lines = events.filter(([step, token]) => step === "enter" && /^(atx|setext)Heading$/.test(token.type))
+    .map(([, token]) => token.start.line);
+  const raw = compile(options)(events);
   const slug = slugger();
   const outline: OutlineEntry[] = [];
-  const heads: Rendered["heads"] = [];
+  const rendered: { level: number; id: string; line: number }[] = [];
   let title: string | null = null;
   const html = raw
     .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (_m, level: string, inner: string) => {
       const text = plain(inner);
       const id = slug(text);
-      heads.push({ level: Number(level), id });
+      rendered.push({ level: Number(level), id, line: lines[rendered.length] ?? 0 });
       if (level === "1" && title === null) title = text;
       if (level === "2" || level === "3") outline.push({ level: Number(level) as 2 | 3, text, id, words: 0 });
       return `<h${level} id="${id}">${inner}</h${level}>`;
@@ -84,15 +106,19 @@ export function renderMarkdown(body: string): Rendered {
     text: plain(html.slice(m.index, tops[i + 1]?.index ?? html.length)) }));
   const wrapped = !tops.length ? html : html.slice(0, tops[0]!.index) + tops.map((m, i) =>
     `<section class="sec" data-sec="${m[1]}">${html.slice(m.index, tops[i + 1]?.index ?? html.length)}</section>`).join("");
+  const heads = countedLines(src).map((line) => {
+    const h = rendered.find((r) => r.line === line);
+    return h ? { level: h.level, id: h.id } : null;
+  });
   return { html: wrapped, title, outline, words: count(html), sections, heads };
 }
 
 /** The sections the change set marks, by heading id: a record names a heading by its position among
- *  every heading of the body — the change set's own count, fenced code excluded — and its level. A
+ *  the headings the change set's scan counts, and its level; `heads` is numbered by that scan. A
  *  second- or third-level heading is marked itself, and any deeper change marks the second-level
- *  section it sits in, which is what "changes only" shows or hides. A record whose position does not
- *  land on a heading of its own level is not marked rather than marked on the wrong one: a heading
- *  markdown reads that the change set's scan does not (an underlined one) shifts the count.
+ *  section it sits in, which is what "changes only" shows or hides. The document's first `#`
+ *  heading is its title, and a change under it is the opening; a later `#` part is named. A record
+ *  whose position lands on no rendered heading of its own level is not marked.
  *
  *  `removed` lists the headings gone, and `other` what changed outside the sections. */
 export function marksOf(view: Rendered, changes: readonly Change[]):
@@ -104,11 +130,15 @@ export function marksOf(view: Rendered, changes: readonly Change[]):
   const mark = (heading: string, at: number, how: "changed" | "new") => {
     const h = view.heads[at - 1];
     if (!h || h.level !== (/^#+/.exec(heading)?.[0].length ?? 0)) return;
-    if (h.level === 1) { if (!other.includes("the opening")) other.push("the opening"); return; }
+    if (h.level === 1) {
+      const what = view.heads.find((x) => x?.level === 1) === h ? "the opening" : name(heading);
+      if (!other.includes(what)) other.push(what);
+      return;
+    }
     if (h.level === 2 || h.level === 3) { if (marks.get(h.id) !== "new") marks.set(h.id, how); }
     if (h.level === 2) return;
     // The second-level section it sits in: the last one before it.
-    const parent = view.heads.slice(0, at - 1).reverse().find((x) => x.level === 2);
+    const parent = view.heads.slice(0, at - 1).reverse().find((x) => x?.level === 2);
     if (parent && !marks.has(parent.id)) marks.set(parent.id, "changed");
   };
   for (const c of changes) {

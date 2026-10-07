@@ -98,16 +98,20 @@ export async function insertCauses(
   return null;
 }
 
-/** A committed request under this key: the receipt to replay, or the conflict. Null when none. */
+/** A committed request under this key: the receipt to replay, or the conflict. Null when none. The
+ *  digest may be read off the receipt the first call recorded: a replay asked before its upload is
+ *  read binds the upload's digest from there (`replayFor`, document-change.ts). */
 export async function storedRequest(
-  c: Pick<pg.Pool, "query">, team: string, principal: string, r: RequestRecord,
+  c: Pick<pg.Pool, "query">, team: string, principal: string,
+  r: Pick<RequestRecord, "canonicalPath" | "requestId"> & { digest: string | ((receipt: Record<string, unknown>) => string) },
 ): Promise<{ replayed: Record<string, unknown> } | { refusal: string } | null> {
   const { rows } = await c.query<{ request_digest: string; receipt: Record<string, unknown> }>(
     `select q.request_digest, q.receipt from zz.doc_request q join zz.team t on t.id = q.team_id
       where t.slug = $1 and q.principal_id = $2::uuid and q.canonical_path = $3 and q.request_id = $4`,
     [team, principal, r.canonicalPath, r.requestId]);
   if (!rows[0]) return null;
-  return rows[0].request_digest === r.digest ? { replayed: rows[0].receipt } : { refusal: REQUEST_ID_CONFLICT };
+  const digest = typeof r.digest === "string" ? r.digest : r.digest(rows[0].receipt);
+  return rows[0].request_digest === digest ? { replayed: rows[0].receipt } : { refusal: REQUEST_ID_CONFLICT };
 }
 
 /** A keyed request's own lock, held to the end of the transaction, for a write whose path is chosen

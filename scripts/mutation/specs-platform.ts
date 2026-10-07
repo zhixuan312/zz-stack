@@ -65,6 +65,20 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
       "document change can be recovered except by reading the state it made",
   },
   {
+    check: "scripts/gate/checks/data-telemetry.ts",
+    target: "a tool that changes something records that it did",
+    subject: "services/zz-core/src/document-save.ts",
+    // The in-transaction recorder, held to its side of the commit (R1-G6-1): the main path's act
+    // rows are inserted after the transaction already committed. Compiles — a second commit is a
+    // warning to PostgreSQL, not an error to tsc — and the keyed no-change site, which stays
+    // before its own commit, must not keep the check green.
+    find: "    for (const a of acts) {\n      const recorded = await insertEvent(client, {",
+    replace: "    await client.query(\"commit\");\n    for (const a of acts) {\n      const recorded = await insertEvent(client, {",
+    planted: "a detailed change's act row — and its captured source's — is inserted after the write " +
+      "committed, so the row its receipt's details_ref names is no longer part of the write and a " +
+      "failed insert leaves a committed change with a dangling receipt",
+  },
+  {
     check: "scripts/gate/checks/deploy-compose.ts",
     target: "the compose file names this release's images",
     subject: "deploy/docker-compose.yml",

@@ -27,6 +27,7 @@ import type pg from "pg";
 import { type Line, refusalText } from "./document-details.js";
 import { closingDocRuledOut, factsFor } from "./initiative-record.js";
 import { db } from "./platform-db.js";
+import { isHandover } from "./stage-records.js";
 import { dayOf } from "./versions.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
@@ -335,9 +336,10 @@ async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | nu
  * abandoned close lands on the furthest document that exists, which on sdlc-flow is usually
  * the ungated `explore.md`, approved by nobody.
  *
- * `document_edit` files the correction as a draft beside the signed revision and carries the
- * outcome forward; a write without `via` does neither. A closed record may be corrected; it may
- * not be quietly overwritten. */
+ * `document_edit` files the correction beside the snapshot the close rests on — the pin rule
+ * (`currentRow`, document-snapshot.ts) counts a row carrying an outcome as pinned, signed or not —
+ * and carries the outcome forward; a write without `via` does neither. A closed record may be
+ * corrected; it may not be quietly overwritten. */
 async function closedDocumentGuard(p: pg.Pool, team: string | null, relPath: string,
                                    via: string | null): Promise<string | null> {
   if (via) return null;                       // the acts that pass `via` own their writes, document_edit among them
@@ -427,10 +429,13 @@ async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath:
   const depRow = (await documents(p, team, parts[0])).get(dep) ?? null;
   const exists = depRow !== null;
   const status = depRow?.status ?? null;
-  // A prerequisite carrying the initiative's outcome is the document it closed on, and the close
-  // already settled it: it is required only `recorded`. A correction of it waiting for its own
-  // approval is a draft, and asking `ratified` there would block the handover the close owes.
-  const settledByClose = !!depRow?.outcome;
+  // The handover's prerequisite, when it carries the initiative's outcome, is the document the
+  // close landed on, and the close already settled it for the handover: it is required only
+  // `recorded`. A correction of it waiting for its own approval is a draft, and asking `ratified`
+  // there would block the handover the close owes. Every other dependant still asks `ratified`: a
+  // stop that landed on a draft spec.md settles nothing about the plan.md that requires it.
+  const self = chain.documents.find((d) => d.name === parts[1]) ?? { name: parts[1] };
+  const settledByClose = !!depRow?.outcome && isHandover(self);
   const admission = admitEntry(
     [{ kind: dep, standard: depGate && !settledByClose ? "ratified" : "recorded" }],
     // A document the store holds a revision of is recorded; one carrying a recorded approval is

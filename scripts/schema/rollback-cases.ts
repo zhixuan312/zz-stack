@@ -55,7 +55,12 @@ export function previousRelease(): string {
   return fail("derive the previous release", `no v* tag lacks ${MIGRATION} — there is no release to roll back to`);
 }
 
-/** The guard over a fixture repository: a declaration, destructive DDL, neither, and no tag. */
+/** This checkout's own version — what a host running it reports as `ZZ_VERSION`. */
+const checkoutVersion = (): string => String(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
+
+/** The guard over a fixture repository at 1.1.0 — the version the host is told it runs: a
+ *  declaration, in any case and indented, destructive DDL of every kind it names, neither, no tag,
+ *  and a checkout that is not of the host's version. */
 export function guardCases(): void {
   const repo = mkdtempSync(join(tmpdir(), "rollback-guard-"));
   try {
@@ -64,6 +69,7 @@ export function guardCases(): void {
     const g = (...a: string[]) => git(["-c", "user.email=check@example.test", "-c", "user.name=check",
                                        "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", ...a], repo);
     g("init", "-q");
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "1.1.0" }));
     writeFileSync(join(dir, "001_init.sql"), "CREATE TABLE zz.t (a integer);\n");
     g("add", ".");
     g("commit", "-q", "-m", "one");
@@ -71,7 +77,7 @@ export function guardCases(): void {
 
     let step = "a migration with neither a declaration nor destructive DDL permits the rollback";
     writeFileSync(join(dir, "004_plain.sql"), "-- adds a nullable column\nALTER TABLE zz.t ADD COLUMN b integer;\n");
-    let got = rollbackGuard("1.0.0", repo);
+    let got = rollbackGuard("1.0.0", "1.1.0", repo);
     if (json(got) !== json({ refusals: [] }) || refusalLines("1.1.0", "1.0.0", got).length) fail(step, json(got));
     pass(step);
 
@@ -79,22 +85,57 @@ export function guardCases(): void {
     writeFileSync(join(dir, "002_declared.sql"),
                   "-- 002_declared.sql — a header\n--\n-- rollback: refused — the old writer cannot fill b\n" +
                   "ALTER TABLE zz.t ALTER COLUMN a SET NOT NULL;\n");
-    got = rollbackGuard("1.0.0", repo);
+    got = rollbackGuard("1.0.0", "1.1.0", repo);
     if (json(got) !== json({ refusals: [{ file: "002_declared.sql", reason: "the old writer cannot fill b" }] })) fail(step, json(got));
     pass(step);
 
     step = "destructive DDL still refuses, with its existing reason";
     writeFileSync(join(dir, "003_destructive.sql"), "ALTER TABLE zz.t DROP COLUMN a;\n");
-    got = rollbackGuard("1.0.0", repo);
+    got = rollbackGuard("1.0.0", "1.1.0", repo);
     const refusals = "refusals" in got ? got.refusals : [];
     if (refusals.map((r) => r.file).join(",") !== "002_declared.sql,003_destructive.sql"
-        || !/drops something 1\.0\.0's code still reads/.test(refusals[1]?.reason ?? "")
+        || !/drops, renames or retypes something 1\.0\.0's code still reads/.test(refusals[1]?.reason ?? "")
         || !/answer 500 to every caller while \/health stayed green/.test(refusals[1]?.reason ?? "")) fail(step, json(got));
     pass(step);
 
+    step = "a rename, a retype without COLUMN or with SET DATA, and a dropped view or function each refuse";
+    rmSync(join(dir, "002_declared.sql"));
+    rmSync(join(dir, "003_destructive.sql"));
+    for (const ddl of ["ALTER TABLE zz.t RENAME COLUMN a TO b;", "ALTER TABLE zz.t RENAME TO u;", "alter table zz.t alter a type text;",
+                       "ALTER TABLE zz.t ALTER COLUMN a SET DATA TYPE text;", "DROP VIEW zz.v;", "DROP MATERIALIZED VIEW zz.m;",
+                       "DROP FUNCTION zz.f();"]) {
+      writeFileSync(join(dir, "005_ddl.sql"), `${ddl}\n`);
+      got = rollbackGuard("1.0.0", "1.1.0", repo);
+      if (!("refusals" in got) || got.refusals.map((r) => r.file).join(",") !== "005_ddl.sql") fail(step, `${ddl} → ${json(got)}`);
+    }
+    rmSync(join(dir, "005_ddl.sql"));
+    pass(step);
+
+    step = "a declaration in another case, or indented, refuses all the same";
+    for (const line of ["-- Rollback: Refused — the old writer cannot fill b", "  -- rollback: refused — the old writer cannot fill b"]) {
+      writeFileSync(join(dir, "006_declared.sql"), `-- a header\n${line}\nALTER TABLE zz.t ALTER COLUMN a SET NOT NULL;\n`);
+      got = rollbackGuard("1.0.0", "1.1.0", repo);
+      if (json(got) !== json({ refusals: [{ file: "006_declared.sql", reason: "the old writer cannot fill b" }] })) fail(step, `${json(line)} → ${json(got)}`);
+    }
+    rmSync(join(dir, "006_declared.sql"));
+    pass(step);
+
     step = "a version with no tag is the guard's error, never every migration counted as new";
-    got = rollbackGuard("9.9.9", repo);
-    if (json(got) !== json({ error: "no tag v9.9.9" })) fail(step, json(got));
+    got = rollbackGuard("9.9.9", "1.1.0", repo);
+    if (!("error" in got) || !got.error.startsWith("no tag v9.9.9 — ")) fail(step, json(got));
+    pass(step);
+
+    step = "a checkout that is not of the version the host runs is the guard's error, its migrations not the ones applied";
+    // The case R1-G6-3 names: a checkout behind the deployment lacks the refusing migration and,
+    // asked anyway, would permit the rollback it forbids.
+    writeFileSync(join(dir, "002_declared.sql"), "-- rollback: refused — the old writer cannot fill b\n");
+    for (const live of ["1.2.0", ""]) {
+      got = rollbackGuard("1.0.0", live, repo);
+      if (!("error" in got) || !got.error.startsWith(`this checkout is 1.1.0 and the host runs ${live || "(no recorded version)"} — `)) {
+        fail(step, `host at ${json(live)} → ${json(got)}`);
+      }
+      if (!refusalLines(live, "1.0.0", got).some((l) => /is refused: this checkout is 1\.1\.0/.test(l))) fail(step, "refusalLines does not print it");
+    }
     pass(step);
   } finally {
     rmSync(repo, { recursive: true, force: true });
@@ -107,7 +148,7 @@ export function headCases(previous: string): void {
   const declared = readFileSync(join(root, MIGRATIONS, MIGRATION), "utf8").split("\n")
     .find((l) => l.startsWith(`${DECLARATION} — `))?.slice(`${DECLARATION} — `.length).trim();
   if (!declared) fail(step, `${MIGRATION} carries no \`${DECLARATION} — <reason>\` line`);
-  const got = rollbackGuard(previous);
+  const got = rollbackGuard(previous, checkoutVersion());
   if (json(got) !== json({ refusals: [{ file: MIGRATION, reason: declared }] })) fail(step, json(got));
   pass(step);
 }
@@ -123,8 +164,8 @@ export function lineCases(): void {
   pass(step);
 
   step = "a guard error prints the missing tag and that the guard cannot know what that version's code expects";
-  text = refusalLines("0.94.0", "0.93.3", { error: "no tag v0.93.3" }).join("\n");
-  for (const want of ["no tag v0.93.3", "cannot know what that version's code expects", "0.94.0 is STILL LIVE; fix forward"]) {
+  text = refusalLines("0.94.0", "9.9.9", rollbackGuard("9.9.9", checkoutVersion())).join("\n");
+  for (const want of ["no tag v9.9.9", "cannot know what that version's code expects", "0.94.0 is STILL LIVE; fix forward"]) {
     if (!text.includes(want)) fail(step, `no "${want}" in:\n${text}`);
   }
   pass(step);
@@ -151,6 +192,13 @@ export function textCases(): void {
   if (!/\bdie\(/.test(branch) || !/refusalLines\(/.test(branch) || /\brollback\(/.test(branch)) {
     fail(step, `the refusal branch must die with refusalLines and never call rollback():\n${branch}`);
   }
+  // The guard answers only for a checkout of the version the host runs: step 6's host runs `version`.
+  if (!/rollbackGuard\(previous, version\)/.test(branch)) fail(step, "step 6 does not tell the guard the host runs this release");
+  // A same-version re-run moves nothing, so the rollback — and the outcome line's "rolled back" —
+  // is reached only when the host was on another version.
+  if (!/if \(previous && previous !== version\) \{\s*try \{/.test(block)) {
+    fail(step, "the rollback is attempted, and reported as done, when the host was already on this release");
+  }
   pass(step);
 
   step = "--rollback asks the guard before the first ssh that changes the host, and dies with its lines";
@@ -160,6 +208,7 @@ export function textCases(): void {
   if (g < 0 || moves < 0 || g > moves || !/die\([^;]*refusal/.test(rb.slice(g, moves))) {
     fail(step, `rollbackGuard( at ${g}, the first host change at ${moves}`);
   }
+  if (!/rollbackGuard\(to, current\)/.test(rb)) fail(step, "--rollback does not tell the guard the version the host runs");
   if (/IRREVERSIBLE|migrationsSince/.test(rb)) fail(step, "rollback.ts still carries a guard of its own beside rollback-guard.ts");
   pass(step);
 

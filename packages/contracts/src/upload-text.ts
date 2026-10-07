@@ -13,6 +13,8 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 
+import { base32 } from "./base32.js";
+
 /** FR-16's extensions, lowercase, without the dot. `.env` is not one: an environment file is a
  *  credential store far more often than material for a document. */
 export const UPLOAD_EXTENSIONS = [
@@ -33,32 +35,23 @@ export type UploadRefusal = { code: "UNSUPPORTED_FORMAT" | "SIZE_LIMIT" | "INVAL
 /** The file's text, and whether a leading BOM was removed to get it. */
 export type UploadedText = { text: string; bom: boolean };
 
-const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
-
-/** RFC 4648 base32, lowercase, unpadded, the final partial group included. */
-function base32(bytes: Uint8Array): string {
-  let bits = 0, value = 0, out = "";
-  for (const b of bytes) {
-    value = ((value << 8) | b) & 0xffff;
-    bits += 8;
-    while (bits >= 5) { out += BASE32[(value >>> (bits - 5)) & 31]; bits -= 5; }
-  }
-  return bits > 0 ? out + BASE32[(value << (5 - bits)) & 31] : out;
-}
-
 export const mintUploadId = (): string => `up_${base32(randomBytes(16))}`;
 export const mintUploadSecret = (): string => `us_${base32(randomBytes(32))}`;
 /** What `zz.upload.link_secret_hash` holds for a secret: the sha256 hex of its UTF-8. */
 export const uploadSecretHash = (secret: string): string => createHash("sha256").update(secret, "utf8").digest("hex");
+
+/** A filename's extension: the part after its last dot, lowercase, or "" when nothing comes before
+ *  that dot (`.env`, `.md`) or there is no dot. The one spelling of the rule that decides the
+ *  family, so a staging route's check of a sent name and `uploadText` never disagree. */
+export const uploadExtension = (filename: string): string => /^.+\.([^.]+)$/.exec(filename)?.[1].toLowerCase() ?? "";
 
 const BOM = [0xef, 0xbb, 0xbf];
 const FAMILY = UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(", ");
 
 /** A file's bytes as the text a document or source stores, or the refusal that says what to send.
  *
- *  The extension is the one after the name's last dot, compared without case; a name with nothing
- *  before that dot (`.env`, `.md`) has no extension. The size is checked on the bytes as sent,
- *  before anything is decoded.
+ *  The extension is `uploadExtension`'s. The size is checked on the bytes as sent, before anything
+ *  is decoded.
  *
  *  DELIBERATE: the decoder is told to keep the BOM (`ignoreBOM: true`) and this removes it itself.
  *  TextDecoder's default drops a leading BOM silently, and the spec allows that removal only with
@@ -67,8 +60,7 @@ const FAMILY = UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(", ");
  *  DELIBERATE: a NUL is refused rather than kept or stripped. It is valid UTF-8, but PostgreSQL
  *  text cannot hold one, so keeping it fails the write and stripping it changes the text. */
 export function uploadText(filename: string, bytes: Uint8Array): UploadedText | UploadRefusal {
-  const ext = /^.+\.([^.]+)$/.exec(filename)?.[1].toLowerCase() ?? "";
-  if (!(UPLOAD_EXTENSIONS as readonly string[]).includes(ext)) {
+  if (!(UPLOAD_EXTENSIONS as readonly string[]).includes(uploadExtension(filename))) {
     return { code: "UNSUPPORTED_FORMAT", refusal:
       `ERROR: UNSUPPORTED_FORMAT — ${JSON.stringify(filename)} is not a plain-text file this platform takes; ` +
       `send a UTF-8 text file named with one of ${FAMILY}. Nothing is extracted from HTML, Office or PDF ` +

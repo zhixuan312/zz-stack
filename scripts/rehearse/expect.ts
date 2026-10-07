@@ -171,8 +171,8 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
   // The document-versions release. It reshapes three tables by adding columns and deletes no row,
   // so each keeps its count and hashes unchanged over the columns it had before — the added ones
   // (`version`, both `content_generation`s, `current_version`, `linked_by`) are this file's own and are
-  // left out of the digest. The three tables it creates are declared added. On `zz.event` it adds an
-  // index and restates the table's comment, which move no row, so `event` is deliberately not named
+  // left out of the digest. The three tables it creates are declared added. On `zz.event` it adds two
+  // indexes and restates the table's comment, which move no row, so `event` is deliberately not named
   // here: its default — count and every column hashed unchanged — is exactly what the file claims.
   // This entry leaves with the file when it folds into `001_init.sql`.
   "002_document_versions.sql": {

@@ -25,8 +25,9 @@
  *   - a refusal rolls back a captured source with everything else;
  *   - request records replay, conflict on a different digest, and record a keyed no-change;
  *   - a cause linked by the platform is upgraded when the writer names it;
- *   - version reads: a public version's approved snapshot, else its last, and the refusal for a
- *     version that does not exist lists the versions that do;
+ *   - version reads: a public version's last retained state, an approved snapshot a later one
+ *     superseded read by its content revision, and the refusal for a version that does not exist
+ *     lists the versions that do;
  *   - the activity record: a change's `document.*` event row, carrying its details, commits with the
  *     change (and its captured source's row with it), is the change's only act row, and is absent
  *     after a refusal or a failed insert of it; and every act `saveDocument` can record names a
@@ -65,6 +66,23 @@ function fail(step: string, detail: string): never {
   throw new CaseFailure(`document-store: FAILED at "${step}": ${detail}`);
 }
 const ok = (step: string): void => console.log(`  ${step}: ok`);
+
+/** Until `n` callers wait, ungranted, on the per-document lock `key` (polled in `pg_locks`, as
+ *  `scripts/schema/throwaway-core.ts`'s `waiters` does) — refused when `done()` reports a writer
+ *  finished first, which means it never queued, or after 20 seconds. */
+async function queued(db: pg.Client, step: string, key: string, n: number, done: () => boolean): Promise<void> {
+  const until = Date.now() + 20_000;
+  for (;;) {
+    const seen = (await db.query<{ n: number }>(
+      `select count(*)::int as n from pg_catalog.pg_locks
+        where locktype = 'advisory' and not granted
+          and ((classid::bigint << 32) | objid::bigint) = pg_catalog.hashtext($1)::bigint`, [key])).rows[0].n;
+    if (seen === n) return;
+    if (done()) fail(step, `a write finished without waiting on ${key}, which another transaction holds`);
+    if (Date.now() > until) fail(step, `expected ${n} write(s) waiting on ${key}, saw ${seen}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
 
 /** The text a write sends: a title envelope and a body. */
 const doc = (body: string, extra = ""): string => `---\ntitle: Notes\n${extra}---\n\n${body}`;
@@ -282,8 +300,12 @@ async function cases(
     await db.query("select pg_advisory_xact_lock(hashtext($1))", [`doc:${TEAM}/${rel}`]);
     let settled = false;
     const pending = write().then((r) => { settled = true; return r; });
-    await new Promise((r) => setTimeout(r, 700));
-    if (settled) { await db.query("rollback"); fail(step, "the write did not wait for the lock another transaction holds"); }
+    try {
+      await queued(db, step, `doc:${TEAM}/${rel}`, 1, () => settled);
+    } catch (err) {
+      await db.query("rollback");
+      throw err;
+    }
     await db.query("commit");
     const r = await pending as Record<string, unknown>;
     if ("refusal" in r) fail(step, `after the lock was released the write was refused: ${String(r.refusal)}`);
@@ -373,18 +395,17 @@ async function cases(
   // ── version reads ────────────────────────────────────────────────────────────────────────────
   {
     const v1 = await versions.loadDocument(TEAM, DOC, 1);
-    if (!v1.ok || v1.rev.revision !== 3 || !/^version: 1$/m.test(v1.text)) {
-      fail("read v1", `version 1 did not answer with its approved snapshot r3: ${JSON.stringify(v1.ok ? v1.rev : v1)}`);
+    if (!v1.ok || v1.rev.revision !== 4 || !/^version: 1$/m.test(v1.text)) {
+      fail("read v1", `version 1 did not answer with its last snapshot r4: ${JSON.stringify(v1.ok ? v1.rev : v1)}`);
     }
     const cur = await versions.loadDocument(TEAM, DOC);
     const own = contentRevision(cur.doc.id, Number(await gen(3)));
     const current = (await docRow()).content_generation;
-    if (!v1.text.includes(`content_revision: ${own}\n`) || own === contentRevision(cur.doc.id, Number(current))) {
-      fail("read v1", "a past snapshot does not carry its own content revision, or carries the current one");
-    }
+    // r3, the approved snapshot r4 superseded inside v1, is read by its content revision.
     const byToken = await versions.loadSnapshot(TEAM, DOC, own);
-    if (!byToken.ok || byToken.rev.revision !== 3 || byToken.text !== v1.text) {
-      fail("read by content revision", `the token of r3 did not read r3: ${JSON.stringify(byToken.ok ? byToken.rev : byToken)}`);
+    if (!byToken.ok || byToken.rev.revision !== 3 || !byToken.text.includes(`content_revision: ${own}\n`)
+        || own === contentRevision(cur.doc.id, Number(current))) {
+      fail("read by content revision", `the token of r3 did not read r3 under its own content revision: ${JSON.stringify(byToken.ok ? byToken.rev : byToken)}`);
     }
     const want = contentRevision(cur.doc.id, Number(current));
     if (!/^cr_[a-z2-7]{26}$/.test(want)) fail("content revision", `malformed: ${want}`);
@@ -399,9 +420,20 @@ async function cases(
     }
     const history = await versions.revisionsOf(pool, cur.doc.id);
     const listed = versions.publicVersions(history).map((r: { version: number; revision: number }) => `${r.version}:${r.revision}`);
-    if (listed[0] !== "1:3") fail("public versions", `one entry per version, the approved snapshot first: ${listed.join(", ")}`);
+    if (listed[0] !== "1:4") fail("public versions", `one entry per version, v1's last snapshot first: ${listed.join(", ")}`);
     if (new Set(listed.map((l: string) => l.split(":")[0])).size !== listed.length) fail("public versions", `repeated: ${listed}`);
-    ok("version reads: approved snapshot of a version, its last otherwise, distinct versions listed");
+    // A version of several snapshots, none approved, is read as its last too: a second document, its
+    // r1 presented so the rewrite files r2 beside it in v1.
+    const unsigned = `${INIT}/unsigned.md`;
+    saved("read unapproved version", await saveDocument({ ...base, relPath: unsigned, text: doc("one\n"), mode: "create" }));
+    await db.query("update zz.doc_revision r set presented_at = now() from zz.doc d where d.id = r.doc_id and d.path = 'unsigned.md' and r.revision = 1");
+    const two = saved("read unapproved version", await saveDocument({ ...base, relPath: unsigned, text: doc("two\n"), mode: "rewrite" }));
+    if (two.revision !== 2 || two.version !== 1) fail("read unapproved version", `the rewrite filed ${JSON.stringify(two)}, not r2 in v1`);
+    const last = await versions.loadDocument(TEAM, unsigned, 1);
+    if (!last.ok || last.rev.revision !== 2 || !last.text.endsWith("two\n")) {
+      fail("read unapproved version", `v1 of two unapproved snapshots did not answer with r2: ${JSON.stringify(last.ok ? last.rev : last)}`);
+    }
+    ok("version reads: a version's last snapshot, distinct versions listed");
     ok("snapshot reads: a past snapshot carries its own content revision and is read by it");
   }
 
@@ -604,11 +636,18 @@ async function reservations(
     text: `---\ntitle: Reserved\n---\n\n${words}\n`, type: "source", mode: "create", act: "source", reserveName: true });
   const plain = saved("reserve, plain", await create("first"));
   if (plain.reserved !== `${stem}.md`) fail("reserve, plain", `a free stem reserved ${plain.reserved}`);
-  // Both queue behind the stem's lock, held here, and are let go together.
+  // Both queue behind the stem's lock, held here, and are let go together — only once both are seen
+  // waiting, so the case cannot quietly become two creates in sequence.
   await db.query("begin");
   await db.query("select pg_advisory_xact_lock(hashtext($1))", [`doc:${TEAM}/${stem}`]);
-  const both = Promise.all([create("second"), create("third")]);
-  await new Promise((r) => setTimeout(r, 700));
+  let settled = 0;
+  const both = Promise.all([create("second"), create("third")].map((p) => p.then((r) => { settled++; return r; })));
+  try {
+    await queued(db, "reserve, concurrent", `doc:${TEAM}/${stem}`, 2, () => settled > 0);
+  } catch (err) {
+    await db.query("rollback");
+    throw err;
+  }
   await db.query("commit");
   const got = (await both).map((r) => saved("reserve, concurrent", r).reserved).sort();
   if (got.join() !== `${stem}-2.md,${stem}-3.md`) fail("reserve, concurrent", `reserved ${JSON.stringify(got)}`);

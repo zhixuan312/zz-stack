@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * zz-core's listening port: --port <n> when n is a port number in plain decimal, 8000 with no --port, refused otherwise.
+ * zz-core's listening port: --port <n> when n is a port number in plain decimal, 8000 with no --port, refused otherwise —
+ * `--port=<n>` and a repeated --port included, each by name.
  * Run: node checks/core-port.ts   (after npm run build; also run by scripts/gate.ts)
  */
 import { join } from "node:path";
@@ -19,6 +20,11 @@ is(listenPort(argv("--port", "8123")) === 8123, "a port number is not used");
 is(listenPort(argv("--port", "1")) === 1, "the lowest port is refused");
 is(listenPort(argv("--port", "65535")) === 65535, "the highest port is refused");
 is(refuses(null), "--port with no value was accepted");
+const refusedWith = (args: string[], says: RegExp) => {
+  try { listenPort(argv(...args)); return false; } catch (err) { return err instanceof Error && says.test(err.message); }
+};
+is(refusedWith(["--port=8123"], /"--port=8123" is not accepted; write --port <n> with a space/), "--port=8123 was accepted, or refused without naming it");
+is(refusedWith(["--port", "1", "--port", "2"], /--port was given more than once/), "a repeated --port was accepted, or refused without saying so");
 for (const bad of ["0", "65536", "-1", "+80", "80.5", "1e3", "0x50", "08123", " 8123", "8123 ", "   ", "", "eighty", "8000abc"]) {
   is(refuses(bad), `${JSON.stringify(bad)} was accepted, or refused without naming it`);
 }

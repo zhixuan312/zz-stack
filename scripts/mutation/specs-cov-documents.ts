@@ -3,10 +3,11 @@
  * beside them.
  *
  * What these checks protect: the envelope is the platform's and the body is the caller's, and
- * there is no third source. `document_write` and `document_revise` refuse content that opens
- * with frontmatter, and `document_patch` refuses a find/replace reaching the block, so the
- * rows that matter most re-open one of those: a guard whose answer is thrown away, a refusal
- * that stops firing, a stamp that invents a field for a document it does not govern.
+ * there is no third source. `document_write` and `document_edit` take an envelope sent in whole
+ * content apart — every key the platform owns ignored and reported, a malformed one refused — and
+ * the platform renders the envelope itself, so the rows that matter most re-open one of those: a
+ * guard whose answer is thrown away, a refusal that stops firing, a stamp that invents a field for
+ * a document it does not govern.
  *
  * DELIBERATE: several payloads below are assembled from halves rather than written whole.
  * `makeWorkspace` runs `git add -A` inside the disposable copy, so this spec file is tracked
@@ -143,7 +144,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     subject: "services/zz-core/src/tools/artifacts.ts",
     find: "      const path = await safePath(args.path);",
     replace: "      const path = args.path;",
-    planted: "document_patch judges a document without resolving its path first, so a caller " +
+    planted: "document_write judges a document without resolving its path first, so a caller " +
       "who wrote a path the store would never accept is answered about the document instead — " +
       "and the refusal that teaches the path form never reaches the caller who needs it",
   },

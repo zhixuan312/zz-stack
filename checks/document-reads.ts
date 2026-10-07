@@ -329,7 +329,7 @@ events.splice(0, events.length, ...events.filter((e) => e.subject !== `${INIT}/s
 const recorded = events.length;
 const historical = await present(db()!, TEAM, `${INIT}/spec.md`, 1);
 is(/The first approval/.test(historical) && !/The current draft/.test(historical),
-   "`version: 1` did not return the copy filed at the first approval");
+   "`version: 1` did not return v1's last retained state, the first approval");
 is(await shown(`${INIT}/spec.md`) === false,
    "fetching an old version marks the current revision as presented");
 is(events.length === recorded, "fetching an old version recorded a presentation, which pins the current row nobody was shown");

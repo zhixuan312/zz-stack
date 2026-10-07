@@ -311,5 +311,6 @@ if (fail.length) {
   process.exit(1);
 }
 console.log("approve-needs-present: an approval rests on a context of the caller's covering exactly the current snapshot — " +
-            "the most recent, or the one passed; never another principal's or credential's; a stale target is a conflict " +
+            "the most recent, or the one passed, given only the rows the statement scopes to the caller (the statement's own " +
+            "scoping is attest-shown's); a stale target is a conflict " +
             "naming what changed, and a failed read refuses; a moved row covers nothing; a legacy row is stamped");

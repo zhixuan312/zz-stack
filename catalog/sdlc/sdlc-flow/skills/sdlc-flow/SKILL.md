@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 2.15
+version: 2.16
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -110,10 +110,10 @@ the `Next move:` line every document call ends with — computes it from the rec
 | The record | Next move |
 |---|---|
 | no round yet | round 1 is owed |
-| the document was revised after the last round read it | the next round checks the revision |
+| the document reached a new version after the last round read it | the next round checks the new version |
 | the last round read the current version | the audit is settled; move on |
 | the last round reopens something the person agreed (the platform asks `changes_commitment` the moment the round lands) | the stakeholder decides |
-| three rounds are spent and the latest revision was never audited | the stakeholder decides |
+| three rounds are spent and the latest version was never audited | the stakeholder decides |
 
 Three is a resource limit, never a pass: a spent budget does not mean the document is fine, so
 the person decides whether it proceeds unaudited or goes back to the stage that wrote it. Their

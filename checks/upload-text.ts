@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 
 import { mintUploadId, mintUploadSecret, UPLOAD_EXTENSIONS, UPLOAD_ID, UPLOAD_MAX_BYTES, UPLOAD_SECRET,
-         uploadSecretHash, uploadText } from "@zz/contracts";
+         uploadExtension, uploadSecretHash, uploadText } from "@zz/contracts";
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
@@ -43,6 +43,11 @@ for (const ext of FR16) {
 for (const name of ["x.env", ".env", "x.html", "x.htm", "x.docx", "x.odt", "x.pdf", "x.rtf", "README", ".md",
                     "x.md.exe", "x.", ""]) {
   refused(name, utf8("plain"), "UNSUPPORTED_FORMAT", `${JSON.stringify(name)} is outside the family`);
+}
+// The extension rule the gateway's sent-name check shares with uploadText.
+for (const [name, ext] of [["notes.MD", "md"], ["a.b.Txt", "txt"], [".env", ""], [".md", ""], ["x.", ""], ["README", ""],
+                           ["", ""]]) {
+  is(uploadExtension(name) === ext, `uploadExtension(${JSON.stringify(name)}) is ${JSON.stringify(uploadExtension(name))}, not ${JSON.stringify(ext)}`);
 }
 const fmt = read("report.pdf", utf8("x"));
 is("refusal" in fmt && fmt.refusal.includes(".md") && fmt.refusal.includes(".adoc") && fmt.refusal.includes("report.pdf"),

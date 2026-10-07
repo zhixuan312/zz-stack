@@ -16,12 +16,14 @@
  *   - several causes in one call open one version; a source the current version already cites,
  *     named again, opens none;
  *   - a same-version snapshot carries its version's causes; `version: N` reads and presents N's
- *     approved snapshot, else its last;
+ *     last retained state, and an approved snapshot it superseded reads by its content revision; a snapshot shown in part stays pinned by the generation it
+ *     showed when a rewrite keeping its identity moves its write time past the showing;
  *   - a closed initiative's gated correction is a draft beside its sealed revision, the close and
  *     its ledger untouched, `handover.md` writable and approvable meanwhile and `initiative_status`
  *     awaiting the correction's approval while reporting the outcome; a failure injected while the
  *     correction clears the approval commits nothing; a changed outcome is refused by the real
- *     `documentGuards`, called in this process; an ungated correction invents no status;
+ *     `documentGuards`, called in this process; an ungated correction invents no status; a
+ *     correction of a closing snapshot nobody was shown or signed files a new row beside it;
  *   - the act boundary: an approval meeting an edit committed after its read is APPROVAL_CONFLICT,
  *     naming the current revision and what changed; a close meeting one records on it; a close
  *     whose document moves twice answers that it changed while being closed, and commits nothing;
@@ -29,7 +31,9 @@
  *     most recent context, and the approval's one act row records that context and the snapshot it
  *     signed; a stale `expected_revision` — a metadata-only change after display included — is
  *     APPROVAL_CONFLICT naming what changed, an approval without one is PRESENTATION_REQUIRED
- *     naming the context to present in, and the delta presented in it is then approved.
+ *     naming the context to present in, and the delta presented in it is then approved; an
+ *     approval that would rename a heading is refused, sealing nothing; an approval and a close
+ *     keep the version's note.
  *
  * Races are staged with the order in which PostgreSQL grants one advisory lock — the per-document
  * key `saveDocument` takes; an injected failure is a trigger created for its case and dropped
@@ -104,6 +108,21 @@ async function settledClose(c: Core, initiative: string): Promise<string> {
     await new Promise((r) => setTimeout(r, 50));
   }
   return c.fail(`close of ${initiative}`, "its ledger event never landed");
+}
+
+/** The close record once nothing more lands — the same three reads in a row, as `settled`
+ *  (scripts/schema/rollback-cases.ts) waits. "Not recorded again" read at once would pass a second
+ *  close event written after the reply, the way the first one is. */
+async function quietClose(c: Core, initiative: string): Promise<string> {
+  let last = await closeRecord(c, initiative);
+  for (let same = 0, i = 0; same < 3; i++) {
+    if (i > 100) c.fail(`close of ${initiative}`, "the record never settled");
+    await new Promise((r) => setTimeout(r, 200));
+    const now = await closeRecord(c, initiative);
+    same = now === last ? same + 1 : 0;
+    last = now;
+  }
+  return last;
 }
 
 /** A spec the spec gate approves: every declared section, one phase, one core statement with its
@@ -206,14 +225,16 @@ async function versionTable(c: Core): Promise<void> {
   }
   c.pass(step);
 
-  step = "version: N reads and presents N's approved snapshot, else its last";
+  step = "version: N reads and presents N's last retained state; the approved snapshot it superseded reads by its content revision";
   const readV4 = await c.ok(step, "document_read", { path: n, version: 4 });
-  if (!/^status: approved$/m.test(readV4) || /Notes, renamed/.test(readV4)) c.fail(step, `v4 before re-approval: ${readV4}`);
+  if (/^status: approved$/m.test(readV4) || !/^title: Notes, renamed$/m.test(readV4)) c.fail(step, `v4 before re-approval: ${readV4}`);
   const shownV4 = await c.ok(step, "document_present", { path: n, version: 4 });
-  if (!/version 4, status approved/.test(shownV4) || !/six/.test(shownV4)) c.fail(step, `present v4: ${shownV4}`);
+  if (!/version 4\b/.test(shownV4) || /status approved/.test(shownV4) || !/six/.test(shownV4)) c.fail(step, `present v4: ${shownV4}`);
+  const sealedV4 = await c.ok(step, "document_read", { path: n, content_revision: token });
+  if (!/^status: approved$/m.test(sealedV4) || /Notes, renamed/.test(sealedV4)) c.fail(step, `the approved snapshot by ${token}: ${sealedV4}`);
   await c.sign(n);
   if (!/title: Notes, renamed/.test(await c.ok(step, "document_read", { path: n, version: 4 }))) {
-    c.fail(step, "v4 does not read as its latest approved snapshot");
+    c.fail(step, "v4 does not read as its last snapshot");
   }
   // A version no one approved, with two snapshots: the presented one is pinned, so the change
   // after it files a second row in the same version, and the version reads as that last one.
@@ -225,6 +246,21 @@ async function versionTable(c: Core): Promise<void> {
   if (!/last/.test(await c.ok(step, "document_read", { path: m, version: 1 }))
       || !/last/.test(await c.ok(step, "document_present", { path: m, version: 1 }))) {
     c.fail(step, "v1 does not read as its last snapshot");
+  }
+  c.pass(step);
+
+  step = "a snapshot shown in part stays pinned when a rewrite keeping its identity moves its write past the showing";
+  const pp = `${V}/partly.md`;
+  await c.ok(step, "document_write", { path: pp, content: `# Partly\n\n${"a line shown in part.\n".repeat(40)}` });
+  await c.ok(step, "document_present", { path: pp, limit: 200 });
+  // What an identity-keeping rewrite — a stamp, or an eval document written again unchanged — leaves:
+  // the same generation, written after the showing's `ts`.
+  await c.sql.query(
+    `update zz.doc_revision r set written_at = now() + interval '1 minute' from zz.doc d join zz.initiative i on i.id = d.initiative_id
+      where r.doc_id = d.id and r.revision = d.current_revision and i.slug = $1 and d.path = 'partly.md'`, [V]);
+  reply = await c.ok(step, "document_edit", { path: pp, edits: [{ find: "# Partly", replace: "# Partly, edited" }] });
+  if (first(reply) !== `edited: ${pp} — v1` || (await rowOf(c, pp)).revision !== 2) {
+    c.fail(step, `the shown row was rewritten in place: ${reply} ${JSON.stringify(await rowOf(c, pp))}`);
   }
   c.pass(step);
 
@@ -320,7 +356,7 @@ async function closedCorrections(c: Core): Promise<void> {
   if (first(reply) !== `edited: ${review} — v2 (new version)` || !/^status: draft$/m.test(reply)) c.fail(step, reply);
   const now = await c.ok(step, "document_read", { path: review });
   if (!/^outcome: accepted$/m.test(now) || /^approved_by:/m.test(now)) c.fail(step, `current: ${now}`);
-  if ((await closeRecord(c, K)) !== record) c.fail(step, `close: ${record} → ${await closeRecord(c, K)}`);
+  if ((await quietClose(c, K)) !== record) c.fail(step, `close: ${record} → ${await closeRecord(c, K)}`);
   if ((await snapshot(c, review, sealedRow.revision)) !== sealed) c.fail(step, "the sealed revision changed");
   const v1 = await c.ok(step, "document_read", { path: review, version: 1 });
   if (!/^status: approved$/m.test(v1) || !/^outcome: accepted$/m.test(v1) || !/Ship it\.\n/.test(v1)) {
@@ -343,7 +379,7 @@ async function closedCorrections(c: Core): Promise<void> {
   step = "approving the correction signs it alone: the close is neither reopened nor recorded again";
   await c.sign(review);
   st = await c.status(K);
-  if ((await closeRecord(c, K)) !== record || st.next_move?.action !== "closed") {
+  if ((await quietClose(c, K)) !== record || st.next_move?.action !== "closed") {
     c.fail(step, `${await closeRecord(c, K)} ${JSON.stringify(st)}`);
   }
   c.pass(step);
@@ -354,7 +390,7 @@ async function closedCorrections(c: Core): Promise<void> {
   if (first(reply) !== `edited: ${review} — v2` || !/^status: draft$/m.test(reply) || !/^causes \(0\): none$/m.test(reply)) {
     c.fail(step, reply);
   }
-  if ((await tokenOf(c, review)) === token || (await closeRecord(c, K)) !== record) c.fail(step, "identity or close");
+  if ((await tokenOf(c, review)) === token || (await quietClose(c, K)) !== record) c.fail(step, "identity or close");
   if ((await c.status(K)).next_move?.action !== "await_approval") c.fail(step, "no approval awaited");
   c.pass(step);
 
@@ -387,8 +423,24 @@ async function closedCorrections(c: Core): Promise<void> {
   if (first(reply) !== `edited: ${u} — v2 (new version)` || !/^status: none$/m.test(reply)) c.fail(step, reply);
   const read = await c.ok(step, "document_read", { path: u });
   if (/^(status|approved_by):/m.test(read) || !/^outcome: accepted$/m.test(read)) c.fail(step, `current: ${read}`);
-  if ((await closeRecord(c, U)) !== recordU || (await c.status(U)).outcome !== "accepted") c.fail(step, "the close moved");
+  if ((await quietClose(c, U)) !== recordU || (await c.status(U)).outcome !== "accepted") c.fail(step, "the close moved");
   if (!/^status: approved$/m.test(await c.ok(step, "document_read", { path: u, version: 1 }))) c.fail(step, "v1 lost its seal");
+  c.pass(step);
+
+  // ---- a closing snapshot nobody was shown or signed: the close rests on it all the same
+  const P = await c.open("closed-unpinned");
+  const pn = `${P}/notes.md`;
+  step = "a correction of a closing snapshot nobody was shown or signed files a new row, and the one the close rests on stays";
+  await c.ok(step, "document_write", { path: pn, content: "# Notes\n\nas closed\n" });
+  const closedP = await c.ok(step, "initiative_close", { initiative: P, disposition: "finished", document: "notes.md" });
+  if (!new RegExp(`^${esc(P)} closed as `).test(closedP)) c.fail(step, closedP);
+  const atClose = await rowOf(c, pn);
+  const closing = await snapshot(c, pn, atClose.revision);
+  reply = await c.ok(step, "document_edit", { path: pn, edits: [{ find: "as closed", replace: "corrected" }] });
+  if (first(reply) !== `edited: ${pn} — v1`) c.fail(step, reply);
+  if ((await rowOf(c, pn)).revision !== atClose.revision + 1 || (await snapshot(c, pn, atClose.revision)) !== closing) {
+    c.fail(step, `the closing snapshot was rewritten in place: ${JSON.stringify(await rowOf(c, pn))}`);
+  }
   c.pass(step);
 }
 
@@ -530,6 +582,35 @@ async function exactTarget(c: Core): Promise<void> {
   }
   await c.ok(step, "document_approve", { path: m, expected_revision: now, review_context: ctx });
   if ((await rowOf(c, m)).status !== "approved") c.fail(step, "the approval of the presented delta did not seal");
+  c.pass(step);
+
+  step = "an approval that would rename a heading to the one the flow declares is refused, and seals nothing";
+  const H = await c.open("approve-rename", "sdlc-flow");
+  const hs = `${H}/spec.md`;
+  await c.ok(step, "document_write", { path: `${H}/explore.md`, content: EXPLORE_BODY });
+  await c.ok(step, "document_write", { path: hs, content: SPEC_BODY });
+  // A body stored before the flow's declared section was named so: a near miss approval would rename.
+  const hid = (await rowOf(c, hs)).id;
+  await c.sql.query("update zz.doc_revision set body = replace(body, '## Problem\n', '## The Problem\n') where doc_id = $1::uuid", [hid]);
+  await c.sql.query("update zz.doc set body = replace(body, '## Problem\n', '## The Problem\n') where id = $1::uuid", [hid]);
+  const hctx = ctxOf(await c.ok(step, "document_present", { path: hs }));
+  const held = await rowOf(c, hs);
+  await c.refused(step, "document_approve", { path: hs, expected_revision: await tokenOf(c, hs), review_context: hctx },
+    new RegExp(`^ERROR: ${esc(hs)} .*\`## The Problem\` → \`## Problem\`.*document_edit`, "s"));
+  if (JSON.stringify(await rowOf(c, hs)) !== JSON.stringify(held)) c.fail(step, `sealed: ${JSON.stringify(await rowOf(c, hs))}`);
+  c.pass(step);
+
+  step = "an approval and a close keep the version's note";
+  const nn = `${X}/noted.md`;
+  await c.ok(step, "document_write", { path: nn, content: "# Noted\n\nfirst\n" });
+  await c.ok(step, "document_edit", { path: nn, edits: [{ find: "first", replace: "second" }], note: "the second pass" });
+  const noteOf = async (): Promise<string | null> => (await c.sql.query<{ note: string | null }>(
+    `select r.revision_note as note from zz.doc d join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+      where d.id = $1::uuid`, [(await rowOf(c, nn)).id])).rows[0]?.note ?? null;
+  await c.sign(nn);
+  if ((await noteOf()) !== "the second pass") c.fail(step, `after the approval: ${await noteOf()}`);
+  await c.ok(step, "initiative_close", { initiative: X, disposition: "finished", document: "noted.md" });
+  if ((await noteOf()) !== "the second pass") c.fail(step, `after the close: ${await noteOf()}`);
   c.pass(step);
 }
 

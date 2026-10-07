@@ -58,6 +58,16 @@ function changeFact(s: Slot): string | null {
   return `<span class="fact-change">${parts.length ? parts.join(", ") : "nothing changed"} since v${prev.version}</span>`;
 }
 
+/** The review metadata an approval signs with the body, each one that is set: the title the
+ *  envelope carries can differ from the body's own heading, so it is shown too. */
+function metadata(d: PanelDocument): string {
+  const m = d.metadata;
+  const items = [["Title", m.title], ["Tags", m.tags.join(", ")], ["Stakeholder", m.stakeholder],
+                 ...Object.keys(m.fields).sort().map((k) => [k, m.fields[k] ?? ""])].filter(([, v]) => v);
+  return items.length
+    ? `<dl class="meta">${items.map(([k, v]) => `<div><dt>${esc(k!)}</dt><dd>${esc(v!)}</dd></div>`).join("")}</dl>` : "";
+}
+
 function header(s: Slot): string {
   const d = s.doc;
   const pill = standing(s);
@@ -83,6 +93,7 @@ function header(s: Slot): string {
     <div class="eyebrow"><img class="wordmark" src="${wordmark}" alt="" /><span>${esc(d.initiative)}</span>${mode}</div>
     <div class="title-row"><h1 class="title">${esc(title)}</h1><span class="pill pill-${pill.tone}">${pill.label}</span></div>
     <p class="facts">${facts.join('<span class="sep">·</span>')}</p>
+    ${metadata(d)}
     ${tabs}
   </header>`;
 }
@@ -122,9 +133,8 @@ function footer(s: Slot): string {
   const d = s.doc;
   const who = d.approvedBy ? ` by ${esc(d.approvedBy)}` : "";
   if (!d.latest) {
-    return `<footer class="foot"><p class="note">${d.version === d.current
-      ? `This is an earlier snapshot of v${d.version}. Only its current one can be approved — open the document again.`
-      : `This is version ${d.version}. Only the current version, v${d.current ?? "?"}, can be approved.`}</p></footer>`;
+    return `<footer class="foot"><p class="note">This is version ${d.version}. Only the current version, ` +
+      `v${d.current ?? "?"}, can be approved.</p></footer>`;
   }
   if (s.approval === "done") {
     return `<footer class="foot foot-done" role="status">

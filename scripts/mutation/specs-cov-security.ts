@@ -313,7 +313,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/suites-surface.ts",
     target: "the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",
     subject: "services/zz-core/src/document-panel.ts",
-    find: "      if (!ticketValid(ticket, team, path, loaded.rev.revision, user)) {",
+    find: "      if (!ticketValid(ticket, team, path, target, user)) {",
     replace: "      if (!ticket) {",
     planted: "document_shown records a present for any ticket at all, so a client that lists the " +
       "app-only tool to its model lets the model mark a document presented that nobody saw, and " +
@@ -323,8 +323,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/suites-surface.ts",
     target: "the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",
     subject: "services/zz-core/src/document-panel.ts",
-    find: "    ticket: latest ? ticketFor(team, relPath, shown, user) : null,",
-    replace: "    ticket: ticketFor(team, relPath, shown, user),",
+    find: "    ticket: latest && drawn ? ticketFor(team, relPath, drawn, user) : null,",
+    replace: "    ticket: drawn ? ticketFor(team, relPath, drawn, user) : null,",
     planted: "opening an old version hands the panel a ticket, and a ticket names the revision it " +
       "was cut for — so history now carries a way to vouch for a present it never showed",
   },

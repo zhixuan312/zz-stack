@@ -4,8 +4,7 @@
  *
  * Split out of `tools/initiative-status.ts`, which reached the 700-line ceiling the gate enforces.
  * Both are about the record a stage writes and the handover every flow ends with, not about
- * assembling an initiative's state, and neither is imported by anything else — so the seam is the
- * subject, not the line count.
+ * assembling an initiative's state — so the seam is the subject, not the line count.
  *
  * Not to be confused with `eval/stage-record.ts`, which WRITES a stage's record. This reads one.
  */

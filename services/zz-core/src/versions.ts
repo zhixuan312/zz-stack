@@ -126,8 +126,8 @@ export const NO_DB = "ERROR: no platform database — the store is the database 
  * detoasts a tuple to return it, so a whole history was detoasted to answer about one.
  * `bodyOfVersion` names it by public version instead, as `snapshotOf` picks one.
  *
- * COUPLED: the subquery's order is `snapshotOf`'s rule — the version's last sealed row, else its
- * last row — so the one body detoasted is the one the reader answers with. */
+ * COUPLED: the subquery's order is `snapshotOf`'s rule — the version's last row — so the one body
+ * detoasted is the one the reader answers with. */
 export async function revisionsOf(
   p: Pick<pg.Pool, "query">, docId: string, bodyOf?: number | null, bodyOfVersion?: number | null,
 ): Promise<RevisionRecord[]> {
@@ -136,7 +136,7 @@ export async function revisionsOf(
             case when r.revision = coalesce($2::int, (
                    select x.revision from zz.doc_revision x
                     where x.doc_id = $1::uuid and x.version = $3::int
-                    order by (x.approved_by is not null) desc, x.revision desc limit 1))
+                    order by x.revision desc limit 1))
                  then r.body end as body,
             r.revision_note, w.email as written_by, r.written_at::text as written_at,
             a.email as approved_by, r.approved_at::text as approved_at,
@@ -149,17 +149,15 @@ export async function revisionsOf(
   return rows;
 }
 
-/** The snapshot a public version is read as: its last approved one when it has one — the bytes a
- *  person signed — else its last. Null when the document has no such version. */
-function snapshotOf<R extends { revision: number; version: number; approved_by: string | null }>(
-  history: R[], version: number,
-): R | null {
-  const rows = history.filter((r) => r.version === version);
-  return rows.filter((r) => r.approved_by).pop() ?? rows.pop() ?? null;
+/** The snapshot a public version is read as: its last retained state, as spec v6 states it — the
+ *  version's last row. An approved or presented snapshot superseded inside its version stays
+ *  addressable by its content revision (`loadSnapshot`). Null when the document has no such version. */
+function snapshotOf<R extends { revision: number; version: number }>(history: R[], version: number): R | null {
+  return history.filter((r) => r.version === version).pop() ?? null;
 }
 
 /** One entry per public version, oldest first, each the snapshot `snapshotOf` reads it as. */
-export function publicVersions<R extends { revision: number; version: number; approved_by: string | null }>(
+export function publicVersions<R extends { revision: number; version: number }>(
   history: R[],
 ): R[] {
   return [...new Set(history.map((r) => r.version))].sort((a, b) => a - b)
@@ -279,7 +277,7 @@ const missingLegacy = (relPath: string, version: number): string =>
   "revision exists and its content is gone. Read the current revision, or another version.";
 
 /** One document as a tool reads it: the row, the snapshot — the current one, or the one public
- *  `version` is read as (`snapshotOf`: its approved snapshot, else its last) — its text, and the
+ *  `version` is read as (`snapshotOf`: its last retained state) — its text, and the
  *  whole history for the caller to state. */
 export async function loadDocument(
   team: string, relPath: string, version?: number,
@@ -319,8 +317,8 @@ export async function loadDocument(
 /** One exact retained snapshot, by the `content_revision` it is named by — `document_read(path,
  *  content_revision)`. The token is matched against the document's generations, so a token this
  *  document issued for a state no retained row carries (rewritten in place) is told apart from one
- *  it never issued. When several rows carry one generation, the one read is `snapshotOf`'s: the
- *  last sealed, else the last. */
+ *  it never issued. When several rows carry one generation, the one read is the last sealed, else
+ *  the last. */
 export async function loadSnapshot(team: string, relPath: string, token: string): Promise<Loaded> {
   const p = pool();
   if (!p) return { ok: false, why: "no_database", refusal: NO_DB };

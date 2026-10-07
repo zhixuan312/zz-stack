@@ -6,11 +6,15 @@
  */
 import type { Express } from "express";
 
-import { contentRevision } from "@zz/contracts";
+import { contentRevision, Envelope } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
 
 import { platformDb } from "../db.js";
 import { flowShape, handler, stageOf, ZZ_TZ, type DocRow, type StageDoc } from "./shared.js";
+
+/** The envelope keys the platform reserves; every other field is a flow's own. COUPLED:
+ *  RESERVED_ENVELOPE in services/zz-core/src/document-rules.ts derives from the same schema. */
+const RESERVED = new Set(Object.keys(Envelope.shape));
 
 /** The three document types that state claims. The type is the document's own, and it is what
  *  the role on every claim is stamped from — the reader that already knows the type does not
@@ -100,7 +104,9 @@ export function mountInitiatives(app: Express): void {
        supports through that revision's envelope payload. None of the four is a column of zz.doc,
        so a select naming them off it would stop preparing the day the migration lands.
        COUPLED: correction is the same expression in every statement of this file that feeds
-       stageOf, and in the document read below; StageDoc in shared.ts says what it means. */
+       stageOf, and in the document read below; StageDoc in shared.ts says what it means. It is
+       closedMove's rule in services/zz-core/src/tools/initiative-closed.ts, and abandoned is the
+       outcome contracts names OUTCOME_STOPPED. */
     // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
     // `zz.initiative_fact` (001) — the console's own copy of `<initiative>/
     // _facts.json`, which it cannot read directly (it has no filesystem access to the store).
@@ -171,12 +177,11 @@ export function mountInitiatives(app: Express): void {
                                and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
-              case when i.closed_at is not null and d.status <> 'approved'
-                         and r.fields->>'outcome' is not null
-                         and exists (select 1 from zz.doc_revision c
-                                      where c.doc_id = d.id and c.revision < r.revision
-                                        and c.approved_by is not null
-                                        and c.fields->>'outcome' is not null)
+              case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
+                         and d.approved_revision is not null and d.updated_at > i.closed_at
+                         and (i.outcome <> 'abandoned'
+                              or (select x.fields->>'outcome' from zz.doc_revision x
+                                   where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
                    then d.current_version end as correction,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc d
@@ -196,12 +201,11 @@ export function mountInitiatives(app: Express): void {
                                and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
-              case when i.closed_at is not null and d.status <> 'approved'
-                         and r.fields->>'outcome' is not null
-                         and exists (select 1 from zz.doc_revision c
-                                      where c.doc_id = d.id and c.revision < r.revision
-                                        and c.approved_by is not null
-                                        and c.fields->>'outcome' is not null)
+              case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
+                         and d.approved_revision is not null and d.updated_at > i.closed_at
+                         and (i.outcome <> 'abandoned'
+                              or (select x.fields->>'outcome' from zz.doc_revision x
+                                   where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
                    then d.current_version end as correction,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc d
@@ -220,12 +224,11 @@ export function mountInitiatives(app: Express): void {
                                and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
-              case when i.closed_at is not null and d.status <> 'approved'
-                         and r.fields->>'outcome' is not null
-                         and exists (select 1 from zz.doc_revision c
-                                      where c.doc_id = d.id and c.revision < r.revision
-                                        and c.approved_by is not null
-                                        and c.fields->>'outcome' is not null)
+              case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
+                         and d.approved_revision is not null and d.updated_at > i.closed_at
+                         and (i.outcome <> 'abandoned'
+                              or (select x.fields->>'outcome' from zz.doc_revision x
+                                   where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
                    then d.current_version end as correction,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc d
@@ -275,7 +278,7 @@ export function mountInitiatives(app: Express): void {
      * `written`, because a gate nobody has drafted is waiting on the agent and not on a person, and
      * `!passed`, which is the approval itself.
      *
-     * A closed initiative waits on a person in one case: its closing document's correction, a
+     * A closed initiative waits on a person in one case: a correction of an approved document, a
      * draft until somebody approves it again — the same `await_approval` initiative_status
      * routes it to. Its gates are otherwise settled, so that document is the one row it adds. */
     if (req.query.waiting === "1") {
@@ -345,12 +348,11 @@ export function mountInitiatives(app: Express): void {
                                and l.kind = 'supports') as supports,
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
                 length(coalesce(r.body,'')) as bytes,
-                case when i.closed_at is not null and d.status <> 'approved'
-                           and r.fields->>'outcome' is not null
-                           and exists (select 1 from zz.doc_revision c
-                                        where c.doc_id = d.id and c.revision < r.revision
-                                          and c.approved_by is not null
-                                          and c.fields->>'outcome' is not null)
+                case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
+                           and d.approved_revision is not null and d.updated_at > i.closed_at
+                           and (i.outcome <> 'abandoned'
+                                or (select x.fields->>'outcome' from zz.doc_revision x
+                                     where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
                      then d.current_version end as correction
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
@@ -475,17 +477,17 @@ export function mountInitiatives(app: Express): void {
       db.query(
         `select d.id, coalesce(r.content_generation, d.content_generation) as content_generation,
                 t.slug as team, i.slug as initiative, d.path, d.current_revision, d.current_version,
-                case when i.closed_at is not null and d.status <> 'approved'
-                           and r.fields->>'outcome' is not null
-                           and exists (select 1 from zz.doc_revision c
-                                        where c.doc_id = d.id and c.revision < r.revision
-                                          and c.approved_by is not null
-                                          and c.fields->>'outcome' is not null)
+                case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
+                           and d.approved_revision is not null and d.updated_at > i.closed_at
+                           and (i.outcome <> 'abandoned'
+                                or (select x.fields->>'outcome' from zz.doc_revision x
+                                     where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
                      then d.current_version end as correction,
                 coalesce(i.flow,'') as flow,
                 d.type, d.status, r.fields->>'outcome' as outcome,
                 a.email as approved_by, r.approved_at, r.fields->>'closed_by' as closed_by,
-                d.title, d.tags, r.fields->>'evidence' as evidence,
+                d.title, d.tags, r.fields->>'evidence' as evidence, r.fields->>'stakeholder' as stakeholder,
+                coalesce(r.fields, '{}'::jsonb) as envelope_fields,
                 d.status = 'superseded' as superseded,
                 coalesce(r.body, d.body) as body,
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
@@ -499,9 +501,9 @@ export function mountInitiatives(app: Express): void {
         [team, initiative, path]),
       // One entry per public version of this document, oldest first. A version can hold several
       // snapshots (a presented or approved row that changed with no new cause files another row in
-      // the same version), and its entry is the one it is read as: its last approved snapshot when
-      // it has one, else its last. `version` is the public number; `revision` is the snapshot a
-      // reader fetches through `?revision=`.
+      // the same version), and its entry is the one it is read as: its last retained state, the
+      // version's last row. `version` is the public number; `revision` is the snapshot a reader
+      // fetches through `?revision=`.
       //
       // COUPLED: the subquery's order is `snapshotOf`'s rule in services/zz-core/src/versions.ts,
       // so the console and `document_read(version: N)` show the same bytes for vN.
@@ -537,7 +539,7 @@ export function mountInitiatives(app: Express): void {
             and r.revision in (select distinct on (x.version) x.revision
                                  from zz.doc_revision x
                                 where x.doc_id = d.id
-                                order by x.version, (x.approved_by is not null) desc, x.revision desc)
+                                order by x.version, x.revision desc)
           order by r.version`, [team, initiative, path]),
       // Why it changed. A source declares the documents it bears on — the chain from "what we
       // learned" to "what we changed" — and that declaration is a `doc_link` row of kind
@@ -592,10 +594,14 @@ export function mountInitiatives(app: Express): void {
     // the same current content.
     //
     // COUPLED: `snapshotRevision` in services/zz-core/src/review-context.ts states the same rule.
-    const { id, content_generation, ...row } = doc.rows[0];
+    const { id, content_generation, envelope_fields, ...row } = doc.rows[0];
     res.json({
       ...row, bytes: +row.bytes,
       content_revision: contentRevision(id, Number(content_generation)),
+      // The review metadata an approval signs beside the body, as zz-core's changeSnapshot reads it:
+      // the stakeholder above, and every envelope field the platform does not reserve.
+      fields: Object.fromEntries(Object.entries(envelope_fields as Record<string, unknown>)
+        .filter(([k, v]) => !RESERVED.has(k) && typeof v === "string").sort(([a], [b]) => a.localeCompare(b))),
       gated: rule ? rule.gate : null,
       closing: rule?.closing ?? false,
       requiredForClose: rule?.requiredForClose ?? false,

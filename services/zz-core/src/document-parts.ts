@@ -191,10 +191,11 @@ export function partHeader(rel: string, part: Part, of: string, text: string): s
   const lines = [`Part of ${rel}: characters ${part.start}–${part.end} of ${part.total} ` +
                  `(${of}; offsets count UTF-16 characters)${whole ? " — the whole of it" : ""}.`];
   // The token a change sends as `base`, so a reader of one part can change the document without
-  // reading it whole. Read off the envelope the text carries, which states it on the current
-  // snapshot alone: a body with no envelope, or an older version, states none.
-  const current = parseEnvelope(text).content_revision;
-  if (current) lines.push(`content revision: ${current} (the document as it is now)`);
+  // reading it whole. Read off the envelope the text carries, which states the content revision of
+  // the snapshot it is — an older version's own when a version was asked for — and a body with no
+  // envelope states none.
+  const own = parseEnvelope(text).content_revision;
+  if (own) lines.push(`content revision: ${own} (of the snapshot this part is cut from)`);
   /* A hosted client keeps the tool list it read when the connector was added: ChatGPT's copy from
    * before 0.79.3 had no `offset`, and a model holding it re-asked for part one until it filed a
    * bug. The fix is on the person's side, so the line says what it is. */

@@ -60,9 +60,14 @@ interface InProcess {
    *  `OPENAI_FILE_HOSTS` alone. The request-key lookup first, so a committed keyed call replays
    *  before anything is fetched; then the fetch, the plan and the guards; then the write, with its
    *  request record and the consumption an upload would have (a file has none). As
-   *  `document_write`, `document_edit` and `source_add` order it, for the seeded principal; the
-   *  field and tag rules the child's tools apply first are not repeated. Answers the reply text, a
-   *  refusal opening `ERROR`. */
+   *  `document_write`, `document_edit` and `source_add` order it, for the seeded principal — the
+   *  handlers are held to the lookup-before-fetch half of that order by the gate's "a keyed retry
+   *  with a ChatGPT `file` replays before the file is fetched" (scripts/gate/checks/
+   *  documents-guards.ts), so this copy cannot pass for an order they no longer have. Not
+   *  repeated: the field and tag rules the child's tools apply first, `document_write`'s named
+   *  metadata (none is passed), and `source_add`'s `supports`, `stage` and review-round ledger —
+   *  a `file` case here proves the route, not those rules. Answers the reply text, a refusal
+   *  opening `ERROR`. */
   fileWrite(tool: "document_write" | "document_edit" | "source_add", args: FileArgs, route: FetchRoute): Promise<string>;
 }
 
@@ -453,8 +458,11 @@ export async function withThrowawayCore(
       try {
         await fn(core);
       } catch (err) {
-        // zz-core's own last words, after the failure's line: the reason a reply was what it was.
-        if (child) console.error(`${err instanceof CaseFailure ? err.message : String(err)}\n--- zz-core output (tail)\n${child.output()}`);
+        // The failure's line always — a restart whose zz-core never came up leaves no child, and
+        // its reason is the line — then zz-core's own last words when there is a child to ask:
+        // the reason a reply was what it was.
+        const line = err instanceof CaseFailure ? err.message : `${name}: ${String((err as Error)?.stack ?? err)}`;
+        console.error(child ? `${line}\n--- zz-core output (tail)\n${child.output()}` : line);
         throw Object.assign(err as Error, { printed: true });
       } finally {
         if (child) await stopCore(child);

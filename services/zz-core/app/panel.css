@@ -121,6 +121,10 @@ body {
 .is-full .title { font-size: 32px; }
 .facts { margin: 8px 0 0; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .facts .sep { margin: 0 8px; color: var(--line-strong); }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0; font-size: 12px; }
+.meta div { display: flex; gap: 6px; min-width: 0; }
+.meta dt { color: var(--ink-faint); }
+.meta dd { margin: 0; color: var(--ink-soft); overflow-wrap: anywhere; }
 .chip { font-size: 12px; background: var(--surface-2); color: var(--ink-soft); padding: 1px 6px; border-radius: var(--r-sm); }
 
 /* Standing. Three tones, and they mean what they mean in the console: approved, waiting, neither. */

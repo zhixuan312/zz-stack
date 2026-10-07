@@ -7,7 +7,7 @@ import { App } from "@modelcontextprotocol/ext-apps";
 import type { Rendered } from "./render.ts";
 
 /** One record of the change set from the review context's baseline. COUPLED: `deltaOf`'s records in
- *  src/document-delta.ts; positions count every heading of the body, from 1. */
+ *  src/document-delta.ts; positions count, from 1, the headings its line scan finds (`heads`). */
 export type Change =
   | { kind: "added" | "edited"; heading: string; at: number }
   | { kind: "removed"; heading: string; from: number; lines: number; chars: number }
@@ -25,6 +25,8 @@ export interface PanelDocument {
   gate: string | null;
   history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
   body: string;
+  /** The review metadata an approval signs with the body. */
+  metadata: { title: string; tags: string[]; stakeholder: string; fields: Record<string, string> };
   content_revision: string | null;
   review_context: string | null;
   /** The review context's baseline and the change set from it; `changes` null when it is as long as the document. */

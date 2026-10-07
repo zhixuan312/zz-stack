@@ -6,15 +6,19 @@
 // would collide. Every entry is written out rather than derived from a `<verb>_<noun>` →
 // `<noun>_<verb>` pattern, because a pattern misses the mergers and exceptions.
 
-/** `/core`'s renames, plus three merges aliased so their history resolves: `block_skills` into
- * `skill_list`, and `patch_file` and `revise_document` into `document_edit`, the one tool that
- * changes an existing document.
+/** `/core`'s renames, plus `block_skills` (merged into `skill_list`, aliased so its history
+ * resolves).
+ *
+ * `patch_file` and `revise_document` take no entry. They were renamed to `document_patch` and
+ * `document_revise`, and those were deleted rather than renamed: `document_edit` replaced both
+ * with a different argument shape, so it is a new series, and aliasing either generation onto it
+ * would merge two (the rule MANAGE_ALIAS and EVAL_ALIAS state below).
  *
  * `get_my_info` becomes `session_whoami`, not `whoami` — `/manage` already registers a bare
  * `whoami`, and two doors sharing that name is the ambiguity this rename avoids.
  *
  * A tool that was never renamed takes no entry. COUPLED: checks/alias-maps.ts pins the count
- * at 17.
+ * at 15.
  */
 export const TOOL_ALIAS: Record<string, string> = Object.freeze({
   get_my_info: "session_whoami",
@@ -24,8 +28,6 @@ export const TOOL_ALIAS: Record<string, string> = Object.freeze({
   read_file: "document_read",
   show_document: "document_present",
   write_file: "document_write",
-  patch_file: "document_edit",
-  revise_document: "document_edit",
   approve: "document_approve",
   add_source: "source_add",
   list_sources: "source_list",

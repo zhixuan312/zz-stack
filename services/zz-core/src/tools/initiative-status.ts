@@ -15,7 +15,7 @@
 import type pg from "pg";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentApplies, OUTCOME_STOPPED, parseCaller, type Applicability, type FlowDoc } from "@zz/contracts";
+import { documentApplies, parseCaller, type Applicability, type FlowDoc } from "@zz/contracts";
 import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -32,6 +32,7 @@ import { platformEvent } from "../indexing.js";
 import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
 
+import { closedMove, type Move } from "./initiative-closed.js";
 import { registerKnowledgeReconcileTool } from "./knowledge-reconcile.js";
 
 
@@ -270,7 +271,7 @@ export async function initiativeState(
   const closedBy = (own?.closed_by || closingEnv.closed_by) || null;
 
   // the next move, in the flow's own declared order
-  let next: { action: string; document?: string; stage?: string; waiting_on: string; why: string };
+  let next: Move;
   // The current plan's structure: waves an executor may run in parallel, or why it cannot. Read
   // here because `current_phase` below decides which move the chain answers.
   //
@@ -291,54 +292,7 @@ export async function initiativeState(
   // without this such a plan read as built and the review round was offered a third of the way in.
   const unplannedPhase = plan?.unplanned_phase ?? null;
   if (outcome) {
-    // The platform appends the handover to every flow, so what gets captured does not depend on
-    // the flow author. Its completion signal is handover.md's own approval (zero knowledge nodes
-    // is a legitimate outcome), read through `states` like every other gated document. A FINISHED
-    // close owes it, so until it is approved the next move is the handover, not `closed`; an
-    // abandoned close owes nothing. It stays writeable after the close (guards.ts).
-    //
-    // COUPLED: a close that still owes the handover, or a correction, is not `closed`, so the
-    // no-argument listing shows it among the initiatives with work left and `nextMoveLine` names
-    // it after every call. A flow that declares no handover at all is closed rather than stuck.
-    const handover = states.find(isHandover);
-    const owed = outcome !== OUTCOME_STOPPED && handover !== undefined && handover.status !== "approved";
-    // A correction: a gated document approved before, a draft now, written after the close. It
-    // awaits its own approval while the close and its ledger row stand. A stop's fallback document
-    // was closed as a draft (closeCheck waives its gate), so a stop owes one only on its closing doc.
-    const corrected = (d: DocState): boolean => {
-      const row = rows.get(d.name);
-      return d.gate && d.status !== "approved" && !isHandover(d) && row?.approved_revision != null &&
-        !!own?.closed_at && Date.parse(row.updated_at) > Date.parse(own.closed_at) &&
-        (outcome !== OUTCOME_STOPPED || d.name === chain.closingDoc);
-    };
-    const correction = states.find(corrected);
-    if (correction) {
-      next = { action: "await_approval", document: correction.name, waiting_on: "stakeholder",
-               why: `closed with outcome: ${outcome}, and ${correction.name} ` +
-                    `v${rows.get(correction.name)?.current_version} is a correction awaiting its own ` +
-                    `approval — document_approve("${name}/${correction.name}") signs it; the close ` +
-                    "and its ledger row stand and are not recorded again." };
-    } else if (owed && handover.exists) {
-      next = { action: "await_approval", document: handover.name, waiting_on: "stakeholder",
-               why: `closed with outcome: ${outcome}, and a finished close owes the handover: ` +
-                    `${handover.name} is written and waiting on a verdict — ` +
-                    `document_approve("${name}/${handover.name}") records it.` };
-    } else if (owed) {
-      next = { action: "write_document", document: handover.name, waiting_on: "agent",
-               why: `closed with outcome: ${outcome}. A finished close owes the handover — it is ` +
-                    "where the platform collects what this cycle taught: skill_read(\"zz-handover\") " +
-                    `and run it; it writes ${handover.name} and mints what generalises.` };
-    } else {
-      const note = handover?.status === "approved"
-        ? ` The handover is recorded: ${handover.name} was approved by ${handover.approved_by ?? "somebody"}` +
-          `${handover.approved_at ? ` on ${handover.approved_at}` : ""}.`
-        : outcome === OUTCOME_STOPPED
-          ? " An abandoned close does not owe the handover; if the cycle taught something worth " +
-            "keeping, `skill_read(\"zz-handover\")` mints it and writes handover.md."
-          : "";
-      next = { action: "closed", waiting_on: "nobody",
-               why: `closed with outcome: ${outcome}. The ledger row is the record.${note}` };
-    }
+    next = closedMove(name, outcome, own?.closed_at ?? null, states, rows);
   } else {
     // A requirement is met by the only thing its target can offer. Nothing ever approves a
     // non-gated document — `gate: false` means no approval is required, so its status stays

@@ -97,8 +97,10 @@ export async function stagedUpload(
     return { refusal: `ERROR: UPLOAD_MISSING — ${id} holds no file yet: run the \`shell\` upload_start answered ` +
       "with, or have the person open its `link`, then send this call again." };
   }
-  if (r.expired) return { refusal: expired(id) };
+  // Consumed before expired, as the gateway's staging route and link page read it: a used upload
+  // is used whether or not its window has also run out.
   if (r.consumed) return { refusal: used(id) };
+  if (r.expired) return { refusal: expired(id) };
   // Read only now, once the row says it is this caller's to use.
   const held = (await p.query<{ body: Buffer | null; consumed: boolean }>(
     "select body, consumed_at is not null as consumed from zz.upload where id = $1", [id])).rows[0];

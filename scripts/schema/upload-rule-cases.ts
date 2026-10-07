@@ -63,7 +63,8 @@ export async function consumers(c: Core, g: Gateway, second: Mcp): Promise<void>
   const independent = (n: number) => ({ path: `${I}/keyed-${n}.md`, upload: id, request_id: `independent-${n}` });
   const states: [string, () => Promise<unknown>, RegExp][] = [
     ["consumed", async () => undefined, /^ERROR: UPLOAD_USED — /],
-    ["expired", () => expire(c, id), /^ERROR: UPLOAD_EXPIRED — /],
+    // Consumed before expired: a used upload is used, whether or not its window has also run out.
+    ["expired", () => expire(c, id), /^ERROR: UPLOAD_USED — /],
     ["deleted", () => c.sql.query("delete from zz.upload where id = $1", [id]), /^ERROR: FORBIDDEN — /],
   ];
   for (const [n, [state, reach, refusal]] of states.entries()) {

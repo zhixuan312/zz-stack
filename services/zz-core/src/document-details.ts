@@ -22,6 +22,7 @@
  */
 import { randomBytes } from "node:crypto";
 
+import { base32, unbase32 } from "@zz/contracts";
 import type pg from "pg";
 
 import { type EditRefusal, MAX_EDITS } from "./document-edits.js";
@@ -34,32 +35,6 @@ const REPLY_BUDGET = 16 * 1024;
 export const PAGE_BYTES = 12_000;
 /** The longest one entry of a preview that had to shrink; the detail keeps it whole. */
 const ENTRY_CAP = 120;
-
-const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
-
-/** RFC 4648 base32, lowercase, unpadded. */
-function base32(bytes: Uint8Array): string {
-  let bits = 0, value = 0, out = "";
-  for (const b of bytes) {
-    value = ((value << 8) | b) & 0xffff;
-    bits += 8;
-    while (bits >= 5) { out += BASE32[(value >>> (bits - 5)) & 31]; bits -= 5; }
-  }
-  return bits > 0 ? out + BASE32[(value << (5 - bits)) & 31] : out;
-}
-
-function unbase32(s: string): Buffer | null {
-  const out: number[] = [];
-  let bits = 0, value = 0;
-  for (const ch of s) {
-    const v = BASE32.indexOf(ch);
-    if (v < 0) return null;
-    value = ((value << 5) | v) & 0xffff;
-    bits += 5;
-    if (bits >= 8) { out.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
-  }
-  return Buffer.from(out);
-}
 
 /** A details reference: `dr_` and 26 base32 characters of 128 random bits. Opaque. */
 export const mintRef = (): string => `dr_${base32(randomBytes(16))}`;

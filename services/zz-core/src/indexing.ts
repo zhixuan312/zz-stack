@@ -174,6 +174,9 @@ export interface DocRow {
   outcome: string | null; approved_by: string | null; approved_at: string | null;
   closed_by: string | null; updated_at: string; title: string; body: string; tags: string[];
   current_revision: number | null; approved_revision: number | null;
+  /** The `outcome` the last approved revision carries: set when a close stamped the document while
+   *  it was approved, which is what tells a stop's corrected fallback from one it closed as a draft. */
+  approved_outcome: string | null;
   /** The public version of the current revision — what a reader is shown as `version`. */
   current_version: number | null;
   /** The current revision's ENVELOPE PAYLOAD — the keys no column of `doc` or `doc_revision`
@@ -198,6 +201,8 @@ export async function docRows(p: pg.Pool, team: string | null, initiative: strin
            d.updated_at::text as updated_at, d.title, coalesce(r.body, d.body) as body,
            coalesce(d.tags, '{}'::text[]) as tags,
            d.current_revision, d.approved_revision, d.current_version, r.fields,
+           (select x.fields->>'outcome' from zz.doc_revision x
+             where x.doc_id = d.id and x.revision = d.approved_revision) as approved_outcome,
            -- What this revision bears on. to_revision is null by doc_link's own CHECK for this
            -- kind, so the target is a document and not a revision of one, and the path is what
            -- every caller of supports compares against.

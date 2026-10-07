@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.18
+version: 1.19
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -477,7 +477,7 @@ Before finishing, verify:
 - All eight top-level `##` components are present, followed by `## Phase outline` and `## Core statements`, nothing else is added, and zero `<!-- brief:` markers remain. A component that does not apply says so under its own heading rather than being left out — the platform refuses the approval of a spec missing one.
 - Every component heading is present, using its label from the Component catalog. Check them against the numbered list at the end of Phase B rather than against a comma-separated run of them — `Approach, Method & Structure` is ONE label containing a comma, and read out of a comma list it turns into two components that do not exist. A component outside the eight is a defect, not a bonus: remove it before you finish.
 - Nothing in the file is a heading the manifest does not declare at `##` level. A `##` heading of your own invention is not refused, but it is also nobody's requirement, and the next two stages read the spec by these labels and will not see it.
-- If a write, revision or approval came back saying a heading was renamed to the one this flow declares, that line is kept and handed to `sdlc-spec-audit` with the spec. It is reported once and stored nowhere, so the copy in your hands is the only one there is.
+- If a write or an edit came back saying a heading was renamed to the one this flow declares, that line is kept and handed to `sdlc-spec-audit` with the spec. It is reported once and stored nowhere, so the copy in your hands is the only one there is. An approval renames nothing: if the stored spec carries a heading the flow now declares differently, `document_approve` refuses and names each rename — apply them with `document_edit` (`find: "## <old>", replace: "## <new>"`), present the result, then approve it.
 - The `### Deliverable contract` block declares `kind`, `audience`, `disposition`, at least one `artifacts` entry or a terminal `command` criterion, and every `acceptance` entry has an explicit `method`, a `why` rationale, and at least one `references` entry
 - Sections within components use `###`, sub-parts use `####` — no other heading levels for spec content
 - Every functional requirement is numbered (FR-N) and maps to an acceptance criterion

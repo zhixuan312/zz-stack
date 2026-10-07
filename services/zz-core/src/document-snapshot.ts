@@ -9,6 +9,7 @@
  * an approval sealing it, a close stamping its outcome — stays in place, because what was shown is
  * still what the row says.
  */
+import { contentRevision } from "@zz/contracts";
 import type pg from "pg";
 
 import { splitStorePath } from "./versions.js";
@@ -75,20 +76,29 @@ export interface CurrentRow {
 
 /** The document a store path names and its current row, with the pin rule's answer.
  *
- * PINNED: a row somebody was shown or signed. Shown means `presented_at` set, or a
- * `document.shown`/`document.shown_part` event for this document at or after the row's write;
- * signed means sealed, or the document's approved revision — a seal whose person resolved to no
- * principal leaves the row's columns null and the approval stands. */
+ * PINNED: a row somebody was shown, signed or closed on. Shown means `presented_at` set, or a
+ * `document.shown`/`document.shown_part` event for this document naming the row's own content
+ * revision as its `target`, or one at or after the row's write; signed means sealed, or the
+ * document's approved revision — a seal whose person resolved to no principal leaves the row's
+ * columns null and the approval stands; closed on means it carries an `outcome`, the snapshot the
+ * close rests on.
+ *
+ * DELIBERATE: the shown event is matched by the generation it showed, not only by time. An
+ * identity-keeping rewrite — a close stamping its outcome — moves `written_at` past a partial
+ * presentation's `ts`, and `ts` is its transaction's start, which can precede a `written_at`
+ * committed while the presentation waited on the lock; either way the time test alone let the
+ * next change rewrite a presented row in place. The time test stays for rows shown before events
+ * named their target. */
 export async function currentRow(
   p: Pick<pg.Pool, "query">, team: string, relPath: string,
 ): Promise<CurrentRow | null> {
   const { initiative, name } = splitStorePath(relPath);
-  const { rows } = await p.query<CurrentRow>(
-    `select d.id::text as id, d.status, d.current_revision, d.approved_revision,
-            d.content_generation::text as generation, r.version, r.written_at::text as written_at,
-            r.title, r.body, r.tags, r.fields,
+  const { rows } = await p.query<CurrentRow & { initiative_id: string; own: string | null }>(
+    `select d.id::text as id, d.initiative_id::text as initiative_id, d.status, d.current_revision,
+            d.approved_revision, d.content_generation::text as generation, r.content_generation::text as own,
+            r.version, r.written_at::text as written_at, r.title, r.body, r.tags, r.fields,
             (r.approved_by is not null or d.approved_revision = d.current_revision
-             or r.presented_at is not null
+             or r.presented_at is not null or r.fields->>'outcome' is not null
              or exists (select 1 from zz.event e
                          where e.initiative_id = d.initiative_id and e.subject = $4
                            and e.kind in ('document.shown', 'document.shown_part')
@@ -100,7 +110,17 @@ export async function currentRow(
       where t.slug = $1 and i.slug = $2 and d.path = $3
       order by d.updated_at desc
       limit 1`, [team, initiative, name, relPath]);
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  const { initiative_id, own, ...cur } = row;
+  if (cur.pinned) return cur;
+  const target = contentRevision(cur.id, Number(own ?? cur.generation));
+  const { rows: shown } = await p.query(
+    `select 1 from zz.event e
+      where e.initiative_id = $1::uuid and e.subject = $2 and e.kind in ('document.shown', 'document.shown_part')
+        and e.detail->>'target' = $3
+      limit 1`, [initiative_id, relPath, target]);
+  return { ...cur, pinned: shown.length > 0 };
 }
 
 /** Where a write to an existing document lands: a new public version when it opens one (a change

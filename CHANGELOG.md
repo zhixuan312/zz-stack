@@ -56,7 +56,9 @@ by image. Read the upgrade notes before deploying.
   - `upload` or `file`: a file.
 
   A call can also carry metadata alone. `document_write` on a path that already exists now
-  answers `TARGET_EXISTS` instead of overwriting it.
+  answers `TARGET_EXISTS` instead of overwriting it. In `tool-report`, rows under the old names
+  (`document_patch`, `document_revise`, and their older `patch_file` and `revise_document`) are
+  no longer grouped under any current tool: `document_edit` takes different arguments.
 - **The platform decides the version.** A body change to an approved document needs its
   cause: an existing source in `sources`, or the words that caused it as `source_content`,
   which the platform files as a source. A cause the current version does not have yet opens
@@ -72,9 +74,13 @@ by image. Read the upgrade notes before deploying.
   revision was a version. A correction now keeps the version and adds a revision, so every
   version shown (`initiative_status`, `document_present`, the panel, the control loop) is the
   public one. Evidence ids change from `@vN` to `@vN.R`. A flow run open across the release
-  holds ids that a later approval or revision no longer matches.
+  holds ids that a later approval or revision no longer matches. `document_read(version: N)`
+  and `document_present(version: N)` read version N's last retained state; an approved snapshot
+  a later one superseded inside its version is read by its `content_revision`.
   `plugin_profile`'s `patched` and `patched_with_evidence` are replaced by
-  `edits_without_cause` and `edits_with_cause`.
+  `edits_without_cause` and `edits_with_cause`, which count only the door's own calls outside
+  evaluation flows, and its `revised` now counts a document with a second public version rather
+  than a second revision. Both figures can drop.
 - **A present shows what changed since the reviewer last covered it.** `document_present` used
   to show the whole document every time. Each present now belongs to a review context
   (`rc_…`). Pass it back as `review_context` and the reply shows only what changed since that
@@ -86,20 +92,27 @@ by image. Read the upgrade notes before deploying.
   Without one, the answer is `PRESENTATION_REQUIRED`. A stale `expected_revision`, or an edit
   that lands between the present and the approval, is `APPROVAL_CONFLICT`, naming what changed.
   These two codes replace the old "present it first" and "present it again" replies.
-- **Receipts and refusals are counted, and complete.** A reply used to list what fitted and
-  stop at the first problem. Every list is now counted (`causes (3): …`), previews shrink to
-  fit 16 KiB but totals never do, and every reply names its full details as `details: dr_…`.
-  `document_read(path, details_ref, cursor)` pages through them. A refusal reports every
-  independent issue together: each failing edit, each bad source, each unmet gate, and every
-  row of a review ledger, acceptance table or spec gate. `MULTIPLE_MATCHES` lists its lines as
-  a counted preview. A script that parses reply text has to follow the new shape.
+  `document_approve` no longer renames a heading the flow now declares differently: it refuses,
+  names each rename, and nothing is signed. Apply them with `document_edit`, present the result,
+  then approve it.
+- **What an approval signs is shown with the body.** A full presentation, and a `version` or
+  `section` read, now name the review metadata an approval signs beside the body: the title,
+  tags, stakeholder and the flow's own fields. The document panel draws them in its header.
+- **Receipts and refusals are counted, and complete.** A reply's lists were not counted, and a
+  refusal named fewer of its problems than it had. Every list is now counted (`causes (3): …`),
+  previews shrink to fit 16 KiB but totals never do, and every reply names its full details as
+  `details: dr_…`. `document_read(path, details_ref, cursor)` pages through them. A refusal
+  reports every independent issue together: each failing edit, each bad source, each unmet gate,
+  and every row of a review ledger, acceptance table or spec gate. `MULTIPLE_MATCHES` lists its
+  lines as a counted preview. A script that parses reply text has to follow the new shape.
 - **Content that opens with an envelope is normalised, not refused.** A frontmatter block at
   the top of `content` used to be refused. Now the title, tags, stakeholder and flow fields in
   it are taken unless a named argument says otherwise. Keys the platform writes itself are
   ignored and reported. Any other key is refused by name. Tags are lower-cased. `supports` and
   `sources` entries lose a leading `./` and their own initiative prefix, and gain `.md`.
   `source_add` files under the first free name instead of refusing a taken one. A document
-  read and sent back whole is a `no_change`.
+  read and sent back whole answers `(no change)`. A source holding nothing but whitespace, as
+  `source_add` content, an uploaded file or `source_content`, is refused by name.
 - **`upload_start` replaces `source_upload`, and files are plain text only.** `source_upload`
   answered with a command that sent bytes to `PUT /upload/source`. That route converted HTML,
   `.docx`, `.odt` and PDF into a source's text. The route, the tool and all four extractors are
@@ -110,6 +123,19 @@ by image. Read the upgrade notes before deploying.
   leading BOM or leading blank lines removed and said in the receipt. A PDF or Office file is
   refused at `upload_start` with `UNSUPPORTED_FORMAT`. A staged upload expires after 15 minutes
   and is consumed in the write's own commit. A refused or failed write leaves it unconsumed.
+  `upload_start`'s answer carries a `note`: its `shell` line names the file without a path, so it
+  runs in the file's own directory, or with the file's path put in place of the name.
+  - An upload that was consumed answers `410 UPLOAD_USED` on its staging route, its link page
+    and a write, whether or not its window has also run out. An expired one answers
+    `UPLOAD_EXPIRED`, and its link page is a 410 page. An unknown staging link answers
+    `403 FORBIDDEN`.
+  - Staging is bounded. A client (an IPv6 address counted by its /64) may send 60 attempts a
+    minute, page loads of a link included, and have 4 bodies arriving at once, 32 in all. An
+    upload's owner may hold 64 MiB staged and unwritten. Past any of these the answer is
+    `429 RATE_LIMITED`.
+  - The gateway's hourly sweep removes an expired upload's body and deletes a row no write
+    consumed once its window has been over a day. A consumed row is kept without its body, so a
+    used id is never new again.
 - **In ChatGPT, a `file` attached to the conversation can be written directly, but that route
   is off by default.** `document_write`, `document_edit` and `source_add` take `file`. zz-core
   fetches it itself, only from hosts listed in `OPENAI_FILE_HOSTS`, only over HTTPS to public
@@ -129,6 +155,14 @@ by image. Read the upgrade notes before deploying.
   reason. At step 6, a refusal prints every verification failure and the reasons, and leaves
   the release live to be fixed forward instead of rolling it back. The compose header and
   `.env.example` no longer describe editing the image version by hand as a rollback.
+  - `--rollback` must now be run from a checkout whose `package.json` version is the host's
+    `ZZ_VERSION`. Any other checkout is refused before the host is touched: one behind the
+    deployment lacks the migrations it applied, and would have permitted a forbidden rollback.
+  - The guard also refuses a migration that renames a column or a table, changes a column's
+    type, or drops a view, a materialized view or a function, and it reads the declaration in
+    any case and indented.
+  - Step 6 no longer claims a rollback when the host was already on this version before the
+    release; there is nothing earlier to roll back to, and it says so.
 
 ### zz-stack-dashboard
 
@@ -143,15 +177,28 @@ by image. Read the upgrade notes before deploying.
   context with the approval. A page that has gone out of date shows the gateway's sentence
   with a Reload button instead of approving something the person did not see. Approve is
   offered only to a browser session reading its own team's document, the only presentation
-  zz-core accepts from the console.
+  zz-core accepts from the console. A newer snapshot that arrives while the page is open is
+  not recorded by itself: Approve is held, a banner says the document changed, and Reload
+  records the new one. Confirm closes whenever the snapshot behind it changes, and the second
+  click of a double-click never confirms.
+- **The document page shows what an approval signs.** Beside the title, the Document panel
+  lists the stakeholder, the tags and each of the flow's own fields.
+- **A correction is any approved document revised after the close.** After a finished close,
+  the console used to count only the closing document; it now counts what `initiative_status`
+  counts, so the bell and the stepper agree with it.
 
 ### Upgrade notes
 
 - **A migration applies on the gateway's next start:** `002_document_versions.sql`. It adds
-  `doc_revision.version` (filled from `revision`), `doc.current_version`,
-  `doc.content_generation`, `doc_link.linked_by` and three tables: `zz.doc_request`,
-  `zz.cause_link_epoch` and `zz.upload`. No row is deleted. It was rehearsed against the
-  latest production backup, and every existing row survived unchanged.
+  columns to three tables: `doc_revision.version` (NOT NULL, filled from `revision`) and
+  `doc_revision.content_generation`; `doc.current_version` and `doc.content_generation`; and
+  `doc_link.linked_by`; the version columns and `linked_by` carry CHECK constraints. It creates
+  three tables, `zz.doc_request`, `zz.cause_link_epoch` and `zz.upload`, and adds two partial
+  indexes on `zz.event`, one for `detail->>'details_ref'` and one for a document's
+  presentations, whose builds read every existing event. No row is
+  deleted, and no existing value changes: `doc_revision.version` and `doc.current_version` are
+  filled from the revision numbers already there, and the other new columns start empty or at
+  zero. It was rehearsed against the latest production backup, and no row was lost.
 - **Unlike every earlier migration, this one does affect a rollback: there is no image
   rollback across this release.** The previous image inserts revisions without the new
   NOT NULL `version`, so every write it made would fail with the health check still green.
@@ -167,14 +214,17 @@ by image. Read the upgrade notes before deploying.
   So no gateway write stop is built.
 - **Release the console alongside.** The console's approve call to
   `POST /api/console/documents/approve` now needs `expected_revision` and `review_context`,
-  and is answered 400 without them. The previous console cannot approve against this gateway.
+  and is answered 400 without them. The previous console cannot approve against this gateway,
+  and the new console reads the document's `stakeholder` and `fields`, which only this gateway
+  returns.
 - **Open document panels must reopen their document.** The panel's `document_shown` now
   requires `review_context` and `version`, so a panel loaded before the release cannot record
   that it was shown.
 - **A flow run open across the release should re-read its documents** before it cites
   evidence. Ids it holds as `@vN` no longer match `@vN.R`.
-- **Set `GATEWAY_PUBLIC_URL`.** `upload_start` builds its command and its link from it, and
-  refuses rather than print an address that resolves nowhere. `OPENAI_FILE_HOSTS` is new.
+- **`GATEWAY_PUBLIC_URL` gains a reader.** It is the existing key client packages already
+  need. `upload_start` now builds its command and its link from it, and refuses rather than
+  print an address that resolves nowhere, as `source_upload` did. `OPENAI_FILE_HOSTS` is new.
   Leave it empty, which keeps the ChatGPT `file` route off, until the hosts are established.
 - **Refresh the ChatGPT connector** (Settings → Apps & Connectors → zz-stack → refresh, or
   remove and add it again). ChatGPT caches tool schemas. Without a refresh it keeps offering

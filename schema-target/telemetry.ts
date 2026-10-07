@@ -243,6 +243,7 @@ export const TELEMETRY: Record<string, TableTarget> = {
       "CREATE INDEX event_refusal_owner_idx ON zz.event USING btree (refusal_owner) WHERE (ok = false)",
       "CREATE INDEX event_run ON zz.event USING btree (run_id) WHERE (run_id IS NOT NULL)",
       "CREATE INDEX event_run_identity ON zz.event USING btree (team_id, initiative_id, skill_version_id, session)",
+      "CREATE INDEX event_shown_subject ON zz.event USING btree (initiative_id, subject) WHERE (kind = ANY (ARRAY['document.shown'::text, 'document.shown_part'::text]))",
       "CREATE INDEX event_ts ON zz.event USING btree (ts DESC)",
     ],
     comment: "class=immutable_history; authority=this; question=what did the platform do or get asked to do, one append-only timestamped act — a tool call at a door, an admin act, a document act, a knowledge-journal act or a sign-in — the only fallback being /data/events-unwritten.jsonl when a write fails, except a document.* row written in the transaction of the change it records, whose failed insert fails that change?; retention=audit kinds (admin.*, credential.*, console.*, team.*, bug.*, pkg.download) and document.* kinds, whose rows carry the complete details a change receipt names, are kept indefinitely; tool_call and knowledge.* may age out once volume requires it, except a row an evaluation cites",

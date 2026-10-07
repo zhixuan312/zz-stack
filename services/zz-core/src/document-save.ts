@@ -513,9 +513,10 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
         //
         // DELIBERATE: `fields` is ASSIGNED, not coalesced, like the body beside it. Every rewrite
         // reads the document it replaces, so a field the rewrite dropped is a field the document
-        // no longer carries.
+        // no longer carries. The note is coalesced: an approval or a close sends none, and the
+        // version's note is still what the version is.
         `update zz.doc_revision set title = $3, body = $4, tags = $5::text[], content_hash = $6,
-                                    revision_note = $7, written_by = $8::uuid, written_at = now(),
+                                    revision_note = coalesce($7, revision_note), written_by = $8::uuid, written_at = now(),
                                     approved_by = coalesce($9::uuid, approved_by),
                                     approved_at = coalesce($10::timestamptz, approved_at),
                                     fields = $11::jsonb, content_generation = $12

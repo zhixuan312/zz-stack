@@ -30,11 +30,20 @@ assert.ok(/-- absorbs: 004_envelope_fields\.sql/.test(one),
 
 // 3. the writer computes the residual against the columns, and the reader prefers them. Two
 // files since the write path left the readers: `document-save.ts` writes, `versions.ts` reads.
+// The filtering itself is asserted, inside the function that does it: an import or the list's own
+// declaration names the keys without subtracting them.
+const fn = (src: string, name: string) => {
+  const at = src.indexOf(`function ${name}(`);
+  return at < 0 ? "" : src.slice(at, src.indexOf("\n}\n", at));
+};
 const w = readFileSync("services/zz-core/src/document-save.ts", "utf8");
 assert.ok(/parseEnvelope\(/.test(w), "the writer reads the envelope it is storing");
-assert.ok(/fields/.test(w) && /ENVELOPE_COLUMN_KEYS/.test(w), "and computes the payload against the columns' keys");
+assert.ok(/if \(!ENVELOPE_COLUMN_KEYS\.includes\(key\)\) payload\[key\] = value;/.test(fn(w, "envelopePayload")),
+  "and computes the payload against the columns' keys: envelopePayload keeps only a key no column carries");
 const v = readFileSync("services/zz-core/src/versions.ts", "utf8");
-assert.ok(/ENVELOPE_COLUMN_KEYS/.test(v) && /fields/.test(v), "the reader filters the payload through the same keys");
+const read = fn(v, "documentText");
+assert.ok(/for \(const \[key, value\] of Object\.entries\(rev\.fields \?\? \{\}\)\) \{\s*if \(!ENVELOPE_COLUMN_KEYS\.includes\(key\)\) env\[key\] = value;/.test(read),
+  "the reader filters the payload through the same keys: documentText drops a payload key a column carries");
 // The columns-win rule, stated where a reader can see it.
 assert.ok(/(columns?\s+win|column\s+wins|over\s+it|columns?\s+over)/i.test(v),
   "and the module states that the columns win over the payload on read");

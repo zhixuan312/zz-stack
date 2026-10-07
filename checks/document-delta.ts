@@ -6,7 +6,8 @@
  * preamble and trailing text, blank lines between sections, each metadata field, a fenced block
  * holding `#` lines, a CRLF body and a body with no headings — then the full fallback at its exact
  * boundary, and that every body byte is accounted for: one character inserted or deleted anywhere
- * in any body of the table gives at least one record, and a snapshot against itself gives none.
+ * in any body of the table gives at least one record or the full fallback (each counted apart), and
+ * a snapshot against itself gives none.
  * Run: node checks/document-delta.ts   (also run by scripts/gate.ts; needs `npm run build`)
  */
 import { deepStrictEqual } from "node:assert/strict";
@@ -138,8 +139,9 @@ records("tags in another order are the same tags", snap(doc(A), { tags: ["b", "a
 }
 
 // Every byte accounted for: a snapshot against itself has no record, and one character inserted or
-// deleted at any offset of any body above has at least one.
-let probes = 0;
+// deleted at any offset of any body above has at least one, or is presented in full. The two are
+// counted apart so the summary never calls a full presentation a record.
+let probes = 0, fulls = 0;
 for (const body of new Set(bodies)) {
   const self = deltaOf(snap(body), snap(body));
   if (self.kind === "delta" && self.records.length) fail.push(`a body against itself has records: ${JSON.stringify(body)}`);
@@ -149,7 +151,8 @@ for (const body of new Set(bodies)) {
     for (const now of edits) {
       probes++;
       const got = deltaOf(snap(body), snap(now));
-      if (got.kind === "delta" && !got.records.length) {
+      if (got.kind === "full") { fulls++; continue; }
+      if (got.kind !== "delta" || !got.records.length) {
         fail.push(`a one-character change at offset ${i} gave no record: ${JSON.stringify(now.slice(Math.max(0, i - 20), i + 20))}`);
         break;
       }
@@ -162,4 +165,4 @@ if (fail.length) {
   process.exit(1);
 }
 console.log(`document-delta: every case gives its exact records, the full fallback holds at its boundary, ` +
-            `and ${probes} one-character changes each gave a record`);
+            `and of ${probes} one-character changes ${probes - fulls} gave a record and ${fulls} were presented in full`);

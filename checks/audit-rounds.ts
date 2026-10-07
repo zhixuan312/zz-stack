@@ -13,8 +13,8 @@
  *
  *   1. material supporting spec.md is not a round
  *   2. a round that read the current version settles the audit
- *   3. a revision after the last round owes the next round
- *   4. a spent budget with an unaudited revision waits on the stakeholder, and a recorded
+ *   3. a new version after the last round owes the next round
+ *   4. a spent budget with an unaudited version waits on the stakeholder, and a recorded
  *      decision releases it
  *   5. a round that reopens an agreement waits on the stakeholder, and a decision releases it
  *   6. `auditRoundOf` counts only a stage that produces a source supporting that document
@@ -27,7 +27,8 @@
  *      and a new snapshot of the same version owes no round
  *  12. a closed initiative's gated document corrected after the close awaits its own approval,
  *      with the outcome still reported from the anchor and the initiative not counted closed;
- *      a draft the close itself left — a stop's fallback, or a change before the close — does not
+ *      a draft the close itself left — a stop's fallback, or a change before the close — does not;
+ *      a stop's fallback approved at the close and corrected after it does, whichever document it is
  *
  * Run: node checks/audit-rounds.ts   (also run by scripts/gate.ts)
  */
@@ -187,11 +188,11 @@ m = await move(a);
 is(m?.action === "write_document" && m?.document === "plan.md",
    `round 1 read spec v1 and spec is v1, yet the next move is ${JSON.stringify(m)}`);
 
-// 3. a revision after the last round owes the next round
+// 3. a new version after the last round owes the next round
 spec(a.name, 2);
 m = await move(a);
 // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
-is(m?.action === "add_source" && /Round 2 checks the revision/.test(m?.why ?? ""),
+is(m?.action === "add_source" && /Round 2 checks the new version/.test(m?.why ?? ""),
    `spec went to v2 after round 1 read v1, and the next move is ${JSON.stringify(m)}`);
 round(a.name, 2, 2);
 m = await move(a);
@@ -259,7 +260,7 @@ world.get(d.name)!.answers.push({ about: `sources/${f2}`, family: "repeats_findi
 spec(d.name, 2);
 m = await move(d);
 // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
-is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? "") && !/repeat/.test(m?.why ?? ""),
+is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ?? "") && !/repeat/.test(m?.why ?? ""),
    `a stray repeats_finding reading changed the audit's move: ${JSON.stringify(m)}`);
 
 // 10. The plan is audited, then approved; the spec is agreed, then audited. A draft plan phase owes
@@ -288,7 +289,7 @@ is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? ""
   plan(2);
   pm = await move(p);
   // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
-  is(pm?.action === "add_source" && pm?.document === "plan.md" && /Round 2 checks the revision/.test(pm?.why ?? ""),
+  is(pm?.action === "add_source" && pm?.document === "plan.md" && /Round 2 checks the new version/.test(pm?.why ?? ""),
      `a revised draft plan did not owe the next audit round: ${JSON.stringify(pm)}`);
 
   // The spec keeps its order: a draft spec is approved first, and audited once it is.
@@ -317,7 +318,9 @@ is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? ""
 
 // 12. A closed initiative's correction.
 {
-  const closed = async (outcome: string, written: string, closing: string, draftOutcome: boolean) => {
+  // `sealedOutcome`: the approved revision carries the outcome too — the close stamped it while it
+  // was approved, and the draft is a change filed after.
+  const closed = async (outcome: string, written: string, closing: string, draftOutcome: boolean, sealedOutcome = false) => {
     const c = await fresh(1);
     round(c.name, 1, 1);
     const w = world.get(c.name)!;
@@ -330,7 +333,7 @@ is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? ""
     Object.assign(w.docs.find((x) => x.path === closing)!, {
       status: "draft", approved_by: null, approved_at: null, approved_revision: 1, current_revision: 2,
       current_version: 2, updated_at: written, outcome: draftOutcome ? outcome : null,
-      closed_by: draftOutcome ? "bo@zz.test" : null });
+      closed_by: draftOutcome ? "bo@zz.test" : null, approved_outcome: sealedOutcome ? outcome : null });
     return c;
   };
   const after = "2026-09-26T00:00:00.000Z", before = "2026-09-24T12:00:00.000Z";
@@ -352,10 +355,16 @@ is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? ""
   const early = await closed("accepted", before, "spec.md", false);
   const m3 = (await initiativeState(db()!, TEAM, early.name, early.chain, early.chain.documents)).next_move;
   is(m3?.action === "closed", `a draft left before the close reopened the initiative: ${JSON.stringify(m3)}`);
-  // A stop's fallback document was closed as a draft; its gate is waived, so it is not a correction.
+  // A stop's fallback document closed as a draft: its gate is waived, so it is not a correction.
   const stop = await closed("abandoned", after, "spec.md", true);
   const m4 = (await initiativeState(db()!, TEAM, stop.name, stop.chain, stop.chain.documents)).next_move;
   is(m4?.action === "closed", `a stop's fallback draft reads as a correction: ${JSON.stringify(m4)}`);
+  // A stop that landed on an approved fallback, corrected after it: the correction awaits its own
+  // approval, whichever document the stop landed on — not only the flow's declared closing one.
+  const fixed = await closed("abandoned", after, "spec.md", true, true);
+  const m5 = (await initiativeState(db()!, TEAM, fixed.name, fixed.chain, fixed.chain.documents)).next_move;
+  is(m5?.action === "await_approval" && m5?.document === "spec.md" && /v2 is a correction/.test(m5?.why ?? ""),
+     `a stop's approved fallback, corrected after it, does not await its own approval: ${JSON.stringify(m5)}`);
 }
 
 if (fail.length) {

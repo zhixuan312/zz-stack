@@ -518,10 +518,11 @@ export async function pluginTraces(
              and e.ts between $2 and $3
              and ${NOT_EVALUATION_EVENT}
         ),
-        -- A revised document is one with a second revision beside it: a revision was filed and
-        -- the current-revision pointer moved off the first. The frozen file an approval used to
-        -- write is a doc_revision row now, so the row's own count is the platform's record of
-        -- a version change. Its evidence is what the revision's own cites links name —
+        -- A revised document is one past its first PUBLIC version: a change's cause opened a new
+        -- one. Not a second doc_revision row — a revision is a snapshot, and an edit after a
+        -- presentation or a metadata change to an approved document files one in the SAME
+        -- version, with the cites links carried onto it. Its evidence is what the current
+        -- revision's own cites links name —
         -- DELIBERATE: not r.fields->>'evidence', which belonged to the retired doc.evidence column
         -- and which no writer sets, so both counts read 0 for every plugin — including the ones
         -- the measure exists to size.
@@ -531,8 +532,7 @@ export async function pluginTraces(
                                     join zz.doc td on td.id = l.to_doc_id
                                    where l.from_doc_id = d.id and l.from_revision = r.revision
                                      and l.kind = 'cites'), '{}'::text[]) as evidence_list,
-                        exists (select 1 from zz.doc_revision r2
-                                 where r2.doc_id = d.id and r2.revision > 1) as revised,
+                        coalesce(d.current_version > 1, false) as revised,
                         i.id as initiative_id
                    from zz.doc d
                    join zz.initiative i on i.id = d.initiative_id
@@ -542,10 +542,12 @@ export async function pluginTraces(
         -- cause (sources or source_content). A body change to an approved document is refused
         -- without one, and a draft fill needs none, so the split says where the cause obligation
         -- bit. A cause the platform linked itself is in the cites links above, not in the call.
+        -- The same population as touched: this door's own calls, evaluation traffic excluded.
         edits as (select coalesce(e.detail->'args', '[]'::jsonb) ?| array['sources', 'source_content'] as caused
                     from zz.event e
-                   where e.kind = 'tool_call' and e.ok is not false
+                   where e.plugin = $1 and e.kind = 'tool_call' and e.ok is not false
                      and e.ts between $2 and $3
+                     and ${NOT_EVALUATION_EVENT}
                      and e.initiative_id in (select initiative_id from touched)
                      and split_part(coalesce(e.tool_key, e.subject), ':', 2) = 'document_edit')
         select count(*)::text as documents,

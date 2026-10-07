@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.22
+version: 1.23
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -179,12 +179,12 @@ wrong.
 stored revision you want audited — `plan.md` at version 3, not "the plan" — because otherwise a
 round picks whatever is current when it happens to run, and two rounds then disagree without
 either being wrong. Alongside it, pass on any `Renamed to the heading this flow declares:` line
-the platform handed back when that document was written, edited or approved. The platform
-normalizes a near-miss `##` heading to the wording the manifest declares and tells the caller it
-did; the stored document and its frozen copy carry the new wording and nothing else. A write's or
-an edit's line is also in the details its reply names (``details: `dr_…` ``), which
-`document_read(path, details_ref)` reads back; an approval's is in its reply alone. Keep those
-lines, or the refs, for the initiative's life. Where there is none to pass, say
+the platform handed back when that document was written or edited. The platform normalizes a
+near-miss `##` heading to the wording the manifest declares and tells the caller it did; the
+stored document carries the new wording and nothing else. The line is also in the details its
+reply names (``details: `dr_…` ``), which `document_read(path, details_ref)` reads back. An
+approval renames nothing: it refuses, naming each rename, and the `document_edit` that applies
+them hands back the line. Keep those lines, or the refs, for the initiative's life. Where there is none to pass, say
 `rename_receipt: unavailable` rather than leaving the auditor to decide whether you forgot.
 
 **How a loaded stage reaches the record.** The platform attributes a step from the last skill

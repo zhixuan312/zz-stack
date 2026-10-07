@@ -6,8 +6,9 @@
 //      two groups — the three CAUSE_REQUIRED refusals are one rule, whatever initiative and
 //      document they named; the MULTIPLE_MATCHES refusal stays its own. Production's own samples
 //      (events 19321, 19385, 19405, 19451) were refusals of `document_revise` and `document_patch`,
-//      which are no longer registered; the texts below are `document_edit`'s, in its own words, so
-//      the fixture is a refusal the door can still give. The singular and plural of one rule —
+//      which are no longer registered; the texts below are `document_edit`'s — CAUSE_REQUIRED in its
+//      words, MULTIPLE_MATCHES rendered by the built `batchRefusal` itself — so the fixture is a
+//      refusal the door can still give, and follows the door when its wording moves. The singular and plural of one rule —
 //      what the number fold exists for — are kept as text: production's "supports … was added" and
 //      "support … were added", which no registered tool still says, but which any rule worded both
 //      ways is folded by;
@@ -19,6 +20,7 @@ import { pathToFileURL } from "node:url";
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { foldByRule, refusalRule, refusalKey, returnKey } = await load("services/zz-core/dist/eval/discover-groups.js");
 const { interpret } = await load("packages/contracts/dist/assessment.js");
+const { batchRefusal, refusalText } = await load("services/zz-core/dist/document-details.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
@@ -31,8 +33,9 @@ const group = (tool: string, text: string, id: string) => ({
 });
 const CAUSE = (path: string) => `ERROR: CAUSE_REQUIRED — ${path} is approved, so a change to its body opens a new ` +
   "version and needs its cause: name an existing source in `sources` or pass the words as `source_content`";
-const REPEATS = "ERROR: MULTIPLE_MATCHES — `find` occurs 2 times, on lines 3, 9 of the body. Send a longer `find` " +
-  "that includes enough surrounding text to occur exactly once.";
+const REPEATS: string = refusalText([batchRefusal("2026-09-20-export/spec.md",
+  { code: "MULTIPLE_MATCHES", edit_index: 0, match_count: 2, lines: [3, 9] })]);
+is(/^ERROR: MULTIPLE_MATCHES — /.test(REPEATS), `batchRefusal no longer renders a MULTIPLE_MATCHES refusal: ${REPEATS}`);
 const groups = [
   group(EDIT, CAUSE("2026-09-20-export/spec.md"), "e1"),
   group(EDIT, CAUSE("2026-09-20-export/plan.md"), "e2"),

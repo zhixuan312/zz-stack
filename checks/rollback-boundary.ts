@@ -8,16 +8,21 @@
  * What it establishes, one line per case:
  *
  *   - the guard (`scripts/release/rollback-guard.ts`) over a fixture repository: a migration
- *     declaring `-- rollback: refused — <reason>` refuses with its file and reason, destructive DDL
- *     still refuses with its existing reason, a migration with neither permits, and a version with
- *     no tag is the guard's error, never "every migration is new";
+ *     declaring `-- rollback: refused — <reason>` refuses with its file and reason, in any case and
+ *     indented; destructive DDL — a drop, a rename, a retype with or without COLUMN, a dropped view
+ *     or function — refuses with its existing reason; a migration with neither permits; a version
+ *     with no tag is the guard's error, never "every migration is new"; and a checkout that is not
+ *     of the version the host runs is the guard's error, never an answer from migrations the
+ *     deployment did not apply;
  *   - from HEAD back to the derived previous release, the refusing set is exactly
  *     {002_document_versions.sql}, with its declared reason;
  *   - the lines a refused rollback prints: every verification failure, every reason or the guard's
  *     error, and that the release is STILL LIVE; fix forward;
  *   - `scripts/release.ts` read as text: step 6 asks the guard before its `try`, only when the
- *     previous version differs, and its refusal branch dies before the rollback is called;
- *     `--rollback` asks it before the first command that changes the host; the compose header, the
+ *     previous version differs, telling it the host runs this release, its refusal branch dies
+ *     before the rollback is called, and a same-version re-run never reaches the rollback;
+ *     `--rollback` asks it, with the version the host runs, before the first command that changes
+ *     the host; the compose header, the
  *     `.env.example` ZZ_VERSION comment and the release script's header name the guarded route;
  *   - on a throwaway database migrated by the real runner and filled through a real zz-core with
  *     new-format state, the previous release's own revision insert (read from its tag with `git

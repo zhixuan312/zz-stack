@@ -197,9 +197,10 @@ export function registerArtifactTools(server: McpServer): void {
         "Read a document from your team's store. Paths are relative to it — " +
         "`<initiative>/spec.md`. Pass an ARRAY of paths to read several in one call; they " +
         "come back in the order you asked, and a path that cannot be read names its own " +
-        "failure without costing you the others. `version: N` reads the copy filed when " +
-        "approval N landed instead of the current document — document_present lists which " +
-        "versions exist. A search result that came back with `shelf: \"platform\"` " +
+        "failure without costing you the others. `version: N` reads public version N's last " +
+        "retained state instead of the current document — document_present lists which versions " +
+        "exist; an approved snapshot a later one superseded inside its version is read by its " +
+        "`content_revision`. A search result that came back with `shelf: \"platform\"` " +
         "lives in the journal every team shares, not in yours: pass `scope: \"platform\"` " +
         "with the same path to read it. A document too long for one result — over about " +
         `${PART_LIMIT} characters — is read in parts: \`section\` by heading, or \`offset\` and ` +
@@ -212,7 +213,7 @@ export function registerArtifactTools(server: McpServer): void {
         path: z.union([z.string(), z.array(z.string())])
           .describe("One path, or an array of paths read in the order given."),
         version: z.number().int().positive().optional()
-          .describe("Read the copy filed at approval N instead of the current document."),
+          .describe("Read public version N's last retained state instead of the current document."),
         // DELIBERATE: `scope` is read-only and only on this tool. document_write and
         // document_edit stay on the caller's own team; knowledge_add owns the writing side
         // of the shared journal and takes its own `scope`.
@@ -239,7 +240,7 @@ export function registerArtifactTools(server: McpServer): void {
       // documents, so it files no approvals and has no version history; answering per entry
       // would read as a missing file rather than as a request that does not apply.
       if (version !== undefined && scope === "platform") {
-        return text("ERROR: `version` reads a copy filed at an approval, and the platform " +
+        return text("ERROR: `version` reads a public version of a document, and the platform " +
                     "journal keeps none — its nodes are superseded, not versioned. Drop one " +
                     "of the two.");
       }
@@ -352,7 +353,7 @@ export function registerArtifactTools(server: McpServer): void {
         path: z.union([z.string(), z.array(z.string())])
           .describe("One path, or an array of paths presented in the order given."),
         version: z.number().int().positive().optional()
-          .describe("Show the copy filed at approval N instead of the current document."),
+          .describe("Show public version N's last retained state instead of the current document."),
         ...PART_INPUT,
         ...CONTEXT_INPUT,
       },
@@ -532,6 +533,13 @@ export function registerArtifactTools(server: McpServer): void {
         : file !== undefined ? await FILES(file) : undefined;
       if (staged && "refusal" in staged) return text(staged.refusal);
       const words = staged ? staged.text : content ?? ""; // literally, whatever its extension
+      // An empty source is refused by name: a source is material a change can name as its cause,
+      // and one holding nothing would stand as that cause with nothing behind it.
+      if (!words.trim()) {
+        return text("ERROR: the source is empty — its `content`, or the file it was sent as, holds nothing " +
+                    "but whitespace, and a source is material a change can name as its cause. Send the " +
+                    "material itself; nothing was filed.");
+      }
       // An audit round is a source that names the stage producing it and supports the document
       // that stage audits. Anything else is material, however it is titled: a stakeholder's
       // answers support spec.md too, and counting them as a round would let a spec pass its

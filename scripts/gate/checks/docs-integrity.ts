@@ -220,6 +220,16 @@ check("the README describes the tree it ships with", () => {
       }
     }
   }
+  // And the other way: an offline check the README names must still exist. Two checks were
+  // deleted with the extractors they tested and the README kept describing both, because the
+  // rule above only asks whether an existing check is named.
+  const tracked = trackedFiles();
+  if (!tracked) return "git could not list the tree, so the README's offline checks cannot be found";
+  const checks = new Set([...tracked].filter((f) => /-check\.ts$/.test(f) && !f.includes("/dist/"))
+    .map((f) => (f.split("/").pop() ?? "").replace(/\.ts$/, "")));
+  for (const name of new Set(readme.match(/\b[a-z][a-z0-9-]*-check\b/g) ?? [])) {
+    if (!checks.has(name)) bad.push(`the README names ${name}, and no ${name}.ts exists`);
+  }
   return bad.length ? bad.join("; ") : null;
 });
 

@@ -2,7 +2,7 @@
 name: "flow"
 description: "Run the SDLC Agent flow for your team."
 when_to_use: "Only when a person opens it by name: `/sdlc:flow` in Claude Code, `$sdlc:flow` in Codex."
-version: "0.93.3"
+version: "0.94.0"
 disable-model-invocation: true
 ---
 

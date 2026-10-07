@@ -35,7 +35,10 @@ const { default: express } = await import(
 
 const app = express();
 mountMcpOauth(app, ["/core/mcp"]);
-const server = app.listen(0);
+// DELIBERATE: bound to the address the check calls. On `::`, another process may hold
+// 127.0.0.1 on the same port, and the check then talks to it.
+const server = app.listen(0, "127.0.0.1");
+await new Promise<void>((resolve) => server.once("listening", () => resolve()));
 const port = (server.address() as { port: number }).port;
 try {
   const meta = await (await fetch(`http://127.0.0.1:${port}/.well-known/oauth-authorization-server`)).json();

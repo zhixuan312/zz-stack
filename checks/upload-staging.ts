@@ -119,7 +119,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
 
   /** An app as the gateway builds one: the identity this check stamps in place of the gate, the
    *  staging routes, and then the global body parsers, which must never see a staged file. */
-  const appWith = (limits?: { perUpload: number; perAddress: number }): Server => {
+  const appWith = async (limits?: { perUpload: number; perAddress: number }): Promise<Server> => {
     const app = express();
     // Behind one proxy hop, as the gateway is, so a case can arrive from an address of its own.
     app.set("trust proxy", 1);
@@ -134,11 +134,16 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     mountUpload(app, limits ? { limits } : {});
     app.use(express.json({ limit: "20mb" }));
     app.use(express.urlencoded({ extended: false, limit: "1mb" }));
-    return app.listen(0);
+    // DELIBERATE: bound to the address the check calls. On `::`, another process may hold 127.0.0.1
+    // on the same port — a throwaway database's published port, under the gate's concurrency — and
+    // the check then talks to it.
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", () => resolve()));
+    return server;
   };
   // Every case but the bounds stages more often than a minute allows; the bounds get production's.
-  const listener = appWith({ perUpload: 1_000, perAddress: 100_000 });
-  const bounded = appWith();
+  const listener = await appWith({ perUpload: 1_000, perAddress: 100_000 });
+  const bounded = await appWith();
   const port = (listener.address() as { port: number }).port;
   const boundedPort = (bounded.address() as { port: number }).port;
   let n = 0;

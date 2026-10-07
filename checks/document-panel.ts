@@ -241,7 +241,10 @@ serveMcp(app, "/core/mcp", () => {
   registerDocumentPanel(s);
   return s;
 });
-const server = app.listen(0);
+// DELIBERATE: bound to the address the check calls. On `::`, another process may hold
+// 127.0.0.1 on the same port, and the check then talks to it.
+const server = app.listen(0, "127.0.0.1");
+await new Promise<void>((resolve) => server.once("listening", () => resolve()));
 const port = (server.address() as { port: number }).port;
 /** A client for one person, under the credential kind the gateway would stamp. */
 const as = async (email: string, via = "pat") => {

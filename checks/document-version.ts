@@ -16,14 +16,18 @@
  *   - several causes in one call open one version; a source the current version already cites,
  *     named again, opens none;
  *   - a same-version snapshot carries its version's causes; `version: N` reads and presents N's
- *     last retained state, and an approved snapshot it superseded reads by its content revision; a snapshot shown in part stays pinned by the generation it
- *     showed when a rewrite keeping its identity moves its write time past the showing;
+ *     last retained state, and an approved snapshot it superseded reads by its content revision, which
+ *     the versions line names beside the version; a snapshot shown in part stays pinned by the generation it
+ *     showed when a rewrite keeping its identity moves its write time past the showing, and a showing
+ *     that names another snapshot pins no row it did not show;
  *   - a closed initiative's gated correction is a draft beside its sealed revision, the close and
  *     its ledger untouched, `handover.md` writable and approvable meanwhile and `initiative_status`
  *     awaiting the correction's approval while reporting the outcome; a failure injected while the
  *     correction clears the approval commits nothing; a changed outcome is refused by the real
  *     `documentGuards`, called in this process; an ungated correction invents no status; a
- *     correction of a closing snapshot nobody was shown or signed files a new row beside it;
+ *     metadata-only correction leaves the approved snapshot named in the versions line; a
+ *     correction of a closing snapshot nobody was shown or signed files a new row beside it, and
+ *     the correction's own next edit rewrites it in place;
  *   - the act boundary: an approval meeting an edit committed after its read is APPROVAL_CONFLICT,
  *     naming the current revision and what changed; a close meeting one records on it; a close
  *     whose document moves twice answers that it changed while being closed, and commits nothing;
@@ -230,6 +234,7 @@ async function versionTable(c: Core): Promise<void> {
   if (/^status: approved$/m.test(readV4) || !/^title: Notes, renamed$/m.test(readV4)) c.fail(step, `v4 before re-approval: ${readV4}`);
   const shownV4 = await c.ok(step, "document_present", { path: n, version: 4 });
   if (!/version 4\b/.test(shownV4) || /status approved/.test(shownV4) || !/six/.test(shownV4)) c.fail(step, `present v4: ${shownV4}`);
+  if (!shownV4.includes(`v4 filed (approved snapshot \`${token}\``)) c.fail(step, `v4's entry hides ${token}: ${shownV4}`);
   const sealedV4 = await c.ok(step, "document_read", { path: n, content_revision: token });
   if (!/^status: approved$/m.test(sealedV4) || /Notes, renamed/.test(sealedV4)) c.fail(step, `the approved snapshot by ${token}: ${sealedV4}`);
   await c.sign(n);
@@ -261,6 +266,21 @@ async function versionTable(c: Core): Promise<void> {
   reply = await c.ok(step, "document_edit", { path: pp, edits: [{ find: "# Partly", replace: "# Partly, edited" }] });
   if (first(reply) !== `edited: ${pp} — v1` || (await rowOf(c, pp)).revision !== 2) {
     c.fail(step, `the shown row was rewritten in place: ${reply} ${JSON.stringify(await rowOf(c, pp))}`);
+  }
+  c.pass(step);
+
+  step = "a showing that names another snapshot as its target pins no row it did not show, however late it came";
+  const ep = `${V}/elsewhere.md`;
+  await c.ok(step, "document_write", { path: ep, content: "# Elsewhere\n\nnever shown\n" });
+  // A continuing presentation of an older snapshot: its row comes after this one's write, and its
+  // target is not this row's content revision.
+  await c.sql.query(
+    `insert into zz.event (team_id, initiative_id, kind, subject, detail)
+     select i.team_id, i.id, 'document.shown_part', $2, $3::jsonb from zz.initiative i where i.slug = $1`,
+    [V, ep, JSON.stringify({ action: "shown_part", path: ep, target: `cr_${"a".repeat(26)}`, start: 0, end: 10, total: 100 })]);
+  reply = await c.ok(step, "document_edit", { path: ep, edits: [{ find: "never shown", replace: "still never shown" }] });
+  if (first(reply) !== `edited: ${ep} — v1` || (await rowOf(c, ep)).revision !== 1) {
+    c.fail(step, `a row nobody was shown was pinned: ${reply} ${JSON.stringify(await rowOf(c, ep))}`);
   }
   c.pass(step);
 
@@ -392,6 +412,15 @@ async function closedCorrections(c: Core): Promise<void> {
   }
   if ((await tokenOf(c, review)) === token || (await quietClose(c, K)) !== record) c.fail(step, "identity or close");
   if ((await c.status(K)).next_move?.action !== "await_approval") c.fail(step, "no approval awaited");
+  // The snapshot the close's correction was approved as is no longer v2's last row: the versions
+  // line names it by the token that reads it, so it is found without the approval's reply.
+  const listed = await c.ok(step, "document_present", { path: review, version: 2 });
+  if (!new RegExp(`v2 filed \\(approved snapshot \`${esc(token)}\` by [^)]* superseded inside it\\)`).test(listed)) {
+    c.fail(step, `the versions line does not name the superseded approved snapshot ${token}: ${listed}`);
+  }
+  if (!/^status: approved$/m.test(await c.ok(step, "document_read", { path: review, content_revision: token }))) {
+    c.fail(step, `${token} does not read as the approved snapshot`);
+  }
   c.pass(step);
 
   step = "a changed outcome is refused by the real documentGuards";
@@ -430,7 +459,7 @@ async function closedCorrections(c: Core): Promise<void> {
   // ---- a closing snapshot nobody was shown or signed: the close rests on it all the same
   const P = await c.open("closed-unpinned");
   const pn = `${P}/notes.md`;
-  step = "a correction of a closing snapshot nobody was shown or signed files a new row, and the one the close rests on stays";
+  step = "a correction of a closing snapshot nobody was shown or signed files a new row, and the one the close rests on stays; the correction's next edit rewrites the correction in place";
   await c.ok(step, "document_write", { path: pn, content: "# Notes\n\nas closed\n" });
   const closedP = await c.ok(step, "initiative_close", { initiative: P, disposition: "finished", document: "notes.md" });
   if (!new RegExp(`^${esc(P)} closed as `).test(closedP)) c.fail(step, closedP);
@@ -440,6 +469,13 @@ async function closedCorrections(c: Core): Promise<void> {
   if (first(reply) !== `edited: ${pn} — v1`) c.fail(step, reply);
   if ((await rowOf(c, pn)).revision !== atClose.revision + 1 || (await snapshot(c, pn, atClose.revision)) !== closing) {
     c.fail(step, `the closing snapshot was rewritten in place: ${JSON.stringify(await rowOf(c, pn))}`);
+  }
+  // The correction carries the outcome forward, and nobody was shown or signed it: only the row the
+  // close stamped is pinned by its outcome, so the next edit copies no body.
+  reply = await c.ok(step, "document_edit", { path: pn, edits: [{ find: "corrected", replace: "corrected again" }] });
+  if (first(reply) !== `edited: ${pn} — v1` || (await rowOf(c, pn)).revision !== atClose.revision + 1
+      || (await snapshot(c, pn, atClose.revision)) !== closing || !/corrected again/.test(await snapshot(c, pn, atClose.revision + 1))) {
+    c.fail(step, `the correction's edit filed another row: ${reply} ${JSON.stringify(await rowOf(c, pn))}`);
   }
   c.pass(step);
 }

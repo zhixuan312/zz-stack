@@ -26,8 +26,12 @@ anything, as the signal this cycle is actually done.
 - Every document the flow declared, in order, and every version of each: what changed between
   one approval and the next is where the disagreements are. `document_read(<path>)` gives the
   current one; `document_read(<path>, version: N)` gives public version N's last retained
-  state — an approved snapshot a later one superseded is read by its `content_revision` — and
-  it lists the versions it holds.
+  state, and `document_present` lists the versions by that state. An approval superseded inside
+  its version — a metadata-only correction after the close files exactly that — is not what
+  version N reads as: the list shows the version as `filed` and names that approved snapshot
+  beside it by its `content_revision`, as the console's version history does, and
+  `document_read(<path>, content_revision: …)` reads it. Never read version N's last state as
+  the approved text.
 - `initiative_status(<initiative>)` — the close: its outcome, who closed it, its date, and the
   next move the platform computes from the record. Written by the platform and not by the agent,
   which is why it is the one to measure against.

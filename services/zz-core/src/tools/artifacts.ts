@@ -200,7 +200,8 @@ export function registerArtifactTools(server: McpServer): void {
         "failure without costing you the others. `version: N` reads public version N's last " +
         "retained state instead of the current document — document_present lists which versions " +
         "exist; an approved snapshot a later one superseded inside its version is read by its " +
-        "`content_revision`. A search result that came back with `shelf: \"platform\"` " +
+        "`content_revision`, which that list names beside the version. A search result that came " +
+        "back with `shelf: \"platform\"` " +
         "lives in the journal every team shares, not in yours: pass `scope: \"platform\"` " +
         "with the same path to read it. A document too long for one result — over about " +
         `${PART_LIMIT} characters — is read in parts: \`section\` by heading, or \`offset\` and ` +

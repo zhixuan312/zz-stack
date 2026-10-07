@@ -96,7 +96,7 @@ ${SCRIPT}`) };
     case "busy":
       return { status: 429, body: page("Too many tries", html`<p class="eyebrow">File upload</p>
 <h1>Too many tries<span class="dot">.</span></h1>
-<p class="refusal">This device has opened or sent to upload links too often in the last minute. Wait a minute, then reload this page.</p>`) };
+<p class="refusal">This link has been opened too often in the last minute. Wait a minute, then reload this page.</p>`) };
   }
 }
 

@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.11
+version: 2.12
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -37,19 +37,21 @@ newest copy answers a question nobody asked.
 
 **The `##` headings on that revision are not necessarily the ones its author typed.** Where this
 flow's manifest declares the sections a document must carry, the platform renames a heading that
-already says everything a declared heading says to the declared wording, and does it on every
-write path — first write, edit and approval alike. Here that reaches `explore.md`,
+already says everything a declared heading says to the declared wording, on every write and
+every edit. An approval renames nothing: it refuses and names each rename, so the edit that
+applies them is where the wording changes. Here that reaches `explore.md`,
 `spec.md` and `plan.md`. `review.md` declares no sections, so nothing is ever renamed in it.
 
 Three consequences, and every one of them lands on this round:
 
 - **The rename is reported to whoever made the call, and kept nowhere a reader looks.** The
   revision the write filed and the one before it hold the normalized wording; what the caller sent
-  survives only in that reply's `Renamed …` line and, for a write or an edit, in the details the
-  reply names. If the caller passed you the line, or its `dr_…` ref for
-  `document_read(path, details_ref)`, quote it as the rename receipt. If they did not, record the
-  normalization history as `unavailable` and audit the text in front of you — the caller's
-  wording is not something to reconstruct from context.
+  survives only in that write's or edit's `Renamed …` line and the details its reply names, or —
+  for a rename an approval refused — in that refusal's own list (`` `## old` → `## new` ``), since
+  the edit that applies it renames nothing itself. If the caller passed you the line, its `dr_…`
+  ref for `document_read(path, details_ref)`, or the refusal's list, quote it as the rename
+  receipt. If they did not, record the normalization history as `unavailable` and audit the
+  text in front of you — the caller's wording is not something to reconstruct from context.
 - **A declared heading is not evidence that its author chose it.** Never read section wording as
   authorial intent, never attribute a section to somebody on the strength of its label, and never
   raise a finding whose entire content is that a heading matches the manifest.

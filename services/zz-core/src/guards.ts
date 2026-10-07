@@ -337,7 +337,7 @@ async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | nu
  * the ungated `explore.md`, approved by nobody.
  *
  * `document_edit` files the correction beside the snapshot the close rests on — the pin rule
- * (`currentRow`, document-snapshot.ts) counts a row carrying an outcome as pinned, signed or not —
+ * (`currentRow`, document-snapshot.ts) counts the row the close stamped as pinned, signed or not —
  * and carries the outcome forward; a write without `via` does neither. A closed record may be
  * corrected; it may not be quietly overwritten. */
 async function closedDocumentGuard(p: pg.Pool, team: string | null, relPath: string,

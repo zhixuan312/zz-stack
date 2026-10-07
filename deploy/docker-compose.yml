@@ -12,12 +12,11 @@
 # to type, and asking them to would make the wrong answer possible. The release command
 # rewrites the literals below and ships the result.
 #
-# Rolling back is `node scripts/release.ts --rollback` — seconds, no rebuild. Run it from a
-# checkout of the version the host runs: it reads that checkout's migrations, and refuses any
-# other. It asks first whether the earlier image can run on the schema this release migrated,
-# and refuses a release whose migrations declare `-- rollback: refused`: the earlier image
-# cannot write what they built. Editing the literal below by hand skips that question, so do not roll such a release
-# back that way; fix forward. ZZ_VERSION in the environment still overrides, which is what the
+# Rolling back is `node scripts/release.ts --rollback` — seconds, no rebuild. It asks first
+# whether the earlier image can run on the schema this release migrated, reading both releases'
+# migrations from their git tags, and refuses a release whose migrations declare
+# `-- rollback: refused`: the earlier image cannot write what they built. Editing the literal
+# below by hand skips that question, so do not roll such a release back that way; fix forward. ZZ_VERSION in the environment still overrides, which is what the
 # release script uses to switch a host.
 #
 # To develop against a checkout instead, layer the build override on top:

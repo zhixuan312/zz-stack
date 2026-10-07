@@ -164,9 +164,9 @@ export interface StageDoc {
   /** Which documents this one bears on, comma-joined — a source's own declaration. It
    *  evidences a stage that produces evidence rather than a deliverable. */
   supports?: string | null;
-  /** The public version of a pending correction, else null: the initiative is closed, and this
-   *  document — not the handover — was approved before, is unapproved now, and was written after
-   *  the close. After an abandoned close it counts only when its approved snapshot carries the
+  /** The public version of a pending correction, else null: the initiative is closed and runs a
+   *  flow, and this document — not the handover — was approved before, is unapproved now, and was
+   *  written after the close. A freeform initiative has no gate for a correction to await. After an abandoned close it counts only when its approved snapshot carries the
    *  outcome (the stop stamped it while approved); a stop on an unapproved draft is not one.
    *  COUPLED: computed in SQL by every console/initiatives.ts statement that feeds stageOf, by
    *  closedMove's rule in services/zz-core/src/tools/initiative-closed.ts. */

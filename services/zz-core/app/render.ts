@@ -10,7 +10,7 @@
  *     stands in its place, which says what the author meant rather than showing a broken icon;
  *   - a heading gets an id, so the outline can take a reader to it.
  */
-import { compile, parse, postprocess, preprocess } from "micromark";
+import { micromark } from "micromark";
 import { gfm, gfmHtml } from "micromark-extension-gfm";
 
 import type { Change } from "./state.ts";
@@ -68,23 +68,31 @@ function countedLines(text: string): number[] {
   return out;
 }
 
+/** Each heading's source line, written as a comment where its text starts — the post-pass reads it
+ *  and strips it. DELIBERATE: carried by the heading itself, not paired by order: GFM moves footnote
+ *  definitions, and any heading inside one, to the end of the page. Nothing else writes `<!--`:
+ *  raw HTML in a document is escaped. */
+const LINE = /<!--line:(\d+)-->/;
+function markLine(this: { raw(s: string): void }, token: { start: { line: number } }): undefined {
+  this.raw(`<!--line:${token.start.line}-->`);
+  return undefined;
+}
+const lineMarks = { enter: { atxHeadingText: markLine, setextHeadingText: markLine } };
+
 export function renderMarkdown(body: string): Rendered {
   const src = body.replace(/\r\n/g, "\n");
-  // micromark's own steps, so the line each rendered heading starts on can be read off its events.
-  const options = { extensions: [gfm()], htmlExtensions: [gfmHtml()] };
-  const events = postprocess(parse(options).document().write(preprocess()(src, undefined, true)));
-  const lines = events.filter(([step, token]) => step === "enter" && /^(atx|setext)Heading$/.test(token.type))
-    .map(([, token]) => token.start.line);
-  const raw = compile(options)(events);
+  const raw = micromark(src, { extensions: [gfm()], htmlExtensions: [gfmHtml(), lineMarks] });
   const slug = slugger();
   const outline: OutlineEntry[] = [];
   const rendered: { level: number; id: string; line: number }[] = [];
   let title: string | null = null;
   const html = raw
-    .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (_m, level: string, inner: string) => {
+    .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (_m, level: string, marked: string) => {
+      const line = Number(LINE.exec(marked)?.[1] ?? 0);
+      const inner = marked.replace(LINE, "");
       const text = plain(inner);
       const id = slug(text);
-      rendered.push({ level: Number(level), id, line: lines[rendered.length] ?? 0 });
+      rendered.push({ level: Number(level), id, line });
       if (level === "1" && title === null) title = text;
       if (level === "2" || level === "3") outline.push({ level: Number(level) as 2 | 3, text, id, words: 0 });
       return `<h${level} id="${id}">${inner}</h${level}>`;

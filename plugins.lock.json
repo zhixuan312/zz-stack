@@ -1,20 +1,20 @@
 {
   "sdlc": {
     "version": "0.93.3",
-    "digest": "478a5a98",
+    "digest": "f4f744d8",
     "skills": {
-      "sdlc-audit-criteria": "1dd3486defaf",
+      "sdlc-audit-criteria": "401d0c71603a",
       "sdlc-execute": "6a020ff169fc",
       "sdlc-explore": "3ba3c323ae8a",
       "sdlc-flow": "c8b20acbc478",
       "sdlc-investigate": "15e674f6b8a1",
-      "sdlc-method": "97d685d51621",
+      "sdlc-method": "58a90118b060",
       "sdlc-plan": "51eba7c9a427",
       "sdlc-plan-audit": "3537273a35f6",
       "sdlc-recall": "29a2e6cd164d",
       "sdlc-research": "3acbabf13cb4",
       "sdlc-review": "bec116e9be19",
-      "sdlc-spec": "1aa78284d0e9",
+      "sdlc-spec": "aaf145bf78be",
       "sdlc-spec-audit": "b3125191c223"
     }
   },
@@ -31,13 +31,13 @@
   },
   "zz-core": {
     "version": "0.93.3",
-    "digest": "12b0a3ad",
+    "digest": "affdd018",
     "skills": {
       "zz-authoring": "a2c3a1684d0c",
       "zz-breakout": "593964bc3415",
       "zz-deck": "e59a9f79d685",
-      "zz-handover": "7ae05b2f8ed6",
-      "zz-platform": "705a1acd47d6",
+      "zz-handover": "481cb9116739",
+      "zz-platform": "eab2fc739ebd",
       "zz-tldr": "0fa98d6ce832"
     }
   },

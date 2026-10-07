@@ -23,7 +23,8 @@ export interface PanelDocument {
   version: number; current: number | null; latest: boolean;
   status: string | null; approvedBy: string | null; approvedAt: string | null;
   gate: string | null;
-  history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
+  history: { version: number; approvedBy: string | null; approvedAt: string | null;
+             superseded: { approvedBy: string; approvedAt: string | null; content_revision: string | null } | null }[];
   body: string;
   /** The review metadata an approval signs with the body. */
   metadata: { title: string; tags: string[]; stakeholder: string; fields: Record<string, string> };

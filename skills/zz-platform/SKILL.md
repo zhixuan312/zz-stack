@@ -110,9 +110,8 @@ Two different needs arise, usually at different moments:
   Never read every plugin's tool surface to decide: a verb list tells you a call exists, not
   where the work belongs, and a hundred plugins is ten thousand tools.
 
-- **To USE a capability you need its tools on your surface, and you find that out by USING
-  it.** Call the tool the work needs. If it answers, it was installed and there was never a
-  question.
+- **To USE a capability you need its tools on your surface, and you find that out by USING it.**
+  Call the tool the work needs. If it answers, it was installed and there was never a question.
 
   **A plugin you do not have installed has NO tools in your list at all. [convention]** Not one
   stub tool, not an error tool — nothing. So when a tool you expected is missing, that is the
@@ -281,17 +280,17 @@ the timing; getting this wrong costs a plan, not a refusal.
   name, use it: never tell a person you are unable to write their decision for
   them, because writing down what they decided IS writing it on their authority,
   which is the only kind there is.
-- **An initiative closes once. A closed record may be corrected; what closed it may
-  not.** A second `initiative_close` is refused, and the `outcome`, `closed_by` and the
-  ledger row that went with it are fixed for good. The document itself is not: `document_edit`
-  works on a closed document, with its cause like any approved one. The correction is a draft
-  — the next version, awaiting its own approval — while the close, its outcome and its ledger
-  row stand, and the approved revision the close rested on stays readable by version. So a
-  wrong number in a closed `review.md` is corrected where somebody reading the report will see
-  it. What changed is what the report SAYS, not what it concluded. If the VERDICT was wrong,
-  that is a different thing and not a revision: `knowledge_add` it against the initiative,
-  `scope: "team"` unless the mistake is itself a fact about a registry entry, in which case
-  `scope: "platform"`.
+- **An initiative closes once. A closed record may be corrected; what closed it may not.** A
+  second `initiative_close` is refused, and the `outcome`, `closed_by` and the ledger row that
+  went with it are fixed for good. The document itself is not: `document_edit` works on a
+  closed document, with its cause like any approved one. The correction is a draft awaiting its
+  own approval — the next version, or a metadata-only draft inside the same one. The snapshot
+  the close rested on is read by `version` until a later one of that version supersedes it,
+  then by its `content_revision`, which `document_present` lists beside that version. So a wrong
+  number in a closed `review.md` is corrected where its reader sees it. What changed is what the
+  report SAYS, not what it concluded. If the VERDICT was wrong, that is not a revision:
+  `knowledge_add` it against the initiative, `scope: "team"` unless the mistake is itself a
+  fact about a registry entry, in which case `scope: "platform"`.
 - **A finished close owes the handover; an abandoned one does not.**
   `initiative_close` is terminal, and it may be called at ANY point: an
   initiative that ran to its last stage and one that stopped halfway are both
@@ -531,9 +530,10 @@ and v2 (what it made us change)** are both on the record, and a later reader see
 `<label> (<total>): <preview>` — `changed sections (2): Scope, Risks`, `causes (0): none` — and a
 receipt names its complete details, ``details: `dr_…` (complete)`` or, with a preview cut,
 ``details: `dr_…` — 12 entries not shown above``. Read them with `document_read(path, details_ref)`
-for the path the reply was about, then `document_read(path, details_ref, cursor)` with the cursor
-each page ends on, until one ends `complete`. A refusal names every independent fault at once, one
-`ERROR:` line each — fix them all before the retry — and names details only when it cut a list.
+for the path the reply was about, then again with each page's `cursor`, until one ends `complete`.
+A refusal names every independent fault at once, one `ERROR:` line each — fix them all before the
+retry — and names details only when it cut a list. One list is bounded: a `MULTIPLE_MATCHES` edit
+keeps its first 1,000 match lines, the exact count and the number omitted (`details_complete: false`).
 
 ## The platform's own tools, and every other plugin's
 

@@ -50,7 +50,7 @@ import { db, teamFor } from "./platform-db.js";
 import { commitPresentation, contextState, mintContext, presentedBody, snapshotRevision, type Viewer,
          viewerOf } from "./review-context.js";
 import { changeSnapshot } from "./stale-base.js";
-import { loadDocument, publicVersions } from "./versions.js";
+import { loadDocument, publicVersions, supersededApproval } from "./versions.js";
 
 type Loaded = Extract<Awaited<ReturnType<typeof loadDocument>>, { ok: true }>;
 /** One record of the change set the panel marks sections by. */
@@ -99,7 +99,8 @@ export interface PanelDocument {
   /** Null when the document can be approved; otherwise why not, in `document_approve`'s words. */
   gate: string | null;
   /** One entry per public version. */
-  history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
+  history: { version: number; approvedBy: string | null; approvedAt: string | null;
+             superseded: ReturnType<typeof supersededApproval> }[];
   body: string;
   /** The review metadata an approval signs with the body — the snapshot's title, tags, stakeholder
    *  and flow fields, as its content identity is taken over — drawn beside it. */
@@ -166,7 +167,8 @@ export async function panelDocument(
     approvedAt: env.approved_at ?? null,
     gate: gateRefusal(await chainFor(p, team, relPath, loaded.text), at.path),
     history: publicVersions(loaded.history).map((r) => ({ version: r.version, approvedBy: r.approved_by ?? null,
-                                                          approvedAt: r.approved_at ?? null })),
+                                                          approvedAt: r.approved_at ?? null,
+                                                          superseded: supersededApproval(loaded.doc.id, loaded.history, r) })),
     body: presentedBody(loaded.text),
     metadata: { title, tags, stakeholder, fields },
     content_revision: drawn,

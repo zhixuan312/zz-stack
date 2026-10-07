@@ -13,7 +13,8 @@
  *   5. `renderMarkdown` keeps raw HTML inert, drops a `javascript:` link and every fetched image,
  *      renders a GFM table, and gives each heading a unique id; `marksOf` marks the sections the
  *      real change set's records name — by position, so of two sections with one title only the
- *      edited one — and a deeper change marks the section it sits in;
+ *      edited one — and a deeper change marks the section it sits in, a heading inside a footnote
+ *      moving none;
  *   6. a ticket is good for one person, one team, one path, one content revision, and one day;
  *   7. driven through the real door, as a person, against a stubbed store:
  *      - `document_present` names the panel, and its result carries the WHOLE body in `_meta`
@@ -165,6 +166,18 @@ const { deltaOf } = await load("services/zz-core/dist/document-delta.js");
   const part = oddMarks(odd.replace("part text", "part text, edited"));
   is(!part.marks.size && JSON.stringify(part.other) === '["Part 2"]',
      `an edit under a second \`#\` part marks ${JSON.stringify([...part.marks])}, other ${JSON.stringify(part.other)}`);
+  // A heading inside a footnote definition renders after every other, where GFM puts the notes:
+  // pairing rendered headings with lines in order gave each later heading its neighbour's line.
+  const noted = "# Doc\n\nText with a note.[^1]\n\n[^1]: The note.\n\n    ## Inside the note\n\n## Alpha\n\nalpha text\n\n## Beta\n\nbeta text\n";
+  const notedMarks = (to: string) => {
+    const d = deltaOf(snap(noted), snap(to));
+    return JSON.stringify([...marksOf(renderMarkdown(to), d.kind === "delta" ? d.records : []).marks]);
+  };
+  for (const [what, want] of [["alpha", '[["alpha","changed"]]'], ["beta", '[["beta","changed"]]']]) {
+    const got = notedMarks(noted.replace(`${what} text`, `${what} text, edited`));
+    is(got === want, `an edit to ${what}, after a heading inside a footnote, marks ${got}`);
+  }
+  is(!/<!--/.test(renderMarkdown(noted).html), "the line marks are left in the rendered page");
 }
 const r = renderMarkdown([
   "# The title", "", "<script>alert(1)</script>", "", "[run](javascript:alert(1)) and [site](https://example.org)",
@@ -275,7 +288,7 @@ const as = async (email: string, via = "pat") => {
 };
 type Result = { content: { text: string }[]; structuredContent?: unknown; _meta?: Record<string, unknown> };
 type Drawn = { body: string; metadata: unknown; ticket: string | null; version: number; current: number | null; latest: boolean;
-  history: { version: number; approvedBy: string | null }[]; review_context: string | null; content_revision: string | null;
+  history: { version: number; approvedBy: string | null; superseded?: { approvedBy: string; content_revision: string | null } | null }[]; review_context: string | null; content_revision: string | null;
   previous: { version: number; content_revision: string; changes: { kind: string; heading?: string; at?: number }[] | null } | null };
 const said = (res: Result) => res.content.map((c) => c.text).join("\n");
 const drawnOf = (res: Result) => (res._meta?.["zz-core/documents"] ?? []) as Drawn[];
@@ -407,6 +420,11 @@ try {
   is(byNumber[0]?.version === 2 && byNumber[0]?.latest === true && !!byNumber[0]?.ticket
      && byNumber[0]?.content_revision === now[0]?.content_revision,
      `v2 read by number is not its last snapshot: ${JSON.stringify({ ...byNumber[0], body: undefined })}`);
+  // v2's signed r2, superseded inside v2 by r3, is named in the history by the token that reads it,
+  // as `document_present`'s versions line and the console's history name it.
+  const superseded = byNumber[0]?.history.find((h) => h.version === 2)?.superseded;
+  is(superseded?.approvedBy === "bo@zz.test" && superseded.content_revision === cr(1),
+     `the panel's history does not name v2's superseded approved snapshot: ${JSON.stringify(byNumber[0]?.history)}`);
   revs[1]!.approved_by = null;
   // A new public version: named as the change.
   doc.version = 3;

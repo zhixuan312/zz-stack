@@ -32,9 +32,9 @@
  * release whose migrations declare `-- rollback: refused`, whose schema the earlier image cannot
  * write. Such a release is not rolled back by editing the version on the host either. The guarded
  * route is `node scripts/release.ts --rollback`, which refuses it with the migrations' reasons and
- * leaves the new version running, as step 6 does: recovery is fixing forward. It reads the
- * migrations from this checkout, so it is run from a checkout of the version the host runs; any
- * other checkout is refused before the host is touched.
+ * leaves the new version running, as step 6 does: recovery is fixing forward. It reads both
+ * releases' migrations from their git tags, never from this checkout's working tree, which a fold
+ * or an unreleased migration makes differ from what the host applied.
  *
  *   1. gate            everything provable without touching the server
  *   2. build + smoke   build both images locally, start every service from them
@@ -513,8 +513,9 @@ if (problems.length) {
   // same-version re-run has nothing to roll back to, and the `else` below says so. A refusal (a
   // migration since `previous` that declares one, or destructive DDL) or a guard that cannot tell
   // (no tag) leaves this release running: putting `previous` back on a schema its code cannot write
-  // is a worse outage than the one verification found. The host runs `version` now and step 1
-  // pinned this checkout to it, which is the guard's own precondition. The guard never throws;
+  // is a worse outage than the one verification found. The host runs `version` now, which has no
+  // tag until step 7, so the guard reads this checkout's migrations — step 1 pinned its
+  // package.json to `version`, which is the one case it accepts that from. The guard never throws;
   // rollback()'s own refusal is die(), which inside the `try` would end the release before this
   // report.
   const refusal = previous && previous !== version ? refusalLines(version, previous, rollbackGuard(previous, version), problems) : [];

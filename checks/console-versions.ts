@@ -15,7 +15,9 @@
  *   - a document's `versions` holds one entry per public version, each the version's last
  *     retained state — an approved snapshot a later one superseded inside its version is not it —
  *     with `version` the public number and `revision` the snapshot to fetch; `current_version` is
- *     the document's own;
+ *     the document's own; an entry whose last row is unsigned names the approved snapshot a later
+ *     row superseded inside it (`superseded_approved`) by the `content_revision` zz-core reads it
+ *     with, and one written before generations were kept by no token;
  *   - the document read carries the review metadata an approval signs: `stakeholder`, and
  *     `fields`, every envelope field the platform does not reserve, sorted by name;
  *   - `?revision=` returns that one snapshot's text and names its public version;
@@ -24,7 +26,9 @@
  *     the list; after a finished close, an approved document that is not the closing one, revised
  *     after the close, is a correction too (initiative_status's rule); a close that was approved
  *     and never corrected carries no correction; and a close recorded on a draft (an abandoned
- *     close) is not a correction and still reads as incomplete;
+ *     close) is not a correction and still reads as incomplete; and a freeform initiative's
+ *     document approved before a finished close and edited after it is no correction, because no
+ *     gate governs it (initiative_status's rule);
  *   - the bell (`?waiting=1`) lists a closed initiative's pending correction, and no other closed one;
  *   - the document read names the displayed snapshot's `content_revision`, the token zz-core states;
  *   - opening a document records a full presentation of that snapshot under the console's own
@@ -41,6 +45,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { contentRevision } from "@zz/contracts";
 import pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
@@ -53,6 +58,7 @@ const CORRECTED = "2026-10-06-corrected";
 const SIGNED = "2026-10-06-signed";
 const DROPPED = "2026-10-06-dropped";
 const REVISED = "2026-10-06-revised";
+const FREEFORM = "2026-10-06-freeform";
 
 const NAME = "console-versions";
 const DONE = "console-versions: public versions, snapshot reads, pending corrections, and the console's " +
@@ -60,7 +66,8 @@ const DONE = "console-versions: public versions, snapshot reads, pending correct
 
 /** One snapshot as seeded: its public version, whether it was presented or approved, the
  *  `outcome` its fields carry when a close stamped one, and any other envelope payload. */
-type Snap = { version: number; approved?: boolean; presented?: boolean; outcome?: string; fields?: Record<string, string> };
+type Snap = { version: number; approved?: boolean; presented?: boolean; outcome?: string; fields?: Record<string, string>;
+              generation?: number };
 
 async function seed(db: pg.Client): Promise<{ principal: string; team: string }> {
   const p = await db.query<{ id: string }>(
@@ -104,14 +111,19 @@ async function document(db: pg.Client, principal: string, initiativeId: string, 
     const fields = { ...s.fields, ...(s.outcome ? { outcome: s.outcome, closed_by: EMAIL } : {}) };
     await db.query(
       `INSERT INTO zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
-                                    written_by, written_at, approved_by, approved_at, presented_at, fields)
+                                    written_by, written_at, approved_by, approved_at, presented_at, fields,
+                                    content_generation)
        VALUES ($1, $2, $3, 'retained', $4, $5, '{}', $6, $7, now() - make_interval(mins => $8::int),
-               $9, $10, $11, $12)`,
+               $9, $10, $11, $12, $13)`,
       [d.rows[0].id, i + 1, s.version, path, `body of r${i + 1}`, `h${i + 1}`, principal, current - i,
        s.approved ? principal : null, s.approved ? new Date().toISOString() : null,
-       s.presented || s.approved ? new Date().toISOString() : null, JSON.stringify(fields)]);
+       s.presented || s.approved ? new Date().toISOString() : null, JSON.stringify(fields), s.generation ?? null]);
   }
-  await db.query("UPDATE zz.doc SET status = $2, approved_revision = $3 WHERE id = $1",
+  // The document's counter is never behind a row's generation, as zz-core keeps it: the token a
+  // row is named by stays one `document_read(content_revision)` can resolve.
+  await db.query(`UPDATE zz.doc SET status = $2, approved_revision = $3,
+                    content_generation = (select coalesce(max(content_generation), 0) from zz.doc_revision where doc_id = $1)
+                  WHERE id = $1`,
     [d.rows[0].id, last.approved ? "approved" : "draft", approvedAt]);
   await db.query("COMMIT");
 }
@@ -304,14 +316,16 @@ async function run(c: Core): Promise<void> {
   const ok = c.pass;
   const db = c.sql;
   const { principal, team } = await seed(db);
-  // v1 is approved as r1 and changed with no new cause as r2; v2 is presented as r3 and is now r4,
-  // unapproved, carrying a stakeholder, two flow fields and a key the platform reserves.
+  // v1 is approved as r1 (generation 1) and changed with no new cause as r2; v2 is presented as r3
+  // and is now r4, unapproved, carrying a stakeholder, two flow fields and a key the platform reserves.
   const plain = await initiative(db, team, principal, VERSIONS, null, null);
   await document(db, principal, plain, "notes.md", "note", [
-    { version: 1, approved: true }, { version: 1 },
+    { version: 1, approved: true, generation: 1 }, { version: 1 },
     { version: 2, presented: true },
     { version: 2, fields: { stakeholder: "Ada", risk: "low", audience: "ops", stage: "spec-audit" } },
   ]);
+  // Approved and then changed in the same version, both rows written before generations were kept.
+  await document(db, principal, plain, "legacy.md", "note", [{ version: 1, approved: true }, { version: 1 }]);
   // Closed on an approved review.md (r1, v1), then corrected: r2 is v2, a draft carrying the outcome.
   await closedFlow(db, principal, await initiative(db, team, principal, CORRECTED, "sdlc-flow", "accepted"),
     [{ version: 1, approved: true, outcome: "accepted" }, { version: 2, outcome: "accepted" }]);
@@ -326,6 +340,10 @@ async function run(c: Core): Promise<void> {
   // short, not a correction.
   await closedFlow(db, principal, await initiative(db, team, principal, DROPPED, "sdlc-flow", "abandoned"),
     [{ version: 1, approved: true }, { version: 2, outcome: "abandoned" }]);
+  // Freeform, closed on an approved notes.md, which an edit then changed after the close: no flow
+  // gates it, so initiative_status never sees it as awaiting approval.
+  await document(db, principal, await initiative(db, team, principal, FREEFORM, null, "accepted"), "notes.md", "note",
+    [{ version: 1, approved: true, outcome: "accepted" }, { version: 2 }]);
 
   // `withThrowawayDb` ended the gateway's pool after migrating; a fresh one on the same container.
   process.env.TEAM_DB_URL = c.url;
@@ -358,6 +376,22 @@ async function run(c: Core): Promise<void> {
       fail("one entry per public version", `versions were ${got}, not v1@r2:draft, v2@r4:draft`);
     }
     ok("one entry per public version, its last snapshot");
+    type Sealed = { revision: number; content_revision: string | null; approved_by: string | null } | null;
+    const sealed = (vs: unknown[]) => vs.map((v) => (v as { superseded_approved: Sealed }).superseded_approved);
+    const { rows: [notesRow] } = await db.query<{ id: string }>(
+      "select d.id::text as id from zz.doc d join zz.initiative i on i.id = d.initiative_id where i.slug = $1 and d.path = 'notes.md'",
+      [VERSIONS]);
+    const want = JSON.stringify([{ revision: 1, content_revision: contentRevision(notesRow.id, 1), approved_by: EMAIL }, null]);
+    const named = JSON.stringify(sealed(versions).map((x) => x && { revision: x.revision, content_revision: x.content_revision,
+                                                                    approved_by: x.approved_by }));
+    if (named !== want) fail("a superseded approval", `superseded_approved was ${named}, not ${want}`);
+    const legacy = await call(documentRoute, { team: TEAM, initiative: VERSIONS, 0: "legacy.md" });
+    const old = sealed(legacy.body.versions as unknown[]);
+    if (old.length !== 1 || old[0]?.revision !== 1 || old[0].content_revision !== null) {
+      fail("a superseded approval", `legacy.md's superseded_approved was ${JSON.stringify(old)}: a row with no ` +
+        "generation must be named with no token, never one minted from generation 0");
+    }
+    ok("a version read as a later row names the approved snapshot it superseded by its content revision, and a legacy one by none");
     if (d.body.stakeholder !== "Ada" || JSON.stringify(d.body.fields) !== '{"audience":"ops","risk":"low"}') {
       fail("review metadata", `stakeholder ${JSON.stringify(d.body.stakeholder)}, fields ${JSON.stringify(d.body.fields)} — ` +
         'expected "Ada" and {"audience":"ops","risk":"low"}');
@@ -406,13 +440,21 @@ async function run(c: Core): Promise<void> {
         "expected spec.md v2, complete");
     }
     ok("after a finished close, an approved document revised after it is a correction, as initiative_status says");
+    const f = await call(initiativeRoute, { team: TEAM, slug: FREEFORM });
+    const notes = (f.body.documents as { path: string; correction: number | null }[] | undefined)?.find((x) => x.path === "notes.md");
+    const fd = await call(documentRoute, { team: TEAM, initiative: FREEFORM, 0: "notes.md" });
+    if (f.status !== 200 || f.body.correction !== null || notes?.correction !== null || fd.body.correction !== null) {
+      fail("freeform edit", `correction ${JSON.stringify(f.body.correction)}, notes.md's ${String(notes?.correction)}, ` +
+        `the document read's ${String(fd.body.correction)} — expected none: no gate governs a freeform document`);
+    }
+    ok("a freeform initiative's document edited after its close is no correction, as initiative_status says");
 
     const list = await call(listRoute, {}, { team: TEAM });
     const rows = list.body.initiatives as { slug: string; correction: unknown; complete: boolean }[];
     const listed = (slug: string) => rows.find((x) => x.slug === slug);
     if (JSON.stringify(listed(CORRECTED)?.correction) !== JSON.stringify({ path: "review.md", version: 2 })
         || listed(CORRECTED)?.complete !== true || listed(SIGNED)?.correction !== null
-        || listed(DROPPED)?.correction !== null) {
+        || listed(DROPPED)?.correction !== null || listed(FREEFORM)?.correction !== null) {
       fail("initiative list", `the list says ${JSON.stringify(rows.map((x) => [x.slug, x.correction, x.complete]))}`);
     }
     ok("the initiative list carries the same correction");
@@ -424,10 +466,10 @@ async function run(c: Core): Promise<void> {
     const waiting = bell.body.waiting as { id: string; gate: string }[];
     const ids = waiting.map((w) => w.id);
     if (!ids.includes(`${TEAM}/${CORRECTED}/review.md`) || !ids.includes(`${TEAM}/${REVISED}/spec.md`)
-        || ids.some((x) => x.includes(SIGNED) || x.includes(DROPPED))) {
+        || ids.some((x) => x.includes(SIGNED) || x.includes(DROPPED) || x.includes(FREEFORM))) {
       fail("waiting list", `the bell lists ${JSON.stringify(waiting)}`);
     }
-    ok("the bell lists a pending correction and no other closed initiative");
+    ok("the bell lists a pending correction and no other closed initiative, a freeform one included");
 
     await presentation(c, { detail: documentRoute, shown: route("POST /api/console/documents/shown"),
                             approve: route("POST /api/console/documents/approve") });

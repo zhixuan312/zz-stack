@@ -20,14 +20,17 @@ export async function lockPath(c: Pick<pg.Pool, "query">, team: string, relPath:
 }
 
 /** The document's current row and both generations: the document's, and the row's own — null on a
- *  row written before generations were recorded per row. What a presentation confirms it showed. */
+ *  row written before generations were recorded per row — and when the row was written. What a
+ *  presentation confirms it showed, what a change is computed from, and whether a name is taken;
+ *  no pin rule, which only the write itself reads (`currentRow`). */
 export async function rowHeld(
   c: Pick<pg.Pool, "query">, team: string, relPath: string,
-): Promise<{ id: string; current_revision: number; content_generation: string; own_generation: string | null } | null> {
+): Promise<{ id: string; current_revision: number; content_generation: string; own_generation: string | null;
+             written_at: string | null } | null> {
   const { initiative, name } = splitStorePath(relPath);
   const { rows } = await c.query(
     `select d.id::text as id, d.current_revision, d.content_generation::text as content_generation,
-            r.content_generation::text as own_generation
+            r.content_generation::text as own_generation, r.written_at::text as written_at
        from zz.doc d
        join zz.initiative i on i.id = d.initiative_id
        join zz.team t on t.id = i.team_id
@@ -60,13 +63,13 @@ export async function reservePath(c: Pick<pg.Pool, "query">, team: string, relPa
   await lockPath(c, team, stem);
   for (let n = 1; ; n++) {
     const rel = n === 1 ? `${stem}.md` : `${stem}-${n}.md`;
-    if (await currentRow(c, team, rel)) continue;
+    if (await rowHeld(c, team, rel)) continue;
     await lockPath(c, team, rel);
-    if (!(await currentRow(c, team, rel))) return rel;
+    if (!(await rowHeld(c, team, rel))) return rel;
   }
 }
 
-export interface CurrentRow {
+interface CurrentRow {
   id: string; status: string; current_revision: number | null; approved_revision: number | null;
   /** The document's content generation, `zz.doc.content_generation`, as text. */
   generation: string; version: number | null; written_at: string | null;
@@ -78,17 +81,21 @@ export interface CurrentRow {
  *
  * PINNED: a row somebody was shown, signed or closed on. Shown means `presented_at` set, or a
  * `document.shown`/`document.shown_part` event for this document naming the row's own content
- * revision as its `target`, or one at or after the row's write; signed means sealed, or the
- * document's approved revision — a seal whose person resolved to no principal leaves the row's
- * columns null and the approval stands; closed on means it carries an `outcome`, the snapshot the
- * close rests on.
+ * revision as its `target`, or one naming no target at or after the row's write; signed means
+ * sealed, or the document's approved revision — a seal whose person resolved to no principal
+ * leaves the row's columns null and the approval stands; closed on means it is the first row
+ * carrying an `outcome`, the snapshot the close stamped. A correction carries the outcome forward
+ * (`closeCheck`), so the outcome alone would pin every correction row and copy its body at each
+ * edit; one is pinned when somebody was shown or signed it, like any other row.
  *
- * DELIBERATE: the shown event is matched by the generation it showed, not only by time. An
+ * DELIBERATE: the shown event is matched by the generation it showed, not by time. An
  * identity-keeping rewrite — a close stamping its outcome — moves `written_at` past a partial
  * presentation's `ts`, and `ts` is its transaction's start, which can precede a `written_at`
  * committed while the presentation waited on the lock; either way the time test alone let the
- * next change rewrite a presented row in place. The time test stays for rows shown before events
- * named their target. */
+ * next change rewrite a presented row in place. And a continuing presentation shows an older
+ * snapshot after this row was written, so the time test would pin a row nobody saw. It stays only
+ * for rows shown before events named their target. Only `saveDocument` reads this, under the
+ * document's lock: every other reader of the current row takes `rowHeld`. */
 export async function currentRow(
   p: Pick<pg.Pool, "query">, team: string, relPath: string,
 ): Promise<CurrentRow | null> {
@@ -98,11 +105,14 @@ export async function currentRow(
             d.approved_revision, d.content_generation::text as generation, r.content_generation::text as own,
             r.version, r.written_at::text as written_at, r.title, r.body, r.tags, r.fields,
             (r.approved_by is not null or d.approved_revision = d.current_revision
-             or r.presented_at is not null or r.fields->>'outcome' is not null
+             or r.presented_at is not null
+             or (r.fields->>'outcome' is not null
+                 and not exists (select 1 from zz.doc_revision y
+                                  where y.doc_id = r.doc_id and y.revision < r.revision and y.fields->>'outcome' is not null))
              or exists (select 1 from zz.event e
                          where e.initiative_id = d.initiative_id and e.subject = $4
                            and e.kind in ('document.shown', 'document.shown_part')
-                           and e.ts >= r.written_at)) as pinned
+                           and e.detail->>'target' is null and e.ts >= r.written_at)) as pinned
        from zz.doc d
        join zz.initiative i on i.id = d.initiative_id
        join zz.team t on t.id = i.team_id

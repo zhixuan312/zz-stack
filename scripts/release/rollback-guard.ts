@@ -1,53 +1,82 @@
 /**
- * Whether the deployment may be put back on an earlier release: which migrations this checkout
- * ships that the earlier release's tag never had, and which of them refuse to be rolled back
- * across, with each one's reason.
+ * Whether the deployment may be put back on an earlier release: which migrations the release the
+ * host runs applied that the earlier release's tag never had, and which of them refuse to be rolled
+ * back across, with each one's reason.
  *
- * Pure in the sense that matters to its callers: it reads git, the checkout's `package.json` and
- * its migrations directory and nothing else — no `ssh`, no `die`, no output; the version the host
- * runs is an argument its caller read — so `--rollback`, release step 6 and
- * `checks/rollback-boundary.ts` all ask the same function, and asking it moves nothing. It never
- * throws: step 6 asks it outside its `try`, and a throw there would replace the verification
- * failures with a stack trace.
+ * Pure in the sense that matters to its callers: it reads git, and the checkout only in the one
+ * case below — no `ssh`, no `die`, no output; the version the host runs is an argument its caller
+ * read — so `--rollback`, release step 6 and `checks/rollback-boundary.ts` all ask the same
+ * function, and asking it moves nothing. It never throws: step 6 asks it outside its `try`, and a
+ * throw there would replace the verification failures with a stack trace.
  *
- * The migrations it reads are this CHECKOUT's, so it answers only for a checkout of the release
- * the host runs. One behind it — another clone, a branch, a checkout of the very tag being rolled
- * back to — lacks the migrations the deployment applied, and would permit the rollback they
- * forbid. So a checkout whose `package.json` version is not the host's is the guard's error: step
- * 6 runs from the checkout step 1 pinned to the release it deployed, and `--rollback` must be run
- * from a checkout of the version that is live.
+ * Both sides are asked of git: the earlier release's tag, and the live release's tag. A working
+ * tree is not what any deployment applied — a fold rewrites `001_init.sql` and deletes the `002`
+ * it absorbed without a version bump, and master carries migrations no release has shipped — so
+ * answering from it permits after a fold and refuses for a file production never ran. The one
+ * exception is a live version with no tag yet, which is release step 6: the version being released
+ * is tagged only at step 7, once it verifies, and step 1 pinned the checkout to it. So an untagged
+ * live version is read from the working tree when the checkout's `package.json` is that version,
+ * and is the guard's error otherwise.
+ *
+ * A release's migrations are the files in its tree and the names its `001_init.sql` records as
+ * absorbed (`-- absorbs: <file>`): a deployment ran each absorbed file under its own name before
+ * the fold, so a file absorbed since the earlier release is as new to that release's code as one
+ * still on disk. Its text is read from the newest tag whose tree still has it; one that no tag has
+ * is the guard's error, never "nothing to see".
  *
  * Two reasons refuse:
  *
  *   - a migration that DECLARES it, with a header line `-- rollback: refused — <reason>`. What
  *     breaks an old writer — a new NOT NULL column, a new CHECK, a column whose meaning changed —
  *     is not reliably visible in DDL, so the migration that knows says so, and this reads it;
- *   - destructive DDL — a dropped column, table, type, schema, view or function, a renamed column
- *     or table, or a column whose type changed (`ALTER [COLUMN] c [SET DATA] TYPE`). The previous
- *     release's code still SELECTs what was dropped or renamed, and every request that resolves
- *     an identity then answers 500 while `/health` stays green, because /health resolves nobody.
- *     The pattern reads comments too, so a comment that names such DDL refuses — the safe way to
- *     be wrong. A change that breaks the old code some other way is the declaration's to say.
+ *   - destructive DDL — a dropped column, table, type, schema, view or function, a column whose
+ *     type changed (`ALTER [COLUMN] c [SET DATA] TYPE`), or a rename of something the earlier
+ *     release's code still names: a column (`RENAME [COLUMN] a TO b`, `COLUMN` optional), a table
+ *     or view (`RENAME TO`), a type or one of its values, a function or a schema. That code still
+ *     SELECTs what was dropped or renamed, and every request that resolves an identity then
+ *     answers 500 while `/health` stays green, because /health resolves nobody. A rename the old
+ *     code cannot see does not refuse: an index, sequence, trigger or constraint (this platform's
+ *     code names none of them — no `ON CONFLICT ON CONSTRAINT`, no `nextval('…')`), or a table or
+ *     view one of the new migrations itself created. The pattern reads comments too, so a comment
+ *     that names such DDL refuses — the safe way to be wrong. A change that breaks the old code
+ *     some other way is the declaration's to say.
  *
  * Deploying before verifying rests on being able to undo it. For a release carrying either, that
  * is false, so the callers say so and leave the new version running rather than performing a
  * rollback that makes the outage worse.
  */
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { root } from "../deployment.ts";
 
 const MIGRATIONS = "services/gateway/migrations";
+const INIT = "001_init.sql";
 
-/** DDL that cannot be undone by putting the old image back. */
-const IRREVERSIBLE =
-  /\b(drop\s+(column|table|type|schema|view|materialized\s+view|function)|rename\s+(column|to)|alter\s+(column\s+)?\S+\s+(set\s+data\s+)?type)\b/i;
+/** One relation name as DDL spells it: quoted or bare, schema-qualified or not. */
+const REL = String.raw`(?:"[^"]+"|[\w$]+)(?:\.(?:"[^"]+"|[\w$]+))?`;
+
+/** DDL that cannot be undone by putting the old image back, renames of relations aside. */
+const IRREVERSIBLE = new RegExp(String.raw`\b(drop\s+(column|table|type|schema|view|materialized\s+view|function)` +
+  String.raw`|alter\s+(column\s+)?\S+\s+(set\s+data\s+)?type` +
+  String.raw`|alter\s+(type|domain|function|procedure|schema)\s[^;]*?\brename)\b`, "i");
+
+/** A table or view renamed, or one of its columns — `COLUMN` optional, `ONLY` and `IF EXISTS`
+ *  allowed — capturing the relation. Not `RENAME CONSTRAINT`: no code here names a constraint. */
+const RENAMED = new RegExp(String.raw`\balter\s+(?:table|view|materialized\s+view|foreign\s+table)\s+` +
+  String.raw`(?:if\s+exists\s+)?(?:only\s+)?(${REL})\s+rename\s+(?!constraint\b)`, "gi");
+
+/** A table or view a migration creates, capturing its name. */
+const CREATED = new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?(?:(?:temp|temporary|unlogged)\s+)?` +
+  String.raw`(?:table|view|materialized\s+view|foreign\s+table)\s+(?:if\s+not\s+exists\s+)?(${REL})`, "gi");
 
 /** A migration's own declaration that the release before it cannot run on what it builds — in any
  *  case and indented or not, because a declaration this misread would permit the rollback. */
 const DECLARED = /^[ \t]*--[ \t]*rollback:[ \t]*refused\b[ \t]*(?:—[ \t]*)?(.*?)[ \t]*$/im;
+
+/** The names a `001_init.sql` records as absorbed. */
+const ABSORBS = /^--[ \t]*absorbs:[ \t]*(\S+)[ \t]*$/gm;
 
 /** One migration that refuses a rollback across it, and why. */
 export interface Refusal { file: string; reason: string }
@@ -59,48 +88,97 @@ export type Guarded = { refusals: Refusal[] } | { error: string };
 const stderrOf = (err: unknown): string =>
   String((err as { stderr?: unknown })?.stderr ?? (err as Error)?.message ?? err).trim();
 
+/** A relation's name as Postgres resolves it: a bare part folded to lower case, a quoted one as
+ *  written. */
+const relName = (spelled: string): string =>
+  spelled.split(".").map((p) => (p.startsWith('"') ? p.slice(1, -1) : p.toLowerCase())).join(".");
+
+/** Whether `text` drops, retypes or renames what the earlier release's code still reads — a rename
+ *  of a relation in `created`, one a new migration made, is not that. */
+function destructive(text: string, created: Set<string>): boolean {
+  return IRREVERSIBLE.test(text) || [...text.matchAll(RENAMED)].some((m) => !created.has(relName(m[1]!)));
+}
+
+/** git in `repo`, its output as text. */
+const gitIn = (repo: string) => (args: string[]): string =>
+  execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+/** Whether `repo` has the tag `tag`. */
+const tagged = (repo: string, tag: string): boolean => {
+  try {
+    gitIn(repo)(["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** The migrations a release knows, by name, each with a way to read its text: the files in its
+ *  tree, and the files its `001_init.sql` absorbed. */
+interface Known { files: Map<string, () => string>; absorbed: Set<string> }
+
+/** What release `tag` knows — or, given null, this checkout's working tree. */
+function knownAt(repo: string, tag: string | null): Known {
+  const git = gitIn(repo);
+  const files = new Map<string, () => string>();
+  if (tag) {
+    // DELIBERATE: the tree and a path filter, not `<tag>:<dir>`. A tag from before the gateway had
+    // migrations has none, which is a true answer (every migration is new to it), not a failure.
+    for (const line of git(["ls-tree", "--name-only", tag, "--", `${MIGRATIONS}/`]).split("\n")) {
+      const file = basename(line.trim());
+      if (file.endsWith(".sql")) files.set(file, () => git(["show", `${tag}:${MIGRATIONS}/${file}`]));
+    }
+  } else {
+    const dir = join(repo, MIGRATIONS);
+    for (const file of existsSync(dir) ? readdirSync(dir) : []) {
+      if (file.endsWith(".sql")) files.set(file, () => readFileSync(join(dir, file), "utf8"));
+    }
+  }
+  const init = files.get(INIT);
+  return { files, absorbed: new Set(init ? [...init().matchAll(ABSORBS)].map((m) => m[1]!) : []) };
+}
+
+/** The text of a migration a fold deleted: from the newest `v*` tag whose tree still has it. */
+function absorbedText(repo: string, file: string): string | null {
+  const git = gitIn(repo);
+  for (const tag of git(["tag", "--list", "v*", "--sort=-v:refname"]).split("\n").filter(Boolean)) {
+    try {
+      return git(["show", `${tag}:${MIGRATIONS}/${file}`]);
+    } catch { /* not in this tag */ }
+  }
+  return null;
+}
+
 /**
  * Which migrations since release `version` (bare, `0.93.3`, as `ZZ_PREVIOUS_VERSION` stores it)
- * refuse a rollback to it from `live` — the version the host runs, as its `ZZ_VERSION` says, read
- * by the caller — which must be this checkout's own.
- *
- * Asked of git rather than of the database: the question is what the target version's code knows
- * about, and its tag is what that code was. A version with no tag is an error, never "every
- * migration is new": an empty or a full list both claim to know what that version's code expects,
- * and without its tag nothing here does.
+ * refuse a rollback to it from the live release, read from `live` — that release's tag, or null
+ * for this checkout's working tree, which only `rollbackGuard`'s step-6 case and the check that
+ * asks about this checkout as the release it would become may pass.
  */
-export function rollbackGuard(version: string, live: string, repo: string = root): Guarded {
+export function refusalsSince(version: string, live: string | null, repo: string = root): Guarded {
   const tag = `v${version}`;
-  let checkout = "";
-  try {
-    checkout = String(JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).version ?? "");
-  } catch (err) {
-    return { error: `this checkout's version could not be read from package.json: ${stderrOf(err)}` };
-  }
-  if (checkout !== live) {
-    return { error: `this checkout is ${checkout || "(no version)"} and the host runs ${live || "(no recorded version)"} — ` +
-                    "its migrations are not the ones the deployment applied, so it cannot tell what they forbid. " +
-                    `Run the rollback from a checkout of ${live ? `v${live}` : "the version that is live"}` };
-  }
-  try {
-    execFileSync("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`],
-                 { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
-  } catch {
+  if (!tagged(repo, tag)) {
     return { error: `no tag ${tag} — the guard cannot know what that version's code expects of this schema without its tag` };
   }
   try {
-    // DELIBERATE: the tree and a path filter, not `<tag>:<dir>`. A tag from before the gateway had
-    // migrations has none, which is a true answer (every migration is new to it), not a failure.
-    const then = new Set(execFileSync("git", ["ls-tree", "--name-only", tag, "--", `${MIGRATIONS}/`],
-                                      { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
-      .split("\n").map((l) => basename(l.trim())).filter(Boolean));
-    const dir = join(repo, MIGRATIONS);
+    const then = knownAt(repo, tag);
+    const now = knownAt(repo, live);
+    const isNew = (file: string) => !then.files.has(file) && !then.absorbed.has(file);
+    const texts: [string, string][] = [];
+    for (const file of [...new Set([...now.files.keys(), ...now.absorbed])].filter(isNew).sort()) {
+      const text = now.files.get(file)?.() ?? absorbedText(repo, file);
+      if (text === null) {
+        return { error: `${live ?? "this checkout"}'s ${INIT} absorbs ${file}, which no tag carries — its text, and so ` +
+                        "whether it refuses the rollback, cannot be read" };
+      }
+      texts.push([file, text]);
+    }
+    const created = new Set(texts.flatMap(([, text]) => [...text.matchAll(CREATED)].map((m) => relName(m[1]!))));
     const refusals: Refusal[] = [];
-    for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql") && !then.has(f)).sort()) {
-      const text = readFileSync(join(dir, file), "utf8");
+    for (const [file, text] of texts) {
       const declared = DECLARED.exec(text);
       if (declared) refusals.push({ file, reason: declared[1] || "the migration declares it and gives no reason" });
-      if (IRREVERSIBLE.test(text)) {
+      if (destructive(text, created)) {
         refusals.push({ file, reason:
           `it drops, renames or retypes something ${version}'s code still reads. Putting ${version} back would leave ` +
           "its code querying what no longer exists as it expects — the deployment would answer 500 to every caller while " +
@@ -112,6 +190,35 @@ export function rollbackGuard(version: string, live: string, repo: string = root
   } catch (err) {
     return { error: `the migrations since ${tag} could not be read: ${stderrOf(err)}` };
   }
+}
+
+/**
+ * Which migrations since release `version` refuse a rollback to it from `live` — the version the
+ * host runs, as its `ZZ_VERSION` says, read by the caller. Asked of `v<live>`'s tree; with no such
+ * tag, of this checkout's working tree when its `package.json` is `live` (release step 6), and
+ * otherwise the guard's error.
+ *
+ * Asked of git rather than of the database: the question is what the target version's code knows
+ * about, and its tag is what that code was. A version with no tag is an error, never "every
+ * migration is new": an empty or a full list both claim to know what that version's code expects,
+ * and without its tag nothing here does.
+ */
+export function rollbackGuard(version: string, live: string, repo: string = root): Guarded {
+  const liveTag = `v${live}`;
+  if (live && tagged(repo, liveTag)) return refusalsSince(version, liveTag, repo);
+  // Not released yet — step 6 — or a clone that has not fetched the tag and cannot say.
+  let checkout = "";
+  try {
+    checkout = String(JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).version ?? "");
+  } catch (err) {
+    return { error: `no tag ${liveTag}, and this checkout's version could not be read from package.json: ${stderrOf(err)}` };
+  }
+  if (!live || checkout !== live) {
+    return { error: `no tag ${live ? liveTag : "for the version the host runs (none is recorded)"}, and this checkout is ` +
+                    `${checkout || "(no version)"} — nothing here records the migrations the deployment applied. ` +
+                    "Fetch the tags (git fetch --tags), or run from a checkout of the commit that was deployed" };
+  }
+  return refusalsSince(version, null, repo);
 }
 
 /**

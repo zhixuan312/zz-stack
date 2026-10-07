@@ -106,7 +106,12 @@ export function mountInitiatives(app: Express): void {
        COUPLED: correction is the same expression in every statement of this file that feeds
        stageOf, and in the document read below; StageDoc in shared.ts says what it means. It is
        closedMove's rule in services/zz-core/src/tools/initiative-closed.ts, and abandoned is the
-       outcome contracts names OUTCOME_STOPPED. */
+       outcome contracts names OUTCOME_STOPPED. That rule asks for a gated document of the
+       initiative's flow, which SQL cannot read off a manifest; a flow on the initiative is the
+       stand-in, and an exact one while the manifest is installed and unchanged: under a flow only a
+       gated document it declares can be approved (gateRefusal in services/zz-core/src/chain.ts), so
+       an approved revision already means gated, and only a freeform initiative, where anything is
+       approvable and closedMove sees nothing, needs ruling out. */
     // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
     // `zz.initiative_fact` (001) — the console's own copy of `<initiative>/
     // _facts.json`, which it cannot read directly (it has no filesystem access to the store).
@@ -178,7 +183,7 @@ export function mountInitiatives(app: Express): void {
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
               case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                         and d.approved_revision is not null and d.updated_at > i.closed_at
+                         and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
                          and (i.outcome <> 'abandoned'
                               or (select x.fields->>'outcome' from zz.doc_revision x
                                    where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
@@ -202,7 +207,7 @@ export function mountInitiatives(app: Express): void {
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
               case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                         and d.approved_revision is not null and d.updated_at > i.closed_at
+                         and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
                          and (i.outcome <> 'abandoned'
                               or (select x.fields->>'outcome' from zz.doc_revision x
                                    where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
@@ -225,7 +230,7 @@ export function mountInitiatives(app: Express): void {
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
               case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                         and d.approved_revision is not null and d.updated_at > i.closed_at
+                         and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
                          and (i.outcome <> 'abandoned'
                               or (select x.fields->>'outcome' from zz.doc_revision x
                                    where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
@@ -349,7 +354,7 @@ export function mountInitiatives(app: Express): void {
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
                 length(coalesce(r.body,'')) as bytes,
                 case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                           and d.approved_revision is not null and d.updated_at > i.closed_at
+                           and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
                            and (i.outcome <> 'abandoned'
                                 or (select x.fields->>'outcome' from zz.doc_revision x
                                      where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
@@ -478,7 +483,7 @@ export function mountInitiatives(app: Express): void {
         `select d.id, coalesce(r.content_generation, d.content_generation) as content_generation,
                 t.slug as team, i.slug as initiative, d.path, d.current_revision, d.current_version,
                 case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                           and d.approved_revision is not null and d.updated_at > i.closed_at
+                           and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
                            and (i.outcome <> 'abandoned'
                                 or (select x.fields->>'outcome' from zz.doc_revision x
                                      where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
@@ -521,6 +526,15 @@ export function mountInitiatives(app: Express): void {
       // of it, and under a millisecond on the other 2,050 documents). Paid, because the
       // alternative is sending that 94 MB to the browser to compare it there. The snapshot is
       // picked before the hash is taken, so only one body per version is read.
+      //
+      // `sealed_*`: a version read as an unsigned row can hold an approved row before it — a
+      // metadata-only change after the approval, a closed document's correction among them, files
+      // a new row in the same version. That approval is named, so it stays findable: its snapshot
+      // id, who signed it and its generation, which becomes the `content_revision` zz-core reads it
+      // by. Metadata only, like the rest; no body of it is read.
+      //
+      // COUPLED: `supersededApproval` in services/zz-core/src/versions.ts names the same
+      // snapshot by the same rule — the version's last approved row before its last row.
       db.query(
         `select d.path, r.version, r.revision,
                 md5(coalesce(r.body, '')) as hash,
@@ -529,12 +543,21 @@ export function mountInitiatives(app: Express): void {
                      else 'draft' end as status,
                 a.email as approved_by,
                 to_char(coalesce(r.written_at, d.updated_at) at time zone 'UTC',
-                        'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+                        'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                d.id as doc_id, s.revision as sealed_revision, s.content_generation::text as sealed_generation,
+                s.approved_by as sealed_by,
+                to_char(s.approved_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sealed_at
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id
            join zz.doc_revision r on r.doc_id = d.id
            left join zz.principal a on a.id = r.approved_by
+           left join lateral (select x.revision, x.content_generation, xa.email as approved_by, x.approved_at
+                                from zz.doc_revision x
+                                join zz.principal xa on xa.id = x.approved_by
+                               where x.doc_id = d.id and x.version = r.version and x.revision < r.revision
+                                 and r.approved_by is null
+                               order by x.revision desc limit 1) s on true
           where t.slug = $1 and i.slug = $2 and d.path = $3
             and r.revision in (select distinct on (x.version) x.revision
                                  from zz.doc_revision x
@@ -615,7 +638,15 @@ export function mountInitiatives(app: Express): void {
         withQualifier: decisions.filter((d) => d.qualifier).length,
         withChecker: decisions.filter((d) => d.checker).length,
       },
-      versions: versions.rows.map((v) => ({ ...v, version: +v.version, revision: +v.revision })),
+      // A superseded approval's token is minted only from a generation it carries: a row written
+      // before generations were kept has none, and generation 0 would name other bytes.
+      versions: versions.rows.map(({ doc_id, sealed_revision, sealed_generation, sealed_by, sealed_at, ...v }) => ({
+        ...v, version: +v.version, revision: +v.revision,
+        superseded_approved: sealed_revision == null ? null : {
+          revision: +sealed_revision, approved_by: sealed_by, approved_at: sealed_at,
+          content_revision: sealed_generation == null ? null : contentRevision(doc_id, Number(sealed_generation)),
+        },
+      })),
       sources: sources.rows.map((x) => ({ ...x, bytes: +x.bytes })),
     });
   }));

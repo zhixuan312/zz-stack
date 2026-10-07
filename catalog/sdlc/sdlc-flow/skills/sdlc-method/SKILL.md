@@ -183,9 +183,11 @@ the platform handed back when that document was written or edited. The platform 
 near-miss `##` heading to the wording the manifest declares and tells the caller it did; the
 stored document carries the new wording and nothing else. The line is also in the details its
 reply names (``details: `dr_…` ``), which `document_read(path, details_ref)` reads back. An
-approval renames nothing: it refuses, naming each rename, and the `document_edit` that applies
-them hands back the line. Keep those lines, or the refs, for the initiative's life. Where there is none to pass, say
-`rename_receipt: unavailable` rather than leaving the auditor to decide whether you forgot.
+approval renames nothing: it refuses, naming each rename (`` `## old` → `## new` ``). Keep that
+refusal's list as the rename receipt, since the `document_edit` that applies them changes the
+wording itself and reports no rename. Keep those lines, the lists or the refs for the
+initiative's life. Where there is none to pass, say `rename_receipt: unavailable` rather than
+leaving the auditor to decide whether you forgot.
 
 **How a loaded stage reaches the record.** The platform attributes a step from the last skill
 loaded, and it must see the load to do that. In Claude Code the baseline `zz-core` plugin

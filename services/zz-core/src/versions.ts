@@ -164,6 +164,27 @@ export function publicVersions<R extends { revision: number; version: number }>(
     .map((v) => snapshotOf(history, v)!);
 }
 
+/** The approved snapshot a later row of version `r` superseded inside it — `version: N` reads that
+ *  later row — with the token that reads it; null when `r` is itself approved or nothing in its
+ *  version was. A row written before generations were recorded per row is named with no token and
+ *  never handed one: generation 0 would mint a real-looking token for other bytes.
+ *
+ *  COUPLED: the console's version history (services/gateway/src/console/initiatives.ts,
+ *  `superseded_approved`) names the same snapshot by the same rule. */
+export function supersededApproval(
+  docId: string,
+  history: { revision: number; version: number; approved_by: string | null; approved_at: string | null;
+             content_generation: string | null }[],
+  r: { revision: number; version: number; approved_by: string | null },
+): { approvedBy: string; approvedAt: string | null; content_revision: string | null } | null {
+  if (r.approved_by) return null;
+  const sealed = history.filter((x) => x.version === r.version && x.revision < r.revision && x.approved_by).pop();
+  if (!sealed) return null;
+  return { approvedBy: sealed.approved_by!, approvedAt: sealed.approved_at,
+           content_revision: sealed.content_generation == null
+             ? null : contentRevision(docId, Number(sealed.content_generation)) };
+}
+
 /** The `doc` row a store path names, or null.
  *
  * COUPLED: `zz.doc.path` is the path INSIDE the initiative — `spec.md`, `sources/…` — and the

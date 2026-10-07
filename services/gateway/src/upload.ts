@@ -37,34 +37,53 @@ import { linkHeaders, uploadPage } from "./upload-page.js";
 /** How staging is bounded — on trying, on memory and on what the database holds.
  *
  *  Attempts are counted per minute, refused ones included: the bound is on trying, not on
- *  succeeding. An attempt is counted against one upload only once the caller has shown it may
- *  stage that upload (its token owns it, or it holds the link), so nobody spends another's ten.
+ *  succeeding. Nothing is counted for a link until its secret resolves to a row, so a stranger
+ *  sending links ZZ never issued creates no counter at all; and an attempt is counted against one
+ *  upload only once the caller has shown it may stage it (its token owns it, or it holds the link),
+ *  so nobody spends another's ten. The figures:
  *
- *  A count of attempts does not bound bytes, so two more bounds do. Memory: a body is read whole
- *  before it is bound, so at most `inFlight` bodies arrive from one client at once and
- *  `inFlightTotal` from everyone — at most that many times 8 MiB, however slowly they are sent.
- *  The database: an upload's owner holds at most `stagedBytes` staged and not yet written, in
- *  bodies whose window is still open. Per owner rather than per address because a row records
- *  who started it, never where a staging came from, and the owner is who a link stages for. An
- *  expired body leaves the count at once and the table at the next hourly sweep, so an owner
- *  holds at most five windows' worth (15 minutes open, up to 60 more before the sweep). */
+ *    - `perUpload`, 10: a file is sent once; ten is that and nine retries.
+ *    - `perAddress`, 60: staging PUTs from one client — an IPv4 address, or an IPv6 /64 — on both
+ *      routes. Everyone behind one NAT shares it, so it counts only the PUT that carries a file:
+ *      sixty is one file a second from an office's single egress, and a person sends one file in
+ *      one PUT or two.
+ *    - `perPage`, 60: page loads of one link, apart from the PUTs, so opening and reloading a page
+ *      spends nobody's staging; sixty a minute is far past a person reloading and bounds a loop.
+ *
+ *  A count of attempts does not bound bytes or time, so three more bounds do, all per owner — the
+ *  principal that started the upload, whom a link stages for — rather than per address, so one
+ *  owner's uploads cannot take everybody's room however many addresses send them, and people
+ *  sharing an address do not share it. Memory and slots: a body is read whole before it is bound,
+ *  so at most `inFlight` bodies arrive for one owner at once and `inFlightTotal` for everyone. At
+ *  its peak a body holds its chunks and their concatenation, then the bytes and their decoded text
+ *  (V8 keeps text outside Latin-1 at two bytes a character), with the chunks held until they are
+ *  collected — about four times 8 MiB, so roughly 1 GiB at 32 bodies. Time: a body that has not
+ *  arrived within `readMs` is refused and its slot freed, so a body sent a byte at a time holds a
+ *  slot for a minute, not Caddy's five (Caddyfile `read_body`). 60 s still lets a whole 8 MiB
+ *  arrive at about 140 KB/s (1.1 Mbit/s), and most files are a small fraction of that. The database:
+ *  an owner holds at most `stagedBytes` staged and not yet written, in bodies whose window is still
+ *  open. An expired body leaves the count at once and the table at the next hourly sweep, so an
+ *  owner holds at most five windows' worth (15 minutes open, up to 60 more before the sweep). */
 interface StagingLimits {
-  perUpload: number; perAddress: number; keys: number; inFlight: number; inFlightTotal: number; stagedBytes: number;
+  perUpload: number; perAddress: number; perPage: number; keys: number; inFlight: number; inFlightTotal: number;
+  stagedBytes: number; readMs: number;
 }
 const LIMITS: StagingLimits = {
-  perUpload: 10, perAddress: 60, keys: 100_000, inFlight: 4, inFlightTotal: 32, stagedBytes: 64 * 1024 * 1024,
+  perUpload: 10, perAddress: 60, perPage: 60, keys: 100_000, inFlight: 4, inFlightTotal: 32,
+  stagedBytes: 64 * 1024 * 1024, readMs: 60_000,
 };
 const WINDOW_MS = 60_000;
 const RATE_LIMITED = "ERROR: RATE_LIMITED — try again in a minute";
 
-/** A counter of attempts in the current window, by `a:<client>` and `u:<upload id>`. In memory:
- *  one gateway process serves a deployment, and a restart forgetting a minute of attempts costs
- *  nothing.
+/** A counter of attempts in the current window, by `a:<client>`, `u:<upload id>` and `v:<upload
+ *  id>`. In memory: one gateway process serves a deployment, and a restart forgetting a minute of
+ *  attempts costs nothing.
  *
  *  Every window is `WINDOW_MS` long and a key is re-inserted when its window restarts, so the map
  *  is in order of expiry: finished windows sit at its head and each is dropped once, in one step.
- *  At most `maxKeys` windows are held; past that a key not already counted is refused rather than
- *  let through, because a bound that forgets under load is no bound. */
+ *  At most `maxKeys` windows are held; past that the oldest is dropped to make room. A flood of new
+ *  keys then forgets the counters it pushes out — refusing the new key instead would let that
+ *  flood lock every newcomer out of staging. */
 function limiter(maxKeys: number): (key: string, limit: number) => boolean {
   const attempts = new Map<string, { n: number; until: number }>();
   return (key, limit) => {
@@ -75,7 +94,7 @@ function limiter(maxKeys: number): (key: string, limit: number) => boolean {
     }
     let a = attempts.get(key);
     if (!a) {
-      if (attempts.size >= maxKeys) return true;
+      if (attempts.size >= maxKeys) attempts.delete(attempts.keys().next().value!);
       a = { n: 0, until: now + WINDOW_MS };
       attempts.set(key, a);
     }
@@ -107,24 +126,32 @@ function refuse(req: Request, res: Response, status: number, error: string): voi
   res.status(status).json({ error });
 }
 
-/** The request body, at most `UPLOAD_MAX_BYTES`, or `null` past it.
+/** The request body, at most `UPLOAD_MAX_BYTES`, or `null` past it, or `"late"` once `ms` have
+ *  passed without the whole of it.
  *
  *  Read as a stream rather than buffered whole, because `Content-Length` is the client's claim and
- *  a stream that ignores it is how a cap becomes a lie. Past the cap the rest is read and dropped. */
-function readBody(req: Request): Promise<Buffer | null | "aborted"> {
+ *  a stream that ignores it is how a cap becomes a lie. Past the cap, or the deadline, what was
+ *  held is let go and the rest is read and dropped. */
+function readBody(req: Request, ms: number): Promise<Buffer | null | "aborted" | "late"> {
   return new Promise((resolve) => {
     if (Number(req.headers["content-length"] ?? 0) > UPLOAD_MAX_BYTES) { req.resume(); resolve(null); return; }
-    const chunks: Buffer[] = [];
+    let chunks: Buffer[] | null = [];
     let size = 0;
-    let over = false;
+    const settle = (answer: Buffer | null | "aborted" | "late") => {
+      if (!chunks) return;
+      chunks = null;
+      clearTimeout(timer);
+      resolve(answer);
+    };
+    const timer = setTimeout(() => settle("late"), ms);
     req.on("data", (chunk: Buffer) => {
-      if (over) return;
+      if (!chunks) return;
       size += chunk.length;
-      if (size > UPLOAD_MAX_BYTES) { over = true; resolve(null); return; }
+      if (size > UPLOAD_MAX_BYTES) { settle(null); return; }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(over ? null : Buffer.concat(chunks)));
-    req.on("error", () => resolve("aborted"));
+    req.on("end", () => { if (chunks) settle(Buffer.concat(chunks)); });
+    req.on("error", () => settle("aborted"));
   });
 }
 
@@ -135,9 +162,9 @@ interface Row {
   staged_via: string | null; staged_by: string | null; owner: string;
 }
 
-/** What one mounting's bounds allow a staging: room for its body to arrive, and the bytes its owner
- *  may hold staged. */
-interface Room { arrive: (res: Response) => boolean; stagedBytes: number }
+/** What one mounting's bounds allow a staging: room for its body to arrive, how long it may take,
+ *  and the bytes its owner may hold staged. */
+interface Room { arrive: (res: Response) => boolean; readMs: number; stagedBytes: number }
 
 /** Binds the request's bytes to `row`, or answers why not. `by` is the staging principal for the
  *  token route and null for the link, which authenticates nobody. */
@@ -165,8 +192,16 @@ async function stage(req: Request, res: Response, row: Row, via: "token" | "link
     refuse(req, res, 429, "ERROR: RATE_LIMITED — too many files are arriving at once; wait for one to finish, then send this one again.");
     return;
   }
-  const body = await readBody(req);
+  const body = await readBody(req, room.readMs);
   if (body === "aborted") { if (!res.headersSent) res.status(400).json({ error: "the upload ended before it was complete" }); return; }
+  if (body === "late") {
+    // Answered, which frees the slot; the rest of the body is drained, and the connection is not
+    // kept for another request. NOT A TOOL: "close" is the HTTP Connection header's value.
+    res.set("Connection", "close");
+    res.status(408).json({ error: `ERROR: UPLOAD_TIMEOUT — the file did not arrive within ${room.readMs / 1000} seconds; ` +
+      "send it again over a steadier connection, or split it into smaller parts." });
+    return;
+  }
   if (body === null) {
     res.status(413).json({ error: `ERROR: SIZE_LIMIT — the file is over the 8 MiB (${UPLOAD_MAX_BYTES}-byte) limit for one upload; send a smaller file, or split it into parts.` });
     return;
@@ -207,8 +242,10 @@ async function stage(req: Request, res: Response, row: Row, via: "token" | "link
   if (won?.sha256 === sha256) res.json(binding);
   else if (won && won.sha256 === null && won.expired) res.status(410).json({ error: expired });
   else if (won && won.sha256 === null) {
-    res.status(429).json({ error: `ERROR: RATE_LIMITED — the person this upload is for already has ${room.stagedBytes} bytes staged and not yet ` +
-      "written; have the agent write those files, or wait for their 15 minutes to end, then send this one again." });
+    const mib = room.stagedBytes % 1048576 === 0 ? ` (${room.stagedBytes / 1048576} MiB)` : "";
+    res.status(429).json({ error: `ERROR: RATE_LIMITED — this file would take the person this upload is for past the ` +
+      `${room.stagedBytes}-byte${mib} limit on files staged and not yet written; have the agent write those files, or ` +
+      "wait for their 15 minutes to end, then send this one again." });
   } else res.status(409).json({ error: conflict(won ?? { sha256: null, staged_via: null, staged_by: null }) });
 }
 
@@ -230,25 +267,26 @@ const FORBIDDEN = "ERROR: FORBIDDEN — this is not an upload of yours in the te
  *  production passes nothing, is `LIMITS`. */
 export function mountUpload(app: Express, opts: { limits?: Partial<StagingLimits> } = {}): void {
   const limits: StagingLimits = { ...LIMITS, ...opts.limits };
-  const { perUpload, perAddress } = limits;
+  const { perUpload, perAddress, perPage } = limits;
   const overLimit = limiter(limits.keys);
-  // Bodies arriving now, per client and in all. Released once, when the answer is sent or the
-  // connection goes, however it ends — answered, refused or abandoned mid-body.
+  // Bodies arriving now, per owner and in all. Released once, when the answer is sent or the
+  // connection goes, however it ends — answered, refused, timed out or abandoned mid-body.
   const arriving = new Map<string, number>();
   let arrivingTotal = 0;
-  const roomFor = (client: string): Room => ({
+  const roomFor = (owner: string): Room => ({
     stagedBytes: limits.stagedBytes,
+    readMs: limits.readMs,
     arrive: (res) => {
-      const n = arriving.get(client) ?? 0;
+      const n = arriving.get(owner) ?? 0;
       if (n >= limits.inFlight || arrivingTotal >= limits.inFlightTotal) return false;
-      arriving.set(client, n + 1);
+      arriving.set(owner, n + 1);
       arrivingTotal += 1;
       let gone = false;
       const release = () => {
         if (gone) return;
         gone = true;
-        const left = (arriving.get(client) ?? 1) - 1;
-        if (left > 0) arriving.set(client, left); else arriving.delete(client);
+        const left = (arriving.get(owner) ?? 1) - 1;
+        if (left > 0) arriving.set(owner, left); else arriving.delete(owner);
         arrivingTotal -= 1;
       };
       res.once("finish", release);
@@ -263,8 +301,8 @@ export function mountUpload(app: Express, opts: { limits?: Partial<StagingLimits
     // The identity gate runs before this in server.ts; without it, nothing here is anybody's.
     if (!who) { refuse(req, res, 401, "authentication required: Bearer PAT (zzp_…)"); return; }
     const id = req.params.id ?? "";
-    const client = clientOf(req.ip ?? "");
-    if (overLimit(`a:${client}`, perAddress)) { refuse(req, res, 429, RATE_LIMITED); return; }
+    // Counted before the lookup: the identity gate let only a member's token this far.
+    if (overLimit(`a:${clientOf(req.ip ?? "")}`, perAddress)) { refuse(req, res, 429, RATE_LIMITED); return; }
     if (!UPLOAD_ID.test(id)) { refuse(req, res, 403, FORBIDDEN); return; }
     // Unknown, someone else's and another team's answer alike, so an id says nothing about
     // whether it exists.
@@ -281,7 +319,7 @@ export function mountUpload(app: Express, opts: { limits?: Partial<StagingLimits
     const row = found.rows[0];
     if (!row?.mine || !row.principal) { refuse(req, res, 403, FORBIDDEN); return; }
     if (overLimit(`u:${id}`, perUpload)) { refuse(req, res, 429, RATE_LIMITED); return; }
-    await stage(req, res, row, "token", row.principal, roomFor(client));
+    await stage(req, res, row, "token", row.principal, roomFor(row.owner));
   }));
 
   /** The row a link names, or null for anything that is not one of ours. */
@@ -295,10 +333,15 @@ export function mountUpload(app: Express, opts: { limits?: Partial<StagingLimits
     return found.rows[0] ?? null;
   };
 
-  // The page counts against its client like a staging does: each GET is a hash and a lookup, and
-  // a person sending one file opens the page twice (before, and the reload after).
+  // DELIBERATE: a link is looked up before anything is counted, on the page and on its PUT. A
+  // counter per client for links that resolve to nothing is what let a stranger fill the table,
+  // and per client is what made everyone behind one NAT share it. An unknown secret costs a hash
+  // and one indexed read, as an unknown token costs the identity gate on every door, which counts
+  // nothing either; it is 256 bits, so there is nothing to guess. A known link's page loads are
+  // counted on the link (`v:`), apart from its PUTs.
   app.get("/u/:secret", guarded("upload page", async (req, res) => {
-    const row = overLimit(`a:${clientOf(req.ip ?? "")}`, perAddress) ? "busy" : await byLink(req.params.secret ?? "");
+    const found = await byLink(req.params.secret ?? "");
+    const row = found && overLimit(`v:${found.id}`, perPage) ? "busy" : found;
     const shown = uploadPage(
       row === "busy" ? { kind: "busy" }
       : !row ? { kind: "invalid" }
@@ -311,15 +354,14 @@ export function mountUpload(app: Express, opts: { limits?: Partial<StagingLimits
 
   app.put("/u/:secret", guarded("link staging", async (req, res) => {
     res.set(linkHeaders());
-    const client = clientOf(req.ip ?? "");
-    if (overLimit(`a:${client}`, perAddress)) { refuse(req, res, 429, RATE_LIMITED); return; }
     const row = await byLink(req.params.secret ?? "");
     if (!row) {
       refuse(req, res, 403, "ERROR: FORBIDDEN — this is not a staging link ZZ issued; ask the agent for a new one.");
       return;
     }
+    if (overLimit(`a:${clientOf(req.ip ?? "")}`, perAddress)) { refuse(req, res, 429, RATE_LIMITED); return; }
     if (overLimit(`u:${row.id}`, perUpload)) { refuse(req, res, 429, RATE_LIMITED); return; }
-    await stage(req, res, row, "link", null, roomFor(client));
+    await stage(req, res, row, "link", null, roomFor(row.owner));
   }));
 }
 

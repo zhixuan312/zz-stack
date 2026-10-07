@@ -196,7 +196,7 @@ export async function longLists(c: Core): Promise<void> {
   await sameAfter(c, step, p, ref, detail);
   c.pass(step);
 
-  step = "a `find` on 4,000 lines beside 127 that match nothing: the refusal fits 16 KiB, `lines (4000)` exact, every line it dropped counted, and its document.refused detail read back page by page";
+  step = "a `find` on 4,000 lines beside 127 that match nothing: the refusal fits 16 KiB, `lines (4000)` exact, every line it dropped counted, its document.refused detail read back page by page — the first 1,000 lines kept, and the 3,000 it omitted said";
   const m = `${I}/matches.md`;
   await c.ok(step, "document_write", { path: m, content: `# M\n\n${"zq\n".repeat(4000)}` });
   const misses = Array.from({ length: 127 }, (_, i) => ({ find: `text the body never held, number ${i + 1}, spelt out at length`, replace: "x" }));
@@ -204,9 +204,21 @@ export async function longLists(c: Core): Promise<void> {
   const shownMisses = reply.split("\n").filter((l) => /^ERROR: NO_MATCH — edit \d+ /.test(l)).length;
   if (shownMisses === 127) c.fail(step, `a ${bytes(reply)}-byte refusal kept all 127 NO_MATCH lines`);
   ref = accounted(c, step, reply, [{ label: "lines", at: /^ERROR: MULTIPLE_MATCHES — edit 0 /, total: 4000,
-    tail: ". Send a longer `find` that includes enough surrounding text to occur exactly once." }], 127 - shownMisses);
+    tail: "; the first 1000 are kept and 3000 omitted (details_complete: false). Send a longer `find` that includes " +
+      "enough surrounding text to occur exactly once." }], 127 - shownMisses);
   detail = await readDetail(c, step, m, ref);
-  for (let n = 3; n <= 4002; n++) if (!detail.includes(`\n- ${n}\n`)) c.fail(step, `the detail does not name line ${n}`);
+  // The stakeholder's cap (2026-10-07): an edit keeps its first 1,000 match locations (document-edits.ts),
+  // its count exact, and the detail says what it omitted — in its text and on its row.
+  for (let n = 3; n <= 1002; n++) if (!detail.includes(`\n- ${n}\n`)) c.fail(step, `the detail does not name line ${n}`);
+  for (const n of [1003, 4002]) if (detail.includes(`\n- ${n}\n`)) c.fail(step, `the detail names line ${n}, past the first 1,000`);
+  if (!detail.startsWith("ERROR: MULTIPLE_MATCHES — edit 0 (0-based): `find` occurs 4000 times in the body, on lines (4000); " +
+                         "the first 1000 are kept and 3000 omitted (details_complete: false). ")) {
+    c.fail(step, `the detail does not say what it omitted: ${detail.slice(0, 300)}`);
+  }
+  const row = (await c.sql.query<{ complete: string | null; omitted: string | null }>(
+    "select detail->>'details_complete' as complete, detail->>'details_omitted' as omitted from zz.event where detail->>'details_ref' = $1",
+    [ref])).rows[0];
+  if (row?.complete !== "false" || row.omitted !== "3000") c.fail(step, `the stored row does not say what it omitted: ${JSON.stringify(row)}`);
   for (let i = 1; i <= 127; i++) if (!detail.includes(`edit ${i} (0-based)`)) c.fail(step, `the detail does not name edit ${i}`);
   await c.ok(step, "document_edit", { path: m, edits: [{ find: "# M", replace: "# Matches" }] });
   await sameAfter(c, step, m, ref, detail);

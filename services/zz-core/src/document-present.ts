@@ -36,7 +36,7 @@ import { PART_LIMIT, asksPart, partHeader, slicePart } from "./document-parts.js
 import { commitPresentation, presentedBody, type PresentAsk, resolvePresentation, snapshotRevision,
          type Viewer } from "./review-context.js";
 import { changeSnapshot } from "./stale-base.js";
-import { loadDocument, loadSnapshot, publicVersions } from "./versions.js";
+import { loadDocument, loadSnapshot, publicVersions, supersededApproval } from "./versions.js";
 
 type Loaded = Extract<Awaited<ReturnType<typeof loadDocument>>, { ok: true }>;
 type Shown = { text: string; panel: PanelDocument | null };
@@ -173,14 +173,34 @@ function metadataLine(text: string): string {
 }
 
 /** One entry per public version, each the snapshot it is read as, with the note that says why it
- *  differs from the one before. */
+ *  differs from the one before.
+ *
+ *  A version read as an unsigned snapshot can hold an approved one before it — a metadata-only
+ *  change after the approval files a new row in the same version (a closed document's correction
+ *  among them). `version: N` no longer reads that approval, so the entry names it by the token
+ *  `content_revision` reads it with; without this, the approval's own reply was the one place the
+ *  token was ever printed.
+ *
+ *  COUPLED: the console's version history (services/gateway/src/console/initiatives.ts,
+ *  `superseded_approved`) names the same snapshot by the same rule. */
 function versionsLine(l: Loaded): string {
-  const history = publicVersions(l.history).map((r) =>
+  const entries = publicVersions(l.history).map((r) => ({ r, sealed: supersededApproval(l.doc.id, l.history, r) }));
+  const history = entries.map(({ r, sealed }) =>
     `v${r.version} ${r.approved_by ? "approved" : "filed"}` +
     (r.approved_by ? ` by ${r.approved_by}` : "") +
     (r.approved_at ? ` on ${r.approved_at}` : "") +
+    (sealed ? ` (${supersededSeal(sealed)})` : "") +
     (r.revision_note ? ` — ${r.revision_note}` : ""));
   return history.length
-    ? `Versions filed: ${history.join("; ")}. Read one with \`version: N\`.`
+    ? `Versions filed: ${history.join("; ")}. Read one with \`version: N\`` +
+      (entries.some((e) => e.sealed) ? ", and a superseded approved snapshot with its `content_revision`." : ".")
     : "Versions filed: none — no approval has landed on this document yet.";
+}
+
+/** An approved snapshot a later row of its version superseded, as the versions line says it. */
+function supersededSeal(s: NonNullable<ReturnType<typeof supersededApproval>>): string {
+  const by = `by ${s.approvedBy}${s.approvedAt ? ` on ${s.approvedAt}` : ""}`;
+  return s.content_revision == null
+    ? `an approved snapshot ${by} superseded inside it, with no content revision retained`
+    : `approved snapshot \`${s.content_revision}\` ${by} superseded inside it`;
 }

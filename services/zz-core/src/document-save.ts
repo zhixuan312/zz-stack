@@ -43,7 +43,7 @@ import {
 import type { Composed } from "./document-details.js";
 import { RESERVED_ENVELOPE } from "./document-rules.js";
 import { insertEvent } from "./indexing.js";
-import { currentRow, type CurrentRow, landing, lockPath, reservePath } from "./document-snapshot.js";
+import { currentRow, landing, lockPath, reservePath, rowHeld } from "./document-snapshot.js";
 import { stampEnvelope } from "./write-guards.js";
 import { db as platformDb } from "./platform-db.js";
 import { type Consumption, consumeUpload } from "./upload-consume.js";
@@ -282,12 +282,12 @@ async function initiativeIdIn(
 export async function documentState(
   p: Pick<pg.Pool, "query">, team: string, relPath: string,
 ): Promise<DocumentState | null> {
-  const cur = await currentRow(p, team, relPath);
-  return cur ? stateOf(cur) : null;
+  const cur = await rowHeld(p, team, relPath);
+  return cur ? stateOf(cur.content_generation, cur.current_revision, cur.written_at) : null;
 }
 
-const stateOf = (c: CurrentRow): DocumentState =>
-  ({ generation: Number(c.generation), revision: c.current_revision ?? 0, writtenAt: c.written_at ?? "" });
+const stateOf = (generation: string, revision: number | null, writtenAt: string | null): DocumentState =>
+  ({ generation: Number(generation), revision: revision ?? 0, writtenAt: writtenAt ?? "" });
 
 /** What a write answers: the rows it left, a refusal, or — only for a write carrying `change` —
  *  a retry or a replayed receipt. */
@@ -372,7 +372,7 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
     let mode: "create" | "rewrite" | "append" | "pinned" = "create";
     if (existing && w.mode !== "create") {
       // The compare-and-swap: a write commits only onto the state it was computed from.
-      const now = stateOf(existing);
+      const now = stateOf(existing.generation, existing.current_revision, existing.written_at);
       const moved = (e: DocumentState): boolean =>
         now.generation !== e.generation || now.revision !== e.revision || now.writtenAt !== e.writtenAt;
       if (!change && w.expect && moved(w.expect)) {

@@ -2,14 +2,16 @@
 /**
  * The edit primitive: an exact batch applied to one original body, or EVERY reason it cannot be —
  * each failing edit named by its index, in the order sent — and the refusal text a repeated `find`
- * gets: its lines counted, at most 40 shown, the rest left to the detail.
+ * gets: its lines counted, at most 40 shown, the rest left to the detail. Occurrences are counted
+ * exactly, overlapping ones included, in one pass whatever the `find` repeats; an edit keeps the
+ * lines of its first 1,000 (document-edits.ts), and the detail says what it omitted.
  * Run: node checks/document-edits.ts   (also run by scripts/gate.ts)
  */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const { applyEdits } = await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/document-edits.js")).href);
-const { batchRefusal, refusalText } = await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/document-details.js")).href);
+const { batchRefusal, refusalText, settleRefusal } = await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/document-details.js")).href);
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 const ok = (body: string, edits: { find: string; replace: string }[], want: string, why: string) => {
@@ -60,14 +62,65 @@ is(two === "ERROR: MULTIPLE_MATCHES — edit 1 (0-based): `find` occurs 2 times 
           "Send a longer `find` that includes enough surrounding text to occur exactly once.",
    `an uncut refusal prints its whole list and no details line: ${two}`);
 
-// A short repeated `find` in a long body numbers every occurrence in one forward pass. Counting
+// A short repeated `find` in a long body numbers its occurrences in one forward pass. Counting
 // each line from offset 0 again is quadratic: 14.7 s here, on the one event loop every team shares.
+// The count stays exact; only the first 1,000 occurrences keep a line.
 const big = Array.from({ length: 40_000 }, (_, i) => `line ${i} the quick brown fox`).join("\n");
 const t0 = performance.now();
 const slow = applyEdits(big, [{ find: "the", replace: "a" }]);
 const took = performance.now() - t0;
-is(took < 1500 && "refusals" in slow && slow.refusals[0].match_count === 40_000 && slow.refusals[0].lines[39_999] === 40_000,
-   `40,000 occurrences are numbered in linear time: ${Math.round(took)} ms`);
+is(took < 1500 && "refusals" in slow && slow.refusals[0].match_count === 40_000
+   && slow.refusals[0].lines.length === 1000 && slow.refusals[0].lines[999] === 1000,
+   `40,000 occurrences are counted, and the first 1,000 numbered, in linear time: ${Math.round(took)} ms, ` +
+   `${"refusals" in slow ? `${slow.refusals[0].match_count} counted, ${slow.refusals[0].lines.length} lines kept` : "applied"}`);
+
+// Overlapping occurrences are counted exactly, at the offsets a naive scan finds: every start
+// position of a small alphabet's bodies, against every short `find` — self-overlapping ones too.
+let seed = 7;
+const rand = (n: number) => { seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648; return seed % n; };
+const word = (len: number, abc: string) => Array.from({ length: len }, () => abc[rand(abc.length)]).join("");
+for (let n = 0; n < 20_000; n++) {
+  const abc = n % 2 ? "ab" : "abc";
+  const body = word(rand(40), abc), find = word(1 + rand(6), abc);
+  const want: number[] = [];
+  for (let i = 0; i + find.length <= body.length; i++) if (body.startsWith(find, i)) want.push(i);
+  const r = applyEdits(body, [{ find, replace: "" }]);
+  const got = "body" in r ? [body.indexOf(find)] : r.refusals[0].code === "NO_MATCH" ? [] : r.refusals[0].match_count;
+  const wantCount = want.length === 1 ? [want[0]] : want.length === 0 ? [] : want.length;
+  if (JSON.stringify(got) !== JSON.stringify(wantCount)) { is(false, `${JSON.stringify(find)} in ${JSON.stringify(body)}: ${JSON.stringify(r)}`); break; }
+}
+
+// The most one call can ask: 128 edits of a self-overlapping `find` on a 1.2 MB run of one
+// character. Each occurrence counted and none stored past the cap: holding every line ran zz-core
+// out of heap for every team (64 such edits passed 1.5 GB) and stored a 79 MB detail row. The
+// refusal's detail, as `settleRefusal` writes it, is bounded and says what it omitted.
+const run = "a".repeat(1_200_000);
+const t1 = performance.now();
+const flood = applyEdits(run, Array.from({ length: 128 }, () => ({ find: "aa", replace: "b" })));
+const floodTook = performance.now() - t1;
+const refusals = "refusals" in flood ? flood.refusals : [];
+is(floodTook < 3000 && refusals.length === 128
+   && refusals.every((r: { match_count: number; lines: number[] }) => r.match_count === 1_199_999 && r.lines.length === 1000),
+   `128 edits of "aa" on 1.2 MB are counted exactly and keep at most 1,000 lines each: ${Math.round(floodTook)} ms, ` +
+   `${JSON.stringify(refusals.slice(0, 1).map((r: { match_count: number; lines: number[] }) => [r.match_count, r.lines.length]))}`);
+const told = refusalText(refusals.map((r: object) => batchRefusal("i/doc.md", r)));
+let stored: Record<string, unknown> = {};
+await settleRefusal({ query: async (_sql: string, params: unknown[]) => { stored = JSON.parse(String(params[5])); return { rows: [] }; } },
+                    { who: "u@zz.test", team: "t1", path: "i/doc.md" }, told);
+const detail = String(stored.details ?? "");
+is(Buffer.byteLength(told, "utf8") <= 16 * 1024 && Buffer.byteLength(detail, "utf8") < 1024 * 1024
+   && stored.details_complete === false && stored.details_omitted === 128 * 1_198_999
+   && /^ERROR: MULTIPLE_MATCHES — edit 127 \(0-based\): `find` occurs 1199999 times in the body, on lines \(1199999\); the first 1000 are kept and 1198999 omitted \(details_complete: false\)\. Send a longer/m.test(detail),
+   `the stored detail is bounded and says what it omitted: ${Buffer.byteLength(detail, "utf8")} bytes, ` +
+   `${JSON.stringify({ details_complete: stored.details_complete, details_omitted: stored.details_omitted })}, ${detail.slice(0, 300)}`);
+
+// A long self-overlapping `find` costs one pass, not one comparison of the whole `find` per
+// position: 4.3 s an edit here before.
+const t2 = performance.now();
+const long = applyEdits(run, Array.from({ length: 16 }, () => ({ find: "a".repeat(10_000), replace: "" })));
+const longTook = performance.now() - t2;
+is(longTook < 1500 && "refusals" in long && long.refusals.every((r: { match_count: number }) => r.match_count === 1_190_001),
+   `16 edits of a 10,000-character self-overlapping find take one pass each: ${Math.round(longTook)} ms`);
 
 if (fail.length) {
   console.error(`document-edits: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);

@@ -180,7 +180,10 @@ export function registerInitiativeActTools(server: McpServer): void {
           `differently (${renamed.join(", ")}), and an approval signs exactly the snapshot presented — ` +
           "renaming here would seal bytes nobody was shown, so nothing was approved. Rename " +
           `${renamed.length === 1 ? "it" : "them"} with document_edit(path: "${relPath}", edits: ` +
-          '[{ find: "## <old>", replace: "## <new>" }, …]), present the result with document_present, then approve it.');
+          '[{ find: "## <old>", replace: "## <new>" }, …]' +
+          // An approved body changes only with a cause new to its version (CAUSE_REQUIRED).
+          (already ? ", plus its cause in `sources` or `source_content` — the document is approved, so the rename opens a new version" : "") +
+          "), present the result with document_present, then approve it.");
       }
       const bad = await documentGuards(chain, relPath, doc, team, "document_approve");
       if (bad) return text(await settle(bad));

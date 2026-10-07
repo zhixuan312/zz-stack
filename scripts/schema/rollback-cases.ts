@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { root } from "../deployment.ts";
-import { type Guarded, refusalLines, rollbackGuard } from "../release/rollback-guard.ts";
+import { type Guarded, refusalLines, refusalsSince, rollbackGuard } from "../release/rollback-guard.ts";
 import type { Core } from "./throwaway-core.ts";
 import { type Gateway, start } from "./upload-cases.ts";
 
@@ -58,17 +58,24 @@ export function previousRelease(): string {
 /** This checkout's own version — what a host running it reports as `ZZ_VERSION`. */
 const checkoutVersion = (): string => String(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
 
-/** The guard over a fixture repository at 1.1.0 — the version the host is told it runs: a
- *  declaration, in any case and indented, destructive DDL of every kind it names, neither, no tag,
- *  and a checkout that is not of the host's version. */
-export function guardCases(): void {
+/** A fixture repository with a migrations directory, and git run in it. */
+function fixture(): { repo: string; dir: string; g: (...a: string[]) => string; done: () => void } {
   const repo = mkdtempSync(join(tmpdir(), "rollback-guard-"));
+  const dir = join(repo, MIGRATIONS);
+  mkdirSync(dir, { recursive: true });
+  const g = (...a: string[]) => git(["-c", "user.email=check@example.test", "-c", "user.name=check",
+                                     "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", ...a], repo);
+  g("init", "-q");
+  return { repo, dir, g, done: () => rmSync(repo, { recursive: true, force: true }) };
+}
+
+/** The guard over a fixture repository at 1.1.0 with v1.0.0 its only tag — release step 6's shape,
+ *  read from the working tree: a declaration, in any case and indented, destructive DDL of every
+ *  kind it names and the renames the old code cannot see, neither, no tag, and a host on a version
+ *  that has no tag and is not this checkout's. */
+export function guardCases(): void {
+  const { repo, dir, g, done } = fixture();
   try {
-    const dir = join(repo, MIGRATIONS);
-    mkdirSync(dir, { recursive: true });
-    const g = (...a: string[]) => git(["-c", "user.email=check@example.test", "-c", "user.name=check",
-                                       "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", ...a], repo);
-    g("init", "-q");
     writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "1.1.0" }));
     writeFileSync(join(dir, "001_init.sql"), "CREATE TABLE zz.t (a integer);\n");
     g("add", ".");
@@ -98,15 +105,32 @@ export function guardCases(): void {
         || !/answer 500 to every caller while \/health stayed green/.test(refusals[1]?.reason ?? "")) fail(step, json(got));
     pass(step);
 
-    step = "a rename, a retype without COLUMN or with SET DATA, and a dropped view or function each refuse";
+    step = "a rename the old code still names — a column with or without COLUMN, ONLY or IF EXISTS, a table, view, type, " +
+      "enum value, function or schema — a retype without COLUMN or with SET DATA, and a dropped view or function each refuse";
     rmSync(join(dir, "002_declared.sql"));
     rmSync(join(dir, "003_destructive.sql"));
-    for (const ddl of ["ALTER TABLE zz.t RENAME COLUMN a TO b;", "ALTER TABLE zz.t RENAME TO u;", "alter table zz.t alter a type text;",
+    for (const ddl of ["ALTER TABLE zz.t RENAME COLUMN a TO b;", "ALTER TABLE zz.t RENAME a TO b;", "ALTER TABLE ONLY zz.t RENAME a TO b;",
+                       "alter table if exists only zz.t rename column a to b;", "ALTER TABLE zz.t RENAME TO u;", "ALTER VIEW zz.v RENAME TO w;",
+                       "ALTER MATERIALIZED VIEW zz.m RENAME TO n;", "ALTER TYPE zz.e RENAME VALUE 'a' TO 'b';", "ALTER TYPE zz.e RENAME TO f;",
+                       "ALTER FUNCTION zz.f(integer) RENAME TO g;", "ALTER SCHEMA zz RENAME TO yy;",
+                       "CREATE TABLE zz.n (a integer);\nALTER TABLE zz.t RENAME TO n_old;", "alter table zz.t alter a type text;",
                        "ALTER TABLE zz.t ALTER COLUMN a SET DATA TYPE text;", "DROP VIEW zz.v;", "DROP MATERIALIZED VIEW zz.m;",
                        "DROP FUNCTION zz.f();"]) {
       writeFileSync(join(dir, "005_ddl.sql"), `${ddl}\n`);
       got = rollbackGuard("1.0.0", "1.1.0", repo);
       if (!("refusals" in got) || got.refusals.map((r) => r.file).join(",") !== "005_ddl.sql") fail(step, `${ddl} → ${json(got)}`);
+    }
+    pass(step);
+
+    step = "a rename the old code cannot see permits: an index, sequence, trigger or constraint, and a table or column of a " +
+      "table a new migration created";
+    for (const ddl of ["ALTER INDEX zz.t_a_idx RENAME TO t_b_idx;", "ALTER SEQUENCE zz.t_a_seq RENAME TO t_b_seq;",
+                       "ALTER TRIGGER t_touch ON zz.t RENAME TO t_stamp;", "ALTER TABLE ONLY zz.t RENAME CONSTRAINT t_a_key TO t_b_key;",
+                       "CREATE TABLE zz.n (a integer);\nALTER TABLE zz.n RENAME TO m;",
+                       "CREATE TABLE IF NOT EXISTS zz.n (a integer);\nALTER TABLE ONLY zz.n RENAME a TO b;"]) {
+      writeFileSync(join(dir, "005_ddl.sql"), `${ddl}\n`);
+      got = rollbackGuard("1.0.0", "1.1.0", repo);
+      if (json(got) !== json({ refusals: [] })) fail(step, `${ddl} → ${json(got)}`);
     }
     rmSync(join(dir, "005_ddl.sql"));
     pass(step);
@@ -125,31 +149,113 @@ export function guardCases(): void {
     if (!("error" in got) || !got.error.startsWith("no tag v9.9.9 — ")) fail(step, json(got));
     pass(step);
 
-    step = "a checkout that is not of the version the host runs is the guard's error, its migrations not the ones applied";
-    // The case R1-G6-3 names: a checkout behind the deployment lacks the refusing migration and,
+    step = "a host on a version with no tag that is not this checkout's is the guard's error, never an answer from this working tree";
+    // A clone behind the deployment, or one that never fetched its tag, lacks what it applied and,
     // asked anyway, would permit the rollback it forbids.
     writeFileSync(join(dir, "002_declared.sql"), "-- rollback: refused — the old writer cannot fill b\n");
     for (const live of ["1.2.0", ""]) {
       got = rollbackGuard("1.0.0", live, repo);
-      if (!("error" in got) || !got.error.startsWith(`this checkout is 1.1.0 and the host runs ${live || "(no recorded version)"} — `)) {
+      const named = live ? `v${live}` : "for the version the host runs (none is recorded)";
+      if (!("error" in got) || !got.error.startsWith(`no tag ${named}, and this checkout is 1.1.0 — `)) {
         fail(step, `host at ${json(live)} → ${json(got)}`);
       }
-      if (!refusalLines(live, "1.0.0", got).some((l) => /is refused: this checkout is 1\.1\.0/.test(l))) fail(step, "refusalLines does not print it");
+      if (!refusalLines(live, "1.0.0", got).some((l) => /is refused: no tag .*this checkout is 1\.1\.0/.test(l))) fail(step, "refusalLines does not print it");
     }
     pass(step);
   } finally {
-    rmSync(repo, { recursive: true, force: true });
+    done();
   }
 }
 
-/** The guard over this checkout, back to the derived previous release. */
+/** The guard over a fixture repository with releases v1.0.0, v1.0.1 (an additive migration) and
+ *  v1.1.0 (a declared refusal): the live release is read from its tag, so a migration master
+ *  carries and no release shipped refuses nothing, and a fold made after the tag — without a
+ *  version bump — still refuses what the release applied; an absorbed migration counts as new to a
+ *  release that predates it, and one no tag carries is the guard's error. */
+export function foldCases(): void {
+  const { repo, dir, g, done } = fixture();
+  const declared = "the old writer cannot fill b";
+  const release = (version: string, file?: string, text?: string) => {
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ version }));
+    if (file) writeFileSync(join(dir, file), text ?? "");
+    g("add", "-A");
+    g("commit", "-q", "-m", version);
+    g("tag", `v${version}`);
+  };
+  const expect = (step: string, got: Guarded, refused: string[]) => {
+    if (json(got) !== json({ refusals: refused.map((file) => ({ file, reason: declared })) })) fail(step, json(got));
+  };
+  try {
+    const init = "CREATE TABLE zz.t (a integer);\n";
+    release("1.0.0", "001_init.sql", init);
+    release("1.0.1", "002_plain.sql", "ALTER TABLE zz.t ADD COLUMN b integer;\n");
+    release("1.1.0", "003_declared.sql", `-- rollback: refused — ${declared}\nALTER TABLE zz.t ALTER COLUMN b SET NOT NULL;\n`);
+
+    let step = "an unreleased migration in the checkout refuses nothing: v1.1.0 → v1.0.1 names only what v1.1.0 shipped, " +
+      "and v1.0.1 → v1.0.0 permits";
+    writeFileSync(join(dir, "004_unreleased.sql"), "-- rollback: refused — not shipped\nALTER TABLE zz.t DROP COLUMN a;\n");
+    expect(step, rollbackGuard("1.0.1", "1.1.0", repo), ["003_declared.sql"]);
+    expect(step, rollbackGuard("1.0.0", "1.0.1", repo), []);
+    rmSync(join(dir, "004_unreleased.sql"));
+    pass(step);
+
+    step = "after a fold committed without a version bump, v1.1.0 → v1.0.1 still refuses on the migration v1.1.0 applied";
+    // The fold as this repo makes one: the absorbed files' DDL appended to 001, their names listed,
+    // the refusal line not carried over, and the files deleted.
+    writeFileSync(join(dir, "001_init.sql"), "-- absorbs: 002_plain.sql\n-- absorbs: 003_declared.sql\n" + init +
+      "ALTER TABLE zz.t ADD COLUMN b integer;\nALTER TABLE zz.t ALTER COLUMN b SET NOT NULL;\n");
+    rmSync(join(dir, "002_plain.sql"));
+    rmSync(join(dir, "003_declared.sql"));
+    g("add", "-A");
+    g("commit", "-q", "-m", "fold 002 and 003 into 001");
+    expect(step, rollbackGuard("1.0.1", "1.1.0", repo), ["003_declared.sql"]);
+    pass(step);
+
+    step = "releasing the folded checkout (step 6, untagged): back to v1.1.0 permits, and back to v1.0.1 refuses on the " +
+      "absorbed migration, read from the tag that still has it";
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "1.2.0" }));
+    expect(step, rollbackGuard("1.1.0", "1.2.0", repo), []);
+    expect(step, rollbackGuard("1.0.1", "1.2.0", repo), ["003_declared.sql"]);
+    pass(step);
+
+    step = "an absorbed migration no tag carries is the guard's error";
+    const folded = readFileSync(join(dir, "001_init.sql"), "utf8");
+    writeFileSync(join(dir, "001_init.sql"), `-- absorbs: 009_never.sql\n${folded}`);
+    const lost = rollbackGuard("1.1.0", "1.2.0", repo);
+    if (!("error" in lost) || !lost.error.includes("absorbs 009_never.sql, which no tag carries")) fail(step, json(lost));
+    writeFileSync(join(dir, "001_init.sql"), folded);
+    pass(step);
+
+    step = "once v1.2.0 is tagged, its tag answers whatever the checkout holds next";
+    release("1.2.0");
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "1.3.0" }));
+    writeFileSync(join(dir, "005_next.sql"), "ALTER TABLE zz.t DROP COLUMN b;\n");
+    expect(step, rollbackGuard("1.0.1", "1.2.0", repo), ["003_declared.sql"]);
+    expect(step, rollbackGuard("1.1.0", "1.2.0", repo), []);
+    pass(step);
+  } finally {
+    done();
+  }
+}
+
+/** The guard over this checkout: as the release it would become, back to the derived previous
+ *  release; and between that release and the one before it, read from their tags whatever this
+ *  checkout carries. */
 export function headCases(previous: string): void {
-  const step = `from HEAD back to v${previous} (the newest tag without ${MIGRATION}) the refusing set is exactly {${MIGRATION}}, with its declared reason`;
+  let step = `this checkout as the release it would become, back to v${previous} (the newest tag without ${MIGRATION}): the refusing set is exactly {${MIGRATION}}, with its declared reason`;
   const declared = readFileSync(join(root, MIGRATIONS, MIGRATION), "utf8").split("\n")
     .find((l) => l.startsWith(`${DECLARATION} — `))?.slice(`${DECLARATION} — `.length).trim();
   if (!declared) fail(step, `${MIGRATION} carries no \`${DECLARATION} — <reason>\` line`);
-  const got = rollbackGuard(previous, checkoutVersion());
+  const got = refusalsSince(previous, null);
   if (json(got) !== json({ refusals: [{ file: MIGRATION, reason: declared }] })) fail(step, json(got));
+  pass(step);
+
+  const tags = git(["tag", "--list", "v*", "--sort=-v:refname"]).split("\n").filter(Boolean);
+  const before = tags[tags.indexOf(`v${previous}`) + 1]?.slice(1);
+  step = `v${previous} back to v${before ?? "(none)"} answers from their tags: this checkout's ${MIGRATION} is no part of it`;
+  if (!before) fail(step, `no tag before v${previous}`);
+  const between = rollbackGuard(before!, previous);
+  if (!("refusals" in between) || between.refusals.some((r) => r.file === MIGRATION)) fail(step, json(between));
   pass(step);
 }
 
@@ -192,7 +298,7 @@ export function textCases(): void {
   if (!/\bdie\(/.test(branch) || !/refusalLines\(/.test(branch) || /\brollback\(/.test(branch)) {
     fail(step, `the refusal branch must die with refusalLines and never call rollback():\n${branch}`);
   }
-  // The guard answers only for a checkout of the version the host runs: step 6's host runs `version`.
+  // Step 6's host runs `version`, untagged until step 7: the one case the guard reads this checkout for.
   if (!/rollbackGuard\(previous, version\)/.test(branch)) fail(step, "step 6 does not tell the guard the host runs this release");
   // A same-version re-run moves nothing, so the rollback — and the outcome line's "rolled back" —
   // is reached only when the host was on another version.

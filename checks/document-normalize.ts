@@ -23,7 +23,8 @@
  *     a call that changes nothing; cause, match and normalisation lists past 16 KiB, a review ledger
  *     and a close past it, and one sentence past it alone, each answer under 16 KiB with its totals
  *     exact, what it left out counted, and its detail read back through `document_read` page by
- *     page, byte-equal to the stored row and the same after a later edit;
+ *     page, byte-equal to the stored row and the same after a later edit; a match list keeps its
+ *     first 1,000 lines and says, in its reply, its detail and its stored row, how many it omitted;
  *   - discovery (AC-2.3), in this process against the same database — the built `planEdit` and
  *     `saveDocument`, every statement counted by wrapping `pg`'s `Client.prototype.query`, as
  *     `checks/document-body-whole.ts` counts lookups: exactly one statement reads
@@ -148,7 +149,7 @@ async function discovery(c: Core): Promise<void> {
 const catalog = fixtureCatalog();
 try {
   process.exitCode = await withThrowawayCore(NAME,
-    `${NAME}: input read one way is normalised and reported, every independent fault said at once, long lists counted and paged whole, and owed sources found in one statement: ok`,
+    `${NAME}: input read one way is normalised and reported, every independent fault said at once, long lists counted and paged whole, a match list's omitted lines said, and owed sources found in one statement: ok`,
     async (c) => {
       await normalisationCases(c);
       await independentFaults(c);

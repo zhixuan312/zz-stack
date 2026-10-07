@@ -382,7 +382,9 @@ What that leaves, in the four shapes a reader has to know:
   document change's own `document.*` row is written inside the change's transaction, so it fails
   the change rather than the fallback file, and carries `details_ref` (`dr_…`) and `details`: the
   complete receipt, every list whole. A refusal that had to cut a list writes a `document.refused`
-  row before it replies. The reply itself counts every list and previews what fits 16 KiB, and
+  row before it replies — whole, except a `MULTIPLE_MATCHES` edit's match lines, of which it
+  keeps the first 1,000 and records `details_complete: false` with `details_omitted`. The reply
+  itself counts every list and previews what fits 16 KiB, and
   `document_read(path, details_ref, cursor)` pages the rest back; these rows are kept as long as
   the audit kinds, so a printed ref never dangles.
 

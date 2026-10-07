@@ -22,11 +22,14 @@
  *     that one upload and no other, as `link` with no principal; a malformed or unknown secret is
  *     refused, and an upload id is not a secret; a written or expired upload's page says so, never
  *     "staged";
- *   - staging is bounded at 10 attempts per upload and 60 per client a minute — an IPv6 client by
- *     its /64, the page's GETs counted, an upload's attempts only once the caller may stage it —
- *     answering `ERROR: RATE_LIMITED — try again in a minute`; past its table of counters a new
- *     client is refused; bodies arriving at once are bounded per client and in all, and an owner's
- *     staged, unwritten bytes are bounded;
+ *   - staging is bounded at 10 attempts per upload and 60 staging PUTs per client a minute — an
+ *     IPv6 client by its /64, an upload's attempts only once the caller may stage it — answering
+ *     `ERROR: RATE_LIMITED — try again in a minute`; a link that resolves to nothing is counted
+ *     against nobody; a link's page loads are bounded on the link, apart from the client's PUTs;
+ *     past its table of counters a new client is still served; bodies arriving at once are bounded
+ *     per owner, not per address, and in all; a body that does not arrive within the read deadline
+ *     answers UPLOAD_TIMEOUT and frees its slot; and an owner's staged, unwritten bytes are
+ *     bounded;
  *   - the sweep removes the body of an expired, unused upload, deletes a row no write consumed a day
  *     after its window, and keeps a consumed row;
  *   - no HTML, Office or PDF reader remains in the gateway.
@@ -122,7 +125,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   }
 }
 
-type Limits = { perUpload?: number; perAddress?: number; keys?: number; inFlight?: number; inFlightTotal?: number; stagedBytes?: number };
+type Limits = { perUpload?: number; perAddress?: number; perPage?: number; keys?: number; inFlight?: number; inFlightTotal?: number;
+                stagedBytes?: number; readMs?: number };
 
 async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
                      mint: (filename?: string, by?: string) => Promise<{ id: string; secret: string }>,
@@ -172,6 +176,7 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
   const boundedPort = portOf(await appWith());
   const tightPort = portOf(await appWith({ perUpload: 1_000, perAddress: 100_000, inFlight: 1, inFlightTotal: 2, stagedBytes: 64 }));
   const crowdedPort = portOf(await appWith({ keys: 2 }));
+  const slowPort = portOf(await appWith({ perUpload: 1_000, perAddress: 100_000, inFlight: 1, readMs: 300 }));
   let n = 0;
   const call = async (method: string, path: string, body?: Uint8Array, headers: Record<string, string> = {},
                       to = port): Promise<Answer> => {
@@ -192,7 +197,9 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
 
   /** The gateway's own pool, watched for one upload: `read` settles once a staging's row read for
    *  it has answered — that staging then waits on its body — and `binds` records each bind tried on
-   *  it with the rows it bound. The order of two stagings is then certain rather than slept for. */
+   *  it with the rows it bound. The order of two stagings is then certain rather than slept for.
+   *  `readBy` waits for that read and fails instead when the staging answers first, or after 10 s:
+   *  a staging refused before its row read, or a reworded read, must not hang the check. */
   const watch = (id: string) => {
     const real = pool.query.bind(pool) as (...a: unknown[]) => Promise<pg.QueryResult>;
     let rowRead = () => {};
@@ -207,7 +214,23 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
       }
       return got;
     };
-    return { read, binds, stop: () => { delete (pool as unknown as { query?: unknown }).query; } };
+    const readBy = async (step: string, answer: Promise<number>): Promise<void> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      try {
+        await Promise.race([
+          read,
+          answer.then((status) => { if (!settled) fail(step, `the staging answered ${status} before reading its row`); }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new CaseFailure(`${NAME}: FAILED at "${step}": no row read for ${id} within 10 s`)), 10_000);
+          }),
+        ]);
+      } finally {
+        settled = true;
+        clearTimeout(timer);
+      }
+    };
+    return { readBy, binds, stop: () => { delete (pool as unknown as { query?: unknown }).query; } };
   };
 
   // Binding, the same bytes again, and different bytes.
@@ -254,7 +277,7 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
       late.on("error", reject);
     });
     late.write("late");
-    await w.read;
+    await w.readBy("bind is guarded", lateAnswer.then((a) => a.status));
     expect("bind while another reads", await call("PUT", `/upload/${slow.id}`, utf8("first\n"), as()), 200);
     late.end("r!\n\n");
     const second = await lateAnswer;
@@ -410,6 +433,18 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
   expect("per address", await call("PUT", `/upload/${(await mint()).id}`, bytes, { ...as(), ...from }, boundedPort), 429, "RATE_LIMITED");
   expect("per address, link", await call("PUT", `/u/${(await mint()).secret}`, bytes, from, boundedPort), 429, "RATE_LIMITED");
   ok("staging is bounded at 10 attempts per upload and 60 per client address a minute, on both routes");
+  // A link that resolves to nothing is counted against nobody: seventy of them from one address,
+  // page and PUT, and that address's own link still opens and stages.
+  const stranger = { "x-forwarded-for": "192.0.2.9" };
+  for (let i = 0; i < 70; i++) {
+    const bad = mintUploadSecret();
+    if ((await call("GET", `/u/${bad}`, undefined, stranger, boundedPort)).status !== 404) fail("unknown links", `GET ${i + 1} was not a 404`);
+    expect(`unknown link ${i + 1}`, await call("PUT", `/u/${bad}`, bytes, stranger, boundedPort), 403, "FORBIDDEN");
+  }
+  const strangersOwn = await mint();
+  if ((await call("GET", `/u/${strangersOwn.secret}`, undefined, stranger, boundedPort)).status !== 200) fail("unknown links", "the page was refused");
+  expect("unknown links", await call("PUT", `/u/${strangersOwn.secret}`, bytes, stranger, boundedPort), 200);
+  ok("a link that resolves to nothing is counted against nobody");
   // An upload's ten are spent only by callers who may stage it: another member trying the owner's
   // id is refused as a stranger every time, and the owner then stages.
   const coveted = await mint();
@@ -421,66 +456,95 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
   }
   expect("same /64", await call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), "x-forwarded-for": "2001:db8:1:2:ffff:ffff:ffff:fffe" }, boundedPort), 429, "RATE_LIMITED");
   expect("next /64", await call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), "x-forwarded-for": "2001:db8:1:3::1" }, boundedPort), 403, "FORBIDDEN");
-  // The page's GETs count against the client like its PUTs.
+  // A link's page loads count on the link, from any address, and spend no address's staging: one
+  // address opening pages for a whole office still stages, and opens another link's page.
   const looked = await mint();
   const viewer = { "x-forwarded-for": "192.0.2.8" };
   for (let i = 0; i < 60; i++) {
-    const g = await call("GET", `/u/${looked.secret}`, undefined, viewer, boundedPort);
+    const g = await call("GET", `/u/${looked.secret}`, undefined, i % 2 ? viewer : {}, boundedPort);
     if (g.status !== 200) fail("page bound", `GET ${i + 1} answered ${g.status}`);
   }
-  const tooMany = await call("GET", `/u/${looked.secret}`, undefined, viewer, boundedPort);
+  const tooMany = await call("GET", `/u/${looked.secret}`, undefined, {}, boundedPort);
   if (tooMany.status !== 429 || !/Too many tries/.test(tooMany.text) || tooMany.text.includes("notes.md")) {
     fail("page bound", `the sixty-first GET answered ${tooMany.status}`);
   }
-  expect("page bound, PUT", await call("PUT", `/u/${looked.secret}`, bytes, viewer, boundedPort), 429, "RATE_LIMITED");
-  ok("an upload's attempts count only once the caller may stage it, an IPv6 client is its /64, and the page's GETs count");
+  expect("page loads spend no staging", await call("PUT", `/u/${looked.secret}`, bytes, viewer, boundedPort), 200);
+  if ((await call("GET", `/u/${(await mint()).secret}`, undefined, viewer, boundedPort)).status !== 200) fail("page bound", "another link's page was refused");
+  ok("an upload's attempts count only once the caller may stage it, an IPv6 client is its /64, and a link's page loads count on the link alone");
 
-  // Past its table of counters, a client not yet counted is refused; one already counted is not.
+  // Past its table of counters the oldest is forgotten: a client not yet counted is served.
   const crowd = (ip: string) => call("PUT", `/upload/${mintUploadId()}`, bytes, { ...as(), "x-forwarded-for": ip }, crowdedPort);
   expect("first client", await crowd("203.0.113.1"), 403, "FORBIDDEN");
   expect("second client", await crowd("203.0.113.2"), 403, "FORBIDDEN");
-  expect("a client past the table", await crowd("203.0.113.3"), 429, "RATE_LIMITED");
-  expect("a client already counted", await crowd("203.0.113.1"), 403, "FORBIDDEN");
-  ok("past its table of counters a new client is refused, and a counted one is still served");
+  expect("a client past the table", await crowd("203.0.113.3"), 403, "FORBIDDEN");
+  expect("a client counted before", await crowd("203.0.113.1"), 403, "FORBIDDEN");
+  ok("past its table of counters a new client is still served");
 
-  // Bytes: one body arriving per client and two in all, and 64 staged bytes per owner — a person of
+  // Bytes: one body arriving per owner and two in all, and 64 staged bytes per owner — a person of
   // their own, so the earlier cases' staged files count for nobody here.
   const third = (await sql.query<{ id: string }>(
     "insert into zz.principal (email, display_name, role) values ('third@example.test', 'third', 'member') returning id")).rows[0].id;
   await sql.query("insert into zz.membership (team_id, principal_id, role, added_by) select id, $1, 'member', $1 from zz.team where slug = 'home-team'", [third]);
   const asThird = (ip: string) => ({ ...as("third@example.test"), "x-forwarded-for": ip });
-  const held = async (ip: string) => {
-    const up = await mint("held.md", third);
+  const otherId = (await sql.query<{ id: string }>("select id from zz.principal where email = 'other@example.test'")).rows[0].id;
+  /** A body that has begun to arrive and waits, holding its slot, until `finish`. */
+  const held = async (ip: string, email = "third@example.test", by = third) => {
+    const up = await mint("held.md", by);
     const w = watch(up.id);
-    const req = request({ port: tightPort, method: "PUT", path: `/upload/${up.id}`, headers: { ...asThird(ip), "content-length": "8" } });
+    const req = request({ port: tightPort, method: "PUT", path: `/upload/${up.id}`,
+                          headers: { ...as(email), "x-forwarded-for": ip, "content-length": "8" } });
     const answer = new Promise<number>((resolve, reject) => {
       req.on("response", (res) => { res.resume(); res.on("end", () => resolve(res.statusCode ?? 0)); });
       req.on("error", reject);
     });
     req.write("late");
-    await w.read;
-    w.stop();
+    try {
+      await w.readBy("arriving bodies", answer);
+    } finally {
+      w.stop();
+    }
     return { finish: () => { req.end("r!\n\n"); return answer; } };
   };
   const one = await held("198.51.100.1");
-  expect("a second body from one client", await call("PUT", `/upload/${(await mint("q.md", third)).id}`, bytes, asThird("198.51.100.1"), tightPort), 429, "RATE_LIMITED");
-  const two = await held("198.51.100.2");
-  expect("a third body in all", await call("PUT", `/upload/${(await mint("q.md", third)).id}`, bytes, asThird("198.51.100.3"), tightPort), 429, "RATE_LIMITED");
+  expect("a second body for one owner, from another address", await call("PUT", `/upload/${(await mint("q.md", third)).id}`, bytes,
+    asThird("198.51.100.9"), tightPort), 429, "RATE_LIMITED");
+  // Another owner behind the same address is not held back by the first.
+  const two = await held("198.51.100.1", "other@example.test", otherId);
+  expect("a third body in all", await call("PUT", `/upload/${(await mint("q.md", owner)).id}`, bytes, as(), tightPort), 429, "RATE_LIMITED");
   if (await one.finish() !== 200 || await two.finish() !== 200) fail("arriving bodies", "a held body did not stage once sent whole");
   const after = await mint("q.md", third);
   expect("room again", await call("PUT", `/upload/${after.id}`, bytes, asThird("198.51.100.1"), tightPort), 200);
-  // 8 + 8 + 20 bytes held now; 30 more is past 64, until a write consumes one.
+  // 8 + 20 bytes held now; 40 more is past 64, until a write consumes one.
   const over = await mint("over.md", third);
-  const thirty = utf8("x".repeat(29) + "\n");
-  const quota = await call("PUT", `/upload/${over.id}`, thirty, asThird("198.51.100.4"), tightPort);
+  const forty = utf8("x".repeat(39) + "\n");
+  const quota = await call("PUT", `/upload/${over.id}`, forty, asThird("198.51.100.4"), tightPort);
   expect("staged bytes", quota, 429, "RATE_LIMITED");
-  if (!String(quota.json.error).includes("staged and not yet written") || (await rowOf(over.id)).sha256 !== null) {
+  if (!String(quota.json.error).includes("past the 64-byte limit on files staged and not yet written") || (await rowOf(over.id)).sha256 !== null) {
     fail("staged bytes", `answered ${quota.text}`);
   }
   await sql.query(`update zz.upload set consumed_at = now(), consumed_by_operation = 'document_write a/q.md',
                      consumed_digest = sha256, body = null where id = $1`, [after.id]);
-  expect("staged bytes after a write", await call("PUT", `/upload/${over.id}`, thirty, asThird("198.51.100.4"), tightPort), 200);
-  ok("bodies arriving at once are bounded per client and in all, and an owner's staged, unwritten bytes are bounded");
+  expect("staged bytes after a write", await call("PUT", `/upload/${over.id}`, forty, asThird("198.51.100.4"), tightPort), 200);
+  ok("bodies arriving at once are bounded per owner, not per address, and in all, and an owner's staged, unwritten bytes are bounded");
+
+  // A body that does not arrive within the read deadline is refused, binds nothing, and frees its
+  // slot for the owner's next one.
+  const stalled = await mint();
+  const slowReq = request({ port: slowPort, method: "PUT", path: `/upload/${stalled.id}`, headers: { ...as(), "content-length": "8" } });
+  const timedOut = new Promise<{ status: number; body: string }>((resolve, reject) => {
+    slowReq.on("response", (res) => { let b = ""; res.on("data", (c: Buffer) => { b += c; }); res.on("end", () => resolve({ status: res.statusCode ?? 0, body: b })); });
+    slowReq.on("error", reject);
+  });
+  slowReq.write("late");
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const stall = await Promise.race([timedOut, new Promise<null>((resolve) => { deadline = setTimeout(() => resolve(null), 5_000); })]);
+  clearTimeout(deadline);
+  slowReq.destroy();
+  if (!stall || stall.status !== 408 || !stall.body.includes("ERROR: UPLOAD_TIMEOUT — ") || (await rowOf(stalled.id)).sha256 !== null) {
+    fail("read deadline", stall ? `answered ${stall.status} ${stall.body.slice(0, 200)}` : "a stalled body was still held after 5 s");
+  }
+  expect("read deadline frees the slot", await call("PUT", `/upload/${(await mint()).id}`, bytes, as(), slowPort), 200);
+  ok("a body that does not arrive within the read deadline answers UPLOAD_TIMEOUT, binds nothing and frees its slot");
 
   // The sweep: an expired body goes and its row stays; a row no write consumed goes a day after its
   // window, staged or not; a recently expired row and a consumed row stay.

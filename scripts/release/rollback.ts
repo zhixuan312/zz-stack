@@ -18,8 +18,8 @@ export function rollback(to: string): void {
 
   // Refused before anything moves, when going back would break what is currently working: a
   // migration since `to` that declares it, or destructive DDL — or no tag for `to`, when nothing
-  // here can know what that version's code expects, or a checkout that is not of the version the
-  // host runs, whose migrations are not the ones applied (rollback-guard.ts).
+  // here can know what that version's code expects, or none for `current` in a checkout that is
+  // not of it, when nothing here records what the deployment applied (rollback-guard.ts).
   const refusal = refusalLines(current || "the running version", to, rollbackGuard(to, current));
   if (refusal.length) die(refusal.join("\n        "));
 

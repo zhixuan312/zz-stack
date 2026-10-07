@@ -17,6 +17,11 @@
  * `document.refused` row (`settleRefusal`), awaited, before the reply goes back — so no printed
  * ref names a row that is not there.
  *
+ * DELIBERATE: one list is bounded where it is built, not only in the reply — a repeated `find`'s
+ * match lines, the first 1,000 per edit (document-edits.ts), by the stakeholder's decision of
+ * 2026-10-07. Its count stays exact, and what it omitted is said, never silent: the line says
+ * `details_complete: false` with the omitted count, and the stored row carries both.
+ *
  * COUPLED: the ref sits in backticks, which the gateway's refusal redaction collapses, so a refusal
  * class does not split by the ref it names.
  */
@@ -41,17 +46,19 @@ export const mintRef = (): string => `dr_${base32(randomBytes(16))}`;
 const REF = /^dr_[a-z2-7]{26}$/;
 
 /** A counted list: `<lead><label> (<total>): <preview><tail>`. `cap` bounds the preview even
- *  when the whole list would fit — a list nobody reads past its first lines. */
-interface Listed { label: string; items: string[]; lead?: string; tail?: string; sep?: string; cap?: number }
+ *  when the whole list would fit — a list nobody reads past its first lines. `total` is the list's
+ *  length when `items` holds only its first entries; the rest are in no reply and no detail. */
+interface Listed { label: string; items: string[]; total?: number; lead?: string; tail?: string; sep?: string; cap?: number }
 export type Line = string | Listed;
 
 const bytes = (s: string): number => Buffer.byteLength(s, "utf8");
-const countOf = (l: Line): number => (typeof l === "string" ? 1 : l.items.length);
+const totalOf = (l: Listed): number => l.total ?? l.items.length;
+const countOf = (l: Line): number => (typeof l === "string" ? 1 : totalOf(l));
 
 /** One line as shown, with `k` entries per list at most (null: every entry, whole). */
 function shown(l: Line, k: number | null): { text: string; hidden: number } {
   if (typeof l === "string") return { text: l, hidden: 0 };
-  const total = l.items.length;
+  const total = totalOf(l);
   const sep = l.sep ?? ", ";
   const limit = Math.min(l.cap ?? Infinity, k ?? Infinity);
   const entries = l.items.slice(0, limit).map((x) => (k === null ? oneLine(x) : oneLine(x, ENTRY_CAP)));
@@ -91,18 +98,24 @@ function fitted(lines: Line[], budget: number): { text: string; hidden: number }
   return { text: `${cut}…`, hidden: one.hidden + 1 };
 }
 
-/** The complete detail: every line, and every entry of every list on a line of its own. */
+/** The complete detail: every line, and every entry a list kept on a line of its own. */
 function detailsText(lines: Line[]): string {
   return lines.map((l) => typeof l === "string" ? l
-    : [`${l.lead ?? ""}${l.label} (${l.items.length})${l.tail ?? ""}`, ...l.items.map((x) => `- ${oneLine(x)}`)].join("\n"))
+    : [`${l.lead ?? ""}${l.label} (${totalOf(l)})${l.tail ?? ""}`, ...l.items.map((x) => `- ${oneLine(x)}`)].join("\n"))
     .join("\n");
 }
+
+/** How many entries the lists counted and kept in no reply and no detail. */
+const omittedOf = (lines: Line[]): number =>
+  lines.reduce((n, l) => n + (typeof l === "string" ? 0 : totalOf(l) - l.items.length), 0);
 
 /** The line naming a reply's detail, and how much of it the reply left out. */
 const detailsLine = (ref: string, hidden: number): string => hidden
   ? `details: \`${ref}\` — ${hidden} ${hidden === 1 ? "entry" : "entries"} not shown above`
   : `details: \`${ref}\` (complete)`;
-const LONGEST_DETAILS_LINE = bytes(detailsLine(`dr_${"a".repeat(26)}`, 9_999_999));
+/** The details line at its longest, with the line break before it: a count of ten digits — a
+ *  repeated `find`'s total is exact, and 128 of them on an 8 MiB body run past a billion. */
+const LONGEST_DETAILS_LINE = 1 + bytes(detailsLine(`dr_${"a".repeat(26)}`, 9_999_999_999));
 
 /** A receipt as one change answers it, and as its request stores it. */
 export interface Composed { text: string; details: { ref: string; text: string }; nextMove: string }
@@ -134,7 +147,7 @@ export function replayText(receipt: Record<string, unknown>, now: string): strin
 
 /** Refusal details waiting for the tool that answers with them to record them, by ref. Bounded:
  *  a refusal computed and never answered (a check calling a guard directly) is forgotten. */
-const pending = new Map<string, string>();
+const pending = new Map<string, { details: string; omitted: number }>();
 
 /** A refusal's text: every line whole when it fits — no details line — and otherwise counted
  *  previews with the details line, its complete detail waiting for `settleRefusal`.
@@ -147,7 +160,7 @@ export function refusalText(lines: Line[]): string {
   const fit = fitted(lines, REPLY_BUDGET - LONGEST_DETAILS_LINE);
   if (!fit.hidden) return fit.text;
   const ref = mintRef();
-  pending.set(ref, detailsText(lines));
+  pending.set(ref, { details: detailsText(lines), omitted: omittedOf(lines) });
   while (pending.size > 64) pending.delete(pending.keys().next().value!);
   return `${fit.text}\n${detailsLine(ref, fit.hidden)}`;
 }
@@ -160,12 +173,14 @@ export async function settleRefusal(
 ): Promise<string> {
   let out = reply;
   for (const m of reply.matchAll(/`(dr_[a-z2-7]{26})`/g)) {
-    const details = pending.get(m[1]);
-    if (details === undefined) continue;
+    const held = pending.get(m[1]);
+    if (held === undefined) continue;
     pending.delete(m[1]);
+    const { details, omitted } = held;
     const recorded = await insertEvent(p, {
       actor: at.who, team: at.team, initiative: at.path.split("/")[0] || null, kind: "document.refused",
-      subject: at.path, detail: { user: at.who, path: at.path, details_ref: m[1], details } });
+      subject: at.path, detail: { user: at.who, path: at.path, details_ref: m[1], details,
+                                  ...(omitted ? { details_complete: false, details_omitted: omitted } : {}) } });
     // A function replacement: the error's own text is never read as a pattern.
     if (!recorded.ok) out = out.replace(`\`${m[1]}\``, () => `not recorded (${oneLine(recorded.error, 200)})`);
   }
@@ -173,7 +188,8 @@ export async function settleRefusal(
 }
 
 /** The refusal the edit primitive gave for one edit, in the platform's `ERROR: <CODE> — <what to
- *  send>` form. A repeated `find` names its lines counted, at most 40 of them. */
+ *  send>` form. A repeated `find` names its lines counted, at most 40 of them in the reply, and says
+ *  how many of them the edit did not keep. */
 export function batchRefusal(path: string, r: EditRefusal): Line {
   const at = r.edit_index === undefined ? "" : `edit ${r.edit_index} (0-based): `;
   switch (r.code) {
@@ -185,10 +201,15 @@ export function batchRefusal(path: string, r: EditRefusal): Line {
     case "NO_MATCH":
       return `ERROR: NO_MATCH — ${at}\`find\` does not occur in ${path}. Matching is exact, with no ` +
         "whitespace folding: read the document and copy the text as it is.";
-    case "MULTIPLE_MATCHES":
-      return { lead: `ERROR: MULTIPLE_MATCHES — ${at}\`find\` occurs ${r.match_count} times in the body, on `,
-               label: "lines", items: (r.lines ?? []).map(String), cap: 40,
-               tail: ". Send a longer `find` that includes enough surrounding text to occur exactly once." };
+    case "MULTIPLE_MATCHES": {
+      const kept = r.lines ?? [];
+      const total = r.match_count ?? kept.length;
+      return { lead: `ERROR: MULTIPLE_MATCHES — ${at}\`find\` occurs ${total} times in the body, on `,
+               label: "lines", items: kept.map(String), total, cap: 40,
+               tail: (total > kept.length
+                 ? `; the first ${kept.length} are kept and ${total - kept.length} omitted (details_complete: false)` : "") +
+                 ". Send a longer `find` that includes enough surrounding text to occur exactly once." };
+    }
     case "OVERLAPPING_EDITS":
       return `ERROR: OVERLAPPING_EDITS — ${at}this edit covers text another edit in the batch also ` +
         "covers (identical edits included). Merge them into one edit, or make their `find` text disjoint.";

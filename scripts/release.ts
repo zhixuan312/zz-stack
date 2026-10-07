@@ -28,14 +28,18 @@
  * decided for it. There is no flag that leaves a moved console behind.
  *
  * A bad version is live for every user the moment `docker compose up -d` returns. Rolling back
- * is re-pointing a tag at an image that already exists: seconds, no rebuild.
+ * is re-pointing a tag at an image that already exists: seconds, no rebuild — except across a
+ * release whose migrations declare `-- rollback: refused`, whose schema the earlier image cannot
+ * write. Such a release is not rolled back by editing the version on the host either. The guarded
+ * route is `node scripts/release.ts --rollback`, which refuses it with the migrations' reasons and
+ * leaves the new version running, as step 6 does: recovery is fixing forward.
  *
  *   1. gate            everything provable without touching the server
  *   2. build + smoke   build both images locally, start every service from them
  *   3. push            images to the registry, tagged with their versions
  *   4. deploy          remote pulls the tags and restarts — recording what it was on
  *   5. verify          against the live deployment, not the build
- *   6. rollback        automatically, if 5 fails, then report failure
+ *   6. rollback        automatically, if 5 fails and the guard permits it, then report failure
  *   7. tag             git tag last, only after 5 passes
  *
  * DELIBERATE: the git tag is created last. It is the proof of a finished release, so
@@ -60,6 +64,7 @@ import { args, dryRun, preflightMode, rollbackMode, version } from "./release/co
 import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
 import { preflight } from "./release/preflight.ts";
 import { skillVersionsMoved, writeRegistries } from "./release/registries.ts";
+import { refusalLines, rollbackGuard } from "./release/rollback-guard.ts";
 import { rollback } from "./release/rollback.ts";
 import { tagVerifiedLive } from "./release/tag-live.ts";
 import { verifyLive, verifyPredeploy } from "./release/verify.ts";
@@ -502,6 +507,14 @@ if (problems.length) {
   // start the old version, and an unguarded throw would replace the list of verification
   // failures and the statement of what is running with a stack trace.
   let rolledBack = true;
+  // DELIBERATE: asked before the `try`, and only when the host was on another version — a
+  // same-version re-run has nothing to roll back to, and rollback() says so. A refusal (a
+  // migration since `previous` that declares one, or destructive DDL) or a guard that cannot tell
+  // (no tag) leaves this release running: putting `previous` back on a schema its code cannot write
+  // is a worse outage than the one verification found. The guard never throws; rollback()'s own
+  // refusal is die(), which inside the `try` would end the release before this report.
+  const refusal = previous && previous !== version ? refusalLines(version, previous, rollbackGuard(previous), problems) : [];
+  if (refusal.length) die(refusal.join("\n        "));
   if (previous) {
     try {
       rollback(previous);

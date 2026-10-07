@@ -12,9 +12,12 @@
 # to type, and asking them to would make the wrong answer possible. The release command
 # rewrites the literals below and ships the result.
 #
-# Rolling back is editing the literal and running `docker compose up -d` again — seconds,
-# no rebuild. ZZ_VERSION in the environment still overrides, which is
-# what the release script uses to switch a host and what makes a rollback one edit.
+# Rolling back is `node scripts/release.ts --rollback` — seconds, no rebuild. It asks first
+# whether the earlier image can run on the schema this release migrated, and refuses a release
+# whose migrations declare `-- rollback: refused`: the earlier image cannot write what they
+# built. Editing the literal below by hand skips that question, so do not roll such a release
+# back that way; fix forward. ZZ_VERSION in the environment still overrides, which is what the
+# release script uses to switch a host.
 #
 # To develop against a checkout instead, layer the build override on top:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build

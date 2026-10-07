@@ -1,49 +1,14 @@
 
-import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { DASH_IMAGE, DASH_REMOTE, HOST, REMOTE, die, log, root, ssh, step } from "../deployment.ts";
+import { DASH_IMAGE, DASH_REMOTE, HOST, REMOTE, die, log, ssh, step } from "../deployment.ts";
 import { consoleImage } from "./dashboard.ts";
-
-/** DDL that cannot be undone by putting the old image back.
- *
- * A dropped column is gone; the previous release's code still SELECTs it, and every request that
- * resolves an identity then answers 500 while `/health` stays green, because /health resolves
- * nobody.
- *
- * Deploying before verifying rests on this step being able to undo it. For a release carrying
- * destructive DDL that is false, so this says so and stops rather than performing a rollback that
- * makes the outage worse. */
-const IRREVERSIBLE = /\b(drop\s+(column|table|type|schema)|alter\s+column\s+\S+\s+type)\b/i;
-
-/** Migrations applied by this release — present now, absent from the tag being rolled back to.
- *
- * Asked of git rather than of the database: the question is what the target version's code knows
- * about, and the tag is what that code was. */
-function migrationsSince(tag: string): string[] {
-  const dir = join(root, "services/gateway/migrations");
-  const now = readdirSync(dir).filter((f) => f.endsWith(".sql"));
-  let thenList: string[] = [];
-  try {
-    thenList = execFileSync("git", ["ls-tree", "--name-only", `v${tag}:services/gateway/migrations`],
-                            { cwd: root, encoding: "utf8" }).split("\n").map((l) => l.trim()).filter(Boolean);
-  } catch {
-    // No such tag, or no such path in it. Unknown is not "none": an empty list here reports every
-    // destructive release as safe to roll back. Treat every migration as new and let the caller
-    // decide.
-    return now;
-  }
-  const had = new Set(thenList);
-  return now.filter((f) => !had.has(f));
-}
+import { refusalLines, rollbackGuard } from "./rollback-guard.ts";
 
 export function rollback(to: string): void {
   // Nothing to go back to is not a failure, and it must be said before the guard below speaks.
   //
   // `previous` is read off the host's own .env, so a redeploy of the version already running asks
   // this function to roll back to the version it just deployed. That is a no-op, and without this
-  // it arrives as a wall of red naming every destructive migration.
+  // it arrives as a wall of red naming every migration that refuses a rollback.
   const current = ssh(`cd ${REMOTE}/deploy && grep -oP '(?<=^ZZ_VERSION=).*' .env || echo ''`).trim();
   if (!to || to === current) {
     log(`  · nothing to roll back to — the host was already on ${to || "(unset)"} before this ` +
@@ -51,22 +16,11 @@ export function rollback(to: string): void {
     return;
   }
 
-  // Refused before anything moves, when going back would break what is currently working.
-  const added = migrationsSince(to);
-  const destructive = added.filter((f) => {
-    try { return IRREVERSIBLE.test(readFileSync(join(root, "services/gateway/migrations", f), "utf8")); }
-    catch { return false; }
-  });
-  if (destructive.length) {
-    die(`this release cannot be rolled back: ${destructive.join(", ")} ` +
-        `${destructive.length === 1 ? "drops" : "drop"} something ${to}'s code still reads.\n` +
-        `        Putting ${to} back would leave its code querying a column that no longer exists — the\n` +
-        `        deployment would answer 500 to every caller while /health stayed green.\n\n` +
-        `        The deployment is LEFT AS IT IS, running the new version, which is the state that\n` +
-        `        currently works. Fix forward: the new code matches the new schema.\n` +
-        `        To go back you must first write a migration that restores what these dropped, and\n` +
-        `        decide what its values should be — which is a decision, not a rollback.`);
-  }
+  // Refused before anything moves, when going back would break what is currently working: a
+  // migration since `to` that declares it, or destructive DDL — or no tag for `to`, when nothing
+  // here can know what that version's code expects (rollback-guard.ts).
+  const refusal = refusalLines(current || "the running version", to, rollbackGuard(to));
+  if (refusal.length) die(refusal.join("\n        "));
 
   // Which deployment, said out loud. This is the mode most likely to be run in a hurry, and the one
   // where aiming at the wrong host moves a deployment nobody asked about.

@@ -17,6 +17,11 @@
 --
 -- `scripts/rehearse/expect.ts` declares what this file changes. It folds into 001_init.sql at the
 -- release that verifies it, and the fold keeps the epoch's insert.
+--
+-- The release before this file cannot run on what it builds: its revision insert names no
+-- `version`, and it labels a snapshot id as the public version. `scripts/release/rollback-guard.ts`
+-- reads the line below and refuses a rollback across this file; the fold removes the line with it.
+-- rollback: refused — the previous release inserts revisions without the NOT NULL version column, so every write it makes fails, and it shows a snapshot id as the public version
 
 -- zz.doc_revision: the public version of each snapshot.
 ALTER TABLE zz.doc_revision ADD COLUMN version integer;

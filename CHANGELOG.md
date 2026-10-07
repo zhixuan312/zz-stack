@@ -33,6 +33,167 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+Changing a document costs what changed. Two tools change documents now: `document_write` creates
+and `document_edit` changes. The platform works out the version from the cause, links owed sources
+itself, presents only what changed since the reviewer last saw it, and takes a plain-text file
+from any client without a model retyping it. Every rule an approval rests on stays in place.
+This release changes tool names and arguments, migrates the schema, and cannot be rolled back
+by image. Read the upgrade notes before deploying.
+
+### zz-stack
+
+- **`document_patch` and `document_revise` are gone. `document_edit` replaces both, and
+  `document_write` only creates.** An agent used to choose among three tools to change a
+  document, and two of them (`document_write` and `document_revise`) took the whole body again,
+  so a model retyped the full text to change one line. `document_edit(path, …)` takes exactly
+  one body change per call:
+  - `edits`: 1 to 128 exact `{find, replace}` pairs, all or nothing.
+  - `section` with `content`: one section, chosen by `section_level` and `section_occurrence`
+    when headings repeat.
+  - `content`: the whole body.
+  - `upload` or `file`: a file.
+
+  A call can also carry metadata alone. `document_write` on a path that already exists now
+  answers `TARGET_EXISTS` instead of overwriting it.
+- **The platform decides the version.** A body change to an approved document needs its
+  cause: an existing source in `sources`, or the words that caused it as `source_content`,
+  which the platform files as a source. A cause the current version does not have yet opens
+  the next version as a draft, and the approved version stays readable. A change to a draft
+  with no new cause stays in its version as a new revision. A source filed since this release
+  that declares it supports a document is linked by the platform itself and named in the
+  reply. A correction to a closed initiative's document is a draft awaiting approval. `base` (the
+  `content revision` your last read returned) refuses a change to a document that moved since
+  that read. `request_id` makes a retry return the first reply instead of landing twice.
+  `document_approve` and `initiative_close` now commit only onto the state they read, so
+  neither can overwrite an edit that landed after it.
+- **Versions are public versions, and evidence ids name the snapshot.** Until now every
+  revision was a version. A correction now keeps the version and adds a revision, so every
+  version shown (`initiative_status`, `document_present`, the panel, the control loop) is the
+  public one. Evidence ids change from `@vN` to `@vN.R`. A flow run open across the release
+  holds ids that a later approval or revision no longer matches.
+  `plugin_profile`'s `patched` and `patched_with_evidence` are replaced by
+  `edits_without_cause` and `edits_with_cause`.
+- **A present shows what changed since the reviewer last covered it.** `document_present` used
+  to show the whole document every time. Each present now belongs to a review context
+  (`rc_…`). Pass it back as `review_context` and the reply shows only what changed since that
+  context last covered the document. `full: true` shows the whole document. A present records
+  the snapshot it showed before it returns the text.
+- **`document_approve(path, expected_revision?, review_context?)` signs exactly the snapshot
+  that was presented.** An approval used to rest on anyone's presentation of the document. It
+  now needs one of the caller's own review contexts to have covered the current snapshot.
+  Without one, the answer is `PRESENTATION_REQUIRED`. A stale `expected_revision`, or an edit
+  that lands between the present and the approval, is `APPROVAL_CONFLICT`, naming what changed.
+  These two codes replace the old "present it first" and "present it again" replies.
+- **Receipts and refusals are counted, and complete.** A reply used to list what fitted and
+  stop at the first problem. Every list is now counted (`causes (3): …`), previews shrink to
+  fit 16 KiB but totals never do, and every reply names its full details as `details: dr_…`.
+  `document_read(path, details_ref, cursor)` pages through them. A refusal reports every
+  independent issue together: each failing edit, each bad source, each unmet gate, and every
+  row of a review ledger, acceptance table or spec gate. `MULTIPLE_MATCHES` lists its lines as
+  a counted preview. A script that parses reply text has to follow the new shape.
+- **Content that opens with an envelope is normalised, not refused.** A frontmatter block at
+  the top of `content` used to be refused. Now the title, tags, stakeholder and flow fields in
+  it are taken unless a named argument says otherwise. Keys the platform writes itself are
+  ignored and reported. Any other key is refused by name. Tags are lower-cased. `supports` and
+  `sources` entries lose a leading `./` and their own initiative prefix, and gain `.md`.
+  `source_add` files under the first free name instead of refusing a taken one. A document
+  read and sent back whole is a `no_change`.
+- **`upload_start` replaces `source_upload`, and files are plain text only.** `source_upload`
+  answered with a command that sent bytes to `PUT /upload/source`. That route converted HTML,
+  `.docx`, `.odt` and PDF into a source's text. The route, the tool and all four extractors are
+  gone. `upload_start(filename)` answers two ways to stage one file: a shell command that PUTs
+  it to `/upload/<id>` with the caller's own token, and a `/u/` link to a page that stages that
+  one file and nothing else. Then pass the id as `upload` to `document_write`, `document_edit`
+  or `source_add`. Files are the plain-text family: at most 8 MiB and strict UTF-8, with a
+  leading BOM or leading blank lines removed and said in the receipt. A PDF or Office file is
+  refused at `upload_start` with `UNSUPPORTED_FORMAT`. A staged upload expires after 15 minutes
+  and is consumed in the write's own commit. A refused or failed write leaves it unconsumed.
+- **In ChatGPT, a `file` attached to the conversation can be written directly, but that route
+  is off by default.** `document_write`, `document_edit` and `source_add` take `file`. zz-core
+  fetches it itself, only from hosts listed in `OPENAI_FILE_HOSTS`, only over HTTPS to public
+  addresses, with every redirect checked, and within 30 seconds and 8 MiB. Empty, the default,
+  keeps the route off, and a `file` is answered with the `upload_start` route instead. Which
+  hosts ChatGPT serves files from is not established yet.
+- **`source_add` takes `request_id`.** It had no request key, so a retry could not tell that
+  its first call had landed. With one, a retry returns the first reply, and two identical
+  calls in flight file one source.
+- **A source reads back exactly as it was sent.** A typed `source_add` `content` used to gain
+  a trailing newline on the way into storage.
+- **A rollback cannot cross a migration that declares it unsafe.** The rollback guard used to
+  refuse only destructive DDL. So `node scripts/release.ts --rollback`, and release step 6's
+  automatic rollback, would have put the previous image back on this release's schema, which
+  it cannot write. A migration can now declare `-- rollback: refused — <reason>` in its
+  header, and `002_document_versions.sql` does. On `--rollback` the guard refuses with the
+  reason. At step 6, a refusal prints every verification failure and the reasons, and leaves
+  the release live to be fixed forward instead of rolling it back. The compose header and
+  `.env.example` no longer describe editing the image version by hand as a rollback.
+
+### zz-stack-dashboard
+
+- **A document's history shows public versions.** The version chain used to list one entry
+  per revision, so a correction looked like a new version. It now lists one entry per public
+  version and opens each at its snapshot. The header shows the document's `current_version`.
+- **A closed initiative with a correction waiting reads as closed.** It used to read as a
+  close that stopped short. The stepper, the document badge and the alert bell now say
+  "correction vN awaiting approval".
+- **Approve signs what the page showed.** Where Approve is offered, the document page records
+  that the person was shown the snapshot on screen and sends that snapshot and its review
+  context with the approval. A page that has gone out of date shows the gateway's sentence
+  with a Reload button instead of approving something the person did not see. Approve is
+  offered only to a browser session reading its own team's document, the only presentation
+  zz-core accepts from the console.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start:** `002_document_versions.sql`. It adds
+  `doc_revision.version` (filled from `revision`), `doc.current_version`,
+  `doc.content_generation`, `doc_link.linked_by` and three tables: `zz.doc_request`,
+  `zz.cause_link_epoch` and `zz.upload`. No row is deleted. It was rehearsed against the
+  latest production backup, and every existing row survived unchanged.
+- **Unlike every earlier migration, this one does affect a rollback: there is no image
+  rollback across this release.** The previous image inserts revisions without the new
+  NOT NULL `version`, so every write it made would fail with the health check still green.
+  It would also show a snapshot id as the public version. `--rollback` and release step 6
+  refuse to go back. Do not roll back by editing `ZZ_VERSION` or the compose literal either.
+  If this release goes wrong, fix forward: redeploy it or a fix on top of it.
+- **This release has no write-disable boundary, deliberately.** The spec allows two
+  recoveries once new-format data exists: stop document, source and upload writes at the
+  gateway, or fix forward. This release takes fix forward. After it, the only writer is the
+  new image, which can write the new schema. The previous image is kept from writing by the
+  guard on `--rollback` and step 6, and by the deploy comments on the manual route. Recovering
+  from a bad deploy means deploying this image or a fix, and both keep writing the new format.
+  So no gateway write stop is built.
+- **Release the console alongside.** The console's approve call to
+  `POST /api/console/documents/approve` now needs `expected_revision` and `review_context`,
+  and is answered 400 without them. The previous console cannot approve against this gateway.
+- **Open document panels must reopen their document.** The panel's `document_shown` now
+  requires `review_context` and `version`, so a panel loaded before the release cannot record
+  that it was shown.
+- **A flow run open across the release should re-read its documents** before it cites
+  evidence. Ids it holds as `@vN` no longer match `@vN.R`.
+- **Set `GATEWAY_PUBLIC_URL`.** `upload_start` builds its command and its link from it, and
+  refuses rather than print an address that resolves nowhere. `OPENAI_FILE_HOSTS` is new.
+  Leave it empty, which keeps the ChatGPT `file` route off, until the hosts are established.
+- **Refresh the ChatGPT connector** (Settings → Apps & Connectors → zz-stack → refresh, or
+  remove and add it again). ChatGPT caches tool schemas. Without a refresh it keeps offering
+  `document_patch`, `document_revise` and `source_upload`, and never sees `document_edit`,
+  `upload_start`, `file` or the new arguments.
+- **Every installed client must re-pull, and the order matters.** All four plugins' skills
+  changed, including `zz-platform`, which teaches the two tools:
+
+  ```bash
+  claude plugin marketplace update zz-stack   # re-pull the shelf first
+  claude plugin update zz-core@zz-stack       # then each plugin installed
+  claude plugin update zz-access@zz-stack
+  claude plugin update sdlc@zz-stack
+  claude plugin update zz-plugin-eval@zz-stack
+  ```
+
+  A client on the old skills goes on calling `document_patch`, `document_revise` and
+  `source_upload`, and those calls fail.
+
 ## [0.93.3] — 2026-10-06
 
 One gate fix.

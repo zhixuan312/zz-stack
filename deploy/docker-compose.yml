@@ -47,6 +47,10 @@ services:
       # that stages one, and both need an address a laptop can dial. Unset, the tool refuses and
       # says so rather than printing a URL that resolves nowhere.
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
+      # The hosts a ChatGPT-attached `file` may be fetched from, comma-separated. zz-core does that
+      # fetch, over HTTPS, to public addresses only, read once at start. Empty by default, which
+      # keeps the route off: a `file` is answered with upload_start instead.
+      - OPENAI_FILE_HOSTS=${OPENAI_FILE_HOSTS:-}
       # The reading judge — failure_discover's critic proposes a description through it.
       # DELIBERATE: a different model from the one the flows' agents run on; a critic exactly as
       # good as the thing it reads describes nothing. Unset, the critic is skipped and the

@@ -17,21 +17,32 @@
  *       the write's own commit (`consumeUpload`). A refusal or a fault anywhere before that commit
  *       rolls it back, so the upload stays unconsumed until it expires.
  *
+ * A ChatGPT `file` (`fileSource`) takes the same path from (3) on: its bytes are fetched by the
+ * guarded helper (file-fetch.ts) before the write's transaction, decoded by the same `uploadText`,
+ * and planned as an upload is. It has no row, so there is nothing to lock or consume at (4); its
+ * request key binds the `file_id` and the digest of what was fetched (document-change.ts).
+ *
  * DELIBERATE: two entry points, not one. `uploadContent` reads a Markdown file through
  * `normalizeContent` and asks `bodyEnvelopeRefusal` of any other, and a refusal reached through it
  * tells the caller to send `title`, `tags`, `stakeholder` and `fields` — arguments `source_add` does
  * not have (scripts/gate/checks/documents-guards.ts). A source keeps its upload literally under the
  * platform's own envelope and never calls it.
  */
+import { createHash } from "node:crypto";
+
 import { UPLOAD_ID, uploadText } from "@zz/contracts";
 import type pg from "pg";
+import { z } from "zod";
 
 import type { Line } from "./document-details.js";
 import { bodyEnvelopeRefusal, type Metadata, normalizeContent } from "./document-normalize.js";
+import { type FetchRoute, fetchFile } from "./file-fetch.js";
 import { principalId } from "./versions.js";
 
-/** An upload checked and decoded: what a write plans with and what its receipt names. */
+/** An upload checked and decoded, or a ChatGPT file fetched and decoded: what a write plans with
+ *  and what its receipt names. `id` is the upload's id, or the file's `file_id`. */
 export interface Staged {
+  via: "upload" | "file";
   id: string; filename: string; sha256: string; bytes: number;
   stagedVia: string; stagedBy: string | null;
   text: string; bom: boolean;
@@ -54,11 +65,11 @@ const used = (id: string): string =>
   `ERROR: UPLOAD_USED — ${id} was consumed by an earlier write, and an upload is used once; call ` +
   "upload_start again to send the same file to another write.";
 
-/** Exactly one of `content` and `upload`, or the INVALID_MODE that says so. */
-export function oneBody(a: { content?: string; upload?: string }): string | null {
-  if ((a.content === undefined) !== (a.upload === undefined)) return null;
-  return "ERROR: INVALID_MODE — send the body ONE way: `content` (the words) or `upload` (the id " +
-    "upload_start answered, once its file is staged) — not both, and not neither.";
+/** Exactly one of `content`, `upload` and `file`, or the INVALID_MODE that says so. */
+export function oneBody(a: { content?: string; upload?: string; file?: OpenAIFile }): string | null {
+  if ([a.content, a.upload, a.file].filter((x) => x !== undefined).length === 1) return null;
+  return "ERROR: INVALID_MODE — send the body ONE way: `content` (the words), `upload` (the id " +
+    "upload_start answered, once its file is staged) or `file` (a file ChatGPT attached) — one, not two, and not none.";
 }
 
 /** (2) and (3): the caller's own staged, unexpired, unconsumed upload, decoded — or the refusal that
@@ -94,7 +105,7 @@ export async function stagedUpload(
   if (!held?.body) return { refusal: held?.consumed ? used(id) : expired(id) };
   const read = uploadText(r.filename, held.body);
   if ("code" in read) return { refusal: read.refusal };
-  return { id, filename: r.filename, sha256: r.sha256, bytes: r.byte_count ?? held.body.length,
+  return { via: "upload", id, filename: r.filename, sha256: r.sha256, bytes: r.byte_count ?? held.body.length,
            stagedVia: r.staged_via ?? "", stagedBy: r.staged_by, text: read.text, bom: read.bom };
 }
 
@@ -117,7 +128,7 @@ export function uploadContent(s: Staged, named: Metadata): ReturnType<typeof nor
 /** The receipt's lines for a consumed upload: which file, its digest, and how it was staged. */
 export function uploadLines(s: Staged): Line[] {
   return [
-    `upload: ${s.id} — ${JSON.stringify(s.filename)}, ${s.bytes} bytes, sha256 ${s.sha256}, ` +
+    `${s.via}: ${s.id} — ${JSON.stringify(s.filename)}, ${s.bytes} bytes, sha256 ${s.sha256}, ` +
       `staged via ${s.stagedVia}${s.stagedBy ? ` by ${s.stagedBy}` : ""}`,
     ...(s.bom ? [`removed the byte-order mark ${JSON.stringify(s.filename)} opened with`] : []),
   ];
@@ -139,4 +150,46 @@ export async function consumeUpload(c: Pick<pg.Pool, "query">, u: Consumption, r
     `update zz.upload set consumed_at = now(), consumed_by_operation = $2, consumed_digest = $3, body = null
       where id = $1`, [u.id, `${u.tool} ${relPath}`, u.digest]);
   return null;
+}
+
+/** A file ChatGPT attached to a call, as the Apps SDK hands it over (`openai/fileParams`). */
+export interface OpenAIFile { download_url: string; file_id: string; mime_type?: string; file_name?: string }
+
+/** `file` on the three write tools, each declaring it `.optional()` where it is used — the gate reads
+ *  that at the field (scripts/gate/checks/skill-calls.ts). */
+export const FILE_INPUT = z.object({
+  download_url: z.string(), file_id: z.string(), mime_type: z.string().optional(), file_name: z.string().optional(),
+}).describe("In place of `content`: a file attached in ChatGPT, which fills this in itself.");
+
+/** The `_meta` that tells ChatGPT `file` takes an attached file. */
+export const FILE_META = { "openai/fileParams": ["file"] };
+
+/** What reads a ChatGPT `file` into a `Staged`, or answers the refusal that stops the write. */
+export type FileSource = (file: OpenAIFile) => Promise<Staged | { refusal: string }>;
+
+/** The `file` route over `options` — built once, by the tools, with `hosts` from
+ *  `OPENAI_FILE_HOSTS` and nothing else; checks/file-fetch.ts passes the rest (file-fetch.ts).
+ *  With no hosts the route is off and says so. With hosts, the file's name decides its format
+ *  before anything is fetched — `file_name`, or the URL's last path segment — and the bytes go
+ *  through `uploadText`, so a file is held to every rule an upload is. */
+export function fileSource(options: FetchRoute = { hosts: [] }): FileSource {
+  return async (file) => {
+    if (!options.hosts.length) {
+      return { refusal: "ERROR: FORBIDDEN — the ChatGPT file route is not enabled on this deployment " +
+        "(OPENAI_FILE_HOSTS is empty), so `file` is not fetched; call upload_start with the file's name, stage the " +
+        "file through the link it answers with, and send that `upload` in place of `file`." };
+    }
+    let name = file.file_name ?? "";
+    if (!name) {
+      try { name = decodeURIComponent(new URL(file.download_url).pathname.split("/").pop() ?? ""); } catch { name = ""; }
+    }
+    const format = uploadText(name, new Uint8Array(0));
+    if ("code" in format) return { refusal: format.refusal };
+    const got = await fetchFile(file.download_url, options);
+    if ("refusal" in got) return got;
+    const read = uploadText(name, got.bytes);
+    if ("code" in read) return { refusal: read.refusal };
+    return { via: "file", id: file.file_id, filename: name, sha256: createHash("sha256").update(got.bytes).digest("hex"),
+             bytes: got.bytes.length, stagedVia: "file", stagedBy: null, text: read.text, bom: read.bom };
+  };
 }

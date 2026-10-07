@@ -44,7 +44,8 @@ import { sourceDocument } from "./indexing.js";
 import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
 import { baseConflict } from "./stale-base.js";
-import { type Consumption, type Staged, stagedUpload, uploadContent, uploadLines } from "./upload-consume.js";
+import { type Consumption, fileSource, type FileSource, type OpenAIFile, type Staged, stagedUpload,
+         uploadContent, uploadLines } from "./upload-consume.js";
 import { documentAt, loadDocument, principalId, splitStorePath } from "./versions.js";
 import { type Chain, envelopeFor, isoToday, normalizeSections } from "./write-guards.js";
 
@@ -63,8 +64,6 @@ export async function acceptanceLine(p: pg.Pool, team: string, chain: Chain, pat
   return said ? `\n${said}` : "";
 }
 
-const INITIATIVE = "2026-10-06-doc-write-and-update-paradigm";
-
 /** The next move a receipt states, read on the client it is handed: the write's own, inside its
  *  transaction, so the move is the one the committed state will show. */
 type MoveOf = (c: Pick<pg.Pool, "query">) => Promise<string>;
@@ -82,7 +81,7 @@ interface EditArgs {
   edits?: Edit[];
   section?: string; section_level?: number; section_occurrence?: number;
   content?: string;
-  upload?: string; file?: Record<string, unknown>;
+  upload?: string; file?: OpenAIFile;
   sources?: string[]; source_content?: string; source_title?: string;
   note?: string;
   title?: string; tags?: string[]; stakeholder?: string; fields?: Record<string, string>;
@@ -128,13 +127,16 @@ function canonical(v: unknown): string {
  *  sent under one key. */
 type RequestTool = "document_edit" | "document_write" | "source_add";
 
-/** A call as a request key holds it: its key, and the upload it consumes, if any. */
-type Keyed = { request_id?: string; upload?: string };
+/** A call as a request key holds it: its key, and the upload or file its body came from, if any. */
+type Keyed = { request_id?: string; upload?: string; file?: OpenAIFile };
 
 /** What a request key is held to: the tool's name, a newline, and every argument but the key —
- *  with, for a call consuming an upload, the upload's digest beside its id (`upload_sha256`). */
+ *  with, for a call consuming an upload, the upload's digest beside its id (`upload_sha256`), and
+ *  for a ChatGPT file its `file_id` alone, with the digest of what was fetched (`file_sha256`). The
+ *  download URL is a delivery detail a retry refreshes, never part of what was asked. */
 function requestDigest(args: Keyed, tool: RequestTool, uploaded?: string): string {
-  const rest: Record<string, unknown> = { ...args, ...(uploaded !== undefined ? { upload_sha256: uploaded } : {}) };
+  const sha = uploaded === undefined ? {} : args.file ? { file_sha256: uploaded } : { upload_sha256: uploaded };
+  const rest: Record<string, unknown> = { ...args, ...(args.file ? { file: { file_id: args.file.file_id } } : {}), ...sha };
   delete rest.request_id;
   return createHash("sha256").update(`${tool}\n${canonical(rest)}`, "utf8").digest("hex");
 }
@@ -148,7 +150,9 @@ function requestDigest(args: Keyed, tool: RequestTool, uploaded?: string): strin
  *  DELIBERATE: asked before the upload a call names is read, so a keyed write replays after its
  *  upload was used, expired or swept. The digest it compares binds the upload's digest too, taken
  *  from the receipt the first call recorded — the one an upload id was bound to: staging binds an
- *  id's bytes once and never again, so the same id is the same digest. */
+ *  id's bytes once and never again, so the same id is the same digest. A file's digest is read the
+ *  same way, so a keyed file request replays before anything is fetched — after its signed URL has
+ *  expired too. */
 export async function replayFor(
   p: Pick<pg.Pool, "query">, team: string, who: string, path: string, args: Keyed,
   tool: RequestTool = "document_edit",
@@ -161,16 +165,17 @@ export async function replayFor(
       where t.slug = $1 and q.principal_id = $2::uuid and q.canonical_path = $3 and q.request_id = $4`,
     [team, principal, path, args.request_id]);
   if (!rows[0]) return null;
-  const uploaded = args.upload !== undefined && typeof rows[0].receipt.upload_sha256 === "string"
-    ? rows[0].receipt.upload_sha256 : undefined;
+  const recorded = rows[0].receipt[args.file ? "file_sha256" : "upload_sha256"];
+  const uploaded = (args.file ?? args.upload) !== undefined && typeof recorded === "string" ? recorded : undefined;
   return rows[0].request_digest === requestDigest(args, tool, uploaded)
     ? { replayed: rows[0].receipt }
     : { refusal: "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request" };
 }
 
-/** The upload a write consumes, bound to the digest of the call that consumes it — keyed or not. */
+/** The upload a write consumes, bound to the digest of the call that consumes it — keyed or not. A
+ *  ChatGPT file has no row, so nothing is consumed. */
 export function consumptionOf(args: Keyed, tool: RequestTool, s: Staged | undefined): Consumption | undefined {
-  return s && { id: s.id, sha256: s.sha256, tool, digest: requestDigest(args, tool, s.sha256) };
+  return s?.via === "upload" ? { id: s.id, sha256: s.sha256, tool, digest: requestDigest(args, tool, s.sha256) } : undefined;
 }
 
 /** The sources a change to a document owes: sources in its initiative that declare they support
@@ -344,10 +349,12 @@ async function refused(p: pg.Pool, who: string, team: string, path: string, line
 }
 
 /** Which body mode a call sends, or the INVALID_MODE that says why it sends none or two. */
-function modeOf(a: EditArgs): "edits" | "section" | "content" | "upload" | "metadata" | { refusal: string } {
+function modeOf(a: EditArgs): "edits" | "section" | "content" | "upload" | "file" | "metadata" | { refusal: string } {
   const invalid = (why: string) => ({ refusal: `ERROR: INVALID_MODE — ${why}` });
-  if (a.upload !== undefined && (a.edits !== undefined || a.section !== undefined || a.content !== undefined)) {
-    return invalid("send ONE body change: an `upload` is the whole body, and comes without `edits`, `section` or `content`.");
+  const sent = [a.edits, a.section ?? a.content, a.upload, a.file].filter((x) => x !== undefined).length;
+  if ((a.upload !== undefined || a.file !== undefined) && sent > 1) {
+    return invalid("send ONE body change: an `upload` or a `file` is the whole body, and comes alone — without " +
+      "`edits`, `section`, `content` or the other.");
   }
   if (a.section === undefined && (a.section_level !== undefined || a.section_occurrence !== undefined)) {
     return invalid("`section_level` and `section_occurrence` choose among headings `section` names; send `section` with them.");
@@ -365,6 +372,7 @@ function modeOf(a: EditArgs): "edits" | "section" | "content" | "upload" | "meta
     return invalid("`section_occurrence` counts from 1.");
   }
   if (a.upload !== undefined) return "upload";
+  if (a.file !== undefined) return "file";
   if (a.edits !== undefined) return "edits";
   if (a.section !== undefined) return "section";
   if (a.content !== undefined) return "content";
@@ -428,9 +436,11 @@ function envelopeOf(current: string, a: EditArgs, approved: boolean, gated: bool
 }
 
 /** (3)–(10): the change a call asks for, or the answer that stops it. `path` is canonical; `moveOf`
- *  reads the next move the receipt states, on the write's own client. */
+ *  reads the next move the receipt states, on the write's own client; `fileOf` reads the call's
+ *  ChatGPT `file` — the handler's, fetched once however many times the change is computed. */
 export async function planEdit(
   p: pg.Pool, team: string, who: string, path: string, a: EditArgs, moveOf: MoveOf = noMove,
+  fileOf?: () => ReturnType<FileSource>,
 ): Promise<{ reply: string } | Planned> {
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
   // The state first, then the document — see the module header.
@@ -443,18 +453,15 @@ export async function planEdit(
         "document_list shows the paths there are."
       : loaded.refusal };
   }
-  // (4) `file`, not served yet.
-  if (a.file !== undefined) {
-    return { reply: `ERROR: NOT_YET — \`file\` arrives in Phase 4 of ${INITIATIVE}; send the text as \`content\` until then` };
-  }
   // (5)
   const mode = modeOf(a);
   if (typeof mode !== "string") return { reply: mode.refusal };
-  // (4) An upload — the whole body, sent alone — read and checked before its body is decoded
-  // (upload-consume.ts); from (8) on it is planned as whole `content` is.
+  // (4) An upload or a file — the whole body, sent alone — read and checked before its body is
+  // decoded (upload-consume.ts); from (8) on it is planned as whole `content` is.
   let staged: Staged | undefined;
-  if (mode === "upload") {
-    const got = await stagedUpload(p, team, who, a.upload ?? "");
+  if (mode === "upload" || mode === "file") {
+    const got = mode === "upload" ? await stagedUpload(p, team, who, a.upload ?? "")
+      : await (fileOf ? fileOf() : fileSource()(a.file as OpenAIFile));
     if ("refusal" in got) return { reply: got.refusal };
     staged = got;
   }
@@ -590,14 +597,14 @@ export function requestOf(a: Keyed, who: string, path: string, facts: Record<str
                           tool: RequestTool, s?: Staged) {
   return a.request_id === undefined ? undefined : {
     principalEmail: who, canonicalPath: path, requestId: a.request_id, digest: requestDigest(a, tool, s?.sha256),
-    receipt: { path, ...facts, ...(s ? { upload: s.id, upload_sha256: s.sha256 } : {}) },
+    receipt: { path, ...facts, ...(s ? { [s.via]: s.id, [`${s.via}_sha256`]: s.sha256 } : {}) },
   };
 }
 
 /** What `document_write` is called with. */
 interface CreateArgs {
   path: string;
-  content?: string; upload?: string;
+  content?: string; upload?: string; file?: OpenAIFile;
   title?: string; tags?: string[]; stakeholder?: string; fields?: Record<string, string>;
   sources?: string[]; source_content?: string; source_title?: string;
   request_id?: string;

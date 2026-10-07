@@ -88,6 +88,7 @@ better value than we already know.
 | `BOOTSTRAP_TEAM` | the first team, created on boot with the superadmin as its admin. **Set it.** A deployment with a superadmin and no team looks perfectly healthy and is not: every document lands in a per-user store instead of the team's, and nobody notices until they go looking for it. **It is re-seeded on every boot** — `on conflict do nothing`, so it is a no-op once the team exists, but a team named here cannot be deleted: it returns on the next restart. Point it at a team you actually use, and change it rather than deleting what it names |
 | `POSTGRES_PASSWORD` | the platform database's own password |
 | `CONSOLE_PUBLIC_URL` | only if you run the console — see below |
+| `OPENAI_FILE_HOSTS` | leave it empty. The hosts a file attached in ChatGPT may be fetched from, comma-separated; zz-core fetches over HTTPS, from public addresses only, within 30 seconds and 8 MiB. Empty keeps that route off and a ChatGPT `file` is answered with `upload_start`, which works in every client. Which hosts ChatGPT serves files from is not established yet |
 
 ### The admin console, if you want it (optional)
 

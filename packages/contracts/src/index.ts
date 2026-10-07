@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
-export { actingTeam, addressResolver, mintPat, parseCaller, PAT_TOKEN,
+export { actingTeam, addressResolver, internalAddress, mintPat, parseCaller, PAT_TOKEN,
          peerAddress, sha256 } from "./identity.js";
 
 // Conditional documents in the flow contract (FR-52, FR-58, Task I-26): a document may declare

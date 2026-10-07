@@ -38,8 +38,9 @@ import { registerUploadStartTool } from "./upload-start.js";
 import { db, teamFor } from "../platform-db.js";
 import { documentAt, documentPaths, loadDocument, loadSnapshot, NO_DB, recordAct } from "../versions.js";
 import { saveDocument } from "../document-save.js";
+import { citedRevisions, sourceReceipt } from "../source-receipt.js";
 import { acceptanceLine, consumptionOf, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor, requestOf } from "../document-change.js";
-import { oneBody, stagedUpload, uploadContent, uploadLines } from "../upload-consume.js";
+import { FILE_INPUT, FILE_META, fileSource, oneBody, stagedUpload, uploadContent, uploadLines } from "../upload-consume.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, PRESENT_META } from "../document-panel.js";
 import { CONTEXT_INPUT, presentRefusal, viewerOf } from "../review-context.js";
@@ -59,12 +60,16 @@ const PART_INPUT = {
     .describe(`At most this many characters (default ${PART_LIMIT}).`),
 };
 
+/** The ChatGPT `file` route, built once at start: the hosts files are fetched from, and nothing else
+ *  from the environment. Empty — the default — and the route is off (upload-consume.ts). */
+const FILES = fileSource({ hosts: (process.env.OPENAI_FILE_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean) });
+
 export function registerArtifactTools(server: McpServer): void {
   // The source subject, past what this file holds: `source_add` stays here with the document
   // tools, and the read-back and the start of an upload are each their own file beside it.
   registerSourceListTool(server);
   registerUploadStartTool(server);
-  registerDocumentEditTool(server);
+  registerDocumentEditTool(server, FILES);
   server.registerTool(
     "document_write",
     {
@@ -84,7 +89,8 @@ export function registerArtifactTools(server: McpServer): void {
         "`source_content` (with `source_title`), which the platform files as a source; sources " +
         "filed since the release that declare they support this document are linked by the " +
         "platform itself, and the reply names every cause. A long file you already have is sent as " +
-        "`upload` — the id upload_start answered, once its file is staged — in place of `content`. " +
+        "`upload` — the id upload_start answered, once its file is staged — in place of `content`; in ChatGPT, an " +
+        "attached file goes as `file`. " +
         "Send one `request_id` per document " +
         "you mean to create and reuse it on every retry of that create: a retry of a create that " +
         "already landed returns its first reply instead of being refused as existing. Every list " +
@@ -94,6 +100,7 @@ export function registerArtifactTools(server: McpServer): void {
         path: z.string(),
         content: z.string().optional().describe("The document's BODY, starting at its first heading. The platform writes the frontmatter."),
         upload: z.string().optional().describe("In place of `content`: the id upload_start answered, once its file is staged."),
+        file: FILE_INPUT.optional(),
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
@@ -105,6 +112,7 @@ export function registerArtifactTools(server: McpServer): void {
         source_title: z.string().optional().describe("The title of the source `source_content` files."),
         request_id: z.string().optional().describe("One per document you mean to create, reused on every retry of it."),
       },
+      _meta: FILE_META,
     },
     async (args) => {
       const p = db();
@@ -133,7 +141,8 @@ export function registerArtifactTools(server: McpServer): void {
       if (unopened) return text(unopened);
       const twice = oneBody(args); // and an upload read and checked before its bytes are
       if (twice) return text(twice);
-      const staged = args.upload === undefined ? undefined : await stagedUpload(p, team, who, args.upload);
+      const staged = args.upload !== undefined ? await stagedUpload(p, team, who, args.upload)
+        : args.file !== undefined ? await FILES(args.file) : undefined;
       if (staged && "refusal" in staged) return text(staged.refusal);
       // (2) The content in the spelling the store keeps — its envelope, if it sent one, separated
       // and read into the metadata it stands for; an uploaded file read as the file it is — then the
@@ -446,13 +455,15 @@ export function registerArtifactTools(server: McpServer): void {
         "`supports` every document this material bears on: each of those documents is then " +
         "flagged for refinement if it was already approved, and initiative_status reports it as " +
         "the next move. This is how information reaches work without editing around the gates. A file " +
-        "you have goes as `upload` (upload_start's id, once staged) in place of `content`, kept as it is. " +
+        "you have goes as `upload` (upload_start's id, once staged) in place of `content` — in ChatGPT, an attached " +
+        "file as `file` — kept as it is. " +
         "Reuse one `request_id` on every retry of a source: a retry returns the one filed first, any day.",
       inputSchema: {
         initiative: z.string(),
         title: z.string(),
         content: z.string().optional(),
         upload: z.string().optional().describe("In place of `content`: the id upload_start answered, once its file is staged."),
+        file: FILE_INPUT.optional(),
         request_id: z.string().optional().describe("One per source you mean to add, reused on every retry of it."),
         supports: z.union([z.string(), z.array(z.string())]).optional()
           .describe("Document(s) this material bears on, e.g. 'spec.md' or ['spec.md','plan.md']."),
@@ -462,8 +473,9 @@ export function registerArtifactTools(server: McpServer): void {
                     "that writes the verifying document, e.g. 'sdlc-review', with its ```json " +
                     "ledger in `content`. Only a source naming its stage counts as that stage's round."),
       },
+      _meta: FILE_META,
     },
-    async ({ initiative, title, content, upload, supports, stage, request_id }) => {
+    async ({ initiative, title, content, upload, file, supports, stage, request_id }) => {
       // The same guard the other initiative-taking tools apply. safePath below only
       // stops a path leaving the store, which is a different question from whether the name
       // is an initiative — and `join(root, initiative, d)` further down asks the second one.
@@ -510,13 +522,14 @@ export function registerArtifactTools(server: McpServer): void {
       const settle = (reply: string) => settleRefusal(p, { who: who.email, team, path: asked }, reply);
       // (1) A source this key already filed answers as it did — on any later day, before the upload
       // is looked at. The key is held in `<initiative>/sources`, not at the path a day names.
-      const keyed = { initiative, title, content, upload, supports, stage, request_id };
+      const keyed = { initiative, title, content, upload, file, supports, stage, request_id };
       const replay = await replayFor(p, team, who.email, `${initiative}/sources`, keyed, "source_add");
       if (replay) return text("refusal" in replay ? replay.refusal : replayText(replay.replayed, await nextMoveLine(p, team, initiative)));
       if (badSupports.length) return text(await settle(refusalText(badSupports)));
-      const twice = oneBody({ content, upload });
+      const twice = oneBody({ content, upload, file });
       if (twice) return text(twice);
-      const staged = upload === undefined ? undefined : await stagedUpload(p, team, who.email, upload);
+      const staged = upload !== undefined ? await stagedUpload(p, team, who.email, upload)
+        : file !== undefined ? await FILES(file) : undefined;
       if (staged && "refusal" in staged) return text(staged.refusal);
       const words = staged ? staged.text : content ?? ""; // literally, whatever its extension
       // An audit round is a source that names the stage producing it and supports the document
@@ -604,38 +617,6 @@ export function registerArtifactTools(server: McpServer): void {
 
 }
 
-/** What `source_add` answers with, line by line: the name it was filed under, and why when that
- *  was another; what it supports and how each entry was read, counted; the round it counts as;
- *  and the documents it could not link yet or that were approved before it arrived. */
-function sourceReceipt(o: {
-  rel: string; asked: string; list: string[]; normalised: string[]; round: { stage: string; document: string } | null;
-  auditsVersion: string | undefined; stage: string | undefined; review: boolean; unwritten: string[]; stale: string[];
-  upload: Line[];
-}): Line[] {
-  const n = o.unwritten.length;
-  return [
-    `source recorded: ${o.rel}`,
-    ...(o.rel !== o.asked ? [`source name: ${o.asked} was taken, so this was filed as ${o.rel}`] : []),
-    ...o.upload,
-    ...(o.list.length ? [{ label: "supports", items: o.list }] : []),
-    { label: "normalised", items: o.normalised, sep: "; " },
-    ...(o.round ? [`recorded as a ${o.round.stage} round on ${o.round.document}` + (o.auditsVersion ? ` v${o.auditsVersion}` : "")] : []),
-    ...(o.stage && !o.round
-      ? ["", `NOT COUNTED AS A ROUND: "${o.stage}" is not a stage of this flow that produces a source ` +
-         `supporting ${o.list.join(", ") || "nothing"}, so this was recorded as material only.`] : []),
-    ...(n ? ["", { lead: "NOT LINKED YET: ", label: "documents that do not exist yet", items: o.unwritten,
-                   tail: ` — the link is filed when ${n > 1 ? "each is" : "it is"} first written, and until then this ` +
-                     `source is not listed as material behind ${n > 1 ? "them" : "it"}.` +
-                     (o.review ? " The review round itself is counted by its stage, not by the link." : "") }] : []),
-    ...(o.stale.length
-      ? ["", { lead: "Note for whoever works on this next: ", label: "documents approved before this material arrived",
-               items: o.stale, tail: ", so the approval does not cover it. initiative_status reports this under " +
-                 "sources_after_approval. Whether to change the document is the team's call — if they decide to, " +
-                 "document_edit naming this source opens the next version and re-opens the gate." }]
-      : o.list.length && !o.round ? ["", "No approved document is affected."] : []),
-  ];
-}
-
 /** `document_read(path, details_ref, cursor?)`: the page of a stored detail, for the caller's team
  *  and the path the detail is about — so a refused create's detail is readable though no document
  *  exists. Every other way to narrow a read is another mode, and refused with it. */
@@ -678,19 +659,4 @@ async function snapshotRead(a: { path: string | string[]; version?: number; scop
   if (!team) return NO_TEAM;
   const loaded = await loadSnapshot(team, await safePath(a.path as string), token);
   return loaded.ok ? loaded.text : loaded.refusal;
-}
-
-/** The current revision of each document a source names in `supports`, as `cites` links. A name
- *  that resolves to no document is skipped: a source may cite material outside this store, and
- *  a link to a row nobody has is a foreign key Postgres would refuse. */
-async function citedRevisions(
-  p: Pick<pg.Pool, "query">, team: string, initiative: string, names: string[],
-): Promise<{ path: string; revision: number }[]> {
-  const out: { path: string; revision: number }[] = [];
-  for (const d of names) {
-    const path = `${initiative}/${d}`;
-    const at = await documentAt(p, team, path);
-    if (at && at.current_revision !== null) out.push({ path, revision: at.current_revision });
-  }
-  return out;
 }

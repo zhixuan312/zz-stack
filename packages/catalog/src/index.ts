@@ -5,7 +5,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { BlockList, isIP } from "node:net";
+import { isIP } from "node:net";
 import { basename, dirname, join } from "node:path";
 
 /** Where the shelf lives. `/catalog` in the image, which is where it ships.
@@ -24,7 +24,8 @@ export const CATALOG_DIR = process.env.ZZ_CATALOG_DIR || "/catalog";
  * DELIBERATE: not re-exported from here. Both services already depend on @zz/contracts
  * directly, and a second module path to one definition is what this package exists to remove. */
 import {
-  addressResolver, CatalogManifest as CatalogManifestSchema, type CatalogManifest, type FlowDoc, whyNot,
+  addressResolver, CatalogManifest as CatalogManifestSchema, type CatalogManifest, type FlowDoc, internalAddress,
+  whyNot,
 } from "@zz/contracts";
 
 interface CatalogEntry {
@@ -518,26 +519,13 @@ export function gitInstruction(dir: string, opts: { ownGit?: boolean } = {}, rel
 // A git source's host. Here rather than in either reader because two of them fetch a caller's
 // URL: `plugin_register` on the platform host, and the candidate-build CLI on the operator's.
 
-/** Addresses a git fetch must never reach: loopback, private, carrier-grade NAT, link-local
- *  (cloud metadata lives there), benchmark, multicast and reserved space, in both families. An
- *  IPv4-mapped address arrives here already folded to its IPv4 spelling (`addressResolver`), so
- *  the IPv4 rules answer for it. */
-const BLOCKED = new BlockList();
-for (const [net, bits] of [
-  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
-  ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3],
-] as const) BLOCKED.addSubnet(net, bits, "ipv4");
-for (const [net, bits] of [
-  ["::", 127], ["64:ff9b::", 96], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
-] as const) BLOCKED.addSubnet(net, bits, "ipv6");
-
 /** A git URL, refused unless it is https to a host that resolves only to public addresses.
  *  Every address the name resolves to is checked, not the first: a resolver that answers one
  *  public and one internal address would otherwise pass half the time.
  *
- *  COUPLED: resolved through `addressResolver` (@zz/contracts), the platform's one resolver and
- *  one IPv4-mapped fold. An address that is still not a valid IP after the fold (a mapped address
- *  in hex spelling) is refused rather than guessed at.
+ *  COUPLED: resolved through `addressResolver` and judged by `internalAddress` (@zz/contracts) —
+ *  the platform's one resolver, one IPv4-mapped fold and one list of internal addresses, which
+ *  zz-core's ChatGPT file fetch applies too.
  *
  *  RETURNS the `http.curloptResolve` entry that pins git to exactly the addresses checked here.
  *  Without it git resolves the name a second time, and a rebinding host answers that second
@@ -554,8 +542,7 @@ export async function publicHttpsUrl(url: string): Promise<{ error: string } | {
   const host = parsed.hostname.replace(/^\[|\]$/g, "");
   const addresses = await addressResolver([host], 0)();
   if (!addresses) return { error: `the host ${host} does not resolve` };
-  const internal = [...addresses].some((a) =>
-    isIP(a) === 0 || BLOCKED.check(a, isIP(a) === 6 ? "ipv6" : "ipv4"));
+  const internal = [...addresses].some((a) => internalAddress(a));
   if (internal) {
     return { error: `the host ${host} resolves to a private, loopback or link-local address; only public hosts are read` };
   }

@@ -8,6 +8,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
+import { BlockList, isIP } from "node:net";
 
 /** Who a call is FROM. The gateway resolves it from a platform token and stamps it on the
  * request; every adapter downstream resolves to this one shape. */
@@ -115,6 +116,29 @@ export const sha256 = (s: string): string => createHash("sha256").update(s).dige
 // Not exported: every caller wants one of the two below, and an exported fold invites the
 // comparison being spelled out again elsewhere.
 const hostAddress = (raw: string): string => raw.replace(/^::ffff:/, "");
+
+/** Addresses an outbound fetch of a caller's URL must never reach: loopback, private,
+ *  carrier-grade NAT, link-local (cloud metadata lives there), benchmark, multicast and reserved
+ *  space, and unique-local IPv6 (a metadata address there too), in both families. */
+const INTERNAL = new BlockList();
+for (const [net, bits] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
+  ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3],
+] as const) INTERNAL.addSubnet(net, bits, "ipv4");
+for (const [net, bits] of [
+  ["::", 127], ["64:ff9b::", 96], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
+] as const) INTERNAL.addSubnet(net, bits, "ipv6");
+
+/** An address a fetch of a caller's URL must not reach — the one rule for a git source
+ *  (`publicHttpsUrl`, @zz/catalog) and a ChatGPT file (zz-core's file-fetch.ts). Folded first, as
+ *  every address here is; anything that is then not an IP is refused rather than guessed at. An
+ *  IPv4-mapped address in any other spelling is judged by the IPv4 rules: a BlockList maps
+ *  between the families itself. */
+export function internalAddress(address: string): boolean {
+  const a = hostAddress(address);
+  const family = isIP(a);
+  return family === 0 || INTERNAL.check(a, family === 6 ? "ipv6" : "ipv4");
+}
 
 /** The peer at the other end of a socket, in that one spelling. */
 export const peerAddress = (socket: { remoteAddress?: string | undefined }): string =>

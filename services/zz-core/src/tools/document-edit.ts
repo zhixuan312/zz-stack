@@ -31,9 +31,11 @@ import { unopenedRefusal } from "../initiative-record.js";
 import { safePath, tagRefusal, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { NO_DB, recordAct } from "../versions.js";
+import { FILE_INPUT, FILE_META, type FileSource, type OpenAIFile } from "../upload-consume.js";
 import { nextMoveLine } from "./initiative-status.js";
 
-export function registerDocumentEditTool(server: McpServer): void {
+/** `files` is the ChatGPT `file` route `artifacts.ts` built once, at start (upload-consume.ts). */
+export function registerDocumentEditTool(server: McpServer, files: FileSource): void {
   server.registerTool("document_edit", {
     annotations: WRITES,
     description:
@@ -44,7 +46,7 @@ export function registerDocumentEditTool(server: McpServer): void {
       "section's new text, heading line first, with `section_level` and `section_occurrence` to pick " +
       "among headings of the same name; or `content` alone — the whole body, only when the change " +
       "is not one section's; or `upload` — the whole body from a file you have, the id upload_start " +
-      "answered, once its file is staged. Metadata — `title`, `tags`, `stakeholder`, `fields` — may come with any " +
+      "answered, once its file is staged; or, in ChatGPT, `file` — a file attached to the conversation. Metadata — `title`, `tags`, `stakeholder`, `fields` — may come with any " +
       "of them, or ALONE: a metadata-only call changes no body and never needs a cause. " +
       "An APPROVED document's body changes only with its cause: name an existing source in " +
       "`sources`, or pass the words that caused it as `source_content` (with `source_title`), which " +
@@ -69,7 +71,7 @@ export function registerDocumentEditTool(server: McpServer): void {
         .describe("With `section`: the section's new text, heading line first. Alone: the whole body."),
       upload: z.string().optional()
         .describe("The whole body from a file: the id upload_start answered, once its file is staged."),
-      file: z.record(z.unknown()).optional(),
+      file: FILE_INPUT.optional(),
       sources: z.array(z.string()).optional()
         .describe("Sources that caused this change, as paths inside the initiative, e.g. 'sources/2026-10-06-call.md'."),
       source_content: z.string().optional().describe("The words that caused this change, filed as a new source."),
@@ -80,6 +82,7 @@ export function registerDocumentEditTool(server: McpServer): void {
       base: z.string().optional().describe("The `content revision` your last read returned."),
       request_id: z.string().optional().describe("One per intended change, reused on every retry of it."),
     },
+    _meta: FILE_META,
   }, async (args) => {
     const p = db();
     if (!p) return text(NO_DB);
@@ -95,6 +98,10 @@ export function registerDocumentEditTool(server: McpServer): void {
     // DELIBERATE: a transaction's client is not a pool, and the next move asks nothing but `query`.
     const moveOf = (c: Pick<pg.Pool, "query">) => nextMoveLine(c as pg.Pool, team, initiative);
     const now = async () => nextMoveLine(p, team, initiative);
+    // A `file` is fetched at most once per call, however many attempts compute the change: a
+    // signed URL may not answer twice. Only once a replay is ruled out, so a replay never fetches.
+    let fetched: ReturnType<FileSource> | undefined;
+    const fileOf = () => (fetched ??= files(args.file as OpenAIFile));
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       // (0) A request already committed under this key answers as it did the first time.
       const replay = await replayFor(p, team, who, path, args);
@@ -116,7 +123,7 @@ export function registerDocumentEditTool(server: McpServer): void {
         return text(await settleRefusal(p, { who, team, path }, refusalText(all)));
       }
       // (3)–(10)
-      const plan = await planEdit(p, team, who, path, args, moveOf);
+      const plan = await planEdit(p, team, who, path, args, moveOf, fileOf);
       if ("reply" in plan) return text(plan.reply);
       // An unkeyed no_change writes no document row, only the record its receipt's details_ref
       // names — awaited, so the ref the reply prints names a row that is there — and consumes no

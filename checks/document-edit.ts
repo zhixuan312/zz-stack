@@ -16,7 +16,8 @@
  *     `section_level`, then `section_occurrence`; the whole body as `content`; metadata alone;
  *   - every step of the precedence a call is answered in, each refusal leaving the body and its
  *     content revision as they were — the path guards, the field and tag rules, a missing target,
- *     an `upload` sent beside another body change, nobody's or unstaged, and `file`, a call sending
+ *     an `upload` or a `file` sent beside another body change, an upload nobody's or unstaged, a
+ *     `file` while the route is off (no OPENAI_FILE_HOSTS, which names upload_start), a call sending
  *     no mode or two, the edit count, a stale `base` (named with
  *     the current token), the batch's and the section's own refusals, a body an edit makes open
  *     with a recognised envelope (one opening with a thematic break is markdown), `no_change` — a
@@ -279,9 +280,10 @@ async function precedence(c: Core): Promise<void> {
   await refusedUnchanged(c, step, p, { upload: minted.upload }, /^ERROR: UPLOAD_MISSING — /);
   c.pass(step);
 
-  step = "(4) `file` is NOT_YET, naming Phase 4";
-  await refusedUnchanged(c, step, p, { file: { path: "x.md" }, content: "# x\n" },
-    /^ERROR: NOT_YET — `file` arrives in Phase 4 of 2026-10-06-doc-write-and-update-paradigm; send the text as `content` until then$/);
+  step = "(4) a `file` sent with another body change is INVALID_MODE; with no OPENAI_FILE_HOSTS the route is off and names upload_start";
+  const attached = { download_url: "https://files.example.com/f?sig=x", file_id: "file-1", file_name: "x.md" };
+  await refusedUnchanged(c, step, p, { file: attached, content: "# x\n" }, /^ERROR: INVALID_MODE — send ONE body change/);
+  await refusedUnchanged(c, step, p, { file: attached }, /^ERROR: FORBIDDEN — the ChatGPT file route is not enabled .*OPENAI_FILE_HOSTS.*upload_start/);
   c.pass(step);
 
   step = "(5) a call sending no change, or two body changes, or a malformed selector or source, is INVALID_MODE";

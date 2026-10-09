@@ -33,21 +33,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.94.1] — 2026-10-09
 
-### zz-stack
+One method change in sdlc-flow: each check runs once per tree.
 
-- **sdlc-flow runs each check once per tree.** A worker's report used to be re-checked by the
-  orchestrator re-running the worker's suite, the gate and the browser checks on unchanged inputs,
-  and workers ran the full gate mid-task; one initiative spent about two thirds of its time waiting
-  on tools. Evidence is now a recorded run (command, tree, exit, decisive line): accepted on the
-  tree it ran on, run again only when missing, stale or in doubt. Workers run their touched suites,
-  the typecheck and their task's checks; the gate runs once per wave on the integrated tree and
-  carries the task checks it discovers; the skeleton runs at a phase end without a second gate on
-  the same tree; review quotes execute's recorded runs on the reviewed tree. A timeout on a loaded
-  machine earns one retry, and a second is a defect. Plans name where a check too slow for every wave
-  runs, and a file every task would write becomes a hotspot instead of a chain. sdlc-method 1.25,
-  sdlc-execute 1.18, sdlc-review 1.18, sdlc-plan 1.27, sdlc-plan-audit 2.10.
+### zz-stack 0.94.1
+
+- **sdlc-flow runs each check once per tree.** The orchestrator used to re-run a worker's suite,
+  the full-suite gate and the slow checks on inputs that had not changed, and workers ran the
+  full-suite gate mid-task; one initiative spent about two thirds of its time waiting on tools.
+  Evidence is now a recorded run (command, tree, exit, decisive output line), accepted on the tree
+  it ran on and run again only when it is missing, stale or in doubt. Workers run their task's
+  checks and the project checks their change touches. The full-suite gate runs once per wave on
+  the integrated tree and carries the task checks it discovers. The walking skeleton runs at a
+  phase end with no second gate on the same tree. Review quotes execute's recorded runs on the
+  reviewed tree. A timeout on a loaded machine earns one retry, and a second is a defect. Plans
+  say where a check too slow for every wave runs, and a file every task would write becomes a
+  hotspot instead of a chain. The full-suite gate after every wave and the frozen-check
+  comparison are unchanged. sdlc-method 1.25, sdlc-execute 1.18, sdlc-review 1.18, sdlc-plan
+  1.27, sdlc-plan-audit 2.10.
+
+### Upgrade notes
+
+- No migration and no env key. Clients re-pull to get the new skill text: an initiative already
+  in flight follows the new execute and review wording from its next skill load.
 
 ## [0.94.0] — 2026-10-07
 

@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.23
+version: 1.24
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -231,6 +231,56 @@ early looks exactly like an abandoned one.
 saying the rest is already written. Do not write it yourself: the point of the method is
 that the expensive model is not the one producing prose.
 
+## Evidence is a recorded run on the tree it is about
+
+The same rule holds for code. A worker's prose saying a suite passed is a claim; a recorded run
+on the tree you are accepting is the fact. A recorded run is four things, written by the command's
+own output and not by a model retyping it:
+
+| | |
+|---|---|
+| command | exactly what ran |
+| tree | the identity of the inputs it ran on |
+| exit | the status the command returned |
+| decisive line | the line of output that settles the claim, quoted from the log |
+
+On a git target, the tree is `git rev-parse HEAD^{tree}` when the working tree is clean, and,
+with uncommitted work, the tree the working copy would commit, computed in a throwaway index so
+the real one is never touched:
+
+```bash
+idx=$(mktemp) && cp "$(git rev-parse --git-path index)" "$idx" &&
+  GIT_INDEX_FILE="$idx" git add -A && GIT_INDEX_FILE="$idx" git write-tree; rm -f "$idx"
+```
+
+Take it before the run and again after it. When the two differ, something wrote the tree while
+the command ran, which is normal in a checkout several workers share, and the run is evidence
+about no tree at all. Keep the log as the command wrote it, the exit captured from the command
+itself and never from a pipe it fed (`cmd > log 2>&1; echo "exit=$?" >> log`), and keep it outside
+wherever the target discovers its checks. A target that already records its runs with the tree
+they ran on keeps its own record; that is the same thing under another name. On a non-git target,
+the tree is a hash of the files the check reads, or there is none, and then every acceptance runs
+afresh.
+
+Two consequences, and quality rests on both:
+
+- **A check runs once per tree.** Evidence recorded on the tree being accepted is accepted as it
+  is: re-running it on unchanged inputs produces the same evidence a second time and says nothing
+  new. A re-run is owed only when the record is missing, its tree differs from the one being
+  accepted, its log disagrees with what was reported, or there is a concrete doubt the run itself
+  could not answer. Say which one when you re-run.
+- **The cheapest check that settles the claim at each layer.** A worker editing needs its touched
+  suite, the typecheck and its task's checks. Accepting a wave needs the full-suite gate on the
+  integrated tree. A phase's end needs the walking skeleton. Final review needs whatever the
+  deliverable as a whole is verified by. Each layer runs its own tier once, on its own tree, and
+  no layer runs a tier that belongs to another.
+
+**A run the machine could not finish is not a result.** On a machine other work is loading, a
+correct test can time out. A timeout while the machine is loaded earns one retry, run when it is
+quieter. A second timeout is a defect to investigate, not a third run. Stop only processes you
+started, by the id you started them with, and never by name: a process found by name may be
+somebody else's gate.
+
 ## You are the quality gate
 
 **Nothing re-reads a worker's output before you do.** There is no second model behind you fixing
@@ -322,7 +372,8 @@ are run correctly.
 **Required evidence:** the document read back with `document_read`, not the worker's summary of
 it. The absence of surviving `<!--`, `TODO`, `TBD` and `brief:` markers. A section with substance
 next to its neighbours. And, on a gated document, the recorded approval. Three checks, every
-stage, before a return is accepted.
+stage, before a return is accepted. For code, a recorded run — command, tree, exit and decisive
+line — on the tree being accepted, run once per tree rather than once per layer.
 
 **Allowed unknowns:** which execution tier a runtime offers and what it is called there — that is
 the runtime's answer, not this skill's, and a tier named in a document goes stale faster than

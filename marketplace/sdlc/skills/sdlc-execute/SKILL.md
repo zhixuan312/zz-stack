@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.16
+version: 1.17
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no approved plan, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -14,7 +14,10 @@ when_to_use: "plan.md exists, has been audited, and the person has approved it. 
      three have cost real work: a check that could not RUN is not a check that FAILED, a
      task that fails the same way twice usually means the plan is wrong rather than the
      worker, and a future task's check sitting in the gate's own discovery path before that
-     task exists is a defect the gate itself will report against the wrong task. -->
+     task exists is a defect the gate itself will report against the wrong task. Evidence is
+     recorded once per tree (sdlc-method): one initiative spent about two thirds of its time
+     waiting on tests, much of it the orchestrator re-running what a worker had already run on
+     the same inputs, and workers running the gate the integration step runs anyway. -->
 
 **Read `sdlc-method` first.** This stage is unusual in the same way `sdlc-explore` is: the work
 is dispatched, the orchestration is not.
@@ -106,6 +109,14 @@ You write ONLY paths inside your Owns. Other workers are writing other paths in 
 You MUST NOT edit an integration hotspot. If your task needs one changed, report the exact lines
   to add or change, per file, in your final report; the orchestrator applies them after the wave.
 Do not commit. The orchestrator commits once the wave is integrated.
+While you work, run the suites your change touches, the typecheck and your task's checks. Do NOT
+  run the full-suite gate, a full build or a browser matrix your task's checks do not name: the
+  integration step runs the gate once on the integrated tree, and another copy of it here, on a
+  tree other workers are still writing, is evidence about nothing.
+Report each run that settles your task as a recorded run (sdlc-method): the command, the tree it
+  ran on, its exit and the decisive line, with the log's path.
+A test that times out while the machine is loaded is retried once; a second timeout is reported
+  as a defect, not run a third time. Stop only processes you started, by their id, never by name.
 ```
 
 ### A broken platform tool is filed, not worked around
@@ -147,23 +158,37 @@ timeout did not fail — it did not run. Judge the task on its contract and on t
 actually executed, and **name the unverifiable ones** so someone can run them elsewhere.
 Conflating "unverifiable here" with "failed" throws away finished work.
 
+A timeout on a machine other work is loading is the same case: one retry, run when the machine is
+quieter. A second timeout is no longer the machine's — investigate it as a defect.
+
 ## After each wave — the integration step
 
 **Check ownership first.** `git status` against the start of the wave: every changed path must sit
 inside the Owns of a task in this wave. A path nobody owned is the wave failing, whoever wrote it.
 
-**Run each task's own checks yourself.** The worker's report is a claim; the check is the fact.
+**Then compare the checks' bytes** to their frozen copies, as above. That comparison is what keeps
+a check from being weakened, and it is yours whatever any run says.
 
 **Then integrate.** Apply the hotspot lines the workers reported — registration entries, changelog
 text, version stamps — yourself, in one pass, then run whatever regenerates generated files.
 
-**Then run the full-suite gate** — the commands the plan names under `## Full-suite gate`. Per-task
-checks prove the task did its own job. They cannot prove it left the rest of the project working,
-and **every check green with the suite red is the actual failure mode** of a plan executed task by
-task. Run the gate after every wave, not only after the last one.
+**Then run the full-suite gate, once, on the integrated tree** — the commands the plan names under
+`## Full-suite gate` — and record the run (`sdlc-method`). Per-task checks prove the task did its
+own job. They cannot prove it left the rest of the project working, and **every check green with
+the suite red is the actual failure mode** of a plan executed task by task. Run the gate after
+every wave, not only after the last one.
+
+**Every task's checks run on the integrated tree, once.** The worker's report is a claim; a
+recorded run on the tree you accept is the fact. A task check the gate discovers runs inside the
+gate, and its line in the gate's log is that task's evidence, so it is not run a second time beside
+it. A task check the gate does not discover (a browser check, a long build) runs once on the
+integrated tree, unless a worker's recorded run already carries that exact tree, which a wave of
+one task can leave. A worker's run on a tree that has since changed is the worker's own working
+loop, not evidence for the wave.
 
 **At the end of a phase, run the walking skeleton** — the Phase 0 command — and read its output.
-A phase whose tasks are green and whose skeleton no longer runs end to end is not done.
+A phase whose tasks are green and whose skeleton no longer runs end to end is not done. The last
+wave's gate already ran on this tree; do not run it again, unless the tree moved since.
 
 Then commit the wave, if the person has agreed to commits along the way.
 
@@ -248,7 +273,13 @@ beside it or with the integration step, and the diff no longer says who changed 
 it is.** Freeze every check first; activate one wave at a time, immediately before its own tasks, never
 before.
 
-❌ **Reading the worker's report instead of running the check.** The report is a claim.
+❌ **Reading the worker's report instead of a recorded run on the tree you accept.** The report is
+a claim; a run on another tree is about another tree.
+
+❌ **Running a check twice on one tree.** The orchestrator re-running a worker's suite on unchanged
+inputs, the gate run again at a phase end on the tree the last wave's gate already passed, a worker
+running the gate the integration step runs anyway: each produces the same evidence a second time
+and costs the same time again.
 
 ❌ **Skipping the full-suite gate between waves, or the skeleton at a phase end.** This is the
 failure mode, not an optimisation.
@@ -264,8 +295,9 @@ of tasks with disjoint ownership at a time, integrated after each wave, each tas
 reported from the tree, and appended to `plan.md` as the phase's `### As built`.
 
 **Required evidence:** the approval on `plan.md`, read from its frontmatter rather than from your
-memory of the conversation. Each task's checks run by you — the worker's report is a claim, the
-check is the fact. Every changed path inside a task's Owns. The full-suite gate after every wave
+memory of the conversation. Each task's checks recorded on the integrated tree — inside the gate's
+log where the gate discovers them, run once otherwise — because the worker's report is a claim and
+a recorded run on the tree you accept is the fact. Every changed path inside a task's Owns. The full-suite gate after every wave
 and the walking skeleton at every phase end, not only after the last. The active
 check's bytes compared by you against its frozen copy after each wave, where any byte difference
 means the task failed whatever else it reports. And `git diff --name-only` against where you started, not the
@@ -281,16 +313,18 @@ throws away finished work.
 **Work roles:** one dispatched worker per task, parallel within a wave, because the plan already
 made the decisions — including who writes what — and what remains is the change itself. This agent
 keeps the sequence, owns the branch, freezes and activates the checks, applies the hotspot edits,
-runs the checks, the gate and the skeleton, and stays accountable for what changed.
+runs the gate and the skeleton once per tree, and stays accountable for what changed. A worker runs
+only its own working tier: its touched suites, the typecheck and its task's checks.
 The person decides whether the work is committed.
 
 **Checkpoints:** none. No bounded question at this stage has an answer the platform routes
 on, so none is asked.
 
 **Action and exit paths:** the action is freeze every check up front, derive the waves, then per
-wave: activate its checks, dispatch its tasks together, check ownership, run the tasks' checks,
-integrate the hotspots, run the full-suite gate (and the skeleton at a phase end), compare the
-hashes; at the phase end, append `### As built`. Five
+wave: activate its checks, dispatch its tasks together, check ownership, compare the hashes,
+integrate the hotspots, run the full-suite gate once on the integrated tree with every task check
+it discovers (and, once, any it does not), then the skeleton at a phase end; at the phase end,
+append `### As built`. Five
 exits. The phase built and more remain, so back to `sdlc-plan` for the next phase. Every phase
 built, so report from the tree, ask about committing, and hand to `sdlc-review`. A phase that
 disproved a core statement, so back to `sdlc-spec`.

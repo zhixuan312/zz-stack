@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.25
+version: 1.26
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -318,6 +318,19 @@ Per-task checks prove the task did its own job. They cannot prove the task left 
 project working, and that is the failure a plan executed task-by-task actually produces: each check
 green, the suite red. State the gate once, at the end, so an executor knows what must hold after
 every task rather than only after the last one.
+
+**Say which tier runs where, when the project has more than one.** The gate is what runs after
+every wave. A verification slower than a wave can bear — a full browser matrix, a release build,
+a long soak — that the deliverable still needs is named in the same section with where it runs:
+at the end of the phase whose acceptance needs it, and at review. Naming it keeps it from being
+skipped and keeps the executor from running the heaviest tier after every wave. Nothing moves out
+of the gate to save time unless the person agrees: what the gate holds is what every wave is
+proven against.
+
+**A file every task would write is a hotspot, not a chain.** When most tasks in a phase must touch
+one file — a register, an exceptions record, a shared test table — owning it in each task links
+them all into one sequence. Make it a hotspot whose lines the workers report, or split it into one
+fragment per task that the integration step assembles, so the tasks can run as one wave.
 
 When the target genuinely has no suite to run — a document, a workflow configuration, a deliverable
 with no build — say so in that section in one line and name what stands in for it (a re-read, a

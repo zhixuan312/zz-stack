@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.9
+version: 2.10
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -98,6 +98,8 @@ plan fails here far more often than it fails as prose.
    registration, a changelog line) is a finding, because at execute it collides with a
    parallel worker or with the integration step. Write out the waves you derived — the tasks
    whose dependencies are done, taken together — so the owner sees what will run in parallel.
+   A phase whose tasks run one at a time only because each owns the same shared file is a
+   finding: the file is a hotspot, or one fragment per task.
 7. **The full-suite gate exists**, as a section headed exactly `## Full-suite gate`, naming the
    project's real build, typecheck, test and lint entry points — or, for a deliverable with no
    suite, one line saying so and naming what stands in for it. Per-task checks prove each task did

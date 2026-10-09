@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.16
+version: 1.17
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -11,7 +11,8 @@ when_to_use: "sdlc-execute has finished and the change is about to be shipped, m
      agent's judgement; one initiative ran six rounds, each wider than the last, and the defects
      that mattered were found by running the flow end to end, not by reading. The outcome this
      stage owes is evidence that the solution meets what was accepted. The sweep is secondary,
-     bounded, and routed by the platform from each round's ledger. -->
+     bounded, and routed by the platform from each round's ledger. Evidence is recorded once per
+     tree (sdlc-method): a row may quote a run execute already recorded on the reviewed tree. -->
 
 Review answers one question first: **does what was built meet what was accepted?** That is
 answered by running things and quoting what they printed. Only then does it ask the second: **what
@@ -58,7 +59,10 @@ declared, is refused by name.
   `upload` when their word arrives as a file, so it is filed as they wrote it.
 
 **Establish by running, not by reading.** The plan's checks, the full-suite gate, a probe, a walk
-of the flow end to end — run them and quote them. A criterion nothing can run is
+of the flow end to end — run them and quote them. A run `sdlc-execute` already recorded on the tree
+you are reviewing is that run: quote its log rather than running it again, and say the tree in the
+locator (`run:node scripts/gate.ts @<tree>`). Run afresh only what has no record on this tree —
+a fix landed since, or a check execute never ran, such as the deliverable's slowest verification. A criterion nothing can run is
 `not_established` and says why in its note; that is an honest row, and a reading dressed as
 evidence is not.
 
@@ -200,7 +204,7 @@ a `finished` close owes `zz-handover`, and `initiative_status` names what is sti
 when you hand back.
 
 **Required evidence:** per acceptance row, a kind-prefixed locator and the quoted decisive
-output. Per round, the change-set established first, then per finding a precise locator, a claim
+output, from a run recorded on the reviewed tree. Per round, the change-set established first, then per finding a precise locator, a claim
 naming the concrete failure, an impact from the rubric, and evidence of one of three kinds — a
 reproducer wherever it says reproduced.
 

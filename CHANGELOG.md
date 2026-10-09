@@ -33,6 +33,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### zz-stack
+
+- **sdlc-flow runs each check once per tree.** A worker's report used to be re-checked by the
+  orchestrator re-running the worker's suite, the gate and the browser checks on unchanged inputs,
+  and workers ran the full gate mid-task; one initiative spent about two thirds of its time waiting
+  on tools. Evidence is now a recorded run (command, tree, exit, decisive line): accepted on the
+  tree it ran on, run again only when missing, stale or in doubt. Workers run their touched suites,
+  the typecheck and their task's checks; the gate runs once per wave on the integrated tree and
+  carries the task checks it discovers; the skeleton runs at a phase end without a second gate on
+  the same tree; review quotes execute's recorded runs on the reviewed tree. A timeout on a loaded
+  machine earns one retry, and a second is a defect. Plans name where a slower tier runs, and a
+  file every task would write becomes a hotspot instead of a chain. sdlc-method 1.24,
+  sdlc-execute 1.17, sdlc-review 1.17, sdlc-plan 1.26, sdlc-plan-audit 2.10.
+
 ## [0.94.0] — 2026-10-07
 
 Changing a document costs what changed. Two tools change documents now: `document_write` creates

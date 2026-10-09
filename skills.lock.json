@@ -4,8 +4,8 @@
     "sha": "401d0c71603a"
   },
   "sdlc-execute": {
-    "version": "1.17",
-    "sha": "3f9f6a6b7ec3"
+    "version": "1.18",
+    "sha": "f927fe1b25e1"
   },
   "sdlc-explore": {
     "version": "1.13",
@@ -20,16 +20,16 @@
     "sha": "15e674f6b8a1"
   },
   "sdlc-method": {
-    "version": "1.24",
-    "sha": "ccb35afbe83b"
+    "version": "1.25",
+    "sha": "10253ef0930d"
   },
   "sdlc-plan-audit": {
     "version": "2.10",
     "sha": "8447215abfc8"
   },
   "sdlc-plan": {
-    "version": "1.26",
-    "sha": "620f85c4d56c"
+    "version": "1.27",
+    "sha": "aa1fd9304ac5"
   },
   "sdlc-recall": {
     "version": "1.12",
@@ -40,8 +40,8 @@
     "sha": "3acbabf13cb4"
   },
   "sdlc-review": {
-    "version": "1.17",
-    "sha": "cad38de3e946"
+    "version": "1.18",
+    "sha": "64569995cbc1"
   },
   "sdlc-spec-audit": {
     "version": "2.8",

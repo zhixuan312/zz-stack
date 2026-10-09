@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.24
+version: 1.25
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -235,14 +235,14 @@ that the expensive model is not the one producing prose.
 
 The same rule holds for code. A worker's prose saying a suite passed is a claim; a recorded run
 on the tree you are accepting is the fact. A recorded run is four things, written by the command's
-own output and not by a model retyping it:
+own output and not by a model retyping it, whatever kind of locator it is later cited under:
 
 | | |
 |---|---|
 | command | exactly what ran |
 | tree | the identity of the inputs it ran on |
 | exit | the status the command returned |
-| decisive line | the line of output that settles the claim, quoted from the log |
+| decisive output line | the line of output that settles the claim, quoted from the log |
 
 On a git target, the tree is `git rev-parse HEAD^{tree}` when the working tree is clean, and,
 with uncommitted work, the tree the working copy would commit, computed in a throwaway index so
@@ -269,11 +269,12 @@ Two consequences, and quality rests on both:
   new. A re-run is owed only when the record is missing, its tree differs from the one being
   accepted, its log disagrees with what was reported, or there is a concrete doubt the run itself
   could not answer. Say which one when you re-run.
-- **The cheapest check that settles the claim at each layer.** A worker editing needs its touched
-  suite, the typecheck and its task's checks. Accepting a wave needs the full-suite gate on the
-  integrated tree. A phase's end needs the walking skeleton. Final review needs whatever the
-  deliverable as a whole is verified by. Each layer runs its own tier once, on its own tree, and
-  no layer runs a tier that belongs to another.
+- **At each step, the cheapest check that settles its claim.** A worker editing needs its task's
+  checks and whichever of the project's own test, typecheck or lint entry points its change
+  touches. Accepting a wave needs the full-suite gate on the integrated tree — the tree as the
+  integration step leaves it. A phase's end needs the walking skeleton. Final review needs
+  whatever the deliverable as a whole is verified by. Each step runs its own checks once, on its
+  own tree, and none runs what belongs to another.
 
 **A run the machine could not finish is not a result.** On a machine other work is loading, a
 correct test can time out. A timeout while the machine is loaded earns one retry, run when it is
@@ -373,7 +374,7 @@ are run correctly.
 it. The absence of surviving `<!--`, `TODO`, `TBD` and `brief:` markers. A section with substance
 next to its neighbours. And, on a gated document, the recorded approval. Three checks, every
 stage, before a return is accepted. For code, a recorded run — command, tree, exit and decisive
-line — on the tree being accepted, run once per tree rather than once per layer.
+output line — on the tree being accepted, run once per tree rather than once per step.
 
 **Allowed unknowns:** which execution tier a runtime offers and what it is called there — that is
 the runtime's answer, not this skill's, and a tier named in a document goes stale faster than

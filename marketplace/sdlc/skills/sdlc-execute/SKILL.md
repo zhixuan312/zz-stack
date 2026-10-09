@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.17
+version: 1.18
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no approved plan, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -109,12 +109,13 @@ You write ONLY paths inside your Owns. Other workers are writing other paths in 
 You MUST NOT edit an integration hotspot. If your task needs one changed, report the exact lines
   to add or change, per file, in your final report; the orchestrator applies them after the wave.
 Do not commit. The orchestrator commits once the wave is integrated.
-While you work, run the suites your change touches, the typecheck and your task's checks. Do NOT
-  run the full-suite gate, a full build or a browser matrix your task's checks do not name: the
-  integration step runs the gate once on the integrated tree, and another copy of it here, on a
-  tree other workers are still writing, is evidence about nothing.
+While you work, run your task's checks and whichever of the project's own test, typecheck or lint
+  entry points your change touches. Do NOT run the full-suite gate, or anything else that verifies
+  the whole project rather than your change: the integration step runs the gate once on the
+  integrated tree, and another copy of it here, on a tree other workers are still writing, is
+  evidence about nothing.
 Report each run that settles your task as a recorded run (sdlc-method): the command, the tree it
-  ran on, its exit and the decisive line, with the log's path.
+  ran on, its exit and the decisive output line, with the log's path.
 A test that times out while the machine is loaded is retried once; a second timeout is reported
   as a defect, not run a third time. Stop only processes you started, by their id, never by name.
 ```
@@ -181,8 +182,7 @@ every wave, not only after the last one.
 **Every task's checks run on the integrated tree, once.** The worker's report is a claim; a
 recorded run on the tree you accept is the fact. A task check the gate discovers runs inside the
 gate, and its line in the gate's log is that task's evidence, so it is not run a second time beside
-it. A task check the gate does not discover (a browser check, a long build) runs once on the
-integrated tree, unless a worker's recorded run already carries that exact tree, which a wave of
+it. A task check the gate does not discover runs once on the integrated tree, unless a worker's recorded run already carries that exact tree, which a wave of
 one task can leave. A worker's run on a tree that has since changed is the worker's own working
 loop, not evidence for the wave.
 
@@ -314,7 +314,7 @@ throws away finished work.
 made the decisions — including who writes what — and what remains is the change itself. This agent
 keeps the sequence, owns the branch, freezes and activates the checks, applies the hotspot edits,
 runs the gate and the skeleton once per tree, and stays accountable for what changed. A worker runs
-only its own working tier: its touched suites, the typecheck and its task's checks.
+only its task's checks and the project's own checks its change touches.
 The person decides whether the work is committed.
 
 **Checkpoints:** none. No bounded question at this stage has an answer the platform routes

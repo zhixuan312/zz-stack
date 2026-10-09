@@ -45,9 +45,9 @@ than how much code moved.
   the typecheck and their task's checks; the gate runs once per wave on the integrated tree and
   carries the task checks it discovers; the skeleton runs at a phase end without a second gate on
   the same tree; review quotes execute's recorded runs on the reviewed tree. A timeout on a loaded
-  machine earns one retry, and a second is a defect. Plans name where a slower tier runs, and a
-  file every task would write becomes a hotspot instead of a chain. sdlc-method 1.24,
-  sdlc-execute 1.17, sdlc-review 1.17, sdlc-plan 1.26, sdlc-plan-audit 2.10.
+  machine earns one retry, and a second is a defect. Plans name where a check too slow for every wave
+  runs, and a file every task would write becomes a hotspot instead of a chain. sdlc-method 1.25,
+  sdlc-execute 1.18, sdlc-review 1.18, sdlc-plan 1.27, sdlc-plan-audit 2.10.
 
 ## [0.94.0] — 2026-10-07
 

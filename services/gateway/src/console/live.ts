@@ -42,7 +42,7 @@ import { resolveScope } from "../scope.js";
 import { mayReadConsole } from "./shared.js";
 
 /** The channel every writer notifies on. A payload is a team slug and a collection name, never a record. */
-export const CONSOLE_CHANGE_CHANNEL = "zz_console_change";
+const CONSOLE_CHANGE_CHANNEL = "zz_console_change";
 
 /** The collections a tab may follow: the console's reads, by their first path segment. */
 const COLLECTIONS = [
@@ -80,7 +80,7 @@ const frame = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.s
 const resyncOf = (names: string[]) => frame("resync", { collections: names });
 
 /** 400 for a list that is empty or malformed, 403 for a name with no read behind it — one body for unknown and forbidden alike. */
-export function parseNames(raw: string | null): { names: string[] } | { status: number; error: string } {
+function parseNames(raw: string | null): { names: string[] } | { status: number; error: string } {
   const parts = raw ? raw.split(",") : [];
   if (parts.length === 0 || !parts.every((n) => NAME.test(n))) return { status: 400, error: "Name the collections to follow." };
   const names = [...new Set(parts)];
@@ -226,11 +226,6 @@ function stopListening(): void {
   client.removeAllListeners();
   client.on("error", () => {});
   void client.end().catch(() => {});
-}
-
-/** How many tabs are following something: the live check reads this rather than guessing that a stream is up. */
-export function liveStreams(): number {
-  return subscribers.size;
 }
 
 /** Hold `res` open as one tab's stream, with the admission check already made. */

@@ -44,8 +44,15 @@ export function requiredExtensions(sql: string): string[] {
   return [...sql.matchAll(/^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/gim)].map((m) => m[1]);
 }
 
+/** The platform database's connection string, or "" when this deployment has none. The one place both names are read:
+ * the pool below and the live stream's `LISTEN` connection must reach the same database, or a write would notify a
+ * listener that never sees it. */
+export function platformDbUrl(): string {
+  return (process.env.PLATFORM_DB_URL || process.env.TEAM_DB_URL || "").trim();
+}
+
 export async function initPlatformDb(): Promise<void> {
-  const serverUrl = (process.env.PLATFORM_DB_URL || process.env.TEAM_DB_URL || "").trim();
+  const serverUrl = platformDbUrl();
   if (!serverUrl) {
     console.log("PLATFORM_DB_URL/TEAM_DB_URL not set — platform db features disabled (local dev)");
     return;

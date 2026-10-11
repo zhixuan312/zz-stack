@@ -42,6 +42,7 @@ import { mountKnowledge } from "./console/knowledge.js";
 import { mountSkills } from "./console/skills.js";
 import { mountCatalog } from "./console/catalog.js";
 import { mountPluginEval } from "./console/plugin-eval.js";
+import { mountConsoleLive } from "./console/live.js";
 
 
 export function mountConsole(app: Express): void {
@@ -53,4 +54,6 @@ export function mountConsole(app: Express): void {
   mountSkills(app);
   mountCatalog(app);
   mountPluginEval(app);
+  // The one endpoint here that is not an answer: a stream held open, which is what keeps a tab fresh without polling.
+  mountConsoleLive(app);
 }

@@ -30,7 +30,7 @@ export async function buildPanel(): Promise<string> {
     entryPoints: [join(here, "panel.ts")],
     bundle: true, format: "esm", platform: "browser", target: "es2022",
     minify: true, write: false, legalComments: "none",
-    loader: { ".png": "dataurl" },
+    loader: { ".png": "dataurl", ".webp": "dataurl" },
     // zz-core's own version, read the one way every service reads it — never a literal.
     define: { PANEL_VERSION: JSON.stringify(serviceVersion(pathToFileURL(join(here, "..", "dist", "server.js")).href)) },
   });

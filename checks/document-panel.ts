@@ -128,7 +128,7 @@ if (!existsSync(join(CONSOLE, "src/styles/tokens.css"))) {
        `${name} is ${value!.trim()} in the panel and ${theirs?.trim() ?? "absent"} in the console`);
   }
   is(compared > 0, "the panel's `:root` block declares no tokens, so nothing was compared");
-  for (const f of ["wordmark.png", "state-approved.png"]) {
+  for (const f of ["wordmark.png", "state-approved-2x.webp"]) {
     const mine = readFileSync(join(cwd, "services/zz-core/app/brand", f));
     const theirs = join(CONSOLE, "public/assets/brand", f);
     is(existsSync(theirs) && mine.equals(readFileSync(theirs)), `brand/${f} is not the console's public/assets/brand/${f}`);

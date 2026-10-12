@@ -20,7 +20,7 @@ import { schedule, tellModel } from "./context.ts";
 import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
 import { day, esc, standing, versionHistory } from "./facts.ts";
 import { answer, app, current, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
-import approvedArt from "./brand/state-approved.png";
+import approvedArt from "./brand/state-approved-2x.webp";
 import wordmark from "./brand/wordmark.png";
 
 const DOCS_KEY = "zz-core/documents";

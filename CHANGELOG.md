@@ -33,6 +33,154 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.95.0] — 2026-10-12 · console 0.26.0
+
+The console goes live. A change made anywhere — a document approved in another tab, a membership
+added in psql, a node filed by an MCP client — now reaches the page a person is looking at, over
+one Server-Sent Events stream per tab that carries a hint and never a record. That is a change on
+both sides of the wire: the gateway holds the stream open and authorizes every frame as it is
+sent, and a database trigger raises the hint inside the writer's own transaction. In the same
+release the console becomes an adopter of ZZ Meridian **as a package**, at 0.14.1, so a sync is a
+command rather than a copy out of a checkout; turns Cache Components on, so the shell is
+prerendered and the chrome streams into it; and fixes what a measured pass over the renders found,
+from a document page that put a six-row form between the reader and the text to a skill page that
+reported an average it had never measured. A migration applies on the gateway's next start, and
+the two images go together.
+
+### zz-stack 0.95.0
+
+- **`/api/console/live`: one Server-Sent Events stream per browser tab, and the caller is checked
+  twice.** The stream carries hints and never data — which collection changed, and whose team's
+  business it is: `{"t": "<team slug>", "c": "<collection>"}`, never a row, a record or a cache
+  tag. A tab that follows `teams` is told that `teams` changed and reads it again through its own
+  read, so no new vocabulary crosses the wire. Admission is decided before the stream opens: no
+  session is 401, a malformed list is 400, and a collection this console has no read for is 403
+  with the same body as one it has but the caller may not reach, so neither is disclosed. Then
+  **every frame waits on a second check made as it is sent**, because whether a caller may be told
+  that a collection changed is a question about the caller, and the answer at open time is not the
+  answer an hour later: a session revoked while a tab sat open ends the stream instead of feeding
+  it. A heartbeat keeps a quiet stream from being reaped. Past 100 hints waiting behind that
+  check they collapse into one resync of every name.
+- **A database trigger raises the hint inside the writer's own transaction**
+  (`003_console_live.sql`). Nothing raised one before this file, so a tab heard nothing after its
+  first resync. A call in each writer was the alternative and was rejected: the writers of a
+  document are zz-core over MCP, of a membership the gateway's own settings surface, of an event
+  whoever called the door — and psql writes all of them — so a call each had to remember would be
+  missing from the next one. A statement-level trigger fires for every one of them at once, and it
+  fires inside the writing transaction, so Postgres delivers the notification on COMMIT and a
+  rollback sends nothing. One hint per statement however many rows it moved, and none at all for
+  one that touched no row. Four tables — `zz.initiative`, `zz.knowledge_node`, `zz.event`,
+  `zz.membership` — and **three triggers each**, one per event, because Postgres refuses
+  transition tables on a trigger declared for more than one event; the function branches on
+  `TG_OP`, and plpgsql parses a branch only when it runs, so each names only the transition table
+  its own event provides.
+- **One function reads the database's address.** `platformDbUrl()` is the single place
+  `PLATFORM_DB_URL` and `TEAM_DB_URL` are read. The pool and the stream's `LISTEN` connection must
+  reach the same database, or a write would notify a listener that never sees it.
+
+### zz-stack-dashboard 0.26.0
+
+- **Live data.** The console showed the data it read when the page loaded and never looked again.
+  Each tab now follows the stream and, on a hint, reads the collections that page shows again. A
+  page says which in one line, `useLive([...])`, and a read's collection is its own first path
+  segment (`/teams` reads `teams`, `/document/…` reads `document`), so nothing new has to be
+  learned to add a page. It is registered by the page rather than by the layout, so a page that
+  stops showing a collection stops following it — `runs` and a team's page follow two. The bell
+  registers too, which is what makes a gate approved in another tab correct the count on every
+  page whose own read is not also `initiatives`. A signed-out tab opens no stream at all, and
+  switching between the platform and one team disposes the old stream rather than relabelling it.
+- **The shell is prerendered and the chrome streams into it.** The shell moved into
+  `app/(dash)/layout.tsx` as a Server Component, and the rail, the tools and the command palette
+  each became a client component resolving its own reads behind its own `<Suspense>` boundary with
+  a skeleton fallback. Rendered from a Client Component, the shell's own `usePathname` is a
+  dynamic hook reached through a boundary, and Cache Components failed those routes rather than
+  prerendering them. `/initiatives` HTML is 38 KiB where it was 65. The 24 per-route declarations
+  that used to stand in for this are gone: `scripts/route-policy.ts` now reads the build itself —
+  2 static, 22 partial, 0 dynamic.
+- **A page no longer hydrates over markup the server did not send.** `fallback={null}` on the
+  shell's boundary made the fallback nothing at all, so a page load put the client's own render of
+  the shell where the server had emitted no nodes; React reported a hydration mismatch (#418), on
+  a different route each run and only under load. The boundary now draws the shell's own frame
+  while it waits. And a value the server cannot have — the rail's label, which turns on how many
+  scopes `/me` returned — no longer reaches the markup on the hydration render.
+- **A document's own words are on screen before its layout arrives.** The body is in hand long
+  before the markdown renderer's chunk is, and the largest paint on a phone is the body's first
+  paragraph. The fallback now draws the body itself, in the same wrapped text the page's Source
+  view draws, rather than a grey block — and the renderer replaces it with the same words, laid
+  out. It is not a second markdown renderer. (Still above the phone profile's bar on six document
+  routes; see the upgrade notes.)
+- **The document page gives its canvas to the document.** A two-column label/value grid of six
+  rows sat between the masthead and the first line of text, pushing the text a screenful down a
+  canvas it was using a third of. The page fills its canvas now, the document is a two-thirds row
+  with the text in the wide cell and a colophon beside it, and the document's status moved up into
+  the masthead where it is visible at every width.
+- **A value that identifies something is never cut silently.** Five cells truncated a value whose
+  tail is the part that identifies it — the bell's `{team} · {slug}`, where an initiative slug keeps
+  its date at the front and its name at the end, so an ellipsis ate exactly what tells two of that
+  day's initiatives apart; a team's slug and name; a member's name, and the address under it, which
+  is the identity whenever no name is recorded; an evaluator's stable key. Each carries its whole
+  value now.
+- **The accent is called `brand`, and one workspace opens the account menu.** Taken from Meridian
+  through the package rather than copied: the accent preset id moved from `zz` to `brand` (same
+  purple, and the appearance menu's swatch now reads "Brand" where it read "Zz"), and with one
+  workspace or none the rail's row opens the account menu, which carries no `Show` group and no
+  checked row of its own.
+- **A refusal a person can read, and a way back.** `/enrol` in its no-link state had nothing on it
+  that could be pressed — no button, no link — while `/signed-out` offers "Sign in again" and the
+  404 offers "Back to the console". It has "Sign in instead" now. And the banner printed the
+  fixture's own developer string, `ERROR: no team to record this for`, under the console's
+  sentence; it says what happened in a person's terms.
+- **A count and its word come from one place.** Five phone cards wrote a count and a fixed plural,
+  so a team with one initiative read "1 initiatives" and a person with one token would read "1
+  tokens". One `plural` rule governs every count in the console now, in one file.
+- **The evidence behind a change is a list, not a wall of markdown.** The "Sources behind the
+  change" panel inlined each source's body as pre-wrapped plain text, so a reader met the stored
+  markdown's own syntax — `# sources/…`, `## What it is` — and a source with no stored title fell
+  back to its path, so the path appeared twice. Each source is its title, linked to its own page.
+- **The phone cards say what the desktop says.** `/initiatives` lists "every piece of work, and how
+  far through its flow it got", and its phone card showed the team, the state and the update time
+  but not how far; the approval badge took the title's place; and on a standalone screen the action
+  now comes before the supporting copy.
+- **A skill that has never run has no average.** `Calls per run` read "0.0" with the note "0 in
+  total, peak 0", which claims a measurement that was never taken — an average of no runs is
+  undefined. It reads "No runs" with "Nothing has called it", like the three tiles beside it.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start:** `003_console_live.sql`. It creates five
+  functions and twelve statement-level triggers on `zz.initiative`, `zz.knowledge_node`,
+  `zz.event` and `zz.membership`. No table is reshaped, no column is added, no row changes and
+  nothing is deleted — it was rehearsed against a throwaway cluster, and the default assertion
+  (row count unchanged, content hash unchanged) is the one it passes.
+- **It does not affect a rollback.** The previous image sends no hints and never opens a stream,
+  and a stream a release does not open cannot be broken by triggers it does not know about, so
+  `--rollback` and release step 6 are not refused by this release.
+- **Release the console alongside.** Its live data needs the platform's stream. Against a gateway
+  older than 0.95.0 the stream never opens and the console falls back to a 30-second poll — nothing
+  breaks and nothing is wrong, but nothing is instant either. The console needs no new environment
+  key, and this release adds none.
+- **No installed client has to re-pull.** No skill, plugin or command text changed. Every plugin's
+  version moves with the platform's (`0.95.0+<digest>`) and its digest does not, so a client that
+  does re-pull gets the same text it already had.
+- **OPEN — the console's phone-profile LCP, on six document routes.** `/initiatives/<team>/<slug>/<doc>.md`
+  measures 2.64–2.79 s against the project's own 2.5 s bar on a mid-range phone profile (150 ms
+  latency, 1.6 Mbps, CPU throttled 4×). Measured, not inferred: the largest paint on those routes
+  is the document body — 18× the area of the masthead beside it on
+  `/initiatives/atlas/2026-09-28-search-relevance/spec.md`, 115,889 px² against 6,439 — and it
+  **cannot exist before the browser has read it**, because this console reads in the browser and
+  the server holds no credential. Every other dynamic route sits at 2.0–2.3 s, so the whole class is
+  within 0.5 s of the bar and these six are the ones that crossed it. Not fixed here, deliberately: the fix is not
+  known yet, and holding the platform's first live-data release behind an unbounded performance
+  investigation was the worse trade. It is a 0.26.1.
+- **OPEN — the console's CI runs the shallow standard.** `.github/workflows/gate.yml` runs
+  `pnpm verify` with no flag, which since Meridian 0.14 is the default depth: the gate, one build,
+  the route policy, the size checks and a three-route navigation smoke — about 40 s. The audit of
+  every page at five widths in both themes, every control pressed, the keyboard path and Web Vitals
+  are `--full`, and they did not run. The workflow's own comment and the console's `README.md` both
+  say otherwise, which is why nobody looked. CI has therefore been green while the deep standard
+  was red, and the LCP failure above is what that cost. The guard is being moved to `--full`, which
+  is only green once that failure is fixed.
+
 ## [0.94.1] — 2026-10-09
 
 One method change in sdlc-flow: each check runs once per tree.

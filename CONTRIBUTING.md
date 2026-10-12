@@ -108,7 +108,7 @@ large is a list nobody prunes.
 Read `SCHEMA.md` first — it states the five questions, the six classes, the twelve
 rules and the comment contract the schema is judged by. Declare the change in
 `schema-target.ts` before writing any migration; a migration nothing has checked
-against the target is not proven. Then write the release's `002_<name>.sql`
+against the target is not proven. Then write the release's `00N_<name>.sql`
 migration, and let `checks/schema-inventory.ts` prove it matches.
 
 ## House rules

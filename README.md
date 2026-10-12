@@ -58,7 +58,8 @@ services/zz-core/     process MCP: skills library, team-shared knowledge store,
                       document-chain guardrails, knowledge tools
 services/gateway/     the one door: identity (PATs, and a passkey for the console),
                       platform registry + admin MCP, the proxy to zz-core's doors,
-                      the console's read API, and the staging routes a file's bytes
+                      the console's read API and its change stream, and the staging routes a
+                      file's bytes
                       arrive through when a model must not carry them — they only
                       stage; the write that uses an upload is zz-core's (see
                       deploy/README.md)

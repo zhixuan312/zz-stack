@@ -151,7 +151,9 @@ rule is what the directory means:
   may not know about a tool.
 - **`services/gateway/src/console/<resource>.ts` — one resource per file.** The routes that
   answer for overviews, teams, initiatives, knowledge, skills and the catalog, split the way
-  the console's own URLs are, with `shared.ts` for what more than one of them needs.
+  the console's own URLs are, with `shared.ts` for what more than one of them needs. `live.ts`
+  is the one that is not an answer: one Server-Sent Events stream per tab, holding a `LISTEN`
+  connection of its own, which says that a collection changed and never what changed in it.
 - **`services/gateway/src/admin/<subject>.ts` and `package/<part>.ts`** — the same rule one
   level down: authority, flows, teams and people for the admin surface; `skills.ts` and
   `describe.ts` for the shelf a person installs.

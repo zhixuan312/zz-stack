@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource, errMessage } from "../read.ts";
+import { asRecord, errMessage, firstOf, functionBody, gateOwnSource, gatewaySource, readJson, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
 import { check, note } from "../run.ts";
 import { catalogRoot } from "../facts.ts";
 
@@ -72,6 +72,7 @@ check("nothing is exported that nobody imports", () => {
   //     console's build and check tooling, most of it Meridian's, copied verbatim so a re-sync
   //     is a copy. It never ships in the image — the same reason this repo's scripts/ is kept
   //     out of `sources` above.
+  //   · a file `zz-meridian` manages is not this console's code. See `meridian` below.
   const dash = join(root, "..", "zz-stack-dashboard");
   const dashFiles: string[] = [];
   if (existsSync(dash)) {
@@ -89,6 +90,29 @@ check("nothing is exported that nobody imports", () => {
     // console is one of the things that could have named it.
     note("    unimported exports: ../zz-stack-dashboard is not checked out beside this " +
          "repository, so console imports did not count towards reachability here.");
+  }
+
+  // The files `zz-meridian` MANAGES are Meridian's, not this console's: Meridian owns them,
+  // re-syncs them verbatim on every `update`, and their exports are a library the product uses
+  // in part. `docs/brief.md` states the decision for one of them — the assistant's components
+  // "ship with the release and stay on disk as part of Meridian's library". Meridian's own gate
+  // encodes exactly this rule, exempting every file its manifest records from its dormant-export
+  // sweep (`scripts/check.ts`: `!meridians.has(x)`, and its TOOLKIT list beside it). Applied here
+  // too, because the two gates judge one tree: without it this check calls dead what Meridian's
+  // own gate keeps deliberately — and the fix it asks for, un-exporting symbols in a managed
+  // file, is undone by the next `zz-meridian update`, so the gate would be red again release
+  // after release. Everything the manifest does not record is still swept, which is the whole of
+  // `src/console/` and `app/`: the console's actual product.
+  //  Read through the gate's own JSON reader, which hands back `unknown` and narrows it — the rule
+  //  `catalog-manifest.ts` states for every manifest read, applied to this one as well.
+  const CONSOLE_MANIFEST = "../zz-stack-dashboard/.meridian/manifest.json";
+  const meridian = new Set<string>();
+  if (existsSync(dash)) {
+    const owned = asRecord(readJson(CONSOLE_MANIFEST), CONSOLE_MANIFEST);
+    for (const managed of Object.keys(asRecord(owned.files, `${CONSOLE_MANIFEST}: files`))) meridian.add(managed);
+    note(`    unimported exports: ${meridian.size} of ../zz-stack-dashboard's files are Meridian's, ` +
+         "re-synced verbatim — their exports are a library the product uses in part, and are " +
+         "judged for nothing here.");
   }
   const dashText = new Map(dashFiles.map((p) => [p, withoutComments(readFileSync(p, "utf8"))]));
   const bad: string[] = [];
@@ -116,6 +140,7 @@ check("nothing is exported that nobody imports", () => {
   for (const [file, src] of dashText) {
     const rel = file.slice(dash.length + 1);
     if (rel.startsWith("tests/") || rel.startsWith("scripts/") || /(^|\/)index\.tsx?$/.test(rel)) continue;
+    if (meridian.has(rel)) continue;
     const isRoute = rel.startsWith("app/");
     // Reachable through the ui barrel: the barrel names the module, never the symbols.
     const viaBarrel = [...dashText].some(([b, bs]) =>

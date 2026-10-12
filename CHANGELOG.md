@@ -33,13 +33,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.95.1] — 2026-10-12 · console 0.26.1
 
-The console's six document routes come under their own LCP bar, and CI starts running the standard
-that says so.
+Every filter and the reporting period now take effect on the press that made them, and the console's
+six document routes come under their own LCP bar. Both halves of the live stream stop treating a
+connect as news, and the console's CI runs the standard that would have caught the LCP failure rather
+than a summary of it.
+
+### zz-stack 0.95.1
+
+- **`resync` on `/api/console/live` means only that the tab missed changes.** It is still sent when
+  the `LISTEN` connection was down, so every tab has a gap, and when a burst overflows a tab's
+  queue. It is no longer sent on connect: a subscriber is registered by connecting, so a connect
+  carries no news, and a tab that is coming back from an error, from being hidden or from the poll's
+  retry takes its own catch-up. Nothing else on that route changed, and no other route, tool, schema,
+  migration or environment key moved.
 
 ### zz-stack-dashboard 0.26.1
 
+- **A filter and the reporting period now take effect on the press that made them.** Both wrote the address on the
+  first press and left the control showing the option it started on, so the second press was what moved it — and it
+  moved it to what the first press had already chosen. Every filter and every period, on every page. The address was
+  always right; only what was on screen lagged, which is why nothing caught it: the presses suite asks whether a
+  press changed *something*, and the address had. A new browser check, `scripts/selection-check.ts`, asks the
+  question the eye asks instead — press once, and the thing you pressed must be the thing that is shown — over every
+  route the rail and the detail list name. It was run against the bug before the fix and reported exactly it.
 - **`/initiatives/<team>/<slug>/<doc>.md` paints its text at 2.24–2.34 s instead of 2.55–2.79 s**,
   against the project's own 2,500 ms bar on `scripts/vitals.ts`'s phone profile. All six pass; none
   did. The read was never the problem — the response headers ask for the body before a line of
@@ -57,26 +75,30 @@ that says so.
   connect with a resync of every subscribed name, and the tab answered that by reading every
   collection it shows again — the read it had just made while mounting. Measured on the same route:
   the document body was read three times and the rail's count twice, on every page load.
-
-### zz-stack 0.95.1
-
-- **`resync` on `/api/console/live` means only that the tab missed changes.** It is still sent when
-  the `LISTEN` connection was down, so every tab has a gap, and when a burst overflows a tab's
-  queue. It is no longer sent on connect: a subscriber is registered by connecting, so a connect
-  carries no news, and a tab that is coming back from an error, from being hidden or from the poll's
-  retry takes its own catch-up.
+- **CI runs `pnpm verify --full`.** The workflow ran the shallow default for its whole life while its
+  own comment described the deep run, so CI was green while the deep standard was red — which is how
+  the failure above went unseen for a day. The job is about 19 minutes rather than 40 seconds, and its
+  timeout is 90 rather than 45.
 
 ### Upgrade notes
 
-- **No migration, no new environment key, no client re-pull.** Nothing in a skill, plugin or command
-  changed, and the database is untouched.
+- **No migration, no new environment key, and no instruction changed for any installed client.** The database is
+  untouched. The shelf's four plugins move to `0.95.1+<digest>` and each skill file's frontmatter moves its `version`
+  line with it — that line is part of what the digest covers, so the digest moves too and a client that re-pulls sees
+  a new one over identical instructions. Nothing a person reads on a client changed, so no one has to re-pull.
 - **The two halves of the stream change ship together and neither needs the other.** A console with
   the new behaviour against a gateway older than this release still passes: measured at 2.23–2.32 s,
   because a re-read that arrives after the paint does not move it. A console older than this release
-  against the new gateway resyncs on connect exactly as it always did.
-- **CI now runs `pnpm verify --full`.** The console's workflow ran the shallow default for its whole
-  life while its comment described the deep one, which is how the LCP failure above went unseen. The
-  job is about 19 minutes rather than 40 seconds.
+  against the new gateway resyncs on connect exactly as it always did. So the platform and the console
+  can be rolled out in either order, and the window between them is not one where the console is slow.
+- **The console now declares one kept divergence from Meridian, `.meridian/keep.json`.** Its filter
+  hook reads the address without Next's `useSearchParams`, because that hook cost `/teams`, `/people`
+  and `/activity` their prerender — LCP 0.63–0.64 s → 2.08–2.27 s on the phone profile, measured by
+  restoring Meridian's own text byte-for-byte. The file has differed from the manifest since
+  2026-10-05 with nothing saying so, which is how `npx zz-meridian update` would have reverted it into
+  that regression or into a conflict. It goes upstream as
+  [zz-meridian#22](https://github.com/zhixuan312/zz-meridian/issues/22), and the entry comes out when
+  Meridian reads the address itself. Nothing here needs doing on a host.
 
 ## [0.95.0] — 2026-10-12 · console 0.26.0
 

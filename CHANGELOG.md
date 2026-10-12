@@ -33,6 +33,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+The console's six document routes come under their own LCP bar, and CI starts running the standard
+that says so.
+
+### zz-stack-dashboard 0.26.1
+
+- **`/initiatives/<team>/<slug>/<doc>.md` paints its text at 2.24–2.34 s instead of 2.55–2.79 s**,
+  against the project's own 2,500 ms bar on `scripts/vitals.ts`'s phone profile. All six pass; none
+  did. The read was never the problem — the response headers ask for the body before a line of
+  script runs and the browser has it from 163 ms. The 425 ms that was missing was Meridian's entry
+  motion: `Stack` is `.arrive`, whose children rise over `--dur-enter` (320 ms) staggered 45 ms
+  apart, and `m-rise` starts at `opacity: 0`, so the document's text sat in the DOM invisible. It is
+  the largest element on the page, so the fade *was* the metric. Isolated by running one build twice,
+  once with `prefers-reduced-motion`: 2.58 / 2.65 / 2.65 s against 2.34 / 2.24 / 2.22 s. The page
+  shell now marks its own stack still for the first arrival of a page load, which is the case
+  Meridian's shell already covers for a click; the mark lifts after the longest arrival would have
+  ended, so a new period or a filter still animates. See
+  [zz-meridian#21](https://github.com/zhixuan312/zz-meridian/issues/21) — the rule belongs in the
+  shell, and this is the console's own copy of it until it lands there.
+- **A page no longer re-reads itself the moment its stream connects.** The gateway answered a
+  connect with a resync of every subscribed name, and the tab answered that by reading every
+  collection it shows again — the read it had just made while mounting. Measured on the same route:
+  the document body was read three times and the rail's count twice, on every page load.
+
+### zz-stack 0.95.1
+
+- **`resync` on `/api/console/live` means only that the tab missed changes.** It is still sent when
+  the `LISTEN` connection was down, so every tab has a gap, and when a burst overflows a tab's
+  queue. It is no longer sent on connect: a subscriber is registered by connecting, so a connect
+  carries no news, and a tab that is coming back from an error, from being hidden or from the poll's
+  retry takes its own catch-up.
+
+### Upgrade notes
+
+- **No migration, no new environment key, no client re-pull.** Nothing in a skill, plugin or command
+  changed, and the database is untouched.
+- **The two halves of the stream change ship together and neither needs the other.** A console with
+  the new behaviour against a gateway older than this release still passes: measured at 2.23–2.32 s,
+  because a re-read that arrives after the paint does not move it. A console older than this release
+  against the new gateway resyncs on connect exactly as it always did.
+- **CI now runs `pnpm verify --full`.** The console's workflow ran the shallow default for its whole
+  life while its comment described the deep one, which is how the LCP failure above went unseen. The
+  job is about 19 minutes rather than 40 seconds.
+
 ## [0.95.0] — 2026-10-12 · console 0.26.0
 
 The console goes live. A change made anywhere — a document approved in another tab, a membership

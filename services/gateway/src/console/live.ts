@@ -3,7 +3,8 @@
  *
  * A hint says which collection changed; the tab then reads that collection again through its own read. It carries no
  * record, no team and no cache tag, so a missed hint costs freshness and never correctness — which is why the tab also
- * has a safety poll and resyncs on every open. There is no `id:`, because the stream does not replay.
+ * has a safety poll, and why it resyncs itself when it is coming back rather than every time it arrives. There is no
+ * `id:`, because the stream does not replay.
  *
  * The shape is the one `.agents/skills/zz-meridian/references/live.md` sets out and the one the console's
  * `src/lib/live.ts` already speaks:
@@ -283,7 +284,23 @@ function serve(req: Request, res: Response, names: string[], teams: string[] | n
   subscribers.add(s);
   connect();
   s.write("retry: 3000\n\n");
-  s.write(resyncOf(names));
+  /* DELIBERATE: a connect is not a resync, and the frame that said it was one is gone.
+   *
+   * The frame used to go out here, and the tab answered it the only way it can — by reading every collection it shows
+   * again. On a page a person has just opened that read is the one the page made while it mounted, taken a moment
+   * earlier: the tab throws away answers it already holds, re-renders every panel, and pays for it in the one window
+   * where the page's largest element is waiting to be painted. Measured on a document route at 390px, with the phone
+   * profile, the body was read three times — twice of them this frame's and the client's own resync-on-open — and the
+   * paint that the LCP is taken from landed at 2,676 ms against a 2,500 ms bar.
+   *
+   * `resync` therefore means what its name says and only that: the tab missed changes. The two cases that are true of
+   * are below in `resyncEveryTab`, when the `LISTEN` connection was down and every tab has a gap, and the queue
+   * overflow, where a burst was collapsed because the frames could not be sent. A tab coming back from an error or
+   * from being hidden takes its own catch-up, and the console's `src/lib/live.ts` says how it knows to.
+   *
+   * The gap this leaves is the one the frame closed: a write that lands between the page's own read and this
+   * subscriber being registered is missed until the next change to that collection. That is the cost every missed
+   * hint already has, and it is bounded by the tab's own safety poll. */
 }
 
 /** The team slugs a scope sees, or null when it sees every team. */

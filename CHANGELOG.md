@@ -33,6 +33,89 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.96.0] — 2026-10-12 · console 0.27.0
+
+The console gets an assistant, Meridian's own, and the gateway stops answering questions. A person
+asks about the page they are on and the assistant reads what that page shows and what the person may
+read; it changes nothing. The Knowledge page's Ask tab and the gateway route behind it are removed,
+because there is now one place a question is asked. The console's rail and command palette are
+Meridian's own chrome, and with the assistant mounted most console pages still load less script than
+they did.
+
+### zz-stack 0.96.0
+
+- **`POST /api/console/ask` is removed, and answers 404.** It searched a team's shelf and wrote an
+  answer with the deployment's own model, for the console's Ask tab, which no longer exists. Removed
+  with it: `generate.ts`, the gate check and mutation plant whose subject was that file, and
+  `LLM_BASE_URL` and `LLM_API_KEY` in the **gateway's** compose environment, which only that route
+  read. zz-core's judge keeps its own. What this drops is ranked retrieval over document
+  bodies: the console's assistant searches a node's title, excerpt and tags, and reads one node at a
+  time.
+- **The document panel's approved mascot is the console's WebP.** The console no longer ships the
+  poses as PNG, and the panel inlines the same file the console draws, held byte-identical by the
+  gate: 4.7 kB inlined where 12.5 kB was. Nothing a person sees in the panel changes.
+
+No tool, schema, migration or skill text changed.
+
+### zz-stack-dashboard 0.27.0
+
+- **An assistant, in every console page, off until the host configures it.** It is ZZ Meridian
+  0.14.1's assistant, mounted as its guide writes it: the panel opens from the shell, reads the
+  address and the page's shared context, and looks records up through one read-only collection per
+  list the console shows (teams, initiatives, knowledge, the knowledge log, people, plugins, skills,
+  activity, your tokens) and one `view_<name>` tool per page. Every page now says what it shows, its
+  scope, its figures with their definitions and what the data cannot say, in a pure function beside
+  the view, and a page that shares no context does not compile. On the Overview it also says which
+  point of the chart the pointer is on, so "why this one?" has a referent.
+- **It reads and does not write.** No collection gives it a tool that changes anything; what a page
+  does (issue or revoke a token, add or deactivate a person, create or archive a team) is declared
+  as the page's, so the assistant says where the thing is done. A document is still approved by a
+  member who was shown that exact snapshot, never by an agent.
+- **The assistant's route is the one place the console's server reads the gateway, and it reads as
+  the person.** It sends the caller's own `zz_console` cookie, that cookie alone, to the address in
+  `ZZ_GATEWAY`, and always asks for the platform scope, which the gateway grants only to a
+  superadmin. Nothing is stored. Pages still read from the browser. This is the "server replays the
+  caller's cookie" shape the console avoided while it was only a renderer; it is taken on for the
+  assistant, in `src/data/gateway.ts` and nowhere else.
+- **Knowledge's Ask tab is gone.** The assistant is where a question is asked. The search field's
+  placeholder is "Search nodes".
+- **The rail and the command palette are Meridian's own.** The console drew its own; it now renders
+  the release's `ConsoleRail` and `ConsolePalette` and only tells them who is signed in. The rail is
+  grouped by who reads a page: Overview, Teams, Initiatives, Knowledge and People first; then
+  "Platform" with Plugins, Runs and Activity, which only a superadmin sees; then Settings. A member's
+  rail no longer has a group that renames itself "Your team".
+- **With the assistant mounted, most pages load 5 to 9 kB less script than 0.26.1, and a document
+  page 43 kB less.** From the two releases' recorded first-load sizes: `/knowledge` 830,981 to
+  823,554 bytes, a document page 829,599 to 785,980; the Overview is 1 kB heavier and Settings is
+  level. The mascot is drawn by a plain `<img srcset>` over WebP the asset script writes, where
+  `next/image` cost every page 12 kB to resize six small pictures; the bell's read no longer carries
+  the initiative table into pages that draw none; and a document page loads its version chain after
+  it has mounted. `/knowledge`, the heaviest route, is 804 KiB against the 820 KiB cap.
+- **The data clock no longer updates one component from inside another's render.** It listens only
+  to data arriving or leaving the cache, which is what the freshness stamp is drawn from, and React's
+  warning about it is gone.
+- **Every file Meridian manages is the release's, or says why it is not.** 158 of 168 are
+  byte-identical to 0.14.1. The other ten are declared in `.meridian/keep.json`, each naming the
+  upstream report it waits on (zz-meridian#22, #23, #24). Settings' sections are Meridian's
+  `FormSection`, and the navigation's access rules are Meridian's `needs`.
+
+### Upgrade notes
+
+- **To turn the assistant on, set five keys in the console's `.env` on the host**
+  (`/root/zz-stack-dashboard/.env`): `ASSISTANT_PROVIDER`, `ASSISTANT_API_KEY`, `ASSISTANT_MODEL`,
+  `ASSISTANT_BASE_URL`, and `ZZ_GATEWAY`. The console's compose file passes them through and leaves
+  them empty by default, which is the assistant off: the launcher is not drawn and
+  `/api/assistant` answers 404. `ZZ_GATEWAY` must be the gateway's **public** address (the `api.`
+  host), because the console's container cannot reach the host's loopback. Restart the console after
+  changing them; they are read per request, but compose only reads `.env` when it starts a container.
+- **The console must ship with this release or before it.** A console older than 0.27.0 still draws
+  the Ask tab and gets a 404 from it. Released together, the window is the length of one image pull.
+- **`LLM_BASE_URL` and `LLM_API_KEY` are no longer passed to the gateway.** They stay in
+  `deploy/.env`: zz-core still reads them.
+- **No migration, and no instruction changed for any installed client.** The shelf's plugins move to
+  `0.96.0+<digest>` with the version line in each skill's frontmatter; nothing a person reads on a
+  client changed, so no one has to re-pull.
+
 ## [0.95.1] — 2026-10-12 · console 0.26.1
 
 Every filter and the reporting period now take effect on the press that made them, and the console's

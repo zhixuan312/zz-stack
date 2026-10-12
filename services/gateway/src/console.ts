@@ -28,6 +28,10 @@
  * over every team, which are SQL questions. The two knowledge endpoints here read zz.doc, which
  * carries the body already.
  *
+ * One route is the exception: `/api/console/search` (console/search.ts) is zz-core's
+ * `knowledge_search`, called as the caller, because ranking a question against the documents and
+ * the shelf is that tool's own work and not a second implementation of it here.
+ *
  * An initiative's lifecycle — whether it is closed, its outcome, its flow — comes from
  * zz.initiative, the one record of it, written by initiative_open and initiative_close; the
  * documents inside an initiative remain the content record, read from zz.doc.
@@ -39,6 +43,7 @@ import { mountOverview } from "./console/overview.js";
 import { mountTeams } from "./console/teams.js";
 import { mountInitiatives } from "./console/initiatives.js";
 import { mountKnowledge } from "./console/knowledge.js";
+import { mountSearch } from "./console/search.js";
 import { mountSkills } from "./console/skills.js";
 import { mountCatalog } from "./console/catalog.js";
 import { mountPluginEval } from "./console/plugin-eval.js";
@@ -51,6 +56,8 @@ export function mountConsole(app: Express): void {
   mountTeams(app);
   mountInitiatives(app);
   mountKnowledge(app);
+  // The one read that is zz-core's answer rather than a query of this gateway's own.
+  mountSearch(app);
   mountSkills(app);
   mountCatalog(app);
   mountPluginEval(app);

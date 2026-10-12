@@ -6,7 +6,7 @@
  * than a chat turn.
  *
  * Each act collects the request's own `x-zz-*` headers, opens an `Mcp` client against
- * `CORE_MCP_URL` with them attached, and calls the tool. The gateway
+ * `CORE_MCP_URL` with them attached (`coreFor`, core-as-caller.ts), and calls the tool. The gateway
  * writes no platform table itself and never sets `approved_by` — zz-core reads the author from
  * those headers and trusts them because a peer allowlist admits only the gateway, so forwarding
  * them is what keeps the web from acting as somebody else. `on_behalf_of` is never sent: that
@@ -29,20 +29,11 @@
  */
 import type { Express, Request, Response } from "express";
 
-import { Mcp, McpError } from "@zz/mcp-client";
+import { McpError } from "@zz/mcp-client";
 
 import { handler, type ResolvedScope } from "./console/shared.js";
+import { coreFor } from "./core-as-caller.js";
 import { logEvent } from "./events.js";
-
-/** A zz-core client carrying the caller's own `x-zz-*` headers — see the file header for why this
- *  is not the gateway acting on the caller's behalf. */
-function coreFor(req: Request): Mcp {
-  const headers: Record<string, string> = {};
-  for (const [k, v] of Object.entries(req.headers)) {
-    if (k.toLowerCase().startsWith("x-zz-") && typeof v === "string") headers[k] = v;
-  }
-  return new Mcp(process.env.CORE_MCP_URL || "http://zz-core:8000/mcp", { headers });
-}
 
 /** zz-core's answer to a page that is out of date, in the console's words, or null for any other.
  *

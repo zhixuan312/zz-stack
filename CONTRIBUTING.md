@@ -48,13 +48,14 @@ npm run doctor                                   # where a deployment stops matc
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the fifteen gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the sixteen gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
 `saveDocument` against one, upload staging (`checks/upload-staging.ts`), which drives the
-gateway's upload routes against one, and the nine that run a real zz-core against one: the console's
-document reads, presentation and approval (`checks/console-versions.ts`), the document walking
+gateway's upload routes against one, and the ten that run a real zz-core against one: the console's
+document reads, presentation and approval (`checks/console-versions.ts`), the console's search of
+documents and nodes by their content (`checks/console-search.ts`), the document walking
 skeleton and every edit mode
 (`checks/document-edit.ts`), concurrent changes and keyed requests (`checks/document-edit-races.ts`),
 the version table and the acts racing an edit (`checks/document-version.ts`), the causes that

@@ -13,7 +13,6 @@ import { z } from "zod";
 
 import { buildAccessServer } from "./access-door.js";
 import { recordAccessSurface } from "./access-surface.js";
-import { mountConsoleAsk } from "./console-ask.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
 import { issueMyAccessTokenFor, myAccessTokensFor, revokeMyAccessTokenFor } from "./credentials.js";
@@ -255,7 +254,6 @@ app.get("/health", (_req, res) => {
 mountPasskey(app);
 mountConsole(app);
 mountConsoleWrite(app);
-mountConsoleAsk(app);
 // DELIBERATE: the `my_*` functions are handed over as a dependency object rather than
 // imported by settings.ts. They live in credentials.ts so /manage/mcp's tools and
 // settings.ts's browser routes call the same function, and a value import there would make

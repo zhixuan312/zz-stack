@@ -158,8 +158,7 @@ export function mountConsoleWrite(app: Express): void {
     // zz-core resolves the team the document is actually in from the caller's own identity headers
     // — they are two things, and a caller in two teams naming the other one used to have this row
     // attributed to a team the document does not belong to. The console cannot learn the real team
-    // here: `document_approve` answers in prose, unlike `knowledge_search`, whose JSON reply is why
-    // console-ask can record the team the act happened in. So the request's own choice is recorded
+    // here: `document_approve` answers in prose, with no field that names it. So the request's own choice is recorded
     // as what it is, in the detail, and the row is attributed to no team rather than the wrong one.
     logEvent({ actor, kind: "document.approve", subject, detail: { via: "web", asked_for: scope.slug } });
     res.json({ ok: true, result: reply });

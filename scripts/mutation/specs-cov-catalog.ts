@@ -254,18 +254,6 @@ export const COV_CATALOG: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/console.ts",
-    target: "the server-held LLM client stays off the console",
-    assertion: "a deployment with no LLM credential says so truthfully rather than at the call",
-    subject: "services/gateway/src/generate.ts",
-    find: `  return missingVars().length === 0;`,
-    replace: `  return true;`,
-    planted: "the question a route asks before it tries — can I even call the model — is " +
-      "answered yes on a deployment with no credential configured. The route proceeds, the " +
-      "call throws, and the person gets a failure where they should have got the sentence " +
-      "naming exactly which variable to set",
-  },
-  {
-    check: "scripts/gate/checks/console.ts",
     target: "every route this gateway serves has a caller",
     subject: INITIATIVES,
     // DELIBERATE: the new path is split so this file does not contain it. The check greps

@@ -124,10 +124,6 @@ services:
       - BOOTSTRAP_TEAM=${BOOTSTRAP_TEAM:-}
       # The model the flows' own agents run on. The judge must not be this one.
       - PLATFORM_BASE_MODEL=${PLATFORM_BASE_MODEL:-}
-      # The gateway generates too — /api/console/ask — so it needs the endpoint as well as the
-      # model name. Set in .env is not the same as seen by this container.
-      - LLM_BASE_URL=${LLM_BASE_URL:-}
-      - LLM_API_KEY=${LLM_API_KEY:-}
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
       # Where the gateway finds zz-core's eval door (`relay.ts`). Spelled here with the same
       # default the code carries: a knob `.env.example` documents and compose never forwards is

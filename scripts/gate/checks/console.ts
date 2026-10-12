@@ -3,11 +3,10 @@
  *
  * The console is a separate repository with its own gate; these are the rules that span the
  * two — a query it sends that Postgres must accept, a write route that must record which
- * door it came through, a version that must match the compose literal beside it, and the
- * server-held LLM client that must never reach it.
+ * door it came through, and a version that must match the compose literal beside it.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { consoleSource, root, sourceFiles, unbuilt, withoutComments } from "../read.ts";
@@ -193,11 +192,6 @@ check("every console write route records the door it came through", () => {
         new RegExp(`\\b(${WRITE_CALLS.join("|")})\\(`).test(body),
       markerCalls: WRITE_CALLS,
     })),
-    // console-ask.ts calls `core.call("knowledge_search", …)`, a read, and otherwise only
-    // `generate()`. DELIBERATE: `isWrite` is a negative lookahead rather than a constant false,
-    // so a `core.call` to anything other than knowledge_search added here flips it to true and
-    // the new call is asked for its `via: "web"` like every other write route.
-    { path: "services/gateway/src/console-ask.ts", isWrite: (body: string) => /\bcore\.call\(\s*"(?!knowledge_search")/.test(body), markerCalls: [] },
   ];
   const bad: string[] = [];
 
@@ -372,95 +366,6 @@ check("the console\'s version and its compose literal move together", () => {
   return pinned === pkg
     ? null
     : `the console's compose pins ${pinned} but its package.json says ${pkg}`;
-});
-
-check("the server-held LLM client stays off the console", () => {
-  // generate.ts is the one place this deployment's LLM credential is read, and it is
-  // server-side only: nothing the browser loads may import it, name LLM_API_KEY or
-  // LLM_BASE_URL, or carry either through a NEXT_PUBLIC_* variable, which Next.js inlines into
-  // every bundle it ships. The console is a separate repository (zz-stack-dashboard) checked
-  // out beside this one, so this walks its tree directly rather than through sourceFiles(),
-  // which answers only for what this repo's git tracks.
-  const dash = join(root, "..", "zz-stack-dashboard");
-  // Same escape as the compose-version check above: no sibling repository, nothing scanned.
-  if (!existsSync(dash)) {
-    note("    console secret scan: ../zz-stack-dashboard is not checked out beside this "
-       + "repository, so no console file was scanned for an inlined key.");
-    return null;
-  }
-
-  const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", "coverage", ".turbo", "docs"]);
-  const relevant = (name: string): boolean => name.startsWith(".env") || /\.(ts|tsx|js|jsx|mjs|cjs|json|ya?ml)$/.test(name);
-  const files: string[] = [];
-  const walk = (d: string): void => {
-    for (const e of readdirSync(d, { withFileTypes: true })) {
-      if (e.isDirectory()) {
-        if (SKIP_DIRS.has(e.name)) continue;
-        walk(join(d, e.name));
-      } else if (relevant(e.name)) {
-        files.push(join(d, e.name));
-      }
-    }
-  };
-  walk(dash);
-
-  const bad: string[] = [];
-  for (const f of files) {
-    const rel = f.slice(dash.length + 1);
-    // Comments stripped, strings intact — a paragraph explaining this boundary is not a
-    // violation of it.
-    const src = withoutComments(readFileSync(f, "utf8"));
-    for (const m of src.matchAll(/(?:from\s+|require\(|import\(\s*)["']([^"']+)["']/g)) {
-      const spec = m[1];
-      if (/gateway/.test(spec) && /generate(\.js)?$/.test(spec)) {
-        bad.push(`${rel}: imports the gateway's generate module (${spec})`);
-      }
-    }
-    if (/\bLLM_API_KEY\b/.test(src)) bad.push(`${rel}: names LLM_API_KEY`);
-    if (/\bLLM_BASE_URL\b/.test(src)) bad.push(`${rel}: names LLM_BASE_URL`);
-    for (const m of src.matchAll(/\bNEXT_PUBLIC_[A-Z0-9_]*LLM[A-Z0-9_]*\b/g)) {
-      bad.push(`${rel}: ${m[0]} would ship the LLM endpoint into every visitor's bundle`);
-    }
-  }
-
-  // The other half of the same boundary, run rather than read: a deployment with no LLM_*
-  // configured must still boot, and generateConfigured() must say so rather than a route
-  // discovering the gap when generate() throws. Spawned with the three variables stripped, so
-  // a host that has them set cannot hide the failure.
-  const nothingToRun = unbuilt();
-  if (nothingToRun) {
-    bad.push(nothingToRun);
-  } else {
-    const probe = `
-      import { generate, generateConfigured } from ${JSON.stringify(join(root, "services/gateway/dist/generate.js"))};
-      const bad = [];
-      if (generateConfigured()) bad.push("generateConfigured() said true with no LLM_* set");
-      try {
-        await generate({ system: "s", user: "u" });
-        bad.push("generate() did not refuse with no LLM_* set");
-      } catch (err) {
-        if (err?.status !== 503) bad.push("a missing credential did not carry status 503");
-        const msg = String(err?.message ?? "");
-        for (const name of ["LLM_BASE_URL", "LLM_API_KEY", "PLATFORM_BASE_MODEL"]) {
-          if (!msg.includes(name)) bad.push("the refusal did not name " + name + ": " + msg);
-        }
-      }
-      process.stdout.write(bad.join("; "));
-    `;
-    try {
-      const env = { ...process.env };
-      delete env.LLM_API_KEY;
-      delete env.LLM_BASE_URL;
-      delete env.PLATFORM_BASE_MODEL;
-      const out = execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8", env });
-      if (out.trim()) bad.push(out.trim());
-    } catch (err) {
-      const stderr = err && typeof err === "object" ? (err as Record<string, unknown>).stderr : undefined;
-      bad.push(`generate.ts could not be imported with no credential set: ${String(stderr ?? err).slice(-300)}`);
-    }
-  }
-
-  return bad.length ? [...new Set(bad)].join("; ") : null;
 });
 
 /* A route is live if it is reached from any of five caller sets: the console app (a sibling

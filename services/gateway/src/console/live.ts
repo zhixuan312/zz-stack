@@ -41,7 +41,13 @@ import { browserSession } from "../identity.js";
 import { resolveScope } from "../scope.js";
 import { mayReadConsole } from "./shared.js";
 
-/** The channel every writer notifies on. A payload is a team slug and a collection name, never a record. */
+/** The channel every writer notifies on. A payload is a team slug and a collection name, never a record.
+ *
+ *  NOT THE ONLY SPELLING: `open()` below names the channel in a `listen` statement, and
+ *  `migrations/003_console_live.sql` names it in the `pg_notify` every writer calls. The statement cannot be
+ *  built from this constant — see the note on it in `open()` — so nothing holds the three together, and the
+ *  day they drift the listener listens for something nobody sends: the console stops going live, with no
+ *  error anywhere. Editing one of the three is editing all three. */
 const CONSOLE_CHANGE_CHANNEL = "zz_console_change";
 
 /** The collections a tab may follow: the console's reads, by their first path segment. */
@@ -205,7 +211,18 @@ async function open(url: string): Promise<void> {
   });
   try {
     await client.connect();
-    await client.query(`listen ${CONSOLE_CHANGE_CHANNEL}`);
+    // COUPLED: `CONSOLE_CHANGE_CHANNEL` above, and the `pg_notify` in `migrations/003_console_live.sql`.
+    //
+    // Spelled out rather than interpolated. `check:sql` hands every statement this repository sends to
+    // Postgres, and a `listen` is not one PREPARE will hold — so a bare literal is excluded from the set it
+    // prepares and NAMED in its skip list, with that reason, which is a fact a reader can act on. A hole is
+    // not the same thing: `${...}` cannot be read as one statement at all, so the whole statement drops out
+    // of the scan with nothing said, and the gate's literal rule refuses this file for exactly that.
+    //
+    // DELIBERATE: the scanner reads comments as well as code, so the name of the call it looks for is
+    // never written in prose here. Spelled out in a comment it is read as a call site, and the failure it
+    // reports lands on the comment rather than on any statement. `sql-check.ts` carries the same warning.
+    await client.query("listen zz_console_change");
   } catch {
     lost(client);
     return;

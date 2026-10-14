@@ -6,10 +6,12 @@
  * route IS that data layer for the plugin-eval architecture (Tasks I-1 to I-29): it is the one
  * place spec v8's protocol/evaluation/candidate/release tables are reduced to what a page draws.
  *
- * Teamless, like the rest of `catalog.ts`: a plugin's evaluation is the same fact for every
- * reader, and ownership here is plugin-level (spec v8 decision record 12), not a console team
- * scope — `owner_team`/`release_owners` name who may RELEASE a candidate, which is a fact about
- * the platform, not about who is allowed to read the console.
+ * Read by the superadmin and by the plugin's owning team alone. The answer carries that team's own
+ * words (a finding's pattern, decision note and owner reference, its protocol and measure keys,
+ * its candidates' hypotheses) and names teams (`ownerTeam`, `releaseOwners`), so anybody else is
+ * refused 403 before anything of the plugin is answered, a name nothing registered included, so
+ * the refusal says nothing about which plugins exist beyond the catalog everybody reads. A member's
+ * public view of a plugin's score is the platform's evaluation read (console/platform-evaluation.ts).
  *
  * Reads `zz.plugin` by name directly rather than through `diskPlugins()` (catalog.ts): a
  * `plugin_register`ed third-party subject has no catalog directory and would read as "no such
@@ -26,7 +28,7 @@ import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { teamless } from "./shared.js";
+import { platformPublic } from "./shared.js";
 
 /** The attempt state a rollback leaves behind — taken from the shared vocabulary every writer
  *  takes its state values from (`EVAL_STATE_ENUMS`), sixth of six, rather than spelled: the
@@ -45,7 +47,7 @@ interface DimensionScoreRow {
 }
 
 export function mountPluginEval(app: Express): void {
-  app.get("/api/console/plugins/:plugin/eval", teamless("the plugin's evaluation", async (req, res) => {
+  app.get("/api/console/plugins/:plugin/eval", platformPublic("the plugin's evaluation", async (req, res, { superadmin, activeTeam }) => {
     const { plugin } = req.params;
     const db = platformDb();
 
@@ -65,6 +67,11 @@ export function mountPluginEval(app: Express): void {
            where r.plugin_id = p.id) owners on true
        where p.name = $1`, [plugin])).rows[0];
 
+    // One refusal for every plugin the caller's team does not own, registered or not.
+    if (!superadmin && (!pluginRow || activeTeam === null || pluginRow.owner_team !== activeTeam)) {
+      res.status(403).json({ error: "not permitted" });
+      return;
+    }
     if (!pluginRow) {
       // Not a refusal: a name nothing has registered is a legitimate answer, the same "no such
       // plugin" shape the page's existing About/skills panels already read off `/plugins`.

@@ -1,0 +1,169 @@
+/**
+ * Two teams of the same kinds of row, seeded into a throwaway database, with the second team's free text
+ * made of sentinels generated afresh on every call: `checks/console-isolation.ts` signs a member of the
+ * first team in and finds none of them in any answer the console gives that member.
+ *
+ * What it writes, for each team, the second's every listed field a sentinel and the first's plain words:
+ *
+ *   - the team (its slug and its name), one admin acting for it, and one access token of that admin's;
+ *   - an open initiative of `sdlc-flow` holding `spec.md`, presented 20 days ago and not approved, so it
+ *     waits for approval (its title and body), and a second initiative delivered two days ago;
+ *   - a bug report fixed (its title, detail, surface and resolution) and one open, filed in the open
+ *     initiative;
+ *   - a plugin the team owns, a protocol version (its key) with one measure (its key), a scored run and a
+ *     deferred finding (its `pattern`, `decision_note` and `owner_ref`);
+ *   - a knowledge node (its title and body) and the `knowledge.add` event that recorded it (its `detail`).
+ *
+ * And a superadmin in no team. It signs the three people in, each with a live console session. It writes no `tool_call` and no `knowledge.search` event, so a seed that
+ * counts those (`status-seed.ts`) reads the same beside it; its reports and its delivered initiatives do
+ * move the bug and finished-work figures. Its people and slugs are its own, so it runs beside any other
+ * seed on one database.
+ *
+ * A helper, not a check: every `.ts` under `checks/` is a check the gate runs.
+ */
+import { randomBytes } from "node:crypto";
+
+import type pg from "pg";
+
+import { signIn } from "./status-seed.ts";
+
+/** Every field of the second team's that carries a sentinel. */
+const FIELDS = [
+  "slug", "name", "initiative", "docTitle", "docBody", "bugTitle", "bugDetail", "bugSurface", "bugResolution",
+  "pattern", "decisionNote", "ownerRef", "protocolKey", "measureKey", "eventDetail", "nodeTitle", "nodeBody",
+] as const;
+type Field = (typeof FIELDS)[number];
+
+/** One team's rows, by what a request names them with. */
+interface Team {
+  slug: string; name: string; email: string;
+  /** The open initiative's dated slug, the delivered one's, and the document's path inside the open one. */
+  initiative: string; delivered: string; docPath: string;
+  /** The fixed report's id and the open one's. */
+  bugs: { fixed: string; open: string };
+  plugin: string; finding: string; tokenId: string;
+  /** The node's address on its shelf, as the knowledge routes take it. */
+  node: string;
+}
+
+/** What `seedIsolation` wrote: both teams, the superadmin, the secret each person's `zz_console` cookie
+ *  carries, and the second team's sentinels by field. */
+interface Isolation {
+  one: Team; two: Team; superadmin: string;
+  cookies: { one: string; two: string; superadmin: string };
+  sentinels: Record<Field, string>;
+}
+
+/** A fresh sentinel per field, lower-case so the slug's stays a slug, and none a substring of another. */
+function sentinels(): Record<Field, string> {
+  return Object.fromEntries(FIELDS.map((f) => [f, `${f.toLowerCase()}-${randomBytes(8).toString("hex")}`])) as Record<Field, string>;
+}
+
+/** The first team's words for each field. */
+function plain(): Record<Field, string> {
+  return Object.fromEntries(FIELDS.map((f) => [f, `first team ${f}`])) as Record<Field, string>;
+}
+
+const DAY = 86_400_000;
+
+async function seedTeam(db: pg.ClientBase | pg.Pool, n: "one" | "two", slug: string, w: Record<Field, string>, now: number): Promise<Team> {
+  const one = async (sql: string, args: unknown[]): Promise<string> => (await db.query<{ id: string }>(sql, args)).rows[0].id;
+  const ago = (days: number): string => new Date(now - days * DAY).toISOString();
+  const email = `${n}@isolation.example.test`;
+  const admin = await one("insert into zz.principal (email, display_name, role) values ($1, $2, 'member') returning id", [email, `Isolation ${n}`]);
+  const team = await one("insert into zz.team (slug, name, created_by) values ($1, $2, $3) returning id", [slug, w.name, admin]);
+  await db.query("insert into zz.membership (team_id, principal_id, role, added_by) values ($1, $2, 'admin', $2)", [team, admin]);
+  await db.query("update zz.principal set active_team_id = $1 where id = $2", [team, admin]);
+  const tokenId = await one(
+    // Unlabelled, as a token nobody replaces is: the one the other team's member tries to delete.
+    "insert into zz.pat (principal_id, token_hash) values ($1, $2) returning id",
+    [admin, randomBytes(32).toString("hex")]);
+
+  const initiative = n === "one" ? "2026-10-01-first-team-work" : `2026-10-01-${w.initiative}`;
+  const delivered = n === "one" ? "2026-09-01-first-team-delivered" : `2026-09-01-${w.initiative}-delivered`;
+  const open = await one(
+    "insert into zz.initiative (team_id, slug, flow, opened_by, opened_at) values ($1, $2, 'sdlc-flow', $3, $4) returning id",
+    [team, initiative, admin, ago(40)]);
+  await db.query(
+    `insert into zz.initiative (team_id, slug, flow, opened_by, opened_at, closed_at, closed_by, outcome, accepted_by)
+     values ($1, $2, 'sdlc-flow', $3::uuid, $4, $5, $3::uuid, 'delivered', $3::uuid)`, [team, delivered, admin, ago(30), ago(2)]);
+
+  // A document and its one revision, presented and not approved: it waits.
+  const docPath = "spec.md";
+  await db.query("begin");
+  await db.query("set constraints all deferred");
+  const doc = await one(
+    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, body, current_revision, current_version)
+     values ($1, $2, 'spec', 'draft', $3, $4, $5, 1, 1) returning id`, [open, docPath, ago(20), w.docTitle, w.docBody]);
+  await db.query(
+    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                  written_at, presented_at)
+     values ($1, 1, 1, 'retained', $2, $3, '{}', $4, $5, $6, $6)`,
+    [doc, w.docTitle, w.docBody, `hash-${doc}`, admin, ago(20)]);
+  await db.query("commit");
+
+  const report = (status: "fixed" | "open", days: number): Promise<string> => one(
+    `insert into zz.bug (reported_at, title, detail, surface, platform_version, impact, status, resolution, resolved_at,
+                         team_id, initiative_id, reported_by, resolved_by)
+     values ($1, $2, $3, $4, '0.99.0', 'confusing', $5, case when $5 = 'open' then null else $6 end,
+             case when $5 = 'open' then null else $1::timestamptz + interval '1 hour' end, $7, $8, $9,
+             case when $5 = 'open' then null else $9::uuid end) returning id`,
+    [ago(days), w.bugTitle, w.bugDetail, w.bugSurface, status, w.bugResolution, team, open, admin]);
+  const bugs = { fixed: await report("fixed", 6), open: await report("open", 3) };
+
+  const plugin = `isolation-${n}-plugin`;
+  const pluginId = await one("insert into zz.plugin (name, origin, owner_team_id) values ($1, 'platform', $2) returning id", [plugin, team]);
+  const protocol = await one(
+    `insert into zz.eval_protocol_version
+       (version, purpose, qualification_policy, scoring_policy, improvement_policy, content_digest, created_at,
+        plugin_id, protocol_key, observable_surfaces, recorded_by)
+     values (1, 'seeded', '{}', '{}', '{}', $1, $2, $3, $4, '{}', $5) returning id`,
+    [`digest-isolation-${n}`, ago(10), pluginId, w.protocolKey, admin]);
+  const dimension = await one(
+    `insert into zz.eval_dimension (protocol_version_id, key, canonical_kind, weight, required)
+     values ($1, 'effectiveness', 'effectiveness', 1, true) returning id`, [protocol]);
+  const measure = await one(
+    `insert into zz.eval_measure (dimension_id, key, evaluator_type, weight, required, definition, protocol_version_id, fact_key)
+     values ($1, $2, 'deterministic', 1, true, '{}', $3, 'seeded_fact') returning id`, [dimension, w.measureKey, protocol]);
+  const version = await one("insert into zz.plugin_version (plugin_id, version, digest) values ($1, '1.0.0', $2) returning id",
+                            [pluginId, `digest-isolation-${n}-1`]);
+  const snapshot = await one(
+    `insert into zz.eval_observation_snapshot
+       (usable_run_count, total_run_count, evidence_digest, created_at, plugin_version_id, surface_observed,
+        surface_total, surface_source, platform_version, recorded_by)
+     values (5, 5, $1, $2, $3, 1, 1, null, '0.99.0', $4) returning id`, [`evidence-isolation-${n}`, ago(9), version, admin]);
+  const run = await one(
+    `insert into zz.eval_run
+       (protocol_version_id, score_status, overall_score, guardrail_status, created_at, team_id, initiative_id,
+        observation_snapshot_id, score_lower, score_upper, scorer_version, started_by, scored_at)
+     values ($1, 'established', 0.8, 'pass', $2, $3, $4, $5, 0.7, 0.9, '0.99.0', $6, $2) returning id`,
+    [protocol, ago(9), team, open, snapshot, admin]);
+  const finding = await one(
+    `insert into zz.eval_finding (eval_run_id, kind, pattern, owner_kind, owner_ref, measure_id, evidence_refs, decision,
+                                  decision_note, created_at)
+     values ($1, 'defect', $2, 'environment', $3, $4, '[]'::jsonb, 'deferred', $5, $6) returning id`,
+    [run, w.pattern, w.ownerRef, measure, w.decisionNote, ago(16)]);
+
+  const nodeSlug = n === "one" ? "first-team-lesson" : "second-team-lesson";
+  await db.query(
+    `insert into zz.knowledge_node (kind, title, body, team_id, node_ordinal, slug)
+     values ('decision', $1, $2, $3, 1, $4)`, [w.nodeTitle, w.nodeBody, team, nodeSlug]);
+  await db.query(
+    `insert into zz.event (ts, kind, subject, detail, origin, team_id, actor_id)
+     values ($1, 'knowledge.add', '1', $2::jsonb, 'work', $3, $4)`,
+    [ago(1), JSON.stringify({ title: w.eventDetail, note: w.eventDetail }), team, admin]);
+
+  return { slug, name: w.name, email, initiative, delivered, docPath, bugs, plugin, finding, tokenId, node: `nodes/1-${nodeSlug}.md` };
+}
+
+/** Seeds both teams and the superadmin into `db`, signs the three in, and answers what it wrote; the second
+ *  team's slug is its own sentinel. */
+export async function seedIsolation(db: pg.ClientBase | pg.Pool, now = Date.now()): Promise<Isolation> {
+  const s = sentinels();
+  const superadmin = "superadmin@isolation.example.test";
+  await db.query("insert into zz.principal (email, display_name, role) values ($1, 'Isolation superadmin', 'superadmin')", [superadmin]);
+  const one = await seedTeam(db, "one", "team-one", plain(), now);
+  const two = await seedTeam(db, "two", s.slug, s, now);
+  const cookies = { one: await signIn(db, one.email), two: await signIn(db, two.email), superadmin: await signIn(db, superadmin) };
+  return { one, two, superadmin, cookies, sentinels: s };
+}

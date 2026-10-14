@@ -181,6 +181,7 @@ check("every console write route records the door it came through", () => {
   ];
   const FILES = [
     { path: "services/gateway/src/console-write.ts", isWrite: (body: string) => /\bcore\.call\(/.test(body), markerCalls: [] },
+    { path: "services/gateway/src/console/platform-bug-resolve.ts", isWrite: (body: string) => /\.call\("bug_resolve"/.test(body), markerCalls: [] },
     // The three scope modules, not the mount point: the routes live under settings/ by scope.
     ...["me", "team", "platform"].map((scope) => ({
       path: `services/gateway/src/settings/${scope}.ts`,

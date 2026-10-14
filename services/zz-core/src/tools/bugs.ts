@@ -96,6 +96,13 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
       },
     },
     async ({ title, detail, impact, surface, initiative }) => {
+      // `min(1)` passes a title of spaces, which is stored trimmed: an empty line in the queue.
+      const blank = [!title.trim() && "`title`", !detail.trim() && "`detail`"].filter(Boolean);
+      if (blank.length) {
+        return text(
+          `ERROR: ${blank.join(" and ")} ${blank.length > 1 ? "are" : "is"} blank — a report says in words ` +
+          "what went wrong, and spaces alone are not a report anybody can read. Nothing was written.");
+      }
       const p = db_();
       if (!p) return noDb();
       const who = parseCaller(requestHeaders()).email;
@@ -248,11 +255,18 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         duplicate_of: z.string().uuid().optional().describe(
           "The report this one duplicates, for a `duplicate` resolution. Required for it and " +
           "refused without it: a duplicate that names no target is a close nobody can follow, " +
-          "and the two are one fact the schema itself keeps in step. The target is a report in " +
-          "your own team that is not this one — a duplicate is read by the team that filed it."),
+          "and the two are one fact the schema itself keeps in step. The target is another report " +
+          "filed by the same team as this one, whichever team you act for — a report filed in no " +
+          "team duplicates another filed in none — because a duplicate is read by the team that filed it."),
       },
     },
     async ({ id, status, resolution, duplicate_of }) => {
+      // `min(1)` passes a resolution of spaces, which would be stored as an empty reason.
+      if (!resolution.trim()) {
+        return text(
+          "ERROR: a resolution says what was decided and why — it cannot be blank. A close with no " +
+          "reason is a status nobody learns anything from. Nothing was written.");
+      }
       const db = db_();
       if (!db) return noDb();
       // Both directions refused before the database sees the statement: `status = 'duplicate'` and
@@ -273,43 +287,66 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       const who = parseCaller(requestHeaders()).email;
       const resolver = await principalId(db, who);
       if (!resolver) return noPrincipal(who);
-      if (duplicate_of) {
-        const { rows: target } = await db.query<{ id: string; team_id: string | null; is_self: boolean }>(
-          "select id::text as id, team_id::text as team_id, (id = $2::uuid) as is_self " +
-          "from zz.bug where id = $1::uuid", [duplicate_of, id]);
-        if (!target.length) {
-          return text(`ERROR: no bug with id ${duplicate_of} — ` +
-            "`duplicate_of` names the report this one duplicates, and nothing carries that id.");
+      // One transaction, the report's row locked before anything is checked: a second close waits
+      // for the first to commit and then reads its decision, and the target is checked inside the
+      // transaction that writes. The target is locked with it, in id order, so two reports closed
+      // as each other's duplicate at once queue rather than deadlock.
+      const client = await db.connect();
+      let rows: { id: string }[];
+      try {
+        await client.query("begin");
+        const refuse = async (said: string): Promise<ReturnType<typeof text>> => {
+          await client.query("rollback");
+          return text(said);
+        };
+        const { rows: held } = await client.query<{ id: string; team_id: string | null; status: string }>(
+          `select id::text as id, team_id::text as team_id, status from zz.bug
+            where id = any($1::uuid[]) order by id for update`,
+          [duplicate_of ? [id, duplicate_of] : [id]]);
+        const source = held.find((r) => r.id === id.toLowerCase());
+        if (duplicate_of) {
+          const target = held.find((r) => r.id === duplicate_of.toLowerCase());
+          if (!target) {
+            return refuse(`ERROR: no bug with id ${duplicate_of} — ` +
+              "`duplicate_of` names the report this one duplicates, and nothing carries that id.");
+          }
+          if (target === source) {
+            return refuse(`ERROR: bug ${id} cannot duplicate itself — ` +
+              "`duplicate_of` names the OTHER report this one duplicates, and a close saying " +
+              "\"same as this one\" records nothing a reader can follow. Nothing was written.");
+          }
+          // The report's own team, not the caller's: an operator closes reports of every team.
+          if (source && source.team_id !== target.team_id) {
+            return refuse(`ERROR: bug ${id} cannot duplicate bug ${duplicate_of} — a duplicate is read ` +
+              "within one team's reports, and the report it points at was filed by another team " +
+              "than this one. Nothing was written.");
+          }
         }
-        if (target[0].is_self) {
-          return text(`ERROR: bug ${id} cannot duplicate itself — ` +
-            "`duplicate_of` names the OTHER report this one duplicates, and a close saying " +
-            "\"same as this one\" records nothing a reader can follow. Nothing was written.");
+        if (!source) return refuse(`ERROR: no bug with id ${id}`);
+        // Only from open, so two operators closing the same report do not overwrite each other's
+        // reasoning — the second is told what the first decided instead of silently replacing it.
+        // COUPLED: `packages/tools/src/testing/chain-bugs.ts` and the console's resolve route
+        // (gateway console/platform-bug-resolve.ts) both read `already closed as` as this refusal.
+        if (source.status !== "open") {
+          const { rows: had } = await client.query<{ status: string; resolution: string | null; resolved_by: string | null }>(
+            `select b.status, b.resolution, p.email as resolved_by from zz.bug b
+               left join zz.principal p on p.id = b.resolved_by where b.id = $1::uuid`, [id]);
+          return refuse(
+            `ERROR: that report was already closed as \`${had[0].status}\` by ${had[0].resolved_by} — ` +
+            `"${had[0].resolution}". If that decision was wrong, file what you now know as a new ` +
+            "report naming this id, rather than overwriting somebody's reasoning.");
         }
-        const { rows: mine } = await db.query<{ team_id: string | null }>(
-          "select team_id::text as team_id from zz.bug where id = $1::uuid", [id]);
-        if (mine.length && mine[0].team_id !== target[0].team_id) {
-          return text(`ERROR: bug ${id} cannot duplicate bug ${duplicate_of} — a duplicate is read ` +
-            "by the team that filed the report, and `bug_list` answers for one team, so the report " +
-            "it points at has to be one of yours. Nothing was written.");
-        }
-      }
-      // Only from open, so two operators closing the same report do not overwrite each other's
-      // reasoning — the second is told what the first decided instead of silently replacing it.
-      const { rows } = await db.query<{ id: string }>(
-        `update zz.bug set status = $2, resolution = $3, resolved_by = $4::uuid,
-                           duplicate_of = $5::uuid, resolved_at = now()
-          where id = $1::uuid and status = 'open' returning id::text as id`,
-        [id, status, resolution.trim(), resolver, duplicate_of ?? null]);
-      if (!rows.length) {
-        const { rows: had } = await db.query<{ status: string; resolution: string | null; resolved_by: string | null }>(
-          `select b.status, b.resolution, p.email as resolved_by from zz.bug b
-             left join zz.principal p on p.id = b.resolved_by where b.id = $1::uuid`, [id]);
-        if (!had.length) return text(`ERROR: no bug with id ${id}`);
-        return text(
-          `ERROR: that report was already closed as \`${had[0].status}\` by ${had[0].resolved_by} — ` +
-          `"${had[0].resolution}". If that decision was wrong, file what you now know as a new ` +
-          "report naming this id, rather than overwriting somebody's reasoning.");
+        ({ rows } = await client.query<{ id: string }>(
+          `update zz.bug set status = $2, resolution = $3, resolved_by = $4::uuid,
+                             duplicate_of = $5::uuid, resolved_at = now()
+            where id = $1::uuid and status = 'open' returning id::text as id`,
+          [id, status, resolution.trim(), resolver, duplicate_of ?? null]));
+        await client.query("commit");
+      } catch (err) {
+        await client.query("rollback").catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
       }
       platformEvent({ actor: who, kind: "bug.resolve", subject: id, team: null, detail: { status } });
       return text(JSON.stringify({

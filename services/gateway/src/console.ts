@@ -21,10 +21,11 @@
  * cross-team read into it would put two authority models in one file.
  *
  * GET only, but for `POST /api/console/page-view` (console/page-view.ts), which records which page
- * was opened and changes nothing a page reads. A read-only surface cannot be driven by a forged
- * cross-site form, which is what lets the session cookie be SameSite=Lax instead of requiring a CSRF
- * token; a cross-site form posting a page view arrives with no session and is answered 401. Anything
- * else that writes belongs in a flow, through zz-core, as the caller.
+ * was opened and changes nothing a page reads, and `POST /api/console/platform/bugs/:id/resolve`
+ * (console/platform-bug-resolve.ts), the superadmin's close of a bug report, which is zz-core's
+ * `bug_resolve` called as the caller, as console-write.ts's acts are. A cross-site form cannot drive
+ * either: the session cookie is SameSite=Lax, so a forged cross-site POST arrives with no session and
+ * is answered 401. Anything else that writes belongs in a flow, through zz-core, as the caller.
  *
  * Reads the database, not the store: the console is a fleet view — counts, means and refusal rates
  * over every team, which are SQL questions. The two knowledge endpoints here read zz.doc, which
@@ -56,6 +57,7 @@ import { mountPluginEval } from "./console/plugin-eval.js";
 import { mountConsoleLive } from "./console/live.js";
 import { mountPlatformStatus } from "./console/platform-status.js";
 import { mountPageView } from "./console/page-view.js";
+import { mountPlatformBugResolve } from "./console/platform-bug-resolve.js";
 
 
 export function mountConsole(app: Express): void {
@@ -73,6 +75,8 @@ export function mountConsole(app: Express): void {
   mountPlatformStatus(app);
   // The one endpoint here that is not an answer: a stream held open, which is what keeps a tab fresh without polling.
   mountConsoleLive(app);
-  // The one POST here: a page view, which records which page was opened and is counted as nothing else.
+  // A page view, which records which page was opened and is counted as nothing else.
   mountPageView(app);
+  // The one act here: the superadmin's close of a bug report, which is zz-core's `bug_resolve` called as the person.
+  mountPlatformBugResolve(app);
 }

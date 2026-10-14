@@ -6,8 +6,9 @@
  * week. A malformed call is a `tool_call` whose `refusal_owner` is `ours` (refused for its shape,
  * which a skill or a tool description could have prevented); a real-work call is one whose `origin`
  * is `work`, so the platform's own maintenance clients and every other kind of event are outside the
- * population. Every other part of `PlatformStatus` is answered as unavailable, never as an empty part
- * that reads as "nothing to report".
+ * population. This read counts the weeks; `summarise` in console/figures.ts names its weeks, judges
+ * them and says its finding, as it does for every platform read. Every other part of `PlatformStatus`
+ * is answered as unavailable, never as an empty part that reads as "nothing to report".
  *
  * Public by route: it is mounted through `platformPublic`, takes no team and no scope, and reads
  * neither from the request. No figure names a team.
@@ -19,6 +20,7 @@
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
+import { summarise, type Measure, type Part, type ReadMeta } from "./figures.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 /** A weekly rate stands only on this many calls; fewer are drawn as `insufficient`, the value kept. */
@@ -32,22 +34,13 @@ const NOT_BUILT = { state: "unavailable", reason: "not_built" } as const;
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-interface Week {
-  window: { from: string; to: string; observedFrom: string | null; observedThrough: string | null; complete: boolean };
-  figure: { value: number | null; why: "no_data" | "insufficient" | null };
-  numerator: number; denominator: number;
-}
-
-/** Last against previous, at the precision the page prints a rate per 1,000: one decimal. Fewer
- *  malformed calls is better, so a rise is `worsened`. A week under `MIN_CALLS` is drawn but not
- *  judged, so either one short of them, or missing, is `not_comparable`. */
-function judge(last: Week | null, previous: Week | null): "improved" | "worsened" | "unchanged" | "not_comparable" {
-  if (!last || !previous || last.denominator < MIN_CALLS || previous.denominator < MIN_CALLS
-      || last.figure.value == null || previous.figure.value == null) return "not_comparable";
-  const a = Math.round(last.figure.value * 10);
-  const b = Math.round(previous.figure.value * 10);
-  return a === b ? "unchanged" : a > b ? "worsened" : "improved";
-}
+/** The answer as far as this phase builds it: every part the spec names, the unbuilt ones unavailable. */
+type PlatformStatus = {
+  meta: ReadMeta;
+  needs: { state: "unavailable"; rows: []; total: null; knownCount: 0; unavailableKinds: string[]; overflowByKind: object };
+  measures: Measure[];
+  records: Part<never>; doors: Part<never>; running: Part<never>; own: Part<never>;
+};
 
 export function mountPlatformStatus(app: Express): void {
   app.get("/api/console/platform/status", platformPublic("the platform's status", async (_req, res) => {
@@ -58,11 +51,13 @@ export function mountPlatformStatus(app: Express): void {
     const asOf = new Date(asOfMs).toISOString();
 
     // Where coverage begins: the first real-work call. Nothing before it was observed under this
-    // definition, so no week that starts earlier is complete.
-    const cov = await db.query<{ first_ms: number | null }>(
-      `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms
+    // definition, so no week that starts earlier is complete. Its local date is what a finding names;
+    // with no call yet, the record begins today.
+    const cov = await db.query<{ first_ms: number | null; first_day: string }>(
+      `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms,
+              to_char(coalesce(min(e.ts), $1::timestamptz) at time zone $2::text, 'YYYY-MM-DD') as first_day
          from zz.event e
-        where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $1::timestamptz`, [asOf]);
+        where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $1::timestamptz`, [asOf, ZZ_TZ]);
     const coverageMs = cov.rows[0]?.first_ms ?? null;
 
     // Every Monday-to-Monday week of the reporting timezone from the one coverage begins in through
@@ -87,38 +82,26 @@ export function mountPlatformStatus(app: Express): void {
          left join buckets b on b.week = w
         order by w`, [ZZ_TZ, asOf, new Date(coverageMs).toISOString()])).rows;
 
-    const weeks: Week[] = rows.map((r) => {
-      const ended = r.to_ms <= asOfMs;
-      return {
-        window: {
-          from: iso(r.from_ms), to: iso(r.to_ms),
-          observedFrom: iso(Math.max(r.from_ms, coverageMs!)),
-          observedThrough: iso(Math.min(r.to_ms, asOfMs)),
-          // Ended, and wholly inside known coverage.
-          complete: ended && r.from_ms >= coverageMs!,
-        },
-        figure: r.calls === 0
-          ? { value: null, why: "no_data" }
-          : { value: (1000 * r.malformed) / r.calls, why: r.calls < MIN_CALLS ? "insufficient" : null },
+    const malformed = summarise({
+      key: "malformed_per_1000", better: "down", minSamples: MIN_CALLS, precision: 1, definedFrom: null,
+      label: "malformed-call rate", countLabel: "calls refused for their shape",
+      coverageFrom: cov.rows[0].first_day, timezone: ZZ_TZ,
+      weeks: rows.map((r) => ({
+        from: iso(r.from_ms), to: iso(r.to_ms),
+        observedFrom: iso(Math.max(r.from_ms, coverageMs!)),
+        observedThrough: iso(Math.min(r.to_ms, asOfMs)),
         numerator: r.malformed, denominator: r.calls,
-      };
+        value: r.calls === 0 ? null : (1000 * r.malformed) / r.calls, samples: r.calls,
+        // Ended, and wholly inside known coverage.
+        complete: r.to_ms <= asOfMs && r.from_ms >= coverageMs!,
+        available: true,
+      })),
     });
 
-    // `last` is the last whole week and `previous` the one before it, whatever their counts: the
-    // page draws `last` as last week, and a thin one is drawn as `insufficient` rather than skipped
-    // for an older week. A record is drawn only from weeks that are complete and on enough calls.
-    // The running week is never any of them.
-    const whole = weeks.filter((w) => w.window.complete);
-    const last = whole.at(-1) ?? null;
-    const previous = whole.at(-2) ?? null;
-    const comparable = whole.filter((w) => w.denominator >= MIN_CALLS);
-    // Lowest rate is best; a tie keeps the earliest week.
-    const best = comparable.reduce<Week | null>((b, w) => (b === null || w.figure.value! < b.figure.value! ? w : b), null);
-
-    res.json({
+    const answer: PlatformStatus = {
       meta: {
         asOf: iso(asOfMs), timezone: ZZ_TZ,
-        period: { from: weeks[0]?.window.from ?? iso(asOfMs), to: iso(asOfMs) },
+        period: { from: malformed.weeks[0]?.window.from ?? iso(asOfMs), to: iso(asOfMs) },
         scope: "platform-public", population: POPULATION,
         coverageFrom: coverageMs === null ? null : iso(coverageMs),
       },
@@ -126,14 +109,9 @@ export function mountPlatformStatus(app: Express): void {
         state: "unavailable", rows: [], total: null, knownCount: 0,
         unavailableKinds: ["bugs", "evaluation", "approvals", "drift", "door"], overflowByKind: {},
       },
-      measures: [{
-        key: "malformed_per_1000", weeks,
-        first: comparable[0] ?? null, best, last, previous,
-        // Named for neutral measures only; this one has a direction.
-        highest: null, lowest: null,
-        better: "down", judgement: judge(last, previous),
-      }],
+      measures: [malformed],
       records: NOT_BUILT, doors: NOT_BUILT, running: NOT_BUILT, own: NOT_BUILT,
-    });
+    };
+    res.json(answer);
   }));
 }

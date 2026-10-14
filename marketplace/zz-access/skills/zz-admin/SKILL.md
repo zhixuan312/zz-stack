@@ -67,7 +67,8 @@ together — whichever half the reporter put the word in is an accident of how t
 `bug_resolve` takes `fixed`, `not_a_bug` or `duplicate`, and **requires a resolution for all
 three**. The two that are not fixes are the ones that matter here: somebody took the trouble to
 file it, and "not a bug" without a sentence is an answer they cannot learn anything from. For a
-duplicate, name the other id in the resolution.
+duplicate, pass the other report's id as `duplicate_of`; it must be a report filed by the same team
+as this one.
 
 It refuses a second close and tells you who decided and what they said. If that decision was
 wrong, file what you now know as a new report naming the old id — the record of what somebody

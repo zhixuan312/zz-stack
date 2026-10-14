@@ -5,7 +5,7 @@
  * closed. Each revision is one row, however many times it was presented or whoever looks at it,
  * and it has waited since it was presented.
  *
- * The console's `?waiting=1` (console/initiatives.ts) keeps its own rule, written and not approved,
+ * The console's `?waiting=1` (console/initiative-list.ts) keeps its own rule, written and not approved,
  * until the pages that read it are rebuilt on this one.
  *
  * DELIBERATE: rows, not a SQL fragment, for the reason `realReports` gives in console/platform-bugs.ts:

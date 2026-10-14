@@ -193,7 +193,7 @@ export interface StageDoc {
    *  flow, and this document — not the handover — was approved before, is unapproved now, and was
    *  written after the close. A freeform initiative has no gate for a correction to await. After an abandoned close it counts only when its approved snapshot carries the
    *  outcome (the stop stamped it while approved); a stop on an unapproved draft is not one.
-   *  COUPLED: computed in SQL by every console/initiatives.ts statement that feeds stageOf, by
+   *  COUPLED: computed in SQL by the console/initiatives.ts statements and the bell's in console/initiative-list.ts that feed stageOf, by
    *  closedMove's rule in services/zz-core/src/tools/initiative-closed.ts. */
   correction?: number | null;
 }

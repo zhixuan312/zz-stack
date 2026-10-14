@@ -17,6 +17,7 @@ const ACCESS = "catalog/zz/zz-access";
 const EVAL = "catalog/zz/zz-plugin-eval";
 const LOCK = "plugins.lock.json";
 const INITIATIVES = "services/gateway/src/console/initiatives.ts";
+const INITIATIVE_LIST = "services/gateway/src/console/initiative-list.ts";
 
 /** zz-plugin-eval's `purpose`, verbatim, so the blanking below replaces the whole sentence
  *  rather than half of it and leaves a manifest that still parses.
@@ -206,29 +207,25 @@ export const COV_CATALOG: readonly MutationSpec[] = [
   // console.ts
   {
     check: "scripts/gate/checks/console.ts",
-    target: "the initiatives route reads the team filter its caller sends",
-    subject: INITIATIVES,
-    find: `typeof req.query.team === "string" && req.query.team ? req.query.team : null`,
-    replace: `typeof req.query.team_slug === "string" && req.query.team_slug ? req.query.team_slug : null`,
-    planted: "the route reads a query key nobody sends. The console still links to " +
-      "`/initiatives?team=<slug>` from the team page, the filter is silently ignored, and a " +
-      "platform-scoped reader clicking into one team is handed every team's initiatives — with " +
-      "the count beside the panel taken from those same rows, so the page agrees with itself " +
-      "and disagrees with the Teams table two clicks away",
+    target: "the initiatives list answers the active team and nothing a request names",
+    subject: INITIATIVE_LIST,
+    find: `res.json(await initiativeList(activeTeam, params,`,
+    replace: `res.json(await initiativeList(String(req.query.team ?? activeTeam), params,`,
+    planted: "the list takes its team from the request when the request names one. A member who " +
+      "types another team's slug into the address reads that team's work, its tiles and its " +
+      "closures counted from the same rows, so the page agrees with itself and nothing on it " +
+      "says it is somebody else's",
   },
   {
     check: "scripts/gate/checks/console.ts",
     target: "a console query is a literal check:sql can PREPARE",
-    subject: INITIATIVES,
-    find: `        where i.slug <> '_knowledge'\n` +
-      "        order by t.slug, i.slug, d.path`);",
-    replace: `        where i.slug <> '_knowledge' and t.slug = '\${want}'\n` +
-      "        order by t.slug, i.slug, d.path`);",
-    planted: "one of the console's queries is assembled at request time from a value the caller " +
-      "sent. There is no longer a complete statement for check:sql to PREPARE before a " +
-      "release, so this query ships with nothing having compiled it — and the team slug is " +
-      "pasted into the SQL text rather than bound. The route's team-filter check goes red " +
-      "beside it, because dropping the bound parameter is what stops the text being a literal",
+    subject: INITIATIVE_LIST,
+    find: "        where t.slug = $1 and i.slug <> '_knowledge' and i.opened_at <= $2::timestamptz`, [team, asOf]),",
+    replace: "        where t.slug = '${team}' and i.slug <> '_knowledge' and i.opened_at <= $2::timestamptz`, [team, asOf]),",
+    planted: "one of the console's queries is assembled at request time from a value it was handed. " +
+      "There is no longer a complete statement for check:sql to PREPARE before a release, so this " +
+      "query ships with nothing having compiled it, and the team slug is pasted into the SQL text " +
+      "rather than bound",
   },
   {
     check: "scripts/gate/checks/console.ts",
@@ -255,13 +252,13 @@ export const COV_CATALOG: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/console.ts",
     target: "every route this gateway serves has a caller",
-    subject: INITIATIVES,
+    subject: INITIATIVE_LIST,
     // DELIBERATE: the new path is split so this file does not contain it. The check greps
     // `scripts/**` for a route's path to decide whether anything calls it and excludes only
     // the gate's own tree, so a spec file spelling the orphaned path would vouch for the route
     // it just orphaned.
-    find: `app.get("/api/console/initiatives", handler("initiatives"`,
-    replace: `app.get("/api/console/initiative` + `-index", handler("initiatives"`,
+    find: `app.get("/api/console/initiatives", (req, res) =>`,
+    replace: `app.get("/api/console/initiative` + `-index", (req, res) =>`,
     planted: "the initiatives list is served at a path nothing asks for. The console still " +
       "calls `/api/console/initiatives`, so the page that lists every initiative gets a 404 " +
       "and the gateway carries a route with no caller in either repository",

@@ -349,8 +349,8 @@ export function mountOverview(app: Express): void {
     // `?team=` as "match every team's events". A team scope always names its own slug; only a
     // platform scope may see every team's activity.
     //
-    // Two complete statements, not one assembled from `scope` — see the note in
-    // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read whole.
+    // Two complete statements, not one assembled from `scope` — see the note on the bell's read in
+    // console/initiative-list.ts; `check:sql` can only PREPARE a literal it can read whole.
     // The team branch's predicate is numbered `$4`, after the three fixed parameters both
     // branches share, and whether the caller belongs to that team `$5`.
     const { rows } = scope.kind === "platform"

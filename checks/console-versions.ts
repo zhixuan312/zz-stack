@@ -22,13 +22,15 @@
  *     `fields`, every envelope field the platform does not reserve, sorted by name;
  *   - `?revision=` returns that one snapshot's text and names its public version;
  *   - a closed initiative whose closing document is a pending correction reads as closed and
- *     complete, with `correction` naming the document and its version, on the initiative and on
- *     the list; after a finished close, an approved document that is not the closing one, revised
- *     after the close, is a correction too (initiative_status's rule); a close that was approved
- *     and never corrected carries no correction; and a close recorded on a draft (an abandoned
- *     close) is not a correction and still reads as incomplete; and a freeform initiative's
+ *     complete, with `correction` naming the document and its version; after a finished close, an
+ *     approved document that is not the closing one, revised after the close, is a correction too
+ *     (initiative_status's rule); a close that was approved and never corrected carries no
+ *     correction; and a close recorded on a draft (an abandoned close) is not a correction and
+ *     still reads as incomplete; and a freeform initiative's
  *     document approved before a finished close and edited after it is no correction, because no
- *     gate governs it (initiative_status's rule);
+ *     gate governs it (initiative_status's rule); the list, which reads each initiative's next move
+ *     from initiative_status as the person, names a pending correction as awaiting approval and no
+ *     other closed initiative;
  *   - the bell (`?waiting=1`) lists a closed initiative's pending correction, and no other closed one;
  *   - the document read names the displayed snapshot's `content_revision`, the token zz-core states;
  *   - opening a document records a full presentation of that snapshot under the console's own
@@ -449,15 +451,21 @@ async function run(c: Core): Promise<void> {
     }
     ok("a freeform initiative's document edited after its close is no correction, as initiative_status says");
 
-    const list = await call(listRoute, {}, { team: TEAM });
-    const rows = list.body.initiatives as { slug: string; correction: unknown; complete: boolean }[];
-    const listed = (slug: string) => rows.find((x) => x.slug === slug);
-    if (JSON.stringify(listed(CORRECTED)?.correction) !== JSON.stringify({ path: "review.md", version: 2 })
-        || listed(CORRECTED)?.complete !== true || listed(SIGNED)?.correction !== null
-        || listed(DROPPED)?.correction !== null || listed(FREEFORM)?.correction !== null) {
-      fail("initiative list", `the list says ${JSON.stringify(rows.map((x) => [x.slug, x.correction, x.complete]))}`);
+    // The list reads where each initiative goes next from initiative_status, relayed as the person: a
+    // pending correction waits on approval though its initiative is closed, and nothing else does.
+    const list = await call(listRoute, {}, { limit: "100" });
+    if (list.status !== 200) fail("initiative list", `answered ${list.status}: ${JSON.stringify(list.body)}`);
+    type Move = { action: string; document: string | null } | null;
+    const rows = list.body.rows as { slug: string; state: string; nextMove: Move }[];
+    const move = (slug: string): Move | undefined => rows.find((x) => x.slug === slug)?.nextMove;
+    const awaiting = (slug: string, document: string) => move(slug)?.action === "await_approval" && move(slug)?.document === document;
+    if (list.body.nextMoveState !== "ok" || rows.find((x) => x.slug === CORRECTED)?.state !== "accepted"
+        || !awaiting(CORRECTED, "review.md") || !awaiting(REVISED, "spec.md")
+        || [SIGNED, DROPPED, FREEFORM].some((slug) => !move(slug) || move(slug)?.action === "await_approval")) {
+      fail("initiative list", `the list says ${JSON.stringify(rows.map((x) => [x.slug, x.state, x.nextMove]))} ` +
+        `(nextMoveState ${String(list.body.nextMoveState)})`);
     }
-    ok("the initiative list carries the same correction");
+    ok("the initiative list names a pending correction as the next move initiative_status gives it, and no other closed one");
 
     // The bell lists what a person can sign today. A correction awaiting approval is one, though its
     // initiative is closed — initiative_status routes it to await_approval — and a close that was

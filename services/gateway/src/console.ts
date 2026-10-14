@@ -7,6 +7,11 @@
  * the scope once, before any handler's SQL runs, so a caller with no `?team=` cannot fall through a
  * `$1::text is null or team_slug = $1` predicate with a null standing in for "every team".
  *
+ * `/api/console/initiatives` (console/initiative-list.ts) and `/api/console/approvals` resolve no scope
+ * of their own: Work is the active team's, for the superadmin too, so each answers the team the
+ * identity acts for, whatever team or scope the request names. The list's `?waiting=1` projection,
+ * the bell's, keeps the caller's scope until the bell is rebuilt.
+ *
  * The authority to be in the console at all is a browser session, from a passkey sign-in. A
  * superadmin PAT is also accepted so the API can be exercised with curl before any browser exists.
  *
@@ -70,6 +75,7 @@ import { mountPlatformUsage } from "./console/platform-usage.js";
 import { mountPlatformKnowledge } from "./console/platform-knowledge.js";
 import { mountPlatformAudit } from "./console/platform-audit.js";
 import { mountPeople } from "./console/people.js";
+import { mountApprovals } from "./console/approvals.js";
 
 
 export function mountConsole(app: Express): void {
@@ -79,6 +85,8 @@ export function mountConsole(app: Express): void {
   // People, the superadmin's read through platformPublic; a member is refused before anything is read.
   mountPeople(app);
   mountInitiatives(app);
+  // Approvals: the active team's waiting queue, and the approvals signed in the caller's name with their evidence.
+  mountApprovals(app);
   mountKnowledge(app);
   // The one read that is zz-core's answer rather than a query of this gateway's own.
   mountSearch(app);

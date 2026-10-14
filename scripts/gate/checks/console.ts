@@ -12,26 +12,33 @@ import { join } from "node:path";
 import { consoleSource, root, sourceFiles, unbuilt, withoutComments } from "../read.ts";
 import { check, note } from "../run.ts";
 
-check("the initiatives route reads the team filter its caller sends", () => {
-  // A parameter that is ignored has no shape, so the wildcard check below cannot see it: a
-  // route that stops reading `?team=` hands a platform-scoped reader every team's rows.
+check("the initiatives list answers the active team and nothing a request names", () => {
+  // Work is the active team's, for the superadmin too. A list that took its team from the request
+  // would hand a member who names another team that team's work, and a superadmin asking for the
+  // platform every team's, with the tiles beside the table counted from the same rows.
   //
-  // This names one route. The general rule — every query key the console sends is read by some
-  // route — needs the console's source, a different repository this gate cannot read.
-  const f = "services/gateway/src/console/initiatives.ts";
+  // This names one route. The bell's projection on the same path (?waiting=1) keeps the caller's
+  // scope until it is rebuilt, and is held by the checks below like every handler.
+  const f = "services/gateway/src/console/initiative-list.ts";
   const src = withoutComments(readFileSync(join(root, f), "utf8"));
+  const open = /platformPublic\("the initiatives",\s*async\s*\(\s*req,\s*res,\s*\{\s*activeTeam\s*\}\s*\)\s*=>\s*\{/.exec(src);
+  if (!open) {
+    return `${f} no longer answers the list through platformPublic with the identity's activeTeam — ` +
+      "this check is reading the wrong file or the list's wrapper changed under it";
+  }
+  // The list's body, from its opening brace to the matching close.
+  let depth = 1, i = open.index + open[0].length;
+  for (; i < src.length && depth > 0; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") depth--;
+  }
+  const body = src.slice(open.index + open[0].length, i - 1);
   const bad: string[] = [];
-  if (!/req\.query\.team\b/.test(src)) {
-    bad.push(`${f} never reads req.query.team — the team page sends ?team= and would be ` +
-             "handed every team's initiatives again");
+  if (/req\.query\.(?:team|scope)\b|req\.query\[\s*["'](?:team|scope)["']\s*\]/.test(body)) {
+    bad.push(`${f}'s list reads a team or a scope the request names — a request may not move Work off the active team`);
   }
-  // Reading it is not enough: it has to reach a statement.
-  if (!/,\s*\[want\]\s*\)/.test(src)) {
-    bad.push(`${f} reads a team filter but no query is bound to it — see the note there`);
-  }
-  // And a team scope must not be able to name another team's slug through it.
-  if (!/scope\.kind === "team" && want !== null && want !== scope\.slug/.test(src)) {
-    bad.push(`${f} does not refuse a team scope naming another team's slug via ?team=`);
+  if (!/\binitiativeList\(\s*activeTeam\s*,/.test(body)) {
+    bad.push(`${f}'s list is not read for the identity's activeTeam`);
   }
   return bad.length ? bad.join("; ") : undefined;
 });

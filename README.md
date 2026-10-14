@@ -207,12 +207,16 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             check; eval-flow-e2e/ holds the stack, the stub, the stages and the release
             commands), skeleton.ts (the walking skeleton in one command, run at the end of
             every phase and never beside another build of the console: the platform built, a
-            throwaway database seeded with schema/status-seed.ts, the gateway's own console API
-            on it in-process, and the
+            throwaway database seeded with schema/status-seed.ts and schema/isolation-seed.ts,
+            the gateway's own console API on it in-process, and the
             console from ../zz-stack-dashboard built and served in production with ZZ_GATEWAY
             pointing at that gateway — a member and a superadmin, each signed in through a real
-            session row, read the seeded malformed-call rate on /platform, a signed-out request
-            is sent to sign in with its whole address, and a member's /teams holds no other team.
+            session row, read the platform's four reads, Usage and Knowledge health from the
+            gateway in the seeds' states, the member's holding no other team's words, no team
+            split and no question; Teams, People and Audit refuse the member with one body and
+            answer the superadmin; both read the seeded malformed-call rate on /platform, a
+            signed-out request is sent to sign in with its whole address, and a member's /teams
+            holds no other team.
             Needs docker, so not a gate check; it exits 2 when docker or the console's checkout
             is missing, which is not a pass), manifests.ts (where the packages are, read by
             both), mutation-run.ts (weekly on a runner as twenty `--shard` jobs and

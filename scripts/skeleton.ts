@@ -23,8 +23,17 @@
  *     Status's malformed-call rate for the last whole week is the seed's, 8 of 125 and 64.0. The
  *     member's answers hold none of the isolation seed's second-team sentinels, matched in the raw
  *     body; the superadmin's bugs and evaluation hold that team's report title and protocol key, so
- *     the member's absence is not a seed that never arrived. Each read's other values are its own
- *     check's (`checks/console-platform-*.ts`);
+ *     the member's absence is not a seed that never arrived;
+ *   - Usage and Knowledge health, each as the member and as the superadmin, answer 200 with every part
+ *     ok. The member's name no team: no week's calls split by team, shelves only `own`, `shared` and
+ *     `all`, `questions` null, and none of the second team's sentinels or any seeded slug in the raw
+ *     body. The superadmin's split every week's calls into at most four team parts, the status seed's
+ *     second team among them, and Knowledge health holds the second team's slug and its question that
+ *     found nothing;
+ *   - Teams, People and Audit answer the member 403 with exactly `{"error":"not permitted"}`, and the
+ *     superadmin 200 holding the seeded teams, people and the second team's events.
+ *
+ *   Each read's other values are its own check's (`checks/console-platform-*.ts`);
  *
  * and through the console, each page read to the end of its stream and matched on its text with
  * markup, scripts and React's comments removed:
@@ -69,8 +78,9 @@ import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn } from "./sc
 import { withThrowawayDb } from "./schema/throwaway.ts";
 
 const NAME = "skeleton";
-const DONE = "skeleton: the real gateway answers the platform's four reads to a member and a superadmin in the " +
-  "seeds' states with none of another team's words to the member, the built console signs both in through it, draws the " +
+const DONE = "skeleton: the real gateway answers the platform's four reads, Usage and Knowledge health to a member and a " +
+  "superadmin in the seeds' states with none of another team's words and no team split or question to the member, refuses " +
+  "the member Teams, People and Audit with one body and answers them to the superadmin, the built console signs both in through it, draws the " +
   "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, and shows " +
   "a member no other team on /teams: ok";
 /** The reporting timezone the gateway cuts weeks in, and the seed with it. */
@@ -203,9 +213,17 @@ const stateOf = (p: Part | undefined): string => p === undefined ? "missing" : p
 /** A JSON answer that is an object, narrowed rather than asserted. */
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** What is wrong with `a` where each of `names` must be an ok part. */
+const notOk = (a: Record<string, unknown>, names: string[]): string[] =>
+  names.filter((k) => stateOf(a[k] as Part) !== "ok").map((k) => `${k} is ${stateOf(a[k] as Part)}, not ok`);
+
+/** How many team parts the superadmin's calls by week may draw in a week: three teams and `Other`. */
+const TEAM_PARTS = 4;
+
 /** Each read's parts in the states the seeds give them, as the person asking: what is wrong with `a`,
- *  each a phrase, and the states the case line names. */
-const READS: { path: string; parts: (a: Record<string, unknown>, who: Who) => { wrong: string[]; said: string } }[] = [
+ *  each a phrase, and the states the case line names. A `teamless` read names no team to the member:
+ *  no seeded slug is anywhere in the member's raw body. */
+const READS: { path: string; teamless?: true; parts: (a: Record<string, unknown>, who: Who) => { wrong: string[]; said: string } }[] = [
   { path: "/api/console/platform/status", parts: (a, who) => {
     const wrong: string[] = [];
     type Last = { figure: { value: number | null }; numerator: number | null; denominator: number | null } | null;
@@ -234,33 +252,68 @@ const READS: { path: string; parts: (a: Record<string, unknown>, who: Who) => { 
   } },
   { path: "/api/console/platform/bugs", parts: (a) => {
     const names = ["counts", "queue"];
-    return { wrong: names.filter((k) => stateOf(a[k] as Part) !== "ok").map((k) => `${k} is ${stateOf(a[k] as Part)}, not ok`),
-             said: `${names.join(" and ")} ok` };
+    return { wrong: notOk(a, names), said: `${names.join(" and ")} ok` };
   } },
   { path: "/api/console/platform/evaluation", parts: (a) => {
     const names = ["plugins", "history", "byDecision", "byOwner", "waiting"];
-    return { wrong: names.filter((k) => stateOf(a[k] as Part) !== "ok").map((k) => `${k} is ${stateOf(a[k] as Part)}, not ok`),
-             said: `${names.join(", ")} ok` };
+    return { wrong: notOk(a, names), said: `${names.join(", ")} ok` };
+  } },
+  { path: "/api/console/platform/usage", teamless: true, parts: (a, who) => {
+    const names = ["tiles", "callsByWeek", "traffic", "refusals", "followup", "tools", "rhythm", "mostUsed", "perApproval", "modelCalls"];
+    const wrong = notOk(a, names);
+    const by = a.callsByWeek as Part;
+    const weeks = by?.state === "ok" ? (by.data as { weeks: { parts: { label: string }[] | null }[] }).weeks : [];
+    if (who === "the member") {
+      const split = weeks.filter((w) => w.parts !== null).length;
+      if (split) wrong.push(`${split} of its weeks split the calls by team`);
+      return { wrong, said: `${names.join(", ")} ok, and no week's calls split by team` };
+    }
+    const over = weeks.filter((w) => w.parts === null || w.parts.length > TEAM_PARTS).length;
+    if (!weeks.length || over) wrong.push(`${over} of its ${weeks.length} weeks draw no team parts or more than ${TEAM_PARTS}`);
+    if (!weeks.some((w) => w.parts?.some((p) => p.label === TEAM_TWO))) wrong.push(`no week names ${TEAM_TWO} among its parts`);
+    return { wrong, said: `${names.join(", ")} ok, every week's calls split into at most ${TEAM_PARTS} parts, ${TEAM_TWO} among them` };
+  } },
+  { path: "/api/console/platform/knowledge", teamless: true, parts: (a, who) => {
+    const names = ["tiles", "shelves", "made", "searches", "cohorts", "byKind"];
+    const wrong = notOk(a, names);
+    const shelves = a.shelves as Part;
+    const rows = shelves?.state === "ok" ? (shelves.data as { rows: { shelf: string }[] }).rows.map((r) => r.shelf) : [];
+    if (who === "the member") {
+      if (a.questions !== null) wrong.push(`questions is ${a.questions === undefined ? "missing" : stateOf(a.questions as Part)}, not null`);
+      const named = rows.filter((s) => !["own", "shared", "all"].includes(s));
+      if (named.length) wrong.push(`its shelves name ${named.join(", ")}, not only own, shared and all`);
+      return { wrong, said: `${names.join(", ")} ok, its shelves own, shared and all, and no questions` };
+    }
+    const questions = a.questions === null ? "null" : stateOf(a.questions as Part);
+    if (questions !== "ok") wrong.push(`questions is ${questions}, not ok`);
+    return { wrong, said: `${names.join(", ")} and questions ok, its shelves named by slug` };
   } },
 ];
 
-/** The platform's four reads straight from the gateway, as the member and as the superadmin: each part
- *  in its seeded state, none of the second team's sentinels in the member's raw body, and the
- *  superadmin's bugs and evaluation holding that team's own words. */
-async function reads(gateway: string, cookies: Map<string, string>, isolation: Isolation): Promise<void> {
+/** What a gateway route answered `email`: its status and its raw body. */
+async function ask(gateway: string, path: string, cookies: Map<string, string>, email: string): Promise<{ status: number; body: string }> {
+  const res = await fetch(`${gateway}${path}`, {
+    headers: { cookie: `zz_console=${cookies.get(email)}` }, signal: AbortSignal.timeout(30_000),
+  });
+  return { status: res.status, body: await res.text() };
+}
+
+/** The platform's reads straight from the gateway, as the member and as the superadmin: each part in
+ *  its seeded state, none of the second team's sentinels in the member's raw body and no seeded slug
+ *  in a teamless one, and the superadmin's bugs, evaluation and Knowledge health holding that team's
+ *  own words. */
+async function reads(gateway: string, cookies: Map<string, string>, isolation: Isolation, seeded: Seeded): Promise<void> {
   const sentinels = Object.entries(isolation.sentinels);
   /** What the superadmin's answer to a read must hold, so the member's absence is not a missing seed. */
   const held: Record<string, (keyof Isolation["sentinels"])[]> = {
     "/api/console/platform/bugs": ["bugTitle"], "/api/console/platform/evaluation": ["protocolKey", "pattern"],
+    "/api/console/platform/knowledge": ["question", "slug"],
   };
-  for (const { path, parts } of READS) {
+  for (const { path, teamless, parts } of READS) {
     for (const [who, email] of [["the member", MEMBER], ["the superadmin", SUPERADMIN]] as const) {
       const step = `${path} as ${who}`;
-      const res = await fetch(`${gateway}${path}`, {
-        headers: { cookie: `zz_console=${cookies.get(email)}` }, signal: AbortSignal.timeout(30_000),
-      });
-      const body = await res.text();
-      if (res.status !== 200) fail(step, `answered ${res.status}: ${body.slice(0, 400)}`);
+      const { status, body } = await ask(gateway, path, cookies, email);
+      if (status !== 200) fail(step, `answered ${status}: ${body.slice(0, 400)}`);
       const answer: unknown = JSON.parse(body);
       if (!isRecord(answer)) fail(step, `answered something other than an object: ${body.slice(0, 200)}`);
       const { wrong, said } = parts(answer, who);
@@ -268,7 +321,10 @@ async function reads(gateway: string, cookies: Map<string, string>, isolation: I
       if (who === "the member") {
         const found = sentinels.filter(([, s]) => body.includes(s));
         if (found.length) fail(step, `the body holds the second team's ${found.map(([f, s]) => `${f} at ${body.indexOf(s)}`).join(", ")}`);
-        pass(`${step} answers 200 with ${said}, and holds none of the second team's ${sentinels.length} sentinels`);
+        const slugs = teamless ? seeded.slugs.filter((s) => body.includes(s)) : [];
+        if (slugs.length) fail(step, `the body names the teams ${slugs.map((s) => `${s} at ${body.indexOf(s)}`).join(", ")}`);
+        pass(`${step} answers 200 with ${said}, and holds none of the second team's ${sentinels.length} sentinels` +
+          (teamless ? ` and none of the ${seeded.slugs.length} seeded teams' slugs` : ""));
       } else {
         const missing = (held[path] ?? []).filter((f) => !body.includes(isolation.sentinels[f]));
         if (missing.length) fail(step, `the body does not hold the second team's ${missing.join(", ")}`);
@@ -276,6 +332,32 @@ async function reads(gateway: string, cookies: Map<string, string>, isolation: I
           (held[path] ? `, and holds the second team's ${held[path].join(" and ")} as written` : ""));
       }
     }
+  }
+}
+
+/** The one body every read refused to a member answers. */
+const REFUSED = JSON.stringify({ error: "not permitted" });
+
+/** Teams, People and Audit straight from the gateway: the member refused 403 with `REFUSED` and not a
+ *  byte more, and the superadmin answered 200 with what the seeds wrote, so the refusal is not a read
+ *  that found nothing. Each answer's other values are its own check's. */
+async function refused(gateway: string, cookies: Map<string, string>, isolation: Isolation): Promise<void> {
+  const reads: { name: string; path: string; holds: [string, string][] }[] = [
+    { name: "Teams", path: "/api/console/teams?limit=100", holds: [["the second team's slug", isolation.sentinels.slug], [TEAM_TWO, TEAM_TWO]] },
+    { name: "People", path: "/api/console/people?limit=100", holds: [[isolation.both, isolation.both], [MEMBER, MEMBER]] },
+    { name: "Audit", path: "/api/console/platform/audit?filter=all&limit=100", holds: [["the second team's slug", isolation.sentinels.slug]] },
+  ];
+  for (const { name, path, holds } of reads) {
+    const mine = await ask(gateway, path, cookies, MEMBER);
+    if (mine.status !== 403 || mine.body !== REFUSED) fail(`${path} as the member`, `${name} answered ${mine.status} ${mine.body.slice(0, 400)}, not 403 ${REFUSED}`);
+    pass(`${path} as the member answers 403 ${REFUSED} and nothing else: ${name} is refused`);
+    const theirs = await ask(gateway, path, cookies, SUPERADMIN);
+    if (theirs.status !== 200) fail(`${path} as the superadmin`, `${name} answered ${theirs.status}: ${theirs.body.slice(0, 400)}`);
+    const answer: unknown = JSON.parse(theirs.body);
+    if (!isRecord(answer)) fail(`${path} as the superadmin`, `${name} answered something other than an object: ${theirs.body.slice(0, 200)}`);
+    const missing = holds.filter(([, s]) => !theirs.body.includes(s)).map(([what]) => what);
+    if (missing.length) fail(`${path} as the superadmin`, `${name} does not hold ${missing.join(" or ")}`);
+    pass(`${path} as the superadmin answers 200 with ${name}, holding ${holds.map(([what]) => what).join(" and ")}`);
   }
 }
 
@@ -347,8 +429,9 @@ async function cases(base: string, cookies: Map<string, string>, seeded: Seeded)
 
 async function run(db: pg.Client, url: string): Promise<void> {
   await seedStatus(db, TIMEZONE);
-  // Its people and slugs are its own, and it writes no tool call, so the status seed's figure stands.
-  const isolation = await seedIsolation(db);
+  // Its people and slugs are its own, its one tool call per team is maintenance, and its planted events sit in the running week, so the status seed's figure stands.
+  const planted = Date.now();
+  const isolation = await seedIsolation(db, planted);
   const seeded: Seeded = {
     slugs: (await db.query<{ slug: string }>("select slug from zz.team")).rows.map((r) => r.slug),
     emails: (await db.query<{ email: string }>("select email from zz.principal")).rows.map((r) => r.email),
@@ -377,6 +460,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
   const gateway = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 
   try {
+    // A read cuts at its whole second, so none begins inside the second the planted events are dated in.
+    await new Promise((r) => setTimeout(r, Math.max(0, Math.floor(planted / 1000) * 1000 + 1000 - Date.now())));
     // Straight from the gateway first: a failure here is the gateway's, not the page's, and the read
     // warms the pool before the page's 5 s bound is counted.
     const step = "the gateway answers the member";
@@ -386,7 +471,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
     const text = await res.text();
     if (res.status !== 200) fail(step, `/api/console/platform/status answered ${res.status}: ${text.slice(0, 400)}`);
     pass(`the gateway listens at ${gateway} and answers the member's status read`);
-    await reads(gateway, cookies, isolation);
+    await reads(gateway, cookies, isolation, seeded);
+    await refused(gateway, cookies, isolation);
 
     const env = consoleEnv(gateway);
     buildConsole(env);

@@ -16,6 +16,15 @@ import { HOST, REMOTE, asExecError, log, run, ssh } from "../deployment.ts";
 
 const regPsql = `ssh ${HOST} docker compose -f ${REMOTE}/deploy/docker-compose.yml exec -T postgres psql -U zz -d zz`;
 
+/** One statement on the deployment's database, through `regPsql`: the statement on standard input,
+ *  the answer unaligned and tuples-only, and a refused statement a thrown error rather than an
+ *  exit 0 that reads as no rows. */
+export async function regSql(sql: string): Promise<string> {
+  const [cmd, ...rest] = regPsql.split(" ");
+  return run(cmd, [...rest, "-q", "-tA", "-v", "ON_ERROR_STOP=1"],
+             { input: sql, stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+}
+
 /** The pre-deploy half: catalog skills whose registered version holds different bytes. Refused
  *  before anything is built — register-skills never rewrites a registered version, so a skill
  *  edited without a version bump would otherwise ship under its old hash. A registry this cannot

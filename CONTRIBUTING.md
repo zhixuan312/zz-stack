@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the twenty that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the twenty-one that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the twenty gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the twenty-one gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -71,7 +71,8 @@ what was shown (`checks/document-present-changes.ts`), and a plain-text file upl
 the link and the ChatGPT file route (`checks/document-upload.ts`), and what each source supports,
 a document not written yet included (`checks/source-list.ts`), and the origin every event
 carries, from the migration's backfill and from both of its writers
-(`checks/event-origin-db.ts`); and the rollback boundary
+(`checks/event-origin-db.ts`); a release's record, written once and reconciled with the tags, on a
+database migrated by the real runner (`checks/release-record-db.ts`); and the rollback boundary
 (`checks/rollback-boundary.ts`), which fills new-format data through a real zz-core and runs the
 previous release's own statements against it. Each exits 2 when Docker is absent rather
 than passing, because a throwaway database that could not be started is not a check that agreed.
@@ -79,7 +80,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those twenty checks or the rehearsal never needs Docker.
+runs those twenty-one checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

@@ -27,8 +27,9 @@ import { EVAL_OBSERVE } from "./schema-target/eval-observe.ts";
 import { EVAL_RUN } from "./schema-target/eval-run.ts";
 import { IMPROVE } from "./schema-target/improve.ts";
 import { CONTROL } from "./schema-target/control.ts";
+import { RELEASE } from "./schema-target/release.ts";
 
 export const SCHEMA_TARGET: SchemaTarget = {
   phase: 6,
-  tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...DOCUMENTS, ...UPLOADS, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL },
+  tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...DOCUMENTS, ...UPLOADS, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL, ...RELEASE },
 };

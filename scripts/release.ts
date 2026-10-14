@@ -42,7 +42,7 @@
  *   4. deploy          remote pulls the tags and restarts — recording what it was on
  *   5. verify          against the live deployment, not the build
  *   6. rollback        automatically, if 5 fails and the guard permits it, then report failure
- *   7. tag             git tag last, only after 5 passes
+ *   7. tag             git tag last, only after 5 passes, then the release's row in zz.release
  *
  * DELIBERATE: the git tag is created last. It is the proof of a finished release, so
  * "tagged but not deployed" cannot happen, and step 6 can move the deployment backwards.
@@ -65,7 +65,8 @@ import { purgeProbes } from "./release/probe-purge.ts";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
 import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
 import { preflight } from "./release/preflight.ts";
-import { skillVersionsMoved, writeRegistries } from "./release/registries.ts";
+import { recordAfterTag } from "./release-record.ts";
+import { regSql, skillVersionsMoved, writeRegistries } from "./release/registries.ts";
 import { refusalLines, rollbackGuard } from "./release/rollback-guard.ts";
 import { rollback } from "./release/rollback.ts";
 import { tagVerifiedLive } from "./release/tag-live.ts";
@@ -92,7 +93,11 @@ if (args.includes("--verify-only")) {
   }
   log("\n\x1b[32m  LIVE DEPLOYMENT HEALTHY\x1b[0m");
   // What a release that went live untagged was told to come back for.
-  tagVerifiedLive(live);
+  const unrecorded = await tagVerifiedLive(live);
+  if (unrecorded.length) {
+    warn(`  ${live} is tagged and stays released, and its record needs attention:\n` + unrecorded.map((p) => `        - ${p}`).join("\n"));
+    process.exit(1);
+  }
   process.exit(0);
 }
 
@@ -582,9 +587,16 @@ if (dashVersion) run("git", ["push", "origin", "HEAD"], { cwd: DASH_SRC });
 // Same rule for both: the tag is what the next release measures "has it changed?" against, so
 // it is written only once this one is known to have worked.
 tagOnce(root, `v${version}`, `zz-stack ${version}\n\ndeployed and verified on ${HOST} from ${commit}`, "zz-stack");
+// Its row in zz.release, and a row for every earlier tag that has none, written only once the tag
+// exists. A problem here is reported at the end and changes nothing about the release.
+const unrecorded = await recordAfterTag(version, regSql);
 if (dashVersion) {
   tagOnce(DASH_SRC, `v${dashVersion}`, `zz-stack-dashboard ${dashVersion}\n\ndeployed and verified on ${HOST}`, "zz-stack-dashboard");
 }
 
 log(`\n\x1b[32m  RELEASED ${version} to ${HOST}\x1b[0m  (from ${commit}, previous ${previous || "none"})`);
 log(`  Roll back with: node scripts/release.ts --rollback`);
+if (unrecorded.length) {
+  warn(`  ${version} is released, and its record needs attention:\n` + unrecorded.map((p) => `        - ${p}`).join("\n"));
+  process.exitCode = 1;
+}

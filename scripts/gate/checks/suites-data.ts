@@ -175,3 +175,11 @@ check("nothing reaches the store's root or its version directory for a live purp
 // no per-table comparison can state — that nothing across the whole schema is missing one.
 check("every table and column carries its structured comment",
       runsCheck("comment-completeness.ts"));
+
+// Phase 1's I-17. The first reads a release's record from each shape the changelog has; the second
+// records releases on a throwaway database (Docker; exit 2 without it) and reads every tagged
+// section of CHANGELOG.md.
+check("a release's record reads its summary, upgrade notes, client action and console version from its own changelog section, and a tag with no section is No changelog entry with its action unknown, never nothing to do",
+      runsCheck("release-record.ts"));
+check("a release is recorded once at its first time, a conflicting record is reported and changes nothing, the backfill writes one row per tag and reconciles the count, and every tagged section of this changelog yields a summary, on a throwaway database",
+      runsCheck("release-record-db.ts"));

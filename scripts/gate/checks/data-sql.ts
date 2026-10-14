@@ -205,6 +205,10 @@ check("a column the platform enforces is a column something can write", () => {
   // a named list, so a column added tomorrow is covered the day it is added.
   const src = sourceFiles(["services", "packages"], [".ts"])
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
+  // A writer may also be a release script: `zz.release` and the registries are written by the
+  // release itself, never by a service.
+  const writers = src + "\n" + sourceFiles(["scripts"], [".ts"])
+    .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
   const bad = [];
   for (const [table, t] of Object.entries(SCHEMA_TARGET.tables).sort(([a], [b]) => a.localeCompare(b))) {
     for (const [col, , , defaultExpr] of t.columns) {
@@ -213,7 +217,7 @@ check("a column the platform enforces is a column something can write", () => {
       if (!guarded) continue;
       const on = `(?:zz\\.)?${table}\\b`;
       const written = new RegExp(`(insert into\\s+${on}[^;]{0,600}\\b${col}\\b|` +
-        `update\\s+${on}[^;]{0,300}\\bset\\b[^;]{0,300}\\b${col}\\s*=)`, "is").test(src);
+        `update\\s+${on}[^;]{0,300}\\bset\\b[^;]{0,300}\\b${col}\\s*=)`, "is").test(writers);
       if (!written) bad.push(`${table}.${col} is queried as though it decides something and nothing ever sets it`);
     }
   }

@@ -267,4 +267,19 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       },
     ],
   },
+  // The release-record release. It creates `zz.release` and writes no row into it: the release that
+  // runs it records itself and the tags before it only after the migration, through
+  // `scripts/release-record.ts`. No other table moves, so every other table keeps its default.
+  // This entry leaves with the file when it folds into `001_init.sql`.
+  "006_release.sql": {
+    tables: {
+      release: { added: true },
+    },
+    joins: [
+      {
+        name: "zz.release starts empty",
+        violatingCount: `select count(*)::int as n from zz.release`,
+      },
+    ],
+  },
 };

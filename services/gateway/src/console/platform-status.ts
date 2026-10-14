@@ -12,7 +12,7 @@
  * Public by route: it is mounted through `platformPublic`, takes no team and no scope, and reads
  * neither from the request. No figure names a team.
  *
- * COUPLED: the console's `PlatformStatus` in src/lib/api-shapes.ts, and its fake answer in
+ * COUPLED: the console's `PlatformStatus` in src/lib/platform-shapes.ts, and its fake answer in
  * scripts/fake-gateway/platform-status.ts, which `checks/console-platform-status.ts` compares this
  * route's answer with, key set by key set.
  */

@@ -284,23 +284,21 @@ function serve(req: Request, res: Response, names: string[], teams: string[] | n
   subscribers.add(s);
   connect();
   s.write("retry: 3000\n\n");
-  /* DELIBERATE: a connect is not a resync, and the frame that said it was one is gone.
+  /* The stream opens with one resync of the collections this tab named: the greeting.
    *
-   * The frame used to go out here, and the tab answered it the only way it can — by reading every collection it shows
-   * again. On a page a person has just opened that read is the one the page made while it mounted, taken a moment
-   * earlier: the tab throws away answers it already holds, re-renders every panel, and pays for it in the one window
-   * where the page's largest element is waiting to be painted. Measured on a document route at 390px, with the phone
-   * profile, the body was read three times — twice of them this frame's and the client's own resync-on-open — and the
-   * paint that the LCP is taken from landed at 2,676 ms against a 2,500 ms bar.
+   * COUPLED: the console's `src/lib/live.ts`, which is ZZ Meridian's own file. It takes the first resync on a stream
+   * as the read the page already made while it mounted, and reads nothing for it; every later resync it reads. A stream
+   * that sent no greeting would have its first real resync, the one that says the tab missed changes, taken for the
+   * greeting and thrown away. checks/console-live-greeting.ts holds the opening.
    *
-   * `resync` therefore means what its name says and only that: the tab missed changes. The two cases that are true of
-   * are below in `resyncEveryTab`, when the `LISTEN` connection was down and every tab has a gap, and the queue
-   * overflow, where a burst was collapsed because the frames could not be sent. A tab coming back from an error or
-   * from being hidden takes its own catch-up, and the console's `src/lib/live.ts` says how it knows to.
+   * It costs no read. It used to cost three on a document route, when the console's own copy of that file answered
+   * every resync by reading every collection again and the paint the LCP is taken from landed at 2,676 ms; the
+   * release's file is what made the greeting free.
    *
-   * The gap this leaves is the one the frame closed: a write that lands between the page's own read and this
-   * subscriber being registered is missed until the next change to that collection. That is the cost every missed
-   * hint already has, and it is bounded by the tab's own safety poll. */
+   * After it, `resync` means what its name says: the tab missed changes. The two cases that are true of are below in
+   * `resyncEveryTab`, when the `LISTEN` connection was down and every tab has a gap, and the queue overflow, where a
+   * burst was collapsed because the frames could not be sent. */
+  s.write(resyncOf(s.names));
 }
 
 /** The team slugs a scope sees, or null when it sees every team. */

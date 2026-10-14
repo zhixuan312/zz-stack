@@ -192,6 +192,9 @@ export interface DocRow {
   approved_outcome: string | null;
   /** The public version of the current revision — what a reader is shown as `version`. */
   current_version: number | null;
+  /** The latest public version approved before the current one: where a plan's current phase
+   *  began, since each phase is approved before the next is planned. Null when none was. */
+  approved_before: number | null;
   /** The current revision's ENVELOPE PAYLOAD — the keys no column of `doc` or `doc_revision`
    *  carries. `stage` is what `audit-rounds.ts` and `review-rounds.ts` read a source's own
    *  declaration out of; `stakeholder` and a flow's own fields are the rest of why it exists.
@@ -216,6 +219,9 @@ export async function docRows(p: pg.Pool, team: string | null, initiative: strin
            d.current_revision, d.approved_revision, d.current_version, r.fields,
            (select x.fields->>'outcome' from zz.doc_revision x
              where x.doc_id = d.id and x.revision = d.approved_revision) as approved_outcome,
+           (select max(x.version) from zz.doc_revision x
+             where x.doc_id = d.id and x.approved_at is not null
+               and x.version < d.current_version) as approved_before,
            -- What this revision bears on. to_revision is null by doc_link's own CHECK for this
            -- kind, so the target is a document and not a revision of one, and the path is what
            -- every caller of supports compares against.

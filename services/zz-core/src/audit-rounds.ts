@@ -59,11 +59,11 @@ interface Round { file: string; version: number; added_at: string }
  *  filed, which `docRows` reads onto the row. */
 const supportsOf = (d: DocRow): string[] => d.supports;
 
-/** The rounds of one audit stage on one document, oldest first. */
-function roundsOf(sources: readonly DocRow[], stage: string, document: string): Round[] {
+/** The rounds of one audit stage on one document that read a version after `since`, oldest first. */
+function roundsOf(sources: readonly DocRow[], stage: string, document: string, since: number): Round[] {
   const out: Round[] = [];
   for (const d of sources) {
-    if (stageOf(d) !== stage || !supportsOf(d).includes(document)) continue;
+    if (stageOf(d) !== stage || !supportsOf(d).includes(document) || auditsVersionOf(d) <= since) continue;
     out.push({ file: sourceName(d), version: auditsVersionOf(d), added_at: addedAtOf(d) });
   }
   return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
@@ -105,14 +105,17 @@ interface AuditMove { action: string; document: string; waiting_on: string; why:
 /**
  * The next move an audited document owes, or null when its audit is settled.
  * `version` is the document's public version as it stands — the number a round records as
- * `audits_version` — never a stored row number, which also moves on a same-version draft. Asked of an approved document, and of the plan while it
+ * `audits_version` — never a stored row number, which also moves on a same-version draft.
+ * `since` is the version the rounds count from: a plan's latest approved version before the
+ * current one, because each phase is audited on its own budget and an approved phase's rounds
+ * are spent on that phase; 0 for every other document. Asked of an approved document, and of the plan while it
  * is a draft: a plan phase is audited before its approval, so the round is owed before that gate
  * (`initiative_status`'s `auditedWhile`).
  */
 export function auditMove(initiative: string, stage: string, document: string,
                           version: number, sources: readonly DocRow[],
-                          answers: RoundAssessments): AuditMove | null {
-  const rounds = roundsOf(sources, stage, document);
+                          answers: RoundAssessments, since = 0): AuditMove | null {
+  const rounds = roundsOf(sources, stage, document, since);
   const call = `source_add(initiative: "${initiative}", title, content, supports: ["${document}"], stage: "${stage}")`;
   if (!rounds.length) {
     // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.

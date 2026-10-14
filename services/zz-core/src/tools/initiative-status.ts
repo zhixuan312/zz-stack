@@ -354,7 +354,8 @@ export async function initiativeState(
       .filter((st) => Boolean(st.supports) && appliesOf(st.supports as string) !== "not_applicable"
                      && auditedWhile(st.supports as string))
       .map((st) => auditMove(name, st.name ?? "", st.supports as string,
-                             rows.get(st.supports as string)?.current_version ?? 1, sources, answers))
+                             rows.get(st.supports as string)?.current_version ?? 1, sources, answers,
+                             st.supports === planDoc?.name ? rows.get(st.supports as string)?.approved_before ?? 0 : 0))
       .find((m): m is NonNullable<typeof m> => m !== null);
     // A stage that produces a `record` writes no document, so `pending` cannot see it. The first
     // such stage ahead of the pending document's own stage that has recorded nothing is what runs

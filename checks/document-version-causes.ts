@@ -261,7 +261,8 @@ async function run(c: Core): Promise<void> {
     }
     const owes = (when: string, move: { action?: string; document?: string; why?: string }): void => {
       // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
-      if (move.action !== "add_source" || move.document !== "plan.md" || !/plan\.md is v2; round 1 read v1/.test(move.why ?? "")) {
+      // The round that read v1 was spent on the version approved at v1, so v2 owes a round of its own.
+      if (move.action !== "add_source" || move.document !== "plan.md" || !/Dispatch round 1 on plan\.md v2/.test(move.why ?? "")) {
         c.fail(step, `${when}: expected the round owed on plan.md v2, got ${JSON.stringify(move)}`);
       }
     };

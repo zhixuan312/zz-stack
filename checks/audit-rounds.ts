@@ -29,6 +29,8 @@
  *      with the outcome still reported from the anchor and the initiative not counted closed;
  *      a draft the close itself left — a stop's fallback, or a change before the close — does not;
  *      a stop's fallback approved at the close and corrected after it does, whichever document it is
+ *  13. each plan phase has its own budget: rounds that audited an approved phase do not count
+ *      against the next
  *
  * Run: node checks/audit-rounds.ts   (also run by scripts/gate.ts)
  */
@@ -132,7 +134,7 @@ const docRow = (initiative: string, path: string, o: Record<string, unknown> = {
   id: `d${++seq}`, path, initiative, flow: "", type: "", status: "",
   outcome: null, approved_by: null, approved_at: null, closed_by: null,
   updated_at: "2026-09-24T00:00:00.000Z", title: "", body: "", tags: [],
-  current_revision: 1, approved_revision: null, current_version: 1, fields: null, supports: [], ...o,
+  current_revision: 1, approved_revision: null, current_version: 1, approved_before: null, fields: null, supports: [], ...o,
 });
 
 interface Fixture { name: string; chain: Awaited<ReturnType<typeof chainFor>> }
@@ -365,6 +367,38 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
   const m5 = (await initiativeState(db()!, TEAM, fixed.name, fixed.chain, fixed.chain.documents)).next_move;
   is(m5?.action === "await_approval" && m5?.document === "spec.md" && /v2 is a correction/.test(m5?.why ?? ""),
      `a stop's approved fallback, corrected after it, does not await its own approval: ${JSON.stringify(m5)}`);
+}
+
+// 13. Each plan phase has its own budget: the rounds that audited a phase already approved do not
+//     count against the next one. Phase 1 was approved at v4 after three rounds; Phase 2, planned
+//     at v5 and audited once, revised to v6, owes its second round, not the stakeholder.
+{
+  const p = await fresh(1);
+  round(p.name, 1, 1);
+  const plan = (version: number, approvedBefore: number | null, status = "draft") => {
+    const w = world.get(p.name)!;
+    w.docs = w.docs.filter((x) => x.path !== "plan.md");
+    w.docs.push(docRow(p.name, "plan.md", { title: "Plan", flow: "sdlc-flow", status,
+      current_revision: version + 5, current_version: version, approved_before: approvedBefore,
+      body: "# Plan\n\n## Phase 1 — skeleton\n\n## Phase 2 — the rest\n" }));
+  };
+  const planRound = (i: number, read: number) => world.get(p.name)!.docs.push(docRow(p.name,
+    `sources/2026-09-24-plan-audit-round-${i}.md`, { type: "sdlc-plan-audit", title: `Plan audit round ${i}`,
+      body: "Findings.", supports: ["plan.md"],
+      fields: { stage: "sdlc-plan-audit", audits_version: String(read), added_at: `2026-09-25T0${i}:00:00.000Z` } }));
+  for (let i = 1; i <= ROUND_BUDGET; i++) planRound(i, i);
+  plan(4, null, "approved");
+  plan(5, 4);
+  let pm = await move(p);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(pm?.action === "add_source" && /Dispatch round 1 on plan\.md v5/.test(pm?.why ?? ""),
+     `a new plan phase was not sent to its own first round: ${JSON.stringify(pm)}`);
+  planRound(4, 5);
+  plan(6, 4);
+  pm = await move(p);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(pm?.action === "add_source" && /Round 2 checks the new version/.test(pm?.why ?? ""),
+     `a new plan phase's revision went to the stakeholder on the earlier phase's spent budget: ${JSON.stringify(pm)}`);
 }
 
 if (fail.length) {

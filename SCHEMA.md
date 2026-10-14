@@ -53,7 +53,7 @@ rather than a second authority.
 1. One authoritative fact, one place. A copy exists only as a declared projection with a rebuild source.
 2. Relations use ids and foreign keys. Slugs and paths are external addresses or declared historical snapshots.
 3. Current state is never reconstructed from telemetry. History explains how state changed; state tables say what is true now.
-4. Immutable history is insert-only. A `state_machine` record freezes its payload and may change only lifecycle fields through declared transitions; a terminal published result is never rewritten.
+4. Immutable history is insert-only. A `state_machine` record freezes its payload and may change only lifecycle fields through declared transitions; a terminal published result is never rewritten. One update of an insert-only table exists: the migration that added `zz.event.origin` set it to `platform`, once, on the rows already there whose recorded client was a maintenance client, whatever their kind, because the column is newer than those rows and they are what a count of real work leaves out. No writer changes an origin after its row is written.
 5. Bearer secrets are stored hashed; expiry and consumption are explicit columns.
 6. Sparse is not dead: null and zero are judged by meaning, not frequency.
 7. A field may lack its reader or writer only while a named capability owns it, and that capability cannot close with the gap open.

@@ -18,7 +18,8 @@
  * the approval a write carries forward into `saveDocument`; and `sourceDocument` is the envelope
  * shape the knowledge tools produce.
  */
-import { parseEnvelope } from "@zz/contracts";
+import { eventOrigin, parseEnvelope } from "@zz/contracts";
+import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
 import { renderEnvelope } from "./document-rules.js";
@@ -90,6 +91,9 @@ export function platformEvent(e: {
   void teamFor(actor).then(write)
     .catch((err) => console.error("journal insert failed:", err));
 }
+/** A header's one value, as the gateway relays it: a name, or nothing. */
+const clientOf = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
+
 /** The one statement that writes a `zz.event` row, on whatever runs it: the pool, for
  *  `platformEvent`'s fire-and-forget record, or a transaction's client, for a row that must commit
  *  or roll back with the write it records — a change's own act, which carries the details its
@@ -105,7 +109,15 @@ export function platformEvent(e: {
  *  DELIBERATE: no refusal for an actor this platform does not know. A journal entry by nobody —
  *  `journalLog` writes one — has that column null, and a row that is a record of an act is worth
  *  more than a refusal to make one. The statement resolves the id, so an address nothing matches
- *  lands as null rather than as an error. */
+ *  lands as null rather than as an error.
+ *
+ *  The origin is stamped here and no caller passes one: `eventOrigin` of the `x-zz-client` the
+ *  gateway relayed with the request being handled, read from the request's own context, which a
+ *  fire-and-forget write and a transaction's client both still run in. A write outside any request
+ *  has no client and is `work`.
+ *
+ *  COUPLED: the gateway's `logEvent` (services/gateway/src/events.ts) stamps the same column from
+ *  the same header through the same function, so one call's two rows agree. */
 export async function insertEvent(
   c: Pick<pg.Pool, "query">,
   e: { actor: string; team: string | null; initiative: string | null; kind: string; subject: string;
@@ -113,7 +125,7 @@ export async function insertEvent(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await c.query(
-      `insert into zz.event (actor_id, team_id, initiative_id, kind, subject, detail)
+      `insert into zz.event (actor_id, team_id, initiative_id, kind, subject, detail, origin)
        -- FOLDED ON BOTH SIDES, as platform-db.ts, versions.ts and semantic.ts all do. This folded
        -- only the parameter, so an address stored with any upper case resolved to no principal and
        -- zz.event.actor_id was written null, silently — platformEvent's insert is fire-and-forget and nothing
@@ -122,8 +134,9 @@ export async function insertEvent(
                (select id from zz.team where slug = $2),
                (select i.id from zz.initiative i join zz.team t on t.id = i.team_id
                  where t.slug = $2 and i.slug = $3),
-               $4, $5, $6)`,
-      [e.actor, e.team, e.initiative, e.kind, e.subject, JSON.stringify(e.detail)]);
+               $4, $5, $6, $7)`,
+      [e.actor, e.team, e.initiative, e.kind, e.subject, JSON.stringify(e.detail),
+       eventOrigin(clientOf(requestHeaders()["x-zz-client"]))]);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

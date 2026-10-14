@@ -29,7 +29,7 @@
  */
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 
-import { refusalOwner } from "@zz/contracts";
+import { type EventOrigin, refusalOwner } from "@zz/contracts";
 import type { PoolClient } from "pg";
 
 import { platformDb, platformDbReady } from "./db.js";
@@ -152,7 +152,7 @@ const STAMP_RUN = `${IDENTITY}
 /** The first seven of the writer's parameters, and all the run statement names.
  *
  *  Postgres refuses a statement handed more parameters than it references, so the two statements
- *  cannot simply share one array: the event statement names all eighteen, the run statement the
+ *  cannot simply share one array: the event statement names all nineteen, the run statement the
  *  prefix — the identity, the session, and the outcome and size the event being written
  *  contributes to the aggregate. One numbering, so $5 is the session in both. */
 const RUN_PARAMS = 7;
@@ -166,12 +166,12 @@ const APPEND_EVENT = `${IDENTITY}
     insert into zz.event (actor_id, team_id, initiative_id, session, skill_version_id, run_id,
                           kind, subject, detail, ok, refusal, refusal_owner,
                           plugin, plugin_version, tool_key,
-                          duration_ms, request_bytes, response_bytes, batched)
+                          duration_ms, request_bytes, response_bytes, batched, origin)
     select id.actor_id, id.team_id, id.initiative_id, $5, id.skill_version_id,
            (select r.id from zz.skill_run r
              where r.team_id = id.team_id and r.initiative_id = id.initiative_id
                and r.skill_version_id = id.skill_version_id and r.session = $5),
-           $8, $9, $10::jsonb, $6, $11, $12, $13, $14, $15, $16, $17, $7, $18
+           $8, $9, $10::jsonb, $6, $11, $12, $13, $14, $15, $16, $17, $7, $18, $19
       from id`;
 
 /** The two statements, in one transaction, or nothing at all.
@@ -239,6 +239,11 @@ export function logEvent(e: {
   plugin?: string;
   pluginVersion?: string;
   toolKey?: string;
+
+  /** Whether the act was the platform maintaining itself — @zz/contracts' eventOrigin() of the
+   *  request's `x-zz-client`, from the one caller that holds the request. Absent is `work`, written
+   *  here so that no row of this writer's is left to the column's default. */
+  origin?: EventOrigin;
 }): void {
   // One spelling of a person, folded here because this is the one place every gateway event passes
   // through. The actor column is grouped on by tool-report --actor and watch-results, and one
@@ -281,5 +286,6 @@ export function logEvent(e: {
     e.durationMs ?? null,                    // $16
     e.requestBytes ?? null,                  // $17
     e.batched ?? false,                      // $18
+    e.origin ?? "work",                      // $19
   ]);
 }

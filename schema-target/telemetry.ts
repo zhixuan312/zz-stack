@@ -136,6 +136,12 @@ export const TELEMETRY: Record<string, TableTarget> = {
         true,
         null,
       ],
+      [
+        "origin",
+        "text",
+        false,
+        "'work'::text",
+      ],
     ],
     primaryKey: [
       "id",
@@ -233,6 +239,7 @@ export const TELEMETRY: Record<string, TableTarget> = {
     checks: [
       "CHECK (((initiative_id IS NULL) OR (team_id IS NOT NULL)))",
       "CHECK ((kind ~ '^[a-z_]+(\\.[a-z_]+)?$'::text))",
+      "CHECK ((origin = ANY (ARRAY['work'::text, 'platform'::text])))",
       "CHECK (((refusal_owner IS NULL) OR ((refusal_owner = ANY (ARRAY['guardrail'::text, 'ours'::text, 'theirs'::text, 'other'::text])) AND (ok = false))))",
       "CHECK (((run_id IS NULL) OR (team_id IS NOT NULL)))",
       "CHECK (((kind <> 'tool_call'::text) OR ((ok IS NOT NULL) AND (tool_key IS NOT NULL))))",
@@ -269,6 +276,7 @@ export const TELEMETRY: Record<string, TableTarget> = {
       initiative_id: "class=relation; authority=this; question=which initiative the caller was working on, carried forward per caller, null when the act belongs to none?",
       session: "class=immutable_history; authority=this; question=what the caller's conversation key is — a hash of the caller's email, client and 45-minute bucket minted in gateway memory, which a gateway restart splits and which groups the events a skill_run is built from?",
       skill_version_id: "class=relation; authority=this; question=which skill version the caller was following, resolved at write as the latest released version of the skill the caller last loaded so that a later re-registration cannot move it, null when no skill was loaded?",
+      origin: "class=immutable_history; authority=this; question=was this act the platform maintaining itself or work, platform when the lower-cased name the caller gave in x-zz-client, cut at the first / and then at the first space, is chain-check, zz-migrate or zz-doctor and work for every other name and for none, stamped by the writer of the row from the request it was handling and set once from detail.client on the rows older than the column, of any kind that recorded one, a caller's own claim that sorts traffic for counting and decides no access?",
     },
   },
   skill_run: {

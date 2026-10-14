@@ -85,6 +85,9 @@ interface CallRow {
   request_bytes: number | null;
   response_bytes: number | null;
   batched: boolean;
+  /** Whether the call was work or the platform maintaining itself, stamped at write from the
+   * client's own name by @zz/contracts' eventOrigin(). Never null. */
+  origin: "work" | "platform";
 
   /** Read, never filtered on — which is exactly what a jsonb column is good at. */
   detail: {
@@ -141,7 +144,7 @@ function rows(psql: string, since: string, surface: string | null, actor: string
     "select e.ts, e.subject, t.slug as team_slug, i.slug as initiative, sk.name as step," +
     " e.plugin, e.plugin_version, e.tool_key," +
     " e.ok, e.refusal, e.refusal_owner, e.duration_ms, e.request_bytes, e.response_bytes," +
-    " e.batched, e.detail" +
+    " e.batched, e.origin, e.detail" +
     " from zz.event e" +
     " left join zz.team t on t.id = e.team_id" +
     " left join zz.initiative i on i.id = e.initiative_id" +

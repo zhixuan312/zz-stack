@@ -232,4 +232,39 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       },
     ],
   },
+  // The event-origin release. It adds one column to `zz.event` and removes no row, so the table
+  // keeps its count and hashes unchanged over the twenty-one columns it had; `origin` is this
+  // file's own and is left out of the digest. Its backfill is the one statement that changes rows
+  // of that table, and the joins say which rows it may have changed and to what.
+  //
+  // DELIBERATE: the joins spell the rule as a pattern over the recorded name, where the file cuts
+  // it with `split_part` — one of the three names, in any case, followed by `/`, a space or
+  // nothing. A join that repeated the file's own expression would agree with it whatever it said.
+  // This entry leaves with the file when it folds into `001_init.sql`.
+  "004_event_origin.sql": {
+    tables: {
+      event: {
+        hashColumns: ["id", "ts", "kind", "subject", "detail", "ok", "refusal", "run_id", "team_id",
+                      "duration_ms", "request_bytes", "response_bytes", "batched", "plugin",
+                      "plugin_version", "tool_key", "refusal_owner", "actor_id", "initiative_id",
+                      "session", "skill_version_id"],
+      },
+    },
+    joins: [
+      // Of any kind: the gateway records a client on a tool call and zz-core on a presentation.
+      {
+        name: "every event whose recorded client is a maintenance client reads platform",
+        violatingCount: `select count(*)::int as n from zz.event e
+          where e.origin <> 'platform'
+            and e.detail->>'client' ~* '^(chain-check|zz-migrate|zz-doctor)([/ ]|$)'`,
+      },
+      // Everything else kept the default: a row from another client, and a row that recorded none.
+      {
+        name: "no other event reads platform",
+        violatingCount: `select count(*)::int as n from zz.event e
+          where e.origin = 'platform'
+            and coalesce(e.detail->>'client', '') !~* '^(chain-check|zz-migrate|zz-doctor)([/ ]|$)'`,
+      },
+    ],
+  },
 };

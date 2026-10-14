@@ -25,7 +25,7 @@ import { StringDecoder } from "node:string_decoder";
 import type { NextFunction, Request, Response } from "express";
 
 import { pluginForDoor } from "@zz/catalog";
-import { refusalClass } from "@zz/contracts";
+import { eventOrigin, refusalClass } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 // COUPLED: `tool_key` must fold onto the same series a reader building one from historical
 // `subject` values would, so nothing but this resolver may produce it.
@@ -436,6 +436,9 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         // Alias-resolved, so `tool_key` reads as one series across a rename and no future reader
         // has to resolve `subject` itself.
         const toolKey = resolveToolKey(`${where}:${call.params?.name ?? ""}`);
+        // The client's own name for itself, as sent. One reading, so the origin the row carries and
+        // the name its detail keeps cannot come from two.
+        const client = req.headers["x-zz-client"] ? String(req.headers["x-zz-client"]) : undefined;
         // An id that answered nothing is unreadable, not refused — the same distinction the
         // report depends on to keep its accepted rate from being a guess.
         const outcome = transport
@@ -487,6 +490,8 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           requestBytes,
           responseBytes: bytes,
           batched: wanted.length > 1,
+          // Work, or the platform maintaining itself, from the name in `detail.client` below.
+          origin: eventOrigin(client),
 
           // The bag: read, never filtered on.
           detail: {
@@ -498,7 +503,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
             //
             // DELIBERATE: not a second capture path. A tool becomes measurable by sending the
             // header it already sends, never by reporting itself.
-            ...(req.headers["x-zz-client"] ? { client: String(req.headers["x-zz-client"]) } : {}),
+            ...(client ? { client } : {}),
             // The hash of the skill text actually served. Not a column: the gate refuses a
             // changed skill that kept its version, so authoring drift is caught in the repo
             // and what is left here is the narrower case of a host running text the repo does

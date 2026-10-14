@@ -6,15 +6,28 @@
  *   npm run skeleton      # needs Docker and ../zz-stack-dashboard with its dependencies installed
  *
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), seeds the events
- * and people `scripts/schema/status-seed.ts` declares, and signs a member of the seed's first team
- * and a superadmin in through real console session rows. The platform is built first (`npm run
- * build`, incremental), and the gateway is its own built identity middleware, JSON parser and
+ * and people `scripts/schema/status-seed.ts` declares and the two teams `scripts/schema/isolation-seed.ts`
+ * declares, and signs a member of the status seed's first team and a superadmin in through real
+ * console session rows. The platform is built first (`npm run build`, incremental), and the gateway is its own built identity middleware, JSON parser and
  * whole console API (`mountConsole`), mounted in this process in server.ts's order on a free port:
  * `dist/server.js` itself listens on port 8000 of every interface, which a run beside a deployment
  * or another stack cannot have. The console is built the way `pnpm verify` builds it, with `ZZ_GATEWAY` set to that
  * gateway, and served with `next start` on a free port with `NODE_ENV` production and no
- * development credential. What it establishes, each page read to the end of its stream and matched
- * on its text with markup, scripts and React's comments removed:
+ * development credential. What it establishes, first through the gateway and then through the console:
+ *
+ *   - the platform's status, releases, bugs and evaluation reads, each as the member and as the
+ *     superadmin, answer 200 with every part in the state the seeds give it: on status `needs`
+ *     complete, the eight measures, `records` and `doors` ok, `running` unavailable as `unrecorded`
+ *     since no seed records a release, and `own` ok for the member and `no_team` for the superadmin;
+ *     on releases `rows` ok and empty with no latest release; every part of bugs and evaluation ok.
+ *     Status's malformed-call rate for the last whole week is the seed's, 8 of 125 and 64.0. The
+ *     member's answers hold none of the isolation seed's second-team sentinels, matched in the raw
+ *     body; the superadmin's bugs and evaluation hold that team's report title and protocol key, so
+ *     the member's absence is not a seed that never arrived. Each read's other values are its own
+ *     check's (`checks/console-platform-*.ts`);
+ *
+ * and through the console, each page read to the end of its stream and matched on its text with
+ * markup, scripts and React's comments removed:
  *
  *   - `/platform` as the member and as the superadmin answers 200 with `Malformed calls per 1,000`,
  *     the last whole week's value to one decimal and its `<n> of <d>` — the figure the seed states,
@@ -51,11 +64,13 @@ import type { Express, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "./deployment.ts";
+import { seedIsolation } from "./schema/isolation-seed.ts";
 import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn } from "./schema/status-seed.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
 
 const NAME = "skeleton";
-const DONE = "skeleton: the built console signs a member and a superadmin in through the real gateway, draws the " +
+const DONE = "skeleton: the real gateway answers the platform's four reads to a member and a superadmin in the " +
+  "seeds' states with none of another team's words to the member, the built console signs both in through it, draws the " +
   "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, and shows " +
   "a member no other team on /teams: ok";
 /** The reporting timezone the gateway cuts weeks in, and the seed with it. */
@@ -177,6 +192,93 @@ async function stop(): Promise<void> {
 /** What a seeded reader could recognise as theirs: every team's slug and every person's email. */
 interface Seeded { slugs: string[]; emails: string[] }
 
+type Isolation = Awaited<ReturnType<typeof seedIsolation>>;
+type Who = "the member" | "the superadmin";
+/** A part as every platform read answers one. */
+type Part = { state: "ok"; data: unknown } | { state: "unavailable"; reason: string };
+
+/** What a part answered, as a case line says it: `ok`, or `unavailable` and why. */
+const stateOf = (p: Part | undefined): string => p === undefined ? "missing" : p.state === "ok" ? "ok" : `unavailable (${p.reason})`;
+
+/** A JSON answer that is an object, narrowed rather than asserted. */
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Each read's parts in the states the seeds give them, as the person asking: what is wrong with `a`,
+ *  each a phrase, and the states the case line names. */
+const READS: { path: string; parts: (a: Record<string, unknown>, who: Who) => { wrong: string[]; said: string } }[] = [
+  { path: "/api/console/platform/status", parts: (a, who) => {
+    const wrong: string[] = [];
+    type Last = { figure: { value: number | null }; numerator: number | null; denominator: number | null } | null;
+    const parts = a as { needs?: { state?: string }; measures?: { key: string; last: Last }[] } & Record<string, Part>;
+    const want: Record<string, string> = {
+      records: "ok", doors: "ok", running: "unavailable (unrecorded)", own: who === "the member" ? "ok" : "unavailable (no_team)",
+    };
+    for (const [k, v] of Object.entries(want)) if (stateOf(parts[k]) !== v) wrong.push(`${k} is ${stateOf(parts[k])}, not ${v}`);
+    if (parts.needs?.state !== "complete") wrong.push(`needs is ${parts.needs?.state ?? "missing"}, not complete`);
+    if (parts.measures?.length !== 8) wrong.push(`it answers ${parts.measures?.length ?? "no"} measures, not 8`);
+    const last = EXPECTED.weeks.find((w) => w.back === EXPECTED.last)!;
+    const got = parts.measures?.find((m) => m.key === "malformed_per_1000")?.last;
+    if (got?.figure.value !== last.value || got.numerator !== last.numerator || got.denominator !== last.denominator) {
+      wrong.push(`the last whole week's malformed-call rate is ${JSON.stringify(got ?? null)}, not ${last.numerator} of ${last.denominator}, ${last.value}`);
+    }
+    return { wrong, said: `needs complete, eight measures, the last whole week's malformed-call rate ${last.numerator} of ` +
+      `${last.denominator} and ${last.value!.toFixed(1)}, ${Object.entries(want).map(([k, v]) => `${k} ${v}`).join(", ")}` };
+  } },
+  { path: "/api/console/platform/releases", parts: (a) => {
+    const parts = a as { tiles?: { latest?: unknown }; rows?: Part };
+    const rows = parts.rows?.state === "ok" ? parts.rows.data as { rows: unknown[]; total: number } : null;
+    const wrong = rows === null ? [`rows is ${stateOf(parts.rows)}, not ok`]
+      : rows.total !== 0 || rows.rows.length ? [`rows holds ${rows.total} releases, though no seed records one`] : [];
+    if (parts.tiles?.latest !== null) wrong.push(`the latest release is ${JSON.stringify(parts.tiles?.latest)}, not none`);
+    return { wrong, said: "rows ok and empty and no latest release, as no seed records one" };
+  } },
+  { path: "/api/console/platform/bugs", parts: (a) => {
+    const names = ["counts", "queue"];
+    return { wrong: names.filter((k) => stateOf(a[k] as Part) !== "ok").map((k) => `${k} is ${stateOf(a[k] as Part)}, not ok`),
+             said: `${names.join(" and ")} ok` };
+  } },
+  { path: "/api/console/platform/evaluation", parts: (a) => {
+    const names = ["plugins", "history", "byDecision", "byOwner", "waiting"];
+    return { wrong: names.filter((k) => stateOf(a[k] as Part) !== "ok").map((k) => `${k} is ${stateOf(a[k] as Part)}, not ok`),
+             said: `${names.join(", ")} ok` };
+  } },
+];
+
+/** The platform's four reads straight from the gateway, as the member and as the superadmin: each part
+ *  in its seeded state, none of the second team's sentinels in the member's raw body, and the
+ *  superadmin's bugs and evaluation holding that team's own words. */
+async function reads(gateway: string, cookies: Map<string, string>, isolation: Isolation): Promise<void> {
+  const sentinels = Object.entries(isolation.sentinels);
+  /** What the superadmin's answer to a read must hold, so the member's absence is not a missing seed. */
+  const held: Record<string, (keyof Isolation["sentinels"])[]> = {
+    "/api/console/platform/bugs": ["bugTitle"], "/api/console/platform/evaluation": ["protocolKey", "pattern"],
+  };
+  for (const { path, parts } of READS) {
+    for (const [who, email] of [["the member", MEMBER], ["the superadmin", SUPERADMIN]] as const) {
+      const step = `${path} as ${who}`;
+      const res = await fetch(`${gateway}${path}`, {
+        headers: { cookie: `zz_console=${cookies.get(email)}` }, signal: AbortSignal.timeout(30_000),
+      });
+      const body = await res.text();
+      if (res.status !== 200) fail(step, `answered ${res.status}: ${body.slice(0, 400)}`);
+      const answer: unknown = JSON.parse(body);
+      if (!isRecord(answer)) fail(step, `answered something other than an object: ${body.slice(0, 200)}`);
+      const { wrong, said } = parts(answer, who);
+      if (wrong.length) fail(step, wrong.join("; "));
+      if (who === "the member") {
+        const found = sentinels.filter(([, s]) => body.includes(s));
+        if (found.length) fail(step, `the body holds the second team's ${found.map(([f, s]) => `${f} at ${body.indexOf(s)}`).join(", ")}`);
+        pass(`${step} answers 200 with ${said}, and holds none of the second team's ${sentinels.length} sentinels`);
+      } else {
+        const missing = (held[path] ?? []).filter((f) => !body.includes(isolation.sentinels[f]));
+        if (missing.length) fail(step, `the body does not hold the second team's ${missing.join(", ")}`);
+        pass(`${step} answers 200 with ${said}` +
+          (held[path] ? `, and holds the second team's ${held[path].join(" and ")} as written` : ""));
+      }
+    }
+  }
+}
+
 async function cases(base: string, cookies: Map<string, string>, seeded: Seeded): Promise<void> {
   const last = EXPECTED.weeks.find((w) => w.back === EXPECTED.last)!;
   const want = ["Malformed calls per 1,000", last.value!.toFixed(1), `${last.numerator} of ${last.denominator}`];
@@ -245,6 +347,8 @@ async function cases(base: string, cookies: Map<string, string>, seeded: Seeded)
 
 async function run(db: pg.Client, url: string): Promise<void> {
   await seedStatus(db, TIMEZONE);
+  // Its people and slugs are its own, and it writes no tool call, so the status seed's figure stands.
+  const isolation = await seedIsolation(db);
   const seeded: Seeded = {
     slugs: (await db.query<{ slug: string }>("select slug from zz.team")).rows.map((r) => r.slug),
     emails: (await db.query<{ email: string }>("select email from zz.principal")).rows.map((r) => r.email),
@@ -282,6 +386,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     const text = await res.text();
     if (res.status !== 200) fail(step, `/api/console/platform/status answered ${res.status}: ${text.slice(0, 400)}`);
     pass(`the gateway listens at ${gateway} and answers the member's status read`);
+    await reads(gateway, cookies, isolation);
 
     const env = consoleEnv(gateway);
     buildConsole(env);

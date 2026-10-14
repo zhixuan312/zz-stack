@@ -23,10 +23,17 @@
  *     scope parameter changes nothing, and the member's answer holds no other team's slug;
  *   - no session is refused with 401, a member's token with 403, and a query that fails answers 500
  *     with the route's sentence and no partial body;
+ *   - over the seed's first rows, nothing needs attention: the superadmin reads `Nothing needs you` and
+ *     a member `No known open issues`; the doors count every real-work call the seed placed, core's
+ *     one tool failure among them, and the other doors none; the records are answered;
+ *   - what is running is `unrecorded` until `zz.release` holds the gateway's own version, and then
+ *     names it, the console version recorded with it, its tagged time, the release tagged before it
+ *     (the nearer of two) and the migrations `zz.schema_migration` holds;
  *   - the answer agrees in shape with the console's fake one, read from the sibling checkout: where
  *     both hold an object their key sets are equal, where both hold an array their first elements are
  *     compared the same way, each measure with the fake's of the same key, and a null on either side is
- *     compared with nothing;
+ *     compared with nothing; `needs.overflowByKind` is a record whose keys are kinds, so its keys are
+ *     data and not compared;
  *   - over the seed's further rows (`seedMeasures`), the eight measures answer in the spec's order,
  *     each week's counts, value and reason, the weeks each names, its judgement and its finding as the
  *     seed writes them out, with the follow-up counts, the calls with no usable duration, the share of
@@ -57,6 +64,7 @@
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
 import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -73,7 +81,8 @@ import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-platform-status";
 const DONE = "console-platform-status: the platform's eight measures are answered week by week in the reporting " +
-  "timezone, alike to a member, a superadmin and a person in no team, from real work only, beside the reader's own team's: ok";
+  "timezone, alike to a member, a superadmin and a person in no team, from real work only, beside the reader's own team's, " +
+  "with what needs attention, the doors, the records and what is running: ok";
 const TIMEZONE = "Pacific/Auckland";
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "platform-status.ts");
@@ -91,9 +100,10 @@ const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z
 interface Answer { status: number; body: Obj; text: string }
 
 /** Where two answers' shapes differ, by the contract's rule: at an object both hold, the key sets;
- *  at an array both hold, the first elements, the same way; a null on either side, nothing. */
+ *  at an array both hold, the first elements, the same way; a null on either side, nothing; a record
+ *  keyed by data (`needs.overflowByKind`), nothing. */
 function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
+  if (a === null || b === null || at === "needs.overflowByKind") return out;
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
   } else if (isObj(a) && isObj(b)) {
@@ -362,6 +372,49 @@ async function measureCases(db: pg.Client, seeded: Seeded, as: (email: string, q
   return added;
 }
 
+/** Over `seedStatus` alone nothing needs attention, and the doors and records count what it placed. */
+function attentionCases(member: Answer, admin: Answer): void {
+  const step = "nothing needs attention, and the doors count what was seeded";
+  const empty = { state: "complete", rows: [], total: 0, knownCount: 0, unavailableKinds: [], overflowByKind: {} };
+  for (const [a, headline] of [[admin, "Nothing needs you"], [member, "No known open issues"]] as const) {
+    if (JSON.stringify(a.body.needs) !== JSON.stringify({ ...empty, headline })) fail(step, `needs reads ${JSON.stringify(a.body.needs)}`);
+  }
+  const doors = admin.body.doors as { state: string; data: Obj[] };
+  const work = CALLS.filter((c) => c.origin === "work");
+  const want = [["core", work.reduce((n, c) => n + c.calls, 0), work.reduce((n, c) => n + (c.theirs ?? 0), 0)], ["manage", 0, 0], ["eval", 0, 0]];
+  const got = doors.state === "ok" ? doors.data.map((d) => [d.door, (d.totals as Obj).calls, (d.totals as Obj).toolFailures]) : doors;
+  if (JSON.stringify(got) !== JSON.stringify(want)) fail(step, `doors read ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
+  const today = (doors.data[0].days as Obj[]).at(-1)!;
+  const local = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(String((admin.body.meta as Obj).asOf)));
+  if (today.date !== local || today.complete !== false) fail(step, `the last day reads ${JSON.stringify(today)}, not ${local}, not complete`);
+  if ((admin.body.records as Obj).state !== "ok") fail(step, `records read ${JSON.stringify(admin.body.records)}`);
+  // The records' values are held to a seed of their own in console-platform-needs.
+  pass(`nothing needs attention (Nothing needs you; No known open issues), the core door counts the ${want[0][1]} real-work calls ` +
+       "seeded and its one tool failure, the other doors none, through today, which is not complete");
+}
+
+/** `running` is `unrecorded` until a release row names the gateway's own version; then it reads that row, the release
+ *  tagged before it and the migrations applied. */
+async function runningCases(db: pg.Client, as: (email: string) => Promise<Answer>): Promise<void> {
+  const step = "what is running";
+  const before = (await as(MEMBER)).body.running;
+  if (JSON.stringify(before) !== JSON.stringify({ state: "unavailable", reason: "unrecorded" })) fail(step, `with no release recorded: ${JSON.stringify(before)}`);
+  // COUPLED: services/gateway/src/client-package.ts — PLATFORM_VERSION is the gateway's own package version.
+  const version = (JSON.parse(readFileSync(join(root, "services", "gateway", "package.json"), "utf8")) as { version: string }).version;
+  const now = Date.now();
+  const at = (days: number): string => iso(now - days * 86_400_000);
+  await db.query(
+    `insert into zz.release (version, console_version, released_at, summary, changelog)
+     values ($1, '0.27.0', $2, 'seeded', 'seeded'), ('0.0.2', null, $3, 'seeded', 'seeded'), ('0.0.1', null, $4, 'seeded', 'seeded')`,
+    [version, at(2), at(9), at(20)]);
+  const migrations = (await db.query<{ n: number }>("select count(*)::int as n from zz.schema_migration")).rows[0].n;
+  const after = (await as(MEMBER)).body.running;
+  const want = { state: "ok", data: { platform: version, console: "0.27.0", releasedAt: at(2), previous: "0.0.2", migrations } };
+  if (JSON.stringify(after) !== JSON.stringify(want)) fail(step, `${JSON.stringify(after)}, not ${JSON.stringify(want)}`);
+  pass(`what is running is unrecorded until zz.release names ${version}, then reads its console version, its tagged time, ` +
+       `the release tagged before it and the ${migrations} migrations applied`);
+}
+
 /** A measure with the running week's `observedThrough` left out: it is the request's own `asOf`,
  *  which moves between two requests a second apart. Everything else must be identical. */
 function settled(m: unknown): string {
@@ -442,6 +495,9 @@ async function run(db: pg.Client, url: string): Promise<void> {
     }
     pass("a query that fails answers 500, could not read the platform's status, and nothing else");
 
+    attentionCases(member, await as(SUPERADMIN));
+    await runningCases(db, as);
+
     step = "the shape the console's fake answers";
     let fake: unknown;
     try {
@@ -450,11 +506,14 @@ async function run(db: pg.Client, url: string): Promise<void> {
       fail(step, `could not read the console's fake answer at ${FAKE}: ${(err as Error).message}`);
     }
     if (!isObj(fake)) fail(step, `${FAKE} exports no PLATFORM_STATUS object`);
-    const diffs = shapeDiffs(member.body, fake, "", []);
+    // Read again: what is running is recorded now.
+    const recorded = await as(MEMBER);
+    const diffs = shapeDiffs(recorded.body, fake, "", []);
     const theirs = (fake as Obj).measures as Obj[];
-    for (const m of measuresOf(step, member)) shapeDiffs(m, theirs.find((f) => f.key === m.key) ?? {}, `measures.${String(m.key)}`, diffs);
+    for (const m of measuresOf(step, recorded)) shapeDiffs(m, theirs.find((f) => f.key === m.key) ?? {}, `measures.${String(m.key)}`, diffs);
     if (diffs.length) fail(step, diffs.join("; "));
-    pass("the answer agrees in shape with the console's fake one, key set by key set and measure by measure, its own part included");
+    pass("the answer agrees in shape with the console's fake one, key set by key set and measure by measure, its own part, " +
+         "the doors, the records and what is running included");
 
     const added = await measureCases(db, seeded, as, dbModule.platformDb());
 

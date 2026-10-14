@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the twenty-five that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the twenty-six that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the twenty-five gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the twenty-six gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -61,10 +61,12 @@ driving the gateway's identity gate and its own route against one, the console's
 page-view, overview and activity routes against one and listens on the console's change channel,
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
 against one and reads its greeting,
-and the twelve that run a real zz-core against one: the console's
+and the thirteen that run a real zz-core against one: the console's
 document reads, presentation and approval (`checks/console-versions.ts`), the console's search of
 documents and nodes by their content (`checks/console-search.ts`), the console's bug resolution
-held to zz-core's own `bug_resolve` (`checks/console-bug-resolve.ts`), the document walking
+held to zz-core's own `bug_resolve` (`checks/console-bug-resolve.ts`), what needs attention on the
+platform's Status, its doors and records, with a resolve through the console's route
+(`checks/console-platform-needs.ts`), the document walking
 skeleton and every edit mode
 (`checks/document-edit.ts`), concurrent changes and keyed requests (`checks/document-edit-races.ts`),
 the version table and the acts racing an edit (`checks/document-version.ts`), the causes that
@@ -83,7 +85,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those twenty-five checks or the rehearsal never needs Docker.
+runs those twenty-six checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

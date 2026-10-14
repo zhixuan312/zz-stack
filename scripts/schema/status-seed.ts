@@ -453,3 +453,204 @@ export const MEASURES = {
     bugs: { filed: 4, fixed: 1, notABug: 1, duplicate: 1, open: 1 },
   },
 };
+
+/* ---- What needs attention, the doors and the records ----
+ *
+ * `seedNeeds` stands alone, on a database holding no other tool call, and `NEEDS` is what a reader must find over it,
+ * written out by hand. Days are local in the timezone given, `D-k` the day `k` days before the seed's clock's own day,
+ * every call one second after the last from local noon, and today's between local midnight and the clock. Weeks are
+ * `weekStart`'s, `back` 0 the running one. Real-work tool calls, in team osprey unless said otherwise:
+ *
+ *   - the latency weeks: 30 `core:skill_read` calls from the first instant of back 6, 5 and 4, timed 100, 150 and
+ *     300 ms, so the record begins on back 6's Monday and both latencies' last comparable week (back 4; the weeks
+ *     after hold no duration) is at least twice its first;
+ *   - `core`: 100 calls on each of D-19 to D-1, except D-10, whose 100 hold 1 tool failure (a fault day at exactly
+ *     1%), and D-2, whose 50 hold 1 malformed call (no fault day); today 10, the first a tool failure;
+ *   - `manage`: 50 calls on D-6, D-4, D-3 and D-1, 20 on D-5 with 1 tool failure (red, 5%), 50 on D-2 with 1 tool
+ *     failure, the malformed call's day; today 20, the first a tool failure, after `core`'s;
+ *   - `eval`: 10 calls on each of D-3 to D-1, one of D-1's refused as `other`; today 5;
+ *   - bug reports: one real and open, blocking work, which the check resolves; one real and fixed; a release check's
+ *     own probe, open;
+ *   - evaluation findings: deferred for 20 and 15 days, the two waiting; deferred for 3 days; applied after 30;
+ *     rejected after 30, superseded by the one 20 days old;
+ *   - revisions of `sdlc-flow` documents waiting for approval (presented, current, gated, unapproved, open): plover's
+ *     spec.md for 30 days, osprey's plan.md for 20 (its first revision approved), wren's spec.md for 18 and
+ *     review.md for 16, lark's spec.md for 3; and none of these: finch's spec.md, approved; osprey's spec.md in a
+ *     closed initiative; osprey's explore.md, which the flow does not gate; wren's plan.md, whose current revision
+ *     was never presented; lark's spec.md in an initiative with no flow.
+ */
+export const NEEDS_SUPERADMIN = "superadmin@needs.example.test";
+export const NEEDS_MEMBER = "member@needs.example.test";
+/** Every team slug the seed writes; the first is the member's. */
+export const NEEDS_TEAMS = ["osprey-works", "plover-works", "wren-works", "lark-works", "finch-works"] as const;
+
+/** The first instant of the local day `back` days before the one `now` falls in. */
+export function dayStart(now: number, back: number, timezone: string): number {
+  const w = wall(now, timezone);
+  const d = new Date(Date.UTC(w.y, w.m - 1, w.d - back));
+  return localMidnight(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), timezone);
+}
+
+/** One run of calls: from `ts`, one second apart, through `tool`; the first `theirs` are tool failures, then the
+ *  first `ours` malformed, then the first `other` classified as other; `durationMs` on every one, or none. */
+type Run = { ts: number; tool: string; calls: number; theirs?: number; ours?: number; other?: number; durationMs?: number };
+
+/** What a reader must find over `seedNeeds`, written out by hand. A day is `D-k` by its `k`, today `0`; `coverage`
+ *  is the day the record begins, back 6's Monday. */
+export const NEEDS = {
+  doors: {
+    core: { calls: 1_950, toolFailures: 2, others: 0, faultDays: 1, lastFaultDay: 10, run: { days: 9, atLeast: false, through: 1 },
+            finding: { kind: "run", text: "9 days in a row under 1% tool failures, to {1}" }, today: "red" },
+    manage: { calls: 290, toolFailures: 3, others: 0, faultDays: 2, lastFaultDay: 2, run: null,
+              finding: { kind: "count", text: "3 tool failures in 290 calls" }, today: "red" },
+    eval: { calls: 35, toolFailures: 0, others: 1, faultDays: 0, lastFaultDay: null, run: { days: 3, atLeast: false, through: 1 },
+            finding: { kind: "no_failure", text: "No tool failure recorded in 35 calls since {coverage}" }, today: "clear" },
+  },
+  /** The day states a reader must find, by `k`: the fault days, a malformed call's day, a door's quiet day. */
+  states: { core: { 10: "marked", 2: "clear", 1: "clear" }, manage: { 5: "red", 2: "marked", 7: "none" }, eval: { 4: "none" } },
+  /** D-19 to D-1 have calls; D-10 is the one at 1% across every door, so two runs of 9 tie and the earlier stands. */
+  records: { daysWithWork: 19, daysUnderOnePercent: 21, longest: { days: 9, from: 19, to: 11 } },
+  /** The revisions waiting, longest first: team index, path, revision, days waited. */
+  pending: [[1, "spec.md", 1, 30], [0, "plan.md", 2, 20], [2, "spec.md", 1, 18], [2, "review.md", 1, 16], [3, "spec.md", 1, 3]] as const,
+  /** Instances by kind; the approvals are the teams plover, osprey and wren, longest waiting first. */
+  instances: { bugs: 1, door: 2, evaluation: 1, approvals: 3, drift: 2 },
+  superadmin: {
+    headline: "9 things need you",
+    rows: [["bugs", "critical", 1], ["door", "critical", 1], ["door", "critical", 1], ["evaluation", "warning", 1], ["approvals", "warning", 1]],
+    doors: ["core", "manage"], approvalsTeam: 1,
+    overflowByKind: { approvals: 2, drift: 2 },
+  },
+  member: {
+    headline: "9 things are known and open",
+    rows: [["bugs", "critical", 1], ["door", "critical", 1], ["door", "critical", 1], ["evaluation", "warning", 1], ["approvals", "warning", 3]],
+    overflowByKind: { drift: 2 },
+  },
+} as const;
+
+/** Seeds the two people and the teams, the member admin of the first and acting for it, and nothing else: what a
+ *  reader finds before `seedNeeds` is the empty assessment. */
+export async function seedNeedsPeople(db: pg.ClientBase | pg.Pool): Promise<void> {
+  const one = async (sql: string, args: unknown[]): Promise<string> => (await db.query<{ id: string }>(sql, args)).rows[0].id;
+  const person = (email: string, role: string): Promise<string> => one(
+    "insert into zz.principal (email, display_name, role) values ($1, $2, $3) returning id", [email, email.split("@")[0], role]);
+  const member = await person(NEEDS_MEMBER, "member");
+  await person(NEEDS_SUPERADMIN, "superadmin");
+  for (const slug of NEEDS_TEAMS) await db.query("insert into zz.team (slug, name, created_by) values ($1, $1, $2)", [slug, member]);
+  await db.query(
+    `insert into zz.membership (team_id, principal_id, role, added_by) select t.id, $1, 'admin', $1 from zz.team t where t.slug = $2`,
+    [member, NEEDS_TEAMS[0]]);
+  await db.query("update zz.principal set active_team_id = (select id from zz.team where slug = $2) where id = $1", [member, NEEDS_TEAMS[0]]);
+}
+
+/**
+ * Seeds the calls, reports, findings and documents above into `db`, after `seedNeedsPeople`, cutting days in
+ * `timezone`, the gateway's `ZZ_TZ`; answers the open real report's id, the one a resolve closes. Read it within the
+ * same local day: a reader after midnight finds today's calls on yesterday.
+ */
+export async function seedNeeds(db: pg.ClientBase | pg.Pool, timezone: string, now = Date.now()): Promise<string> {
+  const one = async (sql: string, args: unknown[]): Promise<string> => (await db.query<{ id: string }>(sql, args)).rows[0].id;
+  const member = await one("select id from zz.principal where email = $1", [NEEDS_MEMBER]);
+  const teams: string[] = [];
+  for (const slug of NEEDS_TEAMS) teams.push(await one("select id from zz.team where slug = $1", [slug]));
+
+  const noon = (k: number): number => dayStart(now, k, timezone) + 12 * 3_600_000;
+  const midnight = dayStart(now, 0, timezone);
+  const runs: Run[] = [];
+  for (const [back, durationMs] of [[6, 100], [5, 150], [4, 300]]) runs.push({ ts: weekStart(now, back, timezone), tool: "core:skill_read", calls: 30, durationMs });
+  for (let k = 1; k <= 19; k++) {
+    runs.push({ ts: noon(k), tool: "core:document_read", calls: k === 2 ? 50 : 100, theirs: k === 10 ? 1 : 0, ours: k === 2 ? 1 : 0 });
+  }
+  for (const [k, calls, theirs] of [[6, 50, 0], [5, 20, 1], [4, 50, 0], [3, 50, 0], [2, 50, 1], [1, 50, 0]]) {
+    runs.push({ ts: noon(k) + 3_600_000, tool: "manage:whoami", calls, theirs });
+  }
+  for (const k of [3, 2, 1]) runs.push({ ts: noon(k) + 7_200_000, tool: "eval:protocol_read", calls: 10, other: k === 1 ? 1 : 0 });
+  const sofar = (share: number): number => midnight + Math.floor((now - midnight) * share);
+  runs.push({ ts: sofar(0.2), tool: "core:document_read", calls: 10, theirs: 1 }, { ts: sofar(0.5), tool: "manage:whoami", calls: 20, theirs: 1 },
+            { ts: sofar(0.7), tool: "eval:protocol_read", calls: 5 });
+  const calls = runs.flatMap((r) => Array.from({ length: r.calls }, (_, i) => {
+    const owner = i < (r.theirs ?? 0) ? "theirs" : i < (r.theirs ?? 0) + (r.ours ?? 0) ? "ours"
+      : i < (r.theirs ?? 0) + (r.ours ?? 0) + (r.other ?? 0) ? "other" : null;
+    // Today's calls share what is left of the day; the clock may be seconds after midnight.
+    const ts = r.ts >= midnight ? Math.min(r.ts + i, now - 1) : r.ts + i * 1000;
+    return { ts: new Date(ts).toISOString(), tool: r.tool, owner, duration: r.durationMs ?? null };
+  }));
+  await db.query(
+    `insert into zz.event (ts, kind, subject, ok, tool_key, refusal_owner, refusal, origin, team_id, actor_id, duration_ms)
+     select u.ts, 'tool_call', u.tool, u.owner is null, u.tool, u.owner,
+            case when u.owner is null then null else 'seeded refusal' end, 'work', $5, $6, u.duration
+       from unnest($1::timestamptz[], $2::text[], $3::text[], $4::int[]) as u(ts, tool, owner, duration)`,
+    [calls.map((c) => c.ts), calls.map((c) => c.tool), calls.map((c) => c.owner), calls.map((c) => c.duration), teams[0], member]);
+
+  const ago = (days: number): string => new Date(now - days * DAY).toISOString();
+  const initiative = (team: string, slug: string, flow: string | null, closed: boolean): Promise<string> => one(
+    `insert into zz.initiative (team_id, slug, flow, opened_by, opened_at, closed_at, closed_by, outcome)
+     values ($1, $2, $3, $4, $5, case when $6 then $7::timestamptz end, case when $6 then $4::uuid end, case when $6 then 'delivered' end)
+     returning id`, [team, slug, flow, member, ago(60), closed, ago(1)]);
+  const report = (title: string, status: string, impact: string, team: string | null): Promise<string> => one(
+    `insert into zz.bug (reported_at, title, detail, platform_version, impact, status, resolution, resolved_at, team_id, reported_by, resolved_by)
+     values ($1, $2, 'seeded', '0.99.0', $3, $4, case when $4 = 'open' then null else 'seeded' end,
+             case when $4 = 'open' then null else now() end, $5, $6, case when $4 = 'open' then null else $6::uuid end)
+     returning id`, [ago(5), title, impact, status, team, member]);
+  const open = await report("seeded open", "open", "blocks_work", teams[0]);
+  await report("seeded fixed", "fixed", "confusing", teams[0]);
+  await report("chain-check probe 2026-10-01-chain-check-1001-a1b2c3", "open", "blocks_work", null);
+
+  const plugin = await one("insert into zz.plugin (name, origin, owner_team_id) values ('needs-plugin', 'platform', $1) returning id", [teams[0]]);
+  const protocol = await one(
+    `insert into zz.eval_protocol_version
+       (version, purpose, qualification_policy, scoring_policy, improvement_policy, content_digest, created_at,
+        plugin_id, protocol_key, observable_surfaces, recorded_by)
+     values (1, 'seeded', '{}', '{}', '{}', 'digest-needs', $1, $2, 'needs-protokey', '{}', $3) returning id`, [ago(40), plugin, member]);
+  const version = await one("insert into zz.plugin_version (plugin_id, version, digest) values ($1, '1.0.0', 'digest-needs-1') returning id", [plugin]);
+  const snapshot = await one(
+    `insert into zz.eval_observation_snapshot
+       (usable_run_count, total_run_count, evidence_digest, created_at, plugin_version_id, surface_observed,
+        surface_total, surface_source, platform_version, recorded_by)
+     values (5, 5, 'evidence-needs', $1, $2, 1, 1, null, '0.90.0', $3) returning id`, [ago(40), version, member]);
+  const run = await one(
+    `insert into zz.eval_run (protocol_version_id, created_at, team_id, observation_snapshot_id, started_by)
+     values ($1, $2, $3, $4, $5) returning id`, [protocol, ago(40), teams[0], snapshot, member]);
+  const finding = (kind: string, decision: string, days: number, supersededBy: string | null = null): Promise<string> => one(
+    `insert into zz.eval_finding (eval_run_id, kind, pattern, owner_kind, decision, created_at, superseded_by)
+     values ($1, $2, 'seeded', 'plugin', $3, $4, $5) returning id`, [run, kind, decision, ago(days), supersededBy]);
+  const replacing = await finding("defect", "deferred", 20);
+  await finding("unknown", "deferred", 15);
+  await finding("defect", "deferred", 3);
+  await finding("defect", "applied", 30);
+  await finding("defect", "rejected", 30, replacing);
+
+  // A document and its revisions, each `[presented days ago | null, approved days ago | null]`, the last current.
+  const document = async (init: string, path: string, revisions: [number | null, number | null][]): Promise<void> => {
+    await db.query("begin");
+    await db.query("set constraints all deferred");
+    const doc = await one(
+      `insert into zz.doc (initiative_id, path, type, status, updated_at, title, body, current_revision, current_version)
+       values ($1, $2, 'seeded', 'draft', now(), $2, 'seeded', $3, $3) returning id`, [init, path, revisions.length]);
+    for (const [i, [presented, approved]] of revisions.entries()) {
+      await db.query(
+        `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                      written_at, approved_by, approved_at, presented_at)
+         values ($1, $2, $2, 'retained', 'seeded', 'seeded', '{}', $3, $4, $5, case when $6::timestamptz is null then null else $4::uuid end,
+                 $6, $7)`,
+        [doc, i + 1, `hash-${doc}-${i + 1}`, member, ago(45), approved === null ? null : ago(approved), presented === null ? null : ago(presented)]);
+    }
+    const approvedAt = revisions.map(([, a], i) => (a === null ? 0 : i + 1)).filter(Boolean).pop() ?? null;
+    await db.query("update zz.doc set approved_revision = $2, status = case when $2 = current_revision then 'approved' else 'draft' end where id = $1",
+                   [doc, approvedAt]);
+    await db.query("commit");
+  };
+  const [osprey, plover, wren, lark, finch] = teams;
+  const ospreyOpen = await initiative(osprey, "2026-08-01-needs-open", "sdlc-flow", false);
+  await document(ospreyOpen, "plan.md", [[40, 39], [20, null]]);
+  await document(ospreyOpen, "explore.md", [[30, null]]);
+  await document(await initiative(osprey, "2026-08-02-needs-closed", "sdlc-flow", true), "spec.md", [[30, null]]);
+  await document(await initiative(plover, "2026-08-03-needs-open", "sdlc-flow", false), "spec.md", [[30, null]]);
+  const wrenOpen = await initiative(wren, "2026-08-04-needs-open", "sdlc-flow", false);
+  await document(wrenOpen, "spec.md", [[18, null]]);
+  await document(wrenOpen, "review.md", [[16, null]]);
+  await document(wrenOpen, "plan.md", [[30, null], [null, null]]);
+  await document(await initiative(lark, "2026-08-05-needs-open", "sdlc-flow", false), "spec.md", [[3, null]]);
+  await document(await initiative(lark, "2026-08-06-needs-no-flow", null, false), "spec.md", [[30, null]]);
+  await document(await initiative(finch, "2026-08-07-needs-open", "sdlc-flow", false), "spec.md", [[30, 29]]);
+  return open;
+}

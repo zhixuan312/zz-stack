@@ -11,9 +11,9 @@
  * `complete` only when both bounds are its own. The figures are observations around a release's
  * time: the other releases inside a window are named on it, and nothing here compares the two sides.
  *
- * The weekly malformed-call rate is counted as the status read counts it, over the same weeks from the
- * one the record begins in, and named by `summarise`, so the two reads give the same figures; each week
- * also counts the releases tagged in it.
+ * The weekly malformed-call rate is the status read's own, `malformedMeasure` over `readGrid`'s weeks
+ * (console/platform-measures.ts), so the two reads give the same figures; each week also counts the
+ * releases tagged in it.
  *
  * Public by route: mounted through `platformPublic`, it takes no team and no scope. No figure names a
  * team.
@@ -26,7 +26,8 @@ import type { Express } from "express";
 import type pg from "pg";
 
 import { platformDb } from "../db.js";
-import { summarise, type Figure, type Part, type PeriodFigure, type ReadMeta, type Window } from "./figures.js";
+import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
+import { malformedMeasure, readGrid } from "./platform-measures.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 /** How far either side of a release its windows reach. */
@@ -79,18 +80,6 @@ const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z
 
 const UNAVAILABLE: Figure = { value: null, why: "unavailable" };
 const NO_DATA: Figure = { value: null, why: "no_data" };
-
-/** The read's one cutoff, in whole seconds so it is the `asOf` the answer states, and where the record
- *  begins: the first real-work call, null when there is none, and its local date. */
-async function cutoff(db: pg.Pool): Promise<{ asOfMs: number; coverageMs: number | null; coverageDay: string }> {
-  const asOfMs = Math.floor(Date.now() / 1000) * 1000;
-  const cov = await db.query<{ first_ms: number | null; first_day: string }>(
-    `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms,
-            to_char(coalesce(min(e.ts), $1::timestamptz) at time zone $2::text, 'YYYY-MM-DD') as first_day
-       from zz.event e
-      where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $1::timestamptz`, [new Date(asOfMs).toISOString(), ZZ_TZ]);
-  return { asOfMs, coverageMs: cov.rows[0]?.first_ms ?? null, coverageDay: cov.rows[0].first_day };
-}
 
 /** Every release's version and time, newest first, `version` breaking a tie: what the tiles, the weeks
  *  and every window's overlapping releases are read from. */
@@ -175,29 +164,6 @@ async function withWindows(db: pg.Pool, r: Stored, all: { version: string; ms: n
   };
 }
 
-/** Every Monday-to-Monday week of the reporting timezone from the one the record begins in through the
- *  running one, with its real-work calls and malformed calls, a week with no calls included — the status
- *  read's own count. */
-async function weekCounts(db: pg.Pool, coverageMs: number, asOfMs: number): Promise<{ from_ms: number; to_ms: number; calls: number; malformed: number }[]> {
-  return (await db.query<{ from_ms: number; to_ms: number; calls: number; malformed: number }>(
-    `with buckets as (
-       select date_trunc('week', e.ts at time zone $1::text) as week,
-              count(*)::int as calls,
-              (count(*) filter (where e.refusal_owner = 'ours'))::int as malformed
-         from zz.event e
-        where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $2::timestamptz
-        group by 1
-     )
-     select (extract(epoch from (w at time zone $1::text)) * 1000)::float8 as from_ms,
-            (extract(epoch from ((w + interval '1 week') at time zone $1::text)) * 1000)::float8 as to_ms,
-            coalesce(b.calls, 0) as calls, coalesce(b.malformed, 0) as malformed
-       from generate_series(date_trunc('week', $3::timestamptz at time zone $1::text),
-                            date_trunc('week', $2::timestamptz at time zone $1::text),
-                            interval '1 week') as w
-       left join buckets b on b.week = w
-      order by w`, [ZZ_TZ, new Date(asOfMs).toISOString(), new Date(coverageMs).toISOString()])).rows;
-}
-
 export function mountPlatformReleases(app: Express): void {
   app.get("/api/console/platform/releases", platformPublic("the platform's releases", async (req, res) => {
     const limit = Number(req.query.limit ?? 10), offset = Number(req.query.offset ?? 0);
@@ -206,30 +172,17 @@ export function mountPlatformReleases(app: Express): void {
       return;
     }
     const db = platformDb();
-    const { asOfMs, coverageMs, coverageDay } = await cutoff(db);
+    const grid = await readGrid(db);
+    const { asOfMs, coverageMs } = grid;
     const all = await releaseTimes(db);
     const migrations = (await db.query<{ applied: number; last_ms: number | null }>(
       `select count(*)::int as applied, (extract(epoch from max(m.applied_at)) * 1000)::float8 as last_ms
          from zz.schema_migration m`)).rows[0];
 
-    const counted = coverageMs === null ? [] : await weekCounts(db, coverageMs, asOfMs);
-    const malformed = summarise({
-      key: "malformed_per_1000", better: "down", minSamples: MIN_SAMPLES, precision: 1, definedFrom: null,
-      label: "malformed-call rate", countLabel: "calls refused for their shape", coverageFrom: coverageDay, timezone: ZZ_TZ,
-      weeks: counted.map((w) => ({
-        from: iso(w.from_ms), to: iso(w.to_ms),
-        observedFrom: iso(Math.max(w.from_ms, coverageMs!)),
-        observedThrough: iso(Math.min(w.to_ms, asOfMs)),
-        numerator: w.malformed, denominator: w.calls,
-        value: w.calls === 0 ? null : (1000 * w.malformed) / w.calls, samples: w.calls,
-        // Ended, and wholly inside known coverage.
-        complete: w.to_ms <= asOfMs && w.from_ms >= coverageMs!,
-        available: true,
-      })),
-    });
+    const malformed = await malformedMeasure(db, grid);
     const weeks = malformed.weeks.map((w, i) => ({
       window: w.window,
-      releases: all.filter((r) => r.ms >= counted[i].from_ms && r.ms < counted[i].to_ms).length,
+      releases: all.filter((r) => r.ms >= grid.weeks[i].fromMs && r.ms < grid.weeks[i].toMs).length,
       malformedPer1000: w,
     }));
 
@@ -278,7 +231,7 @@ export function mountPlatformReleases(app: Express): void {
       res.status(404).end();
       return;
     }
-    const { asOfMs, coverageMs } = await cutoff(db);
+    const { asOfMs, coverageMs } = await readGrid(db);
     const detail: ReleaseDetail = await withWindows(db, found, await releaseTimes(db), coverageMs, asOfMs);
     res.json(detail);
   }));

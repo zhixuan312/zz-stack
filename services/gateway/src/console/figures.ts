@@ -30,7 +30,7 @@ export type ReadMeta = {
   population: string; coverageFrom: string | null;
 };
 export type Part<T> = { state: "ok"; data: T } | { state: "unavailable"; reason: string };
-type MeasureKey = "malformed_per_1000" | "same_tool_followup_pct" | "call_p50_ms" | "call_p95_ms"
+export type MeasureKey = "malformed_per_1000" | "same_tool_followup_pct" | "call_p50_ms" | "call_p95_ms"
   | "searches_with_results_pct" | "bugs_per_1000" | "sessions" | "work_finished";
 export type Measure = {
   key: MeasureKey; weeks: PeriodFigure[];

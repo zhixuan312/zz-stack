@@ -107,18 +107,23 @@ export function teamless(name: string, fn: (req: Request, res: Response) => Prom
 
 /** Wrap a read that is public by route policy: the platform's own health, answered alike to
  * everybody the console lets in, a person in no team included. No scope is resolved and none is
- * read from the request; the handler is told only whether the caller is a superadmin, the one fact
- * an admin extension of a public answer may turn on.
+ * read from the request; the handler is told whether the caller is a superadmin, the one fact an
+ * admin extension of a public answer may turn on, and the team the identity resolved as the
+ * caller's active one (null for a person in no team), which a read may use for the reader's own
+ * part and for nothing else.
  *
  * DELIBERATE: the route, not a parameter, is what makes the read platform-wide. A `?scope=` or a
  * missing `?team=` that widened a read would be the "null means every team" wildcard scope.ts rules
  * out; a route mounted through this wrapper is a decision someone made once, in code, about one
  * answer. It replaces neither `handler` nor `teamless`: a census with a team in every row still
  * goes through `handler` (see /overview). */
-export function platformPublic(name: string, fn: (req: Request, res: Response, caller: { superadmin: boolean }) => Promise<void>) {
+export function platformPublic(
+  name: string, fn: (req: Request, res: Response, caller: { superadmin: boolean; activeTeam: string | null }) => Promise<void>,
+) {
   return (req: Request, res: Response): void => {
     if (!ok(req, res)) return;
-    void fn(req, res, { superadmin: isSuper(req.zzIdentity!) }).catch((err: unknown) => {
+    const id = req.zzIdentity!;
+    void fn(req, res, { superadmin: isSuper(id), activeTeam: id.activeTeam }).catch((err: unknown) => {
       console.error(`console ${name} failed:`, err);
       if (!res.headersSent) res.status(500).json({ error: `could not read ${name}` });
     });

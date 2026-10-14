@@ -39,7 +39,8 @@
  * and `/evaluation` (console/platform-*.ts) are the platform's own, public by route through
  * `platformPublic` (console/shared.ts), and answered to everybody the console lets in, a person in no
  * team included; a superadmin's answer adds only the fields each route names, and a bug report and
- * its duplicate targets are the superadmin's alone.
+ * its duplicate targets are the superadmin's alone. The status read's `own` part alone is the
+ * caller's active team, as the identity resolved it.
  *
  * An initiative's lifecycle — whether it is closed, its outcome, its flow — comes from
  * zz.initiative, the one record of it, written by initiative_open and initiative_close; the

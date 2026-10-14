@@ -53,7 +53,7 @@ the evaluation readers, which EXPLAINs every evaluation statement against a data
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
 `saveDocument` against one, upload staging (`checks/upload-staging.ts`), which drives the
-gateway's upload routes against one, the platform's public status
+gateway's upload routes against one, the platform's status and the reader's own team's figures
 (`checks/console-platform-status.ts`), which drives the gateway's identity gate and status route
 against one, the platform's releases (`checks/console-platform-releases.ts`), bugs
 (`checks/console-platform-bugs.ts`) and evaluation (`checks/console-platform-evaluation.ts`), each

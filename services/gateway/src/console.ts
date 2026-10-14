@@ -35,9 +35,11 @@
  * `knowledge_search`, called as the caller, because ranking a question against the documents and
  * the shelf is that tool's own work and not a second implementation of it here.
  *
- * One route resolves no scope at all: `/api/console/platform/status` (console/platform-status.ts)
- * is the platform's own health, public by route through `platformPublic` (console/shared.ts), and
- * answered alike to everybody the console lets in, a person in no team included.
+ * The platform's reads resolve no scope at all: `/api/console/platform/status`, `/releases`, `/bugs`
+ * and `/evaluation` (console/platform-*.ts) are the platform's own, public by route through
+ * `platformPublic` (console/shared.ts), and answered to everybody the console lets in, a person in no
+ * team included; a superadmin's answer adds only the fields each route names, and a bug report and
+ * its duplicate targets are the superadmin's alone.
  *
  * An initiative's lifecycle — whether it is closed, its outcome, its flow — comes from
  * zz.initiative, the one record of it, written by initiative_open and initiative_close; the
@@ -58,6 +60,9 @@ import { mountConsoleLive } from "./console/live.js";
 import { mountPlatformStatus } from "./console/platform-status.js";
 import { mountPageView } from "./console/page-view.js";
 import { mountPlatformBugResolve } from "./console/platform-bug-resolve.js";
+import { mountPlatformBugs } from "./console/platform-bugs.js";
+import { mountPlatformEvaluation } from "./console/platform-evaluation.js";
+import { mountPlatformReleases } from "./console/platform-releases.js";
 
 
 export function mountConsole(app: Express): void {
@@ -71,8 +76,12 @@ export function mountConsole(app: Express): void {
   mountSkills(app);
   mountCatalog(app);
   mountPluginEval(app);
-  // The one read answered alike to everybody the console lets in: public by route, through platformPublic.
+  // The platform's own reads, public by route through platformPublic; a superadmin's answer adds only what each route names.
   mountPlatformStatus(app);
+  mountPlatformReleases(app);
+  // The bug queue in two projections: the safe one for everybody, the report and its duplicate targets for the superadmin.
+  mountPlatformBugs(app);
+  mountPlatformEvaluation(app);
   // The one endpoint here that is not an answer: a stream held open, which is what keeps a tab fresh without polling.
   mountConsoleLive(app);
   // A page view, which records which page was opened and is counted as nothing else.

@@ -42,20 +42,22 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the twenty-two that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the twenty-five that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the twenty-two gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the twenty-five gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
 `saveDocument` against one, upload staging (`checks/upload-staging.ts`), which drives the
 gateway's upload routes against one, the platform's public status
 (`checks/console-platform-status.ts`), which drives the gateway's identity gate and status route
-against one, the console's page view (`checks/console-page-view.ts`), which drives the gateway's
+against one, the platform's releases (`checks/console-platform-releases.ts`), bugs
+(`checks/console-platform-bugs.ts`) and evaluation (`checks/console-platform-evaluation.ts`), each
+driving the gateway's identity gate and its own route against one, the console's page view (`checks/console-page-view.ts`), which drives the gateway's
 page-view, overview and activity routes against one and listens on the console's change channel,
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
 against one and reads its greeting,
@@ -81,7 +83,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those twenty-two checks or the rehearsal never needs Docker.
+runs those twenty-five checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

@@ -10,11 +10,11 @@
  */
 import { weekFinding, type Finding } from "./findings.js";
 
-type Figure = {
+export type Figure = {
   value: number | null;
   why: "no_data" | "insufficient" | "unavailable" | null;   // null when the value stands
 };
-type Window = {
+export type Window = {
   from: string; to: string;       // requested half-open interval [from, to)
   observedFrom: string | null; observedThrough: string | null;
   complete: boolean;              // ended AND fully observed under this definition

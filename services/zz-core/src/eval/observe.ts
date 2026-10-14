@@ -101,7 +101,9 @@ async function resolveWindow(
 /** The tools this plugin's own door serves at `version`, and where that answer came from: the
  *  surface recorded for that release (zz.plugin_tool), else what this process registered for the
  *  door the plugin's manifest names, else null — a plugin with no door of its own, or a door
- *  nothing here recorded, whose skill-named tools then stand unnarrowed (`ownTools`). */
+ *  nothing here recorded, whose skill-named tools then stand unnarrowed (`ownTools`).
+ *  COUPLED: the gateway's console/platform-evaluation.ts reads each `source` sentence as a population
+ *  kind; a new or reworded sentence is a new kind there, and scores across it stop reading as a trend. */
 async function doorSurface(
   pool: pg.Pool, plugin: string, version: string, serves: boolean,
 ): Promise<{ tools: string[] | null; source: string }> {

@@ -53,6 +53,10 @@ export function mountOverview(app: Express): void {
    * beside it: the copy was written only by acts that belong to a team, so filtering on it
    * silently changed what "the team's events" meant, and the column is gone rather than
    * corrected.
+   *
+   * A console page view is counted by none of this: every statement here that reads events of
+   * any kind leaves `console.page_view` out by name, and the rest name `tool_call`. A person
+   * opening a page is not work the platform did. COUPLED: console/page-view.ts, its one writer.
    */
   app.get("/api/console/overview", handler("the overview", async (req, res, scope) => {
     // One cutoff for all five statements — see periodCutoff for why it is not five
@@ -70,12 +74,13 @@ export function mountOverview(app: Express): void {
       ? await db.query<{ days: string | null }>(
         `select extract(epoch from (max(ts) - min(ts))) / 86400 as days
            from zz.event
-          where ($1::timestamptz is null or ts >= $1)`,
+          where kind <> 'console.page_view'
+            and ($1::timestamptz is null or ts >= $1)`,
         [since])
       : await db.query<{ days: string | null }>(
         `select extract(epoch from (max(e.ts) - min(e.ts))) / 86400 as days
            from zz.event e join zz.team t on t.id = e.team_id
-          where t.slug = $1
+          where t.slug = $1 and e.kind <> 'console.page_view'
             and ($2::timestamptz is null or e.ts >= $2)`,
         [scope.slug, since]);
     // Null when the window holds no events at all — nothing to draw, and `hour` is the
@@ -119,7 +124,8 @@ export function mountOverview(app: Express): void {
                 count(*) filter (where kind = 'tool_call' and ok = false) as failures,
                 count(*) filter (where team_id is null) as unattributed
            from zz.event
-          where ($1::timestamptz is null or ts >= $1)`,
+          where kind <> 'console.page_view'
+            and ($1::timestamptz is null or ts >= $1)`,
         [since]),
       db.query<{ bucket: string; inside: string; outside: string; refused: string }>(
         /* Tool calls, split three ways that are disjoint and sum to the total, so the chart
@@ -162,7 +168,8 @@ export function mountOverview(app: Express): void {
       db.query<{ kind: string; n: string }>(
         `select kind, count(*) as n
            from zz.event
-          where ($1::timestamptz is null or ts >= $1)
+          where kind <> 'console.page_view'
+            and ($1::timestamptz is null or ts >= $1)
           group by 1 order by count(*) desc`,
         [since]),
       /* Refusals, on two axes, over the same population the refusal rate tile counts:
@@ -222,7 +229,7 @@ export function mountOverview(app: Express): void {
                 count(*) filter (where e.ok = false) as failures,
                 0 as unattributed
            from zz.event e join zz.team t on t.id = e.team_id
-          where t.slug = $1
+          where t.slug = $1 and e.kind <> 'console.page_view'
             and ($2::timestamptz is null or e.ts >= $2)`,
         [scope.slug, since]),
       db.query<{ bucket: string; inside: string; outside: string; refused: string }>(
@@ -243,6 +250,9 @@ export function mountOverview(app: Express): void {
            left join zz.team t on t.slug = $1
            left join zz.event e
              on date_trunc($3::text, e.ts at time zone $4::text) = slot.b
+            -- The tool calls of this team, as the platform branch counts those of the platform:
+            -- without both, every event of every team in the hour, page views included, was a call.
+            and e.kind = 'tool_call' and e.team_id = t.id
             -- COUPLED: the platform branch above carries this and says why — the series starts at
             -- date_trunc(grain, since), earlier than since, so without it the first bucket counts
             -- this team's calls from BEFORE the window opens, and the trend stops summing to the
@@ -255,7 +265,7 @@ export function mountOverview(app: Express): void {
       db.query<{ kind: string; n: string }>(
         `select e.kind, count(*) as n
            from zz.event e join zz.team t on t.id = e.team_id
-          where t.slug = $1
+          where t.slug = $1 and e.kind <> 'console.page_view'
             and ($2::timestamptz is null or e.ts >= $2)
           group by 1 order by count(*) desc`,
         [scope.slug, since]),
@@ -307,7 +317,10 @@ export function mountOverview(app: Express): void {
     });
   }));
 
-  /** The event log, filterable, newest first. The console's audit view. */
+  /** The event log, filterable, newest first. The console's audit view.
+   *
+   * Never a page view, even when `?kind=console.page_view` asks for one: who opened which page is
+   * read where its population is named, not in the log of what was done. */
   app.get("/api/console/activity", handler("activity", async (req, res, scope) => {
     const db = platformDb();
     // Clamped at BOTH ends. `Math.min(Number(limit) || 100, 500)` let a negative through —
@@ -352,6 +365,7 @@ export function mountOverview(app: Express): void {
          left join zz.skill sk on sk.id = sv.skill_id
         where ($1::text is null or e.kind = $1)
           and ($2::boolean is false or e.ok = false)
+          and e.kind <> 'console.page_view'
         order by e.ts desc limit $3`,
       [kind, failedOnly, limit])
       : await db.query(
@@ -368,6 +382,7 @@ export function mountOverview(app: Express): void {
          left join zz.skill sk on sk.id = sv.skill_id
         where ($1::text is null or e.kind = $1)
           and ($2::boolean is false or e.ok = false)
+          and e.kind <> 'console.page_view'
           and t.slug = $4
         order by e.ts desc limit $3`,
       [kind, failedOnly, limit, scope.slug]);

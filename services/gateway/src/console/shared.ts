@@ -4,8 +4,8 @@
  *
  * The console is read-only by design and this module is where that is enforced — `mayReadConsole`
  * answers whether a caller may read at all, `ok` refuses a handler that has no database to answer
- * from, and `handler`/`teamless` wrap every route so a refusal is a 403 with a sentence rather
- * than a stack trace. A route that skipped them would be a second, quieter answer to "may this
+ * from, and `handler`/`teamless`/`platformPublic` wrap every route so a refusal is a 403 with a
+ * sentence rather than a stack trace. A route that skipped them would be a second, quieter answer to "may this
  * caller see this".
  */
 import { catalogManifest, isFlow, skillText, withHandover } from "@zz/catalog";
@@ -99,6 +99,26 @@ export function teamless(name: string, fn: (req: Request, res: Response) => Prom
   return (req: Request, res: Response): void => {
     if (!ok(req, res)) return;
     void fn(req, res).catch((err: unknown) => {
+      console.error(`console ${name} failed:`, err);
+      if (!res.headersSent) res.status(500).json({ error: `could not read ${name}` });
+    });
+  };
+}
+
+/** Wrap a read that is public by route policy: the platform's own health, answered alike to
+ * everybody the console lets in, a person in no team included. No scope is resolved and none is
+ * read from the request; the handler is told only whether the caller is a superadmin, the one fact
+ * an admin extension of a public answer may turn on.
+ *
+ * DELIBERATE: the route, not a parameter, is what makes the read platform-wide. A `?scope=` or a
+ * missing `?team=` that widened a read would be the "null means every team" wildcard scope.ts rules
+ * out; a route mounted through this wrapper is a decision someone made once, in code, about one
+ * answer. It replaces neither `handler` nor `teamless`: a census with a team in every row still
+ * goes through `handler` (see /overview). */
+export function platformPublic(name: string, fn: (req: Request, res: Response, caller: { superadmin: boolean }) => Promise<void>) {
+  return (req: Request, res: Response): void => {
+    if (!ok(req, res)) return;
+    void fn(req, res, { superadmin: isSuper(req.zzIdentity!) }).catch((err: unknown) => {
       console.error(`console ${name} failed:`, err);
       if (!res.headersSent) res.status(500).json({ error: `could not read ${name}` });
     });

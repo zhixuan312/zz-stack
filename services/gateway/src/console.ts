@@ -20,9 +20,11 @@
  * Separate from the write surface in `console-write.ts`, which resolves a scope per act. Folding a
  * cross-team read into it would put two authority models in one file.
  *
- * GET only. A read-only surface cannot be driven by a forged cross-site form, which is what lets the
- * session cookie be SameSite=Lax instead of requiring a CSRF token. Anything that writes belongs in
- * a flow, through zz-core, as the caller.
+ * GET only, but for `POST /api/console/page-view` (console/page-view.ts), which records which page
+ * was opened and changes nothing a page reads. A read-only surface cannot be driven by a forged
+ * cross-site form, which is what lets the session cookie be SameSite=Lax instead of requiring a CSRF
+ * token; a cross-site form posting a page view arrives with no session and is answered 401. Anything
+ * else that writes belongs in a flow, through zz-core, as the caller.
  *
  * Reads the database, not the store: the console is a fleet view — counts, means and refusal rates
  * over every team, which are SQL questions. The two knowledge endpoints here read zz.doc, which
@@ -31,6 +33,10 @@
  * One route is the exception: `/api/console/search` (console/search.ts) is zz-core's
  * `knowledge_search`, called as the caller, because ranking a question against the documents and
  * the shelf is that tool's own work and not a second implementation of it here.
+ *
+ * One route resolves no scope at all: `/api/console/platform/status` (console/platform-status.ts)
+ * is the platform's own health, public by route through `platformPublic` (console/shared.ts), and
+ * answered alike to everybody the console lets in, a person in no team included.
  *
  * An initiative's lifecycle — whether it is closed, its outcome, its flow — comes from
  * zz.initiative, the one record of it, written by initiative_open and initiative_close; the
@@ -48,6 +54,8 @@ import { mountSkills } from "./console/skills.js";
 import { mountCatalog } from "./console/catalog.js";
 import { mountPluginEval } from "./console/plugin-eval.js";
 import { mountConsoleLive } from "./console/live.js";
+import { mountPlatformStatus } from "./console/platform-status.js";
+import { mountPageView } from "./console/page-view.js";
 
 
 export function mountConsole(app: Express): void {
@@ -61,6 +69,10 @@ export function mountConsole(app: Express): void {
   mountSkills(app);
   mountCatalog(app);
   mountPluginEval(app);
+  // The one read answered alike to everybody the console lets in: public by route, through platformPublic.
+  mountPlatformStatus(app);
   // The one endpoint here that is not an answer: a stream held open, which is what keeps a tab fresh without polling.
   mountConsoleLive(app);
+  // The one POST here: a page view, which records which page was opened and is counted as nothing else.
+  mountPageView(app);
 }

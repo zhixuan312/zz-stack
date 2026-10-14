@@ -1,9 +1,10 @@
 /**
  * /api/console — the console's write surface.
  *
- * DELIBERATE: console.ts is GET only, so a read-only surface cannot be driven by a forged
+ * DELIBERATE: console.ts mounts reads, so a read-only surface cannot be driven by a forged
  * cross-site form. This file is the acts, each arriving from a button in the console rather
- * than a chat turn.
+ * than a chat turn. The one POST console.ts mounts, the page view (console/page-view.ts), is not
+ * an act: it records which page was opened, changes nothing a page reads, and calls no tool.
  *
  * Each act collects the request's own `x-zz-*` headers, opens an `Mcp` client against
  * `CORE_MCP_URL` with them attached (`coreFor`, core-as-caller.ts), and calls the tool. The gateway

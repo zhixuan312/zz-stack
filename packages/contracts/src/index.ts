@@ -42,6 +42,10 @@ export { UPLOAD_EXTENSIONS, UPLOAD_ID, UPLOAD_MAX_BYTES, UPLOAD_SECRET, mintUplo
 export { BANDS, NOT_MEASURABLE, band,
          HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
 
+// Whether a call is work or the platform maintaining itself, from the client name it sent — one
+// rule, so the two writers of zz.event cannot classify one client two ways.
+export { PLATFORM_CLIENTS, eventOrigin, type EventOrigin } from "./event-origin.js";
+
 // The Evaluation Protocol contract (FR-6, spec v8): the durable measurement object a plugin
 // version is scored against. PROTOCOL_ENUMS and EVAL_STATE_ENUMS are the one source every
 // evaluation writer, and the gate's "every state the schema allows can actually be reached"

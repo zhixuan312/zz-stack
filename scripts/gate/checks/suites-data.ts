@@ -111,6 +111,9 @@ check("every tool call says which plugin it was made for", runsCheck("attributio
 check("what a call cost is a column, and detail keeps no second copy",
       runsCheck("telemetry-columns.ts"));
 
+check("a call's origin is one rule: three maintenance clients are platform, every other name is work",
+      runsCheck("event-origin.ts"));
+
 check("the chain check runs where a deployment exists, and not in this gate",
       runsCheck("chain-check-wiring.ts"));
 

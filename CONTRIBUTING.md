@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the thirty-five that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the thirty-seven that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the thirty-five gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the thirty-seven gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -64,10 +64,11 @@ which also drives the team and platform settings routes) and people
 driving the gateway's identity gate and its own route against one, the console's page view (`checks/console-page-view.ts`), which drives the gateway's
 page-view, overview and activity routes against one and listens on the console's change channel,
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
-against one and reads its greeting, the rule that tells an import from a team's own work
-(`checks/console-imports.ts`), which calls the gateway's own rule over a seeded record in one,
-and the sixteen that run a real zz-core against one: the console's
-document reads, presentation and approval (`checks/console-versions.ts`), the console's search of
+against one and reads its greeting,
+and the nineteen that run a real zz-core against one: the rule that tells an import from a team's
+own work (`checks/console-imports.ts`), which calls the gateway's own rule over what a real zz-core
+recorded, the console's document reads, presentation and approval (`checks/console-versions.ts`),
+the decision basis an approval records (`checks/approval-basis.ts`), the console's search of
 documents and nodes by their content (`checks/console-search.ts`), the console's bug resolution
 held to zz-core's own `bug_resolve` (`checks/console-bug-resolve.ts`), what needs attention on the
 platform's Status, its doors and records, with a resolve through the console's route
@@ -85,9 +86,10 @@ the link and the ChatGPT file route (`checks/document-upload.ts`), and what each
 a document not written yet included (`checks/source-list.ts`), the origin every event
 carries, from the migration's backfill and from both of its writers
 (`checks/event-origin-db.ts`), the origin of every act the gateway writes, an administration
-act, a team switch and a console write on either door (`checks/event-origin-gateway.ts`), and
+act, a team switch and a console write on either door (`checks/event-origin-gateway.ts`),
 the node a lesson's event names and the team a supersede is recorded under
-(`checks/knowledge-events.ts`); a release's record, written once and reconciled with the tags, on a
+(`checks/knowledge-events.ts`), and `initiative_status` answering a page of named initiatives
+while a console session's read records nothing (`checks/initiative-status-names.ts`); a release's record, written once and reconciled with the tags, on a
 database migrated by the real runner (`checks/release-record-db.ts`); and the rollback boundary
 (`checks/rollback-boundary.ts`), which fills new-format data through a real zz-core and runs the
 previous release's own statements against it. Each exits 2 when Docker is absent rather
@@ -96,7 +98,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those thirty-five checks or the rehearsal never needs Docker.
+runs those thirty-seven checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

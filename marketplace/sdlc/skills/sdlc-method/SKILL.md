@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.25
+version: 1.26
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -152,7 +152,9 @@ code is written.
 
 **A person may delegate the decision — "auto-approve, I do not need to see it" — and that is
 theirs to say.** Delegation is an ordinary answer, and it keeps standing until they say
-otherwise; do not treat it as a special case to be re-confirmed each time.
+otherwise; do not treat it as a special case to be re-confirmed each time. Record which it was:
+an approval made under their delegation is `document_approve(path, decision_basis: "delegation", ...)`,
+and one they decided themselves passes `decision_basis: "explicit"`.
 
 The gate constrains YOU, not them. Whatever they decide, it becomes a recorded state
 transition on the document, under their name, written by you in the same turn — because the

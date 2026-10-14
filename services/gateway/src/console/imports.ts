@@ -1,7 +1,7 @@
 /**
  * The one rule that tells an import from a team's own work, for lessons and for documents. Knowledge
  * health reads lessons through `lessonImports`; Record and Home read documents through
- * `importedRevisions`. An import stays in every inventory; what this rule names is left out of what a
+ * `importedDocuments`. An import stays in every inventory; what this rule names is left out of what a
  * team made in a period.
  *
  * A lesson is judged exactly when zz-core's `knowledge.add` event names it (`detail.ids.node`, written
@@ -12,14 +12,14 @@
  * outnumber those with origin `work`, a tie not being one; the lessons made on that shelf that day are
  * its cohort, a lesson added by hand among them, and are labelled `by_day`.
  *
- * A document revision is judged by the write that made it: the successful `core:document_write` and
- * `core:document_edit` calls naming the document's path (`ids.path`, the initiative and the path) in
- * its team, in the order they were made, the first making revision 1, the next revision 2. A revision
- * whose write came from a maintenance client is imported; the rest are the team's.
+ * A document is judged by its writes: the successful calls of the four writing tools, `document_write`
+ * and `document_edit` and the retired `document_patch` and `document_revise`, whose `ids.path`, less a
+ * leading `/`, names its initiative and its path, in its team. It is imported when it has at least one
+ * and every one has origin `platform`; unrecorded when it has none; mixed when both origins appear.
+ * Only a flow document is judged: one whose path is not under `sources/`, outside `_knowledge`.
  *
- * DELIBERATE: the order of writing, not the time a revision records. A revision's `written_at` moves
- * when it is rewritten in place, an approval among the writes that do, so no time on the row says
- * which call made it.
+ * DELIBERATE: the document, not its revisions. A draft nobody has been shown is rewritten in place, so
+ * several calls make one revision and no order of writing pairs a call with the revision it made.
  *
  * The rule reads ids, counts, times and origins, never what anybody wrote. Each function throws when
  * its statement fails; the read that calls it says which of its parts that made unavailable.
@@ -34,8 +34,11 @@ type ImportedLesson = { id: string; shelf: string; basis: "exact" | "by_day" };
 /** One import day on one shelf, a local date, with the calls it was decided on. */
 type ImportDay = { day: string; shelf: string; platform: number; work: number };
 
-/** One revision an import wrote, by its document and its revision number. */
-type ImportedRevision = { docId: string; team: string; initiative: string; path: string; revision: number };
+/** One document, by its id, its team, its initiative and its path within it. */
+type DocRef = { docId: string; team: string; initiative: string; path: string };
+
+/** How a document's writes tell it: every one a maintenance client's, none recorded, or both kinds. */
+type Told = "imported" | "unrecorded" | "mixed";
 
 /**
  * Every lesson made before `asOf` that is an import, by shelf and ordinal, and every import day before
@@ -83,24 +86,31 @@ export async function lessonImports(asOf: string): Promise<{ lessons: ImportedLe
 }
 
 /**
- * Every document revision a maintenance write made before `asOf`, by team, initiative, path and
- * revision. A write recorded at or after `asOf` is not yet read.
+ * Every flow document made before `asOf` whose write calls before it are all a maintenance client's
+ * (`imported`), none at all (`unrecorded`), or both a maintenance client's and the team's (`mixed`), by
+ * team, initiative and path. A document written only as work is in none of the three. A call recorded at
+ * or after `asOf`, and a document made at or after it, is not yet read.
  */
-export async function importedRevisions(asOf: string): Promise<ImportedRevision[]> {
-  const { rows } = await platformDb().query<{ doc_id: string; team: string; initiative: string; path: string; revision: number }>(
+export async function importedDocuments(asOf: string): Promise<{ imported: DocRef[]; unrecorded: DocRef[]; mixed: DocRef[] }> {
+  const { rows } = await platformDb().query<{ doc_id: string; team: string; initiative: string; path: string; told: Told }>(
     `with writes as (
-       select e.team_id, ltrim(e.detail -> 'ids' ->> 'path', '/') as path, e.origin,
-              row_number() over (partition by e.team_id, ltrim(e.detail -> 'ids' ->> 'path', '/') order by e.ts, e.id) as nth
+       select e.team_id, ltrim(e.detail -> 'ids' ->> 'path', '/') as path,
+              (count(*) filter (where e.origin = 'platform'))::int as platform,
+              (count(*) filter (where e.origin = 'work'))::int as work
          from zz.event e
-        where e.kind = 'tool_call' and e.tool_key in ('core:document_write', 'core:document_edit') and e.ok
-          and e.team_id is not null and e.ts < $1::timestamptz)
-     select d.id::text as doc_id, t.slug as team, i.slug as initiative, d.path, r.revision
+        where e.kind = 'tool_call' and e.ok and e.team_id is not null and e.ts < $1::timestamptz
+          and e.tool_key in ('core:document_write', 'core:document_edit', 'core:document_patch', 'core:document_revise')
+        group by 1, 2)
+     select d.id::text as doc_id, t.slug as team, i.slug as initiative, d.path,
+            case when w.path is null then 'unrecorded' when w.work = 0 then 'imported' else 'mixed' end as told
        from zz.doc d
        join zz.initiative i on i.id = d.initiative_id
        join zz.team t on t.id = i.team_id
-       join zz.doc_revision r on r.doc_id = d.id
-       join writes w on w.team_id = i.team_id and w.path = i.slug || '/' || d.path and w.nth = r.revision
-      where w.origin = 'platform'
-      order by t.slug, i.slug, d.path, r.revision`, [asOf]);
-  return rows.map((r) => ({ docId: r.doc_id, team: r.team, initiative: r.initiative, path: r.path, revision: r.revision }));
+       left join writes w on w.team_id = i.team_id and w.path = i.slug || '/' || d.path
+      where d.path not like 'sources/%' and i.slug <> '_knowledge' and d.created_at < $1::timestamptz
+        and (w.path is null or w.platform > 0)
+      order by t.slug, i.slug, d.path`, [asOf]);
+  const told: Record<Told, DocRef[]> = { imported: [], unrecorded: [], mixed: [] };
+  for (const r of rows) told[r.told].push({ docId: r.doc_id, team: r.team, initiative: r.initiative, path: r.path });
+  return told;
 }

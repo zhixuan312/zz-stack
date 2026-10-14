@@ -33,6 +33,7 @@ import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
 
 import { closedMove, correctionsOf, type Move } from "./initiative-closed.js";
+import { initiativesNamed, namesRefusal } from "./initiative-status-names.js";
 import { registerKnowledgeReconcileTool } from "./knowledge-reconcile.js";
 
 
@@ -513,7 +514,7 @@ export async function initiativeState(
            // shape and a caller can read the field without knowing which branch answered.
            next_move_absent: undefined as string | undefined };
 }
-const chainArgs = async (p: pg.Pool, team: string | null, name: string): Promise<[Chain, FlowDoc[]]> => {
+export const chainArgs = async (p: pg.Pool, team: string | null, name: string): Promise<[Chain, FlowDoc[]]> => {
   const chain = await chainFor(p, team, `${name}/x.md`);
   return [chain, chain.documents];
 };
@@ -616,10 +617,22 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         "before continuing any existing work, especially work someone started elsewhere (another " +
         "chat, another client): the initiative is the unit of work, and this is the " +
         "one answer every harness shares. Omit `initiative` to get every OPEN initiative, with " +
-        "a count of the closed ones it did not list; name one to get it whatever its state.",
-      inputSchema: { initiative: z.string().optional() },
+        "a count of the closed ones it did not list; name one to get it whatever its state. " +
+        "`initiatives` names one to ten instead and answers `{ initiatives: [...] }`, each entry " +
+        "what naming that one alone answers, in the order asked; it is never given with `initiative`.",
+      inputSchema: {
+        initiative: z.string().optional(),
+        initiatives: z.array(z.string()).optional(),
+      },
     },
-    async ({ initiative }) => {
+    async ({ initiative, initiatives }) => {
+      if (initiatives !== undefined) {
+        if (initiative !== undefined) {
+          return text("ERROR: name one initiative in `initiative` or a list in `initiatives`, not both.");
+        }
+        const bad = namesRefusal(initiatives);
+        if (bad) return text(bad);
+      }
       if (initiative) {
         const bad = safeName(initiative, "initiative");
         if (bad) return text(bad);
@@ -633,22 +646,32 @@ export function registerInitiativeStatusTools(server: McpServer): void {
           "initiative is a row now, so there is nothing to read without one."
         );
       }
-      // The team's whole roster, or the one named. A slug the team does not hold is reported
-      // per-initiative rather than refused, which is what the named form has always done.
-      const names = initiative
+      // The team's whole roster, the one named, or the list named. A slug the team does not hold
+      // is reported per-initiative rather than refused, which is what the named form has always done.
+      const names = initiatives ?? (initiative
         ? [initiative]
         : (await p.query<{ slug: string }>(
             `select i.slug from zz.initiative i join zz.team t on t.id = i.team_id
-              where t.slug = $1 order by i.slug`, [team])).rows.map((r) => r.slug);
+              where t.slug = $1 order by i.slug`, [team])).rows.map((r) => r.slug));
       // One query for every name in this call, never one per initiative.
       const anchors = await anchorsFor(p, team, names);
       // Named: that one initiative, and an unknown name says so — the caller asked about it.
-      const base = initiative
-        ? (anchors.has(initiative)
-          ? await initiativeState(p, team, initiative, ...await chainArgs(p, team, initiative))
-          : { initiative, error: "no such initiative" })
-        : await initiativeListing(p, team, names, anchors);
-      platformEvent({ actor: who.email, kind: "initiative_status", initiative: initiative ?? "*" });
+      const base = initiatives
+        ? await initiativesNamed(p, team, initiatives, anchors)
+        : initiative
+          ? (anchors.has(initiative)
+            ? await initiativeState(p, team, initiative, ...await chainArgs(p, team, initiative))
+            : { initiative, error: "no such initiative" })
+          : await initiativeListing(p, team, names, anchors);
+      // A console page's read records nothing: only the console's relay sends `x-zz-via: session`
+      // (the gateway overwrites what a client sends), and viewing a page is not an act (FR-34).
+      const via = requestHeaders()["x-zz-via"];
+      if ((Array.isArray(via) ? via[0] : via) !== "session") {
+        platformEvent(initiatives
+          ? { actor: who.email, kind: "initiative_status", initiative: null, subject: initiatives.join(","),
+              detail: { initiatives } }
+          : { actor: who.email, kind: "initiative_status", initiative: initiative ?? "*" });
+      }
       return text(JSON.stringify(base, null, 2));
     },
   );

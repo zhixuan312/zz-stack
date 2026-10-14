@@ -11,8 +11,9 @@
  * team, document and credential kind, so a console session's presentation never satisfies an
  * agent's approval, nor the reverse, and nobody else's presentation satisfies anybody's. Coverage is
  * read from the presentation rows themselves and FAILS CLOSED: a read that cannot answer refuses.
- * The approval's own record — the context it rests on, the snapshot, the signer, the caller — is
- * composed here (`approvalRecord`) and written in the seal's transaction, as its one act row.
+ * The approval's own record — the context it rests on, the snapshot, the signer, the caller, and
+ * the decision basis when the caller stated one — is composed here (`approvalRecord`) and written in
+ * the seal's transaction, as its one act row.
  *
  * COUPLED: `doc_revision.presented_at` is still set when a presentation completes the current
  * snapshot's coverage in its review context (`commitPresentation`, review-context.ts), and the pin
@@ -142,9 +143,17 @@ export async function approvalConflict(
 /** The approval's record — the detail of its one act row, written in the seal's transaction by
  *  `saveDocument`: who recorded it, whose decision it is, the review context it rests on and the
  *  snapshot it signs. Not "the signer read it": a delegated approval rests on the caller's
- *  presentation, and the record says so by naming both. */
-export function approvalRecord(a: { caller: string; signer: string; context: string; target: string }): Record<string, string> {
-  return { user: a.caller, signer: a.signer, review_context: a.context, content_revision: a.target };
+ *  presentation, and the record says so by naming both.
+ *
+ *  `decision_basis` is carried only when the caller stated it: `explicit` (the person decided this
+ *  approval) or `delegation` (approved under a standing delegation the person recorded). Nothing
+ *  infers one — not the approval's time, its credential, nor how near it came to a presentation —
+ *  so an approval that states none records none, and a reader counts it unknown. */
+export function approvalRecord(
+  a: { caller: string; signer: string; context: string; target: string; basis?: "explicit" | "delegation" },
+): Record<string, string> {
+  return { user: a.caller, signer: a.signer, review_context: a.context, content_revision: a.target,
+           ...(a.basis ? { decision_basis: a.basis } : {}) };
 }
 
 /** Record that the current snapshot's coverage was completed — on the row a presentation pinned.

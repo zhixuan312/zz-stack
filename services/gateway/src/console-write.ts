@@ -24,6 +24,10 @@
  * shown, or nothing of this session's shows the current snapshot — are answered 409 in the
  * console's own words, with zz-core's sentence beside them as `detail`; the page offers a reload.
  *
+ * The console's Approve states its decision basis as `explicit`: pressing Confirm in the page's
+ * confirmation is the person recording the decision as their own. The session it came through
+ * decides nothing; zz-core keeps the basis on the approval's record.
+ *
  * Authorised through console.ts's own `handler()`, not a copy of it — the same
  * directory-or-superadmin gate and the same `resolveScope` that decides which team a read sees.
  * A write needs a settled answer to "which team": `document_approve` stamps one document
@@ -130,7 +134,7 @@ export function mountConsoleWrite(app: Express): void {
     const subject = `${initiative}/${path}`;
     let reply: string;
     try {
-      reply = await core.call("document_approve", { path: subject, expected_revision, review_context });
+      reply = await core.call("document_approve", { path: subject, expected_revision, review_context, decision_basis: "explicit" });
     } catch (err) {
       // `Mcp.call` throws only for a transport or protocol failure — a refusal comes back as
       // ordinary text beginning with ERROR, read below. So everything that lands here is "could

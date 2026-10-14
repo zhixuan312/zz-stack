@@ -50,10 +50,16 @@ const sqlLiterals = (src: string): string[] =>
 const hits: string[] = [];
 for (const f of files) {
   for (const sql of sqlLiterals(readFileSync(f, "utf8"))) {
-    // A bare name is a node column only when the statement binds the node table.
+    // A bare name is a node column only when the statement binds the node table. A qualified one is a node column
+    // only when its qualifier is the node table or an alias bound to it: `d.path` beside `zz.knowledge_node k` is a
+    // document's path, and reading it as the node's made every statement that counts both read as a retired column.
     if (!/\bknowledge_node\b/i.test(sql)) continue;
+    const nodeNames = new Set(["knowledge_node"]);
+    for (const m of sql.matchAll(/\bknowledge_node\s+(?:as\s+)?([a-z_][a-z0-9_]*)/gi)) nodeNames.add(m[1].toLowerCase());
     for (const c of retired) {
-      if (new RegExp(`(?:^|[\\s,.(])${c}\\b`, "i").test(sql)) hits.push(`${f}: knowledge_node.${c} in a statement`);
+      for (const m of sql.matchAll(new RegExp(`(?:^|[\\s,(])(?:([a-z_][a-z0-9_]*)\\.)?${c}\\b`, "gi"))) {
+        if (m[1] === undefined || nodeNames.has(m[1].toLowerCase())) { hits.push(`${f}: knowledge_node.${c} in a statement`); break; }
+      }
     }
   }
 }

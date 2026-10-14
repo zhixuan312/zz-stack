@@ -66,7 +66,9 @@ type TeamDetail = {
 };
 
 /** Every team with its counts and its latest real-work call before `asOf`. Documents and sources are counted apart:
- *  both live in zz.doc, and one number for the two counts registered sources as documents. `initiatives` counts
+ *  both live in zz.doc, and one number for the two counts registered sources as documents. A document is a flow
+ *  document, its path not under `sources/` and outside `_knowledge`; a source is one whose path is under `sources/`,
+ *  zz-core's own rule, whatever type it was filed with, an audit round's stage name among them. `initiatives` counts
  *  initiatives holding a document and `knowledge` every node, as today's pages read them; `openWork` counts every
  *  initiative not closed and `lessons` the nodes standing. */
 async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
@@ -87,10 +89,10 @@ async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
               where i.team_id = t.id and i.slug <> '_knowledge')::int as initiatives,
             (select count(*) from zz.doc d
                join zz.initiative i on i.id = d.initiative_id
-              where i.team_id = t.id and d.type <> 'source')::int as documents,
+              where i.team_id = t.id and d.path not like 'sources/%' and i.slug <> '_knowledge')::int as documents,
             (select count(*) from zz.doc d
                join zz.initiative i on i.id = d.initiative_id
-              where i.team_id = t.id and d.type = 'source')::int as sources,
+              where i.team_id = t.id and d.path like 'sources/%')::int as sources,
             (select count(*) from zz.knowledge_node k where k.team_id = t.id)::int as knowledge,
             (select count(*) from zz.initiative i where i.team_id = t.id and i.closed_at is null)::int as open_work,
             (select count(*) from zz.knowledge_node k where k.team_id = t.id and k.lifecycle = 'adopted')::int as lessons,

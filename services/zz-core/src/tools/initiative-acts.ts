@@ -74,7 +74,10 @@ export function registerInitiativeActTools(server: McpServer): void {
         "`review_context`. Without them the most recent of your contexts covering the current " +
         "snapshot is used. A change that lands after the present — content or metadata — is " +
         "`APPROVAL_CONFLICT`, naming what changed: present again in the same context, which " +
-        "shows only that, and approve what it names.",
+        "shows only that, and approve what it names. " +
+        "Say what the approval rests on with `decision_basis`: `explicit` when the person decided " +
+        "this approval themselves, `delegation` when you approve under a standing delegation they " +
+        "recorded. It is kept on the approval's record; omitted, the basis is recorded as unknown.",
       inputSchema: {
         path: z.string().describe("e.g. '2026-08-23-sample-queue/spec.md'"),
         expected_revision: z.string().optional().describe(
@@ -86,11 +89,24 @@ export function registerInitiativeActTools(server: McpServer): void {
         on_behalf_of: z.string().optional().describe(
           "The person whose decision this is, when that is not the caller. Omit for the " +
           "normal case: you acting with someone's authority IS their decision, under their name."),
+        // DELIBERATE: a string checked in the handler, not `z.enum` — a schema refusal answers in
+        // the SDK's words, and an unknown basis is refused in this tool's own `ERROR:` form.
+        decision_basis: z.string().optional().describe(
+          "What the approval rests on: `explicit` — the person decided this approval themselves; " +
+          "`delegation` — approved under a standing delegation the person recorded. Omit when " +
+          "neither was said; nothing is inferred, and the basis is recorded as unknown."),
       },
       // The document panel's Approve button calls this, through the client.
       _meta: PANEL_CALLABLE,
     },
-    async ({ path: relPath, expected_revision, review_context, on_behalf_of }) => {
+    async ({ path: relPath, expected_revision, review_context, on_behalf_of, decision_basis }) => {
+      // Refused before anything is read or written: a basis is recorded as stated, or not at all.
+      if (decision_basis !== undefined && decision_basis !== "explicit" && decision_basis !== "delegation") {
+        return text(
+          `ERROR: decision_basis ${JSON.stringify(decision_basis)} is not one this platform records — pass ` +
+          "`explicit` (the person decided this approval themselves) or `delegation` (approved under a " +
+          "standing delegation the person recorded), or omit it. Nothing was approved.");
+      }
       const who = parseCaller(requestHeaders());
       const p = db();
       if (!p) return text(NO_DB);
@@ -195,7 +211,8 @@ export function registerInitiativeActTools(server: McpServer): void {
         team, relPath, initiative: parts[0], text: doc, by: who.email,
         flow: chain.name ?? undefined, type: chain.roles[parts[1]],
         mode: "rewrite", act: "document_approve", seal: { by: signer, at: isoToday() }, expect: state,
-        record: approvalRecord({ caller: who.email, signer, context: basis.context, target: basis.target }),
+        record: approvalRecord({ caller: who.email, signer, context: basis.context, target: basis.target,
+                                 basis: decision_basis }),
       });
       if ("refusal" in sealed) {
         if (!sealed.refusal.startsWith(STATE_CHANGED)) return text(sealed.refusal);

@@ -11,7 +11,8 @@
  *
  *   - alder: three memberships; four initiatives, three open, one of them with no document; a gated `sdlc-flow` spec
  *     and plan presented and not approved (the plan's first revision approved), an explore presented, which the flow
- *     does not gate, a source, a note and a closed initiative's presented spec; three standing lessons and one
+ *     does not gate, two sources (one a plan audit's round, typed with its stage's name, which is a source by its path
+ *     and not a document), a note and a closed initiative's presented spec; three standing lessons and one
  *     superseded; real-work calls in L-1, L (two of them refused) and the running week;
  *   - birch: two memberships; a review presented and not approved, a spec approved, a plan presented after the clock
  *     and a closed initiative's presented spec; two sources; two standing lessons; calls in L-2 and L, and two
@@ -88,7 +89,7 @@ export const EXPECTED = {
   /** Latest real-work call first, a team with none last, the slug breaking a tie. */
   order: ["alder", "elm", "birch", "cedar", "dune", "fir"] as Slug[],
   rows: {
-    alder: { name: "Alder Works", status: "active", created: "2026-03-02", members: 3, initiatives: 3, documents: 5, sources: 1, knowledge: 4,
+    alder: { name: "Alder Works", status: "active", created: "2026-03-02", members: 3, initiatives: 3, documents: 5, sources: 2, knowledge: 4,
              people: 3, openWork: 3, waiting: 2, lessons: 3 },
     birch: { name: "Birch Bank", status: "active", created: "2026-04-06", members: 2, initiatives: 2, documents: 4, sources: 2, knowledge: 2,
              people: 2, openWork: 1, waiting: 1, lessons: 2 },
@@ -191,6 +192,8 @@ export async function seedFleet(db: pg.ClientBase | pg.Pool, timezone: string, n
   await document(gated, "plan.md", "plan", [[20, 19], [5, null]]);
   await document(gated, "explore.md", "explore", [[30, null]]);
   await document(gated, "sources/a.md", "source", [[null, null]]);
+  // A plan audit's round, filed as `source_add` files one, with its stage's name as its type: a source by its path.
+  await document(gated, "sources/2026-09-10-plan-audit-round-1.md", "sdlc-plan-audit", [[null, null]]);
   await document(await initiative("alder", "2026-09-02-alder-quiet", null, null), "notes.md", "note", [[null, null]]);
   await document(await initiative("alder", "2026-09-03-alder-done", "sdlc-flow", "delivered"), "spec.md", "spec", [[30, null]]);
   await initiative("alder", "2026-09-04-alder-empty", null, null);

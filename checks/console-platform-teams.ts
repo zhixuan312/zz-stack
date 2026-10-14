@@ -17,7 +17,8 @@
  *     read, the memberships, open work, waiting, standing lessons, sessions by week (26 at most, the running week not
  *     complete), calls in the last two complete weeks and the latest real-work call, sorted by it, a team with none
  *     last and the slug breaking a tie; `q` and `status` filter, the page keeps the total, and a value the read does
- *     not take is 400;
+ *     not take is 400; documents and sources are told apart by path, a source under `sources/` whatever its type, so
+ *     a plan audit's round filed with its stage's name as its type is a source and not a document;
  *   - each team's waiting equals `pendingRevisions` at the read's own cutoff, each revision once, and the pending tile
  *     is all of them;
  *   - a team's page answers its team, members, tiles and calls by week, and its counts and tiles equal its row's in
@@ -191,7 +192,8 @@ async function listCases(s: Seeded, get: Get, pending: (asOf: string) => Promise
   }
   pass("six teams, latest real-work call first and dune before fir with none, each with today's fields, memberships, " +
        "open work, waiting, standing lessons, 26 weeks of sessions from back 25 (the running one not complete), its calls " +
-       "in L and L-1 and its latest call, as the seed writes them out");
+       "in L and L-1 and its latest call, as the seed writes them out; a document is told from a source by its path, so " +
+       "alder's plan audit round, typed with its stage's name, is one of its 2 sources and not one of its 5 documents");
 
   step = "the tiles and meta";
   const meta = a.body.meta as Obj;

@@ -185,7 +185,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "first token. RETURNS the membership and the role it carries: member by default, or " +
       "admin, which is who may add the next one. REFUSES anyone who does not administer " +
       "THIS team — being a lead somewhere else is not authority here — and refuses an " +
-      "address with no principal behind it, or a team that is not active.",
+      "address with no principal behind it, a person who is deactivated, or a team that is not active.",
     inputSchema: { team: z.string(), email: z.string().email(), role: z.enum(["member", "admin"]).optional() },
   }, async ({ team, email, role }) => {
     const id = await caller();

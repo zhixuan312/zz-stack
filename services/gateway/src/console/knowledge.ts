@@ -160,7 +160,7 @@ export function mountKnowledge(app: Express): void {
   app.get("/api/console/knowledge/:team/*", handler("the node", async (req, res, scope) => {
     const db = platformDb();
     const address = (req.params as Record<string, string>)[0];
-    // Same not-found rather than a refusal as /teams/:slug: a team scope naming someone else's
+    // A not-found rather than a refusal: a team scope naming someone else's
     // team gets the response it would get for a node that never existed.
     if (scope.kind === "team" && req.params.team !== scope.slug) {
       res.status(404).json({ error: `no node ${address}` });

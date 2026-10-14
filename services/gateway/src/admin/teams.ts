@@ -28,7 +28,8 @@ type TeamWriteOutcome = { ok: true; message: string } | { ok: false; status: 400
 /** Add a principal to a team, or change their role — the same call, because the insert's
  * own `on conflict (team_id, principal_id) do update set role = excluded.role` already
  * handles both. A second code path for "already a member" would only be a second way for
- * add and change-role to disagree about what happened. */
+ * add and change-role to disagree about what happened. A deactivated principal is refused:
+ * a membership is access, and deactivation is the act that ended theirs. */
 export async function addMember(
   id: Identity | null, team: string, email: string, role: "member" | "admin" | undefined,
   extraDetail: Record<string, unknown> = {},
@@ -42,6 +43,10 @@ export async function addMember(
       error: `no active team '${team}' — team_create on the same slug restores an archived one` };
   }
   if (!pid) return { ok: false, status: 400, error: `no principal '${email}' — person_add first` };
+  const status = (await db.query<{ status: string }>("select status from principal where id = $1", [pid])).rows[0]?.status;
+  if (status === "deactivated") {
+    return { ok: false, status: 400, error: `principal ${email} is deactivated — person_add restores them before a team can take them` };
+  }
   const actorId = await principalId(db, id.email);
   await db.query(
     `insert into membership (team_id, principal_id, role, added_by) values ($1,$2,$3,$4)

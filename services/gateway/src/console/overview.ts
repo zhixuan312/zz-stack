@@ -1,5 +1,5 @@
 /**
- * Who is looking, what the platform has been doing, and who is on it.
+ * Who is looking, and what the platform has been doing.
  *
  * `/me` is the one route here not behind `ok()`: it answers 200 even to a caller the console
  * will refuse everywhere else, with `mayRead: false`, so the front end can render "you are
@@ -387,56 +387,5 @@ export function mountOverview(app: Express): void {
         order by e.ts desc limit $3`,
       [kind, failedOnly, limit, scope.slug]);
     res.json({ events: rows, limit });
-  }));
-
-  /** People, their teams, and their tokens' state.
-   *
-   * Never the tokens. `zz.pat` stores a hash and this returns whether one is
-   * live and when it was last used — which is what an administrator asks — and
-   * nothing that could be replayed. */
-  app.get("/api/console/people", handler("people", async (_req, res, scope) => {
-    const db = platformDb();
-    // A team scope narrows this to people who are members of the caller's own team; only a
-    // platform scope sees the whole-platform directory. Two colleagues in one department have
-    // no standing to read another department's roster just because both can sign in to the
-    // console.
-    //
-    // Two complete statements, not one assembled from `scope` — see the note in
-    // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read
-    // whole.
-    const { rows } = scope.kind === "platform"
-      ? await db.query(
-      `select p.email, p.display_name as name, p.role, p.status,
-              to_char(p.created_at at time zone $1,'YYYY-MM-DD') as created,
-              coalesce(t.slug,'') as active_team,
-              (select coalesce(array_agg(tm.slug || ' (' || m.role || ')' order by tm.slug), '{}')
-                 from zz.membership m join zz.team tm on tm.id = m.team_id
-                where m.principal_id = p.id)                                   as teams,
-              (select count(*) from zz.pat pt
-                where pt.principal_id = p.id and pt.revoked_at is null)        as tokens,
-              (select to_char(max(pt.last_used_at) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.pat pt
-                where pt.principal_id = p.id)                                  as last_used
-         from zz.principal p
-         left join zz.team t on t.id = p.active_team_id
-        order by p.role, p.created_at`, [ZZ_TZ])
-      : await db.query(
-      `select p.email, p.display_name as name, p.role, p.status,
-              to_char(p.created_at at time zone $2,'YYYY-MM-DD') as created,
-              coalesce(t.slug,'') as active_team,
-              (select coalesce(array_agg(tm.slug || ' (' || m.role || ')' order by tm.slug), '{}')
-                 from zz.membership m join zz.team tm on tm.id = m.team_id
-                where m.principal_id = p.id)                                   as teams,
-              (select count(*) from zz.pat pt
-                where pt.principal_id = p.id and pt.revoked_at is null)        as tokens,
-              (select to_char(max(pt.last_used_at) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.pat pt
-                where pt.principal_id = p.id)                                  as last_used
-         from zz.principal p
-         left join zz.team t on t.id = p.active_team_id
-        where exists (select 1 from zz.membership m2 join zz.team tm2 on tm2.id = m2.team_id
-                       where m2.principal_id = p.id and tm2.slug = $1)
-        order by p.role, p.created_at`, [scope.slug, ZZ_TZ]);
-    res.json({ people: rows.map((r) => ({
-      ...r, tokens: +r.tokens, activeTeam: r.active_team || null,
-    })) });
   }));
 }

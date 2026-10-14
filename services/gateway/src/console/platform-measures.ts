@@ -26,15 +26,16 @@
  */
 import type pg from "pg";
 
-import { summarise, type Measure, type MeasureKey, type PeriodFigure } from "./figures.js";
+import { summarise, type Measure, type MeasureKey, type PeriodFigure, type Window } from "./figures.js";
 import type { realReports } from "./platform-bugs.js";
 import { ZZ_TZ } from "./shared.js";
+import { followupWeeks, type FollowupRow } from "./usage-figures.js";
 
 /** A weekly platform rate or latency stands only on this many observations; fewer are `insufficient`. */
 const MIN_SAMPLES = 30;
 
 /** How long after a refusal a success of the same tool counts as putting it right. */
-const LOOKAHEAD_MS = 120_000;
+export const LOOKAHEAD_MS = 120_000;
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -78,6 +79,9 @@ const SPECS: Record<MeasureKey, Spec> = {
 /** The share of searches widened, drawn beside the searches measure and named by nothing. */
 const WIDENED: Spec = { better: "neutral", rate: true, precision: 1, label: "share of searches widened", countLabel: null };
 
+/** A figure only its weeks are read of: no direction, and nothing a finding says. */
+const UNNAMED: Spec = { better: "neutral", rate: false, precision: 0, label: "", countLabel: null };
+
 /** Reads the cutoff, where the record begins, and every week from then through the running one, a week
  *  with nothing in it included: a missing week stays a no-data point rather than closing the gap
  *  between its neighbours. Weeks are cut on local wall time, so a week a daylight-saving change falls
@@ -100,9 +104,20 @@ export async function readGrid(db: pg.Pool): Promise<Grid> {
   return { asOfMs, coverageMs: cov.first_ms, coverageDay: cov.first_day, weeks };
 }
 
+/** A week of the grid as a window: observed from where the record begins through the cutoff, and
+ *  complete once it has ended and `settleMs` more has been read after it, and when it lies wholly
+ *  inside known coverage. */
+export function windowOf(grid: Grid, w: { fromMs: number; toMs: number }, settleMs = 0): Window {
+  return {
+    from: iso(w.fromMs), to: iso(w.toMs),
+    observedFrom: iso(Math.max(w.fromMs, grid.coverageMs!)),
+    observedThrough: iso(Math.min(w.toMs, grid.asOfMs)),
+    complete: w.toMs + settleMs <= grid.asOfMs && w.fromMs >= grid.coverageMs!,
+  };
+}
+
 /** A measure over the grid: `count` gives a week's counts by the instant it starts, or is null when
- *  they could not be read, which makes every week unavailable. A week is complete once it has ended
- *  and `settleMs` more has been read after it, and when it lies wholly inside known coverage. */
+ *  they could not be read, which makes every week unavailable. */
 function weekly(grid: Grid, key: MeasureKey, spec: Spec, team: string | null, definedFrom: string | null,
                 count: ((fromMs: number) => Counted) | null, settleMs = 0): Measure {
   return summarise({
@@ -110,14 +125,17 @@ function weekly(grid: Grid, key: MeasureKey, spec: Spec, team: string | null, de
     minSamples: spec.rate && team === null ? MIN_SAMPLES : 0,
     definedFrom, coverageFrom: definedFrom ?? grid.coverageDay, timezone: ZZ_TZ,
     weeks: grid.weeks.map((w) => ({
-      from: iso(w.fromMs), to: iso(w.toMs),
-      observedFrom: iso(Math.max(w.fromMs, grid.coverageMs!)),
-      observedThrough: iso(Math.min(w.toMs, grid.asOfMs)),
+      ...windowOf(grid, w, settleMs),
       ...(count ? count(w.fromMs) : { numerator: null, denominator: null, value: null, samples: 0 }),
-      complete: w.toMs + settleMs <= grid.asOfMs && w.fromMs >= grid.coverageMs!,
       available: count !== null,
     })),
   });
+}
+
+/** A platform figure no measure names, week by week over the grid under a measure's rules: `rate`
+ *  holds each week to the sample minimum, and a week with nothing to divide by has no data. */
+export function periodWeeks(grid: Grid, rate: boolean, count: (fromMs: number) => Counted, settleMs = 0): PeriodFigure[] {
+  return weekly(grid, "sessions", { ...UNNAMED, rate }, null, grid.coverageDay, count, settleMs).weeks;
 }
 
 /** A measure whose counts could not be read: every week unavailable, and nothing counted beside them. */
@@ -132,20 +150,21 @@ export function unavailableMeasure(grid: Grid, key: MeasureKey, team: string | n
 
 /** Rows keyed by the instant their week starts, and a reader of one numeric column that gives 0 for a
  *  week with no row. */
-function byWeek<R extends { from_ms: number }>(rows: R[]): (fromMs: number, column: keyof R) => number {
+export function byWeek<R extends { from_ms: number }>(rows: R[]): (fromMs: number, column: keyof R) => number {
   const at = new Map(rows.map((r) => [r.from_ms, r]));
   return (fromMs, column) => Number(at.get(fromMs)?.[column] ?? 0);
 }
-const share = (n: number, of: number, scale: number): Counted =>
+export const share = (n: number, of: number, scale: number): Counted =>
   ({ numerator: n, denominator: of, value: of === 0 ? null : (scale * n) / of, samples: of });
-const tally = (n: number): Counted => ({ numerator: n, denominator: null, value: n, samples: n });
+export const tally = (n: number): Counted => ({ numerator: n, denominator: null, value: n, samples: n });
 
-/** Real-work calls and the malformed among them, by week; `team` narrows to one team's. */
-async function callWeeks(db: pg.Pool, grid: Grid, team: string | null) {
-  return byWeek((await db.query<{ from_ms: number; calls: number; malformed: number }>(
+/** Real-work calls, the malformed and every refusal among them, by week; `team` narrows to one team's. */
+export async function callWeeks(db: pg.Pool, grid: Grid, team: string | null) {
+  return byWeek((await db.query<{ from_ms: number; calls: number; malformed: number; refusals: number }>(
     `select (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
             count(*)::int as calls,
-            (count(*) filter (where e.refusal_owner = 'ours'))::int as malformed
+            (count(*) filter (where e.refusal_owner = 'ours'))::int as malformed,
+            (count(*) filter (where e.refusal_owner is not null))::int as refusals
        from zz.event e
       where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $2::timestamptz
         and ($3::uuid is null or e.team_id = $3::uuid)
@@ -162,32 +181,16 @@ export async function malformedMeasure(db: pg.Pool, grid: Grid, team: string | n
 
 /** Refusals put right: of the refusals with a session whose next 120 seconds were read before the
  *  cutoff, those the same team, session and tool followed with a real-work call that was not refused
- *  within them, `[t, t + 120s)` after the refusal; when both name an initiative it is the same one.
- *  Several refusals before one success each count, so this counts refusals with a follow-up, not
- *  tasks that recovered. A week groups its refusals by their own time and is complete once the 120
- *  seconds after its end have been read. */
+ *  within them, `(t, t + 120s)` after the refusal; when both name an initiative it is the same one
+ *  (`followupWeeks` counts them). Several refusals before one success each count, so this counts
+ *  refusals with a follow-up, not tasks that recovered. A week groups its refusals by their own time
+ *  and is complete once the 120 seconds after its end have been read. */
 export async function followupMeasure(db: pg.Pool, grid: Grid, team: string | null = null): Promise<StatusMeasure> {
-  const rows = (await db.query<{ from_ms: number; refusals: number; missing_session: number; within_lookahead: number; eligible: number; matched: number }>(
-    `with r as (
-       select e.ts, e.session,
-              e.session <> '' and exists (
-                select 1 from zz.event s
-                 where s.kind = 'tool_call' and s.origin = 'work' and s.refusal_owner is null
-                   and s.session = e.session and s.tool_key = e.tool_key and s.team_id is not distinct from e.team_id
-                   and s.ts > e.ts and s.ts < e.ts + interval '120 seconds' and s.ts < $2::timestamptz
-                   and (e.initiative_id is null or s.initiative_id is null or s.initiative_id = e.initiative_id)) as followed
-         from zz.event e
-        where e.kind = 'tool_call' and e.origin = 'work' and e.refusal_owner is not null and e.ts < $2::timestamptz
-          and ($3::uuid is null or e.team_id = $3::uuid)
-     )
-     select (extract(epoch from (date_trunc('week', r.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
-            count(*)::int as refusals,
-            (count(*) filter (where r.session = ''))::int as missing_session,
-            (count(*) filter (where r.session <> '' and r.ts + interval '120 seconds' > $2::timestamptz))::int as within_lookahead,
-            (count(*) filter (where r.session <> '' and r.ts + interval '120 seconds' <= $2::timestamptz))::int as eligible,
-            (count(*) filter (where r.ts + interval '120 seconds' <= $2::timestamptz and r.followed))::int as matched
-       from r
-      group by 1`, [ZZ_TZ, new Date(grid.asOfMs).toISOString(), team])).rows;
+  return followupOf(grid, await followupWeeks(db, grid, team), team);
+}
+
+/** The refusals-put-right measure from `followupWeeks`'s rows. */
+export function followupOf(grid: Grid, rows: FollowupRow[], team: string | null): StatusMeasure {
   const at = byWeek(rows);
   const m: StatusMeasure = weekly(grid, "same_tool_followup_pct", SPECS.same_tool_followup_pct, team, grid.coverageDay,
     (w) => share(at(w, "matched"), at(w, "eligible"), 100), LOOKAHEAD_MS);

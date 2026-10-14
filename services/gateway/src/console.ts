@@ -2,7 +2,7 @@
  * /api/console — the read API behind the admin console.
  *
  * Who may read it: anyone who signed in through the browser, plus a superadmin PAT. What they see
- * is answered on every route below by `resolveScope` (scope.ts) — a caller sees their own team's
+ * is answered on every team route below by `resolveScope` (scope.ts) — a caller sees their own team's
  * rows unless they are a superadmin who explicitly asked for `?scope=platform`. `handler()` resolves
  * the scope once, before any handler's SQL runs, so a caller with no `?team=` cannot fall through a
  * `$1::text is null or team_slug = $1` predicate with a null standing in for "every team".
@@ -35,12 +35,14 @@
  * `knowledge_search`, called as the caller, because ranking a question against the documents and
  * the shelf is that tool's own work and not a second implementation of it here.
  *
- * The platform's reads resolve no scope at all: `/api/console/platform/status`, `/releases`, `/bugs`
- * and `/evaluation` (console/platform-*.ts) are the platform's own, public by route through
- * `platformPublic` (console/shared.ts), and answered to everybody the console lets in, a person in no
- * team included; a superadmin's answer adds only the fields each route names, and a bug report and
- * its duplicate targets are the superadmin's alone. The status read's `own` part alone is the
- * caller's active team, as the identity resolved it.
+ * The platform's reads resolve no scope at all: `/api/console/platform/status`, `/releases`, `/bugs`,
+ * `/evaluation`, `/usage`, `/knowledge` and `/audit` (console/platform-*.ts) are the platform's own,
+ * public by route through `platformPublic` (console/shared.ts), and answered to everybody the console
+ * lets in, a person in no team included; a superadmin's answer adds only the fields each route names,
+ * and a bug report, its duplicate targets and the audit are the superadmin's alone. The status read's
+ * `own` part alone is the caller's active team, as the identity resolved it. `/api/console/teams`,
+ * `/teams/:slug` (console/teams.ts) and `/people` (console/people.ts) are mounted the same way and are
+ * the superadmin's alone: anybody else is refused before anything is read.
  *
  * An initiative's lifecycle — whether it is closed, its outcome, its flow — comes from
  * zz.initiative, the one record of it, written by initiative_open and initiative_close; the
@@ -64,12 +66,18 @@ import { mountPlatformBugResolve } from "./console/platform-bug-resolve.js";
 import { mountPlatformBugs } from "./console/platform-bugs.js";
 import { mountPlatformEvaluation } from "./console/platform-evaluation.js";
 import { mountPlatformReleases } from "./console/platform-releases.js";
+import { mountPlatformUsage } from "./console/platform-usage.js";
+import { mountPlatformKnowledge } from "./console/platform-knowledge.js";
+import { mountPlatformAudit } from "./console/platform-audit.js";
+import { mountPeople } from "./console/people.js";
 
 
 export function mountConsole(app: Express): void {
   // The console's read API, by resource.
   mountOverview(app);
   mountTeams(app);
+  // People, the superadmin's read through platformPublic; a member is refused before anything is read.
+  mountPeople(app);
   mountInitiatives(app);
   mountKnowledge(app);
   // The one read that is zz-core's answer rather than a query of this gateway's own.
@@ -83,6 +91,10 @@ export function mountConsole(app: Express): void {
   // The bug queue in two projections: the safe one for everybody, the report and its duplicate targets for the superadmin.
   mountPlatformBugs(app);
   mountPlatformEvaluation(app);
+  mountPlatformUsage(app);
+  mountPlatformKnowledge(app);
+  // The superadmin's audit: recorded administration as sentences and the latest events as metadata, never a body.
+  mountPlatformAudit(app);
   // The one endpoint here that is not an answer: a stream held open, which is what keeps a tab fresh without polling.
   mountConsoleLive(app);
   // A page view, which records which page was opened and is counted as nothing else.

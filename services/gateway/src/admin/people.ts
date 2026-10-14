@@ -4,6 +4,8 @@
  * Adding somebody, retiring them, and the enrolment link they sign in with. Same outcome shape
  * as the team writes beside them, for the same reason.
  */
+import { z } from "zod";
+
 import { platformDb } from "../db.js";
 import { auditAdmin, type Identity } from "../identity.js";
 import { issueEnrolment } from "../passkey.js";
@@ -37,6 +39,12 @@ export async function listPeople(
       group by p.id order by p.email`);
   return { ok: true, rows: r.rows };
 }
+/** An email as `person_add`'s schema takes one.
+ *
+ * COUPLED: the `email` of `person_add`'s `inputSchema` in admin.ts, so the console's add-person route,
+ * which has no schema in front of it, refuses exactly what the MCP door does. */
+const EMAIL = z.string().email();
+
 /** Create a principal (platform member). A browser account is made separately, by an
  *  operator; this links to it by email. */
 export async function addPerson(
@@ -44,6 +52,7 @@ export async function addPerson(
   extraDetail: Record<string, unknown> = {},
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
+  if (!EMAIL.safeParse(email).success) return { ok: false, status: 400, error: `${email} is not an email address` };
   await platformDb().query(
     `insert into principal (email, display_name) values ($1, $2)
      on conflict (email) do update set display_name = coalesce(nullif(excluded.display_name,''), principal.display_name), status='active'`,
@@ -52,7 +61,8 @@ export async function addPerson(
   auditAdmin(id, "add_person", email, { ...extraDetail });
   return { ok: true, message: `principal ${email} active` };
 }
-/** Deactivate a principal. `confirm` must repeat the email exactly. */
+/** Deactivate a principal. `confirm` must repeat the email exactly, and an email no principal has
+ *  is refused rather than reported as done. */
 export async function deactivatePerson(
   id: Identity | null, email: string, confirm: string,
   extraDetail: Record<string, unknown> = {},
@@ -72,6 +82,10 @@ export async function deactivatePerson(
       "update principal set status='deactivated' where email=$1 returning id",
       [email.toLowerCase()]);
     const principal = who.rows[0]?.id ?? null;
+    if (principal === null) {
+      await client.query("rollback");
+      return { ok: false, status: 400, error: `no principal for ${email} — nothing was deactivated` };
+    }
     const pats = await client.query(
       "update pat set revoked_at = now() where revoked_at is null and principal_id = $1", [principal]);
     const sessions = await client.query(

@@ -332,8 +332,8 @@ export function mountInitiatives(app: Express): void {
   app.get("/api/console/initiatives/:team/:slug", handler("the initiative", async (req, res, scope) => {
     const db = platformDb();
     const { team, slug } = req.params;
-    // Same not-found rather than a refusal as /teams/:slug, for the same reason: a 403 for
-    // a team scope naming someone else's team would confirm the initiative exists there.
+    // A not-found rather than a refusal: a 403 for a team scope naming someone else's team would
+    // confirm the initiative exists there.
     if (scope.kind === "team" && team !== scope.slug) {
       res.status(404).json({ error: `no initiative ${team}/${slug}` });
       return;
@@ -438,8 +438,8 @@ export function mountInitiatives(app: Express): void {
     const db = platformDb();
     const path = (req.params as Record<string, string>)[0];
     const { team, initiative } = req.params;
-    // Same not-found rather than a refusal as /teams/:slug: a team scope naming someone
-    // else's team gets the response it would get for a document that never existed.
+    // A not-found rather than a refusal: a team scope naming someone else's team gets the
+    // response it would get for a document that never existed.
     if (scope.kind === "team" && team !== scope.slug) {
       res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });
       return;

@@ -34,7 +34,8 @@ export function mountPlatformSettings(app: Express): void {
   });
 
   /** Create a principal, or reactivate a deactivated one on the same email — `addPerson`'s
-   *  own `on conflict` (admin.ts) is why there is no second path for "already exists". */
+   *  own `on conflict` (admin.ts) is why there is no second path for "already exists". An email
+   *  `person_add`'s schema refuses is refused by `addPerson` too, so this route needs no schema. */
   app.post("/api/console/settings/platform/people", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
@@ -77,9 +78,9 @@ export function mountPlatformSettings(app: Express): void {
     });
   });
 
-  /** Deactivate a principal. `confirm` must repeat the email exactly — `deactivatePerson`'s own
-   *  rule (admin.ts), surfaced here rather than duplicated. This is the gateway's independent
-   *  check regardless of what the browser sent. */
+  /** Deactivate a principal. `confirm` must repeat the email exactly, and an email no principal
+   *  has is refused — `deactivatePerson`'s own rules (admin.ts), surfaced here rather than
+   *  duplicated. This is the gateway's independent check regardless of what the browser sent. */
   app.delete("/api/console/settings/platform/people", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;

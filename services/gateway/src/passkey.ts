@@ -36,7 +36,7 @@ import type { Express, Request, Response } from "express";
 
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
-import { CONSOLE_COOKIE, readCookie, sha256 } from "./identity.js";
+import { CONSOLE_COOKIE, readCookie, requestOrigin, sha256 } from "./identity.js";
 
 /** Spelled as a literal, never assembled at runtime: a name built from a variable cannot be
  * found by searching the source, so it cannot be checked against .env.example. The gate
@@ -287,10 +287,10 @@ export function mountPasskey(app: Express): void {
          cred.transports ?? null, label]);
 
       // Fire-and-forget, like every other logEvent call — a sign-in must not fail because the
-      // audit write did.
+      // audit write did. The origin is the request's own: /auth/ is public, so no identity carries it.
       logEvent({
         actor: stored.rows[0]?.email ?? pending.principalId, kind: "console.passkey_registered",
-        subject: cred.id, ok: true, detail: { label, via: "web" },
+        subject: cred.id, ok: true, origin: requestOrigin(req.headers), detail: { label, via: "web" },
       });
 
       const token = await issueSession(pending.principalId, req);
@@ -394,7 +394,8 @@ export function mountPasskey(app: Express): void {
         [id, verified.authenticationInfo.newCounter]);
 
       logEvent({
-        actor: row.email, kind: "console.sign_in", subject: id, ok: true, detail: { via: "web" },
+        actor: row.email, kind: "console.sign_in", subject: id, ok: true, origin: requestOrigin(req.headers),
+        detail: { via: "web" },
       });
 
       const token = await issueSession(row.principal_id, req);

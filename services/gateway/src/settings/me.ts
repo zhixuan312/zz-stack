@@ -83,7 +83,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       // write route records the door it came through". Without it the row would say a person
       // switched teams and nothing would say a browser did it rather than an agent turn.
       logEvent({
-        actor: id.email, kind: "team.switch", subject: team, teamSlug: team,
+        actor: id.email, kind: "team.switch", subject: team, teamSlug: team, origin: id.origin,
         detail: { via: "web", from },
       });
       res.json(redact({ ok: true, actingFor: team, from }));
@@ -115,7 +115,8 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
         return;
       }
       const { label } = (req.body ?? {}) as Record<string, unknown>;
-      const result = await deps.issueMyAccessTokenFor(id.email, typeof label === "string" ? label : undefined, { via: "web" });
+      const result = await deps.issueMyAccessTokenFor(
+        id.email, typeof label === "string" ? label : undefined, { via: "web" }, id.origin);
       if (!result.ok) { res.status(400).json({ error: result.error }); return; }
       res.json({ token: result.token, label: result.label, email: result.email });
     })().catch((err: unknown) => {
@@ -134,7 +135,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
       const tokenId = req.params.id;
-      const ok = await deps.revokeMyAccessTokenFor(id.email, tokenId, { via: "web" });
+      const ok = await deps.revokeMyAccessTokenFor(id.email, tokenId, { via: "web" }, id.origin);
       if (!ok) { res.status(400).json({ error: "no such active token of yours" }); return; }
       res.json(redact({ ok: true, revoked: tokenId }));
     })().catch((err: unknown) => {

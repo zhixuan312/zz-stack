@@ -202,7 +202,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "      platformEvent({\n" +
       "        actor: who.email, kind: \"knowledge.supersede\", subject: old_id,\n" +
-      "        team: oldNode.shelf,\n" +
+      "        team: onShelf,\n" +
       "        detail: { supersededBy: new_id },\n" +
       "      });\n",
     replace: "",

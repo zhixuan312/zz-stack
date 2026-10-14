@@ -88,7 +88,7 @@ export function mountPlatformBugResolve(app: Express): void {
     }
     // After the act, never before. DELIBERATE: not `bug.resolve`, which zz-core writes itself for
     // every close; this row is the door it came through.
-    logEvent({ actor: req.zzIdentity!.email, kind: "bug.console_resolve", subject: done.id,
+    logEvent({ actor: req.zzIdentity!.email, kind: "bug.console_resolve", subject: done.id, origin: req.zzIdentity!.origin,
                detail: { via: "web", status: done.status } });
     res.status(204).end();
   }));

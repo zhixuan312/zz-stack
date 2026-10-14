@@ -24,7 +24,7 @@ import type { Express, Request, Response } from "express";
 
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
-import { browserSession, requestBase, sha256 } from "./identity.js";
+import { browserSession, requestBase, requestOrigin, sha256 } from "./identity.js";
 import { consentHtml, refusalPage } from "./oauth-page.js";
 
 const PUBLIC = (process.env.GATEWAY_PUBLIC_URL ?? "").replace(/\/+$/, "");
@@ -456,8 +456,9 @@ export function mountMcpOauth(app: Express, doors: readonly string[]): void {
         principalId: won.principal_id, teamId: null, label, expiresAt: expiry,
         oauthClientId: won.client_id,
       });
+      // From the request's own header: the token endpoint is public, so no identity carries it.
       logEvent({
-        actor: authz.email, teamSlug: null, kind: "credential.set",
+        actor: authz.email, teamSlug: null, kind: "credential.set", origin: requestOrigin(req.headers),
         subject: `oauth:${won.resource}`,
         detail: { via: "mcp-oauth", client_id: won.client_id, expires_at: expiry },
       });

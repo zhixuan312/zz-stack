@@ -3,7 +3,7 @@
  *
  * The tokens a person uses to reach this platform, and nothing else.
  */
-import { issuePat, parseCaller } from "@zz/contracts";
+import { type EventOrigin, issuePat, parseCaller } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { platformDb } from "./db.js";
@@ -31,7 +31,7 @@ export type IssueTokenOutcome =
  *  because minting it is handing it over; what a caller does with that plaintext — an agent's
  *  chat turn, settings.ts's one-time browser response — is drawn at the call site. */
 export async function issueMyAccessTokenFor(
-  email: string, label: string | undefined, extraDetail: Record<string, unknown> = {},
+  email: string, label: string | undefined, extraDetail: Record<string, unknown> = {}, origin?: EventOrigin,
 ): Promise<IssueTokenOutcome> {
   const db = platformDb();
   const r = await db.query<{ id: string; status: string }>(
@@ -48,7 +48,7 @@ export async function issueMyAccessTokenFor(
   const { token } = await issuePat(db, {
     principalId: r.rows[0].id, teamId: null, label, expiresAt: null, oauthClientId: null,
   });
-  logEvent({ actor: email, kind: "pat.self_issue", subject: label ?? "", detail: extraDetail });
+  logEvent({ actor: email, kind: "pat.self_issue", subject: label ?? "", detail: extraDetail, origin });
   return { ok: true, token, label: label ?? "", email };
 }
 /** Revoke one of the caller's own tokens, returning whether an active token of theirs
@@ -56,7 +56,7 @@ export async function issueMyAccessTokenFor(
  *  whole authorisation story: "someone else's token id" and "no such token" are
  *  indistinguishable, and no id a caller names reaches past their own rows. */
 export async function revokeMyAccessTokenFor(
-  email: string, id: string, extraDetail: Record<string, unknown> = {},
+  email: string, id: string, extraDetail: Record<string, unknown> = {}, origin?: EventOrigin,
 ): Promise<boolean> {
   const r = await platformDb().query(
     `update pat set revoked_at = now()
@@ -64,6 +64,6 @@ export async function revokeMyAccessTokenFor(
        and principal_id = (select id from principal where email = $2)
      returning id`, [id, email]);
   if (!r.rowCount) return false;
-  logEvent({ actor: email, kind: "pat.self_revoke", subject: id, detail: extraDetail });
+  logEvent({ actor: email, kind: "pat.self_revoke", subject: id, detail: extraDetail, origin });
   return true;
 }

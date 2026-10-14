@@ -243,9 +243,12 @@ export function registerKnowledgeTools(server: McpServer): void {
         if ("taken" in written) continue;
         if ("refusal" in written) return text(written.refusal);
         journalLog(shelf, "create", ordinal, title);
+        // `ids.node` is the node's own id, so a lesson is found from the act that made it without
+        // its ordinal, which is only unique per shelf. The answer below stays as it is: the
+        // release's chain check reads `journal node NNNN created` out of it.
         platformEvent({
           actor: who.email, kind: "knowledge.add", subject: ordinal, team: shelf,
-          detail: { title, type, scope, verified_against: pinned || undefined },
+          detail: { title, type, scope, verified_against: pinned || undefined, ids: { node: written.id } },
         });
         return text(`journal node ${ordinal} created on ${shelf}'s shelf`);
       }
@@ -352,13 +355,15 @@ export function registerKnowledgeTools(server: McpServer): void {
         );
       }
       await supersedeNode(oldNode.id, newNode.id);
-      journalLog(oldNode.shelf, "supersede", old_id, `superseded by ${new_id}`);
+      // The shelf's slug, not the caller's word for it: the event's team is resolved by slug, and
+      // `team` or `platform` names no team, so the row was written with none.
+      const onShelf = shelfSlug(oldNode.shelf);
       // The shelf is read from where the old node was found, not from the caller's team:
       // `findId` searches both, so a platform node superseded by somebody with a team of their
       // own still belongs to the platform shelf.
       platformEvent({
         actor: who.email, kind: "knowledge.supersede", subject: old_id,
-        team: oldNode.shelf,
+        team: onShelf,
         detail: { supersededBy: new_id },
       });
       return text(`node ${old_id} superseded by ${new_id}`);

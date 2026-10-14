@@ -48,7 +48,7 @@ npm run doctor                                   # where a deployment stops matc
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the twenty-seven gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the twenty-nine gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -61,7 +61,7 @@ driving the gateway's identity gate and its own route against one, the console's
 page-view, overview and activity routes against one and listens on the console's change channel,
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
 against one and reads its greeting,
-and the fourteen that run a real zz-core against one: the console's
+and the sixteen that run a real zz-core against one: the console's
 document reads, presentation and approval (`checks/console-versions.ts`), the console's search of
 documents and nodes by their content (`checks/console-search.ts`), the console's bug resolution
 held to zz-core's own `bug_resolve` (`checks/console-bug-resolve.ts`), what needs attention on the
@@ -75,9 +75,12 @@ link themselves (`checks/document-version-causes.ts`), normalisation, counted re
 detail pages (`checks/document-normalize.ts`), and presenting what changed and approving exactly
 what was shown (`checks/document-present-changes.ts`), and a plain-text file uploaded by the shell,
 the link and the ChatGPT file route (`checks/document-upload.ts`), and what each source supports,
-a document not written yet included (`checks/source-list.ts`), and the origin every event
+a document not written yet included (`checks/source-list.ts`), the origin every event
 carries, from the migration's backfill and from both of its writers
-(`checks/event-origin-db.ts`); a release's record, written once and reconciled with the tags, on a
+(`checks/event-origin-db.ts`), the origin of every act the gateway writes, an administration
+act, a team switch and a console write on either door (`checks/event-origin-gateway.ts`), and
+the node a lesson's event names and the team a supersede is recorded under
+(`checks/knowledge-events.ts`); a release's record, written once and reconciled with the tags, on a
 database migrated by the real runner (`checks/release-record-db.ts`); and the rollback boundary
 (`checks/rollback-boundary.ts`), which fills new-format data through a real zz-core and runs the
 previous release's own statements against it. Each exits 2 when Docker is absent rather

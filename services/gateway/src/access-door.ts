@@ -169,7 +169,8 @@ export async function buildAccessServer(
       // `active_team_id` is where every other credential that person holds reads their team
       // from, so a left-running automation could silently move its owner's agents and every
       // unbound agent token to a different team. The console route keeps the same refusal.
-      const bound = (await callerIdentity())?.patTeam;
+      const me = await callerIdentity();
+      const bound = me?.patTeam;
       if (bound) {
         return text(
           `ERROR: this token is bound to team '${bound}', so it cannot switch teams — not its ` +
@@ -202,7 +203,7 @@ export async function buildAccessServer(
       }
       // Recorded like any other act. For a platform whose whole point is who approved what
       // and when, who was acting for which team and when belongs in the same record.
-      logEvent({ actor: email, kind: "team.switch", subject: slug, teamSlug: slug });
+      logEvent({ actor: email, kind: "team.switch", subject: slug, teamSlug: slug, origin: me?.origin });
       return text(
         `you are now acting for ${slug}.\n` +
         `Everything follows this: your documents and your knowledge store, on every client.`);

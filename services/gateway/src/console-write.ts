@@ -103,7 +103,7 @@ export function mountConsoleWrite(app: Express): void {
     // DELIBERATE: not `document.shown`. zz-core writes that kind itself, and both the pin rule
     // (document-snapshot.ts) and a context's coverage (review-context.ts) read it — a row here under
     // that name would mark a snapshot presented that zz-core never recorded. No `teamSlug`, as below.
-    logEvent({ actor: req.zzIdentity!.email, kind: "document.console_shown", subject,
+    logEvent({ actor: req.zzIdentity!.email, kind: "document.console_shown", subject, origin: req.zzIdentity!.origin,
                detail: { via: "web", asked_for: scope.slug, content_revision, review_context: context } });
     res.json({ ok: true, review_context: context, content_revision, recorded: !/^Already recorded/.test(reply) });
   }));
@@ -154,7 +154,8 @@ export function mountConsoleWrite(app: Express): void {
     // attributed to a team the document does not belong to. The console cannot learn the real team
     // here: `document_approve` answers in prose, with no field that names it. So the request's own choice is recorded
     // as what it is, in the detail, and the row is attributed to no team rather than the wrong one.
-    logEvent({ actor, kind: "document.approve", subject, detail: { via: "web", asked_for: scope.slug } });
+    logEvent({ actor, kind: "document.approve", subject, origin: req.zzIdentity!.origin,
+               detail: { via: "web", asked_for: scope.slug } });
     res.json({ ok: true, result: reply });
   }));
 }

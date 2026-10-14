@@ -241,8 +241,10 @@ export function logEvent(e: {
   toolKey?: string;
 
   /** Whether the act was the platform maintaining itself — @zz/contracts' eventOrigin() of the
-   *  request's `x-zz-client`, from the one caller that holds the request. Absent is `work`, written
-   *  here so that no row of this writer's is left to the column's default. */
+   *  `x-zz-client` of the request that caused it, which every caller holding a request passes
+   *  (an `Identity` carries it). Absent is `work` — an act with no request behind it, or a page
+   *  view, which the spec counts as work whoever sent it — written here so that no row of this
+   *  writer's is left to the column's default. */
   origin?: EventOrigin;
 }): void {
   // One spelling of a person, folded here because this is the one place every gateway event passes

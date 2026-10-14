@@ -30,6 +30,8 @@
  */
 import type { Express } from "express";
 
+import type { EventOrigin } from "@zz/contracts";
+
 import type { IssueTokenOutcome } from "./credentials.js";
 import { type Identity } from "./identity.js";
 import { mountMySettings } from "./settings/me.js";
@@ -38,17 +40,19 @@ import { mountPlatformSettings } from "./settings/platform.js";
 
 /**
  * The `my_*` functions this file reuses rather than reimplements, handed in by server.ts. Every
- * write takes an optional trailing `extraDetail`, merged into that function's own `logEvent`
- * call; every route below passes `{ via: "web" }`.
+ * write takes an optional `extraDetail`, merged into that function's own `logEvent` call, and the
+ * request's origin after it; every route below passes `{ via: "web" }` and the identity's origin.
  */
 export interface SettingsDeps {
   myAccessTokensFor: (email: string) => Promise<Array<{
     id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
   }>>;
   issueMyAccessTokenFor: (
-    email: string, label: string | undefined, extraDetail?: Record<string, unknown>,
+    email: string, label: string | undefined, extraDetail?: Record<string, unknown>, origin?: EventOrigin,
   ) => Promise<IssueTokenOutcome>;
-  revokeMyAccessTokenFor: (email: string, id: string, extraDetail?: Record<string, unknown>) => Promise<boolean>;
+  revokeMyAccessTokenFor: (
+    email: string, id: string, extraDetail?: Record<string, unknown>, origin?: EventOrigin,
+  ) => Promise<boolean>;
 }
 
 /** The caller's teams, and which one they act for — the same rule `team_mine` (server.ts)

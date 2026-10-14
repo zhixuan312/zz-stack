@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 
 import type { NextFunction, Request, Response } from "express";
 
-import { actingTeam, addressResolver, parseCaller, peerAddress } from "@zz/contracts";
+import { actingTeam, addressResolver, eventOrigin, parseCaller, peerAddress, type EventOrigin } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { logEvent } from "./events.js";
@@ -39,6 +39,10 @@ export interface Identity {
    *  same person keep reading the principal's. Null for every other credential, which has no
    *  session to carry a team. */
   sessionTeam?: string | null;
+  /** Whether this request is the platform maintaining itself, from its own `x-zz-client`, so
+   *  every event written on its behalf says so. Absent where no request resolved it, which is
+   *  `work`. Not a permission: the name is the caller's own claim. */
+  origin?: EventOrigin;
 }
 
 declare module "express-serve-static-core" {
@@ -80,6 +84,15 @@ export function readCookie(req: Request, name: string): string | null {
 }
 
 export const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
+
+/** The origin of a request, from its `x-zz-client` as sent.
+ *
+ * DELIBERATE: not through `one()`, which trims. `eventOrigin` cuts the name as the migration's
+ * backfill does, untrimmed, and a trimmed copy here would read a name the backfill does not. */
+export function requestOrigin(headers: Record<string, string | string[] | undefined>): EventOrigin {
+  const client = headers["x-zz-client"];
+  return eventOrigin(Array.isArray(client) ? client[0] : client);
+}
 
 /** First value of a header, trimmed — headers may arrive as an array. */
 const one = (h: string | string[] | undefined): string =>
@@ -401,7 +414,7 @@ export function identityMiddleware() {
         challenge(req, res, "authentication required: Bearer PAT (zzp_…)");
         return;
       }
-      req.zzIdentity = id;
+      req.zzIdentity = { ...id, origin: requestOrigin(req.headers) };
       // canonical identity for everything downstream — spoofed headers die here
       req.headers["x-zz-user-email"] = id.email;
       req.headers["x-zz-user-name"] = id.displayName;
@@ -479,7 +492,7 @@ export function auditAdmin(
   id: Identity, kind: string, subject: string,
   detail: Record<string, unknown> = {}, team: string | null = null,
 ): void {
-  logEvent({ actor: id.email, kind: `admin.${kind}`, subject, detail, teamSlug: team });
+  logEvent({ actor: id.email, kind: `admin.${kind}`, subject, detail, teamSlug: team, origin: id.origin });
 }
 
 /** The one team-slug rule.
@@ -541,5 +554,6 @@ export async function callerIdentity(): Promise<Identity | null> {
     // another. Both headers are the middleware's own, rewritten on every request.
     activeTeam: actingTeam(teams.rows, auth.sessionTeam ?? chosen, auth.patTeam ?? null),
     ...auth,
+    origin: requestOrigin(headers),
   };
 }

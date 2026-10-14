@@ -15,6 +15,7 @@
     "clean": "tsc -b --clean",
     "gate": "node scripts/gate.ts",
     "eval-flow-e2e": "node scripts/eval-flow-e2e.ts",
+    "skeleton": "node scripts/skeleton.ts",
     "doctor": "node scripts/doctor.ts",
     "set-version": "node scripts/set-version.ts",
     "release": "node scripts/release.ts",

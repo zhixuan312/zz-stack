@@ -12,16 +12,25 @@
  *     initiative;
  *   - a plugin the team owns, a protocol version (its key) with one measure (its key), a scored run and a
  *     deferred finding (its `pattern`, `decision_note` and `owner_ref`);
- *   - a knowledge node (its title and body) and the `knowledge.add` event that recorded it (its `detail`).
+ *   - a knowledge node (its title and body) and the `knowledge.add` event that recorded it (its `detail`);
+ *   - one event of each kind `PLANTED` names, laid out as its own writer lays it out, its free text the
+ *     field's: what a read that selects a subject, a refusal or a detail key would show.
  *
- * And a superadmin in no team. It signs the three people in, each with a live console session. It writes no `tool_call` and no `knowledge.search` event, so a seed that
- * counts those (`status-seed.ts`) reads the same beside it; its reports and its delivered initiatives do
- * move the bug and finished-work figures. Its people and slugs are its own, so it runs beside any other
- * seed on one database.
+ * And a person in both teams, active in the second, who signs in as nobody: what a read listing the
+ * first team's people must not say of the second. And a superadmin in no team. It signs the admins and
+ * the superadmin in, each with a live console session.
+ *
+ * The planted events are dated now, inside the running week, so no complete week of a seed beside it
+ * (`status-seed.ts`) moves. Of them only the search, a real-work search that found nothing, is counted
+ * by a real-work figure, the searches'; the refused call is maintenance; every other kind no real-work
+ * figure counts. Its reports and its delivered initiatives do move the bug and finished-work figures.
+ * `seedWork` adds real-work calls of both teams, so the weekly reads have a record to begin at; a seed
+ * that brings its own record (the skeleton's) leaves it out. Its people and slugs are its own, so it
+ * runs beside any other seed on one database.
  *
  * A helper, not a check: every `.ts` under `checks/` is a check the gate runs.
  */
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
@@ -31,8 +40,23 @@ import { signIn } from "./status-seed.ts";
 const FIELDS = [
   "slug", "name", "initiative", "docTitle", "docBody", "bugTitle", "bugDetail", "bugSurface", "bugResolution",
   "pattern", "decisionNote", "ownerRef", "protocolKey", "measureKey", "eventDetail", "nodeTitle", "nodeBody",
+  "question", "refusal", "reportTitle", "deletedTitle", "journalDetail", "documentDetails", "filename", "tokenLabel",
 ] as const;
 type Field = (typeof FIELDS)[number];
+
+/** The events a team's free text is planted in, one row of each kind: the field, the row's kind, and where
+ *  in the row the text sits. A member reads none of the second team's; Audit answers none of it to the
+ *  superadmin either, and Knowledge health only the question. */
+export const PLANTED = [
+  { field: "question", kind: "knowledge.search", at: "subject" },
+  { field: "refusal", kind: "tool_call", at: "refusal" },
+  { field: "reportTitle", kind: "bug_report", at: "detail.title" },
+  { field: "deletedTitle", kind: "bug.delete", at: "detail.title" },
+  { field: "journalDetail", kind: "knowledge.create", at: "detail.detail" },
+  { field: "documentDetails", kind: "document.write", at: "detail.details" },
+  { field: "filename", kind: "upload.start", at: "detail.filename" },
+  { field: "tokenLabel", kind: "admin.issue_pat", at: "detail.label" },
+] as const satisfies readonly { field: Field; kind: string; at: string }[];
 
 /** One team's rows, by what a request names them with. */
 interface Team {
@@ -46,10 +70,10 @@ interface Team {
   node: string;
 }
 
-/** What `seedIsolation` wrote: both teams, the superadmin, the secret each person's `zz_console` cookie
- *  carries, and the second team's sentinels by field. */
+/** What `seedIsolation` wrote: both teams, the person in both, the superadmin, the secret each signed-in
+ *  person's `zz_console` cookie carries, and the second team's sentinels by field. */
 interface Isolation {
-  one: Team; two: Team; superadmin: string;
+  one: Team; two: Team; both: string; superadmin: string;
   cookies: { one: string; two: string; superadmin: string };
   sentinels: Record<Field, string>;
 }
@@ -153,17 +177,58 @@ async function seedTeam(db: pg.ClientBase | pg.Pool, n: "one" | "two", slug: str
      values ($1, 'knowledge.add', '1', $2::jsonb, 'work', $3, $4)`,
     [ago(1), JSON.stringify({ title: w.eventDetail, note: w.eventDetail }), team, admin]);
 
+  // PLANTED, each row as its writer leaves it: zz-core's search, report, deletion, journal entry, document
+  // act and upload, the gateway's maintenance call and token issue. The journal and a deletion name no team.
+  const at = new Date(now).toISOString();
+  const plant = (kind: string, subject: string, detail: Record<string, unknown>, by: string | null, own: boolean, initiative: string | null = null) =>
+    db.query(
+      `insert into zz.event (ts, kind, subject, detail, origin, team_id, actor_id, initiative_id)
+       values ($1, $2, $3, $4::jsonb, 'work', $5, $6, $7)`,
+      [at, kind, subject, JSON.stringify(detail), own ? team : null, by, initiative]);
+  await plant("knowledge.search", w.question, { returned: [], ranked_total: 0, broadened: false, filters: {} }, admin, true);
+  await db.query(
+    `insert into zz.event (ts, kind, subject, tool_key, ok, refusal, refusal_owner, origin, detail, team_id, actor_id, duration_ms)
+     values ($1, 'tool_call', 'core:document_write', 'core:document_write', false, $2, 'theirs', 'platform', $3::jsonb, $4, $5, 40)`,
+    [at, `ERROR: SECTION_MISSING — ${w.refusal}`, JSON.stringify({ client: "chain-check", args: ["path", "body"] }), team, admin]);
+  await plant("bug_report", bugs.open, { bug: bugs.open, title: w.reportTitle }, admin, true, open);
+  await plant("bug.delete", randomUUID(), { title: w.deletedTitle }, admin, false);
+  await plant("knowledge.create", "0002", { node: "0002", detail: w.journalDetail }, null, false);
+  await plant("document.write", `${initiative}/${docPath}`, {
+    user: email, action: "write", path: `${initiative}/${docPath}`, details_ref: `dr_${n === "one" ? "a" : "b"}${"c".repeat(25)}`,
+    details: `## ${w.documentDetails}` }, admin, true, open);
+  await plant("upload.start", randomUUID(), { filename: w.filename }, admin, true);
+  await plant("admin.issue_pat", email, { team: slug, label: w.tokenLabel, expires_at: ago(-30) }, admin, true);
+
   return { slug, name: w.name, email, initiative, delivered, docPath, bugs, plugin, finding, tokenId, node: `nodes/1-${nodeSlug}.md` };
 }
 
-/** Seeds both teams and the superadmin into `db`, signs the three in, and answers what it wrote; the second
- *  team's slug is its own sentinel. */
+/** Seeds both teams, the person in both and the superadmin into `db`, signs the admins and the superadmin
+ *  in, and answers what it wrote; the second team's slug is its own sentinel. */
 export async function seedIsolation(db: pg.ClientBase | pg.Pool, now = Date.now()): Promise<Isolation> {
   const s = sentinels();
   const superadmin = "superadmin@isolation.example.test";
   await db.query("insert into zz.principal (email, display_name, role) values ($1, 'Isolation superadmin', 'superadmin')", [superadmin]);
   const one = await seedTeam(db, "one", "team-one", plain(), now);
   const two = await seedTeam(db, "two", s.slug, s, now);
+  // A member of both, active in the second: data the readers read about, never a reader.
+  const both = "both@isolation.example.test";
+  await db.query("insert into zz.principal (email, display_name, role) values ($1, 'Isolation both', 'member')", [both]);
+  await db.query(
+    `insert into zz.membership (team_id, principal_id, role, added_by)
+     select t.id, p.id, 'member', a.id from zz.team t join zz.principal a on a.active_team_id = t.id and a.email = any($2::text[]),
+            zz.principal p where p.email = $1`, [both, [one.email, two.email]]);
+  await db.query("update zz.principal set active_team_id = (select id from zz.team where slug = $2) where email = $1", [both, two.slug]);
   const cookies = { one: await signIn(db, one.email), two: await signIn(db, two.email), superadmin: await signIn(db, superadmin) };
-  return { one, two, superadmin, cookies, sentinels: s };
+  return { one, two, both, superadmin, cookies, sentinels: s };
+}
+
+/** Real-work calls of both teams' admins, 20, 9 and 2 days before `now`: where the record of real work begins,
+ *  so the weeks Usage, Teams and Knowledge health read exist, and each team has calls to be split by. */
+export async function seedWork(db: pg.ClientBase | pg.Pool, s: Isolation, now = Date.now()): Promise<void> {
+  await db.query(
+    `insert into zz.event (ts, kind, subject, tool_key, ok, origin, detail, team_id, actor_id, duration_ms)
+     select $1::timestamptz - d * interval '1 day', 'tool_call', 'core:knowledge_search', 'core:knowledge_search', true, 'work',
+            '{}'::jsonb, p.active_team_id, p.id, 120
+       from zz.principal p, unnest(array[20, 9, 2]) d where p.email = any($2::text[])`,
+    [new Date(now).toISOString(), [s.one.email, s.two.email]]);
 }

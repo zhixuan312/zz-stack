@@ -331,6 +331,9 @@ export function mountOverview(app: Express): void {
     // `failed=1` rather than a tri-state string: the only question asked of this log is
     // "show me what broke".
     const failedOnly = req.query.failed === "1";
+    // Whether the caller belongs to the team they read: a superadmin may read any team, and that
+    // reading is across teams.
+    const ownTeam = scope.kind === "team" && (req.zzIdentity?.teams ?? []).some((t) => t.slug === scope.slug);
     // Every attribution on the row is an id, and each is resolved to the thing it names — the
     // team, the actor, the initiative and the skill — out of `zz.event`, which carries `team_id`,
     // `actor_id`, `initiative_id` and `skill_version_id` and no denormalised copy of any of them.
@@ -349,13 +352,14 @@ export function mountOverview(app: Express): void {
     // Two complete statements, not one assembled from `scope` — see the note in
     // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read whole.
     // The team branch's predicate is numbered `$4`, after the three fixed parameters both
-    // branches share.
+    // branches share, and whether the caller belongs to that team `$5`.
     const { rows } = scope.kind === "platform"
       ? await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
               p.email as actor, t.slug as team, e.kind,
-              -- The resolved name, so a renamed tool is one name in the feed.
-              coalesce(e.tool_key, e.subject) as subject,
+              -- The resolved name, so a renamed tool is one name in the feed. A search's subject is
+              -- its question, which no cross-team page but Knowledge health answers (AC-4.6).
+              case when e.kind = 'knowledge.search' then null else coalesce(e.tool_key, e.subject) end as subject,
               i.slug as initiative, sk.name as step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
@@ -371,8 +375,11 @@ export function mountOverview(app: Express): void {
       : await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
               p.email as actor, t.slug as team, e.kind,
-              -- The resolved name, so a renamed tool is one name in the feed.
-              coalesce(e.tool_key, e.subject) as subject,
+              -- The resolved name, so a renamed tool is one name in the feed. A search's question is
+              -- answered to the team that asked it; a superadmin reading a team not theirs is read
+              -- across teams, and gets none (AC-4.6).
+              case when e.kind = 'knowledge.search' and not $5::boolean then null
+                   else coalesce(e.tool_key, e.subject) end as subject,
               i.slug as initiative, sk.name as step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
@@ -385,7 +392,7 @@ export function mountOverview(app: Express): void {
           and e.kind <> 'console.page_view'
           and t.slug = $4
         order by e.ts desc limit $3`,
-      [kind, failedOnly, limit, scope.slug]);
+      [kind, failedOnly, limit, scope.slug, ownTeam]);
     res.json({ events: rows, limit });
   }));
 }

@@ -3,15 +3,16 @@
  * skeleton.ts — the walking skeleton, end to end in one command: the console built and served as
  * production serves it, reading the real gateway, against an isolated database (AC-1.13).
  *
- *   npm run skeleton      # needs Docker and ../zz-stack-dashboard with its dependencies installed
+ *   npm run skeleton      # needs Docker, psql and ../zz-stack-dashboard with its dependencies installed
  *
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), seeds the events
  * and people `scripts/schema/status-seed.ts` declares and the two teams `scripts/schema/isolation-seed.ts`
  * declares, and signs a member of the status seed's first team and a superadmin in through real
  * console session rows. The platform is built first (`npm run build`, incremental), and a real zz-core
  * is started on that database (`startCore`, scripts/skeleton-work.ts). The gateway is its own built
- * identity middleware, JSON parser, whole console API (`mountConsole`), and its `/core/mcp` door's
- * telemetry and relay to that zz-core, mounted in this process in server.ts's order on a free port:
+ * identity middleware, JSON parser, whole console API (`mountConsole`), its console acts and settings
+ * (`mountConsoleWrite`, `mountSettings`), and its `/core/mcp` door's telemetry and relay to that
+ * zz-core, mounted in this process in server.ts's order on a free port:
  * `dist/server.js` itself listens on port 8000 of every interface, which a run beside a deployment
  * or another stack cannot have. The console is built the way `pnpm verify` builds it, with `ZZ_GATEWAY` set to that
  * gateway, and served with `next start` on a free port with `NODE_ENV` production and no
@@ -39,7 +40,15 @@
  *     through the console's route with the outcome initiative_status reads back, and for the member and
  *     a superadmin acting for that team, Home's title and paired figures, Record's lead at its pace,
  *     Approvals' waiting count and the caller's own history, Initiatives' first page with zz-core's next
- *     moves, and the closures by outcome over Record's quarter, asked of work/query, agreeing with Record.
+ *     moves, and the closures by outcome over Record's quarter, asked of work/query, agreeing with Record;
+ *   - Phase 4's destinations, once Work's are done (scripts/skeleton-destinations.ts, which says what it
+ *     makes and what it expects): the catalog's skills registered by the release's own registrar, a run
+ *     of the member's through the door holding a refusal and a question that found nothing, and for the
+ *     member and the acting superadmin, Activity's summary counting the refusal under its owner with
+ *     every week's owners summing to its refused total, its log narrowed to refused calls, Knowledge's
+ *     summary with the question, Runs with the run, Plugins with the required flag and install command,
+ *     and Access with no secret in it; and a person in two teams switched through the console's route,
+ *     the next reads answering the other team.
  *
  *   Each read's other values are its own check's (`checks/console-platform-*.ts`);
  *
@@ -66,8 +75,8 @@
  *
  * Exit 0: every case held — one line per case, then the final line.
  * Exit 1: a case failed, a build failed, or zz-core or the console did not start — the case and what was found.
- * Exit 2: Docker is not available or the console's checkout is missing — the skeleton could not
- *         run, and that is not a pass.
+ * Exit 2: Docker or psql is not available, or the console's checkout is missing — the skeleton could
+ *         not run, and that is not a pass.
  */
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -84,6 +93,7 @@ import { root } from "./deployment.ts";
 import { seedIsolation } from "./schema/isolation-seed.ts";
 import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn } from "./schema/status-seed.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
+import { destinationCases } from "./skeleton-destinations.ts";
 import { startCore, stopCore, workCases } from "./skeleton-work.ts";
 
 const NAME = "skeleton";
@@ -91,7 +101,10 @@ const DONE = "skeleton: the real gateway answers the platform's four reads, Usag
   "superadmin in the seeds' states with none of another team's words and no team split or question to the member, refuses " +
   "the member Teams, People and Audit with one body and answers them to the superadmin, reads Work's Home, Record, Approvals, " +
   "Initiatives and a prepared query agreeing with Record to the member and an acting superadmin, closes an initiative through " +
-  "the console's route to the outcome initiative_status reads back, the built console signs both in through it, draws the " +
+  "the console's route to the outcome initiative_status reads back, reads them Activity with the refusal it made under its " +
+  "owner, Knowledge with its question that found nothing, Runs with its run, Plugins with the required flag and install " +
+  "command and Access with no secret, switches a person between two teams through the console's route and reads the other " +
+  "team's answers, the built console signs both in through it, draws the " +
   "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, and shows " +
   "a member no other team on /teams: ok";
 /** The reporting timezone the gateway cuts weeks in, and the seed with it. */
@@ -459,22 +472,30 @@ async function run(db: pg.Client, url: string): Promise<void> {
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_TZ = TIMEZONE;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
+  process.env.ZZ_SKILLS_DIR = join(root, "skills");
+  process.env.GATEWAY_PUBLIC_URL = "https://gateway.skeleton.example.test";
   const load = (p: string) => import(pathToFileURL(join(root, p)).href);
   const express = (await import("express")).default;
   const dbModule = (await load("services/gateway/dist/db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
   await dbModule.initPlatformDb();
   const { identityMiddleware } = (await load("services/gateway/dist/identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountConsole } = (await load("services/gateway/dist/console.js")) as { mountConsole: (app: Express) => void };
+  const { mountConsoleWrite } = (await load("services/gateway/dist/console-write.js")) as { mountConsoleWrite: (app: Express) => void };
+  const { mountSettings } = (await load("services/gateway/dist/settings.js")) as { mountSettings: (app: Express, deps: unknown) => void };
+  const credentials = (await load("services/gateway/dist/credentials.js")) as Record<string, unknown>;
   const { toolCallTelemetry, doorSurface } = (await load("services/gateway/dist/tool-telemetry.js")) as
     { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
   const { passThrough } = (await load("services/gateway/dist/relay.js")) as
     { passThrough: (url: string, what: string, refusal: string) => RequestHandler };
   const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the console, then the
-  // telemetry on the door and its relay to zz-core.
+  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the console's reads, its
+  // acts and its settings, then the telemetry on the door and its relay to zz-core.
   app.use(identityMiddleware());
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
+  mountConsoleWrite(app);
+  mountSettings(app, { myAccessTokensFor: credentials.myAccessTokensFor, issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
+                       revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
   app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
   app.all("/core/mcp", passThrough(core, "core proxy", "zz-core is not reachable"));
   const server: Server = app.listen(0, "127.0.0.1");
@@ -495,9 +516,14 @@ async function run(db: pg.Client, url: string): Promise<void> {
     pass(`the gateway listens at ${gateway} and answers the member's status read`);
     await reads(gateway, cookies, isolation, seeded);
     await refused(gateway, cookies, isolation);
-    // Work last of the gateway's: its record is written now, in the running week, so every read above
-    // saw the seeds alone. Its people sign in, so no signed-out page may hold them either.
-    seeded.emails.push(...await workCases({ sql: db, gateway, member: MEMBER, memberCookie: cookies.get(MEMBER)!, fail, pass }));
+    // Work and Phase 4's destinations last of the gateway's: their record is written now, in the running
+    // week, so every read above saw the seeds alone. Their people sign in, so no signed-out page may hold
+    // them either.
+    const work = await workCases({ sql: db, gateway, member: MEMBER, memberCookie: cookies.get(MEMBER)!, fail, pass });
+    seeded.emails.push(work.acting);
+    // The release's registrar reaches the throwaway database by its own address, through this machine's psql.
+    await destinationCases({ sql: db, gateway, psql: `psql ${url}`, member: MEMBER, acting: work.acting, cookies: work.cookies,
+                             tokens: work.tokens, isolation, fail, pass });
 
     const env = consoleEnv(gateway);
     buildConsole(env);
@@ -513,6 +539,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
     delete process.env.TEAM_DB_URL;
     delete process.env.ZZ_TZ;
     delete process.env.ZZ_CATALOG_DIR;
+    delete process.env.ZZ_SKILLS_DIR;
+    delete process.env.GATEWAY_PUBLIC_URL;
   }
 }
 
@@ -526,6 +554,8 @@ function cannotRun(): string | null {
   } catch {
     return "Docker is not available or did not answer within two minutes";
   }
+  // The release's registrar writes the skills through psql (scripts/skeleton-destinations.ts).
+  if (spawnSync("psql", ["--version"], { stdio: "ignore" }).status !== 0) return "psql is not on the PATH";
   return null;
 }
 

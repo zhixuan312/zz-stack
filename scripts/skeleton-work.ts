@@ -142,11 +142,15 @@ async function people(sql: pg.Client, member: string, team: string): Promise<{ c
   return { cookie: await signIn(sql, ACTING), tokens };
 }
 
+/** What Work's steps hand on: the acting superadmin's address, which no signed-out page may hold, and each
+ *  reader's console session secret and personal access token, by address. */
+interface WorkReaders { acting: string; cookies: Map<string, string>; tokens: Map<string, string> }
+
 /**
  * Work's steps, after the platform's: the people and the record made, the close, then each reader's five
- * answers. Answers the emails it seeded, which no signed-out page may hold.
+ * answers.
  */
-export async function workCases(ctx: WorkContext): Promise<string[]> {
+export async function workCases(ctx: WorkContext): Promise<WorkReaders> {
   const { sql, gateway, member, fail, pass } = ctx;
   const team = (await sql.query<{ slug: string }>(
     "select t.slug from zz.principal p join zz.team t on t.id = p.active_team_id where p.email = $1", [member])).rows[0]?.slug
@@ -319,5 +323,5 @@ export async function workCases(ctx: WorkContext): Promise<string[]> {
     if (total !== 3) fail(step, `its total is ${String(total)}, not 3`);
     pass(`${step} answers 200 with ${said.join(", ")} from ${period.from} to ${period.to}, as Record's quarter counts them`);
   }
-  return [ACTING];
+  return { acting: ACTING, cookies, tokens };
 }

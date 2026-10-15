@@ -147,6 +147,41 @@ function parse(req: Request): Asked | string {
   return { kind, tool, initiative, refused: refused === null ? null : refused === "true", limit, offset };
 }
 
+/** The team's real-work events before the instant, page views left out, newest first: narrowed by kind, tool,
+ *  initiative (its id), refused and a first instant, each null for none, and the newest limit of them, null for every
+ *  one. Each is its log row, a refused call with its owner, other when none was stored, and its own message, and the
+ *  instant it was recorded. The log reads its page from here, and Work's prepared queries their calls. */
+export async function eventRows(team: string, end: string, f: {
+  kind: string | null; tool: string | null; initiative: string | null; refused: boolean | null; from: string | null;
+}, limit: number | null): Promise<{ ms: number; row: ActivityRow }[]> {
+  const { rows } = await platformDb().query<{
+    id: string; ts_ms: number; kind: string; tool: string | null; initiative: string | null; step: string | null;
+    ok: boolean | null; owner: RefusalOwner | null; message: string | null; actor: string | null;
+  }>(
+    `select e.id::text as id, (extract(epoch from e.ts) * 1000)::float8 as ts_ms, e.kind,
+            case when e.kind = 'tool_call' then e.tool_key end as tool,
+            i.slug as initiative, sk.name as step, e.ok,
+            case when e.kind = 'tool_call' and e.ok = false then coalesce(e.refusal_owner, 'other') end as owner,
+            case when e.kind = 'tool_call' and e.ok = false then nullif(e.refusal, '') end as message,
+            p.email as actor
+       from zz.event e
+       join zz.team t on t.id = e.team_id
+       left join zz.principal p on p.id = e.actor_id
+       left join zz.initiative i on i.id = e.initiative_id
+       left join zz.skill_version sv on sv.id = e.skill_version_id
+       left join zz.skill sk on sk.id = sv.skill_id
+      where t.slug = $1 and e.origin = 'work' and e.kind <> 'console.page_view' and e.ts < $2::timestamptz
+        and ($3::text is null or e.kind = $3::text)
+        and ($4::text is null or (e.kind = 'tool_call' and e.tool_key = $4::text))
+        and ($5::uuid is null or e.initiative_id = $5::uuid)
+        and ($6::boolean is null or (e.kind = 'tool_call' and e.ok is false) = $6::boolean)
+        and ($7::timestamptz is null or e.ts >= $7::timestamptz)
+      order by e.ts desc, e.id desc
+      limit $8::int`,
+    [team, end, f.kind, f.tool, f.initiative, f.refused, f.from, limit]);
+  return rows.map(({ ts_ms, ...r }) => ({ ms: ts_ms, row: { ...r, ts: iso(ts_ms) } }));
+}
+
 /** The log for the team at the cutoff, as asked. */
 async function logOf(team: string, asked: Asked, asOf: string): Promise<ActivityLog> {
   const db = platformDb();
@@ -172,39 +207,15 @@ async function logOf(team: string, asked: Asked, asOf: string): Promise<Activity
       "select i.id::text as id from zz.initiative i where i.team_id = $1::uuid and i.slug = $2", [t.id, asked.initiative]);
     initiativeId = i.rows[0]?.id ?? null;
   }
-  const events = !t || (asked.initiative !== null && initiativeId === null) ? [] : (await db.query<{
-    id: string; ts_ms: number; kind: string; tool: string | null; initiative: string | null; step: string | null;
-    ok: boolean | null; owner: RefusalOwner | null; message: string | null; actor: string | null;
-  }>(
-    `select e.id::text as id, (extract(epoch from e.ts) * 1000)::float8 as ts_ms, e.kind,
-            case when e.kind = 'tool_call' then e.tool_key end as tool,
-            i.slug as initiative, sk.name as step, e.ok,
-            case when e.kind = 'tool_call' and e.ok = false then coalesce(e.refusal_owner, 'other') end as owner,
-            case when e.kind = 'tool_call' and e.ok = false then nullif(e.refusal, '') end as message,
-            p.email as actor
-       from zz.event e
-       left join zz.principal p on p.id = e.actor_id
-       left join zz.initiative i on i.id = e.initiative_id
-       left join zz.skill_version sv on sv.id = e.skill_version_id
-       left join zz.skill sk on sk.id = sv.skill_id
-      where e.team_id = $1::uuid and e.origin = 'work' and e.kind <> 'console.page_view' and e.ts < $2::timestamptz
-        and ($3::text is null or e.kind = $3::text)
-        and ($4::text is null or (e.kind = 'tool_call' and e.tool_key = $4::text))
-        and ($5::uuid is null or e.initiative_id = $5::uuid)
-        and ($6::boolean is null or (e.kind = 'tool_call' and e.ok is false) = $6::boolean)
-      order by e.ts desc, e.id desc
-      limit $7::int`,
-    [t.id, asOf, asked.kind, asked.tool, initiativeId, asked.refused, CEILING])).rows;
+  const events = !t || (asked.initiative !== null && initiativeId === null) ? []
+    : await eventRows(team, asOf, { kind: asked.kind, tool: asked.tool, initiative: initiativeId, refused: asked.refused, from: null }, CEILING);
   const asOfMs = Date.parse(asOf), firstMs = t?.first_ms ?? null;
   return {
     meta: {
       asOf, timezone: ZZ_TZ, period: { from: iso(firstMs ?? asOfMs), to: asOf }, scope: "active-team",
       population: population(team), coverageFrom: firstMs === null ? null : iso(firstMs),
     },
-    rows: events.slice(asked.offset, asked.offset + asked.limit).map((e): ActivityRow => ({
-      id: e.id, ts: iso(e.ts_ms), kind: e.kind, tool: e.tool, initiative: e.initiative, step: e.step,
-      ok: e.ok, owner: e.owner, message: e.message, actor: e.actor,
-    })),
+    rows: events.slice(asked.offset, asked.offset + asked.limit).map((e) => e.row),
     total: events.length, ceiling: CEILING, kinds: t?.kinds ?? [], tools: t?.tools ?? [],
   };
 }

@@ -23,6 +23,14 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 /** Why a token-borne caller is refused Access's two revokes: each acts on what signs a person in. */
 const BROWSER_ONLY = "revoke this from the console, signed in: a token cannot revoke what signs you in";
 
+/** Tells every console tab that a person's own tokens or browsers changed, so their other browsers read Access again.
+ *  `settings`, with no team: a token or a session is a person's, not a team's. A call here rather than a trigger, as
+ *  migrations/003_console_live.sql has for team rows: `zz.pat` and `zz.console_session` are written on every request
+ *  (`last_used_at`, `last_seen_at`), and a trigger would put a hint, or the work of deciding against one, on each. */
+async function hintSettings(): Promise<void> {
+  await platformDb().query("select zz.console_hint('', 'settings')");
+}
+
 /** The caller's client setup: the Claude Code install steps, pointing here. Its bearer header is
  *  always a placeholder (`<YOUR-TOKEN>` / `$ZZ_TOKEN`); `renderClientSetup` never mints or embeds a
  *  real one. COUPLED: Access (console/access.ts) answers the same setup. */
@@ -133,6 +141,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       const result = await deps.issueMyAccessTokenFor(
         id.email, typeof label === "string" ? label : undefined, { via: "web" }, id.origin);
       if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+      await hintSettings();
       res.json({ token: result.token, label: result.label, email: result.email });
     })().catch((err: unknown) => {
       console.error("settings/me/tokens (issue) failed:", err);
@@ -152,6 +161,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       const tokenId = req.params.id;
       const ok = await deps.revokeMyAccessTokenFor(id.email, tokenId, { via: "web" }, id.origin);
       if (!ok) { res.status(400).json({ error: "no such active token of yours" }); return; }
+      await hintSettings();
       res.json(redact({ ok: true, revoked: tokenId }));
     })().catch((err: unknown) => {
       console.error("settings/me/tokens (revoke) failed:", err);
@@ -190,6 +200,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       for (const tokenId of revoked) {
         logEvent({ actor: id.email, kind: "pat.self_revoke", subject: tokenId, origin: id.origin, detail: { via: "web", client } });
       }
+      if (revoked.length) await hintSettings();
       res.json(redact({ ok: true, revoked: revoked.length }));
     })().catch((err: unknown) => {
       console.error("settings/me/applications (revoke) failed:", err);
@@ -229,6 +240,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
         return;
       }
       logEvent({ actor: id.email, kind: "console.sign_out", subject: session, origin: id.origin, detail: { via: "web" } });
+      await hintSettings();
       res.json(redact({ ok: true, revoked }));
     })().catch((err: unknown) => {
       console.error("settings/me/browsers (sign out) failed:", err);

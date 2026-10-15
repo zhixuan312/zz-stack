@@ -19,7 +19,8 @@
  *     history with a score, so a newer run with none leaves the last score standing, and the
  *     history's statement; a plugin never scored answers `score: null`;
  *   - calls, refusals and last run on a plugin and on each skill are the active team's alone, rows
- *     ordered by the team's last run, and another team's calls change none of them;
+ *     ordered by the team's last run, and another team's calls change none of them, nor does a
+ *     maintenance call (`origin` not `work`) carrying the team's skill version;
  *   - `/skills` and `/skills/:name` answer the active team's figures, `plugin` narrows `/skills` to
  *     that plugin's skills, an unknown plugin answering none, and a plugin given twice is refused;
  *   - a person in no team is refused 400; no route under `/api/console/plugins` or `/skills` accepts
@@ -298,6 +299,27 @@ async function cases(ask: (email: string | null, path: string, method?: string) 
        "gates and its install line; sdlc 7.1 between 6.7 and 7.5 under protocol version 1 on 26 Sep with no key, zz-plugin-eval " +
        "5.0 under version 1, never-scored plugins null; team one's six sdlc calls, one refused, and three of zz-platform, the " +
        "unteamed call counted for nobody, rows by the team's last run");
+
+  step = "a maintenance call is no use of a plugin";
+  // The newest call of all, so counting it would move the last run as well as the calls. The skills' own reads,
+  // taken before it, must read the same after it.
+  const skillsBefore = (await ask(MEMBER, "/skills")).body;
+  const skillBefore = (await ask(MEMBER, "/skills/sdlc-spec")).body;
+  const maintained = (await db.query<{ id: string }>(
+    `insert into zz.event (ts, kind, subject, ok, team_id, tool_key, skill_version_id, origin)
+     select '2026-10-10T12:00:00Z', 'tool_call', 'core:document_write', true, t.id, 'core:document_write', sv.id, 'platform'
+       from zz.team t, zz.skill_version sv join zz.skill s on s.id = sv.skill_id
+      where t.slug = $1 and s.name = 'sdlc-spec' returning id::text as id`, [ONE])).rows[0].id;
+  try {
+    const after = rowsOf(step, await ask(MEMBER, "/plugins"));
+    same(step, "the rows", after.map(ofTeam), expectedOne(false));
+    same(step, "sdlc-spec", [skillOf(after[1], "sdlc-spec")].map((s) => [s.calls, s.lastRun]), [[4, "2026-10-05T10:00:00Z"]]);
+    same(step, "/skills", (await ask(MEMBER, "/skills")).body, skillsBefore);
+    same(step, "/skills/sdlc-spec", (await ask(MEMBER, "/skills/sdlc-spec")).body, skillBefore);
+  } finally {
+    await db.query("delete from zz.event where id = $1::bigint", [maintained]);
+  }
+  pass("a maintenance client's call of team one's sdlc-spec, the newest call recorded, moves neither sdlc's calls and last run nor the skill's, nor what /skills and /skills/sdlc-spec answer");
 
   step = "the superadmin reads the protocol's key";
   same(step, "the rows", rowsOf(step, await ask(SUPERADMIN, "/plugins")).map(ofTeam), expectedOne(true));

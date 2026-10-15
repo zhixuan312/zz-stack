@@ -95,20 +95,24 @@ function skillRow(skill: string, runs: RunRow[]): SkillRunRow {
   };
 }
 
+/** One of runsIn's runs as Runs draws its row: its length to its last call, and its state at the cutoff. Runs reads
+ *  its rows through here, and Work's prepared queries their observed output. */
+export function runRow(r: Awaited<ReturnType<typeof runsIn>>[number], asOfMs: number): RunRow {
+  const startedMs = Date.parse(r.startedAt), lastMs = Date.parse(r.endedAt);
+  return {
+    id: r.id, skill: r.skill, initiative: r.initiative, startedAt: r.startedAt, lastCallAt: r.endedAt,
+    calls: r.calls, refusals: r.refusals, bytes: r.bytes, lengthMs: lastMs - startedMs,
+    state: isActive(lastMs, asOfMs) ? "active" : r.calls === 1 ? "one_call" : "last_call",
+  };
+}
+
 /** Runs for the team at the cutoff, narrowed to the skill asked for. */
 export async function runsAt(team: string, params: RunsParams, asOf: string): Promise<Runs> {
   const asOfMs = Date.parse(asOf);
   // The earliest first, as runsIn orders them.
   const runs = (await runsIn(team, { from: ALL_TIME, to: asOf }, asOf))
     .filter((r) => params.skill === null || r.skill === params.skill)
-    .map((r): RunRow => {
-      const startedMs = Date.parse(r.startedAt), lastMs = Date.parse(r.endedAt);
-      return {
-        id: r.id, skill: r.skill, initiative: r.initiative, startedAt: r.startedAt, lastCallAt: r.endedAt,
-        calls: r.calls, refusals: r.refusals, bytes: r.bytes, lengthMs: lastMs - startedMs,
-        state: isActive(lastMs, asOfMs) ? "active" : r.calls === 1 ? "one_call" : "last_call",
-      };
-    });
+    .map((r) => runRow(r, asOfMs));
   const since = runs.length ? runs[0].startedAt : null;
   const newest = [...runs].sort((a, b) => b.lastCallAt.localeCompare(a.lastCallAt) || a.id.localeCompare(b.id));
   const measured = newest.filter((r) => r.bytes !== null);

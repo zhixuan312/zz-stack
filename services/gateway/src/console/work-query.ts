@@ -3,19 +3,37 @@
  * not show. One measure, grouped by one of the dimensions it allows, over a window, against the previous
  * window of the same length when asked, and down to one group's rows, paged.
  *
- *   measure    grouped by                                      read from
- *   closures   outcome, flow, initiative, period               initiativeList's rows, closed in the window
- *   opened     flow, period                                    openedRows, each with its initiativeList row
- *   words      document, initiative, period                    transitions and lessons, the words each added
- *   approvals  presentation, decision_basis, initiative, period callerApprovalRows, the caller's alone
- *   lessons    kind, period                                    the team's lessons, import cohorts left out
- *   runs       skill, initiative, weekday, hour, period        runsIn, those whose first call is in the window
- *   searches   found, period                                   the team's completed work searches
+ *   measure      grouped by                                      read from
+ *   closures     outcome, flow, initiative, period               initiativeList's rows, closed in the window
+ *   opened       flow, period                                    openedRows, each with its initiativeList row
+ *   words        document, initiative, period                    transitions and lessons, the words each added
+ *   approvals    presentation, decision_basis, initiative, period callerApprovalRows, the caller's alone
+ *   lessons      kind, period                                    the team's lessons, import cohorts left out
+ *   runs         skill, initiative, weekday, hour, period        runsIn, those whose first call is in the window
+ *   searches     found, period                                   the team's completed work searches
+ *   calls        tool, initiative, refused, period               the team's real-work tool calls, as Activity's log
+ *   refusals     owner, tool, initiative, period                 those of them refused, under refusalWeeks' owners
+ *   output       skill, initiative, period                       runsIn's observed output, as Runs reads it
+ *   skill_calls  plugin, skill, period                           the team's calls of a shipped skill, as Plugins
+ *   shelf        kind, standing                                  the team's shelf as of the window's end
  *
  * The queries are prepared: no argument is SQL, and nothing is searched but Initiatives' own q over
  * the initiatives' slugs. state, flow and q are Initiatives' filters and narrow the measures over
  * initiatives alone. Nothing is answered that a Work page could not show this person: approvals are
- * the caller's, a row is the row its page draws, and no row carries a body or a question's text.
+ * the caller's, a row is the row its page draws, and no row carries a body. A search's question is
+ * answered only in a drill of the searches that found nothing, as Knowledge lists them, and only to
+ * the team that asked it; a refusal's message only to its own team, as Activity's log does.
+ *
+ * A refusal is a real-work tool call with ok false, owned as refusalWeeks owns it, a row with no owner
+ * counted as other, so the four owners sum to the total; grouped by owner, all four are answered, and
+ * grouped by refused, both. Output is the bytes a run's own calls answered, summed over the runs that
+ * measured it, those that measured none counted beside each figure as unmeasured; a group whose runs
+ * all measured none is no_data, never zero. skill_calls counts what Plugins counts for the team, every
+ * real-work tool call of a skill a shipped plugin ships, under the plugin that ships it; its groups are its
+ * rows, so it is not drilled. The shelf is a stock: the team's lessons made before the window's end,
+ * standing or superseded as they stand now, because nothing records when a lesson was superseded; each
+ * figure says beside it how many of its standing lessons an import made, and no figure of an earlier
+ * window is answered for it, so period is not its dimension.
  *
  * The window defaults to the last whole week; what it counts is inside it and before the cutoff, the
  * read's moment rounded up to a whole second, as Home's. A period group is a period of the window at
@@ -37,19 +55,28 @@
  * a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's WorkQuery and WorkQueryRow in src/lib/work-shapes.ts, and its fake answer in
- * scripts/fake-gateway/work-query.ts, which checks/console-work-query.ts compares this route's answer
- * with, key set by key set; the 400 sentences are the fake's, which the console's tests read.
+ * scripts/fake-gateway/work-query.ts, which checks/console-work-query.ts and
+ * checks/console-work-query-destinations.ts compare this route's answer with, key set by key set; the
+ * 400 sentences are the fake's, which the console's tests read. A drilled row is the row its page
+ * draws, read by the page's own function: Activity's eventRows, Runs' runRow and the shelf's shelfRows.
  */
+import { REFUSAL_OWNERS } from "@zz/contracts";
+import { catalogEntries, pluginName } from "@zz/catalog";
 import type { Mcp } from "@zz/mcp-client";
 import type { Express } from "express";
 
 import { coreFor } from "../core-as-caller.js";
 import { platformDb } from "../db.js";
+import { BASELINE } from "../package/skills.js";
+import { eventRows } from "./activity.js";
 import { callerApprovalRows } from "./approvals.js";
+import { skillsOf } from "./catalog.js";
 import type { Figure, Part, ReadMeta, Window } from "./figures.js";
 import { localDate } from "./findings.js";
 import { lessonImports } from "./imports.js";
 import { initiativeList, listParams } from "./initiative-list.js";
+import { shelfRows } from "./knowledge.js";
+import { runRow } from "./runs.js";
 import { runsIn } from "./runs-observed.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 import { grainFor, lastWholeWeek, openedRows, periodsOf, type Grain, type Period } from "./work-figures.js";
@@ -64,28 +91,41 @@ const MEASURES = {
   lessons: ["kind", "period"],
   runs: ["skill", "initiative", "weekday", "hour", "period"],
   searches: ["found", "period"],
+  calls: ["tool", "initiative", "refused", "period"],
+  refusals: ["owner", "tool", "initiative", "period"],
+  output: ["skill", "initiative", "period"],
+  skill_calls: ["plugin", "skill", "period"],
+  shelf: ["kind", "standing"],
 } as const;
 type Measure = keyof typeof MEASURES;
+/** The groups a dimension always answers, an empty one as zero, so no owner or standing falls out of a chart. */
+const FIXED: Record<string, readonly string[]> = { owner: REFUSAL_OWNERS, refused: ["refused", "answered"], standing: ["standing", "superseded"] };
 
 type Span = { from: string; to: string };
 type Relay = Pick<Mcp, "call">;
 type InitiativeRow = Awaited<ReturnType<typeof initiativeList>>["rows"][number];
 type ApprovalRow = Awaited<ReturnType<typeof callerApprovalRows>>[number];
+type ActivityRow = Awaited<ReturnType<typeof eventRows>>[number]["row"];
+type RunRow = ReturnType<typeof runRow>;
+type KnowledgeRow = Awaited<ReturnType<typeof shelfRows>>[number]["row"];
 type WorkQueryRow =
   | InitiativeRow
   | { initiative: string | null; path: string | null; added: number }   // a lesson: neither
   | ApprovalRow
   | { kind: string; at: string }
   | { skill: string; initiative: string | null; startedAt: string; lengthMs: number }
-  | { at: string; found: boolean };
-type Group = { key: string; label: string; value: Figure; share: number | null; previous: Figure | null };
+  | { at: string; found: boolean; question: string | null }
+  | ActivityRow | RunRow | KnowledgeRow;
+/** A figure, and for output the runs in it that measured none, for the shelf the imports among its standing lessons. */
+type Counted = Figure & { unmeasured?: number; imported?: number };
+type Group = { key: string; label: string; value: Counted; share: number | null; previous: Counted | null };
 type WorkQuery = {
   meta: ReadMeta;
   measure: string; by: string; window: Window;
   grain: Grain | null;
   groups: Group[];
   rest: { groups: number; value: number } | null;
-  total: Figure;
+  total: Counted;
   rows: Part<{ rows: WorkQueryRow[]; total: number }> | null;
 };
 /** Initiatives' filters, as its list reads them. */
@@ -94,8 +134,9 @@ type Asked = {
   measure: Measure; by: string; compare: boolean; filters: Filters;
   from: number | null; to: number | null; group: string | null; limit: number; offset: number;
 };
-/** One row a measure counts: when it happened, what it adds, and its key along each dimension but period. */
-type Fact = { ms: number; value: number; keys: Record<string, string>; row: WorkQueryRow };
+/** One row a measure counts: when it happened, what it adds (null for a run that measured no output), its key along
+ *  each dimension but period, and its id where the record has one, the last to break a tie between two rows. */
+type Fact = { ms: number; value: number | null; keys: Record<string, string>; row: WorkQueryRow | null; id?: string; imported?: boolean };
 
 const PARAMS = ["measure", "by", "from", "to", "compare", "state", "flow", "q", "group", "limit", "offset"];
 /** The groups a dimension other than period answers; the rest are folded. */
@@ -124,6 +165,7 @@ function parse(query: Record<string, unknown>): Asked | string {
   if (!allowed.includes(by)) return `${measure} is grouped by one of ${allowed.join(", ")}`;
   const compare = text("compare");
   if (compare !== null && compare !== "previous") return "compare must be previous, or left out";
+  if (measure === "skill_calls" && text("group") !== null) return "skill_calls is not drilled: its groups are its rows";
   // Initiatives' filters and the page, read as the list reads them.
   const list = listParams(query);
   if (typeof list === "string") return list;
@@ -189,17 +231,44 @@ async function lessonsIn(team: string, [from, end]: [string, string], asOf: stri
 }
 
 /** The team's completed work searches inside the span before the cutoff, as searchesWithResults counts
- *  them: each with whether its result set was not empty, and never its question. */
-async function searchesIn(team: string, [from, end]: [string, string]): Promise<{ ms: number; found: boolean }[]> {
-  const { rows } = await platformDb().query<{ at_ms: number; found: boolean }>(
-    `select (extract(epoch from e.ts) * 1000)::float8 as at_ms,
-            (jsonb_typeof(e.detail -> 'returned') = 'array' and e.detail -> 'returned' <> '[]'::jsonb) as found
+ *  them: each with whether its result set was not empty and, for one that found nothing, its question
+ *  normalised for case and spacing as Knowledge lists it (COUPLED: knowledge-summary.ts questionsOf). */
+async function searchesIn(team: string, [from, end]: [string, string]): Promise<{ ms: number; found: boolean; question: string | null }[]> {
+  const { rows } = await platformDb().query<{ at_ms: number; found: boolean; question: string | null }>(
+    `select s.at_ms, s.found, case when not s.found then s.question end as question
+       from (select (extract(epoch from e.ts) * 1000)::float8 as at_ms,
+                    (jsonb_typeof(e.detail -> 'returned') = 'array' and e.detail -> 'returned' <> '[]'::jsonb) as found,
+                    lower(btrim(regexp_replace(coalesce(e.subject, ''), '\\s+', ' ', 'g'))) as question
+               from zz.event e
+               join zz.team t on t.id = e.team_id
+              where t.slug = $1 and e.kind = 'knowledge.search' and e.origin = 'work' and e.detail ? 'returned'
+                and e.ts >= $2::timestamptz and e.ts < $3::timestamptz) s`, [team, from, end]);
+  return rows.map((r) => ({ ms: r.at_ms, found: r.found, question: r.question }));
+}
+
+/** The team's real-work tool calls of a skill inside the span before the cutoff, as Plugins counts them for the
+ *  team: a call naming no skill version counted under no skill (COUPLED: catalog.ts, /plugins). */
+async function skillCallsIn(team: string, [from, end]: [string, string]): Promise<{ ms: number; skill: string }[]> {
+  const { rows } = await platformDb().query<{ at_ms: number; skill: string }>(
+    `select (extract(epoch from e.ts) * 1000)::float8 as at_ms, sk.name as skill
        from zz.event e
        join zz.team t on t.id = e.team_id
-      where t.slug = $1 and e.kind = 'knowledge.search' and e.origin = 'work' and e.detail ? 'returned'
+       join zz.skill_version sv on sv.id = e.skill_version_id
+       join zz.skill sk on sk.id = sv.skill_id
+      where t.slug = $1 and e.kind = 'tool_call' and e.origin = 'work'
         and e.ts >= $2::timestamptz and e.ts < $3::timestamptz`, [team, from, end]);
-  return rows.map((r) => ({ ms: r.at_ms, found: r.found }));
+  return rows.map((r) => ({ ms: r.at_ms, skill: r.skill }));
 }
+
+/** Each skill a plugin this image ships, and the plugin: of two shipping one name, the first by name. */
+function pluginOfSkill(): Map<string, string> {
+  const of = new Map<string, string>();
+  for (const plugin of [...new Set([BASELINE, ...catalogEntries().map((e) => pluginName(e.flow))])].sort()) {
+    for (const skill of skillsOf(plugin)) if (!of.has(skill)) of.set(skill, plugin);
+  }
+  return of;
+}
+
 
 /** Every row the measure counts inside the span before the cutoff, for the team and, for approvals, the caller. */
 async function factsOf(a: Asked, team: string, caller: string, span: Span, asOf: string): Promise<Fact[]> {
@@ -240,15 +309,49 @@ async function factsOf(a: Asked, team: string, caller: string, span: Span, asOf:
       };
     });
     case "searches": return (await searchesIn(team, bounds)).map((s) => ({
-      ms: s.ms, value: 1, keys: { found: s.found ? "found" : NONE }, row: { at: iso(s.ms), found: s.found },
+      ms: s.ms, value: 1, keys: { found: s.found ? "found" : NONE }, row: { at: iso(s.ms), found: s.found, question: s.question },
     }));
+    case "calls":
+    case "refusals": return (await eventRows(team, bounds[1], { kind: "tool_call", tool: null, initiative: null, refused: null, from: bounds[0] }, null)).filter((c) => a.measure === "calls" || c.row.ok === false).map((c) => ({
+      ms: c.ms, value: 1, id: c.row.id, row: c.row,
+      keys: { tool: c.row.tool ?? NONE, initiative: c.row.initiative ?? NONE, refused: c.row.ok === false ? "refused" : "answered", owner: c.row.owner ?? "" },
+    }));
+    case "output": return (await runsIn(team, span, asOf)).map((r) => ({
+      ms: Date.parse(r.startedAt), value: r.bytes, id: r.id, keys: { skill: r.skill, initiative: r.initiative ?? NONE },
+      row: runRow(r, Date.parse(asOf)),
+    }));
+    case "skill_calls": {
+      const plugin = pluginOfSkill();
+      return (await skillCallsIn(team, bounds)).flatMap((c) => (plugin.has(c.skill)
+        ? [{ ms: c.ms, value: 1, keys: { plugin: plugin.get(c.skill)!, skill: c.skill }, row: null }] : []));
+    }
+    // A stock as of the window's end, counted whatever the window's start.
+    case "shelf": {
+      const [lessons, imports] = await Promise.all([shelfRows(team, bounds[1], { q: "", kind: null, limit: null, offset: 0 }), lessonImports(asOf)]);
+      const imported = new Set(imports.lessons.map((l) => l.id));
+      return lessons.map((l) => ({
+        ms: l.createdMs, value: 1, id: l.id, row: l.row, imported: l.standing && imported.has(l.id),
+        keys: { kind: l.row.type, standing: l.standing ? "standing" : "superseded" },
+      }));
+    }
   }
+}
+
+/** What facts add up to: for output, beside it the runs that measured none, and no_data where every run did; for
+ *  the shelf, beside it its standing lessons an import made. */
+function countOf(measure: Measure, fs: Fact[]): Counted {
+  const measured = fs.filter((f) => f.value !== null);
+  const sum: Figure = fs.length && !measured.length ? { value: null, why: "no_data" } : counted(measured.reduce((n, f) => n + f.value!, 0));
+  if (measure === "output") return { ...sum, unmeasured: fs.length - measured.length };
+  if (measure === "shelf") return { ...sum, imported: fs.filter((f) => f.imported).length };
+  return sum;
 }
 
 /** How a group is named where its key is not a sentence. */
 function labelOf(by: string, key: string, grain: Grain | null): string {
   if (grain) return `${grain === "week" ? "Week" : grain === "month" ? "Month" : "Quarter"} from ${localDate(key, ZZ_TZ)}`;
   if (by === "found") return key === NONE ? "Found nothing" : "Found something";
+  if (by === "refused" || by === "standing") return key[0].toUpperCase() + key.slice(1);
   if (key === NONE && (by === "flow" || by === "initiative")) return by === "flow" ? "No flow" : "No initiative";
   if (key === LESSONS && (by === "document" || by === "initiative")) return "Lessons";
   return by === "hour" ? `${key}:00` : key;
@@ -261,7 +364,7 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
   const meta: ReadMeta = {
     asOf, timezone: ZZ_TZ, period: { from: iso(fromMs), to: iso(toMs) },
     scope: a.measure === "approvals" ? "caller-in-active-team" : "active-team",
-    population: a.measure === "approvals" ? `${team}'s approvals signed in the caller's name` : `${team}'s ${a.measure}`,
+    population: a.measure === "approvals" ? `${team}'s approvals signed in the caller's name` : `${team}'s ${a.measure.replace("_", " ")}`,
     coverageFrom: null,
   };
   const window: Window = {
@@ -289,32 +392,34 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
   }
 
   const inside = (f: Fact, from: number, to: number): boolean => f.ms >= from && f.ms < Math.min(to, asOfMs);
-  const now = facts.filter((f) => inside(f, fromMs, toMs));
-  const then = a.compare ? facts.filter((f) => inside(f, startMs, fromMs)) : [];
+  // A stock is counted as of the window's end, and nothing records it as of the end of the one before.
+  const stock = a.measure === "shelf";
+  const now = stock ? facts : facts.filter((f) => inside(f, fromMs, toMs));
+  const then = a.compare && !stock ? facts.filter((f) => inside(f, startMs, fromMs)) : [];
   const periodOf = (f: Fact, ps: Period[]): number => ps.findIndex((p) => f.ms >= p.fromMs && f.ms < p.toMs);
   const keyOf = (f: Fact): string => (grain ? periods[periodOf(f, periods)]?.window.from ?? "" : f.keys[a.by]);
-  const sum = (fs: Fact[]): number => fs.reduce((n, f) => n + f.value, 0);
-  const total = sum(now);
+  const count = (fs: Fact[]): Counted => countOf(a.measure, fs);
+  const total = count(now);
 
-  const keys = grain ? periods.map((p) => p.window.from) : [...new Set(now.map(keyOf))];
+  const keys = grain ? periods.map((p) => p.window.from) : [...new Set([...(FIXED[a.by] ?? []), ...now.map(keyOf)])];
   const groups = keys.map((key, i): Group => {
-    const value = sum(now.filter((f) => keyOf(f) === key));
-    let previous: Figure | null = null;
-    if (a.compare) {
-      previous = !grain ? counted(sum(then.filter((f) => f.keys[a.by] === key)))
-        : i < before.length ? counted(sum(then.filter((f) => periodOf(f, before) === i))) : { value: null, why: "no_data" };
+    const value = count(now.filter((f) => keyOf(f) === key));
+    let previous: Counted | null = null;
+    if (a.compare && !stock) {
+      previous = !grain ? count(then.filter((f) => f.keys[a.by] === key))
+        : i < before.length ? count(then.filter((f) => periodOf(f, before) === i)) : { ...count([]), value: null, why: "no_data" };
     }
-    return { key, label: labelOf(a.by, key, grain), value: counted(value), share: total ? value / total : null, previous };
+    return { key, label: labelOf(a.by, key, grain), value, share: total.value ? (value.value ?? 0) / total.value : null, previous };
   });
-  if (!grain) groups.sort((x, y) => y.value.value! - x.value.value! || x.key.localeCompare(y.key));
+  if (!grain) groups.sort((x, y) => (y.value.value ?? -1) - (x.value.value ?? -1) || x.key.localeCompare(y.key));
   const kept = grain ? groups : groups.slice(0, LARGEST);
   const folded = grain ? [] : groups.slice(LARGEST);
 
   let rows: WorkQuery["rows"] = null;
   if (a.group !== null) {
-    const order = (f: Fact): string => Object.values(f.keys).join("\0");
+    const order = (f: Fact): string => [...Object.values(f.keys), f.id ?? ""].join("\0");
     const drilled = now.filter((f) => keyOf(f) === a.group).sort((x, y) => y.ms - x.ms || order(x).localeCompare(order(y)));
-    let page = drilled.slice(a.offset, a.offset + a.limit).map((f) => f.row);
+    let page = drilled.slice(a.offset, a.offset + a.limit).map((f) => f.row!);
     if (a.measure === "closures" || a.measure === "opened") {
       // The page's next moves, asked of zz-core for its names alone; a batch it does not answer leaves them null.
       const names = new Set(page.map((r) => (r as InitiativeRow).slug));
@@ -332,8 +437,8 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
   return {
     meta, measure: a.measure, by: a.by, window, grain,
     groups: kept,
-    rest: folded.length ? { groups: folded.length, value: folded.reduce((n, g) => n + g.value.value!, 0) } : null,
-    total: counted(total),
+    rest: folded.length ? { groups: folded.length, value: folded.reduce((n, g) => n + (g.value.value ?? 0), 0) } : null,
+    total,
     rows,
   };
 }

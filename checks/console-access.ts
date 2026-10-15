@@ -261,6 +261,20 @@ async function run(sql: pg.Client, url: string): Promise<void> {
             (select json_agg(json_build_object('id', id, 'revoked', revoked_at, 'expires', expires_at) order by id) from zz.console_session) as sessions,
             (select json_agg(json_build_object('id', client_id, 'revoked', revoked_at) order by client_id) from zz.mcp_oauth_client) as clients`)).rows[0]);
 
+  // Access is followed as `settings` on the console's change channel: every write that changes what it lists tells
+  // every tab, with no team, so the person's other browsers read it again.
+  let hints = 0;
+  sql.on("notification", (m) => {
+    const hint = m.channel === "zz_console_change" && m.payload ? JSON.parse(m.payload) as { t?: string; c?: string } : null;
+    if (hint?.t === "" && hint.c === "settings") hints++;
+  });
+  await sql.query("listen zz_console_change");
+  /** Waits for one more `settings` hint than `since`, and fails the step without it. */
+  const told = async (step: string, what: string, since: number): Promise<void> => {
+    for (const until = Date.now() + 3000; Date.now() < until && hints <= since;) await new Promise((r) => setTimeout(r, 50));
+    if (hints <= since) fail(step, `${what} told no tab: no settings hint on zz_console_change`);
+  };
+
   try {
     let step = "the first person's read";
     const read = clean(step, "the first person's read", await ask("GET", "/api/console/access", one));
@@ -329,10 +343,12 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     pass("the read's key sets, every array's first row, and both writes' answers match the console's fake answer");
 
     step = "an issued token stays out of the read";
+    let heard = hints;
     const issued = await ask("POST", "/api/console/settings/me/tokens", one, { label: "issued by the check" });
     const value = String((issued.body as { token?: unknown }).token ?? "");
     if (issued.status !== 200 || !value.startsWith("zzp_")) fail(step, `the issue answered ${issued.status}: ${issued.text.slice(0, 200)}`);
     mint("the token the check issued", value);
+    await told(step, "the issue", heard);
     const after = clean(step, "the read after the issue", await ask("GET", "/api/console/access", one));
     const head = (after.body.issued as Obj[])[0];
     if (head?.label !== "issued by the check" || head.application !== null || head.revokedAt !== null) fail(step, `the newest token reads ${show(head)}`);
@@ -368,7 +384,9 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     step = "revoking an application";
     const live = async (k: string): Promise<boolean> =>
       (await sql.query("select 1 from zz.pat where id = $1 and revoked_at is null", [s.tokens[k].id])).rowCount === 1;
+    heard = hints;
     const revoked = clean(step, "the revoke", await ask("DELETE", `/api/console/settings/me/applications/${CLIENT_A}`, one));
+    await told(step, "the revoke", heard);
     if (revoked.status !== 200 || !same(revoked.body, { ok: true, revoked: 2 })) fail(step, `answered ${revoked.status}: ${revoked.text}`);
     const left = { t3: await live("t3"), t4: await live("t4"), t7: await live("t7"), t5: await live("t5"), t1: await live("t1") };
     if (!same(left, { t3: false, t4: false, t7: true, t5: true, t1: true })) fail(step, `live afterwards: ${show(left)}`);
@@ -385,7 +403,9 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     step = "signing out a browser";
     const current2 = clean(step, "the current browser's sign-out", await ask("DELETE", `/api/console/settings/me/browsers/${s.sessions.s1.id}`, one));
     if (current2.status !== 400 || !/sign out from the menu/.test(String(current2.body.error))) fail(step, `the current browser answered ${current2.status}: ${current2.text}`);
+    heard = hints;
     const out = clean(step, "the other browser's sign-out", await ask("DELETE", `/api/console/settings/me/browsers/${s.sessions.s2.id}`, one));
+    await told(step, "the sign-out", heard);
     if (out.status !== 200 || !same(out.body, { ok: true, revoked: 1 })) fail(step, `answered ${out.status}: ${out.text}`);
     const sessions = (await sql.query<{ id: string; revoked: boolean }>(
       "select id::text as id, revoked_at is not null as revoked from zz.console_session")).rows;

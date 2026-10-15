@@ -141,8 +141,8 @@ export function mountCatalog(app: Express): void {
       // A call's step is the skill of the version the event names, reached through
       // `zz.skill_version`. An event naming no skill version is a step no reader can name, so it
       // is counted under no skill rather than folded onto one; `logged` on /skills reports the
-      // same population. The calls are the active team's: an event of another team, or of none,
-      // is counted for nobody here.
+      // same population. The calls are the active team's real work: an event of another team, or
+      // of none, or of the platform maintaining itself, is counted for nobody here.
       //
       // DELIBERATE: the event side is aggregated once and joined, never four correlated
       // subqueries per skill. Each of those subqueries re-read the whole event log, so the cost
@@ -167,7 +167,7 @@ export function mountCatalog(app: Express): void {
                                from zz.event e
                                join zz.skill_version sv on sv.id = e.skill_version_id
                                join zz.team t on t.id = e.team_id
-                              where e.kind = 'tool_call' and t.slug = $1
+                              where e.kind = 'tool_call' and e.origin = 'work' and t.slug = $1
                               group by sv.skill_id) c on c.skill_id = s.id`, [activeTeam]),
       // What was released, and how many scored evaluation runs measured each released version.
       // An evaluation's release is its observation snapshot's `plugin_version_id` (FR-29), and a

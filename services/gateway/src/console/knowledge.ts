@@ -66,44 +66,54 @@ function shelfParams(query: Record<string, unknown>): ShelfParams | string {
   return { q: (text("q") ?? "").trim().toLowerCase(), kind, limit, offset };
 }
 
+/** The team's lessons made before the instant, filtered by text in a title, a tag or the body (lower-cased, empty for
+ *  none) and by kind (null for any), the most recently changed first: the page asked for, a limit of null answering
+ *  every one. Each is the list's row, with the lesson's id, when it was made and whether it stands. The list reads
+ *  its page from here, and Work's prepared queries the shelf. */
+export async function shelfRows(team: string, end: string, p: { q: string; kind: string | null; limit: number | null; offset: number }):
+  Promise<{ id: string; createdMs: number; standing: boolean; row: ReturnType<typeof listNode> }[]> {
+  // Where the lesson came from: knowledge_node_evidence holds the initiatives the node cites, the only linkage the
+  // store records between a node and the work behind it. The order ends on the ordinal, unique on one shelf, so a
+  // page never shuffles between reads.
+  const { rows } = await platformDb().query<NodeRow & { id: string; created_ms: number }>(
+    `select k.id::text as id, (extract(epoch from k.created_at) * 1000)::float8 as created_ms, t.slug as shelf,
+            'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
+            k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
+            (select coalesce(array_agg(i.slug order by i.slug), '{}')
+               from zz.knowledge_node_evidence ne
+               join zz.initiative i on i.id = ne.initiative_id
+              where ne.node_id = k.id) as citations,
+            (select s.node_ordinal
+               from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
+            -- An instant, like every other time this API sends.
+            to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
+            length(coalesce(k.body,'')) as bytes,
+            -- DELIBERATE: the whitespace collapse runs over a bounded prefix, not the whole
+            -- body. Collapsing can only ever shorten, and an excerpt is a preview rather than
+            -- a fixed-width field, so a prefix that collapses below 220 characters shows a
+            -- shorter preview and nothing else. Run over the whole body it detoasted all
+            -- 23 MB of the shelf: 402 ms to produce 965 x 220 characters, against 159 ms bounded.
+            left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
+       from zz.knowledge_node k
+       join zz.team t on t.id = k.team_id
+      where t.slug = $1 and k.created_at < $2::timestamptz
+        and ($3::text = '' or k.kind = $3)
+        and ($4::text = ''
+             or strpos(lower(k.title), $4) > 0
+             or strpos(lower(coalesce(k.body, '')), $4) > 0
+             or exists (select 1 from unnest(k.tags) as g(tag) where strpos(lower(g.tag), $4) > 0))
+      order by k.updated_at desc, k.node_ordinal
+      limit $5 offset $6`, [team, end, p.kind ?? "", p.q, p.limit, p.offset]);
+  return rows.map((r) => ({ id: r.id, createdMs: r.created_ms, standing: r.status === "adopted", row: listNode(r) }));
+}
+
 /** The team's shelf as of the cutoff, filtered by text in a title, a tag or the body and by kind: one page of it,
  *  the most recently changed first, and the whole filtered population counted by kind and standing. */
 async function shelfOf(team: string, p: ShelfParams, asOf: string) {
   const db = platformDb();
   const filters = [team, asOf, p.kind ?? "", p.q];
   const [page, counts, first] = await Promise.all([
-    // Where the lesson came from: knowledge_node_evidence holds the initiatives the node cites, the only linkage
-    // the store records between a node and the work behind it. The order ends on the ordinal, unique on one shelf,
-    // so a page never shuffles between reads.
-    db.query(
-      `select t.slug as shelf,
-              'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
-              k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
-              (select coalesce(array_agg(i.slug order by i.slug), '{}')
-                 from zz.knowledge_node_evidence ne
-                 join zz.initiative i on i.id = ne.initiative_id
-                where ne.node_id = k.id) as citations,
-              (select s.node_ordinal
-                 from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
-              -- An instant, like every other time this API sends.
-              to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
-              length(coalesce(k.body,'')) as bytes,
-              -- DELIBERATE: the whitespace collapse runs over a bounded prefix, not the whole
-              -- body. Collapsing can only ever shorten, and an excerpt is a preview rather than
-              -- a fixed-width field, so a prefix that collapses below 220 characters shows a
-              -- shorter preview and nothing else. Run over the whole body it detoasted all
-              -- 23 MB of the shelf: 402 ms to produce 965 x 220 characters, against 159 ms bounded.
-              left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
-         from zz.knowledge_node k
-         join zz.team t on t.id = k.team_id
-        where t.slug = $1 and k.created_at < $2::timestamptz
-          and ($3::text = '' or k.kind = $3)
-          and ($4::text = ''
-               or strpos(lower(k.title), $4) > 0
-               or strpos(lower(coalesce(k.body, '')), $4) > 0
-               or exists (select 1 from unnest(k.tags) as g(tag) where strpos(lower(g.tag), $4) > 0))
-        order by k.updated_at desc, k.node_ordinal
-        limit $5 offset $6`, [...filters, p.limit, p.offset]),
+    shelfRows(team, asOf, p),
     db.query<{ kind: string; lifecycle: string; n: number }>(
       `select k.kind, k.lifecycle, count(*)::int as n
          from zz.knowledge_node k
@@ -135,7 +145,7 @@ async function shelfOf(team: string, p: ShelfParams, asOf: string) {
       population: `${team}'s knowledge shelf, the shared shelf left out`,
       coverageFrom: firstMs === null ? null : iso(firstMs),
     },
-    rows: (page.rows as NodeRow[]).map(listNode),
+    rows: page.map((l) => l.row),
     total: standing + superseded,
     summary: { byKind, standing, superseded },
   };

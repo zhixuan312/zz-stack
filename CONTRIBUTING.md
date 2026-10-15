@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the forty-seven that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the forty-eight that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the forty-seven gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the forty-eight gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -56,7 +56,7 @@ which runs its built readers over a seeded one, the document write path (`checks
 gateway's upload routes against one, the platform's status and the reader's own team's figures
 (`checks/console-platform-status.ts`), which drives the gateway's identity gate and status route
 against one, the platform's releases (`checks/console-platform-releases.ts`), bugs
-(`checks/console-platform-bugs.ts`), evaluation (`checks/console-platform-evaluation.ts`), usage
+(`checks/console-platform-bugs.ts`), evaluation (`checks/console-platform-evaluation.ts`), one plugin's evaluation against the console's fake (`checks/console-plugin-eval-shape.ts`), usage
 (`checks/console-platform-usage.ts`), knowledge health (`checks/console-platform-knowledge.ts`) and
 audit (`checks/console-platform-audit.ts`), and the fleet's teams (`checks/console-platform-teams.ts`,
 which also drives the team and platform settings routes) and people
@@ -103,7 +103,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those forty-seven checks or the rehearsal never needs Docker.
+runs those forty-eight checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

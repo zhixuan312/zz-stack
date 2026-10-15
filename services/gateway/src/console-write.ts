@@ -3,10 +3,11 @@
  *
  * DELIBERATE: console.ts mounts reads, so a read-only surface cannot be driven by a forged
  * cross-site form. This file is the acts, each arriving from a button in the console rather
- * than a chat turn. console.ts mounts two POSTs: the page view (console/page-view.ts), which is not
- * an act, records which page was opened, changes nothing a page reads and calls no tool; and the
- * superadmin's bug resolution (console/platform-bug-resolve.ts), an act that calls `bug_resolve` as
- * the person the way the acts here call theirs.
+ * than a chat turn. console.ts mounts three POSTs: the page view (console/page-view.ts), which is not
+ * an act, records which page was opened, changes nothing a page reads and calls no tool; the
+ * superadmin's bug resolution (console/platform-bug-resolve.ts); and a person's close of an
+ * initiative (console-close.ts). The last two are acts that call `bug_resolve` and
+ * `initiative_close` as the person, the way the acts here call theirs.
  *
  * Each act collects the request's own `x-zz-*` headers, opens an `Mcp` client against
  * `CORE_MCP_URL` with them attached (`coreFor`, core-as-caller.ts), and calls the tool. The gateway

@@ -7,8 +7,8 @@
  * the scope once, before any handler's SQL runs, so a caller with no `?team=` cannot fall through a
  * `$1::text is null or team_slug = $1` predicate with a null standing in for "every team".
  *
- * `/api/console/initiatives` (console/initiative-list.ts) and `/api/console/approvals` resolve no scope
- * of their own: Work is the active team's, for the superadmin too, so each answers the team the
+ * `/api/console/initiatives` (console/initiative-list.ts), `/api/console/approvals` and
+ * `/api/console/home` (console/home.ts) resolve no scope of their own: Work is the active team's, for the superadmin too, so each answers the team the
  * identity acts for, whatever team or scope the request names. The list's `?waiting=1` projection,
  * the bell's, keeps the caller's scope until the bell is rebuilt.
  *
@@ -26,11 +26,14 @@
  * cross-team read into it would put two authority models in one file.
  *
  * GET only, but for `POST /api/console/page-view` (console/page-view.ts), which records which page
- * was opened and changes nothing a page reads, and `POST /api/console/platform/bugs/:id/resolve`
+ * was opened and changes nothing a page reads; `POST /api/console/platform/bugs/:id/resolve`
  * (console/platform-bug-resolve.ts), the superadmin's close of a bug report, which is zz-core's
- * `bug_resolve` called as the caller, as console-write.ts's acts are. A cross-site form cannot drive
- * either: the session cookie is SameSite=Lax, so a forged cross-site POST arrives with no session and
- * is answered 401. Anything else that writes belongs in a flow, through zz-core, as the caller.
+ * `bug_resolve` called as the caller, as console-write.ts's acts are; and
+ * `POST /api/console/initiatives/:team/:slug/close` (console-close.ts), a person's close of an
+ * initiative of their active team, which is zz-core's `initiative_close` called the same way. A
+ * cross-site form cannot drive any of them: the session cookie is SameSite=Lax, so a forged
+ * cross-site POST arrives with no session and is answered 401. Anything else that writes belongs in
+ * a flow, through zz-core, as the caller.
  *
  * Reads the database, not the store: the console is a fleet view — counts, means and refusal rates
  * over every team, which are SQL questions. The two knowledge endpoints here read zz.doc, which
@@ -76,6 +79,8 @@ import { mountPlatformKnowledge } from "./console/platform-knowledge.js";
 import { mountPlatformAudit } from "./console/platform-audit.js";
 import { mountPeople } from "./console/people.js";
 import { mountApprovals } from "./console/approvals.js";
+import { mountHome } from "./console/home.js";
+import { mountConsoleClose } from "./console-close.js";
 
 
 export function mountConsole(app: Express): void {
@@ -87,6 +92,8 @@ export function mountConsole(app: Express): void {
   mountInitiatives(app);
   // Approvals: the active team's waiting queue, and the approvals signed in the caller's name with their evidence.
   mountApprovals(app);
+  // Home: the active team's last whole week, what waits and what is open, the approvals in it the caller's own.
+  mountHome(app);
   mountKnowledge(app);
   // The one read that is zz-core's answer rather than a query of this gateway's own.
   mountSearch(app);
@@ -109,4 +116,6 @@ export function mountConsole(app: Express): void {
   mountPageView(app);
   // The one act here: the superadmin's close of a bug report, which is zz-core's `bug_resolve` called as the person.
   mountPlatformBugResolve(app);
+  // The person's close of an initiative of their active team, which is zz-core's `initiative_close` called as the person.
+  mountConsoleClose(app);
 }

@@ -302,8 +302,9 @@ export function mountApprovals(app: Express): void {
       return;
     }
     const caller = req.zzIdentity!.email;
-    // One instant for every statement, in whole seconds so the cutoff is the `asOf` the answer states.
-    const asOfMs = Math.floor(Date.now() / 1000) * 1000;
+    // One instant for every statement, in whole seconds rounded up, as the list and Home cut theirs, so
+    // what was written in the second the read began is inside it and the cutoff is the `asOf` stated.
+    const asOfMs = Math.ceil(Date.now() / 1000) * 1000;
     const asOf = new Date(asOfMs).toISOString();
     const page = <T>(rows: T[], paged: boolean): T[] =>
       (paged ? rows.slice(asked.offset, asked.offset + asked.limit) : rows.slice(0, FIRST_PAGE));

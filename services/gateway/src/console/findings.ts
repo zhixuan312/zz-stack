@@ -15,61 +15,91 @@ export type Finding = {
 
 /** One day of a door, oldest first; `date` is local. */
 type Day = { date: string; calls: number | null; toolFailures: number | null; complete: boolean; available: boolean };
+/** One whole local day of a team's agents, oldest first: whether it had a real-work call. */
+export type AgentDay = { day: string; active: boolean };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** The local date an instant falls on. en-CA formats as YYYY-MM-DD. */
-const localDate = (instant: string, timezone: string): string =>
+export const localDate = (instant: string, timezone: string): string =>
   new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(instant));
 
 /** A local date as a sentence prints it: `28 Sep`. */
-const day = (date: string): string => `${Number(date.slice(8, 10))} ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
+export const day = (date: string): string => `${Number(date.slice(8, 10))} ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
 
-const count = (n: number): string => n.toLocaleString("en-GB");
+/** A count as a sentence prints it: `496,000`. */
+export const count = (n: number): string => n.toLocaleString("en-GB");
 const counted = (n: number, one: string, many: string): string => `${count(n)} ${n === 1 ? one : many}`;
 
-/** A measure's finding about its last complete week, in order: too few comparable weeks to say
- *  anything; the last week is the best (or, for a neutral measure, the highest or lowest) on record;
- *  the last week's counts; else null. A week ties when another comparable complete week has the same
- *  value at the printed precision, and the sentence names the earliest. */
-export function weekFinding(measure: Measure, input: MeasureInput): Finding | null {
-  const at = (v: number): number => Math.round(v * 10 ** input.precision);
-  const comparable = measure.weeks.filter((w) => w.window.complete && w.figure.why === null);
-  const last = measure.last;
-  const lastDate = last ? [localDate(last.window.from, input.timezone)] : [];
+/** What a finding over periods needs to say it: the words that name the figure, its favourable
+ *  direction, the reporting timezone, the decimals the page prints, the local date the record begins
+ *  (null when it begins with the first period given) and the words after a count (null for a figure
+ *  with no numerator). */
+type PeriodFindingOptions = {
+  label: string; better: "up" | "down" | "neutral"; timezone: string; precision: number;
+  coverageFrom: string | null; countLabel: string | null;
+};
+
+/** A finding about the last complete period, in order: too few comparable periods to say anything;
+ *  the last period is the best (or, for a neutral figure, the highest or lowest) on record; the last
+ *  period's counts; else null. Comparable is complete with a standing value; best is chosen among
+ *  those, highest and lowest among complete periods with any value. A period ties when another
+ *  comparable complete period has the same value at the printed precision, and the sentence names the
+ *  earliest. */
+export function periodFinding(periods: PeriodFigure[], options: PeriodFindingOptions): Finding | null {
+  const at = (v: number): number => Math.round(v * 10 ** options.precision);
+  const whole = periods.filter((p) => p.window.complete);
+  const comparable = whole.filter((p) => p.figure.why === null);
+  const last = whole.at(-1) ?? null;
+  const lastDate = last ? [localDate(last.window.from, options.timezone)] : [];
   if (comparable.length < 3 || !last) {
     return { kind: "incomplete", text: "Not enough complete weeks to compare yet", dates: lastDate, tie: false };
   }
 
-  // Whether the last week holds the record `against` names, and the earliest other week it ties with.
+  // The record among `from` in `ahead`'s order; the first strictly ahead wins, so a tie keeps the earliest.
+  const record = (from: PeriodFigure[], ahead: (a: number, b: number) => boolean): PeriodFigure | null =>
+    from.reduce<PeriodFigure | null>((b, p) => (b === null || ahead(at(p.figure.value!), at(b.figure.value!)) ? p : b), null);
+  const below = (a: number, b: number): boolean => a < b;
+  const above = (a: number, b: number): boolean => a > b;
+  // Whether the last period holds the record `against` names, and the earliest other period it ties with.
   const holds = (against: PeriodFigure | null): { tie: string | null } | null => {
     if (last.figure.why !== null || against === null || at(last.figure.value!) !== at(against.figure.value!)) return null;
-    const tied = comparable.find((w) => w !== last && at(w.figure.value!) === at(last.figure.value!));
-    return { tie: tied ? localDate(tied.window.from, input.timezone) : null };
+    const tied = comparable.find((p) => p !== last && at(p.figure.value!) === at(last.figure.value!));
+    return { tie: tied ? localDate(tied.window.from, options.timezone) : null };
   };
   const said = (kind: Finding["kind"], text: string, dates: string[], tie: string | null): Finding =>
     tie === null
       ? { kind, text, dates, tie: false }
       : { kind, text: `${text}, tied with ${day(tie)}`, dates: [...dates, tie], tie: true };
 
-  if (measure.better !== "neutral") {
-    const best = holds(measure.best);
+  if (options.better !== "neutral") {
+    const best = holds(record(comparable, options.better === "down" ? below : above));
     if (best) {
-      const which = measure.better === "down" ? "Lowest" : "Highest";
-      return said("best_week", `${which} observed ${input.label} in a complete week, ${day(lastDate[0])}`, lastDate, best.tie);
+      const which = options.better === "down" ? "Lowest" : "Highest";
+      return said("best_week", `${which} observed ${options.label} in a complete week, ${day(lastDate[0])}`, lastDate, best.tie);
     }
   } else {
-    const since = day(input.coverageFrom);
-    const high = holds(measure.highest);
-    if (high) return said("high_week", `Most recorded ${input.label} in a week since ${since}`, [...lastDate, input.coverageFrom], high.tie);
-    const low = holds(measure.lowest);
-    if (low) return said("low_week", `Fewest recorded ${input.label} in a week since ${since}`, [...lastDate, input.coverageFrom], low.tie);
+    // With no stated start, the record begins with the first comparable period given.
+    const from = options.coverageFrom ?? localDate(comparable[0].window.from, options.timezone);
+    const valued = whole.filter((p) => p.figure.value !== null);
+    const high = holds(record(valued, above));
+    if (high) return said("high_week", `Most recorded ${options.label} in a week since ${day(from)}`, [...lastDate, from], high.tie);
+    const low = holds(record(valued, below));
+    if (low) return said("low_week", `Fewest recorded ${options.label} in a week since ${day(from)}`, [...lastDate, from], low.tie);
   }
 
-  if (last.numerator !== null && last.denominator !== null && input.countLabel !== null) {
-    return { kind: "count", text: `${count(last.numerator)} of ${count(last.denominator)} ${input.countLabel}`, dates: lastDate, tie: false };
+  if (last.numerator !== null && last.denominator !== null && options.countLabel !== null) {
+    return { kind: "count", text: `${count(last.numerator)} of ${count(last.denominator)} ${options.countLabel}`, dates: lastDate, tie: false };
   }
   return null;
+}
+
+/** A measure's finding about its last complete week: `periodFinding` over its weeks. */
+export function weekFinding(measure: Measure, input: MeasureInput): Finding | null {
+  return periodFinding(measure.weeks, {
+    label: input.label, better: input.better, timezone: input.timezone, precision: input.precision,
+    coverageFrom: input.coverageFrom, countLabel: input.countLabel,
+  });
 }
 
 /** A day that keeps a run going: complete, available, with calls, and tool failures under 1% of them. */
@@ -86,6 +116,20 @@ export function runOf(days: Day[]): { days: number; atLeast: boolean; through: s
   while (start >= 0 && under(days[start])) start--;
   const length = end - start;
   return length < 3 ? null : { days: length, atLeast: start < 0, through: days[end].date };
+}
+
+/** The agents' run of days that ends on the last day given, every day given being whole: days with a
+ *  real-work call, one with none ending it. `atLeast` when it reaches the first day given. Null under
+ *  three days, as `runOf`. */
+export function agentsRunOf(days: AgentDay[]): { days: number; atLeast: boolean; through: string } | null {
+  return runOf(days.map((d) => ({ date: d.day, calls: d.active ? 1 : 0, toolFailures: 0, complete: true, available: true })));
+}
+
+/** The agents' run of days, said once it reaches seven: what the agents did, never what the person did. */
+export function agentsRunFinding(days: AgentDay[]): Finding | null {
+  const run = agentsRunOf(days);
+  if (!run || run.days < 7) return null;
+  return { kind: "run", text: `Your agents ran ${run.atLeast ? "at least " : ""}${run.days} days in a row`, dates: [run.through], tie: false };
 }
 
 /** A door's finding about its days, in order: no tool failure recorded on any day, counting every

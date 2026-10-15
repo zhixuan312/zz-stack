@@ -39,6 +39,10 @@ export { base32, unbase32 } from "./base32.js";
 export { UPLOAD_EXTENSIONS, UPLOAD_ID, UPLOAD_MAX_BYTES, UPLOAD_SECRET, mintUploadId, mintUploadSecret,
          uploadExtension, uploadSecretHash, uploadText, type UploadRefusal, type UploadedText } from "./upload-text.js";
 
+// How a body's words are counted and the one pace every writing estimate is made at (AC-5.4).
+export { WORDS_PER_HOUR, countWords, writingEstimate,
+         type WritingCoverage, type WritingEstimate } from "./words.js";
+
 export { BANDS, NOT_MEASURABLE, band,
          HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
 

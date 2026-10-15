@@ -28,6 +28,13 @@
  * that brings its own record (the skeleton's) leaves it out. Its people and slugs are its own, so it
  * runs beside any other seed on one database.
  *
+ * `seedWorkRecord` adds, through a real zz-core, what Work's reads are asked about: a second person on
+ * the first team with a labelled token of their own, beside a labelled token of the first team's admin; a
+ * superadmin who is a member of the first team and acts for it; approvals made by the first team's admin
+ * (two), by that second person (one) and by the second team's admin (one, in an initiative named by the
+ * initiative sentinel); a run of each team in its open initiative; and an empty initiative of the first
+ * team for each of its admin and that superadmin to close.
+ *
  * A helper, not a check: every `.ts` under `checks/` is a check the gate runs.
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -35,6 +42,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 
 import { signIn } from "./status-seed.ts";
+import type { Core } from "./throwaway-core.ts";
 
 /** Every field of the second team's that carries a sentinel. */
 const FIELDS = [
@@ -72,15 +80,19 @@ interface Team {
 
 /** What `seedIsolation` wrote: both teams, the person in both, the superadmin, the secret each signed-in
  *  person's `zz_console` cookie carries, and the second team's sentinels by field. */
-interface Isolation {
+export interface Isolation {
   one: Team; two: Team; both: string; superadmin: string;
   cookies: { one: string; two: string; superadmin: string };
   sentinels: Record<Field, string>;
 }
 
-/** A fresh sentinel per field, lower-case so the slug's stays a slug, and none a substring of another. */
+/** A fresh sentinel per field, lower-case so the slug's stays a slug, and none a substring of another. Its
+ *  random half begins with a letter, since a search asks by that half alone: PostgreSQL's parser reads a
+ *  digit-led half alone otherwise than inside the hyphenated sentinel (`12e4ab…` as the number `12e4` then the
+ *  word `ab…`, all digits as a signed integer), so the search would miss the row that holds it. */
 function sentinels(): Record<Field, string> {
-  return Object.fromEntries(FIELDS.map((f) => [f, `${f.toLowerCase()}-${randomBytes(8).toString("hex")}`])) as Record<Field, string>;
+  const half = (): string => randomBytes(8).toString("hex").replace(/^\d/, (d) => "abcdef"[Number(d) % 6]);
+  return Object.fromEntries(FIELDS.map((f) => [f, `${f.toLowerCase()}-${half()}`])) as Record<Field, string>;
 }
 
 /** The first team's words for each field. */
@@ -231,4 +243,86 @@ export async function seedWork(db: pg.ClientBase | pg.Pool, s: Isolation, now = 
             '{}'::jsonb, p.active_team_id, p.id, 120
        from zz.principal p, unnest(array[20, 9, 2]) d where p.email = any($2::text[])`,
     [new Date(now).toISOString(), [s.one.email, s.two.email]]);
+}
+
+/** The Work readers `seedWorkRecord` adds or reads for, each with the approvals signed in their name. */
+type Reader = "one" | "colleague" | "acting" | "two";
+
+/** What `seedWorkRecord` wrote. */
+export interface WorkRecord {
+  /** The second person on the first team, and the superadmin acting for the first team. */
+  colleague: string; acting: string;
+  cookies: { colleague: string; acting: string };
+  /** Each reader's approvals, as `<initiative>/<path>`. */
+  approvals: Record<Reader, string[]>;
+  /** The labelled token of the first team's admin and the one of the second person. */
+  tokens: Record<"one" | "colleague", { id: string; label: string }>;
+  /** An empty initiative of the first team for each closer: its admin and the acting superadmin. */
+  closable: { one: string; acting: string };
+}
+
+const NOTES = "# Notes\n\n## Alpha\n\nalpha line one\n\n## Beta\n\nbeta line one\n";
+
+/** Seeds, beside `seedIsolation`'s rows and through the zz-core `c` runs, the people, tokens, approvals,
+ *  runs and initiatives `WorkRecord` names, every one dated now. */
+export async function seedWorkRecord(c: Pick<Core, "sql" | "client" | "ok">, s: Isolation): Promise<WorkRecord> {
+  const db = c.sql;
+  const one = async (sql: string, args: unknown[]): Promise<string> => (await db.query<{ id: string }>(sql, args)).rows[0].id;
+  const colleague = "colleague@isolation.example.test";
+  const acting = "acting@isolation.example.test";
+  for (const [email, name, role] of [[colleague, "Isolation colleague", "member"], [acting, "Isolation acting superadmin", "superadmin"]]) {
+    await db.query("insert into zz.principal (email, display_name, role) values ($1, $2, $3)", [email, name, role]);
+    await db.query(
+      `insert into zz.membership (team_id, principal_id, role, added_by)
+       select t.id, p.id, 'member', a.id from zz.team t, zz.principal p, zz.principal a where t.slug = $1 and p.email = $2 and a.email = $3`,
+      [s.one.slug, email, s.one.email]);
+    await db.query("update zz.principal set active_team_id = (select id from zz.team where slug = $2) where email = $1", [email, s.one.slug]);
+  }
+  const token = async (email: string, label: string): Promise<{ id: string; label: string }> => {
+    const principal = await one("select id from zz.principal where email = $1", [email]);
+    // A label names one purpose with one live token, as every writer of a token keeps it.
+    await db.query("update zz.pat set revoked_at = now() where principal_id = $1 and label = $2 and label <> '' and revoked_at is null",
+      [principal, label]);
+    const id = await one("insert into zz.pat (principal_id, token_hash, label) values ($1, $2, $3) returning id",
+      [principal, randomBytes(32).toString("hex"), label]);
+    return { id, label };
+  };
+  const tokens = { one: await token(s.one.email, "first person's token"), colleague: await token(colleague, "colleague's token") };
+
+  // Each approval as zz-core makes one: a freeform initiative holding one document, presented and approved
+  // by its signer.
+  const signed = async (email: string, slug: string): Promise<string> => {
+    const as = c.client({ email });
+    const opened = await c.ok(`open ${slug}`, "initiative_open", { slug }, as);
+    const path = `${(JSON.parse(opened) as { initiative: string }).initiative}/notes.md`;
+    await c.ok(`write ${path}`, "document_write", { path, content: NOTES }, as);
+    await c.ok(`present ${path}`, "document_present", { path }, as);
+    await c.ok(`approve ${path}`, "document_approve", { path }, as);
+    return path;
+  };
+  const approvals: Record<Reader, string[]> = {
+    one: [await signed(s.one.email, "first-person-signed"), await signed(s.one.email, "first-person-signed-again")],
+    colleague: [await signed(colleague, "colleague-signed")],
+    acting: [],
+    two: [await signed(s.two.email, `${s.sentinels.initiative}-signed`)],
+  };
+  const empty = async (email: string, slug: string): Promise<string> =>
+    (JSON.parse(await c.ok(`open ${slug}`, "initiative_open", { slug }, c.client({ email }))) as { initiative: string }).initiative;
+  const closable = { one: await empty(s.one.email, "first-person-closes"), acting: await empty(acting, "acting-superadmin-closes") };
+
+  // A run of each team in its open initiative, a day ago, as runs-seed.ts writes runs.
+  const skill = await one("insert into zz.skill (name) values ('isolation-skill') returning id", []);
+  const version = await one("insert into zz.skill_version (skill_id, version, content_hash) values ($1, '1.0.0', $2) returning id",
+                            [skill, randomBytes(32).toString("hex")]);
+  for (const team of [s.one, s.two]) {
+    await db.query(
+      `insert into zz.skill_run (team_id, initiative_id, skill_version_id, session, calls, bytes_total, started_at, ended_at)
+       select t.id, i.id, $3, $4, 3, 100, now() - interval '1 day', now() - interval '1 day' + interval '10 minutes'
+         from zz.team t join zz.initiative i on i.team_id = t.id and i.slug = $2 where t.slug = $1`,
+      [team.slug, team.initiative, version, `isolation-${randomUUID()}`]);
+  }
+  return {
+    colleague, acting, cookies: { colleague: await signIn(db, colleague), acting: await signIn(db, acting) },
+    approvals, tokens, closable,
+  };
 }

@@ -2,7 +2,7 @@
 /**
  * checks/console-isolation.ts — a member of one team asks everything the console answers and finds
  * nothing of another team's, through the gateway's whole console on a real database and a real zz-core
- * (AC-1.14, AC-1.15, AC-4.4, AC-4.5, AC-4.7).
+ * (AC-1.14, AC-1.15, AC-4.4, AC-4.5, AC-4.7, AC-5.10).
  *
  *   node checks/console-isolation.ts   # needs Docker and a built tree (`npm run build`)
  *
@@ -10,7 +10,9 @@
  * `scripts/schema/isolation-seed.ts` declares (two teams of the same rows, the second's free text
  * sentinels generated afresh for this run, among them the bodies of the events `PLANTED` names; a person
  * in both teams, who is data and never a reader; real-work calls of both teams, where the record begins;
- * and three people signed in with real console sessions), and serves the gateway's built identity
+ * and three people signed in with real console sessions), then what `seedWorkRecord` makes through
+ * zz-core for Work (a second person on the first team and a superadmin acting for it, both signed in,
+ * approvals and tokens of their own, runs, and initiatives to close), and serves the gateway's built identity
  * middleware, JSON parser, `mountConsole`, `mountConsoleWrite` and `mountSettings` from this process in
  * server.ts's order. The routes are read from that
  * application's own router, so a route added later is asked without editing this file, and every
@@ -39,7 +41,13 @@
  *     intact;
  *   - the superadmin's Audit, reaching every planted row, holds the second team's slug and none of its
  *     other sentinels, and their Knowledge health holds the question that found nothing and, of the
- *     rest, only the slug its shelves and questions are named by.
+ *     rest, only the slug its shelves and questions are named by;
+ *   - Work, in `console-isolation-work.ts`'s rounds: every measure of `work/query` by every dimension,
+ *     drilled to rows, and Home, Record, Approvals and Initiatives hold nothing of the second team's for
+ *     the member or the superadmin acting for the first team; a close aimed at the second team's
+ *     initiative is 404 and closes nothing; each person reads only the approvals signed in their own
+ *     name and only their own tokens, a second person on the same team included. `work/query` is asked
+ *     with measures here too, since a request naming none is refused before anything is read.
  *
  * What each planted row can move of the figures a seed beside this one asserts is `MOVES`, said once
  * the seed is read back.
@@ -62,8 +70,10 @@ import type { Express, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { PLANTED, seedIsolation, seedWork } from "../scripts/schema/isolation-seed.ts";
+import { PLANTED, seedIsolation, seedWork, seedWorkRecord } from "../scripts/schema/isolation-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+
+import { failureQuery, hrefs, leaks, queriesFor, send, tally, workRounds, type Answer, type Sent } from "./console-isolation-work.ts";
 
 const NAME = "console-isolation";
 const DONE = "console-isolation: a member of one team asked every route the mounted console answers, with the other " +
@@ -71,9 +81,9 @@ const DONE = "console-isolation: a member of one team asked every route the moun
   "team's, a colleague in both teams included, or answered otherwise than about a team nobody has; the reads refused " +
   "to a member answered one body naming nobody; every write was refused or the member's own and " +
   "changed nothing of the other team's; the other team's member and the superadmin still read it, and the " +
-  "superadmin's Audit and Knowledge health held no body but the question that found nothing: ok";
-/** How long a stream is read before it is let go. */
-const STREAM_MS = 1500;
+  "superadmin's Audit and Knowledge health held no body but the question that found nothing; Work, every measure by " +
+  "every dimension drilled to rows, a close and a superadmin acting for their own team included, held nothing of the " +
+  "other team's, and a second person on the same team read only their own approvals and tokens: ok";
 /** Fields the platform's evaluation read never selects, so no superadmin read need answer them: the database
  *  is asked for them instead. COUPLED: platform-evaluation.ts. */
 const NOBODY_READS = ["decisionNote", "ownerRef"];
@@ -107,16 +117,7 @@ const MOVES: Record<(typeof PLANTED)[number]["kind"], string> = {
 };
 
 type Seeded = Awaited<ReturnType<typeof seedIsolation>>;
-type Answer = { status: number; text: string };
 interface Route { method: string; path: string }
-/** One request as sent: the address with its query, and the body. */
-interface Sent { method: string; url: string; body: Record<string, unknown> | null }
-
-const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object";
-/** Answers' statuses as `200 ×4, 400 ×2`. */
-const tally = (statuses: (number | string)[]): string =>
-  [...statuses.reduce((m, o) => m.set(o, (m.get(o) ?? 0) + 1), new Map<number | string, number>())]
-    .sort(([a], [b]) => String(a).localeCompare(String(b))).map(([o, n]) => `${o} ×${n}`).join(", ");
 
 /** The `/api/console` routes the application answers, from its router: one per method and path. */
 function routesOf(app: Express): Route[] {
@@ -169,7 +170,8 @@ function addresses(path: string, s: Seeded): string[] {
 /** The queries every read is asked with: none, a forged team, a forged scope, both, the asker's own team
  *  named, which reaches the reads that list a team's people, and the second team's text as the question,
  *  alongside its initiative and plugin. The question is a sentinel's random half, which a search matches as a
- *  word of it, so the question a search records is never a whole sentinel itself. */
+ *  word of it, so the question a search records is never a whole sentinel itself; the seed begins that half with
+ *  a letter, which is what makes the match certain. COUPLED: isolation-seed.ts's `sentinels`. */
 function readQueries(s: Seeded): string[] {
   const { one, two, sentinels: x } = s;
   const probe = (v: string) => `?q=${v.slice(v.indexOf("-") + 1)}&initiative=${encodeURIComponent(two.initiative)}` +
@@ -190,78 +192,12 @@ function forgedBody(s: Seeded): Record<string, unknown> {
   };
 }
 
-/** Sends one request as a signed-in person and reads its answer; a stream is read for `STREAM_MS`, with
- *  `during` run once it opens. */
-async function send(base: string, cookie: string, r: Sent, during?: () => Promise<void>): Promise<Answer> {
-  const res = await fetch(`${base}${r.url}`, {
-    method: r.method.toUpperCase(), signal: AbortSignal.timeout(60_000),
-    headers: { cookie: `zz_console=${cookie}`, ...(r.body ? { "content-type": "application/json" } : {}) },
-    ...(r.body ? { body: JSON.stringify(r.body) } : {}),
-  });
-  if (!(res.headers.get("content-type") ?? "").includes("text/event-stream") || !res.body) {
-    return { status: res.status, text: await res.text() };
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
-  const until = Date.now() + STREAM_MS;
-  const poke = during?.();
-  try {
-    for (;;) {
-      const left = until - Date.now();
-      if (left <= 0) break;
-      const got = await Promise.race([reader.read(), new Promise<null>((r) => setTimeout(() => r(null), left))]);
-      if (!got || got.done) break;
-      text += decoder.decode(got.value, { stream: true });
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-    await poke;
-  }
-  return { status: res.status, text };
-}
-
-/** Where `needle` sits in an answer: the JSON path of the first string or key holding it, or its offset. */
-function where(text: string, needle: string): string {
-  let parsed: unknown;
-  try { parsed = JSON.parse(text); } catch { return `character ${text.indexOf(needle)} of a body that is not JSON`; }
-  const walk = (v: unknown, at: string): string | null => {
-    if (typeof v === "string") return v.includes(needle) ? at || "the whole body" : null;
-    if (!isObj(v)) return null;
-    for (const [k, child] of Object.entries(v)) {
-      const here = Array.isArray(v) ? `${at}[${k}]` : at ? `${at}.${k}` : k;
-      if (k.includes(needle)) return `the key ${here}`;
-      const found = walk(child, here);
-      if (found) return found;
-    }
-    return null;
-  };
-  return walk(parsed, "") ?? `character ${text.indexOf(needle)}`;
-}
-
-/** Every `href` in a JSON answer: how many there are, and those that are not null, by path. */
-function hrefs(text: string): { count: number; set: string[] } {
-  let parsed: unknown;
-  try { parsed = JSON.parse(text); } catch { return { count: 0, set: [] }; }
-  const out = { count: 0, set: [] as string[] };
-  const walk = (v: unknown, at: string): void => {
-    if (!isObj(v)) return;
-    for (const [k, child] of Object.entries(v)) {
-      const here = Array.isArray(v) ? `${at}[${k}]` : at ? `${at}.${k}` : k;
-      if (k === "href") out.count++;
-      if (k === "href" && child !== null) out.set.push(`${here} = ${JSON.stringify(child)}`);
-      walk(child, here);
-    }
-  };
-  walk(parsed, "");
-  return out;
-}
-
 /** The table a read is answered from, renamed for its failure round, or null for a read the map does not
- *  name: `zz.event` for the status, releases, bugs list, usage and audit reads, Teams and the Work reads,
- *  `zz.eval_run` for evaluation, `zz.bug` for a report and its duplicates, `zz.knowledge_node` for Knowledge
- *  health, so one part fails and the rest stand, and `zz.passkey` for People. A table the identity gate reads
- *  (`zz.team`, `zz.principal`) would fail every request before its read. */
+ *  name: `zz.event` for the status, releases, bugs list, usage and audit reads, Teams and the Work pages,
+ *  `zz.initiative` for Work's prepared queries, `zz.eval_run` for evaluation, `zz.bug` for a report and its
+ *  duplicates, `zz.knowledge_node` for Knowledge health, so one part fails and the rest stand, and
+ *  `zz.passkey` for People. A table the identity gate reads (`zz.team`, `zz.principal`) would fail every
+ *  request before its read. */
 function tableFor(path: string): string | null {
   if (/^\/api\/console\/platform\/(status|releases|releases\/:version|bugs|usage|audit)$/.test(path)) return "event";
   if (/^\/api\/console\/teams(\/:slug)?$/.test(path)) return "event";
@@ -269,6 +205,7 @@ function tableFor(path: string): string | null {
   if (path === HEALTH) return "knowledge_node";
   if (path === "/api/console/platform/evaluation") return "eval_run";
   if (/^\/api\/console\/platform\/bugs\/:id(\/duplicates)?$/.test(path)) return "bug";
+  if (path === "/api/console/work/query") return "initiative";
   if (/^\/api\/console\/(platform|settings)\//.test(path) || path === "/api/console/live") return null;
   return "event";
 }
@@ -319,22 +256,14 @@ async function storedText(sql: pg.Client, s: Seeded): Promise<string> {
        join zz.eval_measure m on m.id = f.measure_id
        join zz.knowledge_node k on k.team_id = t.id
        join zz.event e on e.team_id = t.id and e.kind = 'knowledge.add' and e.subject = '1'
-      where t.slug = $1
-      order by e.ts limit 1`, [s.two.slug]);
+      where t.slug = $1 and i.slug = $2
+      order by e.ts limit 1`, [s.two.slug, s.two.initiative]);
   // The planted rows' free text, in the column or detail key each kind keeps it in.
   const planted = await sql.query<{ all: string | null }>(
     `select string_agg(concat_ws(' ', e.subject, e.refusal, e.detail->>'title', e.detail->>'detail', e.detail->>'details',
                                  e.detail->>'filename', e.detail->>'label'), ' ') as all
        from zz.event e where e.kind = any($1::text[])`, [PLANTED.map((p) => p.kind)]);
   return `${rows[0]?.all ?? ""} ${planted.rows[0]?.all ?? ""}`;
-}
-
-/** The sentinels an answer holds that its request did not carry, each with where it sits. */
-function leaks(s: Seeded, r: Sent, a: Answer): { field: string; at: string }[] {
-  const carried = `${r.url} ${r.body ? JSON.stringify(r.body) : ""}`;
-  return Object.entries(s.sentinels)
-    .filter(([, v]) => a.text.includes(v) && !carried.includes(v) && !decodeURIComponent(carried).includes(v))
-    .map(([field, v]) => ({ field, at: where(a.text, v) }));
 }
 
 /** The second team's identifiers a request can name, its plugin's among them, each paired with a phantom of the
@@ -370,6 +299,7 @@ function masked(a: Answer, pairs: [string, string, string][]): string {
 async function run(c: Core): Promise<void> {
   const s = await seedIsolation(c.sql);
   await seedWork(c.sql, s);
+  const w = await seedWorkRecord(c, s);
   const who = {
     one: { label: "the first team's member", cookie: s.cookies.one },
     two: { label: "the second team's member", cookie: s.cookies.two },
@@ -467,7 +397,7 @@ async function run(c: Core): Promise<void> {
       const bad: string[] = [];
       let compared = 0;
       for (const address of addresses(r.path, s)) {
-        for (const query of readQueries(s)) {
+        for (const query of queriesFor(r.path, readQueries(s), s)) {
           const req: Sent = { method: r.method, url: `${address}${query}`, body: null };
           const a = await send(base, who.one.cookie, req, poke);
           statuses.push(a.status);
@@ -508,7 +438,7 @@ async function run(c: Core): Promise<void> {
       console.error = () => undefined;
       try {
         for (const address of addresses(r.path, s)) {
-          const req: Sent = { method: r.method, url: address, body: null };
+          const req: Sent = { method: r.method, url: `${address}${failureQuery(r.path, s)}`, body: null };
           const a = await send(base, who.one.cookie, req);
           statuses.push(a.status);
           refused(r, a);
@@ -578,7 +508,7 @@ async function run(c: Core): Promise<void> {
       for (const person of ["two", "superadmin"] as const) {
         const held = new Set<string>();
         const named: string[] = [];
-        const queries = person === "two" ? readQueries(s) : ["", `?team=${s.two.slug}`, "?scope=platform"];
+        const queries = queriesFor(r.path, person === "two" ? readQueries(s) : ["", `?team=${s.two.slug}`, "?scope=platform"], s);
         for (const address of addresses(r.path, s)) {
           for (const query of queries) {
             const req: Sent = { method: r.method, url: `${address}${query}`, body: null };
@@ -646,6 +576,8 @@ async function run(c: Core): Promise<void> {
     const lost = Object.entries(s.sentinels).filter(([, v]) => !after.includes(v)).map(([f]) => f);
     if (lost.length) found.push(`${step}: ${lost.join(", ")} no longer stored`);
     else c.pass(`${step}, ${NOBODY_READS.join(" and ")} among them`);
+
+    await workRounds({ s, w, base, sql: c.sql, found, pass: c.pass, oracle: (r, a, cookie) => oracle(r, a, undefined, cookie) });
 
     if (found.length) c.fail("isolation", `\n    ${found.join("\n    ")}`);
   } finally {

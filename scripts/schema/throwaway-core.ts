@@ -171,6 +171,19 @@ interface CoreOptions {
   catalog?: string;
 }
 
+/** Starts zz-core on a free port. freePort closes the port it found before the child binds it, so
+ *  under a parallel gate another process can take it first and the child exits with EADDRINUSE
+ *  before listening; that start is retried on a fresh port, and any other failure is the answer. */
+async function startOnFreePort(name: string, url: string, catalog: string): Promise<Child> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await startCore(name, url, await freePort(), catalog);
+    } catch (err) {
+      if (attempt >= 3 || !(err instanceof Error) || !err.message.includes("EADDRINUSE")) throw err;
+    }
+  }
+}
+
 /** Starts zz-core and resolves once it says it is listening on `port`. */
 function startCore(name: string, url: string, port: number, catalog: string): Promise<Child> {
   return new Promise((resolve, reject) => {
@@ -254,7 +267,7 @@ export async function withThrowawayCore(
   try {
     await withThrowawayDb(async (sql) => {
       await seed(sql);
-      child = await startCore(name, url, await freePort(), catalog);
+      child = await startOnFreePort(name, url, catalog);
       const live = (): Child => child ?? fail("zz-core", "not running");
       const call = async (step: string, tool: string, args: unknown, via?: Mcp): Promise<string> => {
         let reply = "";
@@ -292,7 +305,7 @@ export async function withThrowawayCore(
         restart: async () => {
           await stopCore(live());
           child = null;
-          child = await startCore(name, url, await freePort(), catalog);
+          child = await startOnFreePort(name, url, catalog);
           core.mcp = mcpFor(child.port, name);
         },
         call,

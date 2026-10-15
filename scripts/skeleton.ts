@@ -8,8 +8,10 @@
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), seeds the events
  * and people `scripts/schema/status-seed.ts` declares and the two teams `scripts/schema/isolation-seed.ts`
  * declares, and signs a member of the status seed's first team and a superadmin in through real
- * console session rows. The platform is built first (`npm run build`, incremental), and the gateway is its own built identity middleware, JSON parser and
- * whole console API (`mountConsole`), mounted in this process in server.ts's order on a free port:
+ * console session rows. The platform is built first (`npm run build`, incremental), and a real zz-core
+ * is started on that database (`startCore`, scripts/skeleton-work.ts). The gateway is its own built
+ * identity middleware, JSON parser, whole console API (`mountConsole`), and its `/core/mcp` door's
+ * telemetry and relay to that zz-core, mounted in this process in server.ts's order on a free port:
  * `dist/server.js` itself listens on port 8000 of every interface, which a run beside a deployment
  * or another stack cannot have. The console is built the way `pnpm verify` builds it, with `ZZ_GATEWAY` set to that
  * gateway, and served with `next start` on a free port with `NODE_ENV` production and no
@@ -31,7 +33,13 @@
  *     second team among them, and Knowledge health holds the second team's slug and its question that
  *     found nothing;
  *   - Teams, People and Audit answer the member 403 with exactly `{"error":"not permitted"}`, and the
- *     superadmin 200 holding the seeded teams, people and the second team's events.
+ *     superadmin 200 holding the seeded teams, people and the second team's events;
+ *   - Work, once the platform's reads are done (scripts/skeleton-work.ts, which says what it makes and
+ *     what it expects): a record made through the door in the member's team, an initiative closed
+ *     through the console's route with the outcome initiative_status reads back, and for the member and
+ *     a superadmin acting for that team, Home's title and paired figures, Record's lead at its pace,
+ *     Approvals' waiting count and the caller's own history, Initiatives' first page with zz-core's next
+ *     moves, and the closures by outcome over Record's quarter, asked of work/query, agreeing with Record.
  *
  *   Each read's other values are its own check's (`checks/console-platform-*.ts`);
  *
@@ -57,7 +65,7 @@
  * stops every process and container it started by its own id, on success, failure and interrupt.
  *
  * Exit 0: every case held — one line per case, then the final line.
- * Exit 1: a case failed, a build failed or the console did not start — the case and what was found.
+ * Exit 1: a case failed, a build failed, or zz-core or the console did not start — the case and what was found.
  * Exit 2: Docker is not available or the console's checkout is missing — the skeleton could not
  *         run, and that is not a pass.
  */
@@ -69,18 +77,21 @@ import net from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Express, RequestHandler } from "express";
+import type { Express, Request, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "./deployment.ts";
 import { seedIsolation } from "./schema/isolation-seed.ts";
 import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn } from "./schema/status-seed.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
+import { startCore, stopCore, workCases } from "./skeleton-work.ts";
 
 const NAME = "skeleton";
 const DONE = "skeleton: the real gateway answers the platform's four reads, Usage and Knowledge health to a member and a " +
   "superadmin in the seeds' states with none of another team's words and no team split or question to the member, refuses " +
-  "the member Teams, People and Audit with one body and answers them to the superadmin, the built console signs both in through it, draws the " +
+  "the member Teams, People and Audit with one body and answers them to the superadmin, reads Work's Home, Record, Approvals, " +
+  "Initiatives and a prepared query agreeing with Record to the member and an acting superadmin, closes an initiative through " +
+  "the console's route to the outcome initiative_status reads back, the built console signs both in through it, draws the " +
   "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, and shows " +
   "a member no other team on /teams: ok";
 /** The reporting timezone the gateway cuts weeks in, and the seed with it. */
@@ -139,12 +150,13 @@ function stopConsole(): void {
     try { process.kill(-consoleProc.pid, "SIGTERM"); } catch { /* already gone */ }
   }
 }
-process.on("exit", stopConsole);
-// A signal skips every `finally`, so the console and the database container are stopped here.
+process.on("exit", () => { stopConsole(); stopCore(); });
+// A signal skips every `finally`, so the console, zz-core and the database container are stopped here.
 // COUPLED: `withThrowawayDb` in scripts/schema/throwaway.ts names its container by this process's id.
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     stopConsole();
+    stopCore();
     try { execFileSync("docker", ["rm", "-f", "-v", `zz-schema-target-pg-${process.pid}`], { stdio: "ignore", timeout: 60_000 }); } catch { /* none started */ }
     process.exit(sig === "SIGINT" ? 130 : 143);
   });
@@ -440,7 +452,10 @@ async function run(db: pg.Client, url: string): Promise<void> {
   for (const email of [MEMBER, SUPERADMIN]) cookies.set(email, await signIn(db, email));
 
   // `withThrowawayDb` ended the gateway's pool after migrating; a fresh one on the same container,
-  // and the reporting timezone set before console/shared.js reads it at load.
+  // and the reporting timezone set before console/shared.js reads it at load. The console's acts and
+  // next moves reach zz-core through CORE_MCP_URL.
+  const core = await startCore(url, fail);
+  process.env.CORE_MCP_URL = core;
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_TZ = TIMEZONE;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
@@ -450,11 +465,18 @@ async function run(db: pg.Client, url: string): Promise<void> {
   await dbModule.initPlatformDb();
   const { identityMiddleware } = (await load("services/gateway/dist/identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountConsole } = (await load("services/gateway/dist/console.js")) as { mountConsole: (app: Express) => void };
+  const { toolCallTelemetry, doorSurface } = (await load("services/gateway/dist/tool-telemetry.js")) as
+    { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
+  const { passThrough } = (await load("services/gateway/dist/relay.js")) as
+    { passThrough: (url: string, what: string, refusal: string) => RequestHandler };
   const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, then the console.
+  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the console, then the
+  // telemetry on the door and its relay to zz-core.
   app.use(identityMiddleware());
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
+  app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
+  app.all("/core/mcp", passThrough(core, "core proxy", "zz-core is not reachable"));
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const gateway = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -473,6 +495,9 @@ async function run(db: pg.Client, url: string): Promise<void> {
     pass(`the gateway listens at ${gateway} and answers the member's status read`);
     await reads(gateway, cookies, isolation, seeded);
     await refused(gateway, cookies, isolation);
+    // Work last of the gateway's: its record is written now, in the running week, so every read above
+    // saw the seeds alone. Its people sign in, so no signed-out page may hold them either.
+    seeded.emails.push(...await workCases({ sql: db, gateway, member: MEMBER, memberCookie: cookies.get(MEMBER)!, fail, pass }));
 
     const env = consoleEnv(gateway);
     buildConsole(env);
@@ -483,6 +508,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await dbModule.platformDb().end().catch(() => undefined);
+    stopCore();
+    delete process.env.CORE_MCP_URL;
     delete process.env.TEAM_DB_URL;
     delete process.env.ZZ_TZ;
     delete process.env.ZZ_CATALOG_DIR;

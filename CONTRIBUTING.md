@@ -78,7 +78,9 @@ platform's Status, its doors and records, with a resolve through the console's r
 (`checks/console-platform-needs.ts`), a member of one team finding nothing of another's in any answer
 the whole console gives, a colleague in both teams included, its writes refused or the member's own,
 and the superadmin's Audit and Knowledge health holding no planted body but a question, which no other
-page gives them (`checks/console-isolation.ts`), the document walking
+page gives them, and Work, every prepared query drilled to its rows and a close included, holding
+nothing of another team's and no person's approvals or tokens but their own, a second person on the
+same team included (`checks/console-isolation.ts`), the document walking
 skeleton and every edit mode
 (`checks/document-edit.ts`), concurrent changes and keyed requests (`checks/document-edit-races.ts`),
 the version table and the acts racing an edit (`checks/document-version.ts`), the causes that

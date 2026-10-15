@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the forty-eight that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the forty-nine that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the forty-eight gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the forty-nine gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -66,12 +66,12 @@ page-view, overview and activity routes against one and listens on the console's
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
 against one and reads its greeting, a team's observed agent runs, their coverage, peak overlap and what ran
 lately (`checks/console-runs-observed.ts`), which calls the gateway's own reads over seeded runs,
-and the twenty-eight that run a real zz-core against one: the rule that tells an import from a team's
+and the twenty-nine that run a real zz-core against one: the rule that tells an import from a team's
 own work (`checks/console-imports.ts`), which calls the gateway's own rule over what a real zz-core
 recorded, the writing ledger, words added by period and the retained stock from the revisions kept
 (`checks/console-writing.ts`), which calls the gateway's own ledger over what a real zz-core recorded, the console's document reads, presentation and approval (`checks/console-versions.ts`),
 the decision basis an approval records (`checks/approval-basis.ts`), the console's Initiatives, the active team's work filtered and paged on the server with zz-core's next move (`checks/console-work-initiatives.ts`), the console's Approvals, its team's waiting queue and the caller's own approvals with their evidence (`checks/console-work-approvals.ts`), the console's Home, the active team's last whole week, what waits and what is open, with the approvals in it the caller's own (`checks/console-work-home.ts`), Record's Knowledge, Your agents, and Firsts and bests slices, the window's activity beside as-of stocks no window moves (`checks/console-record-slices.ts`), the console's Record, the retained text as of the cutoff beside the period's work in six slices and the record of every initiative (`checks/console-work-record.ts`), Work's prepared queries, each measure of the active team by each dimension it allows answering the figures the pages draw (`checks/console-work-query.ts`), the console's search of
-documents and nodes by their content (`checks/console-search.ts`), a person's own document or lesson found by the number-like part of a hyphenated word, with every earlier search still answering and a boot re-deriving rows of the previous generation (`checks/knowledge-search-hyphen-parts.ts`), the console's bug resolution
+documents and nodes by their content (`checks/console-search.ts`), a person's own document or lesson found by the number-like part of a hyphenated word, with every earlier search still answering and a boot re-deriving rows of the previous generation (`checks/knowledge-search-hyphen-parts.ts`), one question ranked the same through the console's page, its assistant and MCP, in English and in Chinese, on every call and however the rows are stored (`checks/knowledge-search-parity.ts`), the console's bug resolution
 held to zz-core's own `bug_resolve` (`checks/console-bug-resolve.ts`), the console's close of an
 initiative held to zz-core's own `initiative_close` (`checks/console-close.ts`), what needs attention on the
 platform's Status, its doors and records, with a resolve through the console's route
@@ -103,7 +103,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those forty-eight checks or the rehearsal never needs Docker.
+runs those forty-nine checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

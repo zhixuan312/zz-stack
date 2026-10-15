@@ -23,15 +23,23 @@ import { db, teamFor } from "../platform-db.js";
  *  added there is searchable here without anybody remembering this file. */
 import { SUBJECT_KINDS } from "./knowledge.js";
 
-/** A row of the union below: `KbRow` is the shape the answer is built from, plus the three
- *  columns the citation graph is matched on. `subject` tells the two subjects apart, and the
- *  two id arrays are what the neighbour lane joins on — a node's citations are rows keyed by
- *  an initiative id, a document's are slugs, and neither is guessed at from the other. */
+/** A row of the union below: `KbRow` is the shape the answer is built from, plus the row's key
+ *  and the columns the citation graph is matched on. `subject` and `id` are the key, unique
+ *  across both shelves; `initiative/path` is not, since a team's lesson and the platform shelf's
+ *  share one at the same ordinal and slug. The two id arrays are what the neighbour lane joins
+ *  on — a node's citations are rows keyed by an initiative id, a document's are slugs, and
+ *  neither is guessed at from the other. */
 interface SearchRow extends KbRow {
   subject: string;
+  id: string;
   initiative_id: string | null;
   cited_ids: string[] | null;
 }
+
+/** The order every lane ends on, after its own keys, and the fused order after the score: the
+ *  row's key, so rows that tie come back in one order on every call however they are stored.
+ *  COUPLED: `keyOf` and `byKey` below, which order the fused list the same way. */
+const TIE_BREAK = "subject, id";
 
 /** What an empty answer concludes, and the signals it concludes from. That file decides which
  *  kind of empty an empty answer is; this one produces its inputs. */
@@ -179,7 +187,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
       // matches on them, because a slug is team-scoped and two teams can each carry one.
       const COLS = `initiative, path, flow, type, status, outcome, approved_by, approved_at,
                     updated_at, title, tags, evidence, superseded_by, team_slug, subject,
-                    initiative_id, cited_ids`;
+                    initiative_id, cited_ids, id`;
       /* The two subjects, unioned here and nowhere else. A team's documents and the platform's
        * journal are separate tables because their lifecycles are: a document is `approved` when
        * a person agreed, a node is `adopted` until something better replaces it. Each side maps
@@ -220,7 +228,8 @@ export function registerKnowledgeSearch(server: McpServer): void {
                t.slug, k.body, k.body_tsv, 'node', null,
                (select coalesce(array_agg(ne.initiative_id), '{}')
                   from zz.knowledge_node_evidence ne
-                 where ne.node_id = k.id)
+                 where ne.node_id = k.id),
+               k.id
           from zz.knowledge_node k
           join zz.team t on t.id = k.team_id)`;
       const SOURCE = `(
@@ -247,7 +256,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
                -- The union's column names come from this arm, so the two the node arm derives are
                -- named here: a bare i.id would arrive as id and a bare empty-array literal as
                -- ?column?, and the lanes below join on these two by name.
-               i.id as initiative_id, '{}'::uuid[] as cited_ids
+               i.id as initiative_id, '{}'::uuid[] as cited_ids, d.id
           from zz.doc d
           left join zz.initiative i on i.id = d.initiative_id
           left join zz.team t on t.id = i.team_id
@@ -278,7 +287,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
       let scoring = scoringOf(active);
       const sql = `select ${COLS}, ${scoring.sql}
                    from ${SOURCE} where ${primary.sql}
-                   order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}
+                   order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}, ${TIE_BREAK}
                    limit ${CANDIDATE_CAP}`;
       let lexical = (await p.query(sql, scoring.args)).rows as SearchRow[];
 
@@ -307,7 +316,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
           lexical = (await p.query(
             `select ${COLS}, ${scoring.sql}
                from ${SOURCE} where ${wide.sql}
-              order by rank desc, updated_at desc
+              order by rank desc, updated_at desc, ${TIE_BREAK}
               limit ${CANDIDATE_CAP}`, scoring.args)).rows as SearchRow[];
           broadened = lexical.length > 0;
         }
@@ -335,7 +344,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
           `select ${COLS}, 0::float4 as rank
            from ${SOURCE} where ${tCond.join(" and ")}
            order by cardinality(array(select unnest(tags) intersect select unnest($2::text[]))) desc,
-                    updated_at desc
+                    updated_at desc, ${TIE_BREAK}
            limit 50`, tArgs)).rows as SearchRow[];
       }
 
@@ -347,12 +356,14 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * its evidence as text this phase does not reshape, so the lane carries both keys and
        * reads each subject by the one its citations are stored in. Bounded by (seeds x their
        * citations), fetched in one targeted query — never a scan. */
-      const seen = new Set([...lexical, ...tagged].map((r) => `${r.initiative}/${r.path}`));
+      const keyOf = (r: { subject: string; id: string }) => `${r.subject}:${r.id}`;
+      // Re-read as `SearchRow` here and not where it is declared: the lane selected `COLS`, so its
+      // rows carry the key and the citation columns this lane and the fusion read.
+      const taggedRows = tagged as SearchRow[];
+      const seen = new Set([...lexical, ...taggedRows].map(keyOf));
       // Seeds come from both retrieved lists: a node found only by its tags is as good a
-      // starting point for the citation graph as one found by its words. Re-read as `SearchRow`
-      // here and not in the lists above: the three extra columns are what this lane joins on and
-      // nothing else reads them.
-      const seeds = [...lexical.slice(0, 10), ...tagged.slice(0, 10)] as SearchRow[];
+      // starting point for the citation graph as one found by its words.
+      const seeds = [...lexical.slice(0, 10), ...taggedRows.slice(0, 10)];
       const seedIds = [...new Set(seeds.flatMap((r) =>
         [...(r.cited_ids ?? []), ...(r.initiative_id ? [r.initiative_id] : [])]))];
       const seedSlugs = [...new Set(seeds.filter((r) => r.subject === "document")
@@ -367,27 +378,29 @@ export function registerKnowledgeSearch(server: McpServer): void {
         applyFilters((c) => nCond.push(c), nPut);
         neighbours = ((await p.query(
           `select ${COLS}, 0::float4 as rank
-           from ${SOURCE} where ${nCond.join(" and ")} order by updated_at desc limit 50`, nArgs,
-        )).rows as SearchRow[]).filter((r) => !seen.has(`${r.initiative}/${r.path}`));
+           from ${SOURCE} where ${nCond.join(" and ")} order by updated_at desc, ${TIE_BREAK} limit 50`, nArgs,
+        )).rows as SearchRow[]).filter((r) => !seen.has(keyOf(r)));
       }
 
       /* Reciprocal rank fusion over three ranked lists, k=60. The three signals are not on a
        * common scale — ts_rank_cd is a float, tag overlap a count, neighbour proximity a
-       * boolean — so positions are fused rather than scores. */
+       * boolean — so positions are fused rather than scores. Equal scores are ordered by the
+       * row's key, as each lane's ties are. */
       const RRF_K = 60;
-      const key = (r: KbRow) => `${r.initiative}/${r.path}`;
-      const fused = new Map<string, { row: KbRow; score: number; via: Set<string> }>();
-      const fuse = (list: KbRow[], via: string) => list.forEach((row, i) => {
-        const k = key(row);
+      const fused = new Map<string, { row: SearchRow; score: number; via: Set<string> }>();
+      const fuse = (list: SearchRow[], via: string) => list.forEach((row, i) => {
+        const k = keyOf(row);
         const e = fused.get(k) ?? { row, score: 0, via: new Set<string>() };
         e.score += 1 / (RRF_K + i + 1); e.via.add(via); fused.set(k, e);
       });
 
       fuse(lexical, broadened ? "lexical-broad" : "lexical");
-      fuse(tagged, "tag");
+      fuse(taggedRows, "tag");
       fuse(neighbours, "evidence");
 
-      const ranked = [...fused.values()].sort((a, b) => b.score - a.score);
+      const byKey = (a: SearchRow, b: SearchRow): number =>
+        a.subject < b.subject ? -1 : a.subject > b.subject ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      const ranked = [...fused.values()].sort((a, b) => b.score - a.score || byKey(a.row, b.row));
 
       /* The excerpts, read for the rows that come back rather than for the pool that was ranked.
        *
@@ -405,9 +418,9 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * The rows read are `ranked.slice(0, want + 1)`: the fill loop below pushes on each
        * iteration or breaks, so it cannot reach past the row after its last.
        *
-       * One statement for all of them, addressed by the (initiative, path) every row is returned
-       * under — one read of a body however many lanes found it. `body` is not selected by any
-       * lane, so this is also the only place a ranked row's text is materialised at all. */
+       * One statement for all of them, addressed by each row's key — one read of a body however
+       * many lanes found it. `body` is not selected by any lane, so this is also the only place a
+       * ranked row's text is materialised at all. */
       const snippets = new Map<string, string>();
       const shortlist = ranked.slice(0, want + 1);
       if (shortlist.length) {
@@ -420,21 +433,21 @@ export function registerKnowledgeSearch(server: McpServer): void {
           : xPut(active.asciiText);
         const marks = xPut(shortlist.map(({ via }) =>
           xQuery !== null && (via.has("lexical") || via.has("lexical-broad"))));
-        const inits = xPut(shortlist.map(({ row }) => row.initiative));
-        const paths = xPut(shortlist.map(({ row }) => row.path));
+        const subjects = xPut(shortlist.map(({ row }) => row.subject));
+        const ids = xPut(shortlist.map(({ row }) => row.id));
         const column = (c: string) => (xQuery === null
           ? `left(${c}, 400)`
           : `case when w.mark then ${headlineOf(c, `websearch_to_tsquery(${QUERY_CONFIG}, ${xQuery})`)}
                    else left(${c}, 400) end`);
         // `SOURCE` carries its own `k` alias — every lane reads `from ${SOURCE} where …` and calls
         // its columns `k.…` — so this names it without adding another.
-        const { rows: excerpted } = await p.query<{ initiative: string; path: string; snippet: string | null }>(
-          `select k.initiative, k.path, ${column("k.body")} as snippet
+        const { rows: excerpted } = await p.query<{ subject: string; id: string; snippet: string | null }>(
+          `select k.subject, k.id, ${column("k.body")} as snippet
              from ${SOURCE}
-             join unnest(${inits}::text[], ${paths}::text[], ${marks}::bool[])
-               as w(initiative, path, mark)
-               on w.initiative = k.initiative and w.path = k.path`, xArgs);
-        for (const r of excerpted) snippets.set(`${r.initiative}/${r.path}`, r.snippet ?? "");
+             join unnest(${subjects}::text[], ${ids}::uuid[], ${marks}::bool[])
+               as w(subject, id, mark)
+               on w.subject = k.subject and w.id = k.id`, xArgs);
+        for (const r of excerpted) snippets.set(keyOf(r), r.snippet ?? "");
       }
 
       /* Fill a byte budget best-first rather than truncating at `limit` blindly: reporting what
@@ -444,7 +457,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
       let spent = 0;
       for (const { row, score, via } of ranked) {
         if (results.length >= want) break;
-        const snippet = (snippets.get(key(row)) ?? "").replace(/\s+/g, " ").trim().slice(0, 600);
+        const snippet = (snippets.get(keyOf(row)) ?? "").replace(/\s+/g, " ").trim().slice(0, 600);
         const size = snippet.length + row.path.length + (row.title?.length ?? 0) + 120;
         if (spent + size > BUDGET && results.length > 0) break;
         spent += size;

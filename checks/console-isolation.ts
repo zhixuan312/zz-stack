@@ -196,7 +196,7 @@ function forgedBody(s: Seeded): Record<string, unknown> {
  *  name: `zz.event` for the status, releases, bugs list, usage and audit reads, Teams and the Work pages,
  *  `zz.initiative` for Work's prepared queries, `zz.eval_run` for evaluation, `zz.bug` for a report and its
  *  duplicates, `zz.knowledge_node` for Knowledge health, so one part fails and the rest stand, and
- *  `zz.passkey` for People. A table the identity gate reads (`zz.team`, `zz.principal`) would fail every
+ *  `zz.passkey` for People, `zz.skill_run` for Runs. A table the identity gate reads (`zz.team`, `zz.principal`) would fail every
  *  request before its read. */
 function tableFor(path: string): string | null {
   if (/^\/api\/console\/platform\/(status|releases|releases\/:version|bugs|usage|audit)$/.test(path)) return "event";
@@ -206,6 +206,7 @@ function tableFor(path: string): string | null {
   if (path === "/api/console/platform/evaluation") return "eval_run";
   if (/^\/api\/console\/platform\/bugs\/:id(\/duplicates)?$/.test(path)) return "bug";
   if (path === "/api/console/work/query") return "initiative";
+  if (path === "/api/console/runs") return "skill_run";
   if (/^\/api\/console\/(platform|settings)\//.test(path) || path === "/api/console/live") return null;
   return "event";
 }

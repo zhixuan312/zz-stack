@@ -394,7 +394,7 @@ export function mountPasskey(app: Express): void {
         [id, verified.authenticationInfo.newCounter]);
 
       logEvent({
-        actor: row.email, kind: "console.sign_in", subject: id, ok: true, origin: requestOrigin(req.headers),
+        actor: row.email, kind: "console.sign_in", ok: true, origin: requestOrigin(req.headers),
         detail: { via: "web" },
       });
 

@@ -23,10 +23,10 @@
  */
 import { createHash } from "node:crypto";
 
+import { normalizedRefusalSql } from "@zz/contracts";
 import type pg from "pg";
 
 import { toolCallEvents, type EvidenceWindow, type pluginTraces } from "./plugin-profile.js";
-import { NORMALIZED_REFUSAL_SQL } from "./observe-facts.js";
 
 /** One deterministic failure-mode group drawn from refusal evidence — always has a `tool` and an
  *  `owner`, and a `normalized_text` that is empty exactly when every grouped event recorded no
@@ -69,7 +69,7 @@ export async function refusalGroups(
     sample_ids: string[] | null; sample_raw: string[] | null;
   }>(`
     select coalesce(e.tool_key, e.subject) as tool,
-           ${NORMALIZED_REFUSAL_SQL} as normalized,
+           ${normalizedRefusalSql("e.refusal")} as normalized,
            coalesce(e.refusal_owner, 'unattributed') as owner,
            count(*)::text as n,
            (array_agg(e.id::text order by e.ts))[1:5] as sample_ids,

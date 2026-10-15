@@ -1,10 +1,11 @@
 /**
- * /api/console/settings — a member's own write surface (access tokens, client setup and the
- * team they act for), a team admin's `/team/*` tier, and a superadmin's `/platform/*` tier over
+ * /api/console/settings — a member's own write surface (access tokens, client setup, the
+ * team they act for, and the applications and browsers Access revokes), a team admin's `/team/*` tier, and a superadmin's `/platform/*` tier over
  * people and teams.
  *
- * Every member route is `/me/*` alone: there is no field a caller could put someone else's name
- * in, so there is nothing to guard.
+ * Every member route is `/me/*` alone: a route that names a token, an application or a browser
+ * finds it among the caller's own rows in the statement that changes it, so somebody else's
+ * answers as one that does not exist.
  *
  * The credential and access-token logic already exists as `/manage/mcp` tools. server.ts hands
  * this file the same functions through `SettingsDeps`, passed into `mountSettings` as an

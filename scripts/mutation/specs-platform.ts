@@ -44,10 +44,10 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/console.ts",
     target: "a console query cannot fall back to every team",
     subject: "services/gateway/src/console/knowledge.ts",
-    find: "        where t.slug = $1\n        order by k.node_ordinal`, [scope.slug]);",
-    replace: "        where ($1::text is null or t.slug = $1)\n        order by k.node_ordinal`, [scope.slug]);",
+    find: "          and t.slug = $1\n        order by e.ts desc limit 500`,",
+    replace: "          and ($1::text is null or t.slug = $1)\n        order by e.ts desc limit 500`,",
     planted: "a null team parameter makes the predicate true for every row, so a caller who " +
-      "simply omits ?team= is served every team's knowledge",
+      "simply omits ?team= is served every team's knowledge log",
   },
   {
     check: "scripts/gate/checks/data-telemetry.ts",

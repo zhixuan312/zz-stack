@@ -2,7 +2,7 @@
 // DISCOVER on zz-core (initiative 2026-09-26-eval-zz-core) split one refusal family into three
 // candidates by the document each refusal named, and answered owner_kind unknown because Jev's
 // distribution summed to 0.99. Both, asserted on the folding and the reading DISCOVER runs:
-//   1. four refusals of `document_edit`, normalised the way NORMALIZED_REFUSAL_SQL does, fold into
+//   1. four refusals of `document_edit`, normalised the way normalizedRefusalSql (@zz/contracts) does, fold into
 //      two groups — the three CAUSE_REQUIRED refusals are one rule, whatever initiative and
 //      document they named; the MULTIPLE_MATCHES refusal stays its own. Production's own samples
 //      (events 19321, 19385, 19405, 19451) were refusals of `document_revise` and `document_patch`,

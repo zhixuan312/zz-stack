@@ -1,5 +1,5 @@
 /**
- * Who is looking, and what the platform has been doing.
+ * Who is looking, and what the platform has been doing. The event log is console/activity.ts's.
  *
  * `/me` is the one route here not behind `ok()`: it answers 200 even to a caller the console
  * will refuse everywhere else, with `mayRead: false`, so the front end can render "you are
@@ -41,8 +41,8 @@ export function mountOverview(app: Express): void {
    * the same way for everybody is the "null means every team" wildcard scope.ts exists to rule
    * out, spelled as a missing predicate rather than a permissive one.
    *
-   * Two complete statements per query, not one assembled from `scope` — see /activity;
-   * `check:sql` can only PREPARE a literal it can read whole.
+   * Two complete statements per query, not one assembled from `scope`: `check:sql` can only
+   * PREPARE a literal it can read whole.
    *
    * In team mode `teams` is 1 and `superadmins` counts only those in the team, because both are
    * answers about the team; the console drops the tiles that carry them. `unattributedEvents`
@@ -91,7 +91,7 @@ export function mountOverview(app: Express): void {
     // de-duplication key inside an aggregate, not a predicate. The team branch counts
     // `distinct initiative` instead — inside one team the slug is already fixed, so the
     // tuple would be the same key written twice.
-    const [counts, totals, toolTrend, kinds, byTool, byMessage] = scope.kind === "platform"
+    const [counts, totals, toolTrend, kinds, byTool] = scope.kind === "platform"
       ? await Promise.all([
       // One statement, and deliberately not joined to zz.event: an initiative is counted by
       // (team_slug, initiative) over zz.doc, and mixing that into a statement that also reads
@@ -117,7 +117,7 @@ export function mountOverview(app: Express): void {
       db.query<{ events: string; failures: string; unattributed: string }>(
         // `unattributed` because the per-team rows cannot sum to this total. Turns, tool
         // calls made outside a team, and admin acts that belong to a person are all teamless
-        // by design — see the activity endpoint.
+        // by design.
         `select count(*) as events,
                 -- Tool calls only: that is the word the reader is shown, and the refusal
                 -- tile counts the same population.
@@ -177,21 +177,14 @@ export function mountOverview(app: Express): void {
        *
        * Which tool and which message are different questions and neither answers the other:
        * one tool refusing for nine reasons is a surface problem, nine tools refusing with one
-       * message is a single bug. The panel offers both. */
+       * message is a single bug. The panel offers both; the messages are read below, the active
+       * team's alone. */
       db.query<{ tool: string; n: string }>(
         `-- Through tool_key, not subject: tool_key is the alias-resolved name, so a renamed
         -- tool folds onto one series. coalesce covers a row with no tool_key.
         select coalesce(tool_key, subject) as tool, count(*) as n
            from zz.event
           where kind='tool_call' and ok = false and coalesce(tool_key, subject) <> ''
-            and ($1::timestamptz is null or ts >= $1)
-          group by 1 order by count(*) desc limit 12`,
-        [since]),
-      db.query<{ message: string; tool: string; tools: string; n: string }>(
-        `select refusal as message, min(coalesce(tool_key, subject)) as tool,
-                count(distinct coalesce(tool_key, subject)) as tools, count(*) as n
-           from zz.event
-          where kind='tool_call' and ok = false and refusal is not null
             and ($1::timestamptz is null or ts >= $1)
           group by 1 order by count(*) desc limit 12`,
         [since]),
@@ -276,15 +269,20 @@ export function mountOverview(app: Express): void {
             and ($2::timestamptz is null or e.ts >= $2)
           group by 1 order by count(*) desc limit 12`,
         [scope.slug, since]),
-      db.query<{ message: string; tool: string; tools: string; n: string }>(
-        `select e.refusal as message, min(coalesce(e.tool_key, e.subject)) as tool,
-                count(distinct coalesce(e.tool_key, e.subject)) as tools, count(*) as n
-           from zz.event e join zz.team t on t.id = e.team_id
-          where e.kind='tool_call' and t.slug = $1 and e.ok = false and e.refusal is not null
-            and ($2::timestamptz is null or e.ts >= $2)
-          group by 1 order by count(*) desc limit 12`,
-        [scope.slug, since]),
     ]);
+    /* The messages, the active team's alone, whatever the scope: a refusal's text is answered only to
+     * the team it belongs to (reconciliation 39), so the platform's overview and a superadmin's read
+     * of another team carry the messages of the team the caller acts for, and a caller acting for
+     * none reads none. Until Task I-66 removes /overview; Activity reads them grouped. */
+    const activeTeam = req.zzIdentity?.activeTeam ?? null;
+    const byMessage = activeTeam === null ? { rows: [] } : await db.query<{ message: string; tool: string; tools: string; n: string }>(
+      `select e.refusal as message, min(coalesce(e.tool_key, e.subject)) as tool,
+              count(distinct coalesce(e.tool_key, e.subject)) as tools, count(*) as n
+         from zz.event e join zz.team t on t.id = e.team_id
+        where e.kind='tool_call' and t.slug = $1 and e.ok = false and e.refusal is not null
+          and ($2::timestamptz is null or e.ts >= $2)
+        group by 1 order by count(*) desc limit 12`,
+      [activeTeam, since]);
     const c = counts.rows[0], t = totals.rows[0];
     // The four the page leads with. Read after the census rather than beside it: they
     // share no statement with it, and a failure in one should name itself.
@@ -315,84 +313,5 @@ export function mountOverview(app: Express): void {
         })),
       },
     });
-  }));
-
-  /** The event log, filterable, newest first. The console's audit view.
-   *
-   * Never a page view, even when `?kind=console.page_view` asks for one: who opened which page is
-   * read where its population is named, not in the log of what was done. */
-  app.get("/api/console/activity", handler("activity", async (req, res, scope) => {
-    const db = platformDb();
-    // Clamped at BOTH ends. `Math.min(Number(limit) || 100, 500)` let a negative through —
-    // `?limit=-5` is truthy, `min(-5, 500)` is -5, and `limit -5` is a Postgres error rather than
-    // the 400 the caller's own parameter earns.
-    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
-    const kind = typeof req.query.kind === "string" ? req.query.kind : null;
-    // `failed=1` rather than a tri-state string: the only question asked of this log is
-    // "show me what broke".
-    const failedOnly = req.query.failed === "1";
-    // Whether the caller belongs to the team they read: a superadmin may read any team, and that
-    // reading is across teams.
-    const ownTeam = scope.kind === "team" && (req.zzIdentity?.teams ?? []).some((t) => t.slug === scope.slug);
-    // Every attribution on the row is an id, and each is resolved to the thing it names — the
-    // team, the actor, the initiative and the skill — out of `zz.event`, which carries `team_id`,
-    // `actor_id`, `initiative_id` and `skill_version_id` and no denormalised copy of any of them.
-    //
-    // Read as left joins, because each id may legitimately be absent and a missing one is a fact
-    // rather than a defect: a person-level act (a token issued, a package downloaded) belongs to
-    // no team, a door that resolved no principal names no actor, an event outside any initiative
-    // names none, and an event whose skill version could not be resolved names no step. The
-    // console renders each null as "—" rather than dropping the row, which is why none of these
-    // joins may become an inner one.
-    //
-    // DELIBERATE: there is no `($2::text is null or t.slug = $2)` guard. That treated an absent
-    // `?team=` as "match every team's events". A team scope always names its own slug; only a
-    // platform scope may see every team's activity.
-    //
-    // Two complete statements, not one assembled from `scope` — see the note on the bell's read in
-    // console/initiative-list.ts; `check:sql` can only PREPARE a literal it can read whole.
-    // The team branch's predicate is numbered `$4`, after the three fixed parameters both
-    // branches share, and whether the caller belongs to that team `$5`.
-    const { rows } = scope.kind === "platform"
-      ? await db.query(
-      `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
-              p.email as actor, t.slug as team, e.kind,
-              -- The resolved name, so a renamed tool is one name in the feed. A search's subject is
-              -- its question, which no cross-team page but Knowledge health answers (AC-4.6).
-              case when e.kind = 'knowledge.search' then null else coalesce(e.tool_key, e.subject) end as subject,
-              i.slug as initiative, sk.name as step, e.ok, e.refusal
-         from zz.event e
-         left join zz.team t on t.id = e.team_id
-         left join zz.principal p on p.id = e.actor_id
-         left join zz.initiative i on i.id = e.initiative_id
-         left join zz.skill_version sv on sv.id = e.skill_version_id
-         left join zz.skill sk on sk.id = sv.skill_id
-        where ($1::text is null or e.kind = $1)
-          and ($2::boolean is false or e.ok = false)
-          and e.kind <> 'console.page_view'
-        order by e.ts desc limit $3`,
-      [kind, failedOnly, limit])
-      : await db.query(
-      `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
-              p.email as actor, t.slug as team, e.kind,
-              -- The resolved name, so a renamed tool is one name in the feed. A search's question is
-              -- answered to the team that asked it; a superadmin reading a team not theirs is read
-              -- across teams, and gets none (AC-4.6).
-              case when e.kind = 'knowledge.search' and not $5::boolean then null
-                   else coalesce(e.tool_key, e.subject) end as subject,
-              i.slug as initiative, sk.name as step, e.ok, e.refusal
-         from zz.event e
-         left join zz.team t on t.id = e.team_id
-         left join zz.principal p on p.id = e.actor_id
-         left join zz.initiative i on i.id = e.initiative_id
-         left join zz.skill_version sv on sv.id = e.skill_version_id
-         left join zz.skill sk on sk.id = sv.skill_id
-        where ($1::text is null or e.kind = $1)
-          and ($2::boolean is false or e.ok = false)
-          and e.kind <> 'console.page_view'
-          and t.slug = $4
-        order by e.ts desc limit $3`,
-      [kind, failedOnly, limit, scope.slug, ownTeam]);
-    res.json({ events: rows, limit });
   }));
 }

@@ -57,7 +57,7 @@ const QUESTIONS = 10;
 /** A weekly share of searches stands on this many; fewer are `insufficient`. COUPLED: platform-measures.ts's own. */
 const MIN_SAMPLES = 30;
 /** Every kind a lesson may have. COUPLED: the CHECK on zz.knowledge_node.kind. */
-const KINDS = ["decision", "design", "process", "knowledge", "behavior", "style"] as const;
+export const KINDS = ["decision", "design", "process", "knowledge", "behavior", "style"] as const;
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");

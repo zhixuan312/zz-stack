@@ -54,7 +54,10 @@ const DONE = "console-runs-observed: a team's runs cover their union once and th
   "reporting timezone, another team's changing nothing: ok";
 
 type Span = { from: string; to: string };
-type RunRow = { id: string; initiative: string | null; skill: string; startedAt: string; endedAt: string; bytes: number | null };
+type RunRow = {
+  id: string; initiative: string | null; skill: string; startedAt: string; endedAt: string;
+  calls: number; refusals: number; bytes: number | null;
+};
 type ActiveGroup = { initiative: string | null; runs: { skill: string; startedAt: string; lastAt: string }[] };
 type Observed = {
   runs: number; zeroLength: number; coverageMs: number; summedMs: number; peak: number;
@@ -96,7 +99,7 @@ async function cases(db: pg.Client, read: Reads, keyOf: Map<string, string>): Pr
   const { id: _r1, ...r1 } = byKey.get("r1")!;
   const { id: _r5, ...r5 } = byKey.get("r5")!;
   expect(step, { r1, r5, r2bytes: byKey.get("r2")!.bytes }, { r1: EXPECTED.r1, r5: EXPECTED.r5, r2bytes: null });
-  pass("runsIn answers the runs touching the week before the cutoff, the earliest first, each as recorded: r1 unclipped, r5 with no initiative, r2 with no bytes measured, r10 after the week and the other team's left out");
+  pass("runsIn answers the runs touching the week before the cutoff, the earliest first, each as recorded with its calls and refusals: r1 unclipped, r5 with no initiative, r2 with no bytes measured, r10 after the week and the other team's left out");
 
   step = "overlap, coverage and the summed duration over the week";
   const week = await observe("week", TEAM, WEEK, CUTOFFS.late);

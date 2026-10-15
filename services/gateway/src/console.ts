@@ -8,10 +8,16 @@
  * `$1::text is null or team_slug = $1` predicate with a null standing in for "every team".
  *
  * `/api/console/initiatives` (console/initiative-list.ts), `/api/console/approvals`,
- * `/api/console/home` (console/home.ts), `/api/console/record` (console/record.ts) and
+ * `/api/console/home` (console/home.ts), `/api/console/record` (console/record.ts),
+ * `/api/console/activity` and its summary (console/activity.ts), `/api/console/knowledge` and its
+ * summary (console/knowledge.ts, console/knowledge-summary.ts), `/api/console/runs` (console/runs.ts) and
  * `/api/console/work/query` (console/work-query.ts) resolve no scope of their own: Work is the active team's, for the superadmin too, so each answers the team the
  * identity acts for, whatever team or scope the request names. The list's `?waiting=1` projection,
- * the bell's, keeps the caller's scope until the bell is rebuilt.
+ * the bell's, keeps the caller's scope until the bell is rebuilt. A lesson on the shared shelf opens for
+ * any signed-in person by `/api/console/knowledge/zz-platform/*`, marked `shared`.
+ *
+ * `/api/console/access` (console/access.ts) is the caller's alone, through platformPublic: their own
+ * tokens, applications, browsers and passkeys, whatever team or scope the request names.
  *
  * The authority to be in the console at all is a browser session, from a passkey sign-in. A
  * superadmin PAT is also accepted so the API can be exercised with curl before any browser exists.
@@ -64,8 +70,11 @@ import { mountOverview } from "./console/overview.js";
 import { mountTeams } from "./console/teams.js";
 import { mountInitiatives } from "./console/initiatives.js";
 import { mountKnowledge } from "./console/knowledge.js";
+import { mountKnowledgeSummary } from "./console/knowledge-summary.js";
 import { mountSearch } from "./console/search.js";
 import { mountSkills } from "./console/skills.js";
+import { mountRuns } from "./console/runs.js";
+import { mountAccess } from "./console/access.js";
 import { mountCatalog } from "./console/catalog.js";
 import { mountPluginEval } from "./console/plugin-eval.js";
 import { mountConsoleLive } from "./console/live.js";
@@ -81,6 +90,7 @@ import { mountPlatformAudit } from "./console/platform-audit.js";
 import { mountPeople } from "./console/people.js";
 import { mountApprovals } from "./console/approvals.js";
 import { mountHome } from "./console/home.js";
+import { mountActivity } from "./console/activity.js";
 import { mountWorkQuery } from "./console/work-query.js";
 import { mountRecord } from "./console/record.js";
 import { mountConsoleClose } from "./console-close.js";
@@ -97,14 +107,22 @@ export function mountConsole(app: Express): void {
   mountApprovals(app);
   // Home: the active team's last whole week, what waits and what is open, the approvals in it the caller's own.
   mountHome(app);
+  // Activity: the active team's refusals by owner and week, grouped, and its real-work event log with four filters.
+  mountActivity(app);
   // Record: the retained text as of the cutoff, the period's work in six slices and every initiative, the approvals in it the caller's own.
   mountRecord(app);
   // Work's prepared queries: one measure of the active team by a declared dimension, against the previous window and down to a group's rows.
   mountWorkQuery(app);
+  // Knowledge: the active team's shelf as of the cutoff, its own questions that found nothing, its searches by week, and the shelf paged.
+  mountKnowledgeSummary(app);
   mountKnowledge(app);
   // The one read that is zz-core's answer rather than a query of this gateway's own.
   mountSearch(app);
   mountSkills(app);
+  // Runs: the active team's recorded skill runs since its first, their observed output, by skill and lately.
+  mountRuns(app);
+  // Access: the caller's own tokens, applications, browsers, passkeys, teams and setup, never a secret; its two revokes are in settings/me.ts.
+  mountAccess(app);
   mountCatalog(app);
   mountPluginEval(app);
   // The platform's own reads, public by route through platformPublic; a superadmin's answer adds only what each route names.

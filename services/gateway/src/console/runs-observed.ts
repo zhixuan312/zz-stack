@@ -24,20 +24,26 @@
  *
  * Weekday by hour (Monday first) and the days of the window are cut on the reporting timezone's
  * calendar. Every function throws when its statement fails; the read decides what a failure makes of
- * its part.
+ * its part. runsIn answers each run with its calls, its refusals and its observed output as recorded;
+ * Runs reads every run of the team through it, with isActive's five minutes and overlapOf's union and
+ * peak, so a run is active, and a union is cut, the same way on every page.
  *
  * DELIBERATE: no backticks in the comments of this file. check:sql reads it as text, and a backtick
  * in a comment opens a template literal it then parses as code.
  *
- * COUPLED: the console's ActiveGroup, Home and RecordRead in src/lib/work-shapes.ts, and the fake's
- * answers in scripts/fake-gateway/work-home.ts and work-record.ts, which draw these figures.
+ * COUPLED: the console's ActiveGroup, Home and RecordRead in src/lib/work-shapes.ts and Runs in
+ * src/lib/destination-shapes.ts, and the fake's answers in scripts/fake-gateway/work-home.ts,
+ * work-record.ts and work-runs.ts, which draw these figures.
  */
 import { platformDb } from "../db.js";
 import { ZZ_TZ } from "./shared.js";
 
 /** A window as a caller names it: two instants, the first in it and the first after it. */
 type Span = { from: string; to: string };
-type RunRow = { id: string; initiative: string | null; skill: string; startedAt: string; endedAt: string; bytes: number | null };
+type RunRow = {
+  id: string; initiative: string | null; skill: string; startedAt: string; endedAt: string;
+  calls: number; refusals: number; bytes: number | null;
+};
 type ActiveGroup = { initiative: string | null; runs: { skill: string; startedAt: string; lastAt: string }[] };
 type ObservedRuns = {
   runs: number; zeroLength: number; coverageMs: number; summedMs: number; peak: number;
@@ -48,13 +54,16 @@ type ObservedRuns = {
 };
 
 const ACTIVE_MS = 5 * 60_000;
+/** Whether a run whose recorded end is endedMs is active at the cutoff: no more than five minutes before it and not after. */
+export const isActive = (endedMs: number, asOfMs: number): boolean => endedMs <= asOfMs && asOfMs - endedMs <= ACTIVE_MS;
 /** Above this many active runs they are grouped by initiative, and this many groups are answered. */
 const GROUPS = 4;
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 type Row = {
-  id: string; initiative: string | null; skill: string; started_ms: number; ended_ms: number; bytes: number | null;
+  id: string; initiative: string | null; skill: string; started_ms: number; ended_ms: number;
+  calls: number; refusals: number; bytes: number | null;
   day: string; weekday: number; hour: number;
 };
 
@@ -74,7 +83,7 @@ async function rowsOf(team: string, window: Span, asOf: string): Promise<Row[]> 
     `select r.id::text as id, i.slug as initiative, s.name as skill,
             (extract(epoch from r.started_at) * 1000)::float8 as started_ms,
             (extract(epoch from r.ended_at) * 1000)::float8 as ended_ms,
-            r.bytes_total::float8 as bytes,
+            r.calls, r.refusals, r.bytes_total::float8 as bytes,
             to_char(r.started_at at time zone $4::text, 'YYYY-MM-DD') as day,
             (extract(isodow from r.started_at at time zone $4::text) - 1)::int as weekday,
             extract(hour from r.started_at at time zone $4::text)::int as hour
@@ -92,7 +101,8 @@ async function rowsOf(team: string, window: Span, asOf: string): Promise<Row[]> 
 /** The team's runs that touch the window before the cutoff, as recorded: the rows the figures reduce. */
 export async function runsIn(team: string, window: Span, asOf: string): Promise<RunRow[]> {
   return (await rowsOf(team, window, asOf)).map((r) => ({
-    id: r.id, initiative: r.initiative, skill: r.skill, startedAt: iso(r.started_ms), endedAt: iso(r.ended_ms), bytes: r.bytes,
+    id: r.id, initiative: r.initiative, skill: r.skill, startedAt: iso(r.started_ms), endedAt: iso(r.ended_ms),
+    calls: r.calls, refusals: r.refusals, bytes: r.bytes,
   }));
 }
 
@@ -154,7 +164,7 @@ function groupsOf(active: Recent[]): { groups: ActiveGroup[]; more: number } {
 }
 
 /** The union's length and the most open at once, over spans already clipped. */
-function overlapOf(spans: [number, number][]): { coverageMs: number; peak: number } {
+export function overlapOf(spans: [number, number][]): { coverageMs: number; peak: number } {
   const open = spans.filter(([s, e]) => e > s);
   let coverageMs = 0, reach = -Infinity;
   for (const [s, e] of [...open].sort((a, b) => a[0] - b[0])) {

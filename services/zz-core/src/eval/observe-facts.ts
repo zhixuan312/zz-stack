@@ -10,6 +10,7 @@
  * "missing inputs are null with a reason, never 0"), so it is enforced once, in `rate()` and
  * `measured()` below, rather than at each call site.
  */
+import { normalizedRefusalSql } from "@zz/contracts";
 import type pg from "pg";
 
 import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
@@ -112,18 +113,8 @@ export async function latencyAndByteFacts(
   };
 }
 
-/** Lower-cased, with a UUID or a digit run folded to `#` — the one normalisation both this
- *  module's `refusalDetail` and `discover.ts`'s deterministic grouping (Task I-9) apply to
- *  `zz.event.refusal`, so two rows that differ only by which run's UUID or which retry count
- *  they happened to carry still fold into one text. Exported so DISCOVER's own query, which
- *  additionally needs the failing tool and the event id neither `refusalDetail` nor its shape
- *  carries, computes the identical string rather than a second, drifting copy of this regex. */
-export const NORMALIZED_REFUSAL_SQL = `lower(regexp_replace(
-             regexp_replace(coalesce(e.refusal, ''),
-               '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '#', 'gi'),
-             '[0-9]+', '#', 'g'))`;
-
-/** The top refusal texts, normalised (lower-cased; UUIDs and digit runs folded to `#`) and
+/** The top refusal texts, normalised by `normalizedRefusalSql` (lower-cased; UUIDs and digit runs
+ *  folded to `#`, the normalisation DISCOVER and the gateway's Activity group by too) and
  *  grouped with their `refusal_owner` — the detail the AC's "refusals with normalised text and
  *  dependency owner" asks for. Aggregate rates (refusal rate, dependency-failure rate) are built
  *  by the caller from `pluginTraces`' own `use` rows, which already carry calls/refusals/owner
@@ -132,7 +123,7 @@ export async function refusalDetail(
   pool: pg.Pool, plugin: string, version: string, servesOwnDoor: boolean, window: EvidenceWindow,
 ): Promise<{ text: string; owner: string; count: number }[]> {
   const rows = (await pool.query<{ normalized: string; owner: string; n: string }>(`
-    select ${NORMALIZED_REFUSAL_SQL} as normalized,
+    select ${normalizedRefusalSql("e.refusal")} as normalized,
            coalesce(e.refusal_owner, 'unattributed') as owner,
            count(*)::text as n
       ${toolCallEvents(servesOwnDoor)}

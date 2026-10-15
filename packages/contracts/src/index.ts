@@ -50,6 +50,10 @@ export { BANDS, NOT_MEASURABLE, band,
 // rule, so the two writers of zz.event cannot classify one client two ways.
 export { PLATFORM_CLIENTS, eventOrigin, type EventOrigin } from "./event-origin.js";
 
+// How a refusal's text is normalised for grouping — one expression, so zz-core's evaluation and
+// the gateway's Activity fold the same sentences together.
+export { normalizedRefusalSql } from "./refusal-normal.js";
+
 // The Evaluation Protocol contract (FR-6, spec v8): the durable measurement object a plugin
 // version is scored against. PROTOCOL_ENUMS and EVAL_STATE_ENUMS are the one source every
 // evaluation writer, and the gate's "every state the schema allows can actually be reached"
@@ -152,7 +156,8 @@ const VARYING: [RegExp, string][] = [
  *   other      not classifiable from the text, which is a real answer and not a bucket to
  *              make small.
  */
-type RefusalOwner = "guardrail" | "ours" | "theirs" | "other";
+export const REFUSAL_OWNERS = ["guardrail", "ours", "theirs", "other"] as const;
+export type RefusalOwner = (typeof REFUSAL_OWNERS)[number];
 
 /** A refusal the caller could have avoided: the shape of a call, not the health of a tool. */
 const REFUSAL_OURS = /Missing required argument|Invalid arguments|Input validation error|could not be parsed as JSON|validation error|not found|No such tool available/i;

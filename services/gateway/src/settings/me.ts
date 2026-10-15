@@ -1,9 +1,12 @@
 /**
  * A person's own settings: their access tokens, which team they act for, the teams they are on,
- * and the client package that installs the platform for them.
+ * the client package that installs the platform for them, and the applications and browsers they
+ * revoke from Access.
  *
- * Every route here acts on the caller and takes no subject argument, so nothing here can reach
- * anybody else's account and the only question left is whether the caller is signed in.
+ * Every route here acts on the caller. Those that name a token, an application or a browser find
+ * it among the caller's own rows in the same statement that changes it, so somebody else's is
+ * indistinguishable from one that does not exist and the only question left is whether the caller
+ * is signed in.
  */
 import type { Express, Request, Response } from "express";
 
@@ -14,6 +17,18 @@ import { CONSOLE_COOKIE, readCookie, sha256, TEAM_SLUG } from "../identity.js";
 import { logEvent } from "../events.js";
 import { platformDb, platformDbReady } from "../db.js";
 import { renderClientSetup } from "../admin/flows.js";
+
+/** A console session's id: a uuid, so anything else names no browser and is answered as one that is not yours. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Why a token-borne caller is refused Access's two revokes: each acts on what signs a person in. */
+const BROWSER_ONLY = "revoke this from the console, signed in: a token cannot revoke what signs you in";
+
+/** The caller's client setup: the Claude Code install steps, pointing here. Its bearer header is
+ *  always a placeholder (`<YOUR-TOKEN>` / `$ZZ_TOKEN`); `renderClientSetup` never mints or embeds a
+ *  real one. COUPLED: Access (console/access.ts) answers the same setup. */
+export async function myClientSetup(email: string): Promise<{ client: string; config: string }> {
+  return { client: "claude-code", config: await renderClientSetup(email) };
+}
 
 export function mountMySettings(app: Express, deps: SettingsDeps): void {
   /** The caller's own access tokens — masked at the query level (only a hash is ever
@@ -144,17 +159,91 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
     });
   });
 
-  /** The caller's own client setup — the Claude Code install steps, pointing here. Its bearer
-   *  header is always a placeholder (`<YOUR-TOKEN>` / `$ZZ_TOKEN`); `renderClientSetup` never
-   *  mints or embeds a real one. Still wrapped in `redact()`, so a
+  /** Revoke an application the caller authorised: every live token of theirs minted through that
+   *  OAuth client, answered as how many.
+   *
+   *  DELIBERATE: the client registration is never touched. It is shared by everybody who connected
+   *  through it, and revoking it is the superadmin's `client_revoke` on /manage. A client the
+   *  caller holds no token of, live or revoked, is not theirs and answers 404; one whose tokens are
+   *  all revoked already answers that it revoked none. Browser session only, as the team switch is:
+   *  a token is refused rather than let revoke what signs its holder in. */
+  app.delete("/api/console/settings/me/applications/:client", (req: Request, res: Response) => {
+    void (async () => {
+      const id = req.zzIdentity;
+      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
+      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
+      if (id.via !== "session" || !readCookie(req, CONSOLE_COOKIE)) { res.status(400).json({ error: BROWSER_ONLY }); return; }
+      const client = req.params.client;
+      // Ownership is the `mine` predicate: the caller's own tokens from that client, and nobody else's.
+      const r = await platformDb().query<{ minted: number; revoked: string[] }>(
+        `with mine as (
+           select pat.id, pat.revoked_at from pat join principal p on p.id = pat.principal_id
+            where p.email = $1 and pat.oauth_client_id = $2),
+         ended as (
+           update pat set revoked_at = now() where id in (select id from mine where revoked_at is null) returning id)
+         select (select count(*) from mine)::int as minted,
+                (select coalesce(array_agg(id::text order by id), '{}') from ended) as revoked`,
+        [id.email, client]);
+      const { minted, revoked } = r.rows[0];
+      if (!minted) { res.status(404).json({ error: "no application of yours is registered as that client" }); return; }
+      // One `pat.self_revoke` a token, as the token revoke writes, with the client it came from.
+      for (const tokenId of revoked) {
+        logEvent({ actor: id.email, kind: "pat.self_revoke", subject: tokenId, origin: id.origin, detail: { via: "web", client } });
+      }
+      res.json(redact({ ok: true, revoked: revoked.length }));
+    })().catch((err: unknown) => {
+      console.error("settings/me/applications (revoke) failed:", err);
+      if (!res.headersSent) res.status(500).json({ error: "could not revoke application" });
+    });
+  });
+
+  /** Sign out another browser the caller is signed in on, by its session's id.
+   *
+   *  The session is the caller's live one with that id, found in the statement that revokes it;
+   *  anybody else's, or one already ended, answers 404. The browser asking is refused: ending it
+   *  here would leave the page standing on a session that no longer exists, and Sign out in the
+   *  menu ends it and clears its cookie. Browser session only, as the team switch is. */
+  app.delete("/api/console/settings/me/browsers/:id", (req: Request, res: Response) => {
+    void (async () => {
+      const id = req.zzIdentity;
+      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
+      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
+      const cookie = readCookie(req, CONSOLE_COOKIE);
+      if (id.via !== "session" || !cookie) { res.status(400).json({ error: BROWSER_ONLY }); return; }
+      const session = req.params.id;
+      const missing = { error: "no browser of yours is signed in with that id" };
+      if (!SESSION_ID.test(session)) { res.status(404).json(missing); return; }
+      const r = await platformDb().query<{ is_current: boolean | null; revoked: number }>(
+        `with target as (
+           select s.id, s.token_hash = $3 as is_current
+             from console_session s join principal p on p.id = s.principal_id
+            where s.id = $2::uuid and p.email = $1 and s.revoked_at is null and s.expires_at > now()),
+         ended as (
+           update console_session s set revoked_at = now() from target t where s.id = t.id and not t.is_current returning s.id)
+         select (select is_current from target) as is_current, (select count(*) from ended)::int as revoked`,
+        [id.email, session, sha256(cookie)]);
+      const { is_current: current, revoked } = r.rows[0];
+      if (current === null) { res.status(404).json(missing); return; }
+      if (current) {
+        res.status(400).json({ error: "this is the browser you are using: sign out from the menu to end this session" });
+        return;
+      }
+      logEvent({ actor: id.email, kind: "console.sign_out", subject: session, origin: id.origin, detail: { via: "web" } });
+      res.json(redact({ ok: true, revoked }));
+    })().catch((err: unknown) => {
+      console.error("settings/me/browsers (sign out) failed:", err);
+      if (!res.headersSent) res.status(500).json({ error: "could not sign the browser out" });
+    });
+  });
+
+  /** The caller's own client setup, `myClientSetup` above. Still wrapped in `redact()`, so a
    *  future change to what this renders does not have to remember to add it. */
   app.get("/api/console/settings/me/client-setup", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const config = await renderClientSetup(id.email);
-      res.json(redact({ client: "claude-code", config }));
+      res.json(redact(await myClientSetup(id.email)));
     })().catch((err: unknown) => {
       console.error("settings/me/client-setup failed:", err);
       if (!res.headersSent) res.status(500).json({ error: "could not render client setup" });

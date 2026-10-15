@@ -19,10 +19,6 @@ for (const field of FIELDS) {
               `measured reports as instant and free`);
   }
 }
-// The run-level total goes through the same door.
-if (/\bmb:\s*\+/.test(src)) {
-  fail.push("the run-level `mb` total is coerced with a unary plus — same conflation");
-}
 
 // The helper exists and distinguishes null from zero. Testing `> 0` would be wrong here: unlike
 // the old model-turn count, a real 0 is meaningful — measured, and empty.

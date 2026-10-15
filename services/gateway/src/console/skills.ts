@@ -170,32 +170,4 @@ export function mountSkills(app: Express): void {
    * plugin would invite the per-skill comparison the design refuses — every ruler belongs to
    * one plugin, and two skills' numbers under two rulers are not comparable.
    */
-  /** Runs, as recorded.
-   *
-   * No outcome breakdown: `zz.skill_run` has no outcome column and nothing writes one, so a
-   * breakdown would be one bar reading "(not recorded)" forever. */
-  app.get("/api/console/runs", teamless("runs", async (req, res) => {
-    // No team dimension: this reports platform-wide volume totals, the same census category as
-    // /overview. `zz.skill_run` carries its own `team_id` and this route reads none of it — the
-    // totals are over every team, which is what makes them the platform's.
-    //
-    // COUPLED: windowed with /skills. These four totals sit directly above the per-skill table
-    // on one page, so two spans on one page would read as two figures for one thing.
-    const db = platformDb();
-    const since = periodCutoff(req);
-    const [totals] = await Promise.all([
-      // COUPLED: no model-turn column and no caveat built on one — nothing writes the run's
-      // model-turn count and nothing emits the matching event, so a banner watching it could
-      // never clear. checks/console-nulls.ts refuses a reader here again.
-      db.query(`select count(*) as runs, coalesce(sum(calls),0) as calls,
-                       coalesce(sum(refusals),0) as refusals,
-                       round((sum(bytes_total)/1048576.0)::numeric,1) as mb
-                  from zz.skill_run
-                 where ($1::timestamptz is null or started_at >= $1)`, [since]),
-    ]);
-    const t = totals.rows[0];
-    res.json({
-      totals: { runs: +t.runs, calls: +t.calls, refusals: +t.refusals, mb: num(t.mb) },
-    });
-  }));
 }

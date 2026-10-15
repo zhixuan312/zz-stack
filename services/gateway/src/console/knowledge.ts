@@ -1,9 +1,12 @@
 /**
  * The knowledge base, both shelves.
  *
- * The index, the append-only log of what was minted and superseded, and one node's content.
- * A node's shelf is part of its address: the same ordinal under a team and under the platform
- * are different nodes, and a reader that guessed would show one team another team's lesson.
+ * The active team's shelf, filtered and paged; the append-only log of what was minted and
+ * superseded; and one node's content. A node's shelf is part of its address: the same ordinal
+ * under a team and under the platform are different nodes, and a reader that guessed would show
+ * one team another team's lesson. The shared shelf is the one exception to a team's own: a search
+ * finds its lessons, so any signed-in person opens one, marked `shared`; the list and the log stay
+ * the team's own.
  *
  * The reshape moved four relations into keys, and every one of them is derived here from the key
  * rather than read out of a column: the shelf is `team_id`, joined back to the slug this API
@@ -15,7 +18,9 @@
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { handler } from "./shared.js";
+import { PLATFORM_TEAM } from "../identity.js";
+import { KINDS } from "./platform-knowledge.js";
+import { handler, platformPublic, ZZ_TZ } from "./shared.js";
 
 /** One row of the list and detail queries below, as they are aliased there. */
 interface NodeRow {
@@ -40,23 +45,37 @@ function listNode(r: NodeRow) {
   };
 }
 
-export function mountKnowledge(app: Express): void {
-  /** The knowledge base: the list, with enough of each body to recognise it. A title alone does
-   *  not tell a reader whether the node is the one they wanted. Full bodies come from the
-   *  endpoint below, one at a time. */
-  app.get("/api/console/knowledge", handler("the knowledge base", async (_req, res, scope) => {
-    const db = platformDb();
-    // Same deletion as /initiatives, and the same reason: a null shelf parameter must
-    // never mean "every team's nodes".
-    //
-    // Two complete statements, not one assembled from `scope` — `check:sql` can only PREPARE a
-    // literal it can read whole.
-    //
-    // Where the lesson came from: `knowledge_node_evidence` holds the initiatives the node cites,
-    // the only linkage the store records between a node and the work behind it. Ordered, because
-    // a relation has no order of its own and the list must not shuffle between reads.
-    const { rows } = scope.kind === "platform"
-      ? await db.query(
+/** The shelf's filters and page, as the list reads them. */
+type ShelfParams = { q: string; kind: string | null; limit: number; offset: number };
+
+/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
+const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/** The list's filters and page, each given at most once, or the sentence a 400 says. */
+function shelfParams(query: Record<string, unknown>): ShelfParams | string {
+  for (const name of ["q", "kind", "limit", "offset"]) {
+    if (query[name] !== undefined && typeof query[name] !== "string") return "each filter and the page are given at most once";
+  }
+  const text = (name: string): string | null => (query[name] as string | undefined) ?? null;
+  const kind = text("kind");
+  if (kind !== null && !(KINDS as readonly string[]).includes(kind)) return `kind must be one of ${KINDS.join(", ")}`;
+  const limit = Number(text("limit") ?? 10), offset = Number(text("offset") ?? 0);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
+    return "limit must be a whole number from 1 to 100, and offset one from 0";
+  }
+  return { q: (text("q") ?? "").trim().toLowerCase(), kind, limit, offset };
+}
+
+/** The team's shelf as of the cutoff, filtered by text in a title, a tag or the body and by kind: one page of it,
+ *  the most recently changed first, and the whole filtered population counted by kind and standing. */
+async function shelfOf(team: string, p: ShelfParams, asOf: string) {
+  const db = platformDb();
+  const filters = [team, asOf, p.kind ?? "", p.q];
+  const [page, counts, first] = await Promise.all([
+    // Where the lesson came from: knowledge_node_evidence holds the initiatives the node cites, the only linkage
+    // the store records between a node and the work behind it. The order ends on the ordinal, unique on one shelf,
+    // so a page never shuffles between reads.
+    db.query(
       `select t.slug as shelf,
               'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
               k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
@@ -72,37 +91,75 @@ export function mountKnowledge(app: Express): void {
               -- DELIBERATE: the whitespace collapse runs over a bounded prefix, not the whole
               -- body. Collapsing can only ever shorten, and an excerpt is a preview rather than
               -- a fixed-width field, so a prefix that collapses below 220 characters shows a
-              -- shorter preview and nothing else — it takes a node that is mostly blank lines to
-              -- do even that. Run over the whole body it detoasted all 23 MB of the shelf:
-              -- 402 ms to produce 965 × 220 characters, against 159 ms bounded.
+              -- shorter preview and nothing else. Run over the whole body it detoasted all
+              -- 23 MB of the shelf: 402 ms to produce 965 x 220 characters, against 159 ms bounded.
               left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
          from zz.knowledge_node k
          join zz.team t on t.id = k.team_id
-        order by t.slug, k.node_ordinal`)
-      : await db.query(
-      `select t.slug as shelf,
-              'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
-              k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
-              (select coalesce(array_agg(i.slug order by i.slug), '{}')
-                 from zz.knowledge_node_evidence ne
-                 join zz.initiative i on i.id = ne.initiative_id
-                where ne.node_id = k.id) as citations,
-              (select s.node_ordinal
-                 from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
-              to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
-              length(coalesce(k.body,'')) as bytes,
-              -- DELIBERATE: the whitespace collapse runs over a bounded prefix, not the whole
-              -- body. Collapsing can only ever shorten, and an excerpt is a preview rather than
-              -- a fixed-width field, so a prefix that collapses below 220 characters shows a
-              -- shorter preview and nothing else — it takes a node that is mostly blank lines to
-              -- do even that. Run over the whole body it detoasted all 23 MB of the shelf:
-              -- 402 ms to produce 965 × 220 characters, against 159 ms bounded.
-              left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
+        where t.slug = $1 and k.created_at < $2::timestamptz
+          and ($3::text = '' or k.kind = $3)
+          and ($4::text = ''
+               or strpos(lower(k.title), $4) > 0
+               or strpos(lower(coalesce(k.body, '')), $4) > 0
+               or exists (select 1 from unnest(k.tags) as g(tag) where strpos(lower(g.tag), $4) > 0))
+        order by k.updated_at desc, k.node_ordinal
+        limit $5 offset $6`, [...filters, p.limit, p.offset]),
+    db.query<{ kind: string; lifecycle: string; n: number }>(
+      `select k.kind, k.lifecycle, count(*)::int as n
          from zz.knowledge_node k
          join zz.team t on t.id = k.team_id
-        where t.slug = $1
-        order by k.node_ordinal`, [scope.slug]);
-    res.json({ nodes: (rows as NodeRow[]).map(listNode) });
+        where t.slug = $1 and k.created_at < $2::timestamptz
+          and ($3::text = '' or k.kind = $3)
+          and ($4::text = ''
+               or strpos(lower(k.title), $4) > 0
+               or strpos(lower(coalesce(k.body, '')), $4) > 0
+               or exists (select 1 from unnest(k.tags) as g(tag) where strpos(lower(g.tag), $4) > 0))
+        group by k.kind, k.lifecycle`, filters),
+    db.query<{ first_ms: number | null }>(
+      `select (extract(epoch from min(k.created_at)) * 1000)::float8 as first_ms
+         from zz.knowledge_node k
+         join zz.team t on t.id = k.team_id
+        where t.slug = $1 and k.created_at < $2::timestamptz`, [team, asOf]),
+  ]);
+  const byKind: Record<string, number> = {};
+  let standing = 0, superseded = 0;
+  for (const c of counts.rows) {
+    byKind[c.kind] = (byKind[c.kind] ?? 0) + c.n;
+    if (c.lifecycle === "adopted") standing += c.n;
+    else superseded += c.n;
+  }
+  const firstMs = first.rows[0]?.first_ms ?? null;
+  return {
+    meta: {
+      asOf, timezone: ZZ_TZ, period: { from: firstMs === null ? asOf : iso(firstMs), to: asOf }, scope: "active-team" as const,
+      population: `${team}'s knowledge shelf, the shared shelf left out`,
+      coverageFrom: firstMs === null ? null : iso(firstMs),
+    },
+    rows: (page.rows as NodeRow[]).map(listNode),
+    total: standing + superseded,
+    summary: { byKind, standing, superseded },
+  };
+}
+
+export function mountKnowledge(app: Express): void {
+  /** The knowledge base: the active team's shelf, filtered and paged here, with enough of each body to recognise
+   *  it. A title alone does not tell a reader whether the node is the one they wanted. Full bodies come from the
+   *  endpoint below, one at a time.
+   *
+   *  Work is the active team's, for the superadmin too: nothing the request names widens it, and the shared
+   *  shelf, which a search reads beside the team's own, is not on it. */
+  app.get("/api/console/knowledge", platformPublic("the knowledge base", async (req, res, { activeTeam }) => {
+    if (activeTeam === null) {
+      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      return;
+    }
+    const params = shelfParams(req.query as Record<string, unknown>);
+    if (typeof params === "string") {
+      res.status(400).json({ error: params });
+      return;
+    }
+    // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
+    res.json(await shelfOf(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000)));
   }));
 
   /** The knowledge base's own log — what was recorded, what replaced what, and by whom.
@@ -161,8 +218,9 @@ export function mountKnowledge(app: Express): void {
     const db = platformDb();
     const address = (req.params as Record<string, string>)[0];
     // A not-found rather than a refusal: a team scope naming someone else's
-    // team gets the response it would get for a node that never existed.
-    if (scope.kind === "team" && req.params.team !== scope.slug) {
+    // team gets the response it would get for a node that never existed. The shared shelf is
+    // not someone else's: its lessons are every team's, read-only.
+    if (scope.kind === "team" && req.params.team !== scope.slug && req.params.team !== PLATFORM_TEAM) {
       res.status(404).json({ error: `no node ${address}` });
       return;
     }
@@ -282,6 +340,7 @@ export function mountKnowledge(app: Express): void {
       num: String(Number(r.ordinal)),
       related: (neighbours.rows as NodeRow[]).map(listNode),
       multi_team: shelves.rows[0]?.multi_team ?? false,
+      shelf: r.shelf === PLATFORM_TEAM ? "shared" : "team",
     });
   }));
 }

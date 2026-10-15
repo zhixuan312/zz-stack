@@ -91,7 +91,7 @@ export function handler(name: string, fn: (req: Request, res: Response, scope: R
 }
 
 /** Wrap a route that has no team dimension at all: the plugin catalog, the skills library,
- * the run log, the platform census. No scope is resolved, so a caller who is in no team is
+ * the platform census. No scope is resolved, so a caller who is in no team is
  * answered rather than refused.
  *
  * COUPLED: scripts/gate/checks/console.ts refuses a `teamless` body that filters by team. */

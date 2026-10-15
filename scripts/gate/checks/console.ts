@@ -102,7 +102,7 @@ check("a console query cannot fall back to every team", () => {
   }
 
   // (d) A teamless route must stay teamless. `teamless()` wraps routes with no team dimension
-  // — the plugin catalog, the skills library, the run log — and resolves no scope, so somebody
+  // — the plugin catalog, the skills library — and resolves no scope, so somebody
   // in no team is not refused from them. Any team predicate here is wrong rather than merely
   // unaccompanied: nothing authorised it.
   const teamlessBodies = [];
@@ -193,15 +193,29 @@ check("every console write route records the door it came through", () => {
     // The three scope modules, not the mount point: the routes live under settings/ by scope.
     ...["me", "team", "platform"].map((scope) => ({
       path: `services/gateway/src/settings/${scope}.ts`,
-      // `active_team_id` and `console_session` are columns a settings file writes directly,
-      // with no zz-core call and no WRITE_CALLS function to detect it by. The first is the team
-      // a person's agents act for; the second is the team one browser session acts for, which is
-      // the console's own switch. Both change what every client of theirs shows.
-      isWrite: (body: string) => /active_team_id|console_session/.test(body) ||
+      // `active_team_id`, `console_session` and `pat` are tables and columns a settings file
+      // writes directly, with no zz-core call and no WRITE_CALLS function to detect it by. The
+      // first is the team a person's agents act for; the second is one browser's session, the team
+      // it acts for (the console's own switch) and whether it is signed in (Access signing another
+      // browser out); the third is a person's tokens, which Access revokes by the application they
+      // were minted through. Each changes what a client of theirs can do.
+      isWrite: (body: string) => /active_team_id|console_session|\bupdate pat\b/.test(body) ||
         new RegExp(`\\b(${WRITE_CALLS.join("|")})\\(`).test(body),
       markerCalls: WRITE_CALLS,
     })),
   ];
+  // The write routes this rule must find and judge writes, by file: a route renamed, moved, or no
+  // longer recognised as a write by its file's `isWrite` would otherwise drop out of the scan with
+  // nothing here failing. Access's two revokes are the ones it was extended for.
+  const WRITE_ROUTES: Record<string, string[]> = {
+    "services/gateway/src/settings/me.ts": [
+      "post /api/console/settings/me/active-team",
+      "post /api/console/settings/me/tokens",
+      "delete /api/console/settings/me/tokens/:id",
+      "delete /api/console/settings/me/applications/:client",
+      "delete /api/console/settings/me/browsers/:id",
+    ],
+  };
   const bad: string[] = [];
 
   for (const { path, isWrite, markerCalls } of FILES) {
@@ -223,6 +237,12 @@ check("every console write route records the door it came through", () => {
     if (!routes.length) {
       bad.push(`no app.post/put/delete(...) route was found in ${path} — this check is reading ` +
                "the wrong file or the route's shape changed under it");
+    }
+    for (const want of WRITE_ROUTES[path] ?? []) {
+      const [method, route] = want.split(" ");
+      const found = routes.find((r) => r.method === method && r.body.trimStart().startsWith(`"${route}"`));
+      if (!found) bad.push(`${path} has no app.${method}("${route}", ...) — a console write this rule lists is gone or renamed`);
+      else if (!isWrite(found.body)) bad.push(`${path}: app.${method}("${route}", ...) is no longer recognised as a write, so its door goes unchecked`);
     }
 
     for (const r of routes) {

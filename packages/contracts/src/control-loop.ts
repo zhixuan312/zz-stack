@@ -493,6 +493,6 @@ export { recallTrialProbe, type RecallTrialProbeRow } from "./recall-trial-probe
 // the Han half.
 // COUPLED: the copy has to track `identifierTokens` in `@zz/indexing`; a gate check imports both
 // and holds the copy to the original. Nothing else names this export.
-// DELIBERATE: named by module, not by analyzer version. `ANALYZER_NAME` is `zz-lexical-v3` and has
+// DELIBERATE: named by module, not by analyzer version. `ANALYZER_NAME` is `zz-lexical-v4` and has
 // moved before; the copy tracks whatever that module emits, not a numbered generation.
 export { trialAnalyze } from "./recall-trial-corpus.js";

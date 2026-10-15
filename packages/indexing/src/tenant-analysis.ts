@@ -29,8 +29,8 @@ import { createHash } from "node:crypto";
  *  COUPLED: the rederivation walker rewrites a row only when
  *  `analyzer_version !== request.analyzer`, so bumping this name is what makes rows written
  *  under a broken construction repairable. */
-export const ANALYZER_NAME = "zz-lexical-v3";
-export const CURRENT_ANALYZER_VERSION = 3;
+export const ANALYZER_NAME = "zz-lexical-v4";
+export const CURRENT_ANALYZER_VERSION = 4;
 
 /** 8 MiB. Text above this is refused where it is analyzed (`buildRowVector`, which every write
  *  path goes through) and never truncated to fit. `imported: true` is the named exception, for
@@ -305,8 +305,9 @@ export interface RowVector {
    *  `to_tsvector('simple', …)`'s three space-joined strings. */
   readonly terms: readonly RowVectorTerm[];
   /** The raw text of each weighted field, exactly as the row holds it. The Latin half of
-   *  `body_tsv` is built from this and never from `terms`; the Han half comes from `terms`
-   *  through `simple`, since those unigrams are what PostgreSQL's parser cannot produce.
+   *  `body_tsv` is built from this and never from `terms` — this text, then its number-like
+   *  hyphenated words with the hyphens read as spaces (`latinText`); the Han half comes from
+   *  `terms` through `simple`, since those unigrams are what PostgreSQL's parser cannot produce.
    *
    *  DELIBERATE: the Latin half must be tokenized by the same engine as the query, PostgreSQL's
    *  parser over unsplit text. Pre-splitting destroys every compound the parser would emit —
@@ -409,13 +410,36 @@ export function bodyTsvSql(first: number): string {
   ].join(" || ");
 }
 
+/** A hyphenated word: two or more letter-or-digit parts joined by single hyphens, a part keeping
+ *  its inner dots so a version such as `0.96.0` stays whole. */
+const HYPHENATED_WORD = /(?<![\p{L}\p{N}])[\p{L}\p{N}]+(?:\.[\p{L}\p{N}]+)*(?:-[\p{L}\p{N}]+(?:\.[\p{L}\p{N}]+)*)+/gu;
+
+/** The text one weight's Latin half is parsed from: the field's own text, then each of its
+ *  hyphenated words that has an ASCII digit in it, with the hyphens read as spaces.
+ *
+ *  PostgreSQL's parser reads `ticket-1234` as `ticket` plus the signed integer `-1234`, and the
+ *  `3e5a91` of `run-3e5a91` as one part where alone it is a float plus a word, so a person typing
+ *  `1234` or `3e5a91` asks for lexemes the field's own text never yields. The copy is parsed the
+ *  way the query is, so it yields them.
+ *
+ *  DELIBERATE: the field's own text comes first and whole, so every compound the parser emits from
+ *  it is still stored (see `RowVector.raw`). A field with no such word binds exactly that text, so
+ *  its vector, and its rank for every query, is what it was before the copy existed — a word
+ *  without a digit is parsed the same inside a compound as alone, and needs no copy. */
+function latinText(raw: string): string {
+  const parts = (raw.match(HYPHENATED_WORD) ?? [])
+    .filter((word) => /[0-9]/.test(word))
+    .map((word) => word.replace(/-/g, " "));
+  return parts.length ? `${raw}\n${parts.join("\n")}` : raw;
+}
+
 /** The eight values `bodyTsvSql` binds, in its order. */
 export function bodyTsvParams(vector: RowVector): string[] {
   return [
     TEXT_SEARCH_CONFIG.latin, TEXT_SEARCH_CONFIG.han,
-    vector.raw.A, termsByWeight(vector, "A", "han"),
-    vector.raw.B, termsByWeight(vector, "B", "han"),
-    vector.raw.C, termsByWeight(vector, "C", "han"),
+    latinText(vector.raw.A), termsByWeight(vector, "A", "han"),
+    latinText(vector.raw.B), termsByWeight(vector, "B", "han"),
+    latinText(vector.raw.C), termsByWeight(vector, "C", "han"),
   ];
 }
 

@@ -81,6 +81,8 @@ check("knowledge_node's writers and readers answer from the ids, and the evidenc
 // running the scoring assembly rather than by a textual proxy.
 check("Chinese retrieval still matches as a substring, and the Han half its index needs is read rather than left write-only",
       runsCheck("han-retrieval.ts"));
+check("a person finds their own document or lesson by the number-like part of a hyphenated word, and every search that worked before still does, an exact word, a phrase, a Han substring, a version, a compound whole and by part and a title above a body, while a row with no such word keeps its vector and a boot re-derives rows of the previous generation, through a real zz-core on a throwaway database",
+      runsCheck("knowledge-search-hyphen-parts.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));
 

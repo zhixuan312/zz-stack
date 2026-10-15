@@ -14,7 +14,7 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/han-analysis.ts",
     target: "an unspaced Han run is analysed into the terms a reader would search for",
     subject: "packages/indexing/src/tenant-analysis.ts",
-    find: 'export const ANALYZER_NAME = "zz-lexical-v3";',
+    find: 'export const ANALYZER_NAME = "zz-lexical-v4";',
     replace: 'export const ANALYZER_NAME = "zz-lexical-v1";',
     planted: "the analyzer identity is rolled back to the previous generation, so every row " +
       "derived under the new analysis still reads as current",
@@ -23,7 +23,7 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/write-path-analysis.ts",
     target: "new writes carry the analyzer's han terms and the row's own latin text, each to its own half",
     subject: "packages/indexing/src/tenant-analysis.ts",
-    find: '    vector.raw.A, termsByWeight(vector, "A", "han"),',
+    find: '    latinText(vector.raw.A), termsByWeight(vector, "A", "han"),',
     replace: '    termsByWeight(vector, "A", "latin"), termsByWeight(vector, "A", "han"),',
     planted: "the latin half of body_tsv goes back to the analyzer's already-split words, so " +
       "every compound token PostgreSQL's parser would emit is lost while the read path's " +

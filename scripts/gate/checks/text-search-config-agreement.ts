@@ -61,7 +61,8 @@ check("the analyzer's opaque terms and its stemmable words are stored through di
     for (const term of termsByWeight(v, weight, "latin").split(" ").filter(Boolean)) {
       if (han.test(term) || bigram.test(term)) {
         // This list decides the analyzer's field classification, not what is stored: the latin
-        // half of `body_tsv` is the row's raw text. The read path spends that classification —
+        // half of `body_tsv` is the row's raw text, then its number-like hyphenated words. The
+        // read path spends that classification —
         // `buildSearchPredicate` routes a Han-bearing clause to a literal `body` match because
         // `websearch_to_tsquery` cannot see inside an unspaced Han run, so a Han scalar
         // classified `latin` is a clause sent down the lane that cannot match it.

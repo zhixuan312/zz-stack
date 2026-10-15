@@ -40,9 +40,9 @@ check("new writes carry the analyzer's han terms and the row's own latin text, e
   if (!v.terms.some((t) => t.term === "迁")) return "the write-path vector carries no base term for 迁; a query for 迁移 cannot match it";
   const weights = new Set(v.terms.map((t) => t.weight));
   for (const w of ["A", "B", "C"]) if (!weights.has(w)) return `the write-path vector lost weight ${w}`;
-  if (v.analyzer !== "zz-lexical-v3") return `the write path recorded analyzer ${v.analyzer}`;
+  if (v.analyzer !== "zz-lexical-v4") return `the write path recorded analyzer ${v.analyzer}`;
 
-  // The latin half is the row's own text, unsplit. `bodyTsvSql` runs `to_tsvector('english', $n)`
+  // The latin half is the row's own text, unsplit, first. `bodyTsvSql` runs `to_tsvector('english', $n)`
   // over whatever `bodyTsvParams` binds at $n, and binding the analyzer's already-split words
   // there destroys every compound token PostgreSQL's parser would have emitted, while the read
   // path — which does not pre-split — goes on asking for them:
@@ -75,4 +75,14 @@ check("new writes carry the analyzer's han terms and the row's own latin text, e
     return "the han half no longer carries the analyzer's unigrams, which PostgreSQL's parser cannot produce at all";
   }
   if (han[2] !== "迁移说明") return "the latin half is not the row's own title even when that title is Han";
+
+  // A number-like hyphenated word is also bound with its hyphens read as spaces, after the field's
+  // own text: PostgreSQL reads `ticket-1234` as `ticket` plus `-1234`, so the query `1234` finds
+  // nothing in the text alone. The compound stays, since the field's own text comes first and whole.
+  const parts = bodyTsvParams(buildRowVector({ title: "rfc-9110", tags: [], body: "Fixed in ticket-1234 and run-3e5a91." }));
+  if (parts[2] !== "rfc-9110\nrfc 9110" || parts[6] !== "Fixed in ticket-1234 and run-3e5a91.\nticket 1234\nrun 3e5a91") {
+    return `the latin half binds ${JSON.stringify([parts[2], parts[6]])} for number-like hyphenated words — `
+         + "the field's own text, then each such word with its hyphens read as spaces, is what the query "
+         + "1234 or 3e5a91 can match";
+  }
 });

@@ -102,7 +102,7 @@ check("a console query cannot fall back to every team", () => {
   }
 
   // (d) A teamless route must stay teamless. `teamless()` wraps routes with no team dimension
-  // — the plugin catalog, the skills library — and resolves no scope, so somebody
+  // — a skill's text as its plugin ships it — and resolves no scope, so somebody
   // in no team is not refused from them. Any team predicate here is wrong rather than merely
   // unaccompanied: nothing authorised it.
   const teamlessBodies = [];

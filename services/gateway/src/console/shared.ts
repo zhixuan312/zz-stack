@@ -90,7 +90,7 @@ export function handler(name: string, fn: (req: Request, res: Response, scope: R
   };
 }
 
-/** Wrap a route that has no team dimension at all: the plugin catalog, the skills library,
+/** Wrap a route that has no team dimension at all: a skill's text as its plugin ships it,
  * the platform census. No scope is resolved, so a caller who is in no team is
  * answered rather than refused.
  *

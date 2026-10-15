@@ -43,6 +43,10 @@ const MARKETPLACE_REPO = "zhixuan312/zz-stack";
  * identity.ts). A marketplace and a team are different objects. */
 export const MARKETPLACE = "zz-stack";
 
+/** The command that installs one plugin from this shelf. The console's Plugins page offers the same line
+ *  (console/catalog.ts). */
+export const installLine = (plugin: string): string => `claude plugin install ${plugin}@${MARKETPLACE}`;
+
 /** Who publishes this shelf. One object for the marketplace's `owner` and every plugin's
  * `author` — the same claim, and `claude plugin validate` asks for both. */
 const OWNER = { name: "ZZ Stack", url: `https://github.com/${MARKETPLACE_REPO}` };
@@ -318,7 +322,7 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       // every tool below is a door at the gateway and the door still refuses.
       `claude plugin marketplace add ${MARKETPLACE_REPO}`,
       ...plugins.filter((pl) => pl.required)
-        .map((pl) => `claude plugin install ${pl.name}@${MARKETPLACE} # required`),
+        .map((pl) => `${installLine(pl.name)} # required`),
       ``,
       `# Then the token — it is what every tool above actually authenticates with.`,
       // DELIBERATE: created restricted, not restricted afterwards. `>` makes the file with the
@@ -341,7 +345,7 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       // can create teams.
       ``,
       `# Uncomment the ones you want:`,
-      ...optional.map((n) => `# claude plugin install ${n}@${MARKETPLACE}`),
+      ...optional.map((n) => `# ${installLine(n)}`),
     ],
     // One command, because the shelf is a git clone rather than an archive unpacked over
     // whatever was there before: a plugin the platform has retired leaves the shelf on update.

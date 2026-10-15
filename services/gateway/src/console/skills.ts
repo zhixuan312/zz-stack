@@ -1,14 +1,14 @@
 /**
- * Skills and the runs that measured them.
+ * Skills and the active team's runs of them.
  *
- * A skill's versions, what one version says, and the scores it earned — which is the largest
- * route in the console because a score is only meaningful beside what it was scored against:
- * the ruler, the judge, the affirmations, and the runs each of those came from.
+ * Through `platformPublic`: a skill is the platform's, the same for everybody, and every figure here
+ * is counted over the caller's active team's runs and calls alone. A person in no team is refused.
  */
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { periodCutoff, teamless } from "./shared.js";
+import { skillsOf } from "./catalog.js";
+import { periodCutoff, platformPublic } from "./shared.js";
 
 /** A SQL aggregate that saw nothing measurable, kept as null instead of becoming 0. `avg` and
  *  `sum` skip nulls and return null when every input was null, and `+null` is 0, which reads
@@ -16,16 +16,20 @@ import { periodCutoff, teamless } from "./shared.js";
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
 export function mountSkills(app: Express): void {
-  /** Every skill the platform has run or evaluated, with what it cost to run.
-   *
-   * Cost first: a mean score with no idea how many calls or how long it took is a
-   * number nobody can act on. The eval half may legitimately be absent — a step that
-   * produces side effects leaves no document a judge can read — and an absent rubric is
-   * reported as absent rather than as a zero. */
-  app.get("/api/console/skills", teamless("skills", async (req, res) => {
-    // No team dimension: every skill the platform has run, aggregated by skill and version
-    // across every team that ran it. A skill is a platform-wide capability, so a team scope and
-    // a platform scope see the identical response.
+  /** Every skill the active team has run, by skill and version, with how its runs went; `plugin`
+   * narrows it to the skills that plugin ships, and a plugin this image does not ship answers none. */
+  app.get("/api/console/skills", platformPublic("skills", async (req, res, { activeTeam }) => {
+    if (activeTeam === null) {
+      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      return;
+    }
+    const plugin = req.query.plugin;
+    if (plugin !== undefined && typeof plugin !== "string") {
+      res.status(400).json({ error: "plugin is one plugin's name, given once" });
+      return;
+    }
+    // Null is every skill; a list, possibly empty, is the named plugin's.
+    const names = plugin === undefined ? null : skillsOf(plugin);
     const db = platformDb();
     // No evaluation here: zz.eval hangs off a plugin version, so nothing can write a per-skill
     // score and the plugin's scores are on the plugin.
@@ -55,10 +59,7 @@ export function mountSkills(app: Express): void {
          * One decimal, not zero: `round(...,0)` makes a genuine sub-second median
          * indistinguishable from the structural kind above.
          *
-         * DELIBERATE: no `teams` column. This route is `teamless`, and `array_agg(distinct
-         * t.slug)` is not a fact about the skill but a list of the other teams on the
-         * deployment. The gate check for a `teamless` body looks for a filter on team_slug, so
-         * an aggregated team column passes it. */
+         * The active team's runs alone: another team's runs of the same skill change nothing here. */
         `select s.name, sv.version,
                 case when s.flow is null then 'plugin_skill' else 'flow_step' end as kind,
                 s.flow, s.retired,
@@ -82,8 +83,12 @@ export function mountSkills(app: Express): void {
            from zz.skill_run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
+           join zz.team t on t.id = r.team_id
           where ($1::timestamptz is null or r.started_at >= $1)
-          group by 1,2,3,4,5`, [since]),
+            and t.slug = $2
+            and ($3::text[] is null or s.name = any($3))
+          group by 1,2,3,4,5
+          order by 1,2`, [since, activeTeam, names]),
       db.query(
         // The same window as the runs above, or `logged` would report all-time call counts
         // beside a windowed run count on one row.
@@ -97,9 +102,10 @@ export function mountSkills(app: Express): void {
            from zz.event e
            join zz.skill_version v on v.id = e.skill_version_id
            join zz.skill s on s.id = v.skill_id
-          where e.kind = 'tool_call'
+           join zz.team t on t.id = e.team_id
+          where e.kind = 'tool_call' and t.slug = $2
             and ($1::timestamptz is null or e.ts >= $1)
-          group by 1`, [since]),
+          group by 1`, [since, activeTeam]),
     ]);
     const evBy = new Map(stepEvents.rows.map((e) => [e.step as string, e]));
     res.json({ skills: runs.rows.map((r) => {
@@ -125,13 +131,15 @@ export function mountSkills(app: Express): void {
     }) });
   }));
 
-  /** One skill: which surfaces its calls went to, and which tools it leans on.
+  /** One skill: which surfaces the active team's calls of it went to, and which tools it leans on.
    *
    * No rubric and no findings: both belong to a plugin version now, so nothing can write a
    * per-skill score or finding. The scores are on the plugin. */
-  app.get("/api/console/skills/:name", teamless("the skill", async (req, res) => {
-    // DELIBERATE: no team dimension. A skill's call mix is a property of the skill itself, aggregated
-    // across every team that ran it — see /skills above.
+  app.get("/api/console/skills/:name", platformPublic("the skill", async (req, res, { activeTeam }) => {
+    if (activeTeam === null) {
+      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      return;
+    }
     const db = platformDb();
     const name = req.params.name;
     const [mix, top] = await Promise.all([
@@ -148,16 +156,18 @@ export function mountSkills(app: Express): void {
            from zz.event e
            join zz.skill_version v on v.id = e.skill_version_id
            join zz.skill s on s.id = v.skill_id
-          where e.kind = 'tool_call' and s.name = $1
-          group by 1 order by count(*) desc`, [name]),
+           join zz.team t on t.id = e.team_id
+          where e.kind = 'tool_call' and s.name = $1 and t.slug = $2
+          group by 1 order by count(*) desc`, [name, activeTeam]),
       db.query(
         `select coalesce(e.tool_key, e.subject) as tool, count(*) as calls,
                 count(*) filter (where e.ok = false) as failed
            from zz.event e
            join zz.skill_version v on v.id = e.skill_version_id
            join zz.skill s on s.id = v.skill_id
-          where e.kind = 'tool_call' and s.name = $1
-          group by 1 order by count(*) desc limit 8`, [name]),
+           join zz.team t on t.id = e.team_id
+          where e.kind = 'tool_call' and s.name = $1 and t.slug = $2
+          group by 1 order by count(*) desc limit 8`, [name, activeTeam]),
     ]);
     res.json({
       skill: name,

@@ -7,8 +7,9 @@
  * plugin in the catalog with no telemetry reads as "never run", where a telemetry-first listing
  * renders it as absent.
  *
- * They go through `teamless` — a plugin's manifest and its skills are the same facts for
- * everybody, and passing a scope nobody narrows by would imply otherwise.
+ * `/plugins` goes through `platformPublic`: a plugin's manifest, its release and its public score are
+ * the same facts for everybody, and its calls are the caller's active team's alone. A skill's text goes
+ * through `teamless`, the same file for every reader.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -16,10 +17,11 @@ import { join } from "node:path";
 import { catalogEntries, isFlow, pluginName } from "@zz/catalog";
 import type { Express } from "express";
 
-import { PLATFORM_VERSION } from "../client-package.js";
+import { installLine, PLATFORM_VERSION } from "../client-package.js";
 import { platformDb } from "../db.js";
-import { BASELINE } from "../package/skills.js";
-import { teamless } from "./shared.js";
+import { BASELINE, platformPlugins } from "../package/skills.js";
+import { publicScore, scoreHistory } from "./platform-evaluation.js";
+import { platformPublic, teamless } from "./shared.js";
 import { PLATFORM_SKILLS_DIR, type ShippedSkill, readSkillAt, skillsIn } from "./skill-source.js";
 
 /** One plugin as it sits on disk, before the store is asked anything about it. */
@@ -104,6 +106,12 @@ function diskPlugins(): DiskPlugin[] {
   return out.sort((a, b) => a.plugin.localeCompare(b.plugin));
 }
 
+/** The skills `plugin` ships, by name; none for a plugin this image does not ship. */
+export function skillsOf(plugin: string): string[] {
+  const disk = diskPlugins().find((p) => p.plugin === plugin);
+  return disk ? skillsIn(disk.skillsDir).map((s) => s.name) : [];
+}
+
 export function mountCatalog(app: Express): void {
   /** Every plugin, one row each — what it declares, what it ships, and what the store knows.
    *
@@ -118,11 +126,14 @@ export function mountCatalog(app: Express): void {
    *
    * A row arrives at release and at no other moment, so an absent row is a fact rather than an
    * error. */
-  app.get("/api/console/plugins", teamless("plugins", async (_req, res) => {
-    // No team dimension: a plugin's manifest, its skills and its release digest are the same
-    // rows for every reader. The platform records no installs, so there is nothing per team.
+  app.get("/api/console/plugins", platformPublic("plugins", async (_req, res, { superadmin, activeTeam }) => {
+    if (activeTeam === null) {
+      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      return;
+    }
     const db = platformDb();
-    const [ran, released, evaluated] = await Promise.all([
+    const asOf = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const [ran, released, history] = await Promise.all([
       // Every skill the store has seen, whatever kind it is. `zz` ships common skills
       // (zz-platform), which are skills of a plugin here too, so a filter on
       // `kind = 'flow_step'` would show them as never run.
@@ -130,7 +141,8 @@ export function mountCatalog(app: Express): void {
       // A call's step is the skill of the version the event names, reached through
       // `zz.skill_version`. An event naming no skill version is a step no reader can name, so it
       // is counted under no skill rather than folded onto one; `logged` on /skills reports the
-      // same population.
+      // same population. The calls are the active team's: an event of another team, or of none,
+      // is counted for nobody here.
       //
       // DELIBERATE: the event side is aggregated once and joined, never four correlated
       // subqueries per skill. Each of those subqueries re-read the whole event log, so the cost
@@ -141,10 +153,9 @@ export function mountCatalog(app: Express): void {
                        coalesce(v.versions, 0) as versions,
                        coalesce(c.calls, 0) as calls,
                        coalesce(c.failed, 0) as failed,
-                       -- When it last ran. The list sorts on it, so a plugin nobody has touched in a month
-                       -- sinks below one in use rather than sitting wherever the catalog walk put it. No eval
-                       -- count: an evaluation's subject is a plugin version, and the plugin's own count is on
-                       -- the release row below.
+                       -- When the team last ran it. The list sorts on it, so a plugin the team has not
+                       -- touched in a month sinks below one in use rather than sitting wherever the
+                       -- catalog walk put it.
                        to_char(c.last_run at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run
                   from zz.skill s
                   left join (select skill_id, count(*) as versions
@@ -155,8 +166,9 @@ export function mountCatalog(app: Express): void {
                                     max(e.ts)                   as last_run
                                from zz.event e
                                join zz.skill_version sv on sv.id = e.skill_version_id
-                              where e.kind = 'tool_call'
-                              group by sv.skill_id) c on c.skill_id = s.id`),
+                               join zz.team t on t.id = e.team_id
+                              where e.kind = 'tool_call' and t.slug = $1
+                              group by sv.skill_id) c on c.skill_id = s.id`, [activeTeam]),
       // What was released, and how many scored evaluation runs measured each released version.
       // An evaluation's release is its observation snapshot's `plugin_version_id` (FR-29), and a
       // scored run is one with `scored_at` set.
@@ -167,42 +179,16 @@ export function mountCatalog(app: Express): void {
                            and er.scored_at is not null) as evals
                   from zz.plugin p
                   join zz.plugin_version pv on pv.plugin_id = p.id`),
-      // The newest scored evaluation run, one per plugin. Only a scored run carries a score; a
-      // run that was never scored would blank the column beside a good earlier result.
-      //
-      // Across versions, not within one: the answer is the last time anybody measured the
-      // plugin, and pinning to the shelf version would blank the column on every release day.
-      // The version that was measured travels with the figures.
-      //
-      // COUPLED: `/api/console/plugins/:plugin/eval` (plugin-eval.ts) reads the same run for the
-      // plugin's own page; both count a defect as open while its plugin-owned finding is deferred.
-      db.query(`select distinct on (pv.plugin_id)
-                       p.name as plugin, pv.version,
-                       er.overall_score::text as overall_score, er.score_status, er.guardrail_status,
-                       (select count(*) from zz.eval_finding f
-                         where f.eval_run_id = er.id and f.kind = 'defect'
-                           and f.owner_kind = 'plugin' and f.decision = 'deferred') as open_defects,
-                       to_char(er.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
-                  from zz.eval_run er
-                  join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
-                  join zz.plugin_version pv on pv.id = os.plugin_version_id
-                  join zz.plugin p on p.id = pv.plugin_id
-                 where er.scored_at is not null
-                 order by pv.plugin_id, er.created_at desc`),
+      // The public score is the platform's Evaluation read's own: one selection and one comparability
+      // rule, the protocol's key the superadmin's alone. Nothing here starts an evaluation.
+      scoreHistory(asOf, superadmin),
     ]);
-
-    /** The newest completed evaluation per plugin, by name. */
-    const verdict = new Map(evaluated.rows.map((r) => [r.plugin as string, {
-      version: r.version as string,
-      overallScore: r.overall_score === null ? null : Number(r.overall_score),
-      scoreStatus: r.score_status as string | null,
-      guardrailStatus: r.guardrail_status as string | null,
-      openDefects: Number(r.open_defects),
-      at: r.at as string,
-    }]));
 
     const stats = new Map(ran.rows.map((r) => [r.name as string, r]));
     const release = new Map(released.rows.map((r) => [`${r.plugin as string}@${r.version as string}`, r]));
+    const scored = new Map(history.map((h) => [h.plugin, h]));
+    // COUPLED: client-package.ts installs the baseline and the platform's other own plugins as required.
+    const required = new Set([BASELINE, ...platformPlugins().map((pp) => pp.name)]);
     const skillRow = (s: ShippedSkill, position: number | null, isEntry: boolean) => {
       const st = stats.get(s.name);
       return {
@@ -210,8 +196,8 @@ export function mountCatalog(app: Express): void {
         origin: s.origin, version: s.version, description: s.description, source: s.source,
         versions: st ? +st.versions : 0,
         calls: st ? +st.calls : 0,
-        // A skill the plugin ships and the store has never seen. Not an error — a plugin
-        // nobody has run yet is a plugin, and saying so is the point.
+        // A skill the plugin ships and the team has never run. Not an error — a plugin nobody
+        // has run yet is a plugin, and saying so is the point.
         everRun: !!st && +st.calls > 0,
         lastRun: (st?.last_run as string | null) ?? null,
       };
@@ -240,21 +226,25 @@ export function mountCatalog(app: Express): void {
         documents: p.documents,
         gates: p.documents.filter((d) => d.gate).length,
         skills,
-        // Its skills' calls, summed.
-        calls: skills.reduce((a, s) => a + s.calls, 0),
-        failed: shipped.reduce((a, s) => a + Number(stats.get(s.name)?.failed ?? 0), 0),
-        lastRun: skills.map((s) => s.lastRun).filter(Boolean).sort().pop() ?? null,
         release: rel
           ? { version: rel.version as string, digest: rel.digest as string,
               evals: +rel.evals }
           : null,
-        latestEval: verdict.get(p.plugin) ?? null,
+        required: required.has(p.plugin),
+        install: installLine(p.plugin),
+        ...publicScore(scored.get(p.plugin)),
+        // Its skills' calls by the active team, summed.
+        yourTeam: {
+          calls: skills.reduce((a, s) => a + s.calls, 0),
+          failed: shipped.reduce((a, s) => a + Number(stats.get(s.name)?.failed ?? 0), 0),
+          lastRun: skills.map((s) => s.lastRun).filter(Boolean).sort().pop() ?? null,
+        },
       };
     });
 
     const plugins = [...rows].sort((a, b) => {
-      const la = a.lastRun ?? "";
-      const lb = b.lastRun ?? "";
+      const la = a.yourTeam.lastRun ?? "";
+      const lb = b.yourTeam.lastRun ?? "";
       if (la !== lb) return lb.localeCompare(la);
       return a.plugin.localeCompare(b.plugin);
     });

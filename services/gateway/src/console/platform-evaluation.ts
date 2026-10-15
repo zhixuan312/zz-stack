@@ -19,7 +19,8 @@
  *
  * COUPLED: the console's `Evaluation` in src/lib/platform-shapes.ts, and its fake answer in
  * scripts/fake-gateway/platform-evaluation.ts, which `checks/console-platform-evaluation.ts` compares
- * this route's answer with, key set by key set.
+ * this route's answer with, key set by key set. `/api/console/plugins` (catalog.ts) reads each plugin's
+ * public score and comparability from `scoreHistory` and `publicScore` here, so the two reads choose alike.
  */
 import type { Express } from "express";
 
@@ -34,7 +35,13 @@ type Standing = "established" | "provisional" | "not_established";
 type Protocol = { key: string | null; version: number };
 type Series = {
   protocol: Protocol; population: string | null;
-  runs: { scoredAt: string; score: number | null; lower: number | null; upper: number | null; standing: string }[];
+  runs: { scoredAt: string; score: number | null; lower: number | null; upper: number | null; standing: Standing }[];
+};
+/** One plugin's scores in the series they are comparable within, and what that makes of comparing them. */
+type ScoreHistory = { plugin: string; series: Series[]; statement: string };
+/** A plugin's latest score that has a value, with its range, standing, protocol and date. */
+type PluginScore = {
+  value: number; lower: number | null; upper: number | null; standing: Standing; protocol: Protocol; scoredAt: string;
 };
 type SafeFinding = {
   id: string; plugin: string; kind: "defect" | "unknown"; owner: string; measure: string | null;
@@ -47,7 +54,7 @@ type Evaluation = {
     plugin: string; score: Figure; lower: number | null; upper: number | null; standing: Standing;
     guardrails: "pass" | "fail" | "not_established"; protocol: Protocol; scoredAt: string;
   }[]>;
-  history: Part<{ plugin: string; series: Series[]; statement: string }[]>;
+  history: Part<ScoreHistory[]>;
   byDecision: Part<Record<"applied" | "rejected" | "deferred", number>>;
   byOwner: Part<Record<string, number>>;
   waiting: Part<{ rows: (SafeFinding & { pattern?: string })[]; total: number }>;
@@ -79,6 +86,53 @@ function populationOf(source: string | null): string | null {
   if (source === null) return null;
   const known = KINDS.find(([form]) => form.test(source));
   return known ? known[1] : source.replace(/\bv?\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?/g, "<version>");
+}
+
+/** Every plugin's scored runs up to `asOf`, each plugin's grouped into series: one protocol version and one
+ *  population kind, in the order its first score came. The protocol's key is the superadmin's alone. */
+export async function scoreHistory(asOf: string, superadmin: boolean): Promise<ScoreHistory[]> {
+  const rows = (await platformDb().query<ScoredRow & { surface_source: string | null }>(
+    `select p.name as plugin, pv.id::text as protocol_id, pv.protocol_key, pv.version as protocol_version,
+            (extract(epoch from r.scored_at) * 1000)::float8 as scored_ms, r.score_status as standing,
+            r.overall_score::float8 as score, r.score_lower::float8 as lower, r.score_upper::float8 as upper,
+            os.surface_source
+       from zz.eval_run r
+       join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
+       join zz.plugin p on p.id = pv.plugin_id
+       join zz.eval_observation_snapshot os on os.id = r.observation_snapshot_id
+      where r.scored_at is not null and r.scored_at <= $1::timestamptz
+      order by p.name, r.scored_at, r.id`, [asOf])).rows;
+  const plugins = [...new Set(rows.map((r) => r.plugin))];
+  return plugins.map((plugin) => {
+    const series = new Map<string, Series>();
+    const versions = new Set<string>();
+    for (const r of rows.filter((x) => x.plugin === plugin)) {
+      const population = populationOf(r.surface_source);
+      const at = JSON.stringify([r.protocol_id, population]);
+      if (!series.has(at)) {
+        series.set(at, { protocol: { key: superadmin ? r.protocol_key : null, version: r.protocol_version }, population, runs: [] });
+      }
+      series.get(at)!.runs.push({ scoredAt: iso(r.scored_ms), score: r.score, lower: r.lower, upper: r.upper, standing: r.standing });
+      versions.add(r.protocol_id);
+    }
+    const statement = series.size === 1 ? "Comparable: one protocol version and population"
+      : versions.size > 1 ? "Not comparable: a different protocol version" : "Not comparable: a different population";
+    return { plugin, series: [...series.values()], statement };
+  });
+}
+
+/** What a plugin's catalog row says of its scores: the newest run of its history that has a score, and its
+ *  history's statement; a plugin with none answers null and that there is nothing to compare. A newer run with
+ *  no score leaves the last score standing rather than blanking it. */
+export function publicScore(history: ScoreHistory | undefined): { score: PluginScore | null; comparability: string } {
+  let latest: PluginScore | null = null;
+  for (const s of history?.series ?? []) {
+    for (const r of s.runs) {
+      if (r.score === null || (latest && latest.scoredAt > r.scoredAt)) continue;
+      latest = { value: r.score, lower: r.lower, upper: r.upper, standing: r.standing, protocol: s.protocol, scoredAt: r.scoredAt };
+    }
+  }
+  return latest ? { score: latest, comparability: history!.statement } : { score: null, comparability: "No score to compare" };
 }
 
 /** The fixed sentence a waiting finding is read by: its plugin and owner category, or neither when the
@@ -139,35 +193,7 @@ export function mountPlatformEvaluation(app: Express): void {
         protocol: protocol(r), scoredAt: iso(r.scored_ms),
       }))),
 
-      part("history", async () => {
-        const rows = (await db.query<ScoredRow & { surface_source: string | null }>(
-          `select p.name as plugin, pv.id::text as protocol_id, pv.protocol_key, pv.version as protocol_version,
-                  (extract(epoch from r.scored_at) * 1000)::float8 as scored_ms, r.score_status as standing,
-                  r.overall_score::float8 as score, r.score_lower::float8 as lower, r.score_upper::float8 as upper,
-                  os.surface_source
-             from zz.eval_run r
-             join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
-             join zz.plugin p on p.id = pv.plugin_id
-             join zz.eval_observation_snapshot os on os.id = r.observation_snapshot_id
-            where r.scored_at is not null and r.scored_at <= $1::timestamptz
-            order by p.name, r.scored_at, r.id`, [asOf])).rows;
-        const plugins = [...new Set(rows.map((r) => r.plugin))];
-        return plugins.map((plugin) => {
-          // A series is one protocol version and one population kind, in the order its first score came.
-          const series = new Map<string, Series>();
-          const versions = new Set<string>();
-          for (const r of rows.filter((x) => x.plugin === plugin)) {
-            const population = populationOf(r.surface_source);
-            const at = JSON.stringify([r.protocol_id, population]);
-            if (!series.has(at)) series.set(at, { protocol: protocol(r), population, runs: [] });
-            series.get(at)!.runs.push({ scoredAt: iso(r.scored_ms), score: r.score, lower: r.lower, upper: r.upper, standing: r.standing });
-            versions.add(r.protocol_id);
-          }
-          const statement = series.size === 1 ? "Comparable: one protocol version and population"
-            : versions.size > 1 ? "Not comparable: a different protocol version" : "Not comparable: a different population";
-          return { plugin, series: [...series.values()], statement };
-        });
-      }),
+      part("history", () => scoreHistory(asOf, superadmin)),
 
       // Findings are counted once each: a superseded finding is counted as the one that replaced it,
       // and a strength has no decision to count.

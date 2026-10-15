@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the fifty-four that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the fifty-five that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the fifty-four gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the fifty-five gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -70,6 +70,8 @@ lately (`checks/console-runs-observed.ts`), which calls the gateway's own reads 
 a team's refusals counted once under four owners by week and grouped by owner, tool and normalised message (`checks/console-refusals.ts`), which calls the gateway's own reads over seeded calls,
 the console's Runs, the active team's runs since its first with their observed output, by skill and lately
 (`checks/console-work-runs.ts`), which calls the gateway's own read and route over the same seeded runs,
+the console's Plugins and skills, each plugin's requirement, install command and public score with its comparability beside the active team's own calls, and the team's skills narrowed by plugin
+(`checks/console-work-plugins.ts`), which drives the gateway's identity gate and its plugin, skill, evaluation and owner's evaluation routes over seeded scores, calls and runs,
 and the thirty-one that run a real zz-core against one: the rule that tells an import from a team's
 own work (`checks/console-imports.ts`), which calls the gateway's own rule over what a real zz-core
 recorded, the writing ledger, words added by period and the retained stock from the revisions kept
@@ -107,7 +109,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those fifty-four checks or the rehearsal never needs Docker.
+runs those fifty-five checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

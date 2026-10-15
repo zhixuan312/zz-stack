@@ -86,8 +86,9 @@ const BATCH = 10;
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-/** The query's filters and page, each given at most once, or the sentence a 400 says. */
-function listParams(query: Record<string, unknown>): ListParams | string {
+/** The query's filters and page, each given at most once, or the sentence a 400 says. Work's prepared
+ *  queries take the same filters and page, so they read them here too. */
+export function listParams(query: Record<string, unknown>): ListParams | string {
   for (const name of ["state", "flow", "q", "limit", "offset"]) {
     if (query[name] !== undefined && typeof query[name] !== "string") return "each filter and the page are given at most once";
   }

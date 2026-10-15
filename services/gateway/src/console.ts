@@ -7,8 +7,9 @@
  * the scope once, before any handler's SQL runs, so a caller with no `?team=` cannot fall through a
  * `$1::text is null or team_slug = $1` predicate with a null standing in for "every team".
  *
- * `/api/console/initiatives` (console/initiative-list.ts), `/api/console/approvals` and
- * `/api/console/home` (console/home.ts) resolve no scope of their own: Work is the active team's, for the superadmin too, so each answers the team the
+ * `/api/console/initiatives` (console/initiative-list.ts), `/api/console/approvals`,
+ * `/api/console/home` (console/home.ts), `/api/console/record` (console/record.ts) and
+ * `/api/console/work/query` (console/work-query.ts) resolve no scope of their own: Work is the active team's, for the superadmin too, so each answers the team the
  * identity acts for, whatever team or scope the request names. The list's `?waiting=1` projection,
  * the bell's, keeps the caller's scope until the bell is rebuilt.
  *
@@ -80,6 +81,8 @@ import { mountPlatformAudit } from "./console/platform-audit.js";
 import { mountPeople } from "./console/people.js";
 import { mountApprovals } from "./console/approvals.js";
 import { mountHome } from "./console/home.js";
+import { mountWorkQuery } from "./console/work-query.js";
+import { mountRecord } from "./console/record.js";
 import { mountConsoleClose } from "./console-close.js";
 
 
@@ -94,6 +97,10 @@ export function mountConsole(app: Express): void {
   mountApprovals(app);
   // Home: the active team's last whole week, what waits and what is open, the approvals in it the caller's own.
   mountHome(app);
+  // Record: the retained text as of the cutoff, the period's work in six slices and every initiative, the approvals in it the caller's own.
+  mountRecord(app);
+  // Work's prepared queries: one measure of the active team by a declared dimension, against the previous window and down to a group's rows.
+  mountWorkQuery(app);
   mountKnowledge(app);
   // The one read that is zz-core's answer rather than a query of this gateway's own.
   mountSearch(app);

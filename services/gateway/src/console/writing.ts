@@ -228,6 +228,14 @@ export async function transitions(team: string, window: Span, asOf: string): Pro
     .map(toTransition);
 }
 
+/** The words each lesson added inside the window before the cutoff, outside an import cohort, at the
+ *  instant it was made: what additionsByPeriod adds to the documents' transitions. */
+export async function lessonAdditions(team: string, window: Span, asOf: string): Promise<{ atMs: number; words: number }[]> {
+  const { lessons } = await ledger(team, asOf, true);
+  const bounds = boundsOf(window, asOf);
+  return lessons.filter((x) => inside(x.atMs, bounds)).sort((a, b) => a.atMs - b.atMs);
+}
+
 /** A period's words: the sum of what it added, or no data when nothing was written in it. */
 const wordsFigure = (window: PeriodFigure["window"], items: number[]): PeriodFigure => {
   if (!items.length) return { window, figure: { value: null, why: "no_data" }, numerator: null, denominator: null };

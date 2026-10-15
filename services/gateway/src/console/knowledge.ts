@@ -223,14 +223,21 @@ export function mountKnowledge(app: Express): void {
     })) });
   }));
 
-  /** One node, whole. The console's reading pane. */
-  app.get("/api/console/knowledge/:team/*", handler("the node", async (req, res, scope) => {
+  /** One node, whole. The console's reading pane.
+   *
+   *  The active team's lesson, or one on the shared shelf, for the superadmin too: a team or a scope the
+   *  request names widens nothing. */
+  app.get("/api/console/knowledge/:team/*", platformPublic("the node", async (req, res, { activeTeam }) => {
+    if (activeTeam === null) {
+      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      return;
+    }
     const db = platformDb();
     const address = (req.params as Record<string, string>)[0];
-    // A not-found rather than a refusal: a team scope naming someone else's
-    // team gets the response it would get for a node that never existed. The shared shelf is
-    // not someone else's: its lessons are every team's, read-only.
-    if (scope.kind === "team" && req.params.team !== scope.slug && req.params.team !== PLATFORM_TEAM) {
+    // A not-found rather than a refusal: a lesson of someone else's team gets the response it would
+    // get for a node that never existed. The shared shelf is not someone else's: its lessons are
+    // every team's, read-only.
+    if (req.params.team !== activeTeam && req.params.team !== PLATFORM_TEAM) {
       res.status(404).json({ error: `no node ${address}` });
       return;
     }
@@ -242,9 +249,9 @@ export function mountKnowledge(app: Express): void {
      * and a shelf is hundreds of nodes with a title, tags, an excerpt and a byte count each: the
      * page downloaded all of them to show at most a handful of neighbours.
      *
-     * The neighbours are read against the SCOPE, not against the team the node belongs to, so a
-     * platform-scoped reader sees the neighbours the list showed them and a team-scoped one does
-     * not see nodes belonging to another team. The parameters name this node, so it is excluded
+     * The neighbours are read against the active team, not against the shelf the node is on, so a
+     * reader of a shared lesson does not see nodes belonging to another team. The parameters name
+     * this node, so it is excluded
      * from its own neighbours and its tags are read in the same statement — no second round trip
      * to learn them.
      * COUPLED: listNode below, so a neighbour is the same shape as a row of the list.
@@ -281,32 +288,7 @@ export function mountKnowledge(app: Express): void {
          join zz.team t on t.id = k.team_id
         where t.slug = $1 and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2`,
       [req.params.team, address]),
-    // Two complete statements, not one assembled from `scope` — `check:sql` can only PREPARE a
-    // literal it can read whole. The team branch keeps the neighbours on the caller's own shelf.
-    scope.kind === "platform"
-      ? db.query(
-      `select t.slug as shelf,
-              'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
-              k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
-              (select coalesce(array_agg(i.slug order by i.slug), '{}')
-                 from zz.knowledge_node_evidence ne
-                 join zz.initiative i on i.id = ne.initiative_id
-                where ne.node_id = k.id) as citations,
-              (select s.node_ordinal
-                 from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
-              to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
-              length(coalesce(k.body,'')) as bytes,
-              left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
-         from zz.knowledge_node k
-         join zz.team t on t.id = k.team_id
-        where k.tags && (select n2.tags from zz.knowledge_node n2
-                           join zz.team t2 on t2.id = n2.team_id
-                          where t2.slug = $1
-                            and ('nodes/' || n2.node_ordinal || '-' || n2.slug || '.md') = $2)
-          and not (t.slug = $1
-                   and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2)
-        order by t.slug, k.node_ordinal`, [req.params.team, address])
-      : db.query(
+    db.query(
       `select t.slug as shelf,
               'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
               k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
@@ -328,15 +310,11 @@ export function mountKnowledge(app: Express): void {
                             and ('nodes/' || n2.node_ordinal || '-' || n2.slug || '.md') = $2)
           and not (t.slug = $1
                    and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2)
-        order by k.node_ordinal`, [req.params.team, address, scope.slug]),
-    scope.kind === "platform"
-      ? db.query<{ multi_team: boolean }>(
-      `select count(distinct t.slug) > 1 as multi_team
-         from zz.knowledge_node k join zz.team t on t.id = k.team_id`)
-      : db.query<{ multi_team: boolean }>(
+        order by k.node_ordinal`, [req.params.team, address, activeTeam]),
+    db.query<{ multi_team: boolean }>(
       `select count(distinct t.slug) > 1 as multi_team
          from zz.knowledge_node k join zz.team t on t.id = k.team_id
-        where t.slug = $1`, [scope.slug]),
+        where t.slug = $1`, [activeTeam]),
     ]);
     const rows = node.rows;
     if (!rows.length) { res.status(404).json({ error: `no node ${address}` }); return; }

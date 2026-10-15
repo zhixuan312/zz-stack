@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the fifty-seven that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the fifty-eight that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the fifty-seven gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by the fifty-eight gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -72,6 +72,7 @@ the console's Runs, the active team's runs since its first with their observed o
 (`checks/console-work-runs.ts`), which calls the gateway's own read and route over the same seeded runs,
 the console's Plugins and skills, each plugin's requirement, install command and public score with its comparability beside the active team's own calls, and the team's skills narrowed by plugin
 (`checks/console-work-plugins.ts`), which drives the gateway's identity gate and its plugin, skill, evaluation and owner's evaluation routes over seeded scores, calls and runs,
+a second team's member and a superadmin acting for it finding nothing of the first team's in Activity, Knowledge, Runs, Plugins and the skills, Access or the prepared queries over their measures, its refusal message, question, run, lesson and token, application, browser and passkey sentinels and its figures alike (`checks/console-isolation-destinations.ts`), which drives the gateway's identity gate, whole console and settings against one,
 and the thirty-three that run a real zz-core against one: the rule that tells an import from a team's
 own work (`checks/console-imports.ts`), which calls the gateway's own rule over what a real zz-core
 recorded, the writing ledger, words added by period and the retained stock from the revisions kept
@@ -84,8 +85,8 @@ platform's Status, its doors and records, with a resolve through the console's r
 (`checks/console-platform-needs.ts`), a member of one team finding nothing of another's in any answer
 the whole console gives, a colleague in both teams included, its writes refused or the member's own,
 and the superadmin's Audit and Knowledge health holding no planted body but a question, which no other
-page gives them, and Work, every prepared query drilled to its rows and a close included, holding
-nothing of another team's and no person's approvals or tokens but their own, a second person on the
+page gives them, and Work, every prepared query but the calls of a plugin's skills drilled to its rows and a close included, holding
+nothing of another team's and no person's approvals or tokens but their own, nor in Access any of another's tokens, applications, browsers or passkeys, a second person on the
 same team included (`checks/console-isolation.ts`), a person in two teams switching the team
 their browser acts for, every read then answering the new team alone and the old team's links 404,
 while four callers in two teams read at once and each is answered their own
@@ -112,7 +113,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those fifty-seven checks or the rehearsal never needs Docker.
+runs those fifty-eight checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

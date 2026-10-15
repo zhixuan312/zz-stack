@@ -291,10 +291,10 @@ const notRegistered = new Map<string, string>([
   // registered it — re-read rather than trusted, since the wave-1 version of this comment named
   // four hits that waves 2 and 3 had already fixed.
   // Not a check, and not temporary: the Work rounds and request helpers checks/console-isolation.ts
-  // imports and calls (Phase 3, I-63), split out so neither file passes the 700-line ceiling. Run
+  // and checks/console-isolation-destinations.ts import (Phase 3, I-63; Phase 4, I-82), split out so no file passes the 700-line ceiling. Run
   // alone it does nothing, so registering it would be a check green by absence.
   ["console-isolation-work.ts",
-   "a module checks/console-isolation.ts imports and calls, not a check of its own"],
+   "a module checks/console-isolation.ts and checks/console-isolation-destinations.ts import, not a check of its own"],
 ]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {

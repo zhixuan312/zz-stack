@@ -9,8 +9,9 @@
  *
  * `/api/console/initiatives` (console/initiative-list.ts), `/api/console/approvals`,
  * `/api/console/home` (console/home.ts), `/api/console/record` (console/record.ts),
- * `/api/console/activity` and its summary (console/activity.ts), `/api/console/knowledge` and its
- * summary (console/knowledge.ts, console/knowledge-summary.ts), `/api/console/runs` (console/runs.ts) and
+ * `/api/console/activity` and its summary (console/activity.ts), `/api/console/knowledge`, its summary
+ * and a lesson by its address (console/knowledge.ts, console/knowledge-summary.ts), `/api/console/runs`
+ * (console/runs.ts) and
  * `/api/console/work/query` (console/work-query.ts) resolve no scope of their own: Work is the active team's, for the superadmin too, so each answers the team the
  * identity acts for, whatever team or scope the request names. The list's `?waiting=1` projection,
  * the bell's, keeps the caller's scope until the bell is rebuilt. A lesson on the shared shelf opens for

@@ -14,9 +14,9 @@
 #  2. `docker build deploy/postgres` fails: line 43 of the Dockerfile copies
 #     `deploy/postgres/postgresql.conf`, a path relative to the REPO ROOT, so the context is the
 #     root and the Dockerfile is the argument.
-#  3. **The console must be checked out as a SIBLING.** `checks/gateways-routes-have-callers.ts`
-#     reads the console's API calls to prove every route this gateway serves has a caller, and it
-#     REFUSES to pass when the console is absent: "not evidence that they have none". So both
+#  3. **The console must be checked out as a SIBLING.** The check "every route this gateway serves
+#     has a caller" reads the console's API calls to prove it, and REFUSES to pass when the console
+#     is absent: "not evidence that they have none". So both
 #     repositories are checked out under `pair/`, and every step runs from `pair/zz-stack`, which
 #     makes `../zz-stack-dashboard` resolve exactly as it does in a developer's checkout.
 #  4. Two overlapping runs fail each other: `checks/candidate-build-live.ts` asserts the

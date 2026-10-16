@@ -55,9 +55,10 @@ api.203-0-113-11.nip.io {
         }
     }
 
-    # A cap on what a client may send, not on what it receives — the client package streaming
-    # back from /pkg/<client>.tgz is a response and is not bounded here. 20MB is far above any MCP
-    # call and far below anything worth buffering.
+    # A cap on what a client may send, not on what it receives: a body cap never touches a
+    # response, and the long-lived response on THIS host is streamed — an MCP turn's reply is an
+    # SSE stream, one the transport closes when the last reply is sent (`packages/mcp-http`).
+    # 20MB is far above any MCP call and far below anything worth buffering.
     request_body {
         max_size 20MB
     }

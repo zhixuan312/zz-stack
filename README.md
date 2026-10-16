@@ -30,10 +30,12 @@ no toolchain and no build: it runs published images from a release bundle.
 To work on it, read **`CONTRIBUTING.md`**.
 
 **The gate expects `../zz-stack-dashboard` beside this checkout.** The console lives in its
-own repository and is the only caller of the `/api/console/*` routes, so without it three
-checks cannot answer: two say so and pass, and *"every route this gateway serves has a
-caller"* fails naming the missing repository rather than reporting every console-only route
-as uncalled. Clone it as a sibling before running `npm run gate`.
+own repository and is the only caller of the `/api/console/*` routes, and the checks that
+exercise the console read the fake gateway answers its checkout ships — so the sibling is
+required rather than convenient. Without it those checks fail instead of passing unproven,
+and *"every route this gateway serves has a caller"* fails naming the missing repository
+rather than reporting every console-only route as uncalled. A few checks note that they
+cannot answer and pass without answering. Clone it as a sibling before running `npm run gate`.
 
 ## What is where
 
@@ -43,13 +45,15 @@ tools alike, with no dependency outside what the services already carry:
 ```
 packages/contracts/   shared types & zod schemas — the single source of truth
 packages/catalog/     the one reader of catalog/: manifests, entries, skill text
-packages/mcp-http/    session-managed streamable-HTTP MCP hosting + identity
-packages/mcp-client/  the one MCP client anything here uses to call an endpoint — the
+packages/mcp-http/    stateless streamable-HTTP MCP hosting + identity — no session is issued,
+                      none is required and one presented is not checked
+packages/mcp-client/  the one MCP client anything that ships uses to call an endpoint — the
                       counterpart to mcp-http, which hosts one
 packages/indexing/    the knowledge index: the row a document gets in zz.doc, the claims
                       derived from it, and the walks that rebuild both. A package because
-                      both doors index — zz-core on every document write, the gateway for
-                      knowledge_reindex — and a service cannot import another service
+                      both services index — zz-core on every document write and for
+                      knowledge_reindex, the gateway for the console's derived claims — and
+                      a service cannot import another service
 packages/tools/       the platform's command-line tools: the testing engines under
                       src/testing/, day-2 ops under src/ops/, shared libraries under
                       src/lib/. Every testing and ops tool has an npm script, and the
@@ -196,7 +200,7 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             control-loop-e2e.ts (drives a real initiative through the real doors against a
             scratch deployment and checks the loop refuses and grants as the flow declares —
             it refuses to run against production by name, because it writes an initiative,
-            four documents, two sources and a close. Not a gate check: the gate is offline and
+            four documents, four sources and a close. Not a gate check: the gate is offline and
             proves things about the source, and this asks whether a run recorded through the
             platform reaches a grant, which no offline check can answer),
             eval-flow-e2e.ts (walks the whole zz-plugin-eval flow, zz-core as the subject,

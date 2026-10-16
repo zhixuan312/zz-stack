@@ -1,5 +1,5 @@
 /**
- * @zz/mcp-http — session-managed streamable-HTTP hosting for MCP servers, with per-request
+ * @zz/mcp-http — stateless streamable-HTTP hosting for MCP servers, with per-request
  * header propagation so tool handlers can read the forwarded caller identity. The MCP endpoint
  * is always a thin adapter: this package owns all transport plumbing so services stay pure
  * logic.

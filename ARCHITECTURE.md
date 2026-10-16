@@ -29,7 +29,7 @@ question is in the wrong place.
 | `skills/` | What does every flow carry, whoever owns it? | yes, at `/skills` |
 | `deploy/` | How does a host stand this up? | no — the host has it |
 | `scripts/` | How does this repository release and check itself? | no |
-| `checks/` | Which gate checks need a script of their own? | no |
+| `checks/` | Which checks need a script of their own — the gate checks registered by name, and the break-tests that spawn the gate to prove a plant goes red? | no |
 | `testing/` | How do we drive a deployment by hand? | no |
 | `marketplace/` | What does the public Claude Code shelf serve? Generated, committed | no |
 
@@ -390,7 +390,7 @@ What that leaves, in the four shapes a reader has to know:
   `document_read(path, details_ref, cursor)` pages the rest back; these rows are kept as long as
   the audit kinds, so a printed ref never dangles.
 
-The deployment backs up three tarballs and not four (`deploy/backup.sh`): the database dump, the
+The deployment backs up three archives and not four (`deploy/backup.sh`): the database dump, the
 credentials proxy's data, and the compose configuration. The store's own tarball is gone with the
 volume, because the store is in the dump.
 

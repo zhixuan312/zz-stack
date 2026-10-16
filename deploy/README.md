@@ -97,9 +97,10 @@ this compose file: it has its own compose file, from the `zz-stack-dashboard` re
 its own path on the host. It is still released by `zz-stack/scripts/release.ts` — one
 release, two components — so what runs there is a published image
 (`ghcr.io/zhixuan312/zz-stack-dashboard`) and the only file the host holds is that compose
-file. It binds to loopback, and Caddy splits one host on path: `/auth/*` and `/api/console/*`
-to this gateway, everything else to the app. Same origin, so the sign-in cookie is
-first-party; split them and it becomes a third-party cookie every browser is entitled to drop.
+file. It binds to loopback, and Caddy splits one host on path: `/auth/*`, `/oauth/*` and
+`/api/console/*` to this gateway, everything else to the app. Same origin, so the sign-in
+cookie is first-party; split them and it becomes a third-party cookie every browser is
+entitled to drop.
 
 Set `CONSOLE_PUBLIC_URL` and the door opens; leave it unset and `/auth/*` answers 503 and says
 why, rather than guessing a relying party from the Host header.

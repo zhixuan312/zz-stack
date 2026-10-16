@@ -79,7 +79,7 @@ COMMENT ON COLUMN zz.<table>.<col>  IS 'class=<…>; authority=<this|zz.<table>.
 `schema-target.ts` is the one machine-readable target inventory — the exact executable
 description of the schema as delivered through the current phase. Nothing else defines
 the schema a second time: `checks/schema-inventory.ts` imports `schema-target.ts`, reads
-`pg_catalog` of a database migrated from `services/gateway/migrations/001_init.sql`, and
+`pg_catalog` of a database migrated from `services/gateway/migrations/`, and
 fails the gate on any difference — a table or column absent from or extra to the target;
 a type, nullability, primary key, foreign key (including delete action and
 deferrability), unique, check or required index that differs; a missing or malformed

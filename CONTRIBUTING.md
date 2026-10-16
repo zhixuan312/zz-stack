@@ -50,7 +50,7 @@ node scripts/doctor.ts --layer repo,image       # offline; no host needed
 
 **Docker is needed by the fifty-eight gate checks that migrate a real PostgreSQL** — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
-migrated from `001_init.sql`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
+migrated from `services/gateway/migrations/`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
 `saveDocument` against one, upload staging (`checks/upload-staging.ts`), which drives the
 gateway's upload routes against one, the platform's status and the reader's own team's figures

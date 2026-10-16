@@ -129,7 +129,7 @@ if (!new RegExp(`^## \\[${version.replace(/\./g, "\\.")}\\]`, "m").test(readFile
       `        it of every shipped version, and after the tag is the wrong place to find out.`);
 }
 const headSha = run("git", ["rev-parse", "HEAD"], { cwd: root });
-// `--gate-in-ci`: the gate is 484 checks and two of them need Docker, which a machine that
+// `--gate-in-ci`: some of the gate's checks start a real PostgreSQL, which a machine that
 // emptied its Docker cannot run at all. CI runs the same gate on every push, so this asks GitHub
 // for that run's own conclusion on THIS commit instead of promising one.
 if (args.includes("--gate-in-ci")) {

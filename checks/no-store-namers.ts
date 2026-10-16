@@ -6,10 +6,10 @@
 // keeps its fixture, and this check reads statements rather than prose.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const files = execFileSync("git", ["ls-files", "services", "packages", "scripts", "deploy"],
-  { encoding: "utf8" }).split("\n").filter((f) => f.endsWith(".ts") && !f.includes("/dist/"));
+  { encoding: "utf8" }).split("\n").filter((f) => f.endsWith(".ts") && !f.includes("/dist/") && existsSync(f));
 
 // A mention counts only when it is CODE: a comment or a string about the past does not reach a
 // store, and demanding their removal would be asking for a rewrite of the history.

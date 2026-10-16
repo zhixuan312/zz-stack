@@ -7,11 +7,11 @@
 // prose would be a check that cannot pass, so it reads statement literals only.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const retired = ["team_slug", "path", "superseded_by", "evidence"];
 const files = execFileSync("git", ["ls-files", "services", "packages"], { encoding: "utf8" })
-  .split("\n").filter((f) => f.endsWith(".ts") && !f.includes("/dist/"));
+  .split("\n").filter((f) => f.endsWith(".ts") && !f.includes("/dist/") && existsSync(f));
 
 /** Every string a lexer would call one, whatever quote opens it and with escapes honoured.
  *

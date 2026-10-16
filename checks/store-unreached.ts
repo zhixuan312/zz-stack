@@ -9,10 +9,10 @@
 // shortfall before this task pass a green check, so there is none left to outlive anything.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const files = execFileSync("git", ["ls-files", "services", "packages"], { encoding: "utf8" })
-  .split("\n").filter((f) => f.endsWith(".ts") && !f.includes("/dist/") && !f.endsWith(".d.ts"));
+  .split("\n").filter((f) => f.endsWith(".ts") && !f.includes("/dist/") && !f.endsWith(".d.ts") && existsSync(f));
 
 // A call, not a declaration or an import: `export function logActivity(` was the layer defining it.
 // No file is skipped — not even the layer, which no longer exists.

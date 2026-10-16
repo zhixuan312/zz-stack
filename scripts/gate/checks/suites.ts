@@ -7,14 +7,13 @@
  * variable, which is why the gate can run them.
  */
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { asRecord, codeOnly, envNamesIn, isGateLaunchSource, readJson, root, trackedFiles, unbuilt, withoutComments }
   from "../read.ts";
 import { check } from "../run.ts";
 import { execFields, runsCheck, suiteSources } from "../suite-runner.ts";
-
 
 /** Run one of the offline check tools that live beside the code they are about. */
 const runsClean = (tool: string) => (): string | null => {
@@ -151,8 +150,10 @@ check("every check this gate registers is a file git will carry", () => {
   // Every relative import under scripts/gate is followed, not just gate.ts's own, because
   // facts.ts and read.ts are imported by the modules and would take the whole gate down the
   // same way.
+  // `existsSync`: `git ls-files` still lists a file deleted but not yet staged, and reading one
+  // would take the whole gate down with an ENOENT instead of reporting anything about the tree.
   const sources = ["scripts/gate.ts", ...execFileSync("git", ["ls-files", "scripts/gate/"],
-    { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean)];
+    { cwd: root, encoding: "utf8" }).split("\n").filter((f) => f && existsSync(join(root, f)))];
   // Every tracked file, not only scripts/: a gate module may import from the repository root —
   // data-sql.ts reads SCHEMA_TARGET from schema-target.ts — and a set drawn from scripts/ alone
   // reported that tracked file as one git does not carry.
@@ -177,67 +178,6 @@ check("every check this gate registers is a file git will carry", () => {
     : null;
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, search-extension release and actual preload membership",
       runsCheck("postgres-image-pinned.ts"));
 check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
@@ -250,11 +190,6 @@ check("a migration needing an extension declares it, and the runner still defers
       runsCheck("migration-extension-declared.ts"));
 check("the layer's tables, its files and its extension are gone from the tree",
       runsCheck("artifact-layer-deleted.ts"));
-
-// The two checks written as bash. The check at the bottom of this file counts `.sh` as well
-// as `.ts`, because the rule that hunts for unregistered checks reads the extension.
-
-
 
 // Nothing in `checks/` is invisible to this file
 

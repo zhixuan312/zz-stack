@@ -6,13 +6,13 @@
 // job by removing the trigram extension AC-4.2 depends on.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const retiredTables = ["artifact", "artifact_revision", "artifact_event", "artifact_edge", "artifact_passage",
   "artifact_identifier", "artifact_projection_commit", "artifact_projection_watermark",
   "doc_artifact", "knowledge_node_artifact", "search_current", "search_evidence", "search_history"];
 const files = execFileSync("git", ["ls-files", "services", "packages", "scripts", "testing", "deploy", "checks"],
-  { encoding: "utf8" }).split("\n").filter((f) => /\.(ts|sh|sql)$/.test(f) && !f.includes("/dist/"));
+  { encoding: "utf8" }).split("\n").filter((f) => /\.(ts|sh|sql)$/.test(f) && !f.includes("/dist/") && existsSync(f));
 
 const hits: string[] = [];
 for (const f of files) {
@@ -36,11 +36,13 @@ for (const f of files) {
   // asserts the lock's tag reaches the image tag — so those mentions must stay, and a scan that
   // flagged them would demand deleting the pinned image build.
   // Two exemptions, each a file that must name the extension to say what it says: the deploy
-// side compiles and preloads it, and THIS file states the rule — a scan that flagged either
-// would demand deleting the pinned image build or its own explanation.
-const namesItOnPurpose = /^(deploy\/postgres\/|checks\/postgres-image-pinned\.ts$|scripts\/gate\/checks\/deploy-compose\.ts$|checks\/artifact-layer-deleted\.ts$|services\/gateway\/migrations\/00[12][a-z_]*\.sql$)/;
-if (namesItOnPurpose.test(f)) continue;
-    src.split("\n").forEach((line, n) => {
+  // side compiles and preloads it, and THIS file states the rule — a scan that flagged either
+  // would demand deleting the pinned image build or its own explanation. Migrations are the third,
+  // as a whole directory rather than the two files that existed when this was written: the
+  // migration that drops the extension is exactly the file that has to spell it.
+  const namesItOnPurpose = /^(deploy\/postgres\/|checks\/postgres-image-pinned\.ts$|scripts\/gate\/checks\/deploy-compose\.ts$|checks\/artifact-layer-deleted\.ts$|services\/gateway\/migrations\/)/;
+  if (namesItOnPurpose.test(f)) continue;
+  src.split("\n").forEach((line, n) => {
     if (!/pg_textsearch/.test(line)) return;
     if (/remov|deleted|phase 5|absorb|no longer/i.test(line)) return;
     hits.push(`${f}:${n + 1} still names the pg_textsearch extension`);

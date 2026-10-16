@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://zz-stack.dev/schemas/zz-knowledge-v1.json",
   "title": "zz-knowledge-v1",
-  "description": "The native OKF profile for a ZZ knowledge concept. A record satisfying this schema is a native Decision/Rule/Fact/Defect exported by this platform. A record that does NOT satisfy it may still be a perfectly valid, importable OKF document — see 'legacy-okf' and 'legacy-raw' in services/zz-core/src/tenant-info/export.ts. Passing this schema is a structural fact only: it certifies neither that the concept's claim is true, nor that any person approved it — that is the platform's separate gate/approval workflow.",
+  "description": "The native OKF profile for a ZZ knowledge concept. A record satisfying this schema is a native Decision/Rule/Fact/Defect exported by this platform. A record that does NOT satisfy it may still be a perfectly valid, importable OKF document. Passing this schema is a structural fact only: it certifies neither that the concept's claim is true, nor that any person approved it — that is the platform's separate gate/approval workflow.",
   "type": "object",
   "required": ["type", "zz_profile", "title", "description", "zz_artifact_id", "generated"],
   "properties": {

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const CORE = "https://api.165-232-169-165.nip.io/core/mcp";
 const SHELF = new Set(["zz-core","zz-access","sdlc","zz-plugin-eval"]);
+const COMMANDS = {"sdlc":{"flow":"sdlc-flow"},"zz-plugin-eval":{"eval":"zz-plugin-eval"},"zz-access":{"connect":"zz-access","admin":"zz-admin","doctor":"zz-doctor","migrate":"zz-migrate","update":"zz-update"},"zz-core":{"breakout":"zz-breakout","deck":"zz-deck","tldr":"zz-tldr"}};
 
 function headers() {
   try {
@@ -23,8 +24,11 @@ process.stdin.on("data", (d) => { raw += d; }).on("end", async () => {
   try {
     const input = JSON.parse(raw || "{}").tool_input || {};
     const named = String(input.skill || input.name || input.command || "").replace(/^\//, "").trim();
-    const [plugin, name] = named.includes(":") ? named.split(":", 2) : ["", named];
-    if (!name || !SHELF.has(plugin)) return;
+    const [plugin, opened] = named.includes(":") ? named.split(":", 2) : ["", named];
+    if (!opened || !SHELF.has(plugin)) return;
+    // The name typed is the command; the name zz-core resolves by is the skill's directory,
+    // and the two differ for every promoted skill. Reporting the command found nothing.
+    const name = (COMMANDS[plugin] ?? {})[opened] ?? opened;
     const h = headers();
     if (!h.Authorization) return;
     await fetch(CORE, {

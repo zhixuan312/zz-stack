@@ -114,7 +114,7 @@ function trimTo(text: string, max: number): string {
  *
  * Read from the manifest rather than ShelfFlow because it is a property of the package as
  * authored, not of how a team installed it. */
-function declaredCommands(flow: string): Record<string, string> {
+export function declaredCommands(flow: string): Record<string, string> {
   const v = catalogEntry(flow, true)?.manifest.commands;
   return v && typeof v === "object" ? v : {};
 }
@@ -368,8 +368,18 @@ export const SKILL_REPORT_HOOKS = JSON.stringify({
 }, null, 2) + "\n";
 
 /** The script the hook runs. `coreUrl` is the core door; `plugins` are the shelf's plugin names,
- *  so a skill from any other marketplace is never reported and never refused. */
-export function skillReportScript(coreUrl: string, plugins: string[]): string {
+ *  so a skill from any other marketplace is never reported and never refused.
+ *
+ *  `commands` is what each plugin's commands open, keyed by plugin then by the name a person
+ *  typed — and it is load-bearing rather than a convenience. A skill promoted to a command is
+ *  renamed to that command in its frontmatter, which is the name a client sends, while the
+ *  directory beside it keeps the skill's own name: `skill_read` resolves
+ *  `<root>/<name>/SKILL.md`, so reporting the command `flow` looked for a directory that does not
+ *  exist, found nothing, and wrote no event. Every command-typed skill — the platform's own front
+ *  doors — left no trace at all, which is the one kind of failure that quietly makes a
+ *  measurement wrong. */
+export function skillReportScript(coreUrl: string, plugins: string[],
+                                  commands: Record<string, Record<string, string>> = {}): string {
   return [
     "#!/usr/bin/env node",
     "// Reports a skill this session loaded from the ZZ shelf to the platform, as skill_read.",
@@ -382,6 +392,7 @@ export function skillReportScript(coreUrl: string, plugins: string[]): string {
     "",
     `const CORE = ${JSON.stringify(coreUrl)};`,
     `const SHELF = new Set(${JSON.stringify(plugins)});`,
+    `const COMMANDS = ${JSON.stringify(commands)};`,
     "",
     "function headers() {",
     '  try {',
@@ -396,8 +407,11 @@ export function skillReportScript(coreUrl: string, plugins: string[]): string {
     "  try {",
     '    const input = JSON.parse(raw || "{}").tool_input || {};',
     '    const named = String(input.skill || input.name || input.command || "").replace(/^\\//, "").trim();',
-    '    const [plugin, name] = named.includes(":") ? named.split(":", 2) : ["", named];',
-    "    if (!name || !SHELF.has(plugin)) return;",
+    '    const [plugin, opened] = named.includes(":") ? named.split(":", 2) : ["", named];',
+    "    if (!opened || !SHELF.has(plugin)) return;",
+    "    // The name typed is the command; the name zz-core resolves by is the skill's directory,",
+    "    // and the two differ for every promoted skill. Reporting the command found nothing.",
+    "    const name = (COMMANDS[plugin] ?? {})[opened] ?? opened;",
     "    const h = headers();",
     "    if (!h.Authorization) return;",
     "    await fetch(CORE, {",

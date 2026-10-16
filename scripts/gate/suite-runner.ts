@@ -40,10 +40,21 @@ export const runsCheck = (file: string) => (): string | null => {
     return null;
   } catch (err) {
     const out = `${execFields(err).stdout}${execFields(err).stderr}`.trim();
-    return out.split("\n").filter((l) => l.trim()).join("; ").slice(0, 400)
+    return tailOf(out.split("\n").filter((l) => l.trim()).join("; "))
       || `checks/${file} exited non-zero`;
   }
 };
+
+/** The end of a failure's output, not the beginning, and why this is not a style choice.
+ *
+ * A check prints each case as it goes and names the one that failed — or throws — after them, so
+ * its reason is the LAST thing it says. A head-slice of a long output therefore keeps a column of
+ * case-by-case "ok"s and drops the one line that says what went wrong. That is not hypothetical:
+ * two gate runs here failed on checks whose entire reported detail was passing cases, with the
+ * cause cut off at 400 characters, and each had to be run by hand to be diagnosed at all. A
+ * truncated tail is worth more than a complete-looking head — the leading `…` says the rest is
+ * above it, where the cases are. */
+const tailOf = (said: string): string => (said.length > 400 ? `…${said.slice(-400)}` : said);
 
 /** The same, for the checks in `checks/` written as bash rather than as a module. Both print
  * `FAIL:` lines and exit non-zero as the module checks do, so the failure text needs no
@@ -58,7 +69,7 @@ export const runsShell = (file: string) => (): string | null => {
     return null;
   } catch (err) {
     const out = `${execFields(err).stdout}${execFields(err).stderr}`.trim();
-    return out.split("\n").filter((l) => /FAIL/.test(l)).join("; ").slice(0, 400)
+    return tailOf(out.split("\n").filter((l) => /FAIL/.test(l)).join("; "))
       || `checks/${file} exited non-zero`;
   }
 };

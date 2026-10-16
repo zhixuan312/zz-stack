@@ -37,7 +37,7 @@
  * and the superadmin flag decides the split by team and nothing else.
  *
  * COUPLED: the console's `Usage` in src/lib/fleet-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-usage.ts, which `checks/console-platform-usage.ts` compares this
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-usage.ts, which `checks/console-platform-usage.ts` compares this
  * route's answer with, key set by key set.
  */
 import type { Express } from "express";

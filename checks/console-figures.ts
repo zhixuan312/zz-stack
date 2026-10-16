@@ -110,7 +110,10 @@ const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({
   const r = N.runOf(days);
   expect("run of three to the last complete day", r?.days === 3 && r?.through === "2026-10-12" && r?.atLeast === false, r);
   expect("a day at 1% or more ends the run", N.runOf([...days.slice(0, 4), d("2026-10-12", 100, 1)]) === null, N.runOf([...days.slice(0, 4), d("2026-10-12", 100, 1)]));
-  expect("an unavailable day ends the run", N.runOf([d("2026-10-09", 10, 0), d("2026-10-10", null, null), d("2026-10-11", 10, 0), d("2026-10-12", 10, 0)]) === null, null);
+  // The value is passed as the message's own argument: a failing case that reports the literal
+  // `null` says nothing about what came back.
+  const unavailable = N.runOf([d("2026-10-09", 10, 0), d("2026-10-10", null, null), d("2026-10-11", 10, 0), d("2026-10-12", 10, 0)]);
+  expect("an unavailable day ends the run", unavailable === null, unavailable);
   const all = N.runOf([d("2026-10-10", 10, 0), d("2026-10-11", 10, 0), d("2026-10-12", 1000, 1), d("2026-10-13", 10, 0, false)]);
   expect("reaching the first day kept is at least", all?.atLeast === true && all?.days === 3, all);
   expect("the run sentence", N.runFinding(days).kind === "run" && N.runFinding(days).text === "3 days in a row under 1% tool failures, to 12 Oct", N.runFinding(days));

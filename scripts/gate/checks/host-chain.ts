@@ -2,13 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { root } from "../read.ts";
+import { root, stderrOf } from "../read.ts";
 import { check } from "../run.ts";
-
-function execStderr(err: unknown): string {
-  const e = err as { stderr?: Buffer | string; message?: string };
-  return String(e.stderr ?? e.message ?? err);
-}
 
 check("a registered procedure's chain is enforced all the way back, and still grants when it is met", () => {
   // The chain is checked to its root, not one link deep. Asking only whether the step
@@ -124,7 +119,7 @@ check("a registered procedure's chain is enforced all the way back, and still gr
       execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" }));
     return bad.length ? bad.join("; ") : null;
   } catch (err) {
-    return `the registered procedures could not be driven: ${execStderr(err).slice(-300)}`;
+    return `the registered procedures could not be driven: ${stderrOf(err).slice(-300)}`;
   }
 });
 
@@ -195,7 +190,7 @@ check("a fact a later entry withdrew stops being counted, and the log still only
   try {
     out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { encoding: "utf8" });
   } catch (err) {
-    return `the withdrawal probe could not run, so this is unchecked: ${execStderr(err).slice(0, 300)}`;
+    return `the withdrawal probe could not run, so this is unchecked: ${stderrOf(err).slice(0, 300)}`;
   }
   const bad = JSON.parse(out.trim()) as string[];
   if (bad.length) return bad.join("; ");
@@ -280,7 +275,7 @@ check("a stored run replays its withdrawals in order: a re-approval after a revi
   try {
     out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { encoding: "utf8" });
   } catch (err) {
-    return `the stored-run replay probe could not run, so this is unchecked: ${execStderr(err).slice(0, 300)}`;
+    return `the stored-run replay probe could not run, so this is unchecked: ${stderrOf(err).slice(0, 300)}`;
   }
   const bad = JSON.parse(out.trim()) as string[];
   return bad.length ? bad.join("; ") : null;

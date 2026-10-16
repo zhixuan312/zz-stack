@@ -31,8 +31,8 @@
  * earlier evaluation of that version was judged against must not move under it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type PluginComponent, pluginContentDigest, sha256 } from "@zz/catalog";
-import { parseCaller } from "@zz/contracts";
+import { type PluginComponent, pluginContentDigest } from "@zz/catalog";
+import { parseCaller, sha256 } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";

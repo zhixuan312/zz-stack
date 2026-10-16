@@ -477,3 +477,15 @@ export function execOutput(err: unknown): string {
   }
   return String(err);
 }
+
+/** What a spawned probe with `stdio: ["ignore", "pipe", "pipe"]` said on stderr when it failed —
+ *  the child's own words, which is what a check reporting a failed probe has to quote. The
+ *  message is the fallback for a spawn that never produced one. */
+export function stderrOf(err: unknown): string {
+  if (err && typeof err === "object") {
+    const rec = err as { stderr?: Buffer | string; message?: string };
+    if (rec.stderr !== undefined) return String(rec.stderr);
+    if (rec.message !== undefined) return rec.message;
+  }
+  return String(err);
+}

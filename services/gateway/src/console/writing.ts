@@ -36,7 +36,7 @@
  * comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's WritingCoverage and DocumentsSlice in src/lib/work-shapes.ts, and the fake's
- * words in scripts/fake-gateway/work-home.ts and work-record.ts.
+ * words in ../zz-stack-dashboard/scripts/fake-gateway/work-home.ts and work-record.ts.
  */
 import { countWords, type WritingCoverage } from "@zz/contracts";
 

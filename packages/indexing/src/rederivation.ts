@@ -20,9 +20,9 @@
  * `bodyTsvParams` are the write path's own construction, imported rather than restated, so the
  * two halves of a row cannot be stored through different configurations.
  *
- * `rebuildRowVector` lives here rather than in a module of its own because this pass is its only
- * caller: the function exists to normalize a raw database row for `buildRowVector`, and no other
- * walk reads rows that way.
+ * `rebuildRowVector` lives here rather than in a module of its own because nothing else needs it:
+ * the function exists to normalize a raw database row for `buildRowVector`, and no other walk
+ * reads rows that way.
  */
 import { bodyTsvParams, bodyTsvSql, buildRowVector } from "./tenant-analysis.js";
 

@@ -104,7 +104,7 @@ export interface SearchPredicate {
    *  parser cannot produce them from an unspaced run, so `websearch_to_tsquery` finds nothing in
    *  that half of `body_tsv`. Empty when the query carried no Han clause. */
   readonly hanTerms: readonly string[];
-  /** Every `zz-lexical-v2` base term (Han unigrams, whole Latin words) the query analysed into,
+  /** Every `@zz/indexing` base term (Han unigrams, whole Latin words) the query analysed into,
    *  across every positive and excluded clause, for a caller building tag or neighbour-expansion
    *  candidates from the same query. */
   readonly terms: readonly string[];
@@ -148,7 +148,7 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
   let asciiText: string | null = null;
   let unsafe: string | undefined;
 
-  // `zz-lexical-v2` base terms only — Han unigrams and whole Latin words, unstemmed. The ranking
+  // `@zz/indexing` base terms only — Han unigrams and whole Latin words, unstemmed. The ranking
   // bigrams `analyze` also returns are a hint over a real tsvector, which this ILIKE-based match
   // does not build.
   const termsOf = (t: string): string[] => analyze(t).base.map((b) => (b.field === "han" ? b.term : b.term.toLowerCase()));

@@ -4,7 +4,7 @@
 // declaration such as `export function commitStore(` is not a caller, and a check that matched it
 // could only be satisfied by deleting a module this task does not own. The assertion the AC's
 // first clause really makes is about a write path reaching a document, and the primitive for that
-// is writeFileSync, which is asserted per file with the one exemption named.
+// is writeFileSync, which is asserted per file with no exemption.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -32,11 +32,11 @@ for (const f of OWNED) {
 }
 assert.deepEqual(callers, [], "no file this task owns calls the file store's write path");
 
-// The raw write: a document reaching the disk. review-acceptance.ts writes the acceptance cache
-// under `_assessments/`, which is not a document, so it is exempt from this clause alone.
+// The raw write: a document reaching the disk. No file here has an exemption any more —
+// review-acceptance.ts wrote an acceptance cache under `_assessments/` until the store was
+// retired, and that write is gone with it.
 const rawWriters: string[] = [];
 for (const f of OWNED) {
-  if (f.endsWith("review-acceptance.ts")) continue;   // the acceptance cache, not a document
   if (/writeFileSync\s*\(/.test(readFileSync(f, "utf8"))) rawWriters.push(f);
 }
 assert.deepEqual(rawWriters, [], "and none writes a document with the raw primitive");

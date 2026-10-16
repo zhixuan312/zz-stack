@@ -18,12 +18,14 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import { bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "./tenant-analysis.js";
+import { rebuildRowVector } from "./rederivation.js";
 
 // The package's door: a consumer imports `@zz/indexing`, not a path inside it. That is why
 // the pure rules are re-exported here rather than reached by a deep import.
 export { decisionRows, type DecisionRow } from "./rules.js";
-// `zz-lexical-v2`, the versioned analyzer. `buildRowVector` is also imported below, not only
-// re-exported, because the reindex pass calls it to rebuild a row's `body_tsv`.
+// The versioned analyzer's identity and the version it is at. `buildRowVector` is also imported
+// below, not only re-exported, because `indexNode` calls it to write a row's `body_tsv`; the
+// reindex pass goes through `rebuildRowVector` so a raw database row is normalized the one way.
 export {
   ANALYZER_NAME, CURRENT_ANALYZER_VERSION, MAX_INPUT_BYTES, InputTooLargeError,
   assertWithinInputLimit, inputLimitRefusal, PASSAGE_MAX_SCALARS, PASSAGE_OVERLAP_SCALARS,
@@ -39,7 +41,7 @@ export {
 } from "./tenant-analysis.js";
 // The generation-aware rederivation pass over existing `zz.doc`/`zz.knowledge_node` rows.
 // `rederivation.js` imports only `tenant-analysis.js`, never this file, so re-exporting it here
-// creates no import cycle — and `rebuildRowVector` lives there, beside its only caller.
+// creates no import cycle — and `rebuildRowVector` lives there, beside the pass that calls it.
 export { planRebuild, queryGeneration, rederiveCorpus, rederiveAll, rebuildRowVector, type RebuildRowInput, type RebuildPlan, type GenerationQuery, type GenerationStatusResult, type CorpusRebuildRecord, type RederivationClient } from "./rederivation.js";
 // The query-grammar lexer: quotes, exclusions and explicit `OR`, read on the raw text before
 // `identifierTokens`/`analyze` above ever see it.
@@ -257,7 +259,7 @@ export async function reindexTeam(
         where ${corpus.scope}`, [teamId]);
     for (const row of rows.rows) {
       scanned++;
-      const vector = buildRowVector({ title: row.title ?? "", tags: row.tags ?? [], body: row.body ?? "" });
+      const vector = rebuildRowVector({ title: row.title, tags: row.tags, body: row.body });
       if (!force && row.analyzer_version === vector.analyzer) continue;
       await p.query(corpus.update, [row.id, vector.analyzer, ...bodyTsvParams(vector)]);
       indexed++;

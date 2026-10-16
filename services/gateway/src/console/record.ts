@@ -51,7 +51,7 @@
  * comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's RecordRead in src/lib/work-shapes.ts, and its fake answer in
- * scripts/fake-gateway/work-record.ts, which checks/console-work-record.ts compares this route's answer
+ * ../zz-stack-dashboard/scripts/fake-gateway/work-record.ts, which checks/console-work-record.ts compares this route's answer
  * with, key set by key set.
  */
 import { OUTCOMES, writingEstimate, type WritingCoverage } from "@zz/contracts";

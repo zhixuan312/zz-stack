@@ -49,7 +49,7 @@ for (const f of files) {
 // file name. A stale `.mjs` name there does not throw; it silently takes the wrong branch.
 const sv = readFileSync("scripts/skill-versions.ts", "utf8");
 if (/endsWith\(["'`]skill-versions\.mjs["'`]\)/.test(sv)) {
-  fail.push("scripts/skill-versions.ts:~140 still compares argv[1] against skill-versions.mjs — " +
+  fail.push("scripts/skill-versions.ts still compares argv[1] against skill-versions.mjs — " +
             "this does not throw, it silently takes the wrong branch");
 }
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

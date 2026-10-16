@@ -32,7 +32,7 @@
  * in a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's ActiveGroup, Home and RecordRead in src/lib/work-shapes.ts and Runs in
- * src/lib/destination-shapes.ts, and the fake's answers in scripts/fake-gateway/work-home.ts,
+ * src/lib/destination-shapes.ts, and the fake's answers in ../zz-stack-dashboard/scripts/fake-gateway/work-home.ts,
  * work-record.ts and work-runs.ts, which draw these figures.
  */
 import { platformDb } from "../db.js";

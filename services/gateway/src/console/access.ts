@@ -26,7 +26,7 @@
  * comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's Access in src/lib/destination-shapes.ts, and its fake answer in
- * scripts/fake-gateway/work-access.ts, which checks/console-access.ts compares this route's answer with,
+ * ../zz-stack-dashboard/scripts/fake-gateway/work-access.ts, which checks/console-access.ts compares this route's answer with,
  * key set by key set. The two revokes are in settings/me.ts.
  */
 import type { Express } from "express";

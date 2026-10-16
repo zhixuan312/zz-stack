@@ -43,9 +43,6 @@ export { UPLOAD_EXTENSIONS, UPLOAD_ID, UPLOAD_MAX_BYTES, UPLOAD_SECRET, mintUplo
 export { WORDS_PER_HOUR, countWords, writingEstimate,
          type WritingCoverage, type WritingEstimate } from "./words.js";
 
-export { BANDS, NOT_MEASURABLE, band,
-         HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
-
 // Whether a call is work or the platform maintaining itself, from the client name it sent — one
 // rule, so the two writers of zz.event cannot classify one client two ways.
 export { PLATFORM_CLIENTS, eventOrigin, type EventOrigin } from "./event-origin.js";

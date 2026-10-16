@@ -24,8 +24,8 @@ const CLAIM_KEY = "([A-Z]{1,4}-\\d+(?:\\.\\d+)*)";
 
 /** The claims a stage document makes, as rows, from text the stage already wrote.
  *
- * Two shapes, because two stages state a commitment two ways and both are already in the text the
- * stage wrote:
+ * More than one shape: stages state a commitment in different ways, and each is already in the
+ * text the stage wrote:
  *
  *   selection.md   | AC-1.2 web-form channel ready | **Achievable - blocked on credential** | ... |
  *   spec.md        **AC-1.1** `[you]` - An email to the pilot's inbox appears as a case.
@@ -80,8 +80,8 @@ export function decisionRows(body: string): DecisionRow[] {
   }
 
   // A plan's task, and the criteria it discharges. A plan states its claims as
-  // `### Task I-1: <what it does> (← AC-8)` — neither a table cell nor a bolded line, so the
-  // three readers above skip it.
+  // `### Task I-1: <what it does> (← AC-8)` — neither a table cell nor a bolded line, so neither
+  // reader above sees it.
   //
   // The arrow is the point: "which task covers AC-5", and its inverse "which criterion has no
   // task at all", are the questions a plan audit asks. The traceability table an author is

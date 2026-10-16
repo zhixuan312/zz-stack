@@ -15,7 +15,7 @@
  * in a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's InitiativeList, Home and RecordRead in src/lib/work-shapes.ts, and the
- * fake's answers in scripts/fake-gateway/work-*.ts, which draw these figures.
+ * fake's answers in ../zz-stack-dashboard/scripts/fake-gateway/work-*.ts, which draw these figures.
  */
 import { OUTCOMES } from "@zz/contracts";
 import { platformDb } from "../db.js";

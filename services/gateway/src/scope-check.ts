@@ -13,7 +13,7 @@
  * and a superadmin, and the one case that must never happen — a non-superadmin reaching platform
  * scope — is asserted against directly rather than left as an absence.
  *
- * The second matrix below drives `teamAuthority` (admin.ts) — the function settings.ts's
+ * The second matrix below drives `teamAuthority` (admin/authority.ts) — the function settings.ts's
  * `/api/console/settings/team/*` routes and every admin.ts team-write tool both call, rather than
  * a comparison written out at either call site.
  */
@@ -163,7 +163,7 @@ function same(got: Scope, want: Scope): boolean {
 /**
  * The team-authority matrix: who may add, remove or change the role of a
  * team's members. Drives `teamAuthority` itself, exported from
- * admin.ts, rather than a second copy of "team admin or superadmin" — a check that re-implemented
+ * admin/authority.ts, rather than a second copy of "team admin or superadmin" — a check that re-implemented
  * the comparison would still pass if the real function drifted from it.
  *
  * The fifth case is the one worth having this matrix for: a superadmin whose token is bound to one
@@ -241,7 +241,7 @@ const TEAM_AUTHORITY_CASES: TeamAuthorityCase[] = [
  * The platform-authority matrix: who may add or deactivate a person, or create or archive a
  * team.
  *
- * COUPLED: drives `superOnly` itself, exported from admin.ts, rather than a second copy of
+ * COUPLED: drives `superOnly` itself, exported from admin/authority.ts, rather than a second copy of
  * "superadmin required". An inline `platformRole === "superadmin"` is a second authority nothing
  * holds to this matrix.
  *

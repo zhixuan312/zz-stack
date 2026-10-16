@@ -240,6 +240,11 @@ export interface ApplyResult {
   } | null;
 }
 
+/** The branch the apply plan names, and the one the release CLI creates.
+ *
+ *  COUPLED: `packages/tools/src/release/apply.ts` spells the same name in `reconcileMain` —
+ *  reconstructing it from `--candidate`, because `--reconcile` is run by an operator with no plan
+ *  in hand and nothing it may read would return one. A change to this name has to reach there. */
 const branchFor = (candidateId: string): string => `release/candidate-${candidateId}`;
 
 /** Rebuilds `release_apply`'s response from the row alone — the FR-59 ledger stores only

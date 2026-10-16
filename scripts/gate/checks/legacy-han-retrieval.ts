@@ -1,12 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { root } from "../read.ts";
+import { root, stderrOf } from "../read.ts";
 import { check } from "../run.ts";
-
-function execStderr(err: unknown): string {
-  const e = err as { stderr?: Buffer | string; message?: string };
-  return String(e.stderr ?? e.message ?? err);
-}
 
 check("the legacy handler builds a predicate that can match a term inside an unspaced Han run", () => {
   // DELIBERATE: runs the builder in a spawned probe rather than importing it. A service's
@@ -31,6 +26,6 @@ check("the legacy handler builds a predicate that can match a term inside an uns
     const out = execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" });
     return out.trim() || undefined;
   } catch (err) {
-    return `the search-predicate builder could not be run: ${execStderr(err).slice(-200)}`;
+    return `the search-predicate builder could not be run: ${stderrOf(err).slice(-200)}`;
   }
 });

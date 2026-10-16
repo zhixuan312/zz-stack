@@ -25,7 +25,7 @@
  * the evidence (the passage that should support it) — the family's own instruction. A row whose
  * evidence names a check the approved plan declares for that criterion is asked only whether the
  * check ran and passed (`questionOf`). Asked when
- * the document is written or patched and cached per row digest in `_assessments/`, so approval
+ * the document is written or patched and cached per row digest in `zz.assessment`, so approval
  * asks only what nobody asked yet. `no` refuses. `unclear` refuses once, asking for sharper
  * evidence; `unclear` again on different evidence goes to the stakeholder, whose source naming
  * the row accepts it. `unavailable` blocks nothing and is said so.

@@ -46,7 +46,7 @@
  * comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's KnowledgeSlice, AgentsSlice and FirstsSlice in src/lib/work-shapes.ts, and the
- * fake's answer in scripts/fake-gateway/work-record.ts.
+ * fake's answer in ../zz-stack-dashboard/scripts/fake-gateway/work-record.ts.
  */
 import { platformDb } from "../db.js";
 import type { Figure, PeriodFigure } from "./figures.js";

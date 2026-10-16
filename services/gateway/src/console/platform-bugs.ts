@@ -14,7 +14,7 @@
  * that is not a UUID naming a row of `zz.bug` is a 404 with no body. Nothing here writes `zz.bug`.
  *
  * COUPLED: the console's `Bugs`, `AdminBugRow` and `BugReport` in src/lib/platform-shapes.ts, and
- * its fake answer in scripts/fake-gateway/platform-bugs.ts, whose `canonicalSurface` copies the rule
+ * its fake answer in ../zz-stack-dashboard/scripts/fake-gateway/platform-bugs.ts, whose `canonicalSurface` copies the rule
  * below; `checks/console-platform-bugs.ts` compares this route's answers with the fake's, key set by
  * key set.
  */

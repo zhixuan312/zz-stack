@@ -32,7 +32,7 @@
  * Nothing here writes.
  *
  * COUPLED: the console's `Approvals`, `ApprovalRow`, `WaitingRow` and `ApprovalEvidence` in
- * src/lib/work-shapes.ts, and its fake answer in scripts/fake-gateway/work-approvals.ts, which
+ * src/lib/work-shapes.ts, and its fake answer in ../zz-stack-dashboard/scripts/fake-gateway/work-approvals.ts, which
  * `checks/console-work-approvals.ts` compares this route's answer with, key set by key set.
  */
 import { contentRevision } from "@zz/contracts";

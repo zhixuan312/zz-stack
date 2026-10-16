@@ -17,7 +17,7 @@
  * Read, not run. A statement is the text of a string or template literal — adjacent literals that
  * a `+` joins read as one, so an insert list spread across four of them is still a single
  * statement — with the text after a `--` on each of its lines stripped, the way
- * `checks/catalog-eval-columns.ts:232` strips it; or, in a shell script, one line. A
+ * `checks/catalog-eval-columns.ts`'s `withoutSqlComments` does it; or, in a shell script, one line. A
  * `${callee(…)}` the statement interpolates is replaced by the literals that callee returns before
  * the statement is read, so a `set` a caller cannot see is one this reads.
  *

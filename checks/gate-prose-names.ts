@@ -31,6 +31,9 @@ const read = (p: string) => {
 const skOriginal = read(SK);
 const modOriginal = read(MOD);
 const restore = () => { writeFileSync(SK, skOriginal); writeFileSync(MOD, modOriginal); };
+// Every plant is undone even if this dies: both files it edits are shipped ones, and a throw or
+// an interrupt between a plant and its restore would leave the working tree carrying it.
+process.on("exit", restore);
 
 /** The gate's failing checks, by name, with the sentence each gave. */
 const fail: string[] = [];

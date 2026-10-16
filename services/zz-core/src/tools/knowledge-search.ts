@@ -266,7 +266,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
         ${NODE_ARM}
       ) k`;
       /* The query itself, through `buildSearchPredicate`: the platform's query grammar reads
-       * quotes, exclusions and an explicit `OR` on the raw text, and `zz-lexical-v2` analyses
+       * quotes, exclusions and an explicit `OR` on the raw text, and `@zz/indexing` analyses
        * each clause. A Han clause matches as a literal `body` substring, because
        * `websearch_to_tsquery(QUERY_CONFIG, …)` cannot see inside an unspaced Han run. */
       const primary = buildSearchPredicate({
@@ -328,7 +328,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
       let tagged: KbRow[] = [];
       if (tokens.length) {
         // Subject tags are reachable from the word they are about. `tokens` is
-        // `buildSearchPredicate`'s `zz-lexical-v2` base terms, so a node tagged `plugin:sdlc`
+        // `buildSearchPredicate`'s `@zz/indexing` base terms, so a node tagged `plugin:sdlc`
         // is matched by neither `tags && tokens` — the stored tag is one string with a colon in
         // it — nor the lexical arm unless the body spells it.
         //

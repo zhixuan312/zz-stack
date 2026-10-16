@@ -25,7 +25,7 @@ export const CATALOG_DIR = process.env.ZZ_CATALOG_DIR || "/catalog";
  * directly, and a second module path to one definition is what this package exists to remove. */
 import {
   addressResolver, CatalogManifest as CatalogManifestSchema, type CatalogManifest, type FlowDoc, internalAddress,
-  whyNot,
+  sha256, whyNot,
 } from "@zz/contracts";
 
 interface CatalogEntry {
@@ -343,8 +343,6 @@ export interface PluginComponent {
   readonly name: string;
   readonly digest: string;
 }
-
-export const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 /** The refusal for a path that is a symlink, or null — `lstat`, so the link itself is judged and
  *  never where it points. A path that does not exist is not this question's business.

@@ -12,7 +12,7 @@
  * `state` is `active` or `deactivated`, and neither moves a tile. Nothing here writes.
  *
  * COUPLED: the console's `People` and `PersonRow` in src/lib/fleet-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-people.ts; `checks/console-platform-people.ts` compares this route's
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-people.ts; `checks/console-platform-people.ts` compares this route's
  * answer with the fake's, key set by key set.
  */
 import type { Express, Request } from "express";

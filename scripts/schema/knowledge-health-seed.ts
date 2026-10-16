@@ -203,7 +203,12 @@ async function writeLessons(db: pg.ClientBase, s: KnowledgeSeeded, list: readonl
   }
   for (const [i, l] of list.entries()) {
     if (!l.superseded) continue;
-    const by = list.findIndex((x, j) => j !== i && x.shelf === l.shelf && !x.superseded);
+    // The lesson that supersedes it is the next one written on the same shelf that is not itself
+    // superseded — never an earlier one, which would seed a chain running backwards.
+    const by = list.findIndex((x, j) => j > i && x.shelf === l.shelf && !x.superseded);
+    if (by === -1) {
+      throw new Error(`seeded lesson ${i} on ${l.shelf} is marked superseded with no lesson after it to supersede it`);
+    }
     await db.query("update zz.knowledge_node set lifecycle = 'superseded', superseded_by_id = $2 where id = $1", [ids[i], ids[by]]);
   }
 }

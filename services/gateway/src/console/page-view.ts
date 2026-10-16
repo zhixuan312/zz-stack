@@ -35,7 +35,7 @@ type Workspace = "main" | "platform";
  *  `teams` and `people` stay `main` until the phase that moves them to the Platform workspace.
  *
  *  COUPLED: the console's `src/data/features.ts` is its counterpart, and its fake gateway
- *  (`scripts/fake-gateway/server.ts`, `PAGE_FEATURES`) copies this list. */
+ *  (`../zz-stack-dashboard/scripts/fake-gateway/server.ts`, `PAGE_FEATURES`) copies this list. */
 const FEATURES: ReadonlyMap<string, Workspace> = new Map<string, Workspace>([
   ["home", "main"], ["record", "main"], ["initiatives", "main"], ["approvals", "main"],
   ["knowledge", "main"], ["activity", "main"], ["runs", "main"], ["plugins", "main"],

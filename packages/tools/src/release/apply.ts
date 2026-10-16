@@ -338,6 +338,9 @@ export async function reconcileMain(
   const version = required(args, "release-version", "the exact version the attempt's release command publishes", 2);
   const releaseTag = required(args, "release-tag", "the git tag the attempt's release command creates and pushes", 2);
   const repoRoot = required(args, "repo", "the clone the attempt was applied in", 2);
+  // COUPLED: the plan's `branch`, as `services/zz-core/src/eval/release-apply.ts`'s `branchFor`
+  // builds it. `--reconcile` is run by an operator with no plan in hand, and nothing this command
+  // may read would return one, so the name is reconstructed from `--candidate` here.
   const branch = `release/candidate-${candidateId}`;
   const hint = reconcileHint(attemptId, candidateId, plugin, version, releaseTag);
   // A bare flag: parseArgs stores `--flag` alone as "", so presence is the test, never truthiness.

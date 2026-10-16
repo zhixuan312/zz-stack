@@ -30,10 +30,9 @@
  * identifier, so the arguments of a `values (...)` or a nested `select (...)` are not mistaken for
  * a column list by a statement that names none.
  *
- * EXEMPT: `services/gateway/migrations/` — an applied migration is history. `001_init.sql`
- * created `skill_asset` and defined every column the phase retired; the file that retired them is
- * exactly the file that must still spell them. `checks/dropped-columns.ts:47-51` carries this
- * exemption for the same reason.
+ * EXEMPT: `services/gateway/migrations/` — an applied migration is history, so a file there may
+ * still spell a column the phase retired. `checks/dropped-columns.ts` carries this exemption for
+ * the same reason.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

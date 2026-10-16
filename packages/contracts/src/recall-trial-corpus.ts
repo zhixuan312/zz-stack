@@ -25,7 +25,7 @@
  * The analysis is Han-aware. `packages/indexing`'s `TEXT_SEARCH_CONFIG` pins
  * `{ latin: "english", han: "simple" }` because a prose tokenizer cannot segment an unspaced
  * Han run, so `trialAnalyze` emits Han unigrams and adjacent Han bigrams the way
- * `zz-lexical-v2` does, and `searchCorpus` takes its analyzer as a parameter so the probe can
+ * `@zz/indexing`'s analyzer does, and `searchCorpus` takes its analyzer as a parameter so the probe can
  * substitute the broken one. DELIBERATE: `@zz/indexing` is not imported for it — this package
  * has one dependency, and adding a workspace package to borrow a regex would invert the build.
  *
@@ -116,8 +116,8 @@ function latinWords(text: string): readonly string[] {
 }
 
 /**
- * `zz-lexical-v2`'s shape: Han unigrams, overlapping adjacent Han bigrams, and Latin content
- * words. Over Unicode scalars (`Array.from`), so a supplementary-plane Han character is one
+ * The shape `@zz/indexing`'s analyzer emits: Han unigrams, overlapping adjacent Han bigrams, and
+ * Latin content words. Over Unicode scalars (`Array.from`), so a supplementary-plane Han character is one
  * term and not two surrogates' worth.
  *
  * COUPLED: exported for `scripts/gate/checks/rederivation-generation.ts`, which may import
@@ -125,7 +125,7 @@ function latinWords(text: string): readonly string[] {
  * layering forbids importing `@zz/indexing` here, so without that check nothing would watch
  * the two copies. This name is on the package door for it and for no other caller.
  *
- * The Latin half is deliberately narrower and is not the same rule. `zz-lexical-v2` hands the
+ * The Latin half is deliberately narrower and is not the same rule. `@zz/indexing`'s analyzer hands the
  * backend every word run unstemmed and unfiltered and lets the pinned `english` configuration
  * stop and stem them. This fixture has no backend, so it lowercases, drops the question-shaped
  * words in {@link CARRIES_NO_TOPIC}, and reads ASCII runs only. Those are fixture decisions

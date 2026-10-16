@@ -15,13 +15,12 @@
  *     `evidence_relation` of each established acceptance row (review-acceptance.ts);
  *   - the `assess` tool, which any stage uses to ask one family about one subject.
  *
- * Every answer is written twice, and each copy has one job:
- *   - `zz.assessment`, the provenance record: the question, the digest, the reading, and the
- *     call that produced it. Its `model_call_id` is the `zz.model_call` row the same call wrote,
- *     and a row that came from a call it cannot name is not written at all — a record claiming
- *     an attribution it does not have is worse than no record;
- *   - `<initiative>/_assessments/<source>.json` in the store, for an audit round. The next move
- *     is computed from store files, so it stays computable with no database.
+ * Every answer is written once and to one place: `zz.assessment`, the provenance record — the
+ * question, the digest, the reading, and the call that produced it. Its `model_call_id` is the
+ * `zz.model_call` row the same call wrote, and a row that came from a call it cannot name is not
+ * written at all — a record claiming an attribution it does not have is worse than no record.
+ * The `<initiative>/_assessments/*.json` copy that used to sit beside it is gone with the store,
+ * and the row is the only record there is.
  *
  * The row names a principal and a team, not the text the caller handed over: `asked_by` is the
  * principal whose email was passed, `initiative_id` the initiative that slug names, and `team_id`
@@ -360,7 +359,7 @@ async function insertAssessmentRow(row: AssessmentInsertRow, runner?: Queryable)
 }
 
 /** The provenance row for a family question. Never throws: an answer in hand is not lost to a
- *  database hiccup — the store copy under `_assessments/` is the one the next move reads. */
+ *  database hiccup — the row is the record, and a caller that needs it again asks again. */
 async function persistAssessment(a: Assessment, call: AssessmentCall): Promise<void> {
   try {
     await insertAssessmentRow({
@@ -373,7 +372,7 @@ async function persistAssessment(a: Assessment, call: AssessmentCall): Promise<v
       // Asked here and carried in, not resolved by the insert: see `AssessmentInsertRow.team`.
       team: await teamFor(a.asked_by),
     });
-  } catch { /* the store copy is the one the next move reads */ }
+  } catch { /* the row is best-effort; the answer already in hand is what the caller uses */ }
 }
 
 /** `zz.eval_evaluator_version` as `recordEvaluatorAssessment` needs to read it: the exact row

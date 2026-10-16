@@ -3,16 +3,21 @@
 #
 #   ./deploy/init-record-layout.sh /path/to/one/owner/store
 #
-# `record.ts`'s `preflightRefusal` refuses `STORE_UNAVAILABLE` when `.zz/`, `.zz/blobs` or
-# `.zz/commits` is absent — a missing mount is never read as an empty tenant — and nothing in the
-# platform creates that layout. This script is the one thing that does.
+# RETIRED: the file store and its `.zz/` layout are gone (0.86.0) and nothing in the platform
+# reads either, so this script has no step left. It stays in the tree as the script that did the
+# job, because the runbooks that describe the step still point at it — both of them say it is
+# retired (`deploy/ACTIVATION.md`'s section 4, `deploy/RESTORE-AND-CUTOVER.md`).
+#
+# Everything below is what it did while the store existed. `record.ts`'s `preflightRefusal`
+# refused `STORE_UNAVAILABLE` when `.zz/`, `.zz/blobs` or `.zz/commits` was absent — a missing
+# mount was never read as an empty tenant — and nothing in the platform created that layout.
 #
 # DELIBERATE: one explicit path, never a search. It takes exactly one existing directory and
 # acts on it alone: no volume walk, no default, no recursive mode, so what it can touch is what
-# an operator typed. RESTORE-AND-CUTOVER.md step 5a shows the loop.
+# an operator typed. RESTORE-AND-CUTOVER.md's step 5a showed the loop.
 #
 # Idempotent, and it completes a half-initialised layout rather than refusing it: a store with
-# some but not all three directories refuses every write while looking initialised.
+# some but not all three directories refused every write while looking initialised.
 set -euo pipefail
 
 ROOT="${1:-}"
@@ -29,7 +34,7 @@ fi
   exit 1
 }
 
-# The three paths record.ts checks, spelled the way record.ts spells them (STORE_DIR = ".zz",
+# The three paths record.ts checked, spelled the way it spelled them (STORE_DIR = ".zz",
 # BLOBS_SUBDIR = "blobs", COMMITS_SUBDIR = "commits").
 zz="$ROOT/.zz"
 blobs="$zz/blobs"

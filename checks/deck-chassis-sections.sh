@@ -30,10 +30,12 @@ if grep -q '<script id="housebook-manifest"' "$d/deck-chassis.html"; then
   fail=1
 fi
 # Sentinels that prove each kept part actually survived: the style layer, pagination,
-# the self-QA and the dock's version renderer. All four are absent from the guidebook, so
-# they also prove the cut did not carry them off in the wrong direction.
+# the self-QA and the dock's version renderer. Each is asserted BOTH ways — present in the
+# chassis, absent from the guidebook — because a part that travelled with the slides is a cut
+# in the wrong direction, and grepping the chassis alone cannot see that.
 for must in "<style" "fillFeet" "renderQA" "renderVersion"; do
   grep -q "$must" "$d/deck-chassis.html" || { echo "FAIL: chassis lost $must"; fail=1; }
+  grep -q "$must" "$d/deck-guidebook.html" && { echo "FAIL: the guidebook carries $must, which is the chassis's own"; fail=1; }
 done
 [ "$fail" -eq 0 ] && echo "PASS: chassis clean, guidebook whole, manifest with the slides"
 exit "$fail"

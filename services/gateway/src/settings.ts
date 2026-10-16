@@ -56,7 +56,7 @@ export interface SettingsDeps {
   ) => Promise<boolean>;
 }
 
-/** The caller's teams, and which one they act for — the same rule `team_mine` (server.ts)
+/** The caller's teams, and which one they act for — the same rule `team_mine` (access-door.ts)
  *  answers over MCP. It only reads the `Identity` the middleware resolved, so it lives here and
  *  server.ts imports it rather than the other way round. */
 export function myTeamsSummary(id: Identity):

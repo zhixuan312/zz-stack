@@ -34,7 +34,7 @@
  * lone backtick in a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's InitiativeList in src/lib/work-shapes.ts, and its fake answer in
- * scripts/fake-gateway/work-initiatives.ts, which checks/console-work-initiatives.ts compares this
+ * ../zz-stack-dashboard/scripts/fake-gateway/work-initiatives.ts, which checks/console-work-initiatives.ts compares this
  * route's answer with, key set by key set.
  */
 import { OUTCOMES } from "@zz/contracts";

@@ -55,7 +55,7 @@
  * a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's WorkQuery and WorkQueryRow in src/lib/work-shapes.ts, and its fake answer in
- * scripts/fake-gateway/work-query.ts, which checks/console-work-query.ts and
+ * ../zz-stack-dashboard/scripts/fake-gateway/work-query.ts, which checks/console-work-query.ts and
  * checks/console-work-query-destinations.ts compare this route's answer with, key set by key set; the
  * 400 sentences are the fake's, which the console's tests read. A drilled row is the row its page
  * draws, read by the page's own function: Activity's eventRows, Runs' runRow and the shelf's shelfRows.

@@ -283,10 +283,9 @@ async function loadDimensions(
   });
 }
 
-/** `eval_run.dimension_scores` is stored exactly as `evaluation_score` (evaluate.ts) wrote it —
- *  `DimensionScoreRow`/`MeasureScoreRow`, snake_case, because that jsonb shape is shared with
- *  `findings-doc.ts`'s own renderer and changing its keys would be a second, disagreeing copy
- *  of the same column. The console's own convention is camelCase everywhere else, so this is
+/** The row shape the reducer and `findings-doc.ts`'s renderer share — `DimensionScoreRow`/
+ *  `MeasureScoreRow`, snake_case, because changing its keys would be a second, disagreeing copy
+ *  of the same shape. The console's own convention is camelCase everywhere else, so this is
  *  the one remap boundary between the two — read once, here, rather than the dashboard reading
  *  two casing conventions depending which route answered it. */
 function dimensionOut(d: DimensionScoreRow) {

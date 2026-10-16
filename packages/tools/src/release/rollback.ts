@@ -60,8 +60,8 @@ import { Mcp } from "@zz/mcp-client";
 
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
 import { splitCommand } from "../lib/shell.js";
+import { git, gitQuiet } from "./git.js";
 
-const GIT_TIMEOUT_MS = 60_000;
 const ROLLBACK_TIMEOUT_MS = 20 * 60_000;
 /** The failing command's own output tail — mirrors `apply.ts`'s own `OUTPUT_TAIL_CHARS`, printed
  *  to the operator rather than recorded (see the module note: a failed rollback command is never
@@ -70,20 +70,13 @@ const OUTPUT_TAIL_CHARS = 4000;
 const DEFAULT_CLIENT = "zz-release-rollback";
 
 // -------------------------------------------------------------------------------------------
-// Worktree lifecycle — its own ref namespace, deterministic in release_attempt_id, mirroring
-// apply.ts's own createReleaseWorktree/removeReleaseWorktree (kept as its own small copy rather
-// than imported, the same self-contained pattern candidate-build.ts's own module note repeats
-// rather than reaching across a service/package boundary for).
+// Worktree lifecycle — its own ref namespace, deterministic in release_attempt_id, parallel to
+// apply.ts's own worktreePathFor/removeWorktree rather than shared with them: this one pins a
+// DETACHED worktree to a ref it deletes on the way out, where apply.ts's checks out a branch and
+// keeps or removes that. The two git calls underneath are the same either way, so they are
+// imported.
 
 interface Worktree { readonly ref: string; readonly path: string }
-
-function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: GIT_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-function gitQuiet(cwd: string, args: string[]): void {
-  try { execFileSync("git", args, { cwd, timeout: GIT_TIMEOUT_MS, stdio: "ignore" }); }
-  catch { /* nothing there to remove, or already gone — both are the success case here */ }
-}
 
 function worktreePathFor(attemptId: string): string {
   return join(tmpdir(), "zz-release-rollback", attemptId);

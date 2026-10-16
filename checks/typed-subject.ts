@@ -419,8 +419,6 @@ for (const path of writerPaths) {
   }
   // One child per kind, and only the one its kind names. Read per resolver branch rather than
   // per returned object, because the branch that decides is the one that has to be exact.
-  // One child per kind, and only the one its kind names. Read per resolver branch rather than
-  // per returned object, because the branch that decides is the one that has to be exact.
   for (const [kind, column] of [
     ["run", "run_id"], ["bug", "bug_id"], ["event", "event_id"],
     ["document", "doc_id"], ["knowledge", "knowledge_node_id"],

@@ -35,9 +35,6 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
 // Named tables rather than the word "block", because the word is ordinary English —
 // `bug.impact = 'blocks_work'` is the verb.
 {
-  const schema = ts(["services/gateway/migrations"]).length
-    ? "" : "";                                    // migrations are .sql; read them below
-  void schema;
   const sql = sourceFiles(["services/gateway/migrations"], [".sql"])
     .map((f) => src(f)).join("\n");
   const live = new Set<string>();
@@ -184,14 +181,12 @@ const TOOL_DOMAIN: Record<string, string> = {
 };
 {
   const serves = new Map<string, string>();   // tool -> the door that registers it
-  const core = src("services/zz-core/src/server.ts");
   for (const f of ts(["services/zz-core/src/tools"])) {
     for (const m of src(f).matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) serves.set(m[1], "core");
   }
   for (const f of ts(["services/zz-core/src/eval"])) {
     for (const m of src(f).matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) serves.set(m[1], "eval");
   }
-  void core;
   for (const t of Object.values(JSON.parse(JSON.stringify(manageNames)) as string[])) serves.set(t, "manage");
   for (const [tool, door] of serves) {
     const domain = TOOL_DOMAIN[tool];

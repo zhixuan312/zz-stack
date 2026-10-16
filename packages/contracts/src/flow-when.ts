@@ -6,9 +6,9 @@
  * is the one function every reader of a conditional document calls: `initiative_status`
  * (services/zz-core/src/tools/initiative-status.ts), the write guards' gate and close checks
  * (services/zz-core/src/guards.ts), and `initiative_close`'s abandon-truthfulness check
- * (services/zz-core/src/tools/initiative-close.ts). Facts are read from `<initiative>/_facts.json`
- * — written by the eval service (Task I-27), never here — the same "absence is not failure" shape
- * `_assessments/` already uses (services/zz-core/src/semantic.ts).
+ * (services/zz-core/src/tools/initiative-close.ts). Facts are the initiative's recorded branch
+ * facts — `zz.initiative_fact` rows, written by the eval service (Task I-27), never here — read as
+ * a plain name-to-value map, so a fact with no row is "not recorded yet" rather than an error.
  *
  * A document with no `when` is unaffected: `documentApplies` answers `"applies"` for it
  * unconditionally, which is what keeps sdlc and zz-access — neither of which declares `when` —
@@ -17,7 +17,7 @@
 import { z } from "zod";
 
 /** The durable branch facts a document's `when` may name (FR-58). Every writer of a `when`
- *  clause and every reader of `_facts.json` draws from this one list; a fact name not here is
+ *  clause and every reader of those facts draws from this one list; a fact name not here is
  *  refused at the manifest boundary — `FlowDocWhen` below is a closed object, not a free-form
  *  record, so an unrecognised key is a zod issue naming it, the same refusal
  *  `packages/catalog`'s `manifestAt` already gives every other unknown manifest field. */
@@ -58,9 +58,9 @@ export type Applicability = "applies" | "not_applicable" | "undetermined";
  * settled fact is ruled out, whatever else has not been decided yet. Only when nothing mismatches
  * and at least one named fact is still missing does the answer become `"undetermined"`.
  *
- * A document with no `when` — or an empty one — always applies. `facts` is read from
- * `_facts.json`; an absent or blank value for a named fact counts as "not recorded yet", the same
- * as the fact being missing from the file entirely.
+ * A document with no `when` — or an empty one — always applies. `facts` is the initiative's own
+ * recorded branch facts; an absent or blank value for a named fact counts as "not recorded yet", the
+ * same as the fact having no row at all.
  */
 export function documentApplies(
   doc: { when?: Record<string, string | string[]> },

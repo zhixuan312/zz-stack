@@ -36,7 +36,7 @@
  * `readQuestions`, and only the superadmin's read calls it, so a member's read selects no question at all.
  *
  * COUPLED: the console's `KnowledgeHealth` in src/lib/fleet-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-knowledge.ts, which `checks/console-platform-knowledge.ts` compares this route's
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-knowledge.ts, which `checks/console-platform-knowledge.ts` compares this route's
  * answer with, key set by key set.
  */
 import type { Express } from "express";

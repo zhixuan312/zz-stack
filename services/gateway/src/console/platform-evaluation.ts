@@ -18,7 +18,7 @@
  * have no unavailable form, so a failed tile statement fails the read.
  *
  * COUPLED: the console's `Evaluation` in src/lib/platform-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-evaluation.ts, which `checks/console-platform-evaluation.ts` compares
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-evaluation.ts, which `checks/console-platform-evaluation.ts` compares
  * this route's answer with, key set by key set. `/api/console/plugins` (catalog.ts) reads each plugin's
  * public score and comparability from `scoreHistory` and `publicScore` here, so the two reads choose alike.
  */

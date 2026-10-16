@@ -17,7 +17,7 @@
  * can be reached now.
  *
  * COUPLED: the console's `Needs` in src/lib/platform-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-status.ts.
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-status.ts.
  */
 import { platformDb } from "../db.js";
 import type { PeriodFigure } from "./figures.js";

@@ -28,7 +28,7 @@
  * console write relies on.
  *
  * COUPLED: the console's `CloseInput` and `CloseResult` in src/lib/work-shapes.ts, and its fake
- * answer in scripts/fake-gateway/work-initiatives.ts (`close`); `checks/console-close.ts` holds this
+ * answer in ../zz-stack-dashboard/scripts/fake-gateway/work-initiatives.ts (`close`); `checks/console-close.ts` holds this
  * route and the tool to the same outcome, closer, acceptor, closing document and refusal.
  */
 import type { Express } from "express";

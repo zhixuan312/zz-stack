@@ -9,16 +9,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, codeOnly, contractsSource, firstOf, functionBody, gatewaySource, root, sourceFiles, toolsIn, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
+import { between, codeOnly, contractsSource, firstOf, functionBody, gatewaySource, root, sourceFiles, stderrOf, toolsIn, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
 import { check } from "../run.ts";
-
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. Here it is an `execFileSync` failure, which carries `stdout`/`stderr`
- *  rather than a plain `message`. */
-function execStderr(err: unknown): string {
-  const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
-  return e.stderr !== undefined ? String(e.stderr) : String(err);
-}
 
 check("authority is decided by one function, never by comparing the role", () => {
   // isSuper() is where "is this caller platform authority" is answered: role, plus whether
@@ -72,7 +64,7 @@ check("the team a person acts for is stored, not asserted", () => {
     const out = execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" });
     if (out.trim()) bad.push(out.trim());
   } catch (err) {
-    bad.push(`the acting-team rule could not be run: ${execStderr(err).slice(-200)}`);
+    bad.push(`the acting-team rule could not be run: ${stderrOf(err).slice(-200)}`);
   }
   const srv = gatewaySource();
   if (!/"team_switch"/.test(srv)) bad.push("there is no way for a person to switch team");
@@ -164,7 +156,7 @@ check("identity is a port, and a door that says no ends the request", () => {
     const out = execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" });
     if (out.trim()) bad.push(out.trim());
   } catch (err) {
-    bad.push(`the resolver could not be run: ${execStderr(err).slice(-200)}`);
+    bad.push(`the resolver could not be run: ${stderrOf(err).slice(-200)}`);
   }
   return bad.length ? bad.join("; ") : null;
 });

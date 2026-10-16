@@ -29,7 +29,7 @@
  * a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's ActivitySummary and ActivityLog in src/lib/destination-shapes.ts, and its fake
- * answer in scripts/fake-gateway/work-activity.ts, which checks/console-work-activity.ts compares these
+ * answer in ../zz-stack-dashboard/scripts/fake-gateway/work-activity.ts, which checks/console-work-activity.ts compares these
  * routes' answers with, key set by key set.
  */
 import type { RefusalOwner } from "@zz/contracts";

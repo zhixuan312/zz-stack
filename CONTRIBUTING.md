@@ -73,7 +73,7 @@ the console's Runs, the active team's runs since its first with their observed o
 the console's Plugins and skills, each plugin's requirement, install command and public score with its comparability beside the active team's own calls, and the team's skills narrowed by plugin
 (`checks/console-work-plugins.ts`), which drives the gateway's identity gate and its plugin, skill, evaluation and owner's evaluation routes over seeded scores, calls and runs,
 a second team's member and a superadmin acting for it finding nothing of the first team's in Activity, Knowledge, Runs, Plugins and the skills, Access or the prepared queries over their measures, its refusal message, question, run, lesson and token, application, browser and passkey sentinels and its figures alike (`checks/console-isolation-destinations.ts`), which drives the gateway's identity gate, whole console and settings against one,
-and the thirty-three that run a real zz-core against one: the rule that tells an import from a team's
+and the thirty-four that run a real zz-core against one: the rule that tells an import from a team's
 own work (`checks/console-imports.ts`), which calls the gateway's own rule over what a real zz-core
 recorded, the writing ledger, words added by period and the retained stock from the revisions kept
 (`checks/console-writing.ts`), which calls the gateway's own ledger over what a real zz-core recorded, the console's document reads, presentation and approval (`checks/console-versions.ts`),

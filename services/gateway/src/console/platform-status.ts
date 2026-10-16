@@ -32,7 +32,7 @@
  * needs name a team.
  *
  * COUPLED: the console's `PlatformStatus` in src/lib/platform-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-status.ts, which `checks/console-platform-status.ts` compares this
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-status.ts, which `checks/console-platform-status.ts` compares this
  * route's answer with, key set by key set.
  */
 import type { Express } from "express";

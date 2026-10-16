@@ -184,10 +184,9 @@ check("the second distillation exists and is reachable", () => {
   for (const need of ["knowledge_add", "plugin:", "flow:", "evidence"]) {
     if (!text.includes(need)) bad.push(`zz-handover never mentions ${need}`);
   }
-  const learn = readFileSync(join(root, "skills/zz-handover/SKILL.md"), "utf8");
-  if (!learn.includes("zz-handover")) {
-    bad.push("zz-handover does not name zz-handover — its platform-layer findings have no onward path");
-  }
+  // Nothing here asserts that the file names itself: it does, in its frontmatter `name:` and in
+  // its `# zz-handover` heading, which the file cannot be without — a clause that can never fail
+  // is the appearance of a rule rather than one.
   return bad.length ? bad.join("; ") : null;
 });
 
@@ -199,21 +198,22 @@ check("the shelf is on the door everyone has, and each admin act is in its tier"
   //
   // Comments stripped first: the raw text passes on a commented-out registerShelf call.
   const liveText = (t: string): string => t.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-  // The whole gateway: buildAccessServer is in access-door.ts, not server.ts.
-  const server = liveText(gatewaySource());
-  const admin = liveText(gatewaySource());
+  // The whole gateway, once: `buildAccessServer` is in access-door.ts, not server.ts, and the
+  // mount, the tier each tool is registered under and the guard around it are all in that one
+  // surface — three reads of the same text would be three chances to read a different one.
+  const live = liveText(gatewaySource());
   const bad: string[] = [];
   // The access server is the one that mounts both halves; each lives with the code answering it.
-  if (!/registerShelf\(server\)/.test(server)) {
+  if (!/registerShelf\(server\)/.test(live)) {
     bad.push("the access surface does not mount the shelf — nobody can browse the catalog");
   }
-  if (!/registerAdminTools\(server, id\)/.test(server)) {
+  if (!/registerAdminTools\(server, id\)/.test(live)) {
     bad.push("the access surface does not mount the admin tools — administering the platform is unreachable");
   }
   // How each tool is registered, read straight off the source: an `if (sup)` or `if (lead)`
   // prefix is the tier, and its absence is "everyone".
   const tierOf = (name: string): string | null => {
-    const m = new RegExp("(if \\((sup|lead)\\) )?server\\.registerTool\\(\\s*\\n?\\s*\"" + name + "\"").exec(admin + server);
+    const m = new RegExp("(if \\((sup|lead)\\) )?server\\.registerTool\\(\\s*\\n?\\s*\"" + name + "\"").exec(live);
     return m ? (m[2] ?? "everyone") : null;
   };
   for (const [name, want, why] of [
@@ -229,10 +229,10 @@ check("the shelf is on the door everyone has, and each admin act is in its tier"
   // Visibility must never exceed executability. Both tier predicates are derived from the same
   // functions the handlers call, never from platformRole: a superadmin on a member-scope PAT is
   // not super for the request, so they must not be offered tools that will refuse them.
-  if (!/const sup = !!id && isSuper\(id\);/.test(admin)) {
+  if (!/const sup = !!id && isSuper\(id\);/.test(live)) {
     bad.push("registerAdminTools does not derive `sup` from isSuper — visibility could exceed what a handler allows");
   }
-  if (!/const lead = sup \|\| \(!!id && id\.teams\.some\(\(t\) => isTeamAdmin\(id, t\.slug\)\)\);/.test(admin)) {
+  if (!/const lead = sup \|\| \(!!id && id\.teams\.some\(\(t\) => isTeamAdmin\(id, t\.slug\)\)\);/.test(live)) {
     bad.push("registerAdminTools does not derive `lead` from isTeamAdmin — visibility could exceed what a handler allows");
   }
   // And the skill has to say so, or the tool exists and nobody is told to use it.

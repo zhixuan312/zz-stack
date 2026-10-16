@@ -21,7 +21,7 @@
  * response's.
  *
  * COUPLED: the console's `Teams`, `TeamRow` and `TeamDetail` in src/lib/fleet-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-teams.ts, which `checks/console-platform-teams.ts` compares these answers with, key
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-teams.ts, which `checks/console-platform-teams.ts` compares these answers with, key
  * set by key set.
  */
 import type { Express, Request } from "express";

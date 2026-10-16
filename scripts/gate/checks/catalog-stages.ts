@@ -126,7 +126,7 @@ check("no shell freezes one flow's fixture paths", () => {
   // them: a launcher holding one flow's {requirements,steps,scenarios}.json as constants makes
   // a corpus authored for a second flow one nothing can run. The path comes from an argument.
   const dir = join(root, "testing");
-  // Tracked, so its absence is a defect — see the same guard in build.ts.
+  // Tracked, so its absence is a defect — reported rather than thrown on an unreadable directory.
   if (!existsSync(dir)) return "testing/ does not exist, so no stage caller could be read at all";
   const bad: string[] = [];
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".sh"))) {

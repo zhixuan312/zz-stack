@@ -32,7 +32,7 @@
  * a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's Runs in src/lib/destination-shapes.ts, and its fake answer in
- * scripts/fake-gateway/work-runs.ts, which checks/console-work-runs.ts compares this route's answer
+ * ../zz-stack-dashboard/scripts/fake-gateway/work-runs.ts, which checks/console-work-runs.ts compares this route's answer
  * with, key set by key set.
  */
 import type { Express } from "express";

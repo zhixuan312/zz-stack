@@ -19,7 +19,7 @@
  * refusal. Nothing here writes.
  *
  * COUPLED: the console's `Audit` and `AuditRow` in src/lib/fleet-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-audit.ts, whose sentences copy the templates below;
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-audit.ts, whose sentences copy the templates below;
  * `checks/console-platform-audit.ts` compares this route's answers with the fake's, key set by key set.
  */
 import type { Express, Request } from "express";

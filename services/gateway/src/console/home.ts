@@ -41,7 +41,7 @@
  * a comment opens a template literal it then parses as code.
  *
  * COUPLED: the console's Home in src/lib/work-shapes.ts, and its fake answer in
- * scripts/fake-gateway/work-home.ts, which checks/console-work-home.ts compares this route's answer
+ * ../zz-stack-dashboard/scripts/fake-gateway/work-home.ts, which checks/console-work-home.ts compares this route's answer
  * with, key set by key set.
  */
 import { writingEstimate, type WritingCoverage } from "@zz/contracts";

@@ -69,10 +69,11 @@ function skillsDirOf(plugin: string): string {
  * `component_manifest` under `kind: "server"` — the same list, read for a different reason. */
 export function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined):
   { name: string; path: string; baseline?: true }[] {
-  const all = (entry?.manifest.servers ?? []).map((sv) => ({ name: sv.name, path: sv.path }));
+  const all: { name: string; path: string; baseline?: true }[] =
+    (entry?.manifest.servers ?? []).map((sv) => ({ name: sv.name, path: sv.path }));
   // Marked, so a reader can tell what this plugin asked for from what every plugin gets.
   if (!all.some((sv) => sv.name === "zz-core")) {
-    all.unshift({ name: "zz-core", path: "/core/mcp", baseline: true } as never);
+    all.unshift({ name: "zz-core", path: "/core/mcp", baseline: true });
   }
   return all;
 }

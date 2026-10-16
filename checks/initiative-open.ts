@@ -489,20 +489,13 @@ is((await chainFor(db()!, TEAM, `${LEGACY}/other.md`)).name === "sdlc-flow",
 
 // 4d. The declaration survives a lost log line.
 //
-// `logActivity` (persist.ts) swallows every failure by design, and an append that fails
-// creates no file at all, so the flow declaration cannot live only in the activity log: a lost
-// line would convert an initiative somebody governed into one governed by nothing.
-//
-// Driven by deleting the log and re-asking. The event is still logged beside the record,
-// because the open is an event; what this asserts is that nothing reads the declaration from
-// there.
 // The declaration is the initiative's own ROW, and nothing reads it out of telemetry: the store's
-// per-initiative `activity.jsonl` is gone with the store, so there is no best-effort log an append
-// could have failed to reach.
+// per-initiative `activity.jsonl` is gone with the store, so there is no best-effort log whose
+// append could have failed and left an initiative somebody governed reporting as freeform.
 is((await chainFor(db()!, TEAM, `${GOVERNED_NAME}/x.md`)).name === "sdlc-flow",
-   "with the activity log deleted the flow can no longer be resolved — the declaration is " +
-   "being read out of best-effort telemetry, so an append that silently failed leaves an " +
-   "initiative somebody governed reporting as freeform for the rest of its life");
+   "the flow cannot be resolved from the initiative's own record — the declaration is being " +
+   "read out of best-effort telemetry, so an append that silently failed left an initiative " +
+   "somebody governed reporting as freeform for the rest of its life");
 
 // 5. The slug is what is taken
 is(await takenRefusal(db()!, TEAM, "hand-assembled") !== null,

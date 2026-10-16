@@ -19,7 +19,7 @@
  * team.
  *
  * COUPLED: the console's `Releases` and `ReleaseDetail` in src/lib/platform-shapes.ts, and its fake
- * answer in scripts/fake-gateway/platform-releases.ts, which `checks/console-platform-releases.ts`
+ * answer in ../zz-stack-dashboard/scripts/fake-gateway/platform-releases.ts, which `checks/console-platform-releases.ts`
  * compares this route's answers with, key set by key set.
  */
 import type { Express } from "express";

@@ -23,7 +23,7 @@ import { BASELINE } from "./skills.js";
 
 /** The platform's own skills — the `zz` plugin's content. Overridable because the gate builds
  *  real packages on a machine where /skills does not exist. */
-export const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
+const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
 
 /** Where a skill's declared version and content hash are recorded. */
 const SKILLS_LOCK = "skills.lock.json";

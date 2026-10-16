@@ -20,7 +20,7 @@
  * same protection every route in console-write.ts relies on.
  *
  * COUPLED: the console's `BugResolveInput` in src/lib/platform-shapes.ts, and its fake answer in
- * scripts/fake-gateway/platform-bugs.ts (`resolve`); `checks/console-bug-resolve.ts` holds this
+ * ../zz-stack-dashboard/scripts/fake-gateway/platform-bugs.ts (`resolve`); `checks/console-bug-resolve.ts` holds this
  * route and the tool to the same rows and the same refusals.
  */
 import type { Express } from "express";

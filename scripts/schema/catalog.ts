@@ -11,7 +11,7 @@
  *
  * DELIBERATE: `schema_migration` and the three `search_*_default` partitions are excluded here,
  * not by the caller — `readCatalog` is the one place that knows what counts as a design table,
- * and every caller gets the same 67.
+ * and every caller gets the same set.
  */
 import type pg from "pg";
 
@@ -174,7 +174,7 @@ async function readComments(client: pg.Client, oid: string): Promise<{ table: st
   return { table, columns };
 }
 
-/** The 67 design tables of whatever `zz` schema `client` is connected to, keyed by name. */
+/** The design tables of whatever `zz` schema `client` is connected to, keyed by name. */
 export async function readCatalog(client: pg.Client): Promise<Record<string, TableTarget>> {
   const tables = await readTables(client);
   const result: Record<string, TableTarget> = {};

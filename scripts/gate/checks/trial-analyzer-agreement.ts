@@ -30,7 +30,7 @@ check("the recall trial's analyzer finds the same Han terms as @zz/indexing's", 
   // unspaced Chinese question can be matched at all.
   //
   // The Latin half is deliberately two different rules, and equality there would be a lie that
-  // gets relaxed the first time it fires. `zz-lexical-v2` hands the backend every word run,
+  // gets relaxed the first time it fires. The live analyzer hands the backend every word run,
   // unstemmed and unstopped, because the pinned `english` configuration does the stopping and the
   // stemming; the fixture has no backend, so it lowercases, drops its own question-shaped words
   // and reads ASCII runs only. So the direction that matters is containment: the trial must not be
@@ -73,12 +73,12 @@ check("the recall trial's analyzer finds the same Han terms as @zz/indexing's", 
     const lost = missing(realUnigrams, trialUnigrams);
     const invented = missing(trialUnigrams, realUnigrams);
     if (lost.length > 0) {
-      return `on ${label} zz-lexical-v2 finds the Han unigram(s) ${lost.join(", ")} and the recall `
+      return `on ${label} @zz/indexing finds the Han unigram(s) ${lost.join(", ")} and the recall `
            + "trial's analyzer does not — the trial cannot reach material the live index can";
     }
     if (invented.length > 0) {
       return `on ${label} the recall trial's analyzer finds the Han unigram(s) ${invented.join(", ")} `
-           + "and zz-lexical-v2 does not — the trial is demonstrating a retrieval the live index "
+           + "and @zz/indexing does not — the trial is demonstrating a retrieval the live index "
            + "cannot perform";
     }
 
@@ -90,7 +90,7 @@ check("the recall trial's analyzer finds the same Han terms as @zz/indexing's", 
     for (const encoded of real.ranking) {
       const decoded = decodeBigram(encoded);
       if (decoded === null) {
-        return `zz-lexical-v2 produced the ranking term ${JSON.stringify(encoded)} on ${label}, which `
+        return `@zz/indexing produced the ranking term ${JSON.stringify(encoded)} on ${label}, which `
              + "is not a zh<six hex><six hex> Han bigram — this check can no longer read what it compares";
       }
       realBigrams.add(decoded);
@@ -98,17 +98,17 @@ check("the recall trial's analyzer finds the same Han terms as @zz/indexing's", 
     const lostPairs = missing(realBigrams, trialBigrams);
     const inventedPairs = missing(trialBigrams, realBigrams);
     if (lostPairs.length > 0) {
-      return `on ${label} zz-lexical-v2 ranks the adjacent Han bigram(s) ${lostPairs.join(", ")} and the `
+      return `on ${label} @zz/indexing ranks the adjacent Han bigram(s) ${lostPairs.join(", ")} and the `
            + "recall trial's analyzer does not produce them — the two disagree on what is adjacent";
     }
     if (inventedPairs.length > 0) {
       return `on ${label} the recall trial's analyzer produces the Han bigram(s) ${inventedPairs.join(", ")} `
-           + "and zz-lexical-v2 ranks no such pair — the trial is pairing scalars the real analyzer "
+           + "and @zz/indexing ranks no such pair — the trial is pairing scalars the real analyzer "
            + "keeps apart";
     }
 
     // ASCII-scoped, and said so rather than left to be discovered. The fixture's Latin run is
-    // `[a-z0-9_]+` over lowercased text; `zz-lexical-v2`'s is `[\p{L}\p{N}_]`. On a non-ASCII Latin
+    // `[a-z0-9_]+` over lowercased text; the live analyzer's is `[\p{L}\p{N}_]`. On a non-ASCII Latin
     // word the fixture truncates (`café` analyses to `caf`) and containment would fail. Every input
     // above is ASCII on its Latin side, which is what this fixture's corpus is.
     const realLatin = new Set(real.base.filter((t) => t.field === "latin").map((t) => t.term.toLowerCase()));
@@ -116,7 +116,7 @@ check("the recall trial's analyzer finds the same Han terms as @zz/indexing's", 
     const unreachable = trialLatin.filter((w) => !realLatin.has(w));
     if (unreachable.length > 0) {
       return `on ${label} the recall trial's analyzer finds the Latin term(s) ${unreachable.join(", ")} `
-           + "and zz-lexical-v2 produces no word they could match — the trial can find text the live "
+           + "and @zz/indexing produces no word they could match — the trial can find text the live "
            + "index cannot";
     }
   }

@@ -8,16 +8,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { contractsSource, functionBody, gateOwnSource, root, sourceFiles, toolAtLine, unbuilt, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
+import { contractsSource, functionBody, gateOwnSource, root, sourceFiles, stderrOf, toolAtLine, unbuilt, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
-
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. Here it is an `execFileSync` failure, which carries `stdout`/`stderr`
- *  rather than a plain `message`. */
-function execStderr(err: unknown): string {
-  const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
-  return e.stderr !== undefined ? String(e.stderr) : String(err);
-}
 import { envelopeFields, ownedFields } from "../facts.ts";
 
 check("one function decides what a document's envelope says", () => {
@@ -165,7 +157,7 @@ check("the envelope vocabulary is defined once", () => {
     const emitted = execFileSync("node", ["--input-type=module", "-e", emit], { encoding: "utf8" }).trim();
     if (emitted) bad.push(emitted);
   } catch (err) {
-    bad.push(`the schemas could not be emitted: ${execStderr(err).slice(-200)}`);
+    bad.push(`the schemas could not be emitted: ${stderrOf(err).slice(-200)}`);
   }
   return bad.length
     ? `${bad.join(", ")} — @zz/contracts defines this vocabulary; import STATUSES, ` +
@@ -226,7 +218,7 @@ check("the model writes the body and the platform writes the envelope", () => {
         if (got.body !== "# Spec\n" || got.metadata?.title !== "Spec") bad.push(`the read-back body or title was not kept: ${JSON.stringify(got)}`);
       }
     } catch (err) {
-      bad.push(`document-normalize.js could not be run: ${execStderr(err).slice(-300)}`);
+      bad.push(`document-normalize.js could not be run: ${stderrOf(err).slice(-300)}`);
     }
   }
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
@@ -256,7 +248,7 @@ check("the envelope is stamped by what governs the document", () => {
                              { encoding: "utf8" });
     return out.trim() || null;
   } catch (err) {
-    return `the envelope shape could not be read: ${execStderr(err).slice(-200)}`;
+    return `the envelope shape could not be read: ${stderrOf(err).slice(-200)}`;
   }
 });
 

@@ -23,8 +23,8 @@
  * must produce, and `checks/schema-inventory.ts` is what holds the migration to it — and the
  * statements are read from the four trees that write to a database, with the text after a `--` on
  * each of their lines stripped and each `${callee(…)}` replaced by the literals that callee
- * returns, the way `checks/catalog-eval-columns.ts:229-238` and `checks/skill-row-shape.ts:81-100`
- * do it. The shapes below are the criterion's own clauses, not a restatement of the migration.
+ * returns, the way `checks/catalog-eval-columns.ts`'s `withoutSqlComments` and `checks/skill-row-shape.ts`'s
+ * `sources`/`inserts` do it. The shapes below are the criterion's own clauses, not a restatement of the migration.
  *
  * DELIBERATE: the roots are relative to `process.cwd()`, not to this file's own location, and the
  * schema target is imported from there too, so the check can be pointed at a scratch tree that

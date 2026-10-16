@@ -136,7 +136,8 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  * Every hash lists only columns that exist on both sides of a migration, and omits every column
  * the migration owns — the ones it adds, renames, fills from another source or deletes rows by —
  * because a digest carrying them would differ for that reason alone rather than proving the rest
- * of the row survived. `scripts/rehearse.ts:142` looks a migration up here BY FILENAME.
+ * of the row survived. `MIGRATION_EXPECTATIONS` below is keyed BY FILENAME, and every reader
+ * indexes it with a pending migration's own name.
  *
  * COUPLED: `002_catalog_evaluation.sql` folded back here once release 0.84.0 was verified in
  * production, and what it declared went with it — the tables it reshaped, the seven joins that

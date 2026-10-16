@@ -8,15 +8,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource, errMessage } from "../read.ts";
+import { between, firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, stderrOf, unbuilt, withoutComments, zzCoreSource, errMessage } from "../read.ts";
 import { check } from "../run.ts";
-
-/** Same idea, for an `execFileSync` failure, which carries `stdout`/`stderr` rather than a
- *  plain `message`. */
-function execStderr(err: unknown): string {
-  const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
-  return e.stderr !== undefined ? String(e.stderr) : String(err);
-}
 
 check("a value crossing into a shell is quoted for a shell", () => {
   // A shell value is wrapped in single quotes with any embedded one escaped. Neither Python's
@@ -288,7 +281,7 @@ check("both services authenticate their own network the same way", () => {
     const out = execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" });
     if (out.trim()) bad.push(out.trim());
   } catch (err) {
-    bad.push(`the address mechanism could not be run: ${execStderr(err).slice(-200)}`);
+    bad.push(`the address mechanism could not be run: ${stderrOf(err).slice(-200)}`);
   }
   return bad.length ? bad.join("; ") : null;
 });

@@ -27,6 +27,7 @@
  * checks them against the same fail-closed allowlist scripts/control-loop-e2e.ts uses — this
  * writes sixteen initiatives, a release and a rollback into whatever it is pointed at.
  */
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -79,7 +80,7 @@ async function walk(stack: Stack): Promise<void> {
   lap(`8 PROMOTE/VERIFY released ${p.released}, ${p.runs} real runs, verify ${p.verdict} (${p.reason}), rolled back, closed`);
 }
 
-function report(ok: boolean, stubLog: string): void {
+function report(ok: boolean, stubLog: string | null): void {
   console.log("\n  transcript (stage · tool · what came back):");
   // A run of identical silent calls prints once, with its count.
   const rows = transcript.filter((x) => x.stage !== "seed");
@@ -91,7 +92,8 @@ function report(ok: boolean, stubLog: string): void {
     i += n - 1;
   }
   console.log(`\n  model stub, questions by family: ${[...asked.entries()].map(([k, v]) => `${k}=${v}`).join(", ")}`);
-  console.log(`  every question the stub answered: ${stubLog}`);
+  // The path only when there is still something at it: an ordinary run deletes the log below.
+  if (stubLog) console.log(`  every question the stub answered: ${stubLog}`);
   console.log(ok ? "\n  eval-flow-e2e: ok" : "\n  eval-flow-e2e: FAILED");
 }
 
@@ -110,7 +112,9 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error(`\n  FAILED — ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    report(ok, stubLog);
+    // The stub's log is this run's own temp file, not a record: only a kept run keeps one.
+    if (!keep) rmSync(stubLog, { force: true });
+    report(ok, keep ? stubLog : null);
     if (stack && keep) console.log(`  kept: ${stack.work} (containers ${stack.prefix}-*)`);
     else if (stack) down(stack);
     server.close();

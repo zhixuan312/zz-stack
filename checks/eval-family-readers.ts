@@ -36,7 +36,7 @@
  * adjacent literals that a `+` joins read as one, so a select list spread across four of them is
  * still a single statement — with each literal's own delimiters dropped, so the text handed to the
  * database is the SQL itself, and with the text after a `--` on each of its lines stripped, the way
- * `checks/catalog-eval-columns.ts:232` strips it; or, in a shell script, one line. A `${…}` the
+ * `checks/catalog-eval-columns.ts`'s `withoutSqlComments` does it; or, in a shell script, one line. A `${…}` the
  * statement interpolates — a call (`${clause(x)}`) or a bare const holding a fragment
  * (`${STORED_ANSWERS_SQL}`) — is replaced by the literals that declaration returns before the
  * statement is read, so the `from` a caller cannot see is one this reads. Every literal under the

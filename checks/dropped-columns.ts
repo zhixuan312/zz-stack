@@ -44,11 +44,11 @@
  *
  * EXEMPT, each with the reason it is:
  *
- *   `services/gateway/migrations/` — an applied migration is history. `001_init.sql:551` and
- *   `:571` create both tables this phase drops, and `:165`, `:1082` and `:1694` define `actor`,
- *   `step_version` and `caller_session`; the file that retires them is exactly the file that must
- *   still spell them. `checks/telemetry-columns.ts:14-15` carries this exemption for the same
- *   reason.
+ *   `services/gateway/migrations/` — an applied migration is history: rewriting one changes
+ *   nothing on any host, and a file whose own text says what it dropped has to be able to spell the
+ *   name it dropped. `checks/telemetry-columns.ts` carries this exemption for the same reason.
+ *   Neither names a line in it: `001_init.sql` is the schema as one dump, re-rendered as migrations
+ *   fold back into it, so a line number there stops being true the next time it is.
  *
  *   `checks/` — deliberately not a scan root. This check reads files; `checks/` plants defects in
  *   them and quotes them in its own messages. This file's module doc is the standing example: it

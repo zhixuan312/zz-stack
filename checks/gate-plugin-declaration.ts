@@ -13,12 +13,20 @@
  * which sits beside the catalog rather than inside it. That is the measurement saying this
  * rule generalises the older one rather than repeating it.
  */
-import { cpSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { run } from "../testing/gate-plant.ts";
 
 const MF = "catalog/zz/zz-plugin-eval/flow.json";
-const KEEP = "/tmp/zz-plugin-eval-flow.json.keep";
+/** The manifest's kept copy, in a directory of this run's own — a fixed path would be shared by
+ *  two runs at once, and a run that died would leave it behind. */
+const KEEP_DIR = mkdtempSync(join(tmpdir(), "zz-gate-plugin-declaration-"));
+const KEEP = join(KEEP_DIR, "flow.json.keep");
+// Removed however this ends, including the exits below that `process.exit` takes before the
+// `finally` that would otherwise sweep it.
+process.on("exit", () => rmSync(KEEP_DIR, { recursive: true, force: true }));
 
 const DECLARES = "a plugin declares every skill it ships, and ships every skill it declares";
 const PURPOSE = "a plugin manifest says what the plugin is for";
@@ -128,6 +136,7 @@ try {
 } finally {
   restore();
   sweep();
+  rmSync(KEEP_DIR, { recursive: true, force: true });
 }
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

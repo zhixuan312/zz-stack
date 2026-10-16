@@ -139,8 +139,9 @@ export function routerSkill(flows: ShelfFlow[]): string {
     `description: ${JSON.stringify(
       "Use FIRST when the request is delivery work for your team on the ZZ platform " +
       "— a new capability, a change to a service someone operates, or continuing work already " +
-      `under way. Picks the right installed flow (${names}) and loads it. Not for ordinary ` +
-      "coding, debugging or questions about this repository.")}`,
+      `under way. Picks the right installed flow (${names}) and follows it, loading it where a ` +
+      "session may and telling the person to open it by name where only they may. Not for " +
+      "ordinary coding, debugging or questions about this repository.")}`,
     // The router's own version is the platform's: its text is generated from this person's
     // installed flows by this build of the gateway.
     `version: ${JSON.stringify(PLATFORM_VERSION)}`,
@@ -264,7 +265,7 @@ function commandFrontmatter(plugin: string, cmd: string, says: string, version?:
   return [
     "---",
     `name: ${JSON.stringify(cmd)}`,
-    `description: ${JSON.stringify(says.length > 300 ? says.slice(0, 297) + "..." : says)}`,
+    `description: ${JSON.stringify(trimTo(says, 300))}`,
     `when_to_use: ${JSON.stringify(`Only when a person opens it by name: ${openedAs(plugin, cmd)}.`)}`,
     ...(version ? [`version: ${JSON.stringify(version)}`] : []),
     "disable-model-invocation: true",

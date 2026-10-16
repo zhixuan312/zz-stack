@@ -1,6 +1,6 @@
 ---
 name: zz-router
-description: "Use FIRST when the request is delivery work for your team on the ZZ platform — a new capability, a change to a service someone operates, or continuing work already under way. Picks the right installed flow (sdlc-flow, zz-plugin-eval) and loads it. Not for ordinary coding, debugging or questions about this repository."
+description: "Use FIRST when the request is delivery work for your team on the ZZ platform — a new capability, a change to a service someone operates, or continuing work already under way. Picks the right installed flow (sdlc-flow, zz-plugin-eval) and follows it, loading it where a session may and telling the person to open it by name where only they may. Not for ordinary coding, debugging or questions about this repository."
 version: "0.96.0"
 ---
 # zz-router

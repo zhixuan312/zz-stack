@@ -213,7 +213,13 @@ async function settled(c: Core, slug: string, team = c.team): Promise<CloseRecor
 }
 
 /** How many `initiative.console_close` rows name `slug` as the person's act through the web, waited on
- *  briefly where one is expected: `logEvent` does not wait for its write. */
+ *  briefly where one is expected: `logEvent` does not wait for its write.
+ *
+ *  A give-up FAILS BY NAME. Returning the count it happened to have made every caller read "the
+ *  platform recorded the wrong number" for a check that had merely stopped waiting — two opposite
+ *  claims about the product, and the wrong one is what a reader acts on. It is also why a loaded
+ *  machine could turn this check red with a message about counts: the load was in the message's
+ *  absence, not in the counts. */
 async function doors(c: Core, slug: string, expect: number): Promise<number> {
   const until = Date.now() + 5000;
   for (;;) {
@@ -221,7 +227,12 @@ async function doors(c: Core, slug: string, expect: number): Promise<number> {
       `select count(*)::int as n from zz.event e join zz.principal p on p.id = e.actor_id
         where e.kind = 'initiative.console_close' and e.subject = $1 and e.detail->>'via' = 'web' and p.email = $2
           and e.team_id = (select id from zz.team where slug = $3)`, [slug, c.email, c.team]);
-    if (rows[0].n >= expect || Date.now() > until) return rows[0].n;
+    if (rows[0].n >= expect) return rows[0].n;
+    if (Date.now() > until) {
+      c.fail("the close's own event lands",
+             `waited 5s for ${expect} initiative.console_close row(s) naming ${slug} as a web close by ` +
+             `${c.email}, and saw ${rows[0].n} — the wait expired; it does not say the platform recorded the wrong number`);
+    }
     await new Promise((r) => setTimeout(r, 100));
   }
 }

@@ -35,11 +35,14 @@ for (const f of files) {
   // compiles it and `shared_preload_libraries` loads it, and `checks/postgres-image-pinned.ts`
   // asserts the lock's tag reaches the image tag — so those mentions must stay, and a scan that
   // flagged them would demand deleting the pinned image build.
-  // Two exemptions, each a file that must name the extension to say what it says: the deploy
-  // side compiles and preloads it, and THIS file states the rule — a scan that flagged either
-  // would demand deleting the pinned image build or its own explanation. Migrations are the third,
-  // as a whole directory rather than the two files that existed when this was written: the
-  // migration that drops the extension is exactly the file that has to spell it.
+  // Five exemptions, each a file that must name the extension to say what it says:
+  // `deploy/postgres/` compiles and preloads it; `checks/postgres-image-pinned.ts` and
+  // `scripts/gate/checks/deploy-compose.ts` are the two checks that pin the tag that reaches the
+  // image; `checks/artifact-layer-deleted.ts` — this file — states the rule, and a scan that flagged
+  // any of them would demand deleting the pinned image build or its own explanation. The fifth is
+  // `services/gateway/migrations/`, exempted as a whole directory rather than only the file that
+  // existed when this was written, because the migration that drops the extension is exactly the
+  // file that has to spell it.
   const namesItOnPurpose = /^(deploy\/postgres\/|checks\/postgres-image-pinned\.ts$|scripts\/gate\/checks\/deploy-compose\.ts$|checks\/artifact-layer-deleted\.ts$|services\/gateway\/migrations\/)/;
   if (namesItOnPurpose.test(f)) continue;
   src.split("\n").forEach((line, n) => {

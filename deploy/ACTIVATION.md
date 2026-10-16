@@ -215,8 +215,14 @@ failure this whole procedure exists to find.
 *Abort:* discard it. The old unit is byte-identical to what step 4 froze.
 
 **Step 6 — apply migrations to the candidate head.**
-Up to and including `072_write_path_records_its_analyzer.sql`, which adds a nullable
-`analyzer_version` column to `zz.doc` and `zz.knowledge_node`.
+`001_init.sql` first — it is every migration its `-- absorbs:` lines name, squashed into one file —
+then every other file in `services/gateway/migrations/` in filename order, up to and including the
+candidate head: the highest-numbered file there, `006_release.sql` as the tree stands. The nullable
+`analyzer_version` columns on `zz.doc` and `zz.knowledge_node` are declared in `001_init.sql`, which
+absorbed the migration that added them. Where the database already carries a ledger the runner skips
+what `zz.schema_migration` lists, so `001_init.sql` is a no-op there and the ledger's own rows are
+the record of what ran; `deploy/RESTORE-AND-CUTOVER.md` sets out how to tell the two cases apart
+before applying anything.
 *Verify:* the applied head equals the candidate head, and both columns exist and are nullable.
 Nullable is the honest state: no row written before this migration carries a value, and null
 says "unknown" rather than naming an analyzer that did not build the vector.

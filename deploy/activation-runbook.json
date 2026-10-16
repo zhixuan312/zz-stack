@@ -111,10 +111,10 @@
       "requires": "the migration head the activation candidate expects, applied to the database the new unit will use, and agreeing with `app_version`",
       "read_from": "the applied-migration ledger of the candidate database, compared against the highest-numbered file in services/gateway/migrations/",
       "recorded_here": null,
-      "evidence": "production, read read-only over the tailnet on 2026-09-21; services/gateway/migrations/072_write_path_records_its_analyzer.sql",
-      "reading": "Production has 71 migrations applied, the latest being 071_a_source_has_no_content_revision.sql at 2026-09-21T01:32Z. Migration 072 is staged in the working tree, is idempotent, declares no extension, and has NOT been applied. Consistent with that: analyzer_version is ABSENT from both zz.doc and zz.knowledge_node, and schema zz carries 0 `using bm25` indexes. The candidate head and the production head therefore differ by one migration, and the column that migration adds does not exist yet.",
+      "evidence": "production, read read-only over the tailnet on 2026-09-21; the file that reading names — services/gateway/migrations/072_write_path_records_its_analyzer.sql, then staged and unapplied — is a file no longer: 6ad76b68 squashed it and 73 others into services/gateway/migrations/001_init.sql, whose `-- absorbs:` list names it. The reading below stands as a dated record of production's ledger; the filenames in it do not name anything on disk, and the precondition is re-read from the candidate database's ledger, against the highest-numbered file in the directory, at activation time.",
+      "reading": "Production had 71 migrations applied at 2026-09-21T01:32Z, the latest being 071_a_source_has_no_content_revision.sql. Migration 072 was staged in the working tree then — idempotent, declaring no extension, NOT applied — and 6ad76b68 has since squashed it with 73 others into 001_init.sql, which is where both columns below are declared. Consistent with that reading: analyzer_version was ABSENT from both zz.doc and zz.knowledge_node, and schema zz carried 0 `using bm25` indexes. The candidate head and the production head therefore differed by one migration, and the column that migration adds did not exist then. This is a reading of production, not a claim about it now: the squash landed after it, so the head has to be read again rather than inferred from this.",
       "row_counts_at_that_reading": "zz.doc 971, zz.knowledge_node 902, zz.artifact 0. The plan's text says 841 + 902; the live count is 971 + 902. The live numbers are the ones step 8 below is sized against, and the discrepancy is recorded rather than resolved here because the plan's figure is the older reading.",
-      "would_unblock": "applying 072 to the candidate database as step 6 describes, then recording the applied head beside the app digest so the two can be shown to match"
+      "would_unblock": "applying the candidate head to the candidate database as step 6 describes, then recording the applied head beside the app digest so the two can be shown to match"
     },
     "restore_evidence": {
       "state": "blocked",
@@ -246,7 +246,7 @@
     {
       "n": 6,
       "title": "Apply migrations to the candidate head",
-      "does": "Apply the outstanding migrations to the new database, up to and including 072_write_path_records_its_analyzer.sql, which adds a nullable analyzer_version column to zz.doc and zz.knowledge_node.",
+      "does": "Apply 001_init.sql first — every migration its `-- absorbs:` lines name, squashed into one file — then every other file in services/gateway/migrations/ in filename order, up to and including the candidate head, the highest-numbered file there (006_release.sql as the tree stands). The nullable analyzer_version columns on zz.doc and zz.knowledge_node are declared in 001_init.sql, which absorbed the migration that added them. Where the database already carries a ledger the runner skips what zz.schema_migration lists, so 001_init.sql is a no-op there and the ledger's own rows are the record of what ran.",
       "verification": "The applied head equals the candidate head recorded in `database_version`, and the two columns exist and are nullable. Nullable is the honest state: no row written before this migration carries a value, and null says 'unknown' rather than naming an analyzer that did not build the vector.",
       "abort": "Discard the new database and restore it again from step 5. Nothing outside the new unit has changed.",
       "reversible": true

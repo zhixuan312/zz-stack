@@ -14,7 +14,7 @@
  * Read, not run. A statement is the text of a string or template literal — adjacent literals
  * that a `+` joins read as one, so a select list spread across four of them is still a single
  * statement — with the text after a `--` on each of its lines stripped, the way
- * `checks/telemetry-columns.ts:29-31` strips it; or, in a shell script, one line. A `${callee(…)}`
+ * `checks/telemetry-columns.ts`'s own `strip` does; or, in a shell script, one line. A `${callee(…)}`
  * the statement interpolates is replaced by the literals that callee returns before the statement
  * is read, so the `from` a caller cannot see is one this reads (`foldInterpolations` below). A
  * retired column is read through an alias bound to its table (`from zz.event e … e.team_slug`), a

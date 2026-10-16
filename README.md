@@ -200,7 +200,7 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             control-loop-e2e.ts (drives a real initiative through the real doors against a
             scratch deployment and checks the loop refuses and grants as the flow declares —
             it refuses to run against production by name, because it writes an initiative,
-            four documents, four sources and a close. Not a gate check: the gate is offline and
+            four documents, three sources and a close. Not a gate check: the gate is offline and
             proves things about the source, and this asks whether a run recorded through the
             platform reaches a grant, which no offline check can answer),
             eval-flow-e2e.ts (walks the whole zz-plugin-eval flow, zz-core as the subject,

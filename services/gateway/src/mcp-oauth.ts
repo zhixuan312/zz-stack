@@ -50,8 +50,8 @@ const AUTHORIZE_ON = ((process.env.CONSOLE_PUBLIC_URL ?? "").replace(/\/+$/, "")
  * which port it will get, and the code goes to a server on the same machine as the browser.
  *
  * Any other origin must be named in OAUTH_REDIRECT_ORIGINS, comma-separated — on this
- * deployment `https://chatgpt.com`, which redirects to more than one path there, so the rule is
- * by origin.
+ * deployment `https://chatgpt.com` (more than one callback path there, so the rule is by origin)
+ * and `https://claude.ai` with `https://claude.com`, Claude's callback now and after its move.
  *
  * A hosted client is also why there is a consent page: anyone may register a client with
  * chatgpt.com as its redirect and point their own connector at a door here, so every

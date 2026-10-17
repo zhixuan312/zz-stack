@@ -40,7 +40,9 @@
  * One cutoff a request, the read's moment in whole seconds, as every Platform page cuts its own. Reading it records
  * nothing.
  *
- * COUPLED: PlatformQuery in packages/contracts/src/platform-query.ts, and the console's copy of it.
+ * COUPLED: PlatformQuery in packages/contracts/src/platform-query.ts, and the console's copy of it; the console's fake
+ * answer, ../zz-stack-dashboard/scripts/fake-gateway/platform-query.ts, which checks/console-platform-query-shape.ts
+ * holds to this route's shape and refusals.
  */
 import type { PlatformQuery, PlatformQueryFigure, PlatformQueryGroup } from "@zz/contracts";
 import type { Express } from "express";

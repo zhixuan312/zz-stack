@@ -20,7 +20,7 @@ import type { Express } from "express";
 import { platformDb } from "../db.js";
 import { PLATFORM_TEAM } from "../identity.js";
 import { KINDS } from "./platform-knowledge.js";
-import { handler, platformPublic, ZZ_TZ } from "./shared.js";
+import { platformPublic, ZZ_TZ } from "./shared.js";
 
 /** One row of the list and detail queries below, as they are aliased there. */
 interface NodeRow {
@@ -186,23 +186,16 @@ export function mountKnowledge(app: Express): void {
    * and the event's `subject` was always the node's ordinal, so the join runs on `team_id` and
    * `node_ordinal` rather than on a path the table no longer holds. A left join, because a node
    * deleted from the shelf still has a log entry that happened.
+   *
+   * The active team's log, for the superadmin too, as the rest of Work is: a team or a scope the request
+   * names widens nothing, and a caller who acts for no team is answered 400.
    */
-  app.get("/api/console/knowledge/log", handler("the knowledge log", async (_req, res, scope) => {
-    const db = platformDb();
-    const { rows } = scope.kind === "platform"
-      ? await db.query(
-      `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
-              p.email as actor, t.slug as team, e.kind, e.subject as node,
-              e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as successor_recorded,
-              d.title as node_title, d.lifecycle as node_status
-         from zz.event e
-         left join zz.team t on t.id = e.team_id
-         left join zz.principal p on p.id = e.actor_id
-         left join zz.knowledge_node d on d.team_id = t.id
-                           and d.node_ordinal = e.subject
-        where e.kind in ('knowledge.add','knowledge.supersede')
-        order by e.ts desc limit 500`)
-      : await db.query(
+  app.get("/api/console/knowledge/log", platformPublic("the knowledge log", async (_req, res, { activeTeam }) => {
+    if (activeTeam === null) {
+      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      return;
+    }
+    const { rows } = await platformDb().query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
               p.email as actor, t.slug as team, e.kind, e.subject as node,
               e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as successor_recorded,
@@ -215,7 +208,7 @@ export function mountKnowledge(app: Express): void {
         where e.kind in ('knowledge.add','knowledge.supersede')
           and t.slug = $1
         order by e.ts desc limit 500`,
-      [scope.slug]);
+      [activeTeam]);
     res.json({ entries: (rows as Record<string, unknown>[]).map((r) => ({
       ts: r.ts, actor: r.actor, team: r.team, kind: r.kind, node: r.node,
       recorded_title: r.recorded_title, superseded_by: r.successor_recorded,

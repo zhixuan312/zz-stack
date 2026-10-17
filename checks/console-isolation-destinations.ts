@@ -20,7 +20,7 @@
  *     is about who asks and not about what was planted;
  *   - the second team's member and the acting superadmin ask Activity's summary and log (by kind, tool,
  *     the first team's initiative and refused), Knowledge's summary, list (by the lesson's and the question's
- *     words) and the first team's lesson by its address, Runs (by the first team's skill), Plugins, the
+ *     words), log and the first team's lesson by its address, Runs (by the first team's skill), Plugins, the
  *     skills and a skill, Access, and `work/query` by each of `MEASURES` and every dimension it allows,
  *     against the previous window, each group drilled to its rows but skill_calls', whose groups are its rows,
  *     and drilled to the first team's initiative and skill; each plainly, with the first team named, with the
@@ -61,7 +61,7 @@ const DONE = "console-isolation-destinations: the second team's member and a sup
 const WORK = "/api/console/work/query";
 /** Phase 4's reads: every one must be mounted. */
 const ROUTES = ["/api/console/activity/summary", "/api/console/activity", "/api/console/knowledge/summary",
-  "/api/console/knowledge", "/api/console/knowledge/:team/*", "/api/console/runs", "/api/console/plugins",
+  "/api/console/knowledge", "/api/console/knowledge/log", "/api/console/knowledge/:team/*", "/api/console/runs", "/api/console/plugins",
   "/api/console/skills", "/api/console/skills/:name", "/api/console/access", WORK];
 /** The prepared queries' measures over Phase 4's destinations, and the searches, whose drill now answers the
  *  questions that found nothing. */
@@ -144,6 +144,11 @@ async function plant(sql: pg.Client, s: Isolation, x: Record<Field, string>, shi
   await sql.query(
     `insert into zz.knowledge_node (kind, title, body, team_id, node_ordinal, slug) values ('decision', $1, $2, $3, 2, $4)`,
     [x.nodeTitle, x.nodeBody, who.team, lesson]);
+  // The lesson's entry in the knowledge log, as `knowledge_add` writes it: its title is in the log's own words.
+  await sql.query(
+    `insert into zz.event (ts, kind, subject, origin, detail, team_id, actor_id)
+     values (now() - interval '10 minutes', 'knowledge.add', '2', 'work', $1::jsonb, $2, $3)`,
+    [JSON.stringify({ title: x.nodeTitle }), who.team, who.admin]);
   const client = `isolation-client-${hex()}`;
   await sql.query("insert into zz.mcp_oauth_client (client_id, redirect_uris, name) values ($1, '[]'::jsonb, $2)", [client, x.application]);
   await sql.query(
@@ -171,6 +176,7 @@ function requests(s: Isolation, x: Record<Field, string>, p: Planted): string[] 
       "kind=knowledge.search&limit=100", "tool=core:document_write&limit=100"]),
     ...each("/api/console/knowledge/summary", [""]),
     ...each("/api/console/knowledge", ["", "limit=100", `q=${words(x.nodeTitle)}`, `q=${words(x.nodeBody)}`, "kind=decision&limit=100"]),
+    ...each("/api/console/knowledge/log", [""]),
     ...each(node(s.one.slug), [""]), ...each(node(s.two.slug), [""]),
     ...each("/api/console/runs", ["", "limit=100", `skill=${x.skill}`]),
     ...each("/api/console/plugins", [""]),

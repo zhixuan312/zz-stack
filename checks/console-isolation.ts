@@ -39,7 +39,8 @@
  *   - the second team's member reads their own rows, their search by text finding their own document
  *     or node, their Usage and Knowledge health name no team and no question, not even their own; the
  *     superadmin's reads hold every sentinel but a finding's decision note and owner reference, which the
- *     platform's evaluation never selects, a lesson's body, which Work answers to its own team alone, and
+ *     platform's evaluation never selects, a lesson's title and body and its entry in the knowledge log, which Work
+ *     answers to its own team alone, and
  *     the planted event bodies; the database holds all of them intact;
  *   - the superadmin's Audit, reaching every planted row, holds the second team's slug and none of its
  *     other sentinels, and their Knowledge health holds the question that found nothing and, of the
@@ -108,7 +109,7 @@ const NOBODY_READS = ["decisionNote", "ownerRef"];
 const OWN_READS = ["slug", "initiative", "docTitle", "docBody", "nodeTitle", "nodeBody", "eventDetail"];
 /** Fields only Work answers, the active team's for a superadmin too: the superadmin, who acts for no team, need
  *  not read them, and the second team's own member does (OWN_READS). */
-const WORK_ONLY = ["nodeBody"];
+const WORK_ONLY = ["nodeTitle", "nodeBody", "eventDetail"];
 const SEARCH = "/api/console/search";
 const WRITES = ["post", "put", "patch", "delete"];
 /** Fleet's reads, each of which the failure round must reach. */

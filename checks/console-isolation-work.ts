@@ -116,7 +116,12 @@ function where(text: string, needle: string): string {
   return walk(parsed, "") ?? `character ${text.indexOf(needle)}`;
 }
 
-/** Every `href` in a JSON answer: how many there are, and those that are not null, by path. */
+/** The pages a link in a member's answer may open: the released Platform pages a need links to that every
+ *  person reads, which name no team. A team's page is not among them: a member's approvals fold into one row
+ *  that links nowhere. COUPLED: `RELEASED` in services/gateway/src/console/platform-needs.ts. */
+const OPEN = new Set(["/platform/bugs", "/platform/evaluation", "/platform/usage"]);
+
+/** Every `href` in a JSON answer: how many there are, and those that are neither null nor one of `OPEN`, by path. */
 export function hrefs(text: string): { count: number; set: string[] } {
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { return { count: 0, set: [] }; }
@@ -126,7 +131,7 @@ export function hrefs(text: string): { count: number; set: string[] } {
     for (const [k, child] of Object.entries(v)) {
       const here = Array.isArray(v) ? `${at}[${k}]` : at ? `${at}.${k}` : k;
       if (k === "href") out.count++;
-      if (k === "href" && child !== null) out.set.push(`${here} = ${JSON.stringify(child)}`);
+      if (k === "href" && child !== null && !(typeof child === "string" && OPEN.has(child))) out.set.push(`${here} = ${JSON.stringify(child)}`);
       walk(child, here);
     }
   };

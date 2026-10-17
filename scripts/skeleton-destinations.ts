@@ -32,10 +32,19 @@
  * switch through `POST /api/console/settings/me/active-team`; and the same reads then answer the first team's
  * rows and none of the second's sentinels, the second team's initiative answering 404 by its link.
  *
+ * Then a lesson of the member's, written through the door, for the knowledge node's page and view.
+ *
+ * And once the console is built and served (`destinationPages`), Knowledge, Activity, Runs, Plugins and Access read
+ * from it as the member and the acting superadmin, each lead drawn as the gateway answers it at that moment: the
+ * lessons adopted and the question that found nothing, the last whole week's refused calls of its calls, the runs and
+ * the skill that ran, both install commands, and one live row for each live token; then `probe`, which runs
+ * ../zz-stack-dashboard/scripts/explore-probe.ts against this gateway, as the member and, for its control, as the
+ * acting superadmin, and says each of its lines here.
+ *
  * DELIBERATE: the running week is the one the run reads in, so a run that crosses midnight into a Monday in the
  * reporting timezone between its two reads fails on the week; run it again.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 
@@ -45,9 +54,12 @@ import type pg from "pg";
 import { root } from "./deployment.ts";
 import type { Isolation } from "./schema/isolation-seed.ts";
 import { signIn } from "./schema/status-seed.ts";
+import { answer, count, lead, type PageContext } from "./skeleton-work.ts";
 
 /** How long the rows of the calls made have to land. */
 const SETTLE_MS = 15_000;
+/** How long the console's explore probe has to ask every view and prepared query. */
+const PROBE_MS = 600_000;
 const OWNERS = ["guardrail", "ours", "theirs", "other"] as const;
 /** The skill the run follows: a catalog skill zz-core serves, registered by `register-skills`, of an optional
  *  plugin. zz-core's own skills are served from the image's `/skills`, which a run on a laptop has none of. */
@@ -86,9 +98,13 @@ const sha256 = (s: string): string => createHash("sha256").update(s, "utf8").dig
 const nonsense = (): string =>
   [0, 1].map(() => randomBytes(5).toString("hex").replace(/\d/g, (d) => "ghijklmnop"[Number(d)])).join(" ");
 
-/** Phase 4's steps, after Work's: the record made through the door, each reader's five destinations, and the
- *  switch. */
-export async function destinationCases(ctx: DestinationContext): Promise<void> {
+/** What Phase 4's steps made that the pages and the probe are read for: the question that found nothing, the
+ *  plugin that ships the run's skill, and the address of the member's lesson on their shelf. */
+interface Made { question: string; plugin: string; lesson: string }
+
+/** Phase 4's steps, after Work's: the record made through the door, each reader's five destinations, the switch
+ *  and the lesson. */
+export async function destinationCases(ctx: DestinationContext): Promise<Made> {
   const { sql, gateway, member, acting, fail, pass } = ctx;
 
   let step = "the release's register-skills on the throwaway database";
@@ -177,6 +193,7 @@ export async function destinationCases(ctx: DestinationContext): Promise<void> {
   pass(`${step} is made through the gateway's door as the member's plugin: ${slug} opened, ${SKILL} read, a note written, ` +
        `${REFUSED_TOOL} refused under ${owner}, and a question that found nothing, ${sent} tool calls recorded`);
 
+  let shipping = "";
   for (const [who, email] of [["the member", member], ["the acting superadmin", acting]] as const) {
     step = `/api/console/activity/summary as ${who}`;
     const { weeks, now } = await running(step, email);
@@ -222,6 +239,7 @@ export async function destinationCases(ctx: DestinationContext): Promise<void> {
     const plugins = (await ask(step, email, "/api/console/plugins")).answer.plugins as Plugin[];
     const core = plugins.find((p) => p.plugin === "zz-core") ?? fail(step, `it lists no zz-core among ${plugins.length} plugins`);
     const optional = plugins.find((p) => p.skills.some((x) => x.name === SKILL)) ?? fail(step, `no plugin ships ${SKILL}`);
+    shipping = optional.plugin;
     const used = optional.skills.find((x) => x.name === SKILL)!;
     if (core.required !== true || core.install !== "claude plugin install zz-core@zz-stack") {
       fail(step, `zz-core is ${JSON.stringify({ required: core.required, install: core.install })}, not required with its install command`);
@@ -303,4 +321,86 @@ export async function destinationCases(ctx: DestinationContext): Promise<void> {
   }
   pass(`${step} answers 200 acting for ${s.one.slug}, and the next reads answer the first team's initiative and question, none of ` +
        `the second team's ${sentinels.length} sentinels, its initiative 404 and the first's 200`);
+
+  step = "the member's lesson";
+  const title = `The skeleton reads its own lesson ${randomBytes(4).toString("hex")}`;
+  await call(step, "knowledge_add", { title, type: "decision", body: "A lesson the skeleton writes, so its page can be read.", evidence: [slug], scope: "team" });
+  const node = (await sql.query<{ path: string; team: string }>(
+    `select 'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as path, t.slug as team
+       from zz.knowledge_node k join zz.team t on t.id = k.team_id where k.title = $1`, [title])).rows[0]
+    ?? fail(step, `knowledge_add wrote no node titled "${title}"`);
+  pass(`${step} is written through the door as the member's plugin: ${node.path} on ${node.team}'s shelf`);
+  return { question, plugin: shipping, lesson: `/knowledge/${node.team}/${node.path}` };
+}
+
+/** Phase 4's pages from the built console, for the member and the acting superadmin, each against the gateway's
+ *  answer read just before it; what the member's Activity page drew, for the probe to hold its prepared query to.
+ *  COUPLED: the pages' words in ../zz-stack-dashboard/src/views/pages/knowledge.tsx, activity.tsx, runs.tsx and
+ *  access.tsx. */
+export async function destinationPages(ctx: PageContext, readers: [string, string][], made: Made): Promise<{ refusals: number; calls: number }> {
+  let drawn = { refusals: -1, calls: -1 };
+  for (const [who, email] of readers) {
+    let step = `/api/console/knowledge/summary for the page, as ${who}`;
+    const knowledge = await answer(ctx, step, email, "/api/console/knowledge/summary") as {
+      tiles: { standing: { value: number | null } }; questions: Part<{ rows: { question: string; asked: number }[] }> };
+    const asked = knowledge.questions.state === "ok" ? knowledge.questions.data.rows.find((q) => q.question === made.question)?.asked : undefined;
+    if (asked === undefined) ctx.fail(step, `its questions that found nothing do not hold "${made.question}"`);
+    const standing = knowledge.tiles.standing.value;
+    await lead(ctx, who, email, "/knowledge", 'data-figures="read"', [`Lessons adopted ${standing === null ? "—" : count(standing)}`, `${made.question} ${asked}×`]);
+
+    step = `/api/console/activity/summary for the page, as ${who}`;
+    const { refused } = (await answer(ctx, step, email, "/api/console/activity/summary")).tiles as { refused: { figure: { value: number | null }; denominator: number | null } };
+    const [value, of] = [refused.figure.value, refused.denominator];
+    if (value === null || of === null) return ctx.fail(step, `last week's refused calls are ${JSON.stringify(refused)}`);
+    await lead(ctx, who, email, "/activity", 'data-figures="read"', [`${count(value)} of ${count(of)} calls refused in the week of`]);
+    if (email === ctx.member) drawn = { refusals: value, calls: of };
+
+    step = `/api/console/runs for the page, as ${who}`;
+    const runs = (await answer(ctx, step, email, "/api/console/runs")).tiles as { runs: { value: number | null } };
+    await lead(ctx, who, email, "/runs", 'data-figures="read"', [`Runs ${runs.runs.value === null ? "Unavailable" : count(runs.runs.value)}`, SKILL]);
+
+    await lead(ctx, who, email, "/plugins", "data-protagonist=", ["claude plugin install zz-core@zz-stack", `claude plugin install ${made.plugin}@zz-stack`]);
+
+    step = `/api/console/access for the page, as ${who}`;
+    const issued = (await answer(ctx, step, email, "/api/console/access")).issued as { revokedAt: string | null }[];
+    const live = issued.filter((t) => !t.revokedAt).length;
+    const page = await lead(ctx, who, email, "/access", 'data-protagonist="Tokens"', ["Your tokens, newest first"]);
+    // A live token's row ends with its state and its Revoke; a revoked one's with its state alone.
+    const rows = page.text.split(" Live Revoke").length - 1;
+    if (!live || rows !== live) ctx.fail(`the built console's /access as ${who}`, `it draws ${rows} live tokens, where the gateway answers ${live}`);
+    ctx.pass(`the built console's /access as ${who} draws one live row for each of the caller's ${live} live token(s)`);
+  }
+  return drawn;
+}
+
+/** What the probe is handed, but the session secret it is run with. */
+interface ProbeInput {
+  sentinels: string[]; addresses: { address: string; exists: boolean }[];
+  agree: { platform: { week: string; malformed: number; calls: number; per1000: number }; work: { week: string; refusals: number; calls: number } };
+}
+
+/** Runs the console's explore probe on this gateway as the reader whose session secret is given, `control` for a
+ *  reader who may read the words looked for, and says each of its lines; it failing, or not running, fails the step.
+ *  DELIBERATE: a child this process waits for without blocking, since the gateway the probe reads runs in it. */
+export async function probe(ctx: PageContext, who: string, secret: string, input: ProbeInput, control = false): Promise<void> {
+  const step = `the console's explore probe as ${who}`;
+  const checkout = join(root, "..", "zz-stack-dashboard");
+  const child = spawn(process.execPath, [join(checkout, "scripts", "explore-probe.ts")], { cwd: checkout, stdio: ["pipe", "pipe", "pipe"] });
+  let stdout = "", stderr = "";
+  child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+  child.stderr.on("data", (d: Buffer) => { stderr = (stderr + d.toString()).slice(-20_000); });
+  const timer = setTimeout(() => child.kill("SIGTERM"), PROBE_MS);
+  const exited = new Promise<number | string>((resolve) => child.once("close", (code, signal) => resolve(code ?? signal ?? "no status")));
+  // The secret goes on standard input, never on a command line another process could read.
+  child.stdin.end(JSON.stringify({ gateway: ctx.gateway, cookie: secret, sentinels: input.sentinels, addresses: input.addresses,
+                                   ...(control ? { control: true } : { agree: input.agree }) }));
+  const status = await exited;
+  clearTimeout(timer);
+  const out = stdout.trimEnd().split("\n");
+  for (const line of out.filter((l) => l.startsWith("  ok  "))) ctx.pass(`${who}: ${line.slice(6)}`);
+  if (status !== 0) {
+    const said = [...out.filter((l) => !l.startsWith("  ok  ")), stderr.trim()].join("\n");
+    ctx.fail(step, `it exited ${status}:\n${said.slice(-3000)}`);
+  }
+  ctx.pass(`${step}: ${out.at(-1) ?? ""}`);
 }

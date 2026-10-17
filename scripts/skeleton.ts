@@ -47,8 +47,8 @@
  *     member and the acting superadmin, Activity's summary counting the refusal under its owner with
  *     every week's owners summing to its refused total, its log narrowed to refused calls, Knowledge's
  *     summary with the question, Runs with the run, Plugins with the required flag and install command,
- *     and Access with no secret in it; and a person in two teams switched through the console's route,
- *     the next reads answering the other team.
+ *     and Access with no secret in it; a person in two teams switched through the console's route,
+ *     the next reads answering the other team; and a lesson of the member's.
  *
  *   Each read's other values are its own check's (`checks/console-platform-*.ts`);
  *
@@ -65,8 +65,22 @@
  *     meta refresh. The status is 200, said in the case line: the gate redirects from inside the
  *     streamed layout, after the status was sent, as Meridian's pages do, and a browser follows it.
  *     Neither answer holds the page's figure, a seeded team's slug or a seeded person's email;
- *   - the member's `/teams` answers 200 with the refused view, and the other team's slug appears
- *     nowhere in the body, the flight payload included.
+ *   - every page's lead as the gateway answers it just before the page is read, as the member and as the
+ *     superadmin (Work's as the acting superadmin): Releases', Bugs', Evaluation's, Usage's and Knowledge
+ *     health's first tile, Teams', People's and Audit's rows to the superadmin alone (`platformPages`), and
+ *     Home's paired figures, Record's lead, Initiatives' and Approvals' tables, Knowledge's tiles,
+ *     Activity's refused week, Runs' tiles, Plugins' table and Access's tokens (`workPages` and
+ *     `destinationPages`). No page of the member's holds one of the second team's sentinels anywhere in its
+ *     body, the flight payload included, nor a Work page or a page that names no team the status seed's
+ *     second team;
+ *   - the member's Teams, People, Audit, another team's page and the old `/teams` and `/people` each answer
+ *     200 with the page that names nothing: the missing page, its words those of an address no page answers;
+ *   - the console's explore probe (../zz-stack-dashboard/scripts/explore-probe.ts) on this gateway as the
+ *     member: every view tool and every prepared query the member is offered asked through ZZ Meridian's
+ *     runner over the console's prepared collections, none of their answers holding the second team's
+ *     words, and Status's last whole week through `/platform/query` and Activity's through `/work/query`
+ *     agreeing with the pages read above; and as the acting superadmin, its control, whose answers do hold
+ *     them.
  *
  * Run at the end of every phase, never beside another worker: it builds the console into
  * `../zz-stack-dashboard/.next`. Not a gate check — it needs Docker and a production build, and
@@ -91,10 +105,10 @@ import type pg from "pg";
 
 import { root } from "./deployment.ts";
 import { seedIsolation } from "./schema/isolation-seed.ts";
-import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn } from "./schema/status-seed.ts";
+import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn, weekStart } from "./schema/status-seed.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
-import { destinationCases } from "./skeleton-destinations.ts";
-import { startCore, stopCore, workCases } from "./skeleton-work.ts";
+import { destinationCases, destinationPages, probe } from "./skeleton-destinations.ts";
+import { answer, count, lead, startCore, stopCore, workCases, workPages, type ConsolePage, type PageContext } from "./skeleton-work.ts";
 
 const NAME = "skeleton";
 const DONE = "skeleton: the real gateway answers the platform's four reads, Usage and Knowledge health to a member and a " +
@@ -105,8 +119,10 @@ const DONE = "skeleton: the real gateway answers the platform's four reads, Usag
   "owner, Knowledge with its question that found nothing, Runs with its run, Plugins with the required flag and install " +
   "command and Access with no secret, switches a person between two teams through the console's route and reads the other " +
   "team's answers, the built console signs both in through it, draws the " +
-  "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, and shows " +
-  "a member no other team on /teams: ok";
+  "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, draws every " +
+  "page's lead as the gateway answers it with none of another team's words on a member's page, answers a member's Teams, " +
+  "People and Audit as an address that names nothing, and the console's explore probe asks every view and prepared " +
+  "query as the member with none of the second team's words in any answer and two agreeing with their pages: ok";
 /** The reporting timezone the gateway cuts weeks in, and the seed with it. */
 const TIMEZONE = "Asia/Singapore";
 const CONSOLE = join(root, "..", "zz-stack-dashboard");
@@ -142,7 +158,7 @@ const freePort = (): Promise<number> => new Promise((resolve) => {
 });
 
 /** What a page answered: its status, where it redirects, its whole body, and the body as a reader sees it. */
-interface Page { status: number; location: string | null; body: string; text: string }
+interface Page extends ConsolePage { location: string | null }
 
 /** A page's text: React's `<!-- -->` separators, scripts and styles with their contents, and every tag
  *  removed, the common entities decoded and whitespace collapsed. A script's contents are the flight
@@ -154,6 +170,16 @@ function visible(html: string): string {
     .replace(/&nbsp;|&#160;/g, " ").replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, "\"")
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
     .replace(/\s+/g, " ").trim();
+}
+
+/** `path` of the built console at `base`, carrying `secret` as the `zz_console` cookie, or no cookie when it is null. */
+async function read(base: string, path: string, secret: string | null): Promise<Page> {
+  const res = await fetch(`${base}${path}`, {
+    redirect: "manual", signal: AbortSignal.timeout(30_000),
+    headers: secret === null ? {} : { cookie: `zz_console=${secret}` },
+  });
+  const body = await res.text();
+  return { status: res.status, location: res.headers.get("location"), body, text: visible(body) };
 }
 
 /** The console process, while it runs: stopped by its own process group id. */
@@ -389,15 +415,7 @@ async function refused(gateway: string, cookies: Map<string, string>, isolation:
 async function cases(base: string, cookies: Map<string, string>, seeded: Seeded): Promise<void> {
   const last = EXPECTED.weeks.find((w) => w.back === EXPECTED.last)!;
   const want = ["Malformed calls per 1,000", last.value!.toFixed(1), `${last.numerator} of ${last.denominator}`];
-  /** `path`, carrying `secret` as the `zz_console` cookie, or no cookie when it is null. */
-  const get = async (path: string, secret: string | null): Promise<Page> => {
-    const res = await fetch(`${base}${path}`, {
-      redirect: "manual", signal: AbortSignal.timeout(30_000),
-      headers: secret === null ? {} : { cookie: `zz_console=${secret}` },
-    });
-    const body = await res.text();
-    return { status: res.status, location: res.headers.get("location"), body, text: visible(body) };
-  };
+  const get = (path: string, secret: string | null): Promise<Page> => read(base, path, secret);
   const as = (email: string): string => cookies.get(email)!;
   const brief = (p: Page): string => `${p.status}${p.location ? ` to ${p.location}` : ""}: ${p.text.slice(0, 400)}`;
 
@@ -414,12 +432,6 @@ async function cases(base: string, cookies: Map<string, string>, seeded: Seeded)
     if (p.status !== 200) fail(`/ as ${who}`, `answered ${brief(p)}`);
     pass(`/ as ${who} answers 200`);
   }
-
-  const step = "/teams as the member";
-  const teams = await get("/teams", as(MEMBER));
-  if (teams.status !== 200 || !teams.body.includes("data-no-access")) fail(step, `answered ${brief(teams)}, not the refused view`);
-  if (teams.body.includes(TEAM_TWO)) fail(step, `the body holds ${TEAM_TWO} at ${teams.body.indexOf(TEAM_TWO)}`);
-  pass(`/teams as the member answers 200 with the refused view, and ${TEAM_TWO} is nowhere in its body`);
 
   // What no signed-out answer may hold, read in its whole body, the flight payload included.
   const withheld = ["Malformed calls", ...want.slice(1), ...seeded.slugs, ...seeded.emails];
@@ -449,6 +461,59 @@ async function cases(base: string, cookies: Map<string, string>, seeded: Seeded)
       pass(`${step} answers ${p.status} with Next's in-stream redirect to ${target}, as its marker and its meta refresh, ` +
            "and holds none of the page's figure, no seeded team's slug and no seeded person's email");
     }
+  }
+}
+
+/** What a person reads on a page, as a set of words: where Next streamed the title and the search box into the
+ *  body does not tell two answers apart, and a word either holds that the other does not does. */
+const words = (p: ConsolePage): string => [...new Set(p.text.split(" "))].sort().join(" ");
+
+/**
+ * Platform's pages from the built console, as the member and as the superadmin, each lead against the gateway's
+ * answer read just before it; Teams, People and Audit the superadmin's, and to the member each of those, another
+ * team's page and the old addresses the page that names nothing. COUPLED: the tiles' labels in
+ * ../zz-stack-dashboard/src/views/pages/platform-*.tsx, and the missing page's `data-missing-page` in
+ * src/views/no-access.tsx.
+ */
+async function platformPages(ctx: PageContext, isolation: Isolation): Promise<void> {
+  for (const [who, email] of [["the member", MEMBER], ["the superadmin", SUPERADMIN]] as const) {
+    const json = async <T>(path: string): Promise<T> => (await answer(ctx, `${path} for the page, as ${who}`, email, path)) as T;
+    const ok = <T>(path: string, p: Part): T => (p.state === "ok" ? p.data as T : fail(`${path} for the page, as ${who}`, `it is ${stateOf(p)}`));
+    // Its figure is the seed's, read in `cases`; here, that nothing of another team's is in the member's.
+    await lead(ctx, who, email, "/platform", "data-figures", ["Malformed calls per 1,000"], false);
+    const releases = await json<{ tiles: { releases: number; latest: { version: string } | null } }>("/api/console/platform/releases");
+    await lead(ctx, who, email, "/platform/releases", 'data-protagonist="Releases"',
+      [`Releases ${count(releases.tiles.releases)}`, `Latest release ${releases.tiles.latest?.version ?? "None recorded"}`], false);
+    const { open } = ok<{ open: number }>("/api/console/platform/bugs", (await json<{ counts: Part }>("/api/console/platform/bugs")).counts);
+    await lead(ctx, who, email, "/platform/bugs", 'data-protagonist="Queue"', [`Open ${count(open)}`], false);
+    const { waiting } = (await json<{ tiles: { waiting: number } }>("/api/console/platform/evaluation")).tiles;
+    await lead(ctx, who, email, "/platform/evaluation", 'data-figures="read"', [`Findings waiting ${count(waiting)}`], false);
+    const calls = ok<{ calls: { last: { figure: { value: number | null } } } }>("/api/console/platform/usage", (await json<{ tiles: Part }>("/api/console/platform/usage")).tiles).calls.last.figure.value;
+    if (calls === null) fail(`/api/console/platform/usage for the page, as ${who}`, "last week's calls have no value, though the status seed records them");
+    await lead(ctx, who, email, "/platform/usage", 'data-figures="read"', [`Calls ${count(calls)}`]);
+    const { standing } = ok<{ standing: number }>("/api/console/platform/knowledge", (await json<{ tiles: Part }>("/api/console/platform/knowledge")).tiles);
+    await lead(ctx, who, email, "/platform/knowledge", 'data-figures="read"', [`Lessons adopted ${count(standing)}`]);
+  }
+  await lead(ctx, "the superadmin", SUPERADMIN, "/platform/teams", 'data-protagonist="Teams"', [TEAM_TWO, isolation.sentinels.slug]);
+  await lead(ctx, "the superadmin", SUPERADMIN, "/platform/people", 'data-protagonist="People"', [MEMBER, isolation.both]);
+  // The feed draws each act as its actor and the rest of the gateway's sentence (`feedEvent` in the console).
+  const acts = (await answer(ctx, "/api/console/platform/audit for the page", SUPERADMIN, "/api/console/platform/audit?filter=administration&limit=10&offset=0"))
+    .rows as { actor: string | null; sentence: string | null }[];
+  const said = acts.slice(0, 3).flatMap((a) => (a.sentence && a.actor && a.sentence.startsWith(`${a.actor} `) ? [a.sentence.slice(a.actor.length + 1)] : []));
+  await lead(ctx, "the superadmin", SUPERADMIN, "/platform/audit", 'data-feed="read"', said.length ? said : ["Administration"]);
+
+  const secret = ctx.cookies.get(MEMBER)!;
+  // An address no page answers, in each workspace and in none: a refused page reads as one of them.
+  const nowhere = await Promise.all(["/platform", "/record", ""].map(async (at) => words(await ctx.page(`${at}/${randomBytes(8).toString("hex")}`, secret))));
+  for (const path of ["/platform/teams", "/platform/people", "/platform/audit", `/platform/teams/${isolation.sentinels.slug}`, "/teams", "/people"]) {
+    const step = `the built console's ${path} as the member`;
+    const p = await ctx.page(path, secret);
+    const held = [...ctx.withheld, ctx.slug].filter((s) => p.body.includes(s) && !path.includes(s));
+    if (p.status !== 200 || !p.body.includes("data-missing-page") || !nowhere.includes(words(p)) || held.length) {
+      fail(step, `answered ${p.status}${held.length ? `, holding ${held.join(", ")}` : ""}, not the page an address that names nothing draws: ${p.text.slice(0, 400)}`);
+    }
+    pass(`${step} answers 200 with the page that names nothing, its words those of an address no page answers, and none of the ` +
+         `${ctx.withheld.length + 1} words of another team's in its body`);
   }
 }
 
@@ -522,13 +587,32 @@ async function run(db: pg.Client, url: string): Promise<void> {
     const work = await workCases({ sql: db, gateway, member: MEMBER, memberCookie: cookies.get(MEMBER)!, fail, pass });
     seeded.emails.push(work.acting);
     // The release's registrar reaches the throwaway database by its own address, through this machine's psql.
-    await destinationCases({ sql: db, gateway, psql: `psql ${url}`, member: MEMBER, acting: work.acting, cookies: work.cookies,
-                             tokens: work.tokens, isolation, fail, pass });
+    const made = await destinationCases({ sql: db, gateway, psql: `psql ${url}`, member: MEMBER, acting: work.acting, cookies: work.cookies,
+                                          tokens: work.tokens, isolation, fail, pass });
 
     const env = consoleEnv(gateway);
     buildConsole(env);
     const base = await serve(env);
     await cases(base, cookies, seeded);
+    const ctx: PageContext = { gateway, page: (path, secret) => read(base, path, secret), cookies: new Map([...cookies, ...work.cookies]),
+                               member: MEMBER, withheld: Object.values(isolation.sentinels), slug: TEAM_TWO, fail, pass };
+    await platformPages(ctx, isolation);
+    const readers: [string, string][] = [["the member", MEMBER], ["the acting superadmin", work.acting]];
+    await workPages(ctx, readers);
+    const drawn = await destinationPages(ctx, readers, made);
+    // The last whole week's Monday, as both routes key a week: what /platform and /activity drew is that week's.
+    const week = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(weekStart(Date.now(), 1, TIMEZONE)));
+    const last = EXPECTED.weeks.find((w) => w.back === EXPECTED.last)!;
+    const t = `/initiatives/${work.team}/${work.waiting}`;
+    const input = {
+      sentinels: [...Object.values(isolation.sentinels), TEAM_TWO],
+      addresses: [t, `${t}/spec.md`, made.lesson, `/plugins/${made.plugin}`, `/plugins/${made.plugin}/sdlc-method`,
+                  `/platform/bugs/${isolation.two.bugs.open}`, `/platform/teams/${isolation.sentinels.slug}`].map((address) => ({ address, exists: true }))
+        .concat({ address: "/platform/releases/0.0.0", exists: false }),
+      agree: { platform: { week, malformed: last.numerator, calls: last.denominator, per1000: last.value! }, work: { week, ...drawn } },
+    };
+    await probe(ctx, "the member", cookies.get(MEMBER)!, input);
+    await probe(ctx, "the acting superadmin", work.cookies.get(work.acting)!, input, true);
   } finally {
     await stop();
     server.closeAllConnections();

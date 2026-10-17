@@ -42,10 +42,15 @@ export type Needs = {
 /** A door's today, so far, when its tool failures are a fault day's share of its calls. */
 export type DoorToday = { door: string; calls: number; toolFailures: number; firstFailureMs: number | null };
 
-/** The destinations already released, each a page a link may open; a row whose destination is not
- *  among them links nowhere. Bugs and Evaluation join when their pages ship, Usage (door, drift)
- *  with Phase 2. */
-const RELEASED: ReadonlySet<string> = new Set(["/teams"]);
+/** The destinations released, each a page a link may open: every page of both workspaces. A row links
+ *  to its kind's: Bugs, Evaluation, Usage (door, drift), and a team's own page under Teams for its
+ *  approvals; a row whose destination is not among them links nowhere. COUPLED: the console's pages
+ *  under `app/(dash)/`, which checks/console-platform-needs.ts opens each link against. */
+const RELEASED: ReadonlySet<string> = new Set([
+  "/", "/record", "/initiatives", "/approvals", "/knowledge", "/activity", "/runs", "/plugins", "/access",
+  "/platform", "/platform/releases", "/platform/bugs", "/platform/evaluation", "/platform/teams", "/platform/people",
+  "/platform/usage", "/platform/audit", "/platform/knowledge",
+]);
 
 /** How long a finding or a revision may wait before it needs somebody. */
 const WAIT_MS = 14 * 86_400_000;
@@ -148,7 +153,7 @@ function instances(input: NeedsInput): { found: Instance[]; unavailable: NeedKin
       const mine = late.filter((p) => p.teamId === teamId);
       found.push({
         kind: "approvals", key: teamId, tone: "warning", instanceCount: 1,
-        oldestAt: iso(Math.min(...mine.map((p) => p.presentedMs))), href: link("/teams", `/teams/${mine[0].team}`),
+        oldestAt: iso(Math.min(...mine.map((p) => p.presentedMs))), href: link("/platform/teams", `/platform/teams/${mine[0].team}`),
         title: `Approvals are waiting in ${mine[0].team}`,
         detail: `${counted(mine.length, "revision was", "revisions were")} presented 14 days ago or more and not approved`,
       });

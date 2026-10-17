@@ -20,8 +20,9 @@
  *     far today, findings waiting 14 days, three teams with a revision waiting 14 days, both
  *     latencies doubled), the superadmin's five rows and the overflow by kind add up to the total, as
  *     do a member's, whose approvals fold into one row naming no team and linking nowhere; the
- *     wording differs as the spec says; every link is null or a console page that exists; and no
- *     team's slug or id reaches the member;
+ *     wording differs as the spec says; each row links to its released page, which the console's
+ *     checkout holds: bugs to Bugs, a door to Usage, evaluation to Evaluation and a team's
+ *     approvals to that team's page under Platform; and no team's slug or id reaches the member;
  *   - each door's days run from where the record begins through today, today not complete; its
  *     totals, fault days, last fault day, run and finding are the seed's; a malformed call marks no
  *     fault day and a tool failure does, one of each on one day;
@@ -64,6 +65,16 @@ const TIMEZONE = "Asia/Singapore";
 const DAY = 86_400_000;
 /** COUPLED: the console's checkout, `../zz-stack-dashboard` here and in CI; a link must open one of its pages. */
 const CONSOLE = join(root, "..", "zz-stack-dashboard", "app", "(dash)");
+/** The page each kind's row links to, and the console's page file that serves it. COUPLED: `RELEASED` in
+ *  services/gateway/src/console/platform-needs.ts. Drift links to Usage as a door does; the seed's drifts
+ *  are both in the overflow, so no row here shows one. */
+const PAGES: Record<string, { href: RegExp; file: string[] }> = {
+  bugs: { href: /^\/platform\/bugs$/, file: ["platform", "bugs", "page.tsx"] },
+  door: { href: /^\/platform\/usage$/, file: ["platform", "usage", "page.tsx"] },
+  drift: { href: /^\/platform\/usage$/, file: ["platform", "usage", "page.tsx"] },
+  evaluation: { href: /^\/platform\/evaluation$/, file: ["platform", "evaluation", "page.tsx"] },
+  approvals: { href: /^\/platform\/teams\/[a-z0-9_-]+$/, file: ["platform", "teams", "[slug]", "page.tsx"] },
+};
 
 type Obj = Record<string, unknown>;
 type Answer = { status: number; body: Obj; text: string };
@@ -201,7 +212,7 @@ async function run(c: Core): Promise<void> {
         || rows(a) !== JSON.stringify(NEEDS.superadmin.rows) || JSON.stringify(a.overflowByKind) !== JSON.stringify(NEEDS.superadmin.overflowByKind)
         || a.headline !== NEEDS.superadmin.headline || JSON.stringify(byKind(a)) !== JSON.stringify(NEEDS.instances)
         || !doorTitles[0]?.includes(" core ") || !doorTitles[1]?.includes(" manage ")
-        || approvals?.href !== `/teams/${NEEDS_TEAMS[NEEDS.superadmin.approvalsTeam]}` || !approvals.title.includes(NEEDS_TEAMS[NEEDS.superadmin.approvalsTeam])) {
+        || approvals?.href !== `/platform/teams/${NEEDS_TEAMS[NEEDS.superadmin.approvalsTeam]}` || !approvals.title.includes(NEEDS_TEAMS[NEEDS.superadmin.approvalsTeam])) {
       c.fail(step, JSON.stringify(a));
     }
     c.pass("the superadmin reads 9 things need you: five rows worst first, the oldest team's approvals linked to its page, " +
@@ -221,13 +232,26 @@ async function run(c: Core): Promise<void> {
     c.pass("a member reads 9 things are known and open: three teams' approvals fold into one row naming none and linking " +
            "nowhere, and no team's slug or id is anywhere in the answer");
 
-    step = "every link opens a released page";
-    for (const r of [...a.rows, ...m.rows]) {
-      if (r.href === null) continue;
-      const slug = /^\/teams\/([a-z0-9_-]+)$/.exec(r.href)?.[1];
-      if (!slug || !existsSync(join(CONSOLE, "teams", "[slug]", "page.tsx"))) c.fail(step, `${r.kind} links ${r.href}`);
+    step = "each need links to its released page";
+    const linked = new Set<string>();
+    for (const [who, n] of [["the superadmin", a], ["a member", m]] as const) {
+      for (const r of n.rows) {
+        // A member's approvals name no team, so they open no team's page.
+        if (who === "a member" && r.kind === "approvals") {
+          if (r.href !== null) c.fail(step, `${who}'s approvals link ${r.href}`);
+          continue;
+        }
+        const page = PAGES[r.kind];
+        if (!page || r.href === null || !page.href.test(r.href)) c.fail(step, `${who}'s ${r.kind} row links ${String(r.href)}`);
+        if (!existsSync(join(CONSOLE, ...page.file))) c.fail(step, `${r.href} is no page of the console's: app/(dash)/${page.file.join("/")} is missing`);
+        linked.add(r.kind === "approvals" ? "a team's page" : r.href);
+      }
     }
-    c.pass("every link is null or a team's page, which the console already serves; Bugs, Evaluation and Usage rows link nowhere yet");
+    const opened = ["/platform/bugs", "/platform/usage", "/platform/evaluation", "a team's page"];
+    if (opened.some((p) => !linked.has(p))) c.fail(step, `the rows link ${[...linked].join(", ")}, not each of ${opened.join(", ")}`);
+    c.pass("each need links to its released page, which the console serves: bugs to /platform/bugs, a door to /platform/usage, " +
+           "evaluation to /platform/evaluation and the superadmin's approvals to their team's /platform/teams/<slug>; a member's " +
+           "folded approvals link nowhere");
 
     step = "a check that cannot be read";
     const pool = dbModule.platformDb();

@@ -16,6 +16,8 @@
  *     dimension, each group is the total the query answers filtered to it, and the groups sum to the total;
  *   - a drill answers the page's rows under the same filters and window, newest first, each with its address, and pages
  *     without overlap;
+ *   - a plugin the catalog ships that no evaluation ever registered counts nothing, findings and scores 0 and no
+ *     rows, where a name the catalog and the registry both lack is refused, as every value outside a vocabulary is;
  *   - top bounds the groups and the latest buckets, the groups with the folded rest summing to the total, and
  *     from=0001-01-01 answers from the first recorded day;
  *   - a member asking a superadmin's measure, a team as a dimension or a where filter, or the questions searches asked, is
@@ -318,6 +320,23 @@ async function cases(c: Core, s: Seeded, route: (p: string) => Route, figures: W
       [Object.fromEntries(established.map((p) => [p.plugin, 1])), established]);
   }
   c.pass(step);
+
+  step = "a plugin the catalog ships and nobody evaluated counts nothing, and a name in neither is refused";
+  // Loaded once ZZ_CATALOG_DIR is set: the package reads its directory when it loads.
+  const { catalogEntries, pluginName } = await import("@zz/catalog");
+  const evaluated = new Set((await c.sql.query<{ name: string }>("select name from zz.plugin")).rows.map((r) => r.name));
+  const shipped = catalogEntries().map((e) => pluginName(e.flow)).find((p) => !evaluated.has(p))
+    ?? c.fail(step, `every plugin the catalog ships has an evaluation row: ${[...evaluated].join(", ")}`);
+  for (const who of PEOPLE) {
+    for (const measure of ["findings", "scores"]) {
+      const q = await ask(who, { measure, where: `plugin=${shipped}`, ...everything, rows: "20" });
+      same(`${step}: ${measure} of ${shipped}`, [q.total.value, q.rows?.data?.rows], [0, []]);
+    }
+    const unknown = await raw(who, { measure: "findings", where: "plugin=no-such-plugin", ...everything });
+    if (unknown.status !== 400 || unknown.body.error !== "plugin must be a plugin's name") c.fail(step, `no-such-plugin answered ${unknown.status}: ${show(unknown.body)}`);
+  }
+  c.pass(`${step}: ${shipped}, which the catalog ships and no evaluation registered, answers 0 findings and 0 scores with no rows to a ` +
+    "member and the superadmin, and a name in neither is 400, plugin must be a plugin's name");
 
   step = "lessons answer Knowledge health's lessons made, cohorts and shelves, a member's shelves their own and the shared one";
   for (const who of PEOPLE) {

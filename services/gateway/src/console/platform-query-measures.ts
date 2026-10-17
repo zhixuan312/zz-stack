@@ -29,10 +29,12 @@
  * dimension and a member's shelves are their own, the shared one and the rest of them unnamed; a bug report's public
  * row; a finding's safe form; and nothing of Teams, People, sign-ins, Audit or the questions searches asked.
  */
+import { catalogEntries, pluginName } from "@zz/catalog";
 import { REFUSAL_OWNERS } from "@zz/contracts";
 import type pg from "pg";
 
 import { PLATFORM_TEAM } from "../identity.js";
+import { BASELINE } from "../package/skills.js";
 import { lessonImports } from "./imports.js";
 import { KIND, auditDays, auditEvents } from "./platform-audit.js";
 import { IMPACTS, STATES, STATUSES, adminRows, publicRow, realReports, vocabulary, type RealReport } from "./platform-bugs.js";
@@ -100,7 +102,12 @@ const TOOL: Dim = {
 const TEAM: Dim = {
   superadmin: true, has: async (c, v) => (await readSlugs(c.db)).includes(v), refuse: () => "team must be a team's slug", none: "No team",
 };
-const PLUGIN: Dim = { has: async (_c, v) => (await pluginNames()).has(v), refuse: () => "plugin must be a plugin's name", none: "No plugin" };
+/** A plugin's name: one the evaluation registry holds, or one this image ships, which Plugins lists whether or not it was
+ *  ever evaluated, and whose findings and scores are then none. COUPLED: catalog.ts's plugins, as work-query.ts names them. */
+const PLUGIN: Dim = {
+  has: async (_c, v) => v === BASELINE || catalogEntries().some((e) => pluginName(e.flow) === v) || (await pluginNames()).has(v),
+  refuse: () => "plugin must be a plugin's name", none: "No plugin",
+};
 /** A closed vocabulary, every value of it answered unless `fixed` is false. */
 const vocabularyOf = (name: string, values: readonly string[], fixed = true): Dim => ({
   has: (_c, v) => values.includes(v), ...(fixed ? { fixed: () => values } : {}), refuse: closed(name, values), none: "None", label: words,

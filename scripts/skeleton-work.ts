@@ -34,6 +34,13 @@
  *     caller's history, exactly the one approval they signed; Initiatives' first page, every initiative,
  *     waiting first, each with a next move, the waiting one's as initiative_status answers it; and the
  *     closures by outcome over Record's quarter, asked of work/query, agreeing with Record's own.
+ *
+ * And once the console is built and served (`workPages`), each Work page read from it as the member and the
+ * acting superadmin, its lead drawn as the gateway answers it at that moment: Home's title and its paired
+ * figures for the last whole week, Record's retained words at their pace, Initiatives' first page by slug and
+ * Approvals' waiting revisions by document and initiative; the member's pages, the flight payload included,
+ * holding none of the second team's words. `lead` reads one page that way for every page step of the skeleton,
+ * and answers the page for a step that reads more of it.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -144,7 +151,7 @@ async function people(sql: pg.Client, member: string, team: string): Promise<{ c
 
 /** What Work's steps hand on: the acting superadmin's address, which no signed-out page may hold, and each
  *  reader's console session secret and personal access token, by address. */
-interface WorkReaders { acting: string; cookies: Map<string, string>; tokens: Map<string, string> }
+interface WorkReaders { acting: string; cookies: Map<string, string>; tokens: Map<string, string>; team: string; waiting: string }
 
 /**
  * Work's steps, after the platform's: the people and the record made, the close, then each reader's five
@@ -323,5 +330,90 @@ export async function workCases(ctx: WorkContext): Promise<WorkReaders> {
     if (total !== 3) fail(step, `its total is ${String(total)}, not 3`);
     pass(`${step} answers 200 with ${said.join(", ")} from ${period.from} to ${period.to}, as Record's quarter counts them`);
   }
-  return { acting: ACTING, cookies, tokens };
+  return { acting: ACTING, cookies, tokens, team, waiting };
+}
+
+/** A page of the built console as a reader reads it: its status, its whole body and its text. */
+export interface ConsolePage { status: number; body: string; text: string }
+
+/** What the skeleton hands every page step. */
+export interface PageContext {
+  gateway: string;
+  /** A page of the built console, as the person whose console session secret is given. */
+  page(path: string, secret: string): Promise<ConsolePage>;
+  /** Each reader's console session secret, by address. */
+  cookies: Map<string, string>;
+  /** The member, whose pages hold none of `withheld`: the second team's sentinels, and the status seed's
+   *  second team, which no page of the member's own work may name. */
+  member: string; withheld: string[]; slug: string;
+  fail(step: string, detail: string): never;
+  pass(line: string): void;
+}
+
+/** A count as the console writes one. */
+export const count = (n: number): string => n.toLocaleString("en-US");
+
+/** A gateway answer as `email`'s console session: an object, or the step's failure. */
+export async function answer(ctx: PageContext, step: string, email: string, path: string): Promise<Obj> {
+  const res = await fetch(`${ctx.gateway}${path}`, { headers: { cookie: `zz_console=${ctx.cookies.get(email)}` }, signal: AbortSignal.timeout(60_000) });
+  const text = await res.text();
+  if (res.status !== 200) ctx.fail(step, `${path} answered ${res.status}: ${text.slice(0, 400)}`);
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) ctx.fail(step, `${path} answered something other than an object: ${text.slice(0, 200)}`);
+  return parsed as Obj;
+}
+
+/**
+ * One page of the built console as `email`: 200, not the missing page, its lead's `marker` in its body (null for a
+ * lead the markup names no way) and every one of `words` in its text, and for the member none of `withheld` (the
+ * slug of the status seed's second team too where `slugless`) anywhere in its body, the flight payload included.
+ */
+export async function lead(ctx: PageContext, who: string, email: string, path: string, marker: string | null, words: string[], slugless = true): Promise<ConsolePage> {
+  const step = `the built console's ${path} as ${who}`;
+  const p = await ctx.page(path, ctx.cookies.get(email)!);
+  const wrong = [
+    ...(p.status !== 200 ? [`it answered ${p.status}`] : []),
+    ...(p.body.includes("data-missing-page") ? ["it drew the missing page"] : []),
+    ...(marker && !p.body.includes(marker) ? [`it holds no ${marker}`] : []),
+    ...words.filter((w) => !p.text.includes(w)).map((w) => `its text does not read "${w}"`),
+  ];
+  const withheld = email !== ctx.member ? [] : slugless ? [...ctx.withheld, ctx.slug] : ctx.withheld;
+  const held = withheld.filter((s) => p.body.includes(s));
+  if (held.length) wrong.push(`its body holds ${held.map((s) => `${s} at ${p.body.indexOf(s)}`).join(", ")}`);
+  if (wrong.length) ctx.fail(step, `${wrong.join("; ")}: ${p.text.slice(0, 400)}`);
+  ctx.pass(`${step} answers 200 drawing ${words.map((w) => `"${w.length > 90 ? `${w.slice(0, 90)}…` : w}"`).join(", ")}` +
+    (withheld.length ? `, and none of the ${withheld.length} words of another team's anywhere in its body` : ""));
+  return p;
+}
+
+/** Work's pages from the built console, for the member and the acting superadmin, each against the gateway's
+ *  answer read just before it. COUPLED: the pages' words, `HALVES` in ../zz-stack-dashboard/src/views/home-context.ts
+ *  and the Record page's lead in src/views/pages/record.tsx. */
+export async function workPages(ctx: PageContext, readers: [string, string][]): Promise<void> {
+  for (const [who, email] of readers) {
+    let step = `/api/console/home for the page, as ${who}`;
+    const home = await answer(ctx, step, email, "/api/console/home") as {
+      title: { sentence: string }; tiles: { closed: { window: { from: string } } };
+      words: Part<{ weeks: PF[] }>; approvals: Part<{ weeks: PF[] }> };
+    const half = (part: Part<{ weeks: PF[] }>, kicker: string, none: string): string => {
+      const v = part.state === "ok" ? part.data.weeks.find((w) => w.window.from === home.tiles.closed.window.from)?.figure.value : undefined;
+      return `${kicker} ${v === null || v === undefined ? none : count(v)}`;
+    };
+    await lead(ctx, who, email, "/", "data-figures", [home.title.sentence, half(home.words, "Words added · last week", "No words recorded"),
+      half(home.approvals, "Approvals in your name · last week", "No approvals recorded")]);
+
+    step = `/api/console/record for the page, as ${who}`;
+    const { estimate } = (await answer(ctx, step, email, "/api/console/record?period=quarter")).lead as { estimate: { words: number; assumedWordsPerHour: number } };
+    await lead(ctx, who, email, "/record", null, [`Estimated at ${count(estimate.assumedWordsPerHour)} words an hour, over ${count(estimate.words)} words`]);
+
+    step = `/api/console/initiatives for the page, as ${who}`;
+    const rows = (await answer(ctx, step, email, "/api/console/initiatives")).rows as { slug: string }[];
+    if (!rows.length) ctx.fail(step, "it lists no initiative to look for on the page");
+    await lead(ctx, who, email, "/initiatives", 'data-protagonist="Initiatives"', rows.map((r) => r.slug));
+
+    step = `/api/console/approvals for the page, as ${who}`;
+    const waiting = (await answer(ctx, step, email, "/api/console/approvals")).waiting as Part<{ rows: { initiative: string; path: string }[] }>;
+    if (waiting.state !== "ok" || !waiting.data.rows.length) ctx.fail(step, `its waiting revisions are ${JSON.stringify(waiting).slice(0, 300)}`);
+    await lead(ctx, who, email, "/approvals", 'data-protagonist="Approvals"', waiting.data.rows.map((r) => `${r.path} ${r.initiative}`));
+  }
 }

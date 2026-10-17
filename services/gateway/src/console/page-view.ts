@@ -31,18 +31,19 @@ import { teamless } from "./shared.js";
 type Workspace = "main" | "platform";
 
 /** The features a page view may name, and the workspace each destination is in: the spec's
- *  destinations, the internal bug page's `bug`, and `settings`, which today's console still has.
- *  `teams` and `people` stay `main` until the phase that moves them to the Platform workspace.
+ *  destinations, the internal bug page's `bug`, and `settings`, the notice the old address still
+ *  answers with a link to Access. Teams and People are Platform's Fleet pages, at `/platform/teams`
+ *  and `/platform/people`.
  *
  *  COUPLED: the console's `src/data/features.ts` is its counterpart, and its fake gateway
  *  (`../zz-stack-dashboard/scripts/fake-gateway/server.ts`, `PAGE_FEATURES`) copies this list. */
 const FEATURES: ReadonlyMap<string, Workspace> = new Map<string, Workspace>([
   ["home", "main"], ["record", "main"], ["initiatives", "main"], ["approvals", "main"],
   ["knowledge", "main"], ["activity", "main"], ["runs", "main"], ["plugins", "main"],
-  ["access", "main"], ["settings", "main"], ["teams", "main"], ["people", "main"],
+  ["access", "main"], ["settings", "main"],
   ["platform-status", "platform"], ["releases", "platform"], ["bugs", "platform"],
-  ["bug", "platform"], ["evaluation", "platform"], ["usage", "platform"], ["audit", "platform"],
-  ["knowledge-health", "platform"],
+  ["bug", "platform"], ["evaluation", "platform"], ["teams", "platform"], ["people", "platform"],
+  ["usage", "platform"], ["audit", "platform"], ["knowledge-health", "platform"],
 ]);
 
 export function mountPageView(app: Express): void {

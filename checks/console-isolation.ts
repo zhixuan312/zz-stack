@@ -22,7 +22,7 @@
  *   - the first team's member asks every GET route with the second team's slugs and ids in its path
  *     parameters, with `?team=` and `?scope=platform` forged, with their own team named, and with the
  *     second team's text as the question; no answer, error body or stream frame holds any of the second
- *     team's sentinels, and every `href` in those answers is null. A sentinel the request itself carried is not looked for
+ *     team's sentinels, and every `href` in those answers is null or one of the released Platform pages every person opens (Bugs, Evaluation, Usage). A sentinel the request itself carried is not looked for
  *     in its own answer: a refusal that repeats the caller's input discloses nothing new. Instead each
  *     request naming the second team's team, initiative, node, person, plugin or ids is sent again
  *     naming a phantom of the same shape no team holds, and the two answers, those names and every
@@ -447,7 +447,7 @@ async function run(c: Core): Promise<void> {
         : `ok, ${statuses.length} requests answered ${tally(statuses)}, ${compared} answered alike about a team nobody has`);
       found.push(...bad.map((b) => `${who.one.label} GET ${r.path}: ${b}`));
     }
-    c.pass(`every link in the first team's member's answers is null: ${links} of them`);
+    c.pass(`every link in the first team's member's answers is null or opens Bugs, Evaluation or Usage, which name no team: ${links} of them`);
     step = "the comparison tells existence apart";
     const team: Sent = { method: "get", url: `/api/console/teams/${s.two.slug}?scope=platform`, body: null };
     const told = await oracle(team, await send(base, who.superadmin.cookie, team), undefined, who.superadmin.cookie);

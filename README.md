@@ -226,10 +226,13 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             skeleton-destinations.ts then registers the catalog's skills, makes a run with a
             refusal and a question that found nothing through the door, reads Activity,
             Knowledge, Runs, Plugins and Access as both, and switches a person in two teams
-            through the console's route, the next reads answering the other team; both
-            read the seeded malformed-call rate on /platform, a
-            signed-out request is sent to sign in with its whole address, and a member's /teams
-            holds no other team.
+            through the console's route, the next reads answering the other team, and writes
+            a lesson of the member's; both read the seeded malformed-call rate on /platform and
+            every page's lead as the gateway answers it, a signed-out request is sent to sign in
+            with its whole address, a member's Teams, People and Audit answer as an address that
+            names nothing, no member's page holds another team's words, and the console's
+            explore probe asks every view and prepared query on that gateway as the member,
+            none holding the second team's words, two agreeing with their pages.
             Needs docker and psql, so not a gate check; it exits 2 when either or the console's
             checkout is missing, which is not a pass), manifests.ts (where the packages are, read by
             both), mutation-run.ts (weekly on a runner as twenty `--shard` jobs and

@@ -233,6 +233,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       [member, { feature: "home", workspace: "platform", url: "/initiatives/secret-plan?q=x" }],
       [member, { feature: "platform-status" }],
       [loner, { feature: "knowledge" }],
+      [member, { feature: "teams" }],
     ];
     for (const [id, body] of recorded) {
       const a = await post(id, body);
@@ -246,6 +247,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       { subject: "home", detail: '{"workspace": "main"}', actor_id: ids.member, team_id: ids.team },
       { subject: "knowledge", detail: '{"workspace": "main"}', actor_id: ids.loner, team_id: null },
       { subject: "platform-status", detail: '{"workspace": "platform"}', actor_id: ids.member, team_id: ids.team },
+      { subject: "teams", detail: '{"workspace": "platform"}', actor_id: ids.member, team_id: ids.team },
     ];
     for (const [i, want] of expected.entries()) {
       const got = rows[i];

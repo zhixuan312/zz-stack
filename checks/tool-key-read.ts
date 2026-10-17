@@ -38,8 +38,6 @@ if (!call) {
 const SQL_READERS = [
   "services/zz-core/src/eval/plugin-profile.ts",
   "services/zz-core/src/eval/judge.ts",
-  "services/gateway/src/console/overview.ts",
-  "services/gateway/src/console/overview-metrics.ts",
   "services/gateway/src/console/skills.ts",
 ];
 for (const f of SQL_READERS) {

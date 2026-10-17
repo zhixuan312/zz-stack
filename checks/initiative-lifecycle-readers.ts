@@ -74,23 +74,6 @@ const specs: FileSpec[] = [
     ],
   },
   {
-    path: "services/gateway/src/console/overview-metrics.ts",
-    forbid: [
-      { pattern: /docs\.some\(\(d\)\s*=>\s*d\.path\s*===\s*closingDoc\s*&&\s*d\.outcome/, message:
-        "progressOf derives `closed` from the closing document's own `outcome` column again." },
-      { pattern: /docs\.some\(\(d\)\s*=>\s*d\.outcome\s*!==\s*null\)/, message:
-        "progressOf derives `closed` by scanning documents for a non-null `outcome` again." },
-      { pattern: /i\.created_at/, message:
-        "reads zz.initiative.created_at — the column was renamed opened_at by 002_initiative_anchor.sql." },
-    ],
-    require: [
-      { pattern: /i\.closed_at\s+is\s+not\s+null\s+as\s+closed/, message:
-        "no query reads `closed_at is not null` off zz.initiative as `closed`." },
-      { pattern: /closed:\s*boolean/, message:
-        "progressOf no longer takes `closed` as an explicit argument." },
-    ],
-  },
-  {
     path: "services/zz-core/src/eval/observe-facts.ts",
     forbid: [
       { pattern: /min\(outcome\)\s+as\s+outcome\s*\n?\s*from\s+live/, message:

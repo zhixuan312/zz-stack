@@ -27,9 +27,6 @@
  * which initiative_status writes no event. A batch that fails leaves its rows' next move null and says
  * so in nextMoveState; null means that and nothing else.
  *
- * GET /api/console/initiatives?waiting=1 answers the bell's own rule as it did before this read was
- * rebuilt, for the caller's scope, until the bell is rebuilt on the pending queue.
- *
  * DELIBERATE: no backticks in the comments this module adds. check:sql reads the file as text, and a
  * lone backtick in a comment opens a template literal it then parses as code.
  *
@@ -45,7 +42,7 @@ import { coreFor } from "../core-as-caller.js";
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { pendingRevisions } from "./pending.js";
-import { handler, platformPublic, stageOf, ZZ_TZ, type StageDoc } from "./shared.js";
+import { platformPublic, stageOf, ZZ_TZ, type StageDoc } from "./shared.js";
 import { closuresByWeek, grainFor, lastWholeWeek, periodsOf, type ClosureWeek } from "./work-figures.js";
 
 /** Where an initiative goes next, as initiative_status answers it, its keys spelled as the console's. */
@@ -270,8 +267,14 @@ export async function initiativeList(team: string, params: ListParams, asOf: str
 }
 
 export function mountInitiativeList(app: Express): void {
-  /** The list, for the team the caller's identity acts for and no other. */
-  const list = platformPublic("the initiatives", async (req, res, { activeTeam }) => {
+  /** The list, for the team the caller's identity acts for and no other. A request for the waiting
+   *  gates is answered as an address that names nothing: the bell's projection is gone, and what waits
+   *  on a person is Home's and Approvals'. */
+  app.get("/api/console/initiatives", platformPublic("the initiatives", async (req, res, { activeTeam }) => {
+    if (req.query.waiting !== undefined) {
+      res.status(404).json({ error: "no waiting projection: what waits on you is on Home and Approvals" });
+      return;
+    }
     if (activeTeam === null) {
       res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
       return;
@@ -280,260 +283,5 @@ export function mountInitiativeList(app: Express): void {
     if (typeof params === "string") { res.status(400).json({ error: params }); return; }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
     res.json(await initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)));
-  });
-
-  /** What the console's alert bell asks, ?waiting=1: its own rule over the caller's scope, moved here
-   *  unchanged from the handler it shared with the list, until the bell reads the pending queue. */
-  const bell = handler("the waiting gates", async (req, res, scope) => {
-    const db = platformDb();
-    /* `?team=` is a filter, never a nullable one. Absent means "every team I may see"; present
-     * means that one team, and a team scope may only ever name its own — anything else is the
-     * same 404 a missing team gets, never a 403 that would confirm it exists.
-     * `($1::text is null or team_slug = $1)` would make an absent parameter match every row.
-     *
-     * DELIBERATE: three complete statements, not one assembled from `scope` at request time.
-     * `check:sql` PREPAREs every query in this file against a live schema before release and can
-     * only PREPARE a literal it can read whole, so a predicate built from `scope.kind` is
-     * invisible to it. Two of the three are the same text with a different bound value. */
-
-    // A team scope may name its own slug and nothing else. Naming another team's is not a
-    // narrower request it is entitled to make, so it gets the not-found it would get for a
-    // team that does not exist.
-    const want = typeof req.query.team === "string" && req.query.team ? req.query.team : null;
-    if (scope.kind === "team" && want !== null && want !== scope.slug) {
-      res.status(404).json({ error: `no team ${want}` });
-      return;
-    }
-    /* Not `DocRow`, which is the shape of a document read. This route builds a summary per
-       initiative — count, stage, who signed — and reads none of the body. Typing the rows as
-       DocRow puts `length(coalesce(body,''))` in the select, and Postgres detoasts every body
-       to answer it. Carries neither `flow` nor `outcome`: both are the initiative's own, read
-       from `zz.initiative` below, never from a document. */
-    type ListRow = StageDoc & {
-      team_slug: string; initiative: string;
-      approved_by: string | null; updated_at: string;
-      /** How many revisions of this document carry a seal. A document is approved once per
-       *  revision, so this is what the panel's "approvals" column counts — the frozen copy an
-       *  approval used to file beside the document is a `doc_revision` row now. */
-      approvals: string;
-    };
-    /* THREE complete statements, not one assembled at request time.
-       COUPLED: check:sql PREPAREs every query call in this repository against a live schema
-       (scripts/gate/checks/console.ts, through packages/tools/src/lib/sql-scan.ts), and a query
-       built from a `where` argument is a variable to that scan — there is no longer one statement
-       for it to read, so it is neither prepared nor checked. Written out per branch, the same
-       reason the fact and anchor queries above are.
-       DELIBERATE: the names in this comment carry no backticks. The scanner reads this file as
-       text, comments included, so a backtick here opens a template literal it then parses as code
-       — which is how this comment broke the very check it is describing.
-       COUPLED: a document reaches its team and its initiative through initiative_id — zz.doc
-       carries neither slug — its approver through the revision it currently points at, and its
-       supports through that revision's envelope payload. None of the four is a column of zz.doc,
-       so a select naming them off it would stop preparing the day the migration lands.
-       COUPLED: correction is the same expression in every statement of the bell's that feeds
-       stageOf, and in the initiative and document reads of initiatives.ts; StageDoc in shared.ts
-       says what it means. The list's own statement leaves it out, since a gate count never reads
-       it. It is closedMove's rule in services/zz-core/src/tools/initiative-closed.ts, and abandoned is the
-       outcome contracts names OUTCOME_STOPPED. That rule asks for a gated document of the
-       initiative's flow, which SQL cannot read off a manifest; a flow on the initiative is the
-       stand-in, and an exact one while the manifest is installed and unchanged: under a flow only a
-       gated document it declares can be approved (gateRefusal in services/zz-core/src/chain.ts), so
-       an approved revision already means gated, and only a freeform initiative, where anything is
-       approvable and closedMove sees nothing, needs ruling out. */
-    // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
-    // `zz.initiative_fact` (001) — the console's own copy of `<initiative>/
-    // _facts.json`, which it cannot read directly (it has no filesystem access to the store).
-    // Written as three complete statements rather than one assembled at request time, for the
-    // same reason the docs query above is: `check:sql` PREPAREs every statement it can read
-    // whole, and a predicate built from `scope.kind` is invisible to it.
-    type FactRow = { team: string; initiative: string; fact: string; value: string };
-    const { rows: factRows } = scope.kind !== "platform"
-      ? await db.query<FactRow>(
-      `select t.slug as team, i.slug as initiative, f.fact, f.value
-         from zz.initiative_fact f
-         join zz.initiative i on i.id = f.initiative_id
-         join zz.team t on t.id = i.team_id
-        where t.slug = $1`, [scope.slug])
-      : want !== null
-      ? await db.query<FactRow>(
-      `select t.slug as team, i.slug as initiative, f.fact, f.value
-         from zz.initiative_fact f
-         join zz.initiative i on i.id = f.initiative_id
-         join zz.team t on t.id = i.team_id
-        where t.slug = $1`, [want])
-      : await db.query<FactRow>(
-      `select t.slug as team, i.slug as initiative, f.fact, f.value
-         from zz.initiative_fact f
-         join zz.initiative i on i.id = f.initiative_id
-         join zz.team t on t.id = i.team_id`);
-    const factsByInit = new Map<string, Record<string, string>>();
-    for (const r of factRows) {
-      const key = `${r.team}/${r.initiative}`;
-      const got = factsByInit.get(key) ?? {};
-      got[r.fact] = r.value;
-      factsByInit.set(key, got);
-    }
-
-    // The initiative's own lifecycle: `flow`, whether it is closed, and its outcome, all read
-    // from `zz.initiative` — the one authority for a state no document derivation may answer
-    // any more. Same three scope shapes as the queries above, for the same `check:sql` reason.
-    type AnchorRow = { team: string; slug: string; flow: string | null; closed: boolean; outcome: string | null };
-    const { rows: anchorRows } = scope.kind !== "platform"
-      ? await db.query<AnchorRow>(
-      `select t.slug as team, i.slug, i.flow, i.closed_at is not null as closed, i.outcome
-         from zz.initiative i join zz.team t on t.id = i.team_id
-        where t.slug = $1`, [scope.slug])
-      : want !== null
-      ? await db.query<AnchorRow>(
-      `select t.slug as team, i.slug, i.flow, i.closed_at is not null as closed, i.outcome
-         from zz.initiative i join zz.team t on t.id = i.team_id
-        where t.slug = $1`, [want])
-      : await db.query<AnchorRow>(
-      `select t.slug as team, i.slug, i.flow, i.closed_at is not null as closed, i.outcome
-         from zz.initiative i join zz.team t on t.id = i.team_id`);
-    const anchorByInit = new Map<string, { flow: string | null; closed: boolean; outcome: string | null }>();
-    for (const r of anchorRows) {
-      anchorByInit.set(`${r.team}/${r.slug}`, { flow: r.flow, closed: r.closed, outcome: r.outcome });
-    }
-    // A document group with no `zz.initiative` row yet — the reconcile lag Q2/E of the schema
-    // review names — reads as open with no declared flow, the same answer this route gave every
-    // initiative before this row existed at all.
-    const noAnchor = { flow: null as string | null, closed: false, outcome: null as string | null };
-
-    const { rows } = scope.kind !== "platform"
-      ? await db.query<ListRow>(
-      `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
-              a.email as approved_by, (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
-                              from zz.doc_link l
-                              join zz.doc td on td.id = l.to_doc_id
-                             where l.from_doc_id = d.id and l.from_revision = r.revision
-                               and l.kind = 'supports') as supports,
-              (select count(*) from zz.doc_revision r2
-                where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
-              case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                         and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
-                         and (i.outcome <> 'abandoned'
-                              or (select x.fields->>'outcome' from zz.doc_revision x
-                                   where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
-                   then d.current_version end as correction,
-              to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
-         from zz.doc d
-         join zz.initiative i on i.id = d.initiative_id
-         join zz.team t on t.id = i.team_id
-         left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-         left join zz.principal a on a.id = r.approved_by
-        where i.slug <> '_knowledge' and t.slug = $1
-        order by t.slug, i.slug, d.path`, [scope.slug])
-      : want !== null
-      ? await db.query<ListRow>(
-      `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
-              a.email as approved_by, (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
-                              from zz.doc_link l
-                              join zz.doc td on td.id = l.to_doc_id
-                             where l.from_doc_id = d.id and l.from_revision = r.revision
-                               and l.kind = 'supports') as supports,
-              (select count(*) from zz.doc_revision r2
-                where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
-              case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                         and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
-                         and (i.outcome <> 'abandoned'
-                              or (select x.fields->>'outcome' from zz.doc_revision x
-                                   where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
-                   then d.current_version end as correction,
-              to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
-         from zz.doc d
-         join zz.initiative i on i.id = d.initiative_id
-         join zz.team t on t.id = i.team_id
-         left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-         left join zz.principal a on a.id = r.approved_by
-        where i.slug <> '_knowledge' and t.slug = $1
-        order by t.slug, i.slug, d.path`, [want])
-      : await db.query<ListRow>(
-      `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
-              a.email as approved_by, (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
-                              from zz.doc_link l
-                              join zz.doc td on td.id = l.to_doc_id
-                             where l.from_doc_id = d.id and l.from_revision = r.revision
-                               and l.kind = 'supports') as supports,
-              (select count(*) from zz.doc_revision r2
-                where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
-              case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
-                         and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
-                         and (i.outcome <> 'abandoned'
-                              or (select x.fields->>'outcome' from zz.doc_revision x
-                                   where x.doc_id = d.id and x.revision = d.approved_revision) is not null)
-                   then d.current_version end as correction,
-              to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
-         from zz.doc d
-         join zz.initiative i on i.id = d.initiative_id
-         join zz.team t on t.id = i.team_id
-         left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-         left join zz.principal a on a.id = r.approved_by
-        where i.slug <> '_knowledge'
-        order by t.slug, i.slug, d.path`);
-    const byInit = new Map<string, typeof rows>();
-    for (const r of rows) {
-      // "/" as the separator, because a team slug cannot contain one (TEAM_SLUG is [a-z0-9_-]),
-      // so the split below is unambiguous. A NUL byte here makes grep skip the file as binary.
-      const key = `${r.team_slug}/${r.initiative}`;
-      const got = byInit.get(key);
-      if (got) got.push(r); else byInit.set(key, [r]);
-    }
-    const initiatives = [...byInit.entries()].map(([key, docs]) => {
-      const cut = key.indexOf("/");
-      const teamSlug = key.slice(0, cut), slug = key.slice(cut + 1);
-      const anchor = anchorByInit.get(key) ?? noAnchor;
-      return {
-        team: teamSlug, slug,
-        flow: anchor.flow,
-        // `approvals`, not revisions: a seal lands on a revision, and a revision nobody
-        // approved carries none. What each row counts is the sealed revisions of ONE document,
-        // so the initiative's total is their sum — not the document count, which would report
-        // a document approved twice as one approval.
-        documents: docs.length,
-        approvals: docs.reduce((n, d) => n + Number(d.approvals ?? 0), 0),
-        updated: docs.reduce((a, d) => (d.updated_at > a ? d.updated_at : a), ""),
-        // Whoever approved something is the person the work belongs to. There is no owner
-        // column, and the first document's author is whoever typed first, not who signed.
-        stakeholder: docs.map((d) => d.approved_by).find(Boolean) ?? null,
-        ...stageOf(docs, anchor.flow, { closed: anchor.closed, outcome: anchor.outcome },
-                   factsByInit.get(key) ?? {}),
-      };
-    }).sort((a, b) => b.updated.localeCompare(a.updated));
-    /* What the console's alert bell and its "Waiting on you" panel ask: the gate documents a person
-     * can sign today — written, not yet approved, on an open initiative.
-     *
-     * DELIBERATE: its own projection rather than the whole list. The bell sits in the frame every
-     * console page renders, so this read happens on every page, and the full list carries a stepper
-     * and a gate list per initiative for every initiative the caller may read — kilobytes, to draw
-     * a badge that is usually empty. This answers it in a row per open gate.
-     *
-     * `written`, because a gate nobody has drafted is waiting on the agent and not on a person, and
-     * `!passed`, which is the approval itself.
-     *
-     * A closed initiative waits on a person in one case: a correction of an approved document, a
-     * draft until somebody approves it again — the same `await_approval` initiative_status
-     * routes it to. Its gates are otherwise settled, so that document is the one row it adds. */
-    const waiting = initiatives
-      .flatMap((i) => {
-        const where = { team: i.team, slug: i.slug, updated: i.updated, stage: i.stage, at: i.at, of: i.of };
-        if (i.closed) {
-          return i.correction
-            ? [{ id: `${i.team}/${i.slug}/${i.correction.path}`,
-                 gate: `${i.correction.path.replace(/\.md$/, "")} correction v${i.correction.version}`, ...where }]
-            : [];
-        }
-        return i.gates
-          .filter((g) => g.written && !g.passed)
-          // The verb is the platform's ("approve spec"); the reader is shown the noun.
-          .map((g) => ({ id: `${i.team}/${i.slug}/${g.name}`, gate: g.name.replace(/^approve /, ""), ...where }));
-      })
-      .sort((a, b) => b.updated.localeCompare(a.updated));
-    res.json({ waiting });
-  });
-
-  /* The list, unless the bell asks for its own projection.
-   * DELIBERATE: two wrappers on one path. The bell keeps the caller's scope as it always read it; the
-   * list resolves none, because nothing a request names may move it off the active team. */
-  app.get("/api/console/initiatives", (req, res) => (req.query.waiting === "1" ? bell : list)(req, res));
+  }));
 }

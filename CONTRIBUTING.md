@@ -62,7 +62,7 @@ audit (`checks/console-platform-audit.ts`), and the fleet's teams (`checks/conso
 which also drives the team and platform settings routes) and people
 (`checks/console-platform-people.ts`, which also drives the platform settings routes), each
 driving the gateway's identity gate and its own route against one, the console's page view (`checks/console-page-view.ts`), which drives the gateway's
-page-view, overview, activity and activity summary routes against one and listens on the console's change channel,
+page-view, activity, activity summary and Home routes against one and listens on the console's change channel,
 the caller's own Access, its applications revoked and its other browsers signed out from a browser alone (`checks/console-access.ts`), which drives the gateway's identity gate, Access read and settings routes against one over HTTP,
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
 against one and reads its greeting, a team's observed agent runs, their coverage, peak overlap and what ran

@@ -7,7 +7,7 @@
  *
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), seeds people, a
  * team and a history of events with SQL directly, and calls the gateway's own built route handlers
- * (`services/gateway/dist/console/page-view.js`, `dist/console/activity.js` and `dist/console/overview.js`) the way Express
+ * (`services/gateway/dist/console/page-view.js`, `dist/console/activity.js` and `dist/console/home.js`) the way Express
  * would, as a console session. What it establishes:
  *
  *   - a body that is not an object, a missing or empty feature, and a feature not in the closed
@@ -20,8 +20,9 @@
  *     team are the caller's, whose origin is `work`, and which names no initiative, run, skill
  *     version or conversation;
  *   - a caller in no team still records a view, with no team;
- *   - the activity log, its summary and the overview, for the team and for the platform, answer byte
- *     for byte what they answered before those views were written, the read's own cutoff masked;
+ *   - the team's activity log, its summary and Home, and the superadmin's activity log asked for the
+ *     platform, answer byte for byte what they answered before those views were written, the read's
+ *     own cutoff masked;
  *   - a page view raises no live hint: listening on the console's change channel from before the
  *     first view, the only hints heard are the three an ordinary team event written after the views
  *     raises — the positive control, without which hearing nothing would prove nothing.
@@ -31,8 +32,8 @@
  * said.
  *
  * The seeded history is dated forty days ago, inside one day, with a distinct count for every kind,
- * tool and message: a view written now would move the overview's span and its grain, add a kind and
- * a count, and head the activity log, so each exclusion has something to hide.
+ * tool and message: a view written now would add a kind and a count and head the activity log, so
+ * each exclusion has something to hide.
  *
  * The only database it touches is the one it started.
  *
@@ -50,7 +51,7 @@ import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-page-view";
 const DONE = "console-page-view: a page view is one console.page_view event naming its feature and workspace, " +
-  "the caller's own, refused for anything outside the closed list, absent from the activity log, its summary and the overview, " +
+  "the caller's own, refused for anything outside the closed list, absent from the activity log, its summary and Home, " +
   "and heard by no open tab: ok";
 
 /** The channel the console's change triggers notify on. COUPLED: `zz.console_hint` in
@@ -148,12 +149,12 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   const db = (await load("services/gateway/dist/db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
   await db.initPlatformDb();
   const { mountPageView } = (await load("services/gateway/dist/console/page-view.js")) as { mountPageView: (app: unknown) => void };
-  const { mountOverview } = (await load("services/gateway/dist/console/overview.js")) as { mountOverview: (app: unknown) => void };
+  const { mountHome } = (await load("services/gateway/dist/console/home.js")) as { mountHome: (app: unknown) => void };
   const { mountActivity } = (await load("services/gateway/dist/console/activity.js")) as { mountActivity: (app: unknown) => void };
   const routes = new Map<string, Route>();
   const app = { get: (p: string, h: Route) => routes.set(`GET ${p}`, h), post: (p: string, h: Route) => routes.set(`POST ${p}`, h) };
   mountPageView(app);
-  mountOverview(app);
+  mountHome(app);
   mountActivity(app);
   const route = (key: string): Route => routes.get(key) ?? fail("mount", `no route ${key}`);
   const view = route("POST /api/console/page-view");
@@ -164,17 +165,15 @@ async function run(sql: pg.Client, url: string): Promise<void> {
 
   const member = session(MEMBER, "member", TEAM);
   const loner = session(LONER, "member", null);
-  const admin = session(ADMIN, "superadmin", null);
   // Activity is the active team's whatever the request names, so the superadmin reads it acting for the team.
   const acting = session(ADMIN, "superadmin", TEAM);
   const reads: [string, string, Identity, Record<string, string>][] = [
-    ["the team's overview", "GET /api/console/overview", member, {}],
     ["the team's activity log", "GET /api/console/activity", member, {}],
-    ["the platform's overview", "GET /api/console/overview", admin, { scope: "platform" }],
     ["the superadmin's activity log, asked for the platform", "GET /api/console/activity", acting, { scope: "platform" }],
     ["the team's activity summary", "GET /api/console/activity/summary", member, {}],
+    ["the team's Home", "GET /api/console/home", member, {}],
   ];
-  // An answer with its own cutoff masked: Activity states the second it was read at, which no page view moves.
+  // An answer with its own cutoff masked: Activity and Home state the second they were read at, which no page view moves.
   const masked = (body: unknown): string => {
     const asOf = (body as { meta?: { asOf?: string } }).meta?.asOf;
     const text = JSON.stringify(body);
@@ -197,21 +196,9 @@ async function run(sql: pg.Client, url: string): Promise<void> {
 
   try {
     const before = await snapshot();
-    // The seeded history is visible to them, so an equal answer later is not an empty one.
-    if (!before.slice(0, 4).every((b) => b.includes("knowledge.add")) || !before[4].includes("GATE_REFUSED")) {
+    // The seeded history is visible to the activity reads, so an equal answer later is not an empty one.
+    if (!before.slice(0, 2).every((b) => b.includes("knowledge.add")) || !before[2].includes("GATE_REFUSED")) {
       fail("the reads answer", `a read does not show the seeded history: ${before.join(" | ")}`);
-    }
-    // The tool-call trend is tool calls and nothing else, so an unchanged trend means no other kind
-    // could have reached it: its buckets sum to the calls and refusals the tile beside it counts.
-    for (const i of [0, 2]) {
-      const o = JSON.parse(before[i]) as { toolTrend: { inside: number; outside: number; refused: number }[];
-                                           metrics: { refusals: { calls: number; refused: number } } };
-      const calls = o.toolTrend.reduce((n, b) => n + b.inside + b.outside + b.refused, 0);
-      const refusedSum = o.toolTrend.reduce((n, b) => n + b.refused, 0);
-      if (calls !== o.metrics.refusals.calls || refusedSum !== o.metrics.refusals.refused) {
-        fail("the reads answer", `${reads[i][0]}'s trend holds ${calls} calls and ${refusedSum} refusals, ` +
-             `not the ${o.metrics.refusals.calls} and ${o.metrics.refusals.refused} its tile counts`);
-      }
     }
 
     let step = "what is refused";
@@ -285,8 +272,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
         fail(step, `the activity log asked for ${JSON.stringify(query)} answered ${a.status}: ${JSON.stringify(a.body)}`);
       }
     }
-    pass("the activity log, its summary and the overview, for the team and for the platform, answer byte for byte what they answered " +
-         "before the views, and the log asked for page views by kind lists none");
+    pass("the team's activity log, its summary and Home, and the superadmin's log asked for the platform, answer byte for byte what " +
+         "they answered before the views, and the log asked for page views by kind lists none");
 
     step = "heard by no open tab";
     // The positive control: an ordinary event of another team, written after every view committed.

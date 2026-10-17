@@ -16,9 +16,6 @@ check("the initiatives list answers the active team and nothing a request names"
   // Work is the active team's, for the superadmin too. A list that took its team from the request
   // would hand a member who names another team that team's work, and a superadmin asking for the
   // platform every team's, with the tiles beside the table counted from the same rows.
-  //
-  // This names one route. The bell's projection on the same path (?waiting=1) keeps the caller's
-  // scope until it is rebuilt, and is held by the checks below like every handler.
   const f = "services/gateway/src/console/initiative-list.ts";
   const src = withoutComments(readFileSync(join(root, f), "utf8"));
   const open = /platformPublic\("the initiatives",\s*async\s*\(\s*req,\s*res,\s*\{\s*activeTeam\s*\}\s*\)\s*=>\s*\{/.exec(src);
@@ -94,8 +91,8 @@ check("a console query cannot fall back to every team", () => {
       bad.push(`handler("${h.name}", ...) declares only (${h.params}) — it never receives the scope`);
     }
     // (c) A query filtering on team_slug must name the scope that authorised it. team_slug as
-    // an equality predicate only — /overview's `count(distinct (team_slug, initiative))` groups
-    // by it and predicates nothing — and only when the handler body never mentions `scope`.
+    // an equality predicate only — a `count(distinct (team_slug, initiative))` groups by it and
+    // predicates nothing — and only when the handler body never mentions `scope`.
     if (/\bteam_slug\s*=(?!=)/.test(h.body) && !/\bscope\b/.test(h.body)) {
       bad.push(`handler("${h.name}", ...) filters on team_slug without ever consulting scope`);
     }

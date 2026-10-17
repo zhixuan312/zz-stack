@@ -1,7 +1,6 @@
 // An aggregate nothing measured renders as null, never as a confident zero.
 //
-// Both readers are pinned: skills.ts below, and overview-metrics.ts further down. A check that
-// names one file protects one file.
+// The reader pinned is skills.ts, by name: a check that names one file protects one file.
 import { readFileSync } from "node:fs";
 
 const fail = [];
@@ -36,32 +35,6 @@ if (/\bturns\b/.test(src)) {
   fail.push("skills.ts reads `turns` again — zz.skill_run carries no such column and no turn " +
             "event is emitted, so any figure built on it is a zero wearing the clothes of a " +
             "measurement. Delete the reader; do not coerce it.");
-}
-
-// The same property, on the overview. The status row reads `zz.skill_run.bytes_total`, which is
-// nullable for the reason above: a run nobody measured is not a run that moved nothing.
-// `Number(v ?? 0)` one layer up reintroduces the conflation.
-const o = "services/gateway/src/console/overview-metrics.ts";
-const osrc = readFileSync(o, "utf8");
-
-// The nullable column is tested for null, not coerced.
-if (!/\.bytes\s*!==\s*null/.test(osrc)) {
-  fail.push(`${o} does not test run bytes for null — \`Number(null ?? 0)\` is 0, so a run ` +
-            `nobody measured renders as a measured zero and pulls the median down with it`);
-}
-// And the runs it could not measure are reported rather than silently dropped: a median over
-// a set the reader cannot size is its own quiet lie.
-if (!/unmeasured/.test(osrc)) {
-  fail.push(`${o} drops unmeasured runs without counting them — the tile cannot say how many ` +
-            `of its runs it could not see`);
-}
-// The count helper must stay keyed to counts: `?? 0` is right for an absent row and wrong
-// for a null aggregate, and one helper cannot serve both.
-if (!/const count\s*=/.test(osrc)) {
-  fail.push(`${o} has no count() helper — see the note there for why it is not called num()`);
-}
-if (/\bcount\(\s*r\.bytes/.test(osrc)) {
-  fail.push(`${o} points count() at a nullable aggregate — that helper is for count(*) only`);
 }
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

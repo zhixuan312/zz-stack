@@ -8,7 +8,8 @@
  * stream as the greeting that stands for the read the page made while it mounted, and reads again on every later one.
  * A gateway that sent no greeting would have its first real `resync`, the one that says a tab missed changes, taken for
  * the greeting and thrown away. So the stream's first frame after `retry` is a `resync` naming exactly the
- * collections the tab asked for, and nothing else comes before it.
+ * collections the tab asked for, and nothing else comes before it. A tab that names `overview`, a collection the
+ * console no longer reads, is refused 403 like any name with no read behind it, and opens no stream.
  *
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), loads the gateway's built
  * `mountConsoleLive`, and opens the route as a signed-in console session would, reading what is written to the
@@ -27,7 +28,9 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-live-greeting";
-const ASKED = ["overview", "activity"];
+const ASKED = ["initiatives", "activity"];
+/** The collection the console's Overview followed: gone with its read. */
+const REMOVED = "overview";
 
 type Route = (req: unknown, res: unknown) => unknown;
 
@@ -54,16 +57,21 @@ async function run(url: string): Promise<string | null> {
   mountConsoleLive({ get: (path: string, h: Route) => routes.set(path, h) });
   const live = routes.get("/api/console/live");
   if (!live) return "no route GET /api/console/live";
-
-  const res = new Stream();
-  const req = Object.assign(new EventEmitter(), {
-    query: { collections: ASKED.join(",") },
+  const ask = (collections: string) => Object.assign(new EventEmitter(), {
+    query: { collections },
     headers: {},
     zzIdentity: { email: "greeting@example.com", displayName: "Greeting", platformRole: "user", via: "session",
                   teams: [{ slug: "greeting", role: "admin" }], activeTeam: "greeting", patTeam: null, sessionTeam: "greeting" },
   });
+
+  const gone = new Stream();
+  const res = new Stream();
   try {
-    await live(req, res);
+    await live(ask(REMOVED), gone);
+    if (gone.statusCode !== 403 || gone.frames.length !== 1 || !gone.frames[0].startsWith("refused 403")) {
+      return `a tab naming ${REMOVED} answered ${gone.statusCode} with ${JSON.stringify(gone.frames)}, not one 403 refusal`;
+    }
+    await live(ask(ASKED.join(",")), res);
     // The frames before any change can arrive: the stream's own opening, nothing that a database event caused.
     await new Promise((r) => setTimeout(r, 300));
     const frames = res.frames.filter((f) => !f.startsWith(": beat"));
@@ -93,7 +101,7 @@ async function main(): Promise<number> {
     return 1;
   }
   if (problem) { console.error(`${NAME}: FAILED: ${problem}`); return 1; }
-  console.log(`${NAME}: a tab's stream opens with one resync naming the collections it asked for: ok`);
+  console.log(`${NAME}: a tab's stream opens with one resync naming the collections it asked for, and a tab naming ${REMOVED} is refused: ok`);
   return 0;
 }
 

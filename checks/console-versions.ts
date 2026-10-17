@@ -31,7 +31,8 @@
  *     gate governs it (initiative_status's rule); the list, which reads each initiative's next move
  *     from initiative_status as the person, names a pending correction as awaiting approval and no
  *     other closed initiative;
- *   - the bell (`?waiting=1`) lists a closed initiative's pending correction, and no other closed one;
+ *   - the list asked for the waiting gates, the bell's old projection, answers 404 and no list: what
+ *     waits on a person is Home's and Approvals';
  *   - the document read names the displayed snapshot's `content_revision`, the token zz-core states;
  *   - opening a document records a full presentation of that snapshot under the console's own
  *     review context, which `POST /documents/shown` returns; Approve with that revision and that
@@ -467,17 +468,15 @@ async function run(c: Core): Promise<void> {
     }
     ok("the initiative list names a pending correction as the next move initiative_status gives it, and no other closed one");
 
-    // The bell lists what a person can sign today. A correction awaiting approval is one, though its
-    // initiative is closed — initiative_status routes it to await_approval — and a close that was
-    // signed and never corrected, or abandoned on a draft, is not.
-    const bell = await call(listRoute, {}, { team: TEAM, waiting: "1" });
-    const waiting = bell.body.waiting as { id: string; gate: string }[];
-    const ids = waiting.map((w) => w.id);
-    if (!ids.includes(`${TEAM}/${CORRECTED}/review.md`) || !ids.includes(`${TEAM}/${REVISED}/spec.md`)
-        || ids.some((x) => x.includes(SIGNED) || x.includes(DROPPED) || x.includes(FREEFORM))) {
-      fail("waiting list", `the bell lists ${JSON.stringify(waiting)}`);
+    // The bell's projection is gone: what a person can sign today is Home's and Approvals', and a
+    // pending correction is the list's next move above. Asked for it, the list answers no list.
+    for (const query of [{ waiting: "1" }, { waiting: "1", team: TEAM }, { waiting: "1", limit: "100" }] as Record<string, string>[]) {
+      const gone = await call(listRoute, {}, query);
+      if (gone.status !== 404 || "rows" in gone.body || "waiting" in gone.body) {
+        fail("waiting list", `${JSON.stringify(query)} answered ${gone.status}: ${JSON.stringify(gone.body)}`);
+      }
     }
-    ok("the bell lists a pending correction and no other closed initiative, a freeform one included");
+    ok("the list asked for the waiting gates answers 404 and no list");
 
     await presentation(c, { detail: documentRoute, shown: route("POST /api/console/documents/shown"),
                             approve: route("POST /api/console/documents/approve") });

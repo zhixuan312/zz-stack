@@ -13,8 +13,7 @@
  * and a lesson by its address (console/knowledge.ts, console/knowledge-summary.ts), `/api/console/runs`
  * (console/runs.ts) and
  * `/api/console/work/query` (console/work-query.ts) resolve no scope of their own: Work is the active team's, for the superadmin too, so each answers the team the
- * identity acts for, whatever team or scope the request names. The list's `?waiting=1` projection,
- * the bell's, keeps the caller's scope until the bell is rebuilt. A lesson on the shared shelf opens for
+ * identity acts for, whatever team or scope the request names. A lesson on the shared shelf opens for
  * any signed-in person by `/api/console/knowledge/zz-platform/*`, marked `shared`.
  *
  * `/api/console/access` (console/access.ts) is the caller's alone, through platformPublic: their own
@@ -68,7 +67,7 @@
 
 import type { Express } from "express";
 
-import { mountOverview } from "./console/overview.js";
+import { mountMe } from "./console/me.js";
 import { mountTeams } from "./console/teams.js";
 import { mountInitiatives } from "./console/initiatives.js";
 import { mountKnowledge } from "./console/knowledge.js";
@@ -101,7 +100,8 @@ import { mountConsoleClose } from "./console-close.js";
 
 export function mountConsole(app: Express): void {
   // The console's read API, by resource.
-  mountOverview(app);
+  // Who is looking, and whether the console answers them at all; answered even to a caller it refuses elsewhere.
+  mountMe(app);
   mountTeams(app);
   // People, the superadmin's read through platformPublic; a member is refused before anything is read.
   mountPeople(app);

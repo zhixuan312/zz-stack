@@ -1,6 +1,7 @@
 /**
  * /api/console/people — People, the superadmin's read: every person the platform knows, their role,
- * teams, tokens, passkeys, last recorded sign-in and state, with four tiles over everybody.
+ * teams, passkeys, last recorded sign-in and state, with four tiles over everybody. A row is what People
+ * draws, and the day the person was added, which the rows sort by and the prepared query counts a stock by.
  *
  * A recorded sign-in is a `console.sign_in` event with the person as its actor, which the passkey
  * ceremony writes; a console session, a token's use or a passkey's registration is not one. A person
@@ -33,8 +34,7 @@ const POPULATION = "people, their passkeys and their recorded console sign-ins";
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 export type PersonRow = {
-  email: string; name: string; role: string; status: string; created: string;
-  active_team: string; activeTeam: string | null; teams: string[]; tokens: number; last_used: string | null;
+  email: string; name: string; role: string; created: string; teams: string[];
   passkeys: number; lastSignIn: string | null; state: "active" | "deactivated";
 };
 type People = {
@@ -66,25 +66,19 @@ function parse(req: Request): { q: string | null; state: string | null; limit: n
  */
 export async function peopleRows(db: pg.Pool, asOf: string, q: string | null, state: string | null, limit: number | null, offset: number): Promise<PersonRow[]> {
   const rows = (await db.query<{
-    email: string; name: string; role: string; status: "active" | "deactivated"; created: string; active_team: string;
-    teams: string[]; tokens: string; last_used: string | null; passkeys: string; last_sign_in: string | null;
+    email: string; name: string; role: string; status: "active" | "deactivated"; created: string;
+    teams: string[]; passkeys: string; last_sign_in: string | null;
   }>(
     `select p.email::text as email, p.display_name as name, p.role, p.status,
             to_char(p.created_at at time zone $1::text, 'YYYY-MM-DD') as created,
-            coalesce(t.slug, '') as active_team,
             (select coalesce(array_agg(tm.slug || ' (' || m.role || ')' order by tm.slug), '{}')
                from zz.membership m join zz.team tm on tm.id = m.team_id
               where m.principal_id = p.id)                                   as teams,
-            (select count(*) from zz.pat pt
-              where pt.principal_id = p.id and pt.revoked_at is null)        as tokens,
-            (select to_char(max(pt.last_used_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.pat pt
-              where pt.principal_id = p.id)                                  as last_used,
             (select count(*) from zz.passkey k where k.principal_id = p.id)  as passkeys,
             (select to_char(max(e.ts) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
               where e.kind = 'console.sign_in' and e.actor_id = p.id
                 and e.ts <= $2::timestamptz)                                 as last_sign_in
        from zz.principal p
-       left join zz.team t on t.id = p.active_team_id
       where ($3::text is null or strpos(lower(p.email::text), lower($3::text)) > 0
                               or strpos(lower(p.display_name), lower($3::text)) > 0)
         and ($4::text is null or p.status = $4::text)
@@ -92,9 +86,8 @@ export async function peopleRows(db: pg.Pool, asOf: string, q: string | null, st
       limit $5 offset $6`,
     [ZZ_TZ, asOf, q, state, limit, offset])).rows;
   return rows.map((r) => ({
-    email: r.email, name: r.name, role: r.role, status: r.status, created: r.created,
-    active_team: r.active_team, activeTeam: r.active_team || null, teams: r.teams, tokens: Number(r.tokens),
-    last_used: r.last_used, passkeys: Number(r.passkeys), lastSignIn: r.last_sign_in, state: r.status,
+    email: r.email, name: r.name, role: r.role, created: r.created, teams: r.teams,
+    passkeys: Number(r.passkeys), lastSignIn: r.last_sign_in, state: r.status,
   }));
 }
 

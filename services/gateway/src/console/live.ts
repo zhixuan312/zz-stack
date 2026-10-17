@@ -53,7 +53,7 @@ const CONSOLE_CHANGE_CHANNEL = "zz_console_change";
 
 /** The collections a tab may follow: the console's reads, by their first path segment. */
 const COLLECTIONS = [
-  "me", "overview", "teams", "initiatives", "document", "knowledge", "plugins", "skills",
+  "me", "teams", "initiatives", "document", "knowledge", "plugins", "skills",
   "people", "runs", "activity", "settings",
 ] as const;
 

@@ -387,10 +387,12 @@ async function cases(c: Core, s: Seeded, route: (p: string) => Route, figures: W
   const personRows = await ask(ADMIN, { measure: "people", ...everything, rows: "20" });
   const byEmail = (rows: Obj[]) => rows.slice().sort((a, b) => String(a.email) < String(b.email) ? -1 : 1);
   same(step, byEmail(personRows.rows!.data!.rows.map(({ at: _a, address: _d, ...r }) => r)), byEmail(people.body.people as Obj[]));
+  if (personRows.rows!.data!.rows.some((r) => r.address !== "/platform/people")) c.fail(step, show(personRows.rows));
   same(step, (await ask(ADMIN, { measure: "sign_ins", ...L })).total.value, ((people.body.tiles as Obj).signInsLastWeek as { figure: Figure }).figure.value);
   const signedIn = await ask(ADMIN, { measure: "sign_ins", ...L, rows: "20" });
   same(step, byEmail(signedIn.rows!.data!.rows.map(({ at: _a, address: _d, ...r }) => r)),
     byEmail((people.body.people as Obj[]).filter((p) => [c.email, TWO_ADMIN, SUPERADMIN].includes(String(p.email)))));
+  if (signedIn.rows!.data!.rows.some((r) => r.address !== "/platform/people")) c.fail(step, show(signedIn.rows));
   const audit = (await page(ADMIN, "/platform/audit", { filter: "all", limit: "100" })).body;
   same(step, (await ask(ADMIN, { measure: "audit", ...everything })).total.value, audit.total);
   for (const g of (await ask(ADMIN, { measure: "audit", by: "kind", ...everything })).groups) {

@@ -116,7 +116,7 @@ export function teamless(name: string, fn: (req: Request, res: Response) => Prom
  * missing `?team=` that widened a read would be the "null means every team" wildcard scope.ts rules
  * out; a route mounted through this wrapper is a decision someone made once, in code, about one
  * answer. It replaces neither `handler` nor `teamless`: a census with a team in every row still
- * goes through `handler` (see /overview). */
+ * goes through `handler`. */
 export function platformPublic(
   name: string, fn: (req: Request, res: Response, caller: { superadmin: boolean; activeTeam: string | null }) => Promise<void>,
 ) {
@@ -145,8 +145,6 @@ export function periodCutoff(req: Request): Date | null {
   return days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : null;
 }
 
-type Grain = "hour" | "day" | "week" | "month";
-
 /**
  * The deployment's own timezone: every date this platform states is local to it, and
  * buckets are cut on its calendar rather than UTC's.
@@ -156,21 +154,6 @@ type Grain = "hour" | "day" | "week" | "month";
  * COUPLED: zz-core's write guards stamp dates through this same variable.
  */
 export const ZZ_TZ = (process.env.ZZ_TZ ?? "").trim() || "Asia/Singapore";
-
-/** How wide one bucket of the trend series is.
- *
- * DELIBERATE: the argument is the span between the first and last event in view, not the
- * requested period. A 90-day window over sixteen days of data would otherwise draw three
- * weekly points. `all` needs no special case — its span is the whole log's.
- *
- * Thresholds target roughly 12–60 buckets. The result is passed to `date_trunc($n, ts)` as
- * a bound parameter, not by branching the statement four ways. */
-export function grainForSpan(days: number): Grain {
-  if (days <= 2) return "hour";     // ≤ 48 hourly buckets
-  if (days <= 62) return "day";     // ≤ 62 daily buckets
-  if (days <= 730) return "week";   // ≤ ~104 weekly buckets
-  return "month";
-}
 
 /* Times go out as an instant, never as a pre-formatted local string: ISO 8601 in UTC with
  * the Z, formatted by the browser in the reader's own zone. Dates without a time carry no
@@ -193,7 +176,7 @@ export interface StageDoc {
    *  flow, and this document — not the handover — was approved before, is unapproved now, and was
    *  written after the close. A freeform initiative has no gate for a correction to await. After an abandoned close it counts only when its approved snapshot carries the
    *  outcome (the stop stamped it while approved); a stop on an unapproved draft is not one.
-   *  COUPLED: computed in SQL by the console/initiatives.ts statements and the bell's in console/initiative-list.ts that feed stageOf, by
+   *  COUPLED: computed in SQL by the console/initiatives.ts statements that feed stageOf, by
    *  closedMove's rule in services/zz-core/src/tools/initiative-closed.ts. */
   correction?: number | null;
 }

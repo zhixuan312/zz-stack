@@ -12,7 +12,7 @@
  * owned by the gateway's own classifier. Each phase is moved, together and by one interval, into the week
  * it names. The refusals the door cannot be made to give (a `theirs`, an `other` with no text, a refused
  * row with no owner) and the second team's distinctive message are written as rows, as a seed writes them.
- * It calls the gateway's own built routes (`dist/console/activity.js`, `dist/console/overview.js`) the way
+ * It calls the gateway's own built routes (`dist/console/activity.js`, `dist/console/page-view.js`) the way
  * Express would, as a console session. What it establishes, with the expected values written below:
  *
  *   - the summary's tiles are the last whole week's real-work calls with the weeks they are drawn from,
@@ -29,8 +29,8 @@
  *   - an unknown initiative slug, and the second team's, answer no rows;
  *   - a superadmin acting for the team reads it alike, team and scope change nothing, and a superadmin in
  *     no team is answered 400;
- *   - no answer of /activity, /activity/summary or /overview, at any scope, carries the second team's
- *     refusal message, while that team's own overview does;
+ *   - no answer of /activity or /activity/summary, at any scope, carries the second team's refusal
+ *     message, while that team's own log of refusals does;
  *   - the key sets match the console's fake answers.
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, eight hours ahead of UTC, and the weeks are counted
@@ -125,7 +125,7 @@ function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> 
 
 interface Gateway {
   url: string; mine: string; theirs: string;
-  log: Route; summary: Route; overview: Route; pageView: Route;
+  log: Route; summary: Route; pageView: Route;
   refusalGroups: (team: string, window: { from: string; to: string }, asOf: string) => Promise<Obj>;
   stop(): Promise<void>;
 }
@@ -156,7 +156,6 @@ async function listen(c: Core): Promise<Gateway> {
   const routes = new Map<string, Route>();
   const fake = { get: (p: string, h: Route) => routes.set(`GET ${p}`, h), post: (p: string, h: Route) => routes.set(`POST ${p}`, h) };
   ((await load("console/activity.js")) as { mountActivity: (app: unknown) => void }).mountActivity(fake);
-  ((await load("console/overview.js")) as { mountOverview: (app: unknown) => void }).mountOverview(fake);
   ((await load("console/page-view.js")) as { mountPageView: (app: unknown) => void }).mountPageView(fake);
   const { refusalGroups } = (await load("console/refusals.js")) as Pick<Gateway, "refusalGroups">;
 
@@ -174,7 +173,7 @@ async function listen(c: Core): Promise<Gateway> {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     mine: await patOf(c, c.email), theirs: await patOf(c, OTHER_EMAIL),
     log: route("GET /api/console/activity"), summary: route("GET /api/console/activity/summary"),
-    overview: route("GET /api/console/overview"), pageView: route("POST /api/console/page-view"), refusalGroups,
+    pageView: route("POST /api/console/page-view"), refusalGroups,
     stop: async () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -434,18 +433,15 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const scopes: Record<string, string>[] = [{}, { scope: "platform" }, { team: OTHER_TEAM }, { team: OTHER_TEAM, scope: "platform" }];
   for (const query of scopes) {
     for (const who of [ME, ACTING]) {
-      // A member naming another team or the platform may be refused the overview; a refusal is an answer too.
-      await ask(step, g.overview, who, query, null);
       await ask(step, g.summary, who, query);
       await log(step, { ...query, refused: "true" }, who);
     }
   }
-  await ask(step, g.overview, NOWHERE, { scope: "platform" });
   const found = everything.filter((t) => t.includes(SENTINEL) || t.includes("beacon ledger"));
   if (found.length) c.fail(step, `${found.length} answers hold it: ${found[0].slice(0, 300)}`);
-  // The positive control: the second team's own overview names it, so finding it nowhere above proves something.
-  if (!JSON.stringify(await ask(step, g.overview, THEM)).includes(SENTINEL)) c.fail(step, "the second team's own overview does not hold its message");
-  c.pass(`${step}: ${everything.length} answers of /activity, /activity/summary and /overview, while the second team's own overview holds it`);
+  // The positive control: the second team's own log of refusals names it, so finding it nowhere above proves something.
+  if (!JSON.stringify(await ask(step, g.log, THEM, { refused: "true" })).includes(SENTINEL)) c.fail(step, "the second team's own log does not hold its message");
+  c.pass(`${step}: ${everything.length} answers of /activity and /activity/summary, while the second team's own log holds it`);
 
   step = "the key sets match the console's fake answers";
   let fake: { activitySummary: (who: unknown) => [number, unknown]; activityLog: (who: unknown, q: URLSearchParams) => [number, unknown] };

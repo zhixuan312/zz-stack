@@ -350,7 +350,7 @@ export const MEASURES: Record<string, Measure> = {
     },
     async rows(_c, kept) {
       const people = kept.map((k) => k.ref as PersonRow).sort((a, b) => newest({ ms: midnight(a.created), id: a.email }, { ms: midnight(b.created), id: b.email }));
-      return { rows: people.map((p) => ({ ...p, at: iso(midnight(p.created)), address: "/people" })), total: people.length };
+      return { rows: people.map((p) => ({ ...p, at: iso(midnight(p.created)), address: "/platform/people" })), total: people.length };
     },
   },
   sign_ins: {
@@ -366,7 +366,7 @@ export const MEASURES: Record<string, Measure> = {
       for (const f of kept) latest.set(String(f.ref), Math.max(latest.get(String(f.ref)) ?? 0, f.lastMs));
       const people = (await peopleRows(c.db, c.asOf, null, null, null, 0)).filter((p) => latest.has(p.email))
         .sort((a, b) => newest({ ms: latest.get(a.email)!, id: a.email }, { ms: latest.get(b.email)!, id: b.email }));
-      return { rows: people.map((p) => ({ ...p, at: iso(latest.get(p.email)!), address: "/people" })), total: people.length };
+      return { rows: people.map((p) => ({ ...p, at: iso(latest.get(p.email)!), address: "/platform/people" })), total: people.length };
     },
   },
   audit: {

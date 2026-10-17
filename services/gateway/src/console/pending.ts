@@ -1,12 +1,8 @@
 /**
- * The one rule for a revision waiting for approval, which Status counts now and Teams, Home and
- * Approvals count when their phases come: the current revision of a document its flow gates,
- * covered by a presentation (`presented_at` set) and not approved, in an initiative that is not
- * closed. Each revision is one row, however many times it was presented or whoever looks at it,
- * and it has waited since it was presented.
- *
- * The console's `?waiting=1` (console/initiative-list.ts) keeps its own rule, written and not approved,
- * until the pages that read it are rebuilt on this one.
+ * The one rule for a revision waiting for approval, which Status, Teams, Home and Approvals count:
+ * the current revision of a document its flow gates, covered by a presentation (`presented_at` set)
+ * and not approved, in an initiative that is not closed. Each revision is one row, however many times
+ * it was presented or whoever looks at it, and it has waited since it was presented.
  *
  * DELIBERATE: rows, not a SQL fragment, for the reason `realReports` gives in console/platform-bugs.ts:
  * every console query is one literal statement check:sql can PREPARE. Whether a flow gates a document

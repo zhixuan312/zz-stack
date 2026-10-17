@@ -83,13 +83,12 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
   {
     check: SUITES_DATA,
     target: "an aggregate nothing measured renders as null, never a confident zero",
-    assertion: "the overview tests run bytes for null rather than folding a gap to zero",
-    subject: "services/gateway/src/console/overview-metrics.ts",
-    find: "const measured = runs.rows.filter((r) => r.bytes !== null);",
-    replace: "const measured = runs.rows;",
-    planted: "the overview stops separating runs whose size was never measured from runs that " +
-      "moved nothing, so every unmeasured run renders as a zero on the floor of the chart and " +
-      "drags the median size down with it",
+    assertion: "the skills read keeps an unmeasured size null rather than coercing it",
+    subject: "services/gateway/src/console/skills.ts",
+    find: "kbPerRun: num(r.kb_avg)",
+    replace: "kbPerRun: +r.kb_avg",
+    planted: "the skills read coerces the average run size with a unary plus, so a skill whose runs " +
+      "nobody measured reports a size of zero kilobytes, as though every run moved nothing",
   },
   {
     check: SUITES_DATA,

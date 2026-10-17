@@ -15,9 +15,9 @@
  *   - the tiles: people, with a passkey, active and never signed in, and the recorded sign-ins in the
  *     last complete week, a sign-in at that week's first instant in it, one at the running week's
  *     first instant and one with no actor out of it;
- *   - each person's row: today's fields and their passkeys, their last recorded sign-in (null for a
- *     person with none, whatever session, token or passkey registration they hold) and their state;
- *     a person in two teams lists both;
+ *   - each person's row: what People draws and nothing else, their name, role, teams, passkeys, last
+ *     recorded sign-in (null for a person with none, whatever session, token or passkey registration
+ *     they hold) and state, with the day they were added; a person in two teams lists both;
  *   - the rows by the day each person was added and then by email, filtered by `q` (an email or a
  *     name, never a pattern) and `state`, paged 10 at a time by default and at most 100, the tiles
  *     the same under every filter, and a value it does not take refused with 400;
@@ -57,8 +57,8 @@ const TIMEZONE = "Pacific/Auckland";
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "platform-people.ts");
 const POPULATION = "people, their passkeys and their recorded console sign-ins";
 
-const ROW_KEYS = ["active_team", "activeTeam", "created", "email", "lastSignIn", "last_used", "name", "passkeys", "role",
-  "state", "status", "teams", "tokens"];
+/** What People draws of a person, and the day they were added: a row holds these keys and no other. */
+const ROW_KEYS = ["created", "email", "lastSignIn", "name", "passkeys", "role", "state", "teams"];
 /** `person_add`'s schema for its email, as services/gateway/src/admin.ts registers it on the MCP door. */
 const MCP_EMAIL = z.string().email();
 
@@ -109,16 +109,14 @@ function rowsOf(step: string, a: Answer): Obj[] {
 /** The local calendar date an instant falls on in the check's timezone; en-CA formats as YYYY-MM-DD. */
 const localDate = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(ms));
 
-/** What a seeded person's row must read, from the seed's lists and the values written beside them. */
+/** What a seeded person's row must read, from the seed's lists and the values written beside them. The seed also
+ *  writes tokens and the team a person acts for, which no page reads and the read no longer answers. */
 function rowOf(s: SeededPeople, local: string): Obj {
   const p = PEOPLE[local];
   const signedIn = EXPECTED.lastSignIn[local];
-  const used = EXPECTED.lastUsed[local];
   return {
-    email: `${local}@${DOMAIN}`, name: p.name, role: p.role, status: p.status, state: p.status,
-    created: localDate(instant(s, p.added)), active_team: p.active ?? "", activeTeam: p.active,
-    teams: EXPECTED.teams[local] ?? [], tokens: EXPECTED.tokens[local] ?? 0, last_used: used ? iso(instant(s, used)) : null,
-    passkeys: EXPECTED.passkeys[local] ?? 0, lastSignIn: signedIn ? iso(instant(s, signedIn)) : null,
+    email: `${local}@${DOMAIN}`, name: p.name, role: p.role, state: p.status, created: localDate(instant(s, p.added)),
+    teams: EXPECTED.teams[local] ?? [], passkeys: EXPECTED.passkeys[local] ?? 0, lastSignIn: signedIn ? iso(instant(s, signedIn)) : null,
   };
 }
 
@@ -163,8 +161,9 @@ function readCases(s: SeededPeople, a: Answer): void {
   }
   const nulls = rows.filter((r) => r.lastSignIn === null).map((r) => localOf(r.email)).sort();
   if (nulls.join() !== ["bo", "di", "fay", "member", "zed-1", "zed-2"].join()) fail(step, `lastSignIn is null for ${nulls.join(", ")}`);
-  pass("each row reads its role, state, teams (both of ada's), tokens, passkeys and latest recorded sign-in as seeded; " +
-       "lastSignIn is null for bo, di, fay and member, never a date from a session, a token or a passkey registration");
+  pass("each row reads its role, state, teams (both of ada's), passkeys and latest recorded sign-in as seeded, and no " +
+       "field People does not draw; lastSignIn is null for bo, di, fay and member, never a date from a session, a token " +
+       "or a passkey registration");
 }
 
 async function filterCases(as: (email: string, query?: string) => Promise<Answer>, whole: Answer): Promise<void> {
@@ -243,8 +242,7 @@ async function writeCases(db: pg.Client, as: (email: string, query?: string) => 
   let w = await send("POST", "/api/console/settings/platform/people", { email: NEW, display_name: "New Person" });
   if (w.status !== 200 || w.body.ok !== true) fail(step, `answered ${w.status}: ${w.text.slice(0, 300)}`);
   let row = await one(step);
-  const added = { email: NEW_LOWER, name: "New Person", role: "member", status: "active", state: "active", active_team: "", activeTeam: null,
-    teams: [], tokens: 0, last_used: null, passkeys: 0, lastSignIn: null };
+  const added = { email: NEW_LOWER, name: "New Person", role: "member", state: "active", teams: [], passkeys: 0, lastSignIn: null };
   if (!same({ ...row, created: null }, { ...added, created: null })) fail(step, `the read lists ${JSON.stringify(row)}`);
   let t = await tiles();
   if (t.people !== EXPECTED.tiles.people + 1 || t.neverSignedIn !== EXPECTED.tiles.neverSignedIn + 1) fail(step, `the tiles read ${JSON.stringify(t)}`);
@@ -271,7 +269,7 @@ async function writeCases(db: pg.Client, as: (email: string, query?: string) => 
     `select count(*) filter (where e.used_at is null) as open from zz.passkey_enrolment e
        join zz.principal p on p.id = e.principal_id where p.email = $1`, [NEW_LOWER]);
   t = await tiles();
-  if (row.state !== "deactivated" || row.status !== "deactivated" || spent.rows[0].open !== "0"
+  if (row.state !== "deactivated" || spent.rows[0].open !== "0"
       || t.people !== EXPECTED.tiles.people + 1 || t.neverSignedIn !== EXPECTED.tiles.neverSignedIn) {
     fail(step, `the read lists ${JSON.stringify(row)} with tiles ${JSON.stringify(t)}, ${spent.rows[0].open} link(s) open`);
   }

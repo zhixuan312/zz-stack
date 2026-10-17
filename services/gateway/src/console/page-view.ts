@@ -19,9 +19,9 @@
  * Telemetry never fails the page: `logEvent` does not wait for the write and never throws, and a
  * write that fails is logged and kept in its stranded file (events.ts). The answer is 204 either way.
  *
- * A page view is left out of every count of events a page shows. COUPLED: the activity log and the
- * overview's event census in console/overview.ts each leave `console.page_view` out by name; every
- * other event reader in the console counts `tool_call` or another kind it names.
+ * A page view is left out of every count of events a page shows. COUPLED: the activity log leaves
+ * `console.page_view` out by name; every other event reader in the console counts `tool_call` or
+ * another kind it names.
  */
 import type { Express } from "express";
 

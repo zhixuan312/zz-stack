@@ -54,8 +54,8 @@ function claimsOf(docs: { path: string; type: string | null; body: string | null
 }
 
 export function mountInitiatives(app: Express): void {
-  // The list, and the bell's projection of it, live in initiative-list.ts; this module keeps the
-  // reads of one initiative and one document.
+  // The list lives in initiative-list.ts; this module keeps the reads of one initiative and one
+  // document.
   mountInitiativeList(app);
 
   /** One row of the claim ledger, with the fields that cannot state absence stating it.
@@ -126,7 +126,7 @@ export function mountInitiatives(app: Express): void {
           where t.slug = $1 and i.slug = $2
           order by d.path`, [team, slug]),
       // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (001), read for `stageOf`
-      // below the same way the bell's read (initiative-list.ts) reads it for every initiative.
+      // below the same way the list (initiative-list.ts) reads it for every initiative.
       db.query<{ fact: string; value: string }>(
         `select f.fact, f.value
            from zz.initiative_fact f
@@ -143,8 +143,8 @@ export function mountInitiatives(app: Express): void {
     if (!docs.rows.length) { res.status(404).json({ error: `no initiative ${team}/${slug}` }); return; }
     const decisions = claimsOf(claimDocs.rows);
     const factMap = Object.fromEntries(facts.rows.map((f) => [f.fact, f.value]));
-    // No `zz.initiative` row yet is the same reconcile lag the bell's read allows for: read as
-    // open, no declared flow.
+    // No `zz.initiative` row yet is the reconcile lag the schema review names: read as open, no
+    // declared flow.
     const lifecycle = anchor.rows[0] ?? { flow: null, closed: false, outcome: null };
     const shape = flowShape(lifecycle.flow);
     res.json({

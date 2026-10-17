@@ -257,8 +257,8 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     // `scripts/**` for a route's path to decide whether anything calls it and excludes only
     // the gate's own tree, so a spec file spelling the orphaned path would vouch for the route
     // it just orphaned.
-    find: `app.get("/api/console/initiatives", (req, res) =>`,
-    replace: `app.get("/api/console/initiative` + `-index", (req, res) =>`,
+    find: `app.get("/api/console/initiatives", platformPublic(`,
+    replace: `app.get("/api/console/initiative` + `-index", platformPublic(`,
     planted: "the initiatives list is served at a path nothing asks for. The console still " +
       "calls `/api/console/initiatives`, so the page that lists every initiative gets a 404 " +
       "and the gateway carries a route with no caller in either repository",

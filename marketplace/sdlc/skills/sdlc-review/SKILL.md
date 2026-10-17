@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.18
+version: 1.19
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -116,7 +116,7 @@ round unless it is S1 and you reproduced it.
 | S3 | a wrong result on an edge path |
 | S4 | text, docs, naming |
 
-S1 and S2 route the next round; S3 and S4 never do — they are fixed in a batch and the gate
+S1 and S2 route the next round; S3 and S4 never do — they are fixed in a batch and the full-suite gate
 verifies them, without another reading round.
 
 ### Evidence, per finding

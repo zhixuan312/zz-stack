@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.27
+version: 1.28
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -279,7 +279,7 @@ each in backticks, or `none`. A path owns everything beneath it; `*` stays withi
   a changelog, generated or lock files, a version stamp — go in a plan section headed
   `## Integration hotspots`, one backticked path per bullet. A task that needs a hotspot changed
   reports the exact lines; the integration step after each wave makes those edits, regenerates,
-  runs the gate and commits.
+  runs the full-suite gate and commits.
 - **A task no other can run beside** — a repository-wide rename, a regeneration — owns what it
   touches and is depended on by whatever overlaps it, which puts it in a wave of its own.
 
@@ -316,7 +316,7 @@ should read; nothing in the stored plan records that a heading was ever worded d
 
 Per-task checks prove the task did its own job. They cannot prove the task left the rest of the
 project working, and that is the failure a plan executed task-by-task actually produces: each check
-green, the suite red. State the gate once, at the end, so an executor knows what must hold after
+green, the suite red. State the full-suite gate once, at the end, so an executor knows what must hold after
 every task rather than only after the last one.
 
 **Say where a slower check runs, when the deliverable has one.** The full-suite gate is what runs
@@ -334,7 +334,7 @@ wave.
 
 When the target genuinely has no suite to run — a document, a workflow configuration, a deliverable
 with no build — say so in that section in one line and name what stands in for it (a re-read, a
-schema validation, a human review). The section is never omitted; a plan that cannot state its gate
+schema validation, a human review). The section is never omitted; a plan that cannot state its full-suite gate
 has not decided how anyone will know it still works.
 
 ## Constraints
@@ -402,11 +402,11 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    replace: "<the task's complete body>"}])` — the marker line is the `find`, and the task id is
    what makes it unique. Never rewrite the whole file. Continue until zero `<!-- enrich` markers remain.
 4. **Close** with `## Integration hotspots` (or one line saying there are none), a whole-deliverable
-   gate and a Spec-coverage traceability table mapping every spec
-   AC to its task(s). The gate is whatever checks the FINISHED deliverable as a whole, rather than
+   full-suite gate and a Spec-coverage traceability table mapping every spec
+   AC to its task(s). The full-suite gate is whatever checks the FINISHED deliverable as a whole, rather than
    task by task — for a code project that is the test/build/lint suite; for a report it is the
    assembled document checked against the full acceptance set; for a configuration it is the
-   end-to-end run. State the gate this deliverable actually has. Do not name a test suite, a build
+   end-to-end run. State the full-suite gate this deliverable actually has. Do not name a test suite, a build
    or a linter unless you confirmed in step 1 that the deliverable has them.
 5. **Self-check** against the completion test: could a human execute every phase to the working
    solution? Does each task have a technical AC traced to a business AC, a contract, and (where a
@@ -488,7 +488,7 @@ document_edit(
   source_title: "<what sent it back>")
 ```
 
-A cause that is already a file — a worker's execution report, a gate log — is not retyped.
+A cause that is already a file — a worker's execution report, a full-suite gate log — is not retyped.
 `upload_start(filename)` stages it the way `zz-platform` teaches, `source_add(initiative:
 "<initiative>", title: "<what sent it back>", upload: "<the id>", supports: ["plan.md"],
 request_id: "<one per report, reused on every retry>")` files it, and the section edit names that
@@ -536,7 +536,7 @@ on, so none is asked.
 
 **Action and exit paths:** the action is ground truth, state the production method in prose,
 scaffold in one write with a uniquely-id'd marker per task, fill one task at a time until no
-marker remains, close with the gate and the traceability table, dispatch the plan audit, answer
+marker remains, close with the full-suite gate and the traceability table, dispatch the plan audit, answer
 its rounds, present, ask. The forward exit is `sdlc-execute`, once the approval is recorded. After `sdlc-execute` appends a phase's
 `### As built`, this stage runs again for the next phase; a phase that disproved a core statement
 exits back to `sdlc-spec` instead. The return exit is `document_edit` naming the
@@ -546,7 +546,7 @@ second plan is not an exit at all: execution needs one document.
 
 **Degraded behaviour:** the target genuinely has no suite, so the `## Full-suite gate` section
 still exists and says so in one line, naming what stands in for it — the section is never omitted,
-because a plan that cannot state its gate has not decided how anyone will know it still works. A
+because a plan that cannot state its full-suite gate has not decided how anyone will know it still works. A
 source the spec names that does not exist becomes a reconciliation note, not a contract written
 around the gap. A task whose acceptance criterion no method can establish is not ready to be
 planned: say what is missing rather than writing it anyway.

@@ -377,7 +377,7 @@ async function cases(c: Core, s: Seeded, route: (p: string) => Route, figures: W
   const teamRows = await ask(ADMIN, { measure: "teams", ...everything, rows: "20" });
   const bySlug = (rows: Obj[]) => rows.slice().sort((a, b) => String(a.slug) < String(b.slug) ? -1 : 1);
   same(step, settled(bySlug(teamRows.rows!.data!.rows)), settled(bySlug(teams.body.teams as Obj[]), false));
-  if (teamRows.rows!.data!.rows.some((r) => r.address !== `/teams/${String(r.slug)}`)) c.fail(step, show(teamRows.rows));
+  if (teamRows.rows!.data!.rows.some((r) => r.address !== `/platform/teams/${String(r.slug)}`)) c.fail(step, show(teamRows.rows));
   const people = await page(ADMIN, "/people", { limit: "100" });
   same(step, (await ask(ADMIN, { measure: "people", ...everything })).total.value, (people.body.tiles as Obj).people);
   for (const st of ["active", "deactivated"]) {

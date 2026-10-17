@@ -338,7 +338,7 @@ export const MEASURES: Record<string, Measure> = {
     async rows(c, kept) {
       const f = await readFigures(c.db, c.asOfMs);
       const bases = kept.map((k) => k.ref as Base).sort((a, b) => newest({ ms: midnight(a.created), id: a.slug }, { ms: midnight(b.created), id: b.slug }));
-      return { rows: bases.map((b) => ({ ...rowOf(b, f), at: iso(midnight(b.created)), address: `/teams/${b.slug}` })), total: bases.length };
+      return { rows: bases.map((b) => ({ ...rowOf(b, f), at: iso(midnight(b.created)), address: `/platform/teams/${b.slug}` })), total: bases.length };
     },
   },
   people: {

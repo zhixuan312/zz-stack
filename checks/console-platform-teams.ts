@@ -13,16 +13,15 @@
  *   - a member is refused 403 `not permitted` on the list and on any team's page, known or not, before anything is
  *     read: with `zz.knowledge_node` gone the refusal is the same; no session is 401;
  *   - over an empty platform every team reads no week drawn, its last two weeks unavailable and no last activity;
- *   - over more than four teams the list answers its tiles over every team and, per team, the fields today's pages
- *     read, the memberships, open work, waiting, standing lessons, sessions by week (26 at most, the running week not
- *     complete), calls in the last two complete weeks and the latest real-work call, sorted by it, a team with none
- *     last and the slug breaking a tie; `q` and `status` filter, the page keeps the total, and a value the read does
- *     not take is 400; documents and sources are told apart by path, a source under `sources/` whatever its type, so
- *     a plan audit's round filed with its stage's name as its type is a source and not a document;
+ *   - over more than four teams the list answers its tiles over every team and, per team, what Teams draws and
+ *     nothing else: the team, its memberships, open work, waiting, standing lessons, sessions by week (26 at most, the
+ *     running week not complete), calls in the last two complete weeks and the latest real-work call, sorted by it, a
+ *     team with none last and the slug breaking a tie; `q` and `status` filter, the page keeps the total, and a value
+ *     the read does not take is 400;
  *   - each team's waiting equals `pendingRevisions` at the read's own cutoff, each revision once, and the pending tile
  *     is all of them;
- *   - a team's page answers its team, members, tiles and calls by week, and its counts and tiles equal its row's in
- *     the list; a slug no team has is 404 with no body;
+ *   - a team's page answers its team, members, tiles and calls by week and nothing else, and its tiles equal its
+ *     row's in the list; a slug no team has is 404 with no body;
  *   - maintenance calls, page views and calls in no team change no figure;
  *   - through the real routes the superadmin creates a team, adds and removes a member and archives it, the read
  *     following each, each act writing its event once; adding a deactivated person is refused and writes nothing;
@@ -57,10 +56,11 @@ const TIMEZONE = "Pacific/Auckland";
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "platform-teams.ts");
 const REFUSED = JSON.stringify({ error: "not permitted" });
 
-const ROW_KEYS = ["calls", "created", "documents", "initiatives", "knowledge", "lastActive", "lessons", "members", "name",
-  "openWork", "people", "sessions", "slug", "sources", "status", "waiting"];
-const DETAIL_KEYS = ["calls", "counts", "members", "meta", "team", "tiles"];
-const LIST_FIELDS = ["members", "initiatives", "documents", "sources", "knowledge"] as const;
+/** What Teams draws of a row, and what a team's page draws: an answer holds these keys and no other. */
+const ROW_KEYS = ["calls", "created", "lastActive", "lessons", "name", "openWork", "people", "sessions", "slug", "status", "waiting"];
+const DETAIL_KEYS = ["calls", "members", "meta", "team", "tiles"];
+/** The seed's written values a row reads; the seed writes more, which no page reads and the read no longer answers. */
+const SEEDED = ["name", "status", "created", "people", "openWork", "waiting", "lessons"] as const;
 
 class CaseFailure extends Error {}
 function fail(step: string, detail: string): never {
@@ -128,7 +128,7 @@ function series(s: Seeded, team: Slug, of: 0 | 1, asOf: string): Obj[] {
 function wantRow(s: Seeded, team: Slug, asOf: string): Obj {
   const last = EXPECTED.lastActive[team];
   return {
-    slug: team, ...EXPECTED.rows[team], sessions: series(s, team, 0, asOf),
+    slug: team, ...Object.fromEntries(SEEDED.map((k) => [k, EXPECTED.rows[team][k]])), sessions: series(s, team, 0, asOf),
     calls: {
       last: { window: windowAt(s, 1, asOf), ...counted(EXPECTED.weeks[team][1]?.[1] ?? 0) },
       previous: { window: windowAt(s, 2, asOf), ...counted(EXPECTED.weeks[team][2]?.[1] ?? 0) },
@@ -190,10 +190,9 @@ async function listCases(s: Seeded, get: Get, pending: (asOf: string) => Promise
     const want = wantRow(s, r.slug as Slug, asOf);
     if (!same(r, want)) fail(step, `${String(r.slug)} reads\n${JSON.stringify(sortDeep(r))}\nnot\n${JSON.stringify(sortDeep(want))}`);
   }
-  pass("six teams, latest real-work call first and dune before fir with none, each with today's fields, memberships, " +
-       "open work, waiting, standing lessons, 26 weeks of sessions from back 25 (the running one not complete), its calls " +
-       "in L and L-1 and its latest call, as the seed writes them out; a document is told from a source by its path, so " +
-       "alder's plan audit round, typed with its stage's name, is one of its 2 sources and not one of its 5 documents");
+  pass("six teams, latest real-work call first and dune before fir with none, each with its team, memberships, open " +
+       "work, waiting, standing lessons, 26 weeks of sessions from back 25 (the running one not complete), its calls in " +
+       "L and L-1 and its latest call, as the seed writes them out, and no field Teams does not draw");
 
   step = "the tiles and meta";
   const meta = a.body.meta as Obj;
@@ -250,7 +249,6 @@ async function detailCases(s: Seeded, get: Get, list: Answer): Promise<Answer> {
     const want = {
       team: { slug: team, name: t.name, status: t.status, created: EXPECTED.rows[team].created },
       members: EXPECTED.members[team].map(([email, role]) => ({ email, name: email.split("@")[0], role, joined: today })),
-      counts: Object.fromEntries(LIST_FIELDS.map((k) => [k, row[k]])),
       tiles: { people: row.people, openWork: row.openWork, waiting: row.waiting, lessons: row.lessons },
       calls: series(s, team, 1, asOf),
     };
@@ -258,9 +256,8 @@ async function detailCases(s: Seeded, get: Get, list: Answer): Promise<Answer> {
       fail(step, `${team} reads\n${JSON.stringify(sortDeep({ ...a.body, meta: null }))}\nnot\n${JSON.stringify(sortDeep(want))}`);
     }
     const r = listed.get(team)!;
-    if (!same(a.body.counts, Object.fromEntries(LIST_FIELDS.map((k) => [k, r[k]])))
-        || !same(a.body.tiles, { people: r.people, openWork: r.openWork, waiting: r.waiting, lessons: r.lessons })) {
-      fail(step, `${team}'s counts or tiles differ from its row in the list: ${JSON.stringify(a.body.counts)} ${JSON.stringify(a.body.tiles)}`);
+    if (!same(a.body.tiles, { people: r.people, openWork: r.openWork, waiting: r.waiting, lessons: r.lessons })) {
+      fail(step, `${team}'s tiles differ from its row in the list: ${JSON.stringify(a.body.tiles)}`);
     }
     if ((a.body.meta as Obj).scope !== "platform-admin") fail(step, `${team}'s meta reads ${JSON.stringify(a.body.meta)}`);
     if (team === "alder") alder = a;
@@ -269,8 +266,8 @@ async function detailCases(s: Seeded, get: Get, list: Answer): Promise<Answer> {
     const a = await get(path, SUPERADMIN);
     if (a.status !== 404 || a.text !== "") fail(step, `${path} answered ${a.status}: ${a.text.slice(0, 200)}`);
   }
-  pass("each team's page reads its team, its members by role then email, its tiles and 26 weeks of calls, and its counts " +
-       "and tiles are its row's in the list; a slug no team has is 404 with no body");
+  pass("each team's page reads its team, its members by role then email, its tiles and 26 weeks of calls and nothing " +
+       "else, and its tiles are its row's in the list; a slug no team has is 404 with no body");
   return alder!;
 }
 

@@ -89,18 +89,12 @@ export const EXPECTED = {
   /** Latest real-work call first, a team with none last, the slug breaking a tie. */
   order: ["alder", "elm", "birch", "cedar", "dune", "fir"] as Slug[],
   rows: {
-    alder: { name: "Alder Works", status: "active", created: "2026-03-02", members: 3, initiatives: 3, documents: 5, sources: 2, knowledge: 4,
-             people: 3, openWork: 3, waiting: 2, lessons: 3 },
-    birch: { name: "Birch Bank", status: "active", created: "2026-04-06", members: 2, initiatives: 2, documents: 4, sources: 2, knowledge: 2,
-             people: 2, openWork: 1, waiting: 1, lessons: 2 },
-    cedar: { name: "Cedar Field", status: "archived", created: "2025-11-03", members: 1, initiatives: 1, documents: 1, sources: 0, knowledge: 3,
-             people: 1, openWork: 0, waiting: 0, lessons: 1 },
-    dune: { name: "Dune", status: "active", created: "2026-10-01", members: 0, initiatives: 0, documents: 0, sources: 0, knowledge: 0,
-            people: 0, openWork: 0, waiting: 0, lessons: 0 },
-    elm: { name: "Elm Street", status: "active", created: "2026-01-12", members: 1, initiatives: 1, documents: 1, sources: 0, knowledge: 0,
-           people: 1, openWork: 1, waiting: 0, lessons: 0 },
-    fir: { name: "Fir Analytics", status: "active", created: "2026-02-09", members: 1, initiatives: 1, documents: 1, sources: 0, knowledge: 1,
-           people: 1, openWork: 1, waiting: 1, lessons: 1 },
+    alder: { name: "Alder Works", status: "active", created: "2026-03-02", people: 3, openWork: 3, waiting: 2, lessons: 3 },
+    birch: { name: "Birch Bank", status: "active", created: "2026-04-06", people: 2, openWork: 1, waiting: 1, lessons: 2 },
+    cedar: { name: "Cedar Field", status: "archived", created: "2025-11-03", people: 1, openWork: 0, waiting: 0, lessons: 1 },
+    dune: { name: "Dune", status: "active", created: "2026-10-01", people: 0, openWork: 0, waiting: 0, lessons: 0 },
+    elm: { name: "Elm Street", status: "active", created: "2026-01-12", people: 1, openWork: 1, waiting: 0, lessons: 0 },
+    fir: { name: "Fir Analytics", status: "active", created: "2026-02-09", people: 1, openWork: 1, waiting: 1, lessons: 1 },
   } as Record<Slug, Record<string, string | number>>,
   /** Each team's latest real-work call as `[back, ms into that week]`, null for none. */
   lastActive: { alder: [0, 0], elm: [1, 5 * DAY], birch: [1, 3 * DAY + 4_000], cedar: [9, HOUR + 6_000], dune: null, fir: null } as

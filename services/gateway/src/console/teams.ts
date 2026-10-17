@@ -2,14 +2,13 @@
  * Teams: every team on the platform as the superadmin reads it, each beside its own past, and one team's own page.
  *
  * `GET /teams` answers the tiles over every team (teams, open work, revisions waiting, standing lessons) and one
- * page of the rows, filtered by `?q` (a slug or a name containing it) and `?status`. A row keeps the fields today's
- * pages read and adds its memberships, its open initiatives, its revisions waiting by `pendingRevisions` at the read's
- * cutoff, its standing lessons, its sessions by week, its calls in the last two complete weeks and its latest
- * real-work call. Rows sort by that call, newest first, a team with none last, the slug breaking a tie.
+ * page of the rows, filtered by `?q` (a slug or a name containing it) and `?status`. A row is what Teams draws: the
+ * team, its memberships, its open initiatives, its revisions waiting by `pendingRevisions` at the read's cutoff, its
+ * standing lessons, its sessions by week, its calls in the last two complete weeks and its latest real-work call. Rows
+ * sort by that call, newest first, a team with none last, the slug breaking a tie.
  *
- * `GET /teams/:slug` answers today's team and members, and the same figures for that team: its counts are the list
- * fields of its row and its tiles and calls by week the row's, because the page reads every team with the same
- * functions and picks its own. A slug no team has is a 404 with no body.
+ * `GET /teams/:slug` answers the team, its members, its tiles and its calls by week. Its tiles are its row's, because
+ * the page reads every team with the same functions and picks its own. A slug no team has is a 404 with no body.
  *
  * Both are the superadmin's: mounted through `platformPublic`, they refuse anybody else 403 before anything is read,
  * and take no scope. Weeks are Monday to Monday in `ZZ_TZ` with the status read's cutoff and coverage (`readGrid`),
@@ -49,12 +48,10 @@ type Week = { fromMs: number; toMs: number };
 /** A team as `zz.team` and its counts hold it, before any figure is read beside it. */
 export type Base = {
   id: string; slug: string; name: string; status: string; created: string;
-  members: number; initiatives: number; documents: number; sources: number; knowledge: number;
-  openWork: number; lessons: number; lastMs: number | null;
+  people: number; openWork: number; lessons: number; lastMs: number | null;
 };
 type TeamRow = {
   slug: string; name: string; status: string; created: string;
-  members: number; initiatives: number; documents: number; sources: number; knowledge: number;
   people: number; openWork: number; waiting: number; lessons: number;
   sessions: PeriodFigure[]; calls: { last: PeriodFigure; previous: PeriodFigure }; lastActive: string | null;
 };
@@ -63,21 +60,16 @@ type TeamDetail = {
   team: { slug: string; name: string; status: string; created: string };
   members: { email: string; name: string; role: string; joined: string }[];
   meta: ReadMeta;
-  counts: { members: number; initiatives: number; documents: number; sources: number; knowledge: number };
   tiles: { people: number; openWork: number; waiting: number; lessons: number };
   calls: PeriodFigure[];
 };
 
-/** Every team with its counts and its latest real-work call before `asOf`. Documents and sources are counted apart:
- *  both live in zz.doc, and one number for the two counts registered sources as documents. A document is a flow
- *  document, its path not under `sources/` and outside `_knowledge`; a source is one whose path is under `sources/`,
- *  zz-core's own rule, whatever type it was filed with, an audit round's stage name among them. `initiatives` counts
- *  initiatives holding a document and `knowledge` every node, as today's pages read them; `openWork` counts every
- *  initiative not closed and `lessons` the nodes standing. */
+/** Every team with its counts and its latest real-work call before `asOf`: `people` counts its memberships,
+ *  `openWork` every initiative not closed and `lessons` the nodes standing. */
 export async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
   const { rows } = await db.query<{
-    id: string; slug: string; name: string; status: string; created: string; members: number; initiatives: number;
-    documents: number; sources: number; knowledge: number; open_work: number; lessons: number; last_ms: number | null;
+    id: string; slug: string; name: string; status: string; created: string; people: number; open_work: number;
+    lessons: number; last_ms: number | null;
   }>(
     `with last as (
        select e.team_id, max(e.ts) as ts
@@ -86,17 +78,7 @@ export async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
         group by e.team_id
      )
      select t.id::text as id, t.slug, t.name, t.status, to_char(t.created_at at time zone $1::text, 'YYYY-MM-DD') as created,
-            (select count(*) from zz.membership m where m.team_id = t.id)::int as members,
-            (select count(distinct i.slug) from zz.doc d
-               join zz.initiative i on i.id = d.initiative_id
-              where i.team_id = t.id and i.slug <> '_knowledge')::int as initiatives,
-            (select count(*) from zz.doc d
-               join zz.initiative i on i.id = d.initiative_id
-              where i.team_id = t.id and d.path not like 'sources/%' and i.slug <> '_knowledge')::int as documents,
-            (select count(*) from zz.doc d
-               join zz.initiative i on i.id = d.initiative_id
-              where i.team_id = t.id and d.path like 'sources/%')::int as sources,
-            (select count(*) from zz.knowledge_node k where k.team_id = t.id)::int as knowledge,
+            (select count(*) from zz.membership m where m.team_id = t.id)::int as people,
             (select count(*) from zz.initiative i where i.team_id = t.id and i.closed_at is null)::int as open_work,
             (select count(*) from zz.knowledge_node k where k.team_id = t.id and k.lifecycle = 'adopted')::int as lessons,
             (extract(epoch from l.ts) * 1000)::float8 as last_ms
@@ -104,8 +86,7 @@ export async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
        left join last l on l.team_id = t.id`, [ZZ_TZ, asOf]);
   return rows.map((r) => ({
     id: r.id, slug: r.slug, name: r.name, status: r.status, created: r.created,
-    members: r.members, initiatives: r.initiatives, documents: r.documents, sources: r.sources, knowledge: r.knowledge,
-    openWork: r.open_work, lessons: r.lessons, lastMs: r.last_ms,
+    people: r.people, openWork: r.open_work, lessons: r.lessons, lastMs: r.last_ms,
   }));
 }
 
@@ -185,8 +166,7 @@ function weekFigure(f: Figures, team: string, w: Week, of: "calls" | "sessions")
 export function rowOf(b: Base, f: Figures): TeamRow {
   return {
     slug: b.slug, name: b.name, status: b.status, created: b.created,
-    members: b.members, initiatives: b.initiatives, documents: b.documents, sources: b.sources, knowledge: b.knowledge,
-    people: b.members, openWork: b.openWork, waiting: f.waiting.get(b.id) ?? 0, lessons: b.lessons,
+    people: b.people, openWork: b.openWork, waiting: f.waiting.get(b.id) ?? 0, lessons: b.lessons,
     sessions: f.drawn.map((w) => weekFigure(f, b.id, w, "sessions")),
     calls: { last: weekFigure(f, b.id, f.weeks.at(-2)!, "calls"), previous: weekFigure(f, b.id, f.weeks.at(-3)!, "calls") },
     lastActive: b.lastMs === null ? null : iso(b.lastMs),
@@ -275,7 +255,6 @@ export function mountTeams(app: Express): void {
       team: { slug: row.slug, name: row.name, status: row.status, created: row.created },
       members: members.rows,
       meta: metaOf(f, `${row.slug}'s members, open work, revisions waiting, standing lessons and real-work tool calls`),
-      counts: { members: row.members, initiatives: row.initiatives, documents: row.documents, sources: row.sources, knowledge: row.knowledge },
       tiles: { people: row.people, openWork: row.openWork, waiting: row.waiting, lessons: row.lessons },
       calls: f.drawn.map((w) => weekFigure(f, base.id, w, "calls")),
     };

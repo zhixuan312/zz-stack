@@ -233,6 +233,10 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             names nothing, no member's page holds another team's words, and the console's
             explore probe asks every view and prepared query on that gateway as the member,
             none holding the second team's words, two agreeing with their pages.
+            skeleton-agents.ts then calls platform_status, release_list, activity_refusals,
+            run_summary and record_read on the real core door as the member and the acting
+            superadmin, zz-core reaching back through the gateway's agent door, each lead figure
+            the one that person's page reads and draws.
             Needs docker and psql, so not a gate check; it exits 2 when either or the console's
             checkout is missing, which is not a pass), manifests.ts (where the packages are, read by
             both), mutation-run.ts (weekly on a runner as twenty `--shard` jobs and

@@ -48,7 +48,10 @@
  *     every week's owners summing to its refused total, its log narrowed to refused calls, Knowledge's
  *     summary with the question, Runs with the run, Plugins with the required flag and install command,
  *     and Access with no secret in it; a person in two teams switched through the console's route,
- *     the next reads answering the other team; and a lesson of the member's.
+ *     the next reads answering the other team; and a lesson of the member's;
+ *   - the agent reads, once the built console has drawn every page (scripts/skeleton-agents.ts): for the member
+ *     and the acting superadmin, the five reads on the core door, zz-core reaching back through the gateway's
+ *     agent door (`CORE_PEERS` the loopback), each lead figure the one that person's page reads and draws.
  *
  *   Each read's other values are its own check's (`checks/console-platform-*.ts`);
  *
@@ -95,7 +98,7 @@
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { Server } from "node:http";
+import { createServer, type Server } from "node:http";
 import net from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -107,6 +110,7 @@ import { root } from "./deployment.ts";
 import { seedIsolation } from "./schema/isolation-seed.ts";
 import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn, weekStart } from "./schema/status-seed.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
+import { agentReads } from "./skeleton-agents.ts";
 import { destinationCases, destinationPages, probe } from "./skeleton-destinations.ts";
 import { answer, count, lead, startCore, stopCore, workCases, workPages, type ConsolePage, type PageContext } from "./skeleton-work.ts";
 
@@ -122,7 +126,9 @@ const DONE = "skeleton: the real gateway answers the platform's four reads, Usag
   "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, draws every " +
   "page's lead as the gateway answers it with none of another team's words on a member's page, answers a member's Teams, " +
   "People and Audit as an address that names nothing, and the console's explore probe asks every view and prepared " +
-  "query as the member with none of the second team's words in any answer and two agreeing with their pages: ok";
+  "query as the member with none of the second team's words in any answer and two agreeing with their pages, and " +
+  "platform_status, release_list, activity_refusals, run_summary and record_read on the core door answer the member and " +
+  "the acting superadmin their pages' lead figures with none of another team's words: ok";
 /** The reporting timezone the gateway cuts weeks in, and the seed with it. */
 const TIMEZONE = "Asia/Singapore";
 const CONSOLE = join(root, "..", "zz-stack-dashboard");
@@ -531,14 +537,18 @@ async function run(db: pg.Client, url: string): Promise<void> {
 
   // `withThrowawayDb` ended the gateway's pool after migrating; a fresh one on the same container,
   // and the reporting timezone set before console/shared.js reads it at load. The console's acts and
-  // next moves reach zz-core through CORE_MCP_URL.
-  const core = await startCore(url, fail);
+  // next moves reach zz-core through CORE_MCP_URL, and zz-core's agent reads the gateway, listening first.
+  const server: Server = createServer().listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
+  const gateway = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const core = await startCore(url, gateway, fail);
   process.env.CORE_MCP_URL = core;
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_TZ = TIMEZONE;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
   process.env.ZZ_SKILLS_DIR = join(root, "skills");
   process.env.GATEWAY_PUBLIC_URL = "https://gateway.skeleton.example.test";
+  process.env.CORE_PEERS = "localhost";
   const load = (p: string) => import(pathToFileURL(join(root, p)).href);
   const express = (await import("express")).default;
   const dbModule = (await load("services/gateway/dist/db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
@@ -552,9 +562,11 @@ async function run(db: pg.Client, url: string): Promise<void> {
     { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
   const { passThrough } = (await load("services/gateway/dist/relay.js")) as
     { passThrough: (url: string, what: string, refusal: string) => RequestHandler };
+  const { mountAgentDoor } = (await load("services/gateway/dist/agent-door.js")) as { mountAgentDoor: (app: Express) => void };
   const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the console's reads, its
-  // acts and its settings, then the telemetry on the door and its relay to zz-core.
+  // COUPLED: services/gateway/src/server.ts — the agent door outside the identity gate, the gate, the JSON
+  // parser, the console's reads, its acts and its settings, then the telemetry on the door and its relay to zz-core.
+  mountAgentDoor(app);
   app.use(identityMiddleware());
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
@@ -563,9 +575,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
                        revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
   app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
   app.all("/core/mcp", passThrough(core, "core proxy", "zz-core is not reachable"));
-  const server: Server = app.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
-  const gateway = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  server.on("request", app);
 
   try {
     // A read cuts at its whole second, so none begins inside the second the planted events are dated in.
@@ -600,6 +610,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     const readers: [string, string][] = [["the member", MEMBER], ["the acting superadmin", work.acting]];
     await workPages(ctx, readers);
     const drawn = await destinationPages(ctx, readers, made);
+    await agentReads({ ...ctx, sql: db, tokens: work.tokens, timezone: TIMEZONE }, readers);
     // The last whole week's Monday, as both routes key a week: what /platform and /activity drew is that week's.
     const week = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(weekStart(Date.now(), 1, TIMEZONE)));
     const last = EXPECTED.weeks.find((w) => w.back === EXPECTED.last)!;
@@ -625,6 +636,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     delete process.env.ZZ_CATALOG_DIR;
     delete process.env.ZZ_SKILLS_DIR;
     delete process.env.GATEWAY_PUBLIC_URL;
+    delete process.env.CORE_PEERS;
   }
 }
 

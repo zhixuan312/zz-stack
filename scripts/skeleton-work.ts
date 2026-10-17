@@ -6,10 +6,11 @@
  * exit path, so neither file passes the 700-line ceiling.
  *
  * zz-core is the built `services/zz-core/dist/server.js`, started on a free port against the skeleton's
- * throwaway database; the gateway's `/core/mcp` door relays to it, and the console's acts and next moves
- * reach it through `CORE_MCP_URL`. Every document and approval is made through that door, as a person's
- * plugin makes them (`x-zz-client: zz-plugin`), so the gateway's telemetry records each write and the
- * import rule reads the documents as the team's own work.
+ * throwaway database; the gateway's `/core/mcp` door relays to it, the console's acts and next moves
+ * reach it through `CORE_MCP_URL`, and its agent reads reach the gateway's agent door through
+ * `GATEWAY_INTERNAL_URL`. Every document and approval is made through that door, as a person's plugin makes
+ * them (`x-zz-client: zz-plugin`), so the gateway's telemetry records each write and the import rule reads the
+ * documents as the team's own work.
  *
  * What it makes, in the status seed's member's team, all of it now:
  *
@@ -96,17 +97,19 @@ interface WorkContext {
 
 let core: ChildProcess | null = null;
 
-/** Starts zz-core on the throwaway database at `url` and answers its MCP address once it listens.
- *  COUPLED: `startCore` in scripts/schema/throwaway-core.ts starts it the same way, and the sentinel is
- *  services/zz-core/src/server.ts's `listening on :<port>`. */
-export async function startCore(url: string, fail: WorkContext["fail"]): Promise<string> {
+/** Starts zz-core on the throwaway database at `url`, its agent reads asking the gateway at `gateway`
+ *  (`GATEWAY_INTERNAL_URL`), and answers its MCP address once it listens.
+ *  COUPLED: `startCore` in scripts/schema/throwaway-core.ts starts it the same way, but for the gateway it
+ *  leaves to the environment, and the sentinel is services/zz-core/src/server.ts's `listening on :<port>`. */
+export async function startCore(url: string, gateway: string, fail: WorkContext["fail"]): Promise<string> {
   const port = await new Promise<number>((resolve) => {
     const s = net.createServer();
     s.listen(0, "127.0.0.1", () => { const p = (s.address() as net.AddressInfo).port; s.close(() => resolve(p)); });
   });
   const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port)], {
     cwd: root, stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, TEAM_DB_URL: url, TRUSTED_PEERS: "localhost", ZZ_CATALOG_DIR: join(root, "catalog"), ZZ_SKILLS_DIR: join(root, "skills") },
+    env: { ...process.env, TEAM_DB_URL: url, TRUSTED_PEERS: "localhost", GATEWAY_INTERNAL_URL: gateway,
+           ZZ_CATALOG_DIR: join(root, "catalog"), ZZ_SKILLS_DIR: join(root, "skills") },
   });
   core = proc;
   let seen = "";

@@ -24,6 +24,7 @@ import { RESULTS, check, eitherOr, record } from "./chain-report.js";
 import { walkBugs } from "./chain-bugs.js";
 import { walkEvalDoor } from "./chain-eval.js";
 import { walkFreeform } from "./chain-freeform.js";
+import { walkReads } from "./chain-reads.js";
 import { walkShelf } from "./chain-shelf.js";
 import { die, envRequired, parseArgs } from "../lib/cli.js";
 
@@ -591,6 +592,9 @@ async function main(): Promise<number> {
   await walkShelf({ call, check, record, eitherOr, INIT });
 
   await walkBugs({ call, check, record, INIT, admin: core });
+
+  // The console's reads on this door, in chain-reads.ts: read-only, as this same token.
+  await walkReads({ call, core, check, record });
 
   // knowledge_reindex, probed through its refusal rather than its rebuild: a bare call means every
   // team on the deployment. A slug no team carries comes back named, because reindexTeam deletes

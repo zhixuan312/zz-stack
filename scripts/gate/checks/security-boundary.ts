@@ -147,6 +147,7 @@ check("the gateway is authenticated by default, and the exceptions are the inten
     ["/", true], ["/health", true],
     ["/schemas/envelope.json", true], ["/schemas/manifest.json", true],
     ["/core/mcp", false], ["/manage/mcp", false], ["/eval/mcp", false],
+    ["/internal/agent-read/platform_status", false],
   ] as [string, boolean][]) {
     if (isPublic(p) !== want) {
       bad.push(want ? `${p} needs a token and must not` : `${p} IS PUBLIC and must not be`);
@@ -155,6 +156,14 @@ check("the gateway is authenticated by default, and the exceptions are the inten
   // A prefix wide enough to catch more than it names is the way this list goes wrong.
   for (const x of pre) {
     if (!x.endsWith("/")) bad.push(`public prefix ${x} does not end in / — it matches more paths than it names`);
+  }
+  // The one route mounted ahead of the gate, by order rather than by the lists above: the agent door,
+  // which answers only zz-core's address. It must stay behind its own peer guard.
+  const order = withoutComments(readFileSync(join(root, "services/gateway/src/server.ts"), "utf8"));
+  const door = order.indexOf("mountAgentDoor(app)");
+  if (door < 0 || door > order.indexOf("identityMiddleware()")) bad.push("the agent door is not mounted ahead of the identity gate, or not at all");
+  if (!/app\.post\("\/internal\/agent-read\/:tool", fromPeers\(peers\),/.test(withoutComments(readFileSync(join(root, "services/gateway/src/agent-door.ts"), "utf8")))) {
+    bad.push("the agent door's route is not behind its peer guard — mounted ahead of the identity gate, it would answer anyone as anyone");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -258,7 +267,8 @@ check("both services authenticate their own network the same way", () => {
   }
   // Both doors must still be reading it.
   for (const [rel, what] of [["services/gateway/src/identity.ts", "the trusted front end"],
-                             ["services/zz-core/src/server.ts", "its trusted peers"]]) {
+                             ["services/zz-core/src/server.ts", "its trusted peers"],
+                             ["services/gateway/src/agent-door.ts", "the agent door's one peer"]]) {
     const src = readFileSync(join(root, rel), "utf8");
     if (!/addressResolver\(/.test(src)) bad.push(`${rel} no longer resolves ${what} through the shared mechanism`);
     if (!/peerAddress\(/.test(src)) bad.push(`${rel} no longer reads its socket peer through the shared spelling`);

@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import { buildAccessServer } from "./access-door.js";
 import { recordAccessSurface } from "./access-surface.js";
+import { mountAgentDoor } from "./agent-door.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
 import { issueMyAccessTokenFor, myAccessTokensFor, revokeMyAccessTokenFor } from "./credentials.js";
@@ -69,6 +70,11 @@ const PUBLIC_PATHS = new Set(["/", "/health"]);
 // `/u/` is an upload's staging link: whoever holds one has no token, and its secret authorises
 // staging that one upload and nothing else (upload.ts).
 const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/", "/u/"];
+// The agent door, zz-core's way back to the console's reads its core door offers. Mounted before the
+// identity gate and outside it, because its caller is a service rather than a person and carries no
+// credential: it answers only the peer CORE_PEERS resolves to, and rebuilds the person from the
+// identity headers that peer was forwarded. See agent-door.ts.
+mountAgentDoor(app);
 const requireIdentity = identityMiddleware();
 app.use((req, res, next) => {
   if (PUBLIC_PATHS.has(req.path) || PUBLIC_PREFIXES.some((p) => req.path.startsWith(p))) {

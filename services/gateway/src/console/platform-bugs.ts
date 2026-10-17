@@ -14,7 +14,10 @@
  * that is not a UUID naming a row of `zz.bug` is a 404 with no body. Nothing here writes `zz.bug`.
  *
  * The Platform prepared query (platform-query-measures.ts) counts the same real reports and answers
- * the queue's rows through `realReports`, `publicRow` and `adminRows`.
+ * the queue's rows through `realReports`, `publicRow` and `adminRows`. The status read's bugs on one
+ * tool, which the agent read `platform_status` asks for, are the same reports' open ones on that
+ * surface, its tool argument kept only when `canonicalSurface` keeps it, as anybody reads them in the
+ * queue (`publicRow`), with the record's start by `bugsCoverage`.
  *
  * COUPLED: the console's `Bugs`, `AdminBugRow` and `BugReport` in src/lib/platform-shapes.ts, and
  * its fake answer in ../zz-stack-dashboard/scripts/fake-gateway/platform-bugs.ts, whose `canonicalSurface` copies the rule
@@ -46,7 +49,7 @@ const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one fro
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-type PublicBugRow = {
+export type PublicBugRow = {
   id: string; title: string; impact: Impact; surface: string | null;
   filedAt: string; platformVersion: string | null; status: Status; resolvedAt: string | null;
 };
@@ -81,7 +84,7 @@ export async function vocabulary(): Promise<Set<string>> {
 /** A stored surface, lower-cased with a leading door prefix dropped, when it is then exactly a word
  *  of the vocabulary; null otherwise, so free text is never echoed. The one place a public title's
  *  only input is decided. */
-function canonicalSurface(stored: string | null, words: Set<string>): string | null {
+export function canonicalSurface(stored: string | null, words: Set<string>): string | null {
   const word = (stored ?? "").trim().toLowerCase().replace(/^(core|manage|eval):/, "");
   return words.has(word) ? word : null;
 }
@@ -129,6 +132,13 @@ export function medianHours(of: RealReport[]): Figure {
   if (!hours.length) return { value: null, why: "no_data" };
   const mid = Math.floor(hours.length / 2);
   return { value: hours.length % 2 ? hours[mid] : (hours[mid - 1] + hours[mid]) / 2, why: null };
+}
+
+/** Where the record of bugs begins: the first real-work call, the cohorts' denominator, or the first real
+ *  report if one came before it; null with neither. The status read's bugs on a tool begin where these do. */
+export function bugsCoverage(firstCallMs: number | null, reports: RealReport[]): number | null {
+  const firsts = [firstCallMs, reports.at(-1)?.reportedMs ?? null].filter((v): v is number => v !== null);
+  return firsts.length ? Math.min(...firsts) : null;
 }
 
 /** One query parameter given at most once: its text, null when absent, false when repeated. */
@@ -197,8 +207,7 @@ export function mountPlatformBugs(app: Express): void {
       `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms
          from zz.event e
         where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $1::timestamptz`, [asOf]);
-    const firsts = [cov.rows[0]?.first_ms ?? null, reports.at(-1)?.reportedMs ?? null].filter((v): v is number => v !== null);
-    const coverageMs = firsts.length ? Math.min(...firsts) : null;
+    const coverageMs = bugsCoverage(cov.rows[0]?.first_ms ?? null, reports);
 
     // Every Monday-to-Monday week of the reporting timezone from the one coverage begins in through
     // the running one, with its real-work calls, as the status read cuts them.

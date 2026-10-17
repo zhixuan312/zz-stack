@@ -52,6 +52,13 @@ check("no shipped prose names a tool no door registers", () => {
            "could not be read, so the parameter names those registrations declare are not all " +
            "known and an argument would be reported as a tool that does not exist";
   }
+  // COUPLED: the same control "a skill never names a platform tool that does not exist" carries,
+  // over the same derived exclusions.
+  const swallowed = [...s.nouns].map((n) => `${n}_invented`).filter((name) => !claimsOurs(name, s));
+  if (swallowed.length) {
+    return `${swallowed.join(", ")} not read as a claim on the platform's surface — the derived ` +
+           "exclusions have swallowed a tool name nobody serves, so a missing tool would pass";
+  }
   const md = sourceFiles(PROSE, [".md"]);
   const modules = sourceFiles([GATE], [".ts"]);
   // A sweep that reached nothing says so, rather than passing as coverage.

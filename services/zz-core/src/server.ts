@@ -28,6 +28,7 @@ import { packagedModules } from "./reviewed-modules.js";
 
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
+import { registerAgentReadTools } from "./tools/agent-reads.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
 import { registerDocumentPanel } from "./document-panel.js";
 import { registerAssessTool } from "./tools/assess.js";
@@ -145,6 +146,8 @@ function buildServer(everything = false): McpServer {
   registerInitiativeStatusTools(server);
   registerInitiativeActTools(server);
   registerAssessTool(server);
+  // The console's reads, for every caller: their values are the gateway's, asked of its agent door.
+  registerAgentReadTools(server);
   return server;
 }
 

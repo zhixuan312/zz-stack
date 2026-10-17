@@ -135,7 +135,7 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
 // Checked both directions: a tool with no domain is unclassified, and a domain naming a tool
 // no door serves is stale.
 const DOMAIN_DOOR: Record<string, string> = {
-  work: "core", knowledge: "core", defect: "core",
+  work: "core", knowledge: "core", defect: "core", observation: "core",
   catalog: "manage", access: "manage",
   evaluation: "eval",
 };
@@ -158,6 +158,10 @@ const TOOL_DOMAIN: Record<string, string> = {
   // it is neither Work nor Access. Filing and answering are one subject; role decides which
   // half you see.
   bug_report: "defect", bug_list: "defect", bug_resolve: "defect", bug_delete: "defect",
+  // Observation — what the console's pages read: the platform's status and releases, and the
+  // active team's refusals, runs and record. Every caller's, so it is on the door every caller has.
+  platform_status: "observation", release_list: "observation", activity_refusals: "observation",
+  run_summary: "observation", record_read: "observation",
   // Catalog — what is on the shelf, and how to install from it.
   catalog_list: "catalog", client_setup: "catalog",
   // Access — who may do what, and the credential that says so.

@@ -40,10 +40,16 @@ const CORE_INSTRUCTIONS =
   "gates, the frontmatter every document needs, and how the store is laid out. Guessing " +
   "those costs a rewrite; reading them costs one call.\n\n" +
   "The nouns, one line each:\n" +
+  "  activity_*    your team's refused calls, by week, by tool and by message\n" +
   "  bug_*         report something broken, read what is open, close one with what was decided\n" +
   "  document_*    write, revise, read, present and approve a flow's documents\n" +
   "  initiative_*  open a piece of work, ask where it stands, close it with an outcome\n" +
   "  knowledge_*   search what earlier initiatives settled, and add to it — search first\n" +
+  "  platform_*    the platform's status, as the console reads it to you\n" +
+  "  record_*      what your team delivered and approved, and at what pace\n" +
+  "  release_*     release_list: each release and what a client must do after it (the\n" +
+  "                release_* on /eval/mcp are other tools: they promote a plugin)\n" +
+  "  run_*         your team's observed skill runs\n" +
   "  session_*     who you are, which team you act for, and today's date\n" +
   "  skill_*       which skills are installed, who owns each, and what each one is for\n" +
   "  source_*      register the material a document cites, so a reader can follow it\n" +

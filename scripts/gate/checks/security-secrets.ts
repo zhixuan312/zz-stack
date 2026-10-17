@@ -90,7 +90,9 @@ check("no proxy forwards the caller's credentials upstream", () => {
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     const lines = readFileSync(join(root, rel), "utf8").split("\n");
     lines.forEach((ln, i) => {
-      if (!/Object\.entries\(req\.headers\)/.test(ln)) return;
+      // zz-core's agent-read tools copy the headers they were forwarded back to the gateway
+      // (services/zz-core/src/tools/agent-reads.ts), so that copy is held to the same rule.
+      if (!/Object\.entries\((?:req\.headers|requestHeaders\(\))\)/.test(ln)) return;
       const body = lines.slice(i, i + 12).join("\n");
       if (/NEVER_FORWARD\.has\(/.test(body)) return;
       const allow = [...body.matchAll(/startsWith\("([a-z-]+)"\)/g)].map((m) => m[1]);

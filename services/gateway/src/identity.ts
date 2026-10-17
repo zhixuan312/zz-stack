@@ -520,9 +520,15 @@ export function toTeamSlug(name: string): string | null {
 /** Who is calling, from the database rather than from the headers alone.
  *
  * Lives here, beside isSuper and isTeamAdmin, because those two take an Identity and this
- * is the only correct way to build one. */
-export async function callerIdentity(): Promise<Identity | null> {
-  const headers = requestHeaders();
+ * is the only correct way to build one.
+ *
+ * `headers` are this request's, as the middleware stamped them, unless a caller hands others in:
+ * the agent door (agent-door.ts) passes the identity headers zz-core was forwarded and forwards
+ * back, which this middleware stamped on the core door's request. COUPLED: trusted only because
+ * that door answers zz-core alone. */
+export async function callerIdentity(
+  headers: Record<string, string | string[] | undefined> = requestHeaders(),
+): Promise<Identity | null> {
   const email = parseCaller(headers).email;
   if (!email || !platformDbReady()) return null;
   const db = platformDb();

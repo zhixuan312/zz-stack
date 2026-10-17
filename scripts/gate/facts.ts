@@ -14,7 +14,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { manifestPaths } from "../manifests.ts";
-import { contractsSource, gatewaySource, root, sourceFiles, trackedFiles, zzCoreTools, errMessage } from "./read.ts";
+import { codeOnly, contractsSource, gatewaySource, root, sourceFiles, trackedFiles, withoutComments, zzCoreTools, errMessage } from "./read.ts";
 
 export const MANIFESTS = manifestPaths(root);
 
@@ -210,13 +210,15 @@ export function everyShippedSkill(): Set<string> {
   return _shipped;
 }
 
-/** What `platformSurface()` derives from the registration literals — the platform's own
- *  vocabulary, read rather than hand-kept. */
+/** What `platformSurface()` derives from the registration literals and from zz-core's own
+ *  answers — the platform's own vocabulary, read rather than hand-kept. */
 interface PlatformSurface {
   served: Set<string>;
   nouns: Set<string>;
   verbs: Set<string>;
   params: Set<string>;
+  actions: Set<string>;
+  fields: Set<string>;
   foreign: Set<string>;
   occurrences: number;
   closed: number;
@@ -225,7 +227,8 @@ interface PlatformSurface {
 /**
  * The platform's namespace, derived from the registration literals — which tools exist, which
  * nouns they are registered under, and which identifiers those registrations declare as
- * arguments rather than as tools.
+ * arguments rather than as tools — and, from zz-core's source, the next moves and answer fields it
+ * spells in the same shape.
  *
  * The noun is the derivable part: a `<noun>_<verb>` name whose noun this platform registers
  * tools under is a claim on our surface, and if we do not serve it nobody does.
@@ -285,6 +288,30 @@ export function platformSurface(): PlatformSurface {
     }
   }
 
+  // And the two other things zz-core spells in snake_case that are not tools: the values a next
+  // move's `action` takes, and the field names of its answers. `run_experiment` is what
+  // `initiative_status` tells an agent to do next, and `run_id` and `run_refs` are fields of
+  // `evaluation_start`'s answer; once `run_summary` made `run` a noun of ours, each read as a
+  // tool the platform does not serve.
+  //
+  // Read from zz-core alone, the service whose answers the skills teach. An action is a string
+  // literal in an object that also carries `waiting_on`, the shape every next move has and
+  // nothing else here does. A field is a property key in code, comments and string literals
+  // blanked first, so a sentence or a SQL column cannot add one.
+  //
+  // Its limit: a tool name that zz-core also spells as a field or a next move reads as that, not
+  // as a missing tool. A field is `<noun>_id`, `<noun>_refs`, `<noun>_mode`, never a verb, and
+  // `run_status`, a column the migrations dropped, is in neither set because no code spells it.
+  const actions = new Set<string>();
+  const fields = new Set<string>();
+  for (const rel of sourceFiles(["services/zz-core/src"], [".ts"])) {
+    const src = readFileSync(join(root, rel), "utf8");
+    for (const m of withoutComments(src).matchAll(/\baction:\s*"([a-z][a-z0-9_]*)"[^}]{0,200}?\bwaiting_on:/g)) {
+      actions.add(m[1]);
+    }
+    for (const m of codeOnly(src).matchAll(/(?<![\w.$])([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\??:\s/g)) fields.add(m[1]);
+  }
+
   // Foreign vocabulary that collides with a noun of ours, and the only thing here that is
   // written rather than derived. `tool_order` and `tool_used` are grader kinds belonging to
   // `claude plugin eval`; they are not tools and are not this repository's to rename, so they
@@ -294,16 +321,16 @@ export function platformSurface(): PlatformSurface {
   // exists to find.
   const FOREIGN = new Set(["tool_order", "tool_used"]);
 
-  SURFACE = { served, nouns, verbs, params, foreign: FOREIGN, occurrences, closed };
+  SURFACE = { served, nouns, verbs, params, actions, fields, foreign: FOREIGN, occurrences, closed };
   return SURFACE;
 }
 
 /** Does this name claim a tool on the platform's own surface? A `<noun>_<verb>` shape whose
- *  noun we register under, that is not one of our declared arguments and not foreign
- *  vocabulary. Says nothing about whether the tool exists. */
+ *  noun we register under, that is not one of our declared arguments, next moves or answer
+ *  fields and not foreign vocabulary. Says nothing about whether the tool exists. */
 export const claimsOurs = (name: string, s: PlatformSurface): boolean =>
-  name.includes("_") && s.nouns.has(name.split("_")[0]) &&
-  !s.params.has(name) && !s.foreign.has(name);
+  name.includes("_") && s.nouns.has(name.split("_")[0]) && !s.params.has(name) &&
+  !s.actions.has(name) && !s.fields.has(name) && !s.foreign.has(name);
 
 /** Does this name claim a tool on the surface this platform used to have? A `<verb>_…_<noun>`
  *  name — the verb-first spelling every registration abandoned — whose verb we conjugate with
@@ -313,7 +340,11 @@ export const claimsOurs = (name: string, s: PlatformSurface): boolean =>
  *  Its limit is the same boundary `platformSurface` draws above. A verb we do not conjugate
  *  with (`get_my_info`, `show_document`) or a noun we do not register under in the singular
  *  (`list_skills`) does not match: those are renames, they resolve through the frozen alias
- *  maps, and a different check owns them. */
+ *  maps, and a different check owns them.
+ *
+ *  DELIBERATE: next moves and answer fields do not exempt a name here. The next move that tells an
+ *  agent to write a document is also the pre-rename spelling of `document_write`, and in a skill
+ *  it reads as that tool; nothing those sets were derived for is spelled verb-first otherwise. */
 export const claimsPreRename = (name: string, s: PlatformSurface): boolean => {
   const parts = name.split("_");
   return parts.length > 1 && s.verbs.has(parts[0]) && !s.params.has(name) &&

@@ -50,6 +50,10 @@ services:
       # that stages one, and both need an address a laptop can dial. Unset, the tool refuses and
       # says so rather than printing a URL that resolves nowhere.
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
+      # Where zz-core reaches the gateway's agent door (tools/agent-reads.ts), for the console's
+      # reads its core door offers: the compose network's address, never the public one, because the
+      # door answers only the hosts CORE_PEERS names on the gateway below.
+      - GATEWAY_INTERNAL_URL=${GATEWAY_INTERNAL_URL:-http://cred-proxy:8000}
       # The hosts a ChatGPT-attached `file` may be fetched from, comma-separated. zz-core does that
       # fetch, over HTTPS, to public addresses only, read once at start. Empty by default, which
       # keeps the route off: a `file` is answered with upload_start instead.
@@ -148,6 +152,9 @@ services:
       # The one host whose forwarded identity headers this gateway accepts. Same reason as
       # TRUSTED_PEERS on zz-core above.
       - TRUSTED_FORWARD_HOST=${TRUSTED_FORWARD_HOST:-}
+      # The hosts the agent door answers (agent-door.ts): zz-core, reaching back for the console's
+      # reads its core door offers. Spelled with the code's default, as EVAL_MCP_URL is.
+      - CORE_PEERS=${CORE_PEERS:-zz-core}
     volumes:
       # The gateway's own durable data: `/data/events-unwritten.jsonl`, the events it could not
       # write to the database. DELIBERATE: `zz-artifacts` is NOT mounted here any more. The console

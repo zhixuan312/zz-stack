@@ -418,3 +418,18 @@ check("an enrolment link is spent by the statement that redeems it, and only onc
   if (!/\bexpires_at\s*>\s*now\(\)/.test(stmt)) bad.push("the redemption admits an expired link");
   return bad.length ? bad.join("; ") : null;
 });
+
+check("the agent door rebuilds its caller the way every other door does", () => {
+  // zz-core forwards the identity headers this gateway stamped; the door rebuilds the person from them
+  // through callerIdentity (the principal lookup and actingTeam) and decides the role through isSuper,
+  // never reading the role or a team off the headers itself.
+  const src = withoutComments(readFileSync(join(root, "services/gateway/src/agent-door.ts"), "utf8"));
+  const bad: string[] = [];
+  if (!/callerIdentity\(req\.headers\)/.test(src)) bad.push("the agent door does not rebuild its caller through callerIdentity");
+  if (!/superadmin: isSuper\(id\)/.test(src)) bad.push("the agent door does not decide the role through isSuper");
+  if (!/activeTeam: id\.activeTeam/.test(src)) bad.push("the agent door does not take the team callerIdentity decided");
+  if (/x-zz-user-role|x-zz-pat-team|x-zz-session-team/.test(src)) bad.push("the agent door reads an identity header itself");
+  const id = withoutComments(readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8"));
+  if (!/export async function callerIdentity\(\s*headers: [^=]+= requestHeaders\(\)/.test(id)) bad.push("callerIdentity no longer defaults to this request's headers, so its other callers would read none");
+  return bad.length ? bad.join("; ") : null;
+});

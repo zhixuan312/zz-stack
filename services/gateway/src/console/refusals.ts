@@ -8,8 +8,9 @@
  * platform did, every other origin, is counted apart and in no owner.
  *
  * Every function takes the team's slug, a window from one instant up to another, and the read's
- * cutoff, and counts what happened inside the window and before the cutoff. Each throws when its
- * statement fails; the read decides what a failure makes of its part.
+ * cutoff, and counts what happened inside the window and before the cutoff; given an initiative's slug,
+ * only the calls made in the team's initiative of that name, so a slug the team does not hold counts
+ * nothing. Each throws when its statement fails; the read decides what a failure makes of its part.
  *
  * A message is the team's own, as stored (redacted at write): it is read for the team it belongs to
  * and no other, grouped by its normalised form and answered as the group's most recent text.
@@ -42,21 +43,36 @@ const sum = (owners: Owners): number => REFUSAL_OWNERS.reduce((n, o) => n + owne
 /** The team's tool calls by period at the grain: the real-work calls, refused or not, and the refused
  *  among them by owner, the owners summing to the refused total; and the maintenance calls and
  *  refusals over the whole window, in no period. */
-export async function refusalWeeks(team: string, window: Span, asOf: string, grain: Grain): Promise<{
+export async function refusalWeeks(team: string, window: Span, asOf: string, grain: Grain, initiative: string | null = null): Promise<{
   periods: RefusalPeriod[]; maintenance: { calls: number; refused: number };
 }> {
   const periods = await periodsOf(window, asOf, grain);
-  // Each period counted over the part of it inside the window and before the cutoff.
-  const { rows } = await platformDb().query<{ n: number; work: boolean; owner: RefusalOwner | null; calls: number }>(
-    `select p.n::int as n, (e.origin = 'work') as work,
-            case when e.ok = false then coalesce(e.refusal_owner, 'other') end as owner,
-            count(*)::int as calls
-       from unnest($2::timestamptz[], $3::timestamptz[]) with ordinality as p(lo, hi, n)
-       join zz.event e on e.ts >= p.lo and e.ts < p.hi
-       join zz.team t on t.id = e.team_id
-      where t.slug = $1 and e.kind = 'tool_call'
-      group by 1, 2, 3`,
-    [team, periods.map((p) => p.window.observedFrom), periods.map((p) => p.window.observedThrough)]);
+  // Each period counted over the part of it inside the window and before the cutoff; the team's initiative of the
+  // slug asked for is a second complete statement, so no statement holds a parameter that may widen it.
+  const bounds = [periods.map((p) => p.window.observedFrom), periods.map((p) => p.window.observedThrough)];
+  type Row = { n: number; work: boolean; owner: RefusalOwner | null; calls: number };
+  const { rows } = initiative === null
+    ? await platformDb().query<Row>(
+      `select p.n::int as n, (e.origin = 'work') as work,
+              case when e.ok = false then coalesce(e.refusal_owner, 'other') end as owner,
+              count(*)::int as calls
+         from unnest($2::timestamptz[], $3::timestamptz[]) with ordinality as p(lo, hi, n)
+         join zz.event e on e.ts >= p.lo and e.ts < p.hi
+         join zz.team t on t.id = e.team_id
+        where t.slug = $1 and e.kind = 'tool_call'
+        group by 1, 2, 3`,
+      [team, ...bounds])
+    : await platformDb().query<Row>(
+      `select p.n::int as n, (e.origin = 'work') as work,
+              case when e.ok = false then coalesce(e.refusal_owner, 'other') end as owner,
+              count(*)::int as calls
+         from unnest($2::timestamptz[], $3::timestamptz[]) with ordinality as p(lo, hi, n)
+         join zz.event e on e.ts >= p.lo and e.ts < p.hi
+         join zz.team t on t.id = e.team_id
+         join zz.initiative i on i.id = e.initiative_id and i.team_id = t.id
+        where t.slug = $1 and e.kind = 'tool_call' and i.slug = $4
+        group by 1, 2, 3`,
+      [team, ...bounds, initiative]);
   const out = periods.map((p): RefusalPeriod => ({ window: p.window, complete: p.window.complete, calls: 0, refused: 0, owners: none() }));
   const maintenance = { calls: 0, refused: 0 };
   for (const r of rows) {
@@ -77,22 +93,38 @@ export async function refusalWeeks(team: string, window: Span, asOf: string, gra
  *  the largest first and then the most recent: the first limit answered, the rest folded into their
  *  count. A refusal recorded with no text is a group of its own, its message null, in its owner's
  *  count. */
-export async function refusalGroups(team: string, window: Span, asOf: string, limit = 20): Promise<{
+export async function refusalGroups(team: string, window: Span, asOf: string, limit = 20, initiative: string | null = null): Promise<{
   rows: RefusalGroup[]; groups: number; rest: { groups: number; count: number } | null;
 }> {
   const end = new Date(Math.min(Date.parse(window.to), Date.parse(asOf))).toISOString();
-  const { rows } = await platformDb().query<{ owner: RefusalOwner; tool: string; message: string | null; n: number; last_ms: number }>(
-    `select coalesce(e.refusal_owner, 'other') as owner, e.tool_key as tool,
-            lower(regexp_replace(regexp_replace(coalesce(e.refusal, ''), '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '#', 'gi'), '[0-9]+', '#', 'g')) as normalized,
-            nullif((array_agg(e.refusal order by e.ts desc, e.id desc))[1], '') as message,
-            count(*)::int as n, (extract(epoch from max(e.ts)) * 1000)::float8 as last_ms
-       from zz.event e
-       join zz.team t on t.id = e.team_id
-      where t.slug = $1 and e.kind = 'tool_call' and e.origin = 'work' and e.ok = false
-        and e.ts >= $2::timestamptz and e.ts < $3::timestamptz
-      group by 1, 2, 3
-      order by count(*) desc, max(e.ts) desc, 1, 2, 3`,
-    [team, window.from, end]);
+  // The initiative asked for is a second complete statement, as in refusalWeeks.
+  type Row = { owner: RefusalOwner; tool: string; message: string | null; n: number; last_ms: number };
+  const { rows } = initiative === null
+    ? await platformDb().query<Row>(
+      `select coalesce(e.refusal_owner, 'other') as owner, e.tool_key as tool,
+              lower(regexp_replace(regexp_replace(coalesce(e.refusal, ''), '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '#', 'gi'), '[0-9]+', '#', 'g')) as normalized,
+              nullif((array_agg(e.refusal order by e.ts desc, e.id desc))[1], '') as message,
+              count(*)::int as n, (extract(epoch from max(e.ts)) * 1000)::float8 as last_ms
+         from zz.event e
+         join zz.team t on t.id = e.team_id
+        where t.slug = $1 and e.kind = 'tool_call' and e.origin = 'work' and e.ok = false
+          and e.ts >= $2::timestamptz and e.ts < $3::timestamptz
+        group by 1, 2, 3
+        order by count(*) desc, max(e.ts) desc, 1, 2, 3`,
+      [team, window.from, end])
+    : await platformDb().query<Row>(
+      `select coalesce(e.refusal_owner, 'other') as owner, e.tool_key as tool,
+              lower(regexp_replace(regexp_replace(coalesce(e.refusal, ''), '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '#', 'gi'), '[0-9]+', '#', 'g')) as normalized,
+              nullif((array_agg(e.refusal order by e.ts desc, e.id desc))[1], '') as message,
+              count(*)::int as n, (extract(epoch from max(e.ts)) * 1000)::float8 as last_ms
+         from zz.event e
+         join zz.team t on t.id = e.team_id
+         join zz.initiative i on i.id = e.initiative_id and i.team_id = t.id
+        where t.slug = $1 and e.kind = 'tool_call' and e.origin = 'work' and e.ok = false
+          and e.ts >= $2::timestamptz and e.ts < $3::timestamptz and i.slug = $4
+        group by 1, 2, 3
+        order by count(*) desc, max(e.ts) desc, 1, 2, 3`,
+      [team, window.from, end, initiative]);
   const all = rows.map((r): RefusalGroup => ({ owner: r.owner, tool: r.tool, message: r.message, count: r.n, lastSeen: iso(r.last_ms) }));
   const folded = all.slice(limit);
   return {

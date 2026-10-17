@@ -20,6 +20,12 @@
  * Public by route: mounted through `platformPublic`, it takes no team and no scope. No figure names a
  * team.
  *
+ * The list's body is `releasesOf`, which the agent read `release_list` (console/agent-reads.ts) calls too:
+ * its rows carry each release's changelog and upgrade notes, which the route drops and only
+ * `/:version` answers. Given a version, the rows are the releases recorded after it, in the order
+ * releases are recorded in (`released_at`, then `version`), newest first, the named one left out; the
+ * route names none.
+ *
  * COUPLED: the console's `Releases` and `ReleaseDetail` in src/lib/platform-shapes.ts, and its fake
  * answer in ../zz-stack-dashboard/scripts/fake-gateway/platform-releases.ts, which `checks/console-platform-releases.ts`
  * compares this route's answers with, key set by key set.
@@ -56,8 +62,8 @@ type ReleaseRow = {
   summary: string; clientAction: string | null;
   before: ReleaseWindow; after: ReleaseWindow;
 };
-type ReleaseDetail = ReleaseRow & { changelog: string; upgradeNotes: string | null };
-type Releases = {
+export type ReleaseDetail = ReleaseRow & { changelog: string; upgradeNotes: string | null };
+export type Releases<Row = ReleaseRow> = {
   meta: ReadMeta;
   tiles: {
     releases: number; lastWeek: number;
@@ -65,7 +71,7 @@ type Releases = {
     migrations: { applied: number; lastAt: string | null };
   };
   weeks: { window: Window; releases: number; malformedPer1000: PeriodFigure }[];
-  rows: Part<{ rows: ReleaseRow[]; total: number }>;
+  rows: Part<{ rows: Row[]; total: number }>;
 };
 
 /** One side of a release as counted: null when its query failed. */
@@ -190,6 +196,66 @@ export async function releaseRows(db: pg.Pool, versions: string[], asOfMs: numbe
   return detailed.map(({ changelog: _c, upgradeNotes: _u, ...row }) => row);
 }
 
+/** The releases read, one page of its rows each with its changelog and upgrade notes: the latest, or with
+ *  `since` the releases recorded after that version; null when `since` names no recorded release. */
+export async function releasesOf(page: { limit: number; offset: number; since: string | null }): Promise<Releases<ReleaseDetail> | null> {
+  const db = platformDb();
+  const all = await releaseTimes(db);
+  // The releases after `since` are the ones before it in recorded order, newest first.
+  const after = page.since === null ? all.length : all.findIndex((r) => r.version === page.since);
+  if (after < 0) return null;
+  const grid = await readGrid(db);
+  const { asOfMs, coverageMs } = grid;
+  const applied = await migrationTimes(db);
+
+  const malformed = await malformedMeasure(db, grid);
+  const weeks = malformed.weeks.map((w, i) => ({
+    window: w.window,
+    releases: all.filter((r) => r.ms >= grid.weeks[i].fromMs && r.ms < grid.weeks[i].toMs).length,
+    malformedPer1000: w,
+  }));
+
+  let rows: Releases<ReleaseDetail>["rows"];
+  try {
+    const stored = page.since === null
+      ? (await db.query<Stored>(
+        `select r.version, r.console_version, (extract(epoch from r.released_at) * 1000)::float8 as released_ms,
+                r.summary, r.client_action, r.changelog, r.upgrade_notes
+           from zz.release r
+          order by r.released_at desc, r.version desc
+          limit $1 offset $2`, [page.limit, page.offset])).rows
+      : (await db.query<Stored>(
+        `select r.version, r.console_version, (extract(epoch from r.released_at) * 1000)::float8 as released_ms,
+                r.summary, r.client_action, r.changelog, r.upgrade_notes
+           from zz.release r, zz.release s
+          where s.version = $3 and (r.released_at, r.version) > (s.released_at, s.version)
+          order by r.released_at desc, r.version desc
+          limit $1 offset $2`, [page.limit, page.offset, page.since])).rows;
+    const detailed = await Promise.all(stored.map((r) => withWindows(db, r, all, coverageMs, asOfMs)));
+    rows = { state: "ok", data: { rows: detailed, total: after } };
+  } catch (err) {
+    console.error("console the platform's releases: the rows could not be read:", err);
+    rows = { state: "unavailable", reason: "query_failed" };
+  }
+
+  return {
+    meta: {
+      asOf: iso(asOfMs), timezone: ZZ_TZ,
+      period: { from: weeks[0]?.window.from ?? iso(asOfMs), to: iso(asOfMs) },
+      scope: "platform-public", population: POPULATION,
+      coverageFrom: coverageMs === null ? null : iso(coverageMs),
+    },
+    tiles: {
+      releases: all.length,
+      lastWeek: all.filter((r) => r.ms >= asOfMs - 7 * 24 * 3_600_000 && r.ms < asOfMs).length,
+      latest: all[0] ? { version: all[0].version, releasedAt: iso(all[0].ms) } : null,
+      migrations: { applied: applied.length, lastAt: applied.length ? iso(Math.max(...applied)) : null },
+    },
+    weeks,
+    rows,
+  };
+}
+
 export function mountPlatformReleases(app: Express): void {
   app.get("/api/console/platform/releases", platformPublic("the platform's releases", async (req, res) => {
     const limit = Number(req.query.limit ?? 10), offset = Number(req.query.offset ?? 0);
@@ -197,51 +263,14 @@ export function mountPlatformReleases(app: Express): void {
       res.status(400).json({ error: BAD_PAGE });
       return;
     }
-    const db = platformDb();
-    const grid = await readGrid(db);
-    const { asOfMs, coverageMs } = grid;
-    const all = await releaseTimes(db);
-    const applied = await migrationTimes(db);
-
-    const malformed = await malformedMeasure(db, grid);
-    const weeks = malformed.weeks.map((w, i) => ({
-      window: w.window,
-      releases: all.filter((r) => r.ms >= grid.weeks[i].fromMs && r.ms < grid.weeks[i].toMs).length,
-      malformedPer1000: w,
-    }));
-
-    let rows: Releases["rows"];
-    try {
-      const page = (await db.query<Stored>(
-        `select r.version, r.console_version, (extract(epoch from r.released_at) * 1000)::float8 as released_ms,
-                r.summary, r.client_action, r.changelog, r.upgrade_notes
-           from zz.release r
-          order by r.released_at desc, r.version desc
-          limit $1 offset $2`, [limit, offset])).rows;
-      const detailed = await Promise.all(page.map((r) => withWindows(db, r, all, coverageMs, asOfMs)));
-      rows = { state: "ok", data: { rows: detailed.map(({ changelog: _c, upgradeNotes: _u, ...row }) => row), total: all.length } };
-    } catch (err) {
-      console.error("console the platform's releases: the rows could not be read:", err);
-      rows = { state: "unavailable", reason: "query_failed" };
-    }
-
-    const answer: Releases = {
-      meta: {
-        asOf: iso(asOfMs), timezone: ZZ_TZ,
-        period: { from: weeks[0]?.window.from ?? iso(asOfMs), to: iso(asOfMs) },
-        scope: "platform-public", population: POPULATION,
-        coverageFrom: coverageMs === null ? null : iso(coverageMs),
-      },
-      tiles: {
-        releases: all.length,
-        lastWeek: all.filter((r) => r.ms >= asOfMs - 7 * 24 * 3_600_000 && r.ms < asOfMs).length,
-        latest: all[0] ? { version: all[0].version, releasedAt: iso(all[0].ms) } : null,
-        migrations: { applied: applied.length, lastAt: applied.length ? iso(Math.max(...applied)) : null },
-      },
-      weeks,
-      rows,
+    const { rows, ...answer } = (await releasesOf({ limit, offset, since: null }))!;
+    const list: Releases = {
+      ...answer,
+      rows: rows.state === "ok"
+        ? { state: "ok", data: { rows: rows.data.rows.map(({ changelog: _c, upgradeNotes: _u, ...row }) => row), total: rows.data.total } }
+        : rows,
     };
-    res.json(answer);
+    res.json(list);
   }));
 
   app.get("/api/console/platform/releases/:version", platformPublic("the platform's release", async (req, res) => {

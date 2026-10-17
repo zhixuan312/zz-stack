@@ -10,7 +10,9 @@
 // live door and is compared with the instructions text in both directions — a tool group that
 // arrives unannounced is red, and a group named in the text that no longer exists is red.
 //
-// DELIBERATE: that clause applies only to the noun-first doors, core and evaluation.
+// DELIBERATE: that clause applies only to the noun-first doors, core and evaluation. A prefix both
+// of them serve is named on the core door with the other door beside it, so `release_list` there
+// is never read as one of the evaluation door's `release_*`.
 // COUPLED: /manage's shape is checks/manage-surface.ts's subject, so its instructions are held
 // here to length, a self-contained first 512 naming its orientation skill, and a `NOT FOR:`
 // line. Each door's orientation skill is derived and they differ: the core door's from the
@@ -331,6 +333,22 @@ for (const { name: door, client, tools, nouns, skill, skillAt, mustName } of DOO
       fail.push(`the ${door} door's instructions describe \`${noun}_*\`, which it does not ` +
                 "serve — say what is there, not what used to be");
     }
+  }
+}
+
+// A noun both doors serve is two tool sets under one prefix (`release_list` on /core, the
+// promotion tools on /eval), and a caller reading the core door's paragraph alone has to be told
+// which is which: a line of it naming that prefix names the other door too.
+const nounsOf = (tools: Map<string, string>) =>
+  new Set([...tools.keys()].filter((n) => n.includes("_")).map((n) => n.split("_")[0]));
+const coreLines = (coreClient?.getInstructions() ?? "").split("\n");
+const evalNouns = nounsOf(evalTools);
+for (const noun of coreClient ? nounsOf(coreTools) : []) {
+  if (!evalNouns.has(noun)) continue;
+  if (!coreLines.some((l) => l.includes(`${noun}_*`) && l.includes("/eval/mcp"))) {
+    fail.push(`both doors serve ${noun}_* tools, and no line of the core door's instructions naming ` +
+              `\`${noun}_*\` says the /eval/mcp ones are other tools — a caller reading one ` +
+              "paragraph takes them for one set");
   }
 }
 

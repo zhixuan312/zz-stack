@@ -79,6 +79,8 @@ const EXPECTED = [
   "session_whoami", "skill_list", "skill_read", "source_add", "source_list", "upload_start",
   // The semantic-assessment checkpoints a flow's skills cite are asked here.
   "assess",
+  // The console's reads, registered for every caller and answered by the gateway's agent door.
+  "platform_status", "release_list", "activity_refusals", "run_summary", "record_read",
 ];
 
 const TOOLS_DIR = "services/zz-core/src/tools";

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 1.3
+version: 1.4
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -77,7 +77,9 @@ what is already there, and never re-reads a fact already read for this run.
 Reduces every stored assessment, calls the pure `scoreRun` once for the run's own numbers and
 once per subject_ref for a percentile bootstrap interval. RETURNS `{ overall_score, score_status,
 score_coverage, coverage_floor, score_interval, dimension_scores, guardrail_status, coverage,
-readings }` and stores the score on `zz.eval_run`, moving `run_status` to `'completed'`.
+readings }` and stores the score on `zz.eval_run` once, setting `score_status`, `guardrail_status`
+and `scored_at`, the run's terminal marker, in one write. A run already scored refuses a second
+score; a re-score is a new `evaluation_start`.
 `readings` is every stored answer, per measure, per ref, with its `assessment_id` — what EXPLAIN
 cites a finding by.
 

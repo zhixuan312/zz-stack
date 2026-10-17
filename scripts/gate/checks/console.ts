@@ -394,12 +394,13 @@ check("the console\'s version and its compose literal move together", () => {
     : `the console's compose pins ${pinned} but its package.json says ${pkg}`;
 });
 
-/* A route is live if it is reached from any of five caller sets: the console app (a sibling
+/* A route is live if it is reached from any of these caller sets: the console app (a sibling
  * checkout, which writes the suffix after its own `const BASE = '/api/console'`), the page
- * this gateway serves at /app, the client packages it generates, this repo's scripts, and the
- * skills and catalog entries the platform ships. Leaving any one out reports live routes as dead.
+ * this gateway serves at /app, the client packages it generates, this repo's scripts, the
+ * skills and catalog entries the platform ships, and zz-core, whose agent-read tools call the
+ * gateway's agent door. Leaving any one out reports live routes as dead.
  *
- * The fifth set is the instructions rather than the code: a skill tells an agent to run a
+ * The skills and catalog set is the instructions rather than the code: a skill tells an agent to run a
  * command, and `/upload/<id>` is reached by the curl line `upload_start` answers with and
  * `zz-platform` tells the agent to run. Same reasoning as `deploy/` below — prose somebody
  * follows against this gateway is a caller, and it is read the same way.
@@ -456,7 +457,9 @@ check("every route this gateway serves has a caller", () => {
                      ":(exclude)scripts/gate.ts", ":(exclude,glob)scripts/gate/**",
                      ":(glob)deploy/**", ":(glob)packages/**",
                      ":(glob)skills/**", ":(glob)catalog/**",
-                     ":(glob)services/gateway/src/client-package.ts"]);
+                     ":(glob)services/gateway/src/client-package.ts",
+                     // zz-core is the agent door's caller (services/zz-core/src/tools/agent-reads.ts).
+                     ":(glob)services/zz-core/src/**"]);
     if (!called) bad.push(`${r.file.replace("services/gateway/src/", "")}:${r.line} serves ${r.path} and nothing calls it`);
   }
   // The console is the only caller of the /api/console routes, so without the sibling checkout

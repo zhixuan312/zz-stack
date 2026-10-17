@@ -28,6 +28,11 @@
  * Every part is read from one statement over one table, so when it fails the read fails whole and says
  * so; there is no part that could stand without it.
  *
+ * The route's body is runsAt, which the agent read run_summary (console/agent-reads.ts) calls too, with a
+ * first local date the route never names: then the runs are those that touch the window from that date's
+ * start in the reporting timezone to the cutoff, a run under way at its start among them, as runsIn reads
+ * any window.
+ *
  * DELIBERATE: no backticks in the comments of this file. check:sql reads it as text, and a backtick in
  * a comment opens a template literal it then parses as code.
  *
@@ -40,6 +45,7 @@ import type { Express } from "express";
 import type { Figure, Part, ReadMeta } from "./figures.js";
 import { isActive, overlapOf, runsIn } from "./runs-observed.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
+import { midnight } from "./work-query-buckets.js";
 
 type RunRow = {
   id: string; skill: string; initiative: string | null; startedAt: string; lastCallAt: string;
@@ -50,18 +56,20 @@ type SkillRunRow = {
   skill: string; runs: number; callsPerRun: number; shareRefused: number | null; outputPerRun: number | null;
   typicalMs: number | null; timed: number;
 };
-type Runs = {
+export type Runs = {
   meta: ReadMeta; since: string | null;
   tiles: { runs: Figure; outputPerRun: Figure & { unmeasured: number }; largest: RunRow | null };
   coverage: { coverageMs: number; summedMs: number; peak: number; oneCall: number };
   bySkill: Part<{ rows: SkillRunRow[] }>;
   recent: Part<{ rows: RunRow[]; total: number }>;
 };
-type RunsParams = { skill: string | null; limit: number; offset: number };
+/** since is a local date, YYYY-MM-DD; absent or null, every run since the first. */
+type RunsParams = { skill: string | null; limit: number; offset: number; since?: string | null };
 
 /** Before every record: a window from here is the whole of it. */
 const ALL_TIME = "1970-01-01T00:00:00Z";
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
+export const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
+export const NO_TEAM = "no team: Work is the active team's, and you act for none";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -106,11 +114,12 @@ export function runRow(r: Awaited<ReturnType<typeof runsIn>>[number], asOfMs: nu
   };
 }
 
-/** Runs for the team at the cutoff, narrowed to the skill asked for. */
+/** Runs for the team at the cutoff, narrowed to the skill asked for, from the date asked for. */
 export async function runsAt(team: string, params: RunsParams, asOf: string): Promise<Runs> {
   const asOfMs = Date.parse(asOf);
+  const from = params.since ? iso(midnight(params.since)) : null;
   // The earliest first, as runsIn orders them.
-  const runs = (await runsIn(team, { from: ALL_TIME, to: asOf }, asOf))
+  const runs = (await runsIn(team, { from: from ?? ALL_TIME, to: asOf }, asOf))
     .filter((r) => params.skill === null || r.skill === params.skill)
     .map((r) => runRow(r, asOfMs));
   const since = runs.length ? runs[0].startedAt : null;
@@ -124,10 +133,9 @@ export async function runsAt(team: string, params: RunsParams, asOf: string): Pr
 
   return {
     meta: {
-      asOf, timezone: ZZ_TZ, period: { from: since ?? asOf, to: asOf }, scope: "active-team",
-      population: params.skill === null
-        ? `${team}'s recorded skill runs, every one since its first`
-        : `${team}'s recorded runs of ${params.skill}, every one since its first`,
+      asOf, timezone: ZZ_TZ, period: { from: from ?? since ?? asOf, to: asOf }, scope: "active-team",
+      population: (params.skill === null ? `${team}'s recorded skill runs` : `${team}'s recorded runs of ${params.skill}`)
+        + (from === null ? ", every one since its first" : `, from ${params.since}, a run under way then included`),
       coverageFrom: since,
     },
     since,
@@ -159,7 +167,7 @@ export function mountRuns(app: Express): void {
   /** Runs, for the team the caller's identity acts for and no other. */
   app.get("/api/console/runs", platformPublic("runs", async (req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const params = runsParams(req.query as Record<string, unknown>);

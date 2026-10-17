@@ -43,6 +43,8 @@
  *               and the lessons that cite it as evidence, inventories both, imports included; the summary
  *               by outcome and by flow over all of them, never the page
  *
+ * The route's body is recordOf, which the agent read record_read (console/agent-reads.ts) calls too.
+ *
  * Each part fails alone: what it is read from failing makes it unavailable, its figure null with why
  * unavailable, or the lead's estimate null, and the rest stands. No figure is hours saved, a speedup or
  * a measured productivity: the estimate is the time to write the text at the stated pace.
@@ -69,7 +71,7 @@ import {
 import { additionsByPeriod, documentFacts, retainedStock, transitions } from "./writing.js";
 
 type Span = { from: string; to: string };
-type PeriodName = "quarter" | "year" | "all";
+export type PeriodName = "quarter" | "year" | "all";
 type Outcome = (typeof OUTCOMES)[number];
 type Spread = { median: Figure; largest: Figure };
 type WorkSlice = {
@@ -92,7 +94,7 @@ type RecordTable = {
   rows: RecordRow[]; total: number;
   summary: { byOutcome: { open: number } & Record<Outcome, number>; byFlow: { flow: string | null; count: number }[] };
 };
-type RecordRead = {
+export type RecordRead = {
   meta: ReadMeta;
   period: PeriodName;
   /** estimate is null when the retained text could not be read: no coverage of zeros stands in for one. */
@@ -112,11 +114,12 @@ type Initiative = {
   documents: number; versions: number; sources: number;
 };
 
-const PERIODS: readonly PeriodName[] = ["quarter", "year", "all"];
+export const PERIODS: readonly PeriodName[] = ["quarter", "year", "all"];
 const HOUR = 3_600_000;
 /** Before every record: a window from here is the whole of it. */
 const ALL_TIME = "1970-01-01T00:00:00Z";
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
+export const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
+export const NO_TEAM = "no team: Work is the active team's, and you act for none";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -276,7 +279,7 @@ function tableOf(initiatives: Initiative[], lessons: Map<string, number>, page: 
 }
 
 /** Record for the team over the period at the cutoff, the approvals in it the caller's; its table paged. */
-async function recordOf(team: string, caller: string, period: PeriodName, page: { limit: number; offset: number }, asOf: string): Promise<RecordRead> {
+export async function recordOf(team: string, caller: string, period: PeriodName, page: { limit: number; offset: number }, asOf: string): Promise<RecordRead> {
   const bounds = await boundsOf(team, caller, asOf);
   const asOfMs = Date.parse(asOf);
   const startMs = period === "quarter" ? bounds.quarter_ms : period === "year" ? bounds.year_ms : bounds.first_ms ?? asOfMs;
@@ -380,7 +383,7 @@ export function mountRecord(app: Express): void {
   /** Record, for the team the caller's identity acts for and no other, the approvals the caller's own. */
   app.get("/api/console/record", platformPublic("the record", async (req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const params = recordParams(req.query as Record<string, unknown>);

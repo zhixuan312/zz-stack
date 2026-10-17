@@ -21,6 +21,12 @@
  * maintenance are read with the weeks; when that read fails, their figures are unavailable and the
  * counts beside them zero, never stated as read.
  *
+ * The summary's body is summaryOf, which the agent read activity_refusals (console/agent-reads.ts) calls
+ * too, with a first instant and an initiative the route never names: the weeks, the groups and the
+ * maintenance are then counted from that instant to the cutoff, and every part, the tiles included, only
+ * in the team's initiative of that slug. The tiles stay the last whole week's, read on their own when the
+ * window starts inside it.
+ *
  * The log is the team's real-work events newest first, narrowed by kind, tool, initiative (a slug of
  * the active team) and refused before the latest 500 are taken, then paged; its total is the matches
  * up to that ceiling. A refused call carries its owner and its stored message.
@@ -42,7 +48,7 @@ import { platformPublic, ZZ_TZ } from "./shared.js";
 import { lastWholeWeek, periodsOf } from "./work-figures.js";
 
 type Owners = Record<RefusalOwner, number>;
-type ActivitySummary = {
+export type ActivitySummary = {
   meta: ReadMeta;
   tiles: { calls: PeriodFigure; refused: PeriodFigure & { owners: Owners }; mostRefused: { tool: string; count: number; of: number } | null };
   weeks: Part<RefusalPeriod[]>;
@@ -63,13 +69,14 @@ const WHOLE_WEEKS = 24;
 /** The latest events the log reaches, after its filters. */
 const CEILING = 500;
 const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
-const NO_TEAM = "you act for no team, so there is no team whose work to read: switch to one of your teams first";
+export const NO_TEAM = "you act for no team, so there is no team whose work to read: switch to one of your teams first";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 /** A query parameter given once, absent, or given otherwise (false). */
 const one = (v: unknown): string | null | false => (v === undefined ? null : typeof v === "string" ? v : false);
-const population = (team: string): string => `${team}'s real-work events, page views and the platform's maintenance left out`;
+const population = (team: string, initiative: string | null = null): string =>
+  `${team}'s real-work events` + (initiative === null ? "" : ` in its initiative ${initiative}`) + ", page views and the platform's maintenance left out";
 
 /** What a function answers, or null when it failed; the failure is logged under its name. */
 async function attempt<T>(what: string, read: () => Promise<T>): Promise<T | null> {
@@ -100,26 +107,31 @@ function mostRefusedOf(groups: RefusalGroup[]): { tool: string; count: number; o
   return top ? { tool: top[0], count: top[1], of: groups.reduce((n, g) => n + g.count, 0) } : null;
 }
 
-/** The summary for the team at the cutoff. */
-async function summaryOf(team: string, asOf: string): Promise<ActivitySummary> {
+/** The summary for the team at the cutoff: from the first call's week, or from the instant given, and in the
+ *  initiative named. */
+export async function summaryOf(team: string, asOf: string, ask: { from: string | null; initiative: string | null } = { from: null, initiative: null }): Promise<ActivitySummary> {
+  const { initiative } = ask;
   const [week, firstMs] = await Promise.all([lastWholeWeek(asOf), firstCall(team, asOf)]);
   const weekMs = Date.parse(week.from);
   // From the first call's week, the last whole week at the latest and the newest WHOLE_WEEKS at most. A
   // Monday noon is the probe, so a daylight saving hour cannot carry it into the week before.
   const probe = Math.max(Math.min(firstMs ?? weekMs, weekMs), weekMs - (WHOLE_WEEKS - 1) * WEEK + 12 * HOUR);
-  const span = { from: iso((await periodsOf({ from: iso(probe), to: asOf }, asOf, "week"))[0].fromMs), to: asOf };
+  const span = { from: ask.from ?? iso((await periodsOf({ from: iso(probe), to: asOf }, asOf, "week"))[0].fromMs), to: asOf };
+  // A window starting inside the last whole week does not hold all of it, so the tiles read that week alone.
+  const whole = Date.parse(span.from) <= weekMs;
 
-  const [weeks, groups, lastWeek] = await Promise.all([
-    attempt("the refusals by week", () => refusalWeeks(team, span, asOf, "week")),
-    attempt("the refusal groups", () => refusalGroups(team, span, asOf)),
-    attempt("last week's refusals by tool", () => refusalGroups(team, { from: week.from, to: week.to }, asOf, Infinity)),
+  const [weeks, groups, lastWeek, ownWeek] = await Promise.all([
+    attempt("the refusals by week", () => refusalWeeks(team, span, asOf, "week", initiative)),
+    attempt("the refusal groups", () => refusalGroups(team, span, asOf, 20, initiative)),
+    attempt("last week's refusals by tool", () => refusalGroups(team, { from: week.from, to: week.to }, asOf, Infinity, initiative)),
+    whole ? null : attempt("last week's refusals", () => refusalWeeks(team, { from: week.from, to: week.to }, asOf, "week", initiative)),
   ]);
-  const last = weeks?.periods.find((p) => p.window.from === week.from);
+  const last = (whole ? weeks : ownWeek)?.periods.find((p) => p.window.from === week.from);
   const unread = (w: Window): PeriodFigure => ({ window: w, figure: { value: null, why: "unavailable" }, numerator: null, denominator: null });
   return {
     meta: {
       asOf, timezone: ZZ_TZ, period: { from: span.from, to: asOf }, scope: "active-team",
-      population: population(team), coverageFrom: firstMs === null ? null : iso(firstMs),
+      population: population(team, initiative), coverageFrom: firstMs === null ? null : iso(firstMs),
     },
     tiles: {
       calls: last ? { window: last.window, figure: { value: last.calls, why: null }, numerator: last.calls, denominator: null } : unread(week),
@@ -221,7 +233,7 @@ async function logOf(team: string, asked: Asked, asOf: string): Promise<Activity
 }
 
 /** The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it. */
-const cutoff = (): string => iso(Math.ceil(Date.now() / 1000) * 1000);
+export const cutoff = (): string => iso(Math.ceil(Date.now() / 1000) * 1000);
 
 export function mountActivity(app: Express): void {
   /** The active team's refusals by owner and week, grouped, and the maintenance left out of them. */

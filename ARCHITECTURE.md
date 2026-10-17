@@ -55,13 +55,22 @@ A package may not import a service. A service may import any package.
 `gateway` (HTTP, MCP mounts, console, admin) and `zz-core` (the platform's own MCP tools).
 There are two, and adding a third needs a reason written down before the directory is made.
 
-Two routes on the gateway are not doors and not the console: `PUT /upload/<id>` takes a file's
+Some routes on the gateway are not doors and not the console. `PUT /upload/<id>` takes a file's
 bytes with the person's own token, and `/u/<secret>` is the staging page a link opens
-(`services/gateway/src/upload.ts`). Both only stage a plain-text file for an upload `upload_start`
+(`services/gateway/src/upload.ts`). Those two only stage a plain-text file for an upload `upload_start`
 began; the write that consumes it is zz-core's, so there is no second idea of what a document or a
 source is. A file attached in ChatGPT takes neither route: zz-core fetches that `file` itself
 (`services/zz-core/src/file-fetch.ts`), only from a host `OPENAI_FILE_HOSTS` lists — none by
 default, so the route is off and the write answers with `upload_start` instead.
+
+`POST /internal/agent-read/<tool>` is the agent door (`services/gateway/src/agent-door.ts`), zz-core's
+way back to the console's reads. The core door's `platform_status`, `release_list`,
+`activity_refusals`, `run_summary` and `record_read` are answered by the functions the console's own
+routes call (`services/gateway/src/console/agent-reads.ts`), so zz-core asks for them over HTTP,
+the way the gateway reaches zz-core, rather than importing a service. The door answers only the peer
+`CORE_PEERS` resolves to (default `zz-core`), sits outside the identity middleware because that
+peer carries no credential, and rebuilds the person from the identity headers zz-core was forwarded,
+through `callerIdentity` and `isSuper`. Caddy answers `/internal/*` with 404 on the public host.
 
 **Every tool says what it does to the world.** Each `registerTool` passes one of `READS`, `WRITES`
 or `DESTROYS` from `@zz/mcp-http` as its annotations. A client decides confirmation from them —

@@ -46,6 +46,12 @@
 
 # The gateway, for every non-browser client.
 api.203-0-113-11.nip.io {
+    # /internal/* is the gateway's agent door, which zz-core calls on the compose network and
+    # nobody calls from outside (services/gateway/src/agent-door.ts). The gateway refuses any peer
+    # but zz-core already; this answers 404 before the proxy, so a request from outside fails twice.
+    # Caddy's directive order puts `respond` ahead of `reverse_proxy` too, wherever it is written.
+    respond /internal/* 404
+
     # The gateway authenticates every request itself (Bearer zzp_… resolved against zz.pat), so
     # this proxy adds no authorisation of its own and must not strip the Authorization header.
     reverse_proxy 127.0.0.1:8764 {

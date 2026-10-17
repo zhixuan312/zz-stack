@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.87
+version: 3.88
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -556,6 +556,7 @@ keeps its first 1,000 match lines, the exact count and the number omitted (`deta
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | checkpoints | `/core/mcp` | `assess` — one semantic-assessment family asked about one subject, recorded with its provenance |
+  | console reads | `/core/mcp` | `platform_status` `release_list` `activity_refusals` `run_summary` `record_read` — what the console's pages read to you, the team ones for the team you act for |
   | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `improvement_start` `improvement_stop` `candidate_record` `candidate_validate` `candidate_read` `candidate_build_record` `release_prepare` `release_apply` `release_record` `release_verify` `proposal_prepare` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` `client_list` `client_revoke` — only if your role carries them |
@@ -598,8 +599,7 @@ dimensions name against the `subject_ref`s you give it, and `evaluation_score` r
 assessed into one deterministic score (`scoreRun`, pure — no model call) with its status,
 guardrails and a bootstrap interval. Only `evaluation_assess`'s own `bounded_semantic`/
 `generative_critic` measures call a model; everything else is arithmetic over what the platform
-already recorded. Running them again to "check" appends to a stored series rather than
-re-reading one.
+already recorded. Running them again to "check" appends to a stored series rather than re-reading one.
 `improvement_start` and `candidate_record` write
 IMPROVE's own ledger: `improvement_start` opens a durable improvement run against an
 `eval_run`'s plugin-owned findings, and `candidate_record` persists one proposed patch — its

@@ -31,6 +31,11 @@
  * identity resolved it, and `unavailable` with `no_team` for a person in none; only the superadmin's
  * needs name a team.
  *
+ * The route's body is `statusOf`, which the agent read `platform_status` (console/agent-reads.ts) calls
+ * too. Asked about one canonical tool, it adds `bugs`: that tool's open real reports as anybody reads them
+ * in the queue (`publicRow`), alike to a member and the superadmin, their count, and where the record of
+ * bugs begins (`bugsCoverage`), from the one read of the real reports the rest already uses.
+ *
  * COUPLED: the console's `PlatformStatus` in src/lib/platform-shapes.ts, and its fake answer in
  * ../zz-stack-dashboard/scripts/fake-gateway/platform-status.ts, which `checks/console-platform-status.ts` compares this
  * route's answer with, key set by key set.
@@ -43,7 +48,7 @@ import { platformDb } from "../db.js";
 import type { MeasureKey, Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { runFinding, runOf, type Finding } from "./findings.js";
 import { pendingRevisions } from "./pending.js";
-import { realReports } from "./platform-bugs.js";
+import { bugsCoverage, publicRow, queueOf, realReports, type PublicBugRow } from "./platform-bugs.js";
 import {
   bugsMeasure, finishedMeasure, followupMeasure, latencyMeasures, malformedMeasure, ownBugs, readGrid, searchesMeasure,
   sessionsMeasure, unavailableMeasure, type Grid, type StatusMeasure,
@@ -84,9 +89,14 @@ type Records = {
 };
 type Running = { platform: string; console: string | null; releasedAt: string; previous: string | null; migrations: number | null };
 
-type PlatformStatus = {
+/** One tool's open real reports, for the agent read: their count, and where the record of bugs begins
+ *  through the cutoff. */
+type ToolBugs = { tool: string; count: number; coverage: { from: string | null; to: string }; rows: PublicBugRow[] };
+
+export type PlatformStatus = {
   meta: ReadMeta; needs: Needs; measures: StatusMeasure[];
   records: Part<Records>; doors: Part<DoorObservation[]>; running: Part<Running>; own: Part<Own>;
+  bugs?: Part<ToolBugs>;
 };
 
 /** A measure as read, or, when its statement failed, every week unavailable. */
@@ -213,78 +223,94 @@ async function runningOf(db: pg.Pool): Promise<Part<Running>> {
   };
 }
 
-export function mountPlatformStatus(app: Express): void {
-  app.get("/api/console/platform/status", platformPublic("the platform's status", async (_req, res, { superadmin, activeTeam }) => {
-    const db = platformDb();
-    const grid = await readGrid(db);
-    const asOf = iso(grid.asOfMs);
-    // One read of the real reports, for the rate, the reader's own counts and what needs attention.
-    const reports = orNull("the real bug reports", realReports(asOf));
-    const latency = latencyMeasures(db, grid);
-    const days = orNull("the doors' days", readDays(db, grid));
-    const [measures, pending, evaluation, running] = await Promise.all([
-      Promise.all([
-        orUnavailable(grid, "malformed_per_1000", null, malformedMeasure(db, grid)),
-        orUnavailable(grid, "same_tool_followup_pct", null, followupMeasure(db, grid)),
-        orUnavailable(grid, "call_p50_ms", null, latency.then(([p50]) => p50)),
-        orUnavailable(grid, "call_p95_ms", null, latency.then(([, p95]) => p95)),
-        orUnavailable(grid, "searches_with_results_pct", null, searchesMeasure(db, grid)),
-        orUnavailable(grid, "bugs_per_1000", null, reports.then((r) => {
-          if (r === null) throw new Error("no real bug reports to count");
-          return bugsMeasure(db, grid, r);
-        })),
-        orUnavailable(grid, "sessions", null, sessionsMeasure(db, grid)),
-        orUnavailable(grid, "work_finished", null, finishedMeasure(db, grid)),
-      ]),
-      orNull("the revisions waiting for approval", pendingRevisions(asOf)),
-      orNull("the evaluation findings waiting", evaluationWaiting(grid.asOfMs)),
-      runningOf(db).catch((err: unknown): Part<Running> => {
-        console.error("console the platform's status: what is running could not be read:", err);
-        return { state: "unavailable", reason: "query_failed" };
-      }),
+/** The platform's status for the caller, and with a canonical tool that tool's open reports; null for none. */
+export async function statusOf(
+  { superadmin, activeTeam }: { superadmin: boolean; activeTeam: string | null }, tool: string | null,
+): Promise<PlatformStatus> {
+  const db = platformDb();
+  const grid = await readGrid(db);
+  const asOf = iso(grid.asOfMs);
+  // One read of the real reports, for the rate, the reader's own counts and what needs attention.
+  const reports = orNull("the real bug reports", realReports(asOf));
+  const latency = latencyMeasures(db, grid);
+  const days = orNull("the doors' days", readDays(db, grid));
+  const [measures, pending, evaluation, running] = await Promise.all([
+    Promise.all([
+      orUnavailable(grid, "malformed_per_1000", null, malformedMeasure(db, grid)),
+      orUnavailable(grid, "same_tool_followup_pct", null, followupMeasure(db, grid)),
+      orUnavailable(grid, "call_p50_ms", null, latency.then(([p50]) => p50)),
+      orUnavailable(grid, "call_p95_ms", null, latency.then(([, p95]) => p95)),
+      orUnavailable(grid, "searches_with_results_pct", null, searchesMeasure(db, grid)),
+      orUnavailable(grid, "bugs_per_1000", null, reports.then((r) => {
+        if (r === null) throw new Error("no real bug reports to count");
+        return bugsMeasure(db, grid, r);
+      })),
+      orUnavailable(grid, "sessions", null, sessionsMeasure(db, grid)),
+      orUnavailable(grid, "work_finished", null, finishedMeasure(db, grid)),
+    ]),
+    orNull("the revisions waiting for approval", pendingRevisions(asOf)),
+    orNull("the evaluation findings waiting", evaluationWaiting(grid.asOfMs)),
+    runningOf(db).catch((err: unknown): Part<Running> => {
+      console.error("console the platform's status: what is running could not be read:", err);
+      return { state: "unavailable", reason: "query_failed" };
+    }),
+  ]);
+  const dayRows = await days;
+  const observed = dayRows === null ? null : doorsOf(dayRows, grid);
+
+  // The reader's own team, from the identity alone; a slug that names no team is no team.
+  let own: Part<Own> = { state: "unavailable", reason: "no_team" };
+  let team: string | null = null;
+  try {
+    team = activeTeam === null ? null : (await db.query<{ id: string }>(
+      "select t.id::text as id from zz.team t where t.slug = $1", [activeTeam])).rows[0]?.id ?? null;
+  } catch (err) {
+    console.error("console the platform's status: the reader's team could not be read:", err);
+    own = { state: "unavailable", reason: "query_failed" };
+  }
+  if (team !== null) {
+    const [malformed, followup, sessions, mine] = await Promise.all([
+      orUnavailable(grid, "malformed_per_1000", team, malformedMeasure(db, grid, team)),
+      orUnavailable(grid, "same_tool_followup_pct", team, followupMeasure(db, grid, team)),
+      orUnavailable(grid, "sessions", team, sessionsMeasure(db, grid, team)),
+      reports,
     ]);
-    const dayRows = await days;
-    const observed = dayRows === null ? null : doorsOf(dayRows, grid);
+    own = mine === null
+      ? { state: "unavailable", reason: "query_failed" }
+      : { state: "ok", data: { malformed: malformed.weeks, followup: followup.weeks, sessions: sessions.weeks, bugs: ownBugs(mine, team) } };
+  }
 
-    // The reader's own team, from the identity alone; a slug that names no team is no team.
-    let own: Part<Own> = { state: "unavailable", reason: "no_team" };
-    let team: string | null = null;
-    try {
-      team = activeTeam === null ? null : (await db.query<{ id: string }>(
-        "select t.id::text as id from zz.team t where t.slug = $1", [activeTeam])).rows[0]?.id ?? null;
-    } catch (err) {
-      console.error("console the platform's status: the reader's team could not be read:", err);
-      own = { state: "unavailable", reason: "query_failed" };
+  const failed = { state: "unavailable", reason: "query_failed" } as const;
+  const answer: PlatformStatus = {
+    meta: {
+      asOf, timezone: ZZ_TZ,
+      period: { from: grid.weeks[0] ? iso(grid.weeks[0].fromMs) : asOf, to: asOf },
+      scope: "platform-public", population: POPULATION,
+      coverageFrom: grid.coverageMs === null ? null : iso(grid.coverageMs),
+    },
+    needs: needsOf({
+      superadmin, asOfMs: grid.asOfMs, timezone: ZZ_TZ, reports: await reports, doors: observed?.today ?? null,
+      evaluation, pending, latency: await latency.catch(() => null),
+    }),
+    measures,
+    records: dayRows === null ? failed : { state: "ok", data: recordsOf(dayRows, grid) },
+    doors: observed === null ? failed : { state: "ok", data: observed.doors },
+    running, own,
+  };
+  if (tool !== null) {
+    const real = await reports;
+    if (real === null) answer.bugs = failed;
+    else {
+      const rows = queueOf(real, { state: "open", impact: null, surface: tool }).map(publicRow);
+      const from = bugsCoverage(grid.coverageMs, real);
+      answer.bugs = { state: "ok", data: { tool, count: rows.length, coverage: { from: from === null ? null : iso(from), to: asOf }, rows } };
     }
-    if (team !== null) {
-      const [malformed, followup, sessions, mine] = await Promise.all([
-        orUnavailable(grid, "malformed_per_1000", team, malformedMeasure(db, grid, team)),
-        orUnavailable(grid, "same_tool_followup_pct", team, followupMeasure(db, grid, team)),
-        orUnavailable(grid, "sessions", team, sessionsMeasure(db, grid, team)),
-        reports,
-      ]);
-      own = mine === null
-        ? { state: "unavailable", reason: "query_failed" }
-        : { state: "ok", data: { malformed: malformed.weeks, followup: followup.weeks, sessions: sessions.weeks, bugs: ownBugs(mine, team) } };
-    }
+  }
+  return answer;
+}
 
-    const failed = { state: "unavailable", reason: "query_failed" } as const;
-    const answer: PlatformStatus = {
-      meta: {
-        asOf, timezone: ZZ_TZ,
-        period: { from: grid.weeks[0] ? iso(grid.weeks[0].fromMs) : asOf, to: asOf },
-        scope: "platform-public", population: POPULATION,
-        coverageFrom: grid.coverageMs === null ? null : iso(grid.coverageMs),
-      },
-      needs: needsOf({
-        superadmin, asOfMs: grid.asOfMs, timezone: ZZ_TZ, reports: await reports, doors: observed?.today ?? null,
-        evaluation, pending, latency: await latency.catch(() => null),
-      }),
-      measures,
-      records: dayRows === null ? failed : { state: "ok", data: recordsOf(dayRows, grid) },
-      doors: observed === null ? failed : { state: "ok", data: observed.doors },
-      running, own,
-    };
-    res.json(answer);
+export function mountPlatformStatus(app: Express): void {
+  app.get("/api/console/platform/status", platformPublic("the platform's status", async (_req, res, caller) => {
+    res.json(await statusOf(caller, null));
   }));
 }

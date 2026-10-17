@@ -60,12 +60,12 @@
     "sha": "c75fcb2c56a7"
   },
   "zz-doctor": {
-    "version": "1.3",
-    "sha": "b3960436e687"
+    "version": "1.4",
+    "sha": "859c424ba2e1"
   },
   "zz-migrate": {
-    "version": "1.4",
-    "sha": "2ccb1e0161d2"
+    "version": "1.5",
+    "sha": "fd0aa752aae0"
   },
   "zz-update": {
     "version": "1.3",
@@ -124,8 +124,8 @@
     "sha": "481cb9116739"
   },
   "zz-platform": {
-    "version": "3.88",
-    "sha": "d1f80b7964a4"
+    "version": "3.89",
+    "sha": "b389aab4f75a"
   },
   "zz-tldr": {
     "version": "1.3",

@@ -16,9 +16,9 @@
  *     `section_level`, then `section_occurrence`; the whole body as `content`; metadata alone;
  *   - every step of the precedence a call is answered in, each refusal leaving the body and its
  *     content revision as they were — the path guards, the field and tag rules, a missing target,
- *     an `upload` or a `file` sent beside another body change, an upload nobody's or unstaged, a
- *     `file` while the route is off (no OPENAI_FILE_HOSTS, which names upload_start), a call sending
- *     no mode or two, the edit count, a stale `base` (named with
+ *     an `upload` sent beside another body change, an upload nobody's or unstaged, no write tool
+ *     declaring `file` while the route is off (no OPENAI_FILE_HOSTS) and a `file` sent anyway
+ *     changing nothing, a call sending no mode or two, the edit count, a stale `base` (named with
  *     the current token), the batch's and the section's own refusals, a body an edit makes open
  *     with a recognised envelope (one opening with a thematic break is markdown), `no_change` — a
  *     document read back and sent whole among them — and the guards; where two steps apply, the
@@ -280,10 +280,20 @@ async function precedence(c: Core): Promise<void> {
   await refusedUnchanged(c, step, p, { upload: minted.upload }, /^ERROR: UPLOAD_MISSING — /);
   c.pass(step);
 
-  step = "(4) a `file` sent with another body change is INVALID_MODE; with no OPENAI_FILE_HOSTS the route is off and names upload_start";
+  step = "(4) with no OPENAI_FILE_HOSTS no write tool advertises `file`, and a `file` sent anyway is undeclared: no body change";
+  type Listed = { name: string; description?: string; inputSchema?: { properties?: Record<string, unknown> };
+                  _meta?: Record<string, unknown> };
+  const listed = ((await c.mcp.rpc("tools/list")).result?.tools ?? []) as Listed[];
+  for (const name of ["document_write", "document_edit", "source_add"]) {
+    const t = listed.find((x) => x.name === name);
+    if (!t) c.fail(step, `tools/list does not name ${name}`);
+    if (t.inputSchema?.properties?.file !== undefined || t._meta?.["openai/fileParams"] !== undefined || /`file`/.test(t.description ?? "")) {
+      c.fail(step, `${name} advertises a \`file\` this deployment would refuse: ` +
+        JSON.stringify({ properties: Object.keys(t.inputSchema?.properties ?? {}), _meta: t._meta }));
+    }
+  }
   const attached = { download_url: "https://files.example.com/f?sig=x", file_id: "file-1", file_name: "x.md" };
-  await refusedUnchanged(c, step, p, { file: attached, content: "# x\n" }, /^ERROR: INVALID_MODE — send ONE body change/);
-  await refusedUnchanged(c, step, p, { file: attached }, /^ERROR: FORBIDDEN — the ChatGPT file route is not enabled .*OPENAI_FILE_HOSTS.*upload_start/);
+  await refusedUnchanged(c, step, p, { file: attached }, /^ERROR: INVALID_MODE — /);
   c.pass(step);
 
   step = "(5) a call sending no change, or two body changes, or a malformed selector or source, is INVALID_MODE";

@@ -88,7 +88,7 @@ better value than we already know.
 | `BOOTSTRAP_TEAM` | the first team, created on boot with the superadmin as its admin. **Set it.** A deployment with a superadmin and no team looks perfectly healthy and is not: every document lands in a per-user store instead of the team's, and nobody notices until they go looking for it. **It is re-seeded on every boot** — `on conflict do nothing`, so it is a no-op once the team exists, but a team named here cannot be deleted: it returns on the next restart. Point it at a team you actually use, and change it rather than deleting what it names |
 | `POSTGRES_PASSWORD` | the platform database's own password |
 | `CONSOLE_PUBLIC_URL` | only if you run the console — see below |
-| `OPENAI_FILE_HOSTS` | leave it empty. The hosts a file attached in ChatGPT may be fetched from, comma-separated; zz-core fetches over HTTPS, from public addresses only, within 30 seconds and 8 MiB. Empty keeps that route off and a ChatGPT `file` is answered with `upload_start`, which works in every client. Which hosts ChatGPT serves files from is not established yet |
+| `OPENAI_FILE_HOSTS` | leave it empty. The hosts a file attached in ChatGPT may be fetched from, comma-separated; zz-core fetches over HTTPS, from public addresses only, within 30 seconds and 8 MiB. Empty keeps that route off: no tool offers ChatGPT a `file` argument, and a file goes through `upload_start`, which works in every client. Which hosts ChatGPT serves files from is not established yet |
 
 ### The admin console, if you want it (optional)
 
@@ -196,6 +196,9 @@ Then the token, which is what the tools actually authenticate with:
 (umask 077; printf '%s' "$ZZ_TOKEN" > ~/.zz/token) && chmod 600 ~/.zz/token
 ```
 
+Those two lines are bash. On Windows, in PowerShell or cmd, `client_setup` offers the same step
+as one `node -e` line instead, which writes `ZZ_TOKEN` to `~/.zz/token` owner-only.
+
 The shelf is build output, rendered by `npm run build:marketplace` from the catalog and
 committed here; the gate fails a release that forgot to rebuild it. It lists the platform
 baseline, the access tools and one plugin per flow — everything the catalog holds, rather
@@ -218,7 +221,7 @@ Only UTF-8 plain text of at most 8 MiB is taken — `.md`, `.markdown`, `.txt`, 
 — and nothing is extracted or shortened; anything else, a PDF or an Office file included, is
 refused, naming the formats it does take. An upload is open for 15 minutes and used once.
 `GATEWAY_PUBLIC_URL` is what both addresses are built from. A file attached in ChatGPT can
-instead arrive as `file`, fetched by zz-core itself; that route stays off until
+instead arrive as `file`, fetched by zz-core itself; no tool declares that argument until
 `OPENAI_FILE_HOSTS` (above) lists its hosts.
 
 Claude Code and Codex install these plugins from the shelf; ChatGPT reaches `/core/mcp` as a

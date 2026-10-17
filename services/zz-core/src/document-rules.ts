@@ -36,7 +36,9 @@ export const RESERVED_ENVELOPE = new Set<string>(Object.keys(Envelope.shape));
  * simply the name. */
 export function slugRefusal(slug: string): string | null {
   const v = slug.trim();
-  if (!v) return "ERROR: slug is required — a few words in the stakeholder's own language, hyphenated.";
+  if (!v) {
+    return "ERROR: slug is required — a few of the stakeholder's words in lowercase ASCII, hyphenated.";
+  }
   if (v.includes("/") || v.includes("\\") || v === "." || v === "..") {
     return `ERROR: a slug is a single name, not a path — "${v}" contains a separator.`;
   }
@@ -56,10 +58,25 @@ export function slugRefusal(slug: string): string | null {
       "`payment-retries`, not the dated folder name."
     );
   }
+  // A letter, digit, mark or symbol outside ASCII is part of a word, and slugify would cut it:
+  // `女主与猫-api视频生成` opened as `<date>-api` (bug 6608d943), and a folder name cannot be
+  // renamed afterwards. Spaces and punctuation in any script only separate words, so they are
+  // shaped into hyphens like their ASCII kin.
+  const cut = [...new Set(v.match(/(?![\x00-\x7f])[\p{L}\p{N}\p{M}\p{S}]/gu) ?? [])];
+  if (cut.length) {
+    const kept = slugify(v);
+    return (
+      `ERROR: a slug cannot keep ${cut.map((c) => `"${c}"`).join(", ")} — it holds lowercase ` +
+      "ASCII letters a-z, digits 0-9 and hyphens (capitals are lowercased; spaces and " +
+      `punctuation become hyphens), so ${kept ? `"${v}" would open as "${kept}"` : "none of it would survive"}. ` +
+      "Send the stakeholder's words transliterated or translated, e.g. pinyin or English: " +
+      "`payment-retries`. Nothing was created."
+    );
+  }
   return null;
 }
 
-/** A slug as the store will hold it: lowercase, words joined by single hyphens, nothing else.
+/** A slug as the store will hold it: lowercase ASCII, words joined by single hyphens, nothing else.
  *
  * The platform owns this name: it prepends today's date from its own clock and hands the
  * composed name back, and `zz-platform` tells every agent to use what it returns.
@@ -67,7 +84,10 @@ export function slugRefusal(slug: string): string | null {
  * DELIBERATE: it shapes rather than refuses. `slugRefusal` above still rejects what is
  * genuinely ambiguous — a path separator, a leading dot, a second date — because only the
  * caller can answer those. A sentence with spaces and a comma is not ambiguous; it is a slug
- * typed in prose, and the store can hold it correctly without asking. */
+ * typed in prose, and the store can hold it correctly without asking.
+ *
+ * COUPLED: this cuts every non-ASCII letter, and `slugRefusal` refuses a slug holding one, so
+ * nothing reaches here that loses a word. */
 export function slugify(slug: string): string {
   return slug.trim().toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")

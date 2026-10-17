@@ -20,24 +20,24 @@
   },
   "zz-access": {
     "version": "0.96.0",
-    "digest": "1a2dea20",
+    "digest": "a371fde0",
     "skills": {
       "zz-access": "ec96b567b786",
       "zz-admin": "c75fcb2c56a7",
-      "zz-doctor": "b3960436e687",
-      "zz-migrate": "2ccb1e0161d2",
+      "zz-doctor": "859c424ba2e1",
+      "zz-migrate": "fd0aa752aae0",
       "zz-update": "a5d73e2d40eb"
     }
   },
   "zz-core": {
     "version": "0.96.0",
-    "digest": "cb564c57",
+    "digest": "1a73b122",
     "skills": {
       "zz-authoring": "a2c3a1684d0c",
       "zz-breakout": "593964bc3415",
       "zz-deck": "e59a9f79d685",
       "zz-handover": "481cb9116739",
-      "zz-platform": "d1f80b7964a4",
+      "zz-platform": "b389aab4f75a",
       "zz-tldr": "0fa98d6ce832"
     }
   },

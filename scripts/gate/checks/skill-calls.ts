@@ -118,6 +118,9 @@ function shapeOf(body: string): ToolSchema {
   for (const raw of topLevel(body, "ts")) {
     // A field's leading comment is not part of its name.
     const entry = raw.replace(/^(?:\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/))*\s*/, "");
+    // The ChatGPT file argument, spread in only where a deployment lists its hosts
+    // (upload-consume.ts fileArgument): an optional `file`, and nothing that opens the schema.
+    if (/^\.\.\.(?:FILE_ARG|fileArg)\.input\b/.test(entry)) { schema.fields.set("file", { required: false, nested: null }); continue; }
     const m = /^([a-z][a-z0-9_]*)\s*(:?)/.exec(entry);
     if (!m || !m[2]) { schema.open = true; continue; }   // a spread or a shorthand: not enumerable here
     const value = entry.slice(m[0].length);

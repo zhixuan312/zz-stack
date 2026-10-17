@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Reports a skill this session loaded from the ZZ shelf to the platform, as skill_read.
 // Run by a PostToolUse hook on the Skill tool. Always exits 0 and prints nothing. The
-// credential comes from zz-mcp-headers.sh beside this file — the same resolution the MCP
-// connection uses, so there is one place a token is found.
+// credential comes from zz-mcp-headers.mjs beside this file, run by this same node — the
+// resolution the MCP connection uses, so there is one place a token is found.
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ const COMMANDS = {"sdlc":{"flow":"sdlc-flow"},"zz-plugin-eval":{"eval":"zz-plugi
 
 function headers() {
   try {
-    const out = execFileSync(join(dirname(fileURLToPath(import.meta.url)), "zz-mcp-headers.sh"),
+    const out = execFileSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "zz-mcp-headers.mjs")],
                              { encoding: "utf8", timeout: 3000 });
     return JSON.parse(out);
   } catch { return {}; }

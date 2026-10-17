@@ -22,7 +22,7 @@ import { catalogEntry, catalogManifest, pluginName } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
-import { BASELINE, cardDescription, commandFile, declaredCommands, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, SKILL_REPORT_HOOKS, skillReportScript, withoutFrontmatter } from "./package/skills.js";
+import { BASELINE, cardDescription, commandFile, declaredCommands, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, SKILL_REPORT_HOOKS, skillReportScript, tokenWriteCommand, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one number
  * and no second place to forget to update. Through @zz/mcp-http's serviceVersion, which is that
@@ -55,7 +55,8 @@ export interface PackageFile {
   /** Path inside the package, relative to its root. */
   path: string;
   content: string;
-  /** Unix mode; scripts need the execute bit or the client cannot run them. */
+  /** Unix mode, so a person can run a script by hand. The client never relies on it: every
+   *  script it runs is run through `node`, because Windows honours no shebang. */
   mode?: number;
 }
 
@@ -314,14 +315,14 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
         content: JSON.stringify({
           mcpServers: Object.fromEntries(pl.servers.map((sv) => [sv.name, {
             type: "http", url: sv.url,
-            headersHelper: '"${CLAUDE_PLUGIN_ROOT}"/scripts/zz-mcp-headers.sh',
+            // `node` named, because Windows runs no script through its shebang.
+            headersHelper: 'node "${CLAUDE_PLUGIN_ROOT}/scripts/zz-mcp-headers.mjs"',
           }])),
         }, null, 2) + "\n",
       });
       // Each plugin carries its own copy: CLAUDE_PLUGIN_ROOT points at the plugin that
       // declared the server, so a shared script one directory up would not resolve.
-      files.push({ path: `${pl.name}/scripts/zz-mcp-headers.sh`,
-                   content: headersHelper(), mode: 0o755 });
+      files.push({ path: `${pl.name}/scripts/zz-mcp-headers.mjs`, content: headersHelper() });
     }
     for (const f of pl.files) files.push({ path: `${pl.name}/${f.path}`, content: f.content, mode: f.mode });
   }
@@ -343,6 +344,10 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       // ~/.zz or a token file left behind by an earlier install with looser permissions.
       `(umask 077; mkdir -p ~/.zz) && chmod 700 ~/.zz`,
       `(umask 077; printf '%s' "$ZZ_TOKEN" > ~/.zz/token) && chmod 600 ~/.zz/token`,
+      // The two lines above are bash. Windows' PowerShell and cmd have neither umask nor a
+      // subshell, so the same step is offered in node, which every Claude Code machine has.
+      `# On Windows (PowerShell or cmd), instead of the two lines above, set ZZ_TOKEN and run:`,
+      `# ${tokenWriteCommand}`,
       ``,
       `# Then take what you want, and nothing else. To see the shelf:`,
       `#   /plugins in Claude Code, then the Marketplaces tab, or`,

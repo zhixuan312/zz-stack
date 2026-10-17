@@ -31,11 +31,12 @@ import { unopenedRefusal } from "../initiative-record.js";
 import { safePath, tagRefusal, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { NO_DB, recordAct } from "../versions.js";
-import { FILE_INPUT, FILE_META, type FileSource, type OpenAIFile } from "../upload-consume.js";
+import { type FileArgument, type FileSource, type OpenAIFile } from "../upload-consume.js";
 import { nextMoveLine } from "./initiative-status.js";
 
-/** `files` is the ChatGPT `file` route `artifacts.ts` built once, at start (upload-consume.ts). */
-export function registerDocumentEditTool(server: McpServer, files: FileSource): void {
+/** `files` is the ChatGPT `file` route `artifacts.ts` built once, at start, and `fileArg` what it
+ *  declares — nothing while the route is off (upload-consume.ts). */
+export function registerDocumentEditTool(server: McpServer, files: FileSource, fileArg: FileArgument): void {
   server.registerTool("document_edit", {
     annotations: WRITES,
     description:
@@ -46,7 +47,9 @@ export function registerDocumentEditTool(server: McpServer, files: FileSource): 
       "section's new text, heading line first, with `section_level` and `section_occurrence` to pick " +
       "among headings of the same name; or `content` alone — the whole body, only when the change " +
       "is not one section's; or `upload` — the whole body from a file you have, the id upload_start " +
-      "answered, once its file is staged; or, in ChatGPT, `file` — a file attached to the conversation. Metadata — `title`, `tags`, `stakeholder`, `fields` — may come with any " +
+      "answered, once its file is staged" +
+      (fileArg.on ? "; or, in ChatGPT, `file` — a file attached to the conversation" : "") +
+      ". Metadata — `title`, `tags`, `stakeholder`, `fields` — may come with any " +
       "of them, or ALONE: a metadata-only call changes no body and never needs a cause. " +
       "An APPROVED document's body changes only with its cause: name an existing source in " +
       "`sources`, or pass the words that caused it as `source_content` (with `source_title`), which " +
@@ -71,7 +74,7 @@ export function registerDocumentEditTool(server: McpServer, files: FileSource): 
         .describe("With `section`: the section's new text, heading line first. Alone: the whole body."),
       upload: z.string().optional()
         .describe("The whole body from a file: the id upload_start answered, once its file is staged."),
-      file: FILE_INPUT.optional(),
+      ...fileArg.input,
       sources: z.array(z.string()).optional()
         .describe("Sources that caused this change, as paths inside the initiative, e.g. 'sources/2026-10-06-call.md'."),
       source_content: z.string().optional().describe("The words that caused this change, filed as a new source."),
@@ -82,7 +85,7 @@ export function registerDocumentEditTool(server: McpServer, files: FileSource): 
       base: z.string().optional().describe("The `content revision` your last read returned."),
       request_id: z.string().optional().describe("One per intended change, reused on every retry of it."),
     },
-    _meta: FILE_META,
+    _meta: fileArg.meta,
   }, async (args) => {
     const p = db();
     if (!p) return text(NO_DB);

@@ -161,30 +161,39 @@ export async function consumeUpload(c: Pick<pg.Pool, "query">, u: Consumption, r
 /** A file ChatGPT attached to a call, as the Apps SDK hands it over (`openai/fileParams`). */
 export interface OpenAIFile { download_url: string; file_id: string; mime_type?: string; file_name?: string }
 
-/** `file` on the three write tools, each declaring it `.optional()` where it is used — the gate reads
- *  that at the field (scripts/gate/checks/skill-calls.ts). */
-export const FILE_INPUT = z.object({
+const FILE_INPUT = z.object({
   download_url: z.string(), file_id: z.string(), mime_type: z.string().optional(), file_name: z.string().optional(),
 }).describe("In place of `content`: a file attached in ChatGPT, which fills this in itself.");
 
-/** The `_meta` that tells ChatGPT `file` takes an attached file. */
-export const FILE_META = { "openai/fileParams": ["file"] };
+/** What the three write tools declare of the `file` route over `hosts`: `file` in `input`, and in
+ *  `meta` the `_meta` that tells ChatGPT it takes an attached file — both only while `hosts` names
+ *  one, and `on` says which, for the sentence a description spends on it. With no host the route is
+ *  off and nothing is declared, so no tool advertises an argument the deployment always refuses; a
+ *  `file` sent anyway is undeclared, dropped as any other is. `input` is typed as declared either
+ *  way: a handler's `file` is optional, and undeclared it is always absent. */
+export function fileArgument(hosts: string[]) {
+  const on = hosts.length > 0;
+  return {
+    on,
+    input: (on ? { file: FILE_INPUT.optional() } : {}) as { file: z.ZodOptional<typeof FILE_INPUT> },
+    meta: on ? { "openai/fileParams": ["file"] } : undefined,
+  };
+}
+
+/** `fileArgument`'s answer, as the tools it is handed to take it. */
+export type FileArgument = ReturnType<typeof fileArgument>;
 
 /** What reads a ChatGPT `file` into a `Staged`, or answers the refusal that stops the write. */
 export type FileSource = (file: OpenAIFile) => Promise<Staged | { refusal: string }>;
 
 /** The `file` route over `options` — built once, by the tools, with `hosts` from
  *  `OPENAI_FILE_HOSTS` and nothing else; checks/file-fetch.ts passes the rest (file-fetch.ts).
- *  With no hosts the route is off and says so. With hosts, the file's name decides its format
- *  before anything is fetched — `file_name`, or the URL's last path segment — and the bytes go
- *  through `uploadText`, so a file is held to every rule an upload is. */
+ *  The file's name decides its format before anything is fetched — `file_name`, or the URL's last
+ *  path segment — and the bytes go through `uploadText`, so a file is held to every rule an upload
+ *  is. With no hosts no tool declares `file` (`fileArgument`); a file handed here in process anyway
+ *  names a host `fetchFile` does not list, and is refused before anything is looked up. */
 export function fileSource(options: FetchRoute = { hosts: [] }): FileSource {
   return async (file) => {
-    if (!options.hosts.length) {
-      return { refusal: "ERROR: FORBIDDEN — the ChatGPT file route is not enabled on this deployment " +
-        "(OPENAI_FILE_HOSTS is empty), so `file` is not fetched; call upload_start with the file's name, stage the " +
-        "file through the link it answers with, and send that `upload` in place of `file`." };
-    }
     let name = file.file_name ?? "";
     if (!name) {
       try { name = decodeURIComponent(new URL(file.download_url).pathname.split("/").pop() ?? ""); } catch { name = ""; }

@@ -59,21 +59,23 @@ const AUTHORIZE_ON = ((process.env.CONSOLE_PUBLIC_URL ?? "").replace(/\/+$/, "")
 const EXTRA_ORIGINS = (process.env.OAUTH_REDIRECT_ORIGINS ?? "")
   .split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean);
 
-/** Loopback by address, never by name: `localhost` can be made to resolve elsewhere, and a
- * redirect that leaves the machine is the thing being prevented. */
+/** Loopback by address or by the name `localhost`, and no other name (RFC 8252 §7.3, §8.3).
+ *
+ * The name was refused once, because a name can be made to resolve elsewhere. Claude Code
+ * registers `http://localhost:<port>/callback` and nothing else, so the refusal stopped its
+ * OAuth sign-in before the person was asked anything. Pointing `localhost` off the machine needs
+ * the machine already, and whoever has it can read the code at 127.0.0.1 just as well. */
 function isLoopback(u: URL): boolean {
-  const local = u.hostname === "127.0.0.1" || u.hostname === "[::1]" || u.hostname === "::1";
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" ||
+    u.hostname === "[::1]" || u.hostname === "::1";
   return local && (u.protocol === "http:" || u.protocol === "https:");
 }
 
-function redirectAllowed(uri: string): { ok: true } | { ok: false; why: string } {
+/** Whether /oauth/register may record `uri` as a client's redirect. Exported for its check. */
+export function redirectAllowed(uri: string): { ok: true } | { ok: false; why: string } {
   let u: URL;
   try { u = new URL(uri); } catch { return { ok: false, why: `'${uri}' is not a URL` }; }
   if (isLoopback(u)) return { ok: true };
-  if (u.hostname === "localhost") {
-    return { ok: false, why: `redirect_uri '${uri}' uses the name 'localhost'. Use 127.0.0.1 — a ` +
-      "name can be pointed at another machine, and an address cannot." };
-  }
   if (EXTRA_ORIGINS.includes(u.origin)) return { ok: true };
   return { ok: false, why: `redirect_uri '${uri}' is neither a loopback address nor an origin ` +
     `this platform allows${EXTRA_ORIGINS.length ? ` (${EXTRA_ORIGINS.join(", ")})` : " (none are configured)"}. ` +

@@ -5,9 +5,9 @@
  * host in the allow list, resolving the host once and connecting to exactly the address it
  * checked; it refuses private, loopback, link-local and metadata addresses, a host that
  * re-resolves to one, and every redirect that breaks a rule the first hop is held to; it stops at
- * 30 seconds and 8 MiB, sends no platform credential and writes no URL anywhere. `fileSource`
- * (upload-consume.ts) answers that the route is off when no host is set, and reads what it
- * fetched through the same `uploadText` every upload goes through.
+ * 30 seconds and 8 MiB, sends no platform credential and writes no URL anywhere. `fileArgument`
+ * (upload-consume.ts) declares `file` and its ChatGPT `_meta` only when a host is set, and
+ * `fileSource` reads what it fetched through the same `uploadText` every upload goes through.
  *
  * In process, no database. The address rules are never relaxed: `lookup` answers documentation
  * addresses (203.0.113.0/24, which no rule blocks) for the test hostnames, `connect` asserts it is
@@ -33,7 +33,7 @@ import { internalAddress } from "@zz/contracts";
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { fetchFile } = await load("services/zz-core/dist/file-fetch.js");
-const { fileSource } = await load("services/zz-core/dist/upload-consume.js");
+const { fileArgument, fileSource } = await load("services/zz-core/dist/upload-consume.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
@@ -211,13 +211,21 @@ await refused(`https://files.example.test/declared`, "SIZE_LIMIT", /8 MiB/, "a d
 await refused(`https://files.example.test/gzip`, "FILE_UNAVAILABLE", /gzip/, "an encoded body the cap could not bound");
 await refused(`https://files.example.test/missing`, "FILE_UNAVAILABLE", /404/, "a download that answers 404");
 
-// ── the route: off without hosts, and a fetched file read as every upload is ────────────────
+// ── the route: undeclared without hosts, and a fetched file read as every upload is ──────────
+// No host listed, no tool declares `file` or the `_meta` naming it (bug 5e9ffb63: the argument was
+// advertised and always refused); a host listed, both are declared as ChatGPT reads them.
+const none = fileArgument([]);
+is(!none.on && Object.keys(none.input).length === 0 && none.meta === undefined,
+   `with no hosts set, nothing about \`file\` is declared: ${JSON.stringify({ on: none.on, input: Object.keys(none.input), meta: none.meta })}`);
+const some = fileArgument(HOSTS);
+is(some.on && Object.keys(some.input).join() === "file" && some.input.file.isOptional()
+   && JSON.stringify(some.meta) === '{"openai/fileParams":["file"]}',
+   `with a host set, an optional \`file\` and its \`_meta\` are declared: ${JSON.stringify({ on: some.on, input: Object.keys(some.input), meta: some.meta })}`);
 const file = (url: string, extra: object = {}) => ({ download_url: url, file_id: "file-AbC123", ...extra });
 const looked = lookups.length;
 const off = await fileSource({ hosts: [] })(file(`https://files.example.test/ok?${SIG}`, { file_name: "notes.md" }));
-is("refusal" in off && /^ERROR: FORBIDDEN — /.test(off.refusal) && /upload_start/.test(off.refusal)
-   && /OPENAI_FILE_HOSTS/.test(off.refusal),
-   `with no hosts set, a file answers that the route is off and names upload_start: ${JSON.stringify(off)}`);
+is("refusal" in off && /^ERROR: FORBIDDEN — /.test(off.refusal) && /OPENAI_FILE_HOSTS/.test(off.refusal) && lookups.length === looked,
+   `with no hosts set, a file handed over in process is refused before anything is looked up: ${JSON.stringify(off)}`);
 const source = fileSource(route);
 const staged = await source(file(`https://files.example.test/ok?${SIG}`, { file_name: "notes.md", mime_type: "text/markdown" }));
 is("text" in staged && staged.text === BODY && staged.id === "file-AbC123" && staged.via === "file"

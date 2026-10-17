@@ -291,6 +291,10 @@ check("every tool declares whether it reads, writes or destroys, and a client re
       runsCheck("tool-annotations.ts"));
 check("OAuth authorises exactly the doors the gateway mounts, every one of them",
       runsCheck("oauth-doors.ts"));
+check("Dynamic Client Registration takes a loopback redirect by the name localhost as well as by address, and nothing else widened",
+      runsCheck("oauth-redirect-loopback.ts"));
+check("the headers helper and the skill-report hook run through node, and resolve the token from $ZZ_TOKEN, $ZZ_TOKEN_FILE, then ~/.zz/token",
+      runsCheck("headers-helper.ts"));
 check("connecting one application never revokes another's token: one live OAuth token per person, application and door",
       runsCheck("oauth-token-label.ts"));
 check("the live chain check walks with a superadmin probe token, and a missing token or a skipped superadmin probe is unknown", runsCheck("release-probe-token.ts"));

@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { envNamesIn, firstOf, gateOwnSource, root, sourceFiles, trackedFiles } from "../read.ts";
+import { codeOnly, envNamesIn, firstOf, gateOwnSource, root, sourceFiles, trackedFiles } from "../read.ts";
 import { check } from "../run.ts";
 
 check("the documented defaults are the actual defaults", () => {
@@ -50,14 +50,26 @@ check("the configuration surface is documented", () => {
   const wanted = new Set<string>();
   for (const m of readFileSync(composeFile, "utf8").matchAll(/\$\{([A-Z][A-Z_0-9]*)/g)) wanted.add(m[1]);
   // Also what the services read at runtime, which compose does not always pass explicitly.
-  const readsOf = (dirs: string[]): Set<string> => {
+  //
+  // Read in code, never in a string: the gateway ships the client's own scripts as text
+  // (package/skills.ts writes the headers helper a person's machine runs), and the variables
+  // that text reads, ZZ_TOKEN and ZZ_TOKEN_FILE, are the person's, not the deployment's.
+  // `envRequired("NAME")` names its variable in a string, so it is read from the raw text.
+  // Its limit: a variable a service reads inside a template literal's interpolation is blanked
+  // with the template; none does today, and the control below says so if the scan goes empty.
+  const readsOf = (dirs: string[], inCode = false): Set<string> => {
     const out = new Set<string>();
     for (const rel of sourceFiles(dirs, [".ts"])) {
-      for (const v of envNamesIn(readFileSync(join(root, rel), "utf8"))) out.add(v);
+      const text = readFileSync(join(root, rel), "utf8");
+      if (!inCode) { for (const v of envNamesIn(text)) out.add(v); continue; }
+      for (const v of envNamesIn(codeOnly(text))) out.add(v);
+      for (const m of text.matchAll(/envRequired\(\s*"([A-Z][A-Z_0-9]*)"/g)) out.add(m[1]);
     }
     return out;
   };
-  for (const v of readsOf(["services"])) wanted.add(v);
+  const services = readsOf(["services"], true);
+  if (services.size < 20) return `only ${services.size} variables are read in the services' code — the scan is broken`;
+  for (const v of services) wanted.add(v);
   // And what the deploy scripts read out of deploy/.env itself. `env_get NAME` is a script
   // asking this file for a value, so the name is deployment configuration by construction —
   // unlike `${BACKUP_DIR:-…}`, a knob a person exports for one invocation, excluded for the
@@ -77,7 +89,7 @@ check("the configuration surface is documented", () => {
   // tool's own usage line.
   for (const d of readdirSync(join(root, "packages"), { withFileTypes: true })) {
     if (!d.isDirectory() || d.name === "tools") continue;
-    for (const v of readsOf([`packages/${d.name}`])) wanted.add(v);
+    for (const v of readsOf([`packages/${d.name}`], true)) wanted.add(v);
   }
 
   // A third category, and the reason the two directions below are not inverses. ZZ_TOKEN and

@@ -26,7 +26,8 @@ export function token(): string {
     || read(join(homedir(), ".zz", "token"));
   if (!t || !t.trim()) {
     throw new Error("No platform token. Looked at $ZZ_TOKEN, $ZZ_TOKEN_FILE and ~/.zz/token. " +
-      "Ask for a token, then: (umask 077; mkdir -p ~/.zz) && (umask 077; printf '%s' \"$ZZ_TOKEN\" > ~/.zz/token)");
+      "Ask for a token, then: (umask 077; mkdir -p ~/.zz) && (umask 077; printf '%s' \"$ZZ_TOKEN\" > ~/.zz/token)" +
+      " (on Windows: run the node line client_setup gives)");
   }
   return t.trim();
 }

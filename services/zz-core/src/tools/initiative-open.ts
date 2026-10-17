@@ -47,7 +47,9 @@ export function registerInitiativeOpenTool(server: McpServer): void {
         "only thing that creates one — writing a document into a name nobody opened is " +
         "refused. Send the SLUG alone, in the stakeholder's own words: the platform prepends " +
         "today's date, because the date is what every listing sorts on and an agent's idea of " +
-        "today has filed a folder in the wrong place for good. " +
+        "today has filed a folder in the wrong place for good. A slug holds lowercase ASCII " +
+        "letters, digits and hyphens only: a word in another script (Chinese, an accented " +
+        "letter) is refused rather than cut, so send it in pinyin or English. " +
         "Pass `flow` when a flow governs this work and its gates and document order should be " +
         "enforced. LEAVING IT OUT IS A CHOICE, not an omission: a freeform initiative takes " +
         "every document, approval and close a governed one does, and the only thing it gives " +
@@ -55,8 +57,9 @@ export function registerInitiativeOpenTool(server: McpServer): void {
         "so decide here.",
       inputSchema: {
         slug: z.string().describe(
-          "A few words in the stakeholder's own language, hyphenated: `payment-retries`. NO " +
-          "DATE — the platform prepends today's."),
+          "A few of the stakeholder's words in lowercase ASCII letters, digits and hyphens: " +
+          "`payment-retries`. Another script is refused, not cut: transliterate or translate " +
+          "it. NO DATE — the platform prepends today's."),
         flow: z.string().optional().describe(
           "The flow whose gates and document order govern this initiative, e.g. `sdlc-flow`. " +
           "Omit for freeform work; that is supported, not degraded."),
@@ -66,13 +69,14 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       const bad = slugRefusal(slug);
       if (bad) return text(bad);
       // Shaped, not refused: the platform composes this name and the caller is told to use
-      // what comes back, so holding the rest of it to the store's shape is the same rule one
-      // character further along. What is genuinely ambiguous was refused above.
+      // what comes back, so holding case and separators to the store's shape is the same rule
+      // one character further along. What is ambiguous, and every character slugify would cut,
+      // was refused above.
       const shaped = slugify(slug);
       if (!shaped) {
         return text(
           `ERROR: "${slug}" has no letters or digits in it, so there is no name to make from ` +
-          "it. A few words in the stakeholder's own language.");
+          "it. A few of the stakeholder's words in lowercase ASCII, hyphenated.");
       }
       slug = shaped;
       const who = parseCaller(requestHeaders()).email;

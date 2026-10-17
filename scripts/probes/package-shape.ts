@@ -6,6 +6,7 @@
  * ZZ_CATALOG_DIR picks the catalog to build against; buildClientPackage reads it.
  */
 import { buildClientPackage } from "../../services/gateway/dist/client-package.js";
+import { tokenWriteCommand } from "../../services/gateway/dist/package/skills.js";
 
 const base = "https://zz.example";
 const target = "a@b.example.com";
@@ -91,12 +92,29 @@ if (deck && !deck.content.includes("skills/zz-deck/deck-chassis.html")) {
   bad.push("zz-deck no longer points at the chassis's real location");
 }
 
-// The execute bit: `zz-mcp-headers.sh` is run by the client to fetch the token at connect
-// time, and a file without it is a silent auth failure rather than a readable error.
-for (const f of pkg.files.filter((x) => /scripts\/zz-mcp-headers\.sh$/.test(x.path))) {
-  if (f.mode !== 0o755) {
-    bad.push(`${f.path} ships mode ${(f.mode ?? 0o644).toString(8)} — the client cannot run it`);
+// Every command the client runs names its interpreter. Windows cannot execute a script through
+// its shebang, so a bare script path there sends no token and every door refuses; prefixing
+// `bash` finds WSL's bash under PowerShell, where neither ~/.zz/token nor the C:\ plugin path
+// exists. `node` is what anyone running Claude Code already has.
+if (paths.some((f) => /\.sh$/.test(f))) bad.push(`the package ships a shell script: ${paths.filter((f) => /\.sh$/.test(f)).join(", ")}`);
+const HEADERS = 'node "${CLAUDE_PLUGIN_ROOT}/scripts/zz-mcp-headers.mjs"';
+for (const f of pkg.files.filter((x) => /(^|\/)\.mcp\.json$/.test(x.path))) {
+  const servers = Object.entries(JSON.parse(f.content).mcpServers ?? {}) as [string, { headersHelper?: string }][];
+  for (const [name, sv] of servers) {
+    if (sv.headersHelper !== HEADERS) bad.push(`${f.path} runs ${JSON.stringify(sv.headersHelper)} for ${name}, not ${HEADERS}`);
   }
+  // The helper the command names, relative to the plugin's root: one spelling, the command's.
+  const helper = f.path.replace(/\.mcp\.json$/, HEADERS.slice(HEADERS.indexOf("}/") + 2, -1));
+  if (!paths.includes(helper)) bad.push(`${f.path} names a headers helper the plugin does not carry (${helper})`);
+}
+const hook = pkg.files.find((f) => f.path === "zz-core/hooks/hooks.json");
+const hookCommands = hook
+  ? (JSON.parse(hook.content).hooks?.PostToolUse ?? []).flatMap((e: { hooks?: { command?: string }[] }) => e.hooks ?? [])
+      .map((h: { command?: string }) => h.command ?? "")
+  : [];
+if (!hookCommands.length) bad.push("zz-core carries no skill-report hook");
+for (const c of hookCommands) {
+  if (c !== 'node "${CLAUDE_PLUGIN_ROOT}/scripts/zz-skill-report.mjs"') bad.push(`the skill-report hook runs ${JSON.stringify(c)} without naming node`);
 }
 
 // An install block a person pastes must not choose for them: zz-core and zz-access are
@@ -107,5 +125,8 @@ const wrong = live.filter((l) => !/\b(zz-core|zz-access)@[A-Za-z0-9._-]+\b/.test
 if (wrong.length) {
   bad.push(`the install block installs without being asked: ${wrong.join(" | ")}`);
 }
+// And it writes the token on a machine with no bash too: the umask lines are bash, and a
+// Windows person in PowerShell is offered the node line beside them, as a menu entry.
+if (!pkg.install.includes(`# ${tokenWriteCommand}`)) bad.push("the install block offers no node line for writing the token");
 
 process.stdout.write(bad.join("; "));

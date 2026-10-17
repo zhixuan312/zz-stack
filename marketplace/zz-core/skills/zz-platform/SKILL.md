@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.88
+version: 3.89
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -241,8 +241,8 @@ the timing; getting this wrong costs a plan, not a refusal.
   document that outlives the conversation.
 - **Work starts with `initiative_open(slug)`.**
   Writing a document into a name nobody opened is refused, and so is attaching a
-  source to one. Send the SLUG alone — a few words in the stakeholder's own
-  language, hyphenated — and use the name the tool hands back: **the platform
+  source to one. Send the SLUG alone — a few of the stakeholder's words in lowercase ASCII letters, digits and
+  hyphens (another script is refused, not cut: send it in pinyin or English) — and use the name the tool hands back: **the platform
   prepends today's date from its own clock, and you never type a date into a
   folder name.** A folder name cannot be renamed afterwards. Pass `flow` to it when a
   flow governs the work, and decide then: leaving it out is a choice, not an omission.
@@ -413,7 +413,7 @@ The knowledge store is the team's, not one agent's session:
   `source_add`ed, then named in `sources`. Plain UTF-8 text up to 8 MiB — `.md` `.markdown` `.txt`
   `.text` `.csv` `.tsv` `.json` `.yaml` `.yml` `.toml` `.xml` `.sql` `.log` `.ini` `.conf` `.rst`
   `.adoc`; a PDF or Office file is refused. Open 15 minutes, used once. ChatGPT's own attached
-  `file` is taken only once the deployment lists its hosts — until then, `upload_start` there too.
+  `file` is declared only once the deployment lists its hosts — until then, `upload_start` there too.
 - **The platform is a tenant too.** Its TEAM slug is also `zz-platform` —
   the same word as this skill's name and a different thing: a team shelf in
   the store, not a skill you can load. No tenant may claim it. That shelf has

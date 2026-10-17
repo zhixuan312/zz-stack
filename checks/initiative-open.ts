@@ -9,8 +9,9 @@
  *   - the real zod schemas, harvested by handing `registerInitiativeOpenTool` a stub server.
  *   - `initiativeNameFor` against `isoToday`, both loaded from dist, so "the date is the
  *     platform's" is an equality rather than a grep for the word.
- *   - `slugRefusal`, `takenRefusal`, `recordOpen`, `openRecord` and `unopenedRefusal` called
- *     directly, each asserted to fire and not to fire.
+ *   - `slugRefusal`, `slugify`, `takenRefusal`, `recordOpen`, `openRecord` and `unopenedRefusal`
+ *     called directly, each asserted to fire and not to fire; the door's own handler is driven
+ *     with a slug it cannot keep, which it refuses before reaching anything that writes.
  *
  * The write path is not driven: the handler resolves through `userRoot()`, rooted at the
  * hard-coded `/artifacts`. Its two assertions are source-level over comment-stripped text,
@@ -120,7 +121,7 @@ const { initiativeState } = await load("services/zz-core/dist/tools/initiative-s
 const { initiativeNameFor, openRecord, recordOpen, takenRefusal, unopenedRefusal } =
   await load("services/zz-core/dist/initiative-record.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
-const { slugRefusal } = await load("services/zz-core/dist/document-rules.js");
+const { slugRefusal, slugify } = await load("services/zz-core/dist/document-rules.js");
 const { chainFor } = await load("services/zz-core/dist/chain.js");
 const wg = await load("services/zz-core/dist/write-guards.js");
 const { registerInitiativeActTools } = await load("services/zz-core/dist/tools/initiative-acts.js");
@@ -147,10 +148,15 @@ const readSrc = (p: string) => {
 // client is offered is what server.ts wires up. Stubbing the acts registrar answers
 // reachability and registration in one, whichever file the definition lives in.
 interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
-interface ToolDef { inputSchema?: Record<string, ZodLike>; [key: string]: unknown }
+interface ToolDef { inputSchema?: Record<string, ZodLike & { description?: string }>;
+                   description?: string; [key: string]: unknown }
+type Handler = (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
 
 const tools = new Map<string, ToolDef>();
-registerInitiativeActTools({ registerTool: (name: string, def: ToolDef) => tools.set(name, def) });
+const doors = new Map<string, Handler>();
+registerInitiativeActTools({ registerTool: (name: string, def: ToolDef, h: Handler) => {
+  tools.set(name, def); doors.set(name, h);
+} });
 
 const def = tools.get("initiative_open");
 if (!def) {
@@ -166,6 +172,13 @@ if (!def) {
      "initiative_open's `flow` is not optional — a freeform open is refused by the schema " +
      "before any handler runs, which makes freeform an omission rather than a choice");
   is(shape.flow?.safeParse("sdlc-flow").success, "initiative_open's `flow` refuses a flow name");
+  // The description is a promise: "the stakeholder's own language" invited a CJK slug that was
+  // then cut to its ASCII (bug 6608d943). It must say what a slug can hold.
+  for (const [where, said] of [["description", def.description], ["slug", shape.slug?.description]]) {
+    is(/ASCII/.test(String(said)) && !/own language/.test(String(said)),
+       `initiative_open's ${where} text does not say a slug is ASCII, or still asks for the ` +
+       "stakeholder's own language, which a slug cannot keep");
+  }
   // The date is the platform's: there must be no way to pass one.
   const dateish = Object.keys(shape).filter((k) => /date|day|today|when|stamp/i.test(k));
   is(dateish.length === 0,
@@ -195,6 +208,21 @@ is(typeof slugRefusal("") === "string", "an empty slug is accepted");
 // The control. A refusal-only assertion is satisfied by refusing everything.
 is(slugRefusal("payment-retries") === null,
    "an ordinary slug is refused — slugRefusal refuses more than the contract names");
+// A character slugify would drop is refused by name, never cut (bug 6608d943: the reporter's
+// slug opened as `<date>-api`). Lowercasing and separators are shaping, and stay accepted.
+const lost = String(slugRefusal("女主与猫-api视频生成"));
+is(/"女"/.test(lost) && /"成"/.test(lost) && /a-z/.test(lost) && /pinyin/.test(lost),
+   `a CJK slug is not refused by name, with the allowed characters and a way forward: ${lost}`);
+for (const cut of ["支付重试", "café", "launch-🚀"]) {
+  is(typeof slugRefusal(cut) === "string", `slugRefusal accepts "${cut}", which slugify cuts`);
+}
+for (const shaped of ["Payment Retries, v2", "peter’s plan", "pay—retries"]) {
+  is(slugRefusal(shaped) === null, `"${shaped}" is refused — case and punctuation are shaping`);
+}
+is(slugify("Payment Retries, v2") === "payment-retries-v2", "slugify no longer shapes prose");
+const door = await doors.get("initiative_open")?.({ slug: "女主与猫-api视频生成", flow: "sdlc-flow" });
+is(door?.content[0]?.text === lost,
+   `initiative_open does not refuse the reporter's own slug: ${door?.content[0]?.text}`);
 
 // 3. The store, and the two directions of next_move
 

@@ -40,7 +40,7 @@ import { documentAt, documentPaths, loadDocument, loadSnapshot, NO_DB, recordAct
 import { saveDocument } from "../document-save.js";
 import { citedRevisions, sourceReceipt } from "../source-receipt.js";
 import { acceptanceLine, consumptionOf, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor, requestOf } from "../document-change.js";
-import { FILE_INPUT, FILE_META, fileSource, oneBody, stagedUpload, uploadContent, uploadLines } from "../upload-consume.js";
+import { fileArgument, fileSource, oneBody, stagedUpload, uploadContent, uploadLines } from "../upload-consume.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, PRESENT_META } from "../document-panel.js";
 import { CONTEXT_INPUT, presentRefusal, viewerOf } from "../review-context.js";
@@ -61,15 +61,18 @@ const PART_INPUT = {
 };
 
 /** The ChatGPT `file` route, built once at start: the hosts files are fetched from, and nothing else
- *  from the environment. Empty — the default — and the route is off (upload-consume.ts). */
-const FILES = fileSource({ hosts: (process.env.OPENAI_FILE_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean) });
+ *  from the environment. Empty — the default — and the route is off: no tool declares `file`
+ *  (upload-consume.ts). */
+const HOSTS = (process.env.OPENAI_FILE_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
+const FILES = fileSource({ hosts: HOSTS });
+const FILE_ARG = fileArgument(HOSTS);
 
 export function registerArtifactTools(server: McpServer): void {
   // The source subject, past what this file holds: `source_add` stays here with the document
   // tools, and the read-back and the start of an upload are each their own file beside it.
   registerSourceListTool(server);
   registerUploadStartTool(server);
-  registerDocumentEditTool(server, FILES);
+  registerDocumentEditTool(server, FILES, FILE_ARG);
   server.registerTool(
     "document_write",
     {
@@ -89,8 +92,8 @@ export function registerArtifactTools(server: McpServer): void {
         "`source_content` (with `source_title`), which the platform files as a source; sources " +
         "filed since the release that declare they support this document are linked by the " +
         "platform itself, and the reply names every cause. A long file you already have is sent as " +
-        "`upload` — the id upload_start answered, once its file is staged — in place of `content`; in ChatGPT, an " +
-        "attached file goes as `file`. " +
+        "`upload` — the id upload_start answered, once its file is staged — in place of `content`" +
+        (FILE_ARG.on ? "; in ChatGPT, an attached file goes as `file`" : "") + ". " +
         "Send one `request_id` per document " +
         "you mean to create and reuse it on every retry of that create: a retry of a create that " +
         "already landed returns its first reply instead of being refused as existing. Every list " +
@@ -100,7 +103,7 @@ export function registerArtifactTools(server: McpServer): void {
         path: z.string(),
         content: z.string().optional().describe("The document's BODY, starting at its first heading. The platform writes the frontmatter."),
         upload: z.string().optional().describe("In place of `content`: the id upload_start answered, once its file is staged."),
-        file: FILE_INPUT.optional(),
+        ...FILE_ARG.input,
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
@@ -112,7 +115,7 @@ export function registerArtifactTools(server: McpServer): void {
         source_title: z.string().optional().describe("The title of the source `source_content` files."),
         request_id: z.string().optional().describe("One per document you mean to create, reused on every retry of it."),
       },
-      _meta: FILE_META,
+      _meta: FILE_ARG.meta,
     },
     async (args) => {
       const p = db();
@@ -457,15 +460,15 @@ export function registerArtifactTools(server: McpServer): void {
         "`supports` every document this material bears on: each of those documents is then " +
         "flagged for refinement if it was already approved, and initiative_status reports it as " +
         "the next move. This is how information reaches work without editing around the gates. A file " +
-        "you have goes as `upload` (upload_start's id, once staged) in place of `content` — in ChatGPT, an attached " +
-        "file as `file` — kept as it is. " +
+        "you have goes as `upload` (upload_start's id, once staged) in place of `content`" +
+        (FILE_ARG.on ? " — in ChatGPT, an attached file as `file` —" : ",") + " kept as it is. " +
         "Reuse one `request_id` on every retry of a source: a retry returns the one filed first, any day.",
       inputSchema: {
         initiative: z.string(),
         title: z.string(),
         content: z.string().optional(),
         upload: z.string().optional().describe("In place of `content`: the id upload_start answered, once its file is staged."),
-        file: FILE_INPUT.optional(),
+        ...FILE_ARG.input,
         request_id: z.string().optional().describe("One per source you mean to add, reused on every retry of it."),
         supports: z.union([z.string(), z.array(z.string())]).optional()
           .describe("Document(s) this material bears on, e.g. 'spec.md' or ['spec.md','plan.md']."),
@@ -475,7 +478,7 @@ export function registerArtifactTools(server: McpServer): void {
                     "that writes the verifying document, e.g. 'sdlc-review', with its ```json " +
                     "ledger in `content`. Only a source naming its stage counts as that stage's round."),
       },
-      _meta: FILE_META,
+      _meta: FILE_ARG.meta,
     },
     async ({ initiative, title, content, upload, file, supports, stage, request_id }) => {
       // The same guard the other initiative-taking tools apply. safePath below only

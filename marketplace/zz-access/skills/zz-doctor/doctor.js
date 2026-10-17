@@ -58,7 +58,8 @@ token = token.trim();
 if (!token) {
     say("FAIL", "token", "no token in $ZZ_TOKEN, $ZZ_TOKEN_FILE or ~/.zz/token — every tool " +
         "call will come back 401. Ask for a platform token, then: " +
-        `(umask 077; mkdir -p ~/.zz) && (umask 077; printf '%s' "$ZZ_TOKEN" > ~/.zz/token)`);
+        `(umask 077; mkdir -p ~/.zz) && (umask 077; printf '%s' "$ZZ_TOKEN" > ~/.zz/token)` +
+        " (on Windows: run the node line client_setup gives)");
 }
 else {
     say("PASS", "token", `found in ${source}`);

@@ -61,7 +61,7 @@ bytes with the person's own token, and `/u/<secret>` is the staging page a link 
 began; the write that consumes it is zz-core's, so there is no second idea of what a document or a
 source is. A file attached in ChatGPT takes neither route: zz-core fetches that `file` itself
 (`services/zz-core/src/file-fetch.ts`), only from a host `OPENAI_FILE_HOSTS` lists — none by
-default, so the route is off and the write answers with `upload_start` instead.
+default, so the route is off and no tool declares `file`; a file goes through `upload_start` instead.
 
 `POST /internal/agent-read/<tool>` is the agent door (`services/gateway/src/agent-door.ts`), zz-core's
 way back to the console's reads. The core door's `platform_status`, `release_list`,

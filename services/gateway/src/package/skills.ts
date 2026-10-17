@@ -317,39 +317,55 @@ export function withoutFrontmatter(md: string): string {
   return documentBody(md).replace(/^\n+/, "");
 }
 /** Reads the token at connect time so it never enters a file the person might
- * commit. Rotating the token file is picked up on the next connection. */
+ * commit. Rotating the token file is picked up on the next connection.
+ *
+ * A Node script, run as `node <path>` and never through a shebang: Windows cannot execute one,
+ * and a `bash` prefix there finds WSL's bash, where neither ~/.zz/token nor the plugin's C:\
+ * path exists. Anyone running Claude Code has node. `homedir()`, not $HOME, which Windows does
+ * not set. */
 export function headersHelper(): string {
   return [
-    "#!/usr/bin/env bash",
-    "# Supplies the ZZ platform bearer token to the client as MCP connection",
-    "# headers. Read at connect time and never stored in the package, so the",
-    "# token never lands in a file that gets committed.",
-    "#",
-    "# Resolution order:",
-    "#   1. $ZZ_TOKEN        (env override)",
-    "#   2. $ZZ_TOKEN_FILE   (explicit path)",
-    "#   3. ~/.zz/token      (written by the install step, mode 600)",
-    "set -uo pipefail",
+    "// Supplies the ZZ platform bearer token to the client as MCP connection",
+    "// headers. Read at connect time and never stored in the package, so the",
+    "// token never lands in a file that gets committed.",
+    "//",
+    "// Resolution order:",
+    "//   1. $ZZ_TOKEN        (env override)",
+    "//   2. $ZZ_TOKEN_FILE   (explicit path)",
+    "//   3. ~/.zz/token      (written by the install step, mode 600)",
+    'import { readFileSync } from "node:fs";',
+    'import { homedir } from "node:os";',
+    'import { join } from "node:path";',
     "",
-    'if [ -n "${ZZ_TOKEN:-}" ]; then',
-    '  token="$ZZ_TOKEN"',
-    "else",
-    '  token_file="${ZZ_TOKEN_FILE:-$HOME/.zz/token}"',
-    '  if [ -r "$token_file" ]; then',
-    `    token="$(tr -d '\\r\\n' < "$token_file")"`,
-    "  else",
-    "    # No token: emit no credential rather than failing the connection, so the",
-    "    # person sees an auth error they can act on instead of a silent no-op.",
-    `    printf '{"X-ZZ-Client":"zz-plugin"}\\n'`,
-    "    exit 0",
-    "  fi",
-    "fi",
-    "",
-    `escaped=$(printf '%s' "$token" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')`,
-    `printf '{"Authorization":"Bearer %s","X-ZZ-Client":"zz-plugin"}\\n' "$escaped"`,
+    "let token = process.env.ZZ_TOKEN || null;",
+    "if (token === null) {",
+    '  const file = process.env.ZZ_TOKEN_FILE || join(homedir(), ".zz", "token");',
+    '  try { token = readFileSync(file, "utf8").replace(/[\\r\\n]/g, ""); } catch { token = null; }',
+    "}",
+    "// No token: emit no credential rather than failing the connection, so the",
+    "// person sees an auth error they can act on instead of a silent no-op.",
+    "const headers = token === null",
+    '  ? { "X-ZZ-Client": "zz-plugin" }',
+    '  : { Authorization: "Bearer " + token, "X-ZZ-Client": "zz-plugin" };',
+    'process.stdout.write(JSON.stringify(headers) + "\\n");',
     "",
   ].join("\n");
 }
+
+/** The install's token step for a machine with no bash: writes $ZZ_TOKEN to ~/.zz/token, the
+ * file `headersHelper` reads, owner-only. The modes are given at creation and set again, so a
+ * looser file or directory from an earlier install is tightened too. On Windows the modes are
+ * close to inert and the file is as private as the person's home folder.
+ *
+ * One double-quoted script with no `$`, backtick, `%` or `!` in it, so PowerShell, cmd and bash
+ * all hand it to node as written. Refuses, and writes nothing, when ZZ_TOKEN is not set. */
+export const tokenWriteCommand = 'node -e "' +
+  "const f=require('fs'),p=require('path'),k=process.env.ZZ_TOKEN;" +
+  "if(k===undefined||k==='')throw new Error('Set ZZ_TOKEN to your platform token first.');" +
+  "const d=p.join(require('os').homedir(),'.zz'),t=p.join(d,'token');" +
+  "f.mkdirSync(d,{recursive:true,mode:0o700});f.chmodSync(d,0o700);" +
+  "f.writeFileSync(t,k,{mode:0o600});f.chmodSync(t,0o600)" +
+  '"';
 
 /** The baseline plugin's hook: every skill a Claude Code session loads from this shelf is
  *  reported to the platform as a `skill_read`, which is what attributes a step.
@@ -363,7 +379,7 @@ export const SKILL_REPORT_HOOKS = JSON.stringify({
   hooks: {
     PostToolUse: [{
       matcher: "Skill",
-      hooks: [{ type: "command", command: '"${CLAUDE_PLUGIN_ROOT}"/scripts/zz-skill-report.mjs', timeout: 10 }],
+      hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/scripts/zz-skill-report.mjs"', timeout: 10 }],
     }],
   },
 }, null, 2) + "\n";
@@ -385,8 +401,8 @@ export function skillReportScript(coreUrl: string, plugins: string[],
     "#!/usr/bin/env node",
     "// Reports a skill this session loaded from the ZZ shelf to the platform, as skill_read.",
     "// Run by a PostToolUse hook on the Skill tool. Always exits 0 and prints nothing. The",
-    "// credential comes from zz-mcp-headers.sh beside this file — the same resolution the MCP",
-    "// connection uses, so there is one place a token is found.",
+    "// credential comes from zz-mcp-headers.mjs beside this file, run by this same node — the",
+    "// resolution the MCP connection uses, so there is one place a token is found.",
     'import { execFileSync } from "node:child_process";',
     'import { dirname, join } from "node:path";',
     'import { fileURLToPath } from "node:url";',
@@ -397,7 +413,7 @@ export function skillReportScript(coreUrl: string, plugins: string[],
     "",
     "function headers() {",
     '  try {',
-    '    const out = execFileSync(join(dirname(fileURLToPath(import.meta.url)), "zz-mcp-headers.sh"),',
+    '    const out = execFileSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "zz-mcp-headers.mjs")],',
     '                             { encoding: "utf8", timeout: 3000 });',
     '    return JSON.parse(out);',
     '  } catch { return {}; }',

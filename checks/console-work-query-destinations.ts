@@ -28,7 +28,12 @@
  *     own; the second team's question and its refusal message are in no answer;
  *   - compare=previous answers each group's value in the previous window, and the groups with any folded rest sum to
  *     the total in every answer;
- *   - a dimension a measure does not allow, or a drill of skill_calls, is refused with 400 before anything is read;
+ *   - over five weeks as dates, every measure answers `checks/console-work-query-harness.ts`'s cases: dates as their
+ *     days' instants, every bucket in order and each the sum of its drilled rows but skill_calls', rows newest first,
+ *     where as its group's total, and from=0001-01-01 from the record's first day; calls, refusals, output and
+ *     skill_calls by week are the record's;
+ *   - a dimension a measure does not allow, a bucket of the shelf, a filter it does not take, or a drill or rows of
+ *     skill_calls, is refused with 400 before anything is read, never echoing a value sent;
  *     reading records no event; another team's records and maintenance change no answer; the key sets match the fake's.
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, eight hours ahead of UTC, and nothing is placed in the running
@@ -52,11 +57,15 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
+import {
+  FIRST, answer, bucketCases, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request, shapeDiffs, show,
+  spelled, whereCases, type Days, type Obj, type Query, type Route, type Who,
+} from "./console-work-query-harness.ts";
 
 const NAME = "console-work-query-destinations";
 const DONE = "console-work-query-destinations: calls, refusals, output, the calls of each plugin's skills and the shelf, " +
-  "and the questions that found nothing, answer the figures Activity, Runs, Plugins and Knowledge draw, the team's own " +
-  "alone: ok";
+  "and the questions that found nothing, answer the figures Activity, Runs, Plugins and Knowledge draw, over instants or " +
+  "dates and by every bucket, each bucket the sum of its rows, the team's own alone: ok";
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work-query.ts");
 
@@ -71,62 +80,12 @@ const MEASURES: Record<string, string[]> = {
   output: ["skill", "initiative", "period"], skill_calls: ["plugin", "skill", "period"], shelf: ["kind", "standing"],
 };
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
-type Who = { email: string; team: string | null };
 type Counted = { value: number | null; why: string | null; unmeasured?: number; imported?: number };
 type Group = { key: string; label: string; value: Counted; share: number | null; previous: Counted | null };
 type WQ = {
-  meta: Obj; measure: string; by: string; grain: string | null; groups: Group[];
+  meta: Obj; measure: string; by: string; window: { from: string; to: string }; grain: string | null; groups: Group[];
   rest: { groups: number; value: number } | null; total: Counted; rows: { state: string; data?: { rows: Obj[]; total: number } } | null;
 };
-
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-/** Its value with every object's keys in order: an answer's key order is no part of its contract. */
-const canonical = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(canonical)
-    : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
-const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
-const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
-}
-
-/** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
-function request(who: Who, query: Record<string, string>): Obj {
-  return {
-    params: {}, query, body: {},
-    zzIdentity: { email: who.email, displayName: "Work", platformRole: "member", via: "session",
-                  teams: who.team ? [{ slug: who.team, role: "admin" }] : [], activeTeam: who.team, patTeam: null, sessionTeam: who.team },
-    headers: {
-      "x-zz-user-email": who.email, "x-zz-user-name": "Work", "x-zz-user-id": "", "x-zz-user-role": "user",
-      "x-zz-via": "session", "x-zz-pat-team": "", "x-zz-session-team": who.team ?? "",
-    },
-  };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
-}
 
 /** A PAT of the person's, acting for their active team. */
 async function patOf(c: Core, email: string): Promise<string> {
@@ -208,33 +167,6 @@ function door(c: Core, g: Gateway) {
     if (res.status !== 200 || wasRefused !== refused) c.fail(step, `${name} as ${client} answered ${res.status}, ${wasRefused ? "refused" : "not refused"}: ${reply.slice(0, 300)}`);
   };
   return { send, sent: () => sent };
-}
-
-const count = async (c: Core, where: string): Promise<number> =>
-  (await c.sql.query<{ n: number }>(`select count(*)::int as n from zz.event where ${where}`)).rows[0].n;
-
-/** Runs `make`, waits until every row it leaves has landed, then moves every timestamp the phase wrote by one interval,
- *  so its first instant lands on `target`. */
-async function phase(c: Core, d: ReturnType<typeof door>, target: number, make: () => Promise<unknown>): Promise<void> {
-  const start = (await c.sql.query<{ t: string }>("select clock_timestamp()::text as t")).rows[0].t;
-  const base = await count(c, "kind = 'tool_call'") - d.sent();
-  await make();
-  const until = Date.now() + 15_000;
-  let seen = -1;
-  for (;;) {
-    await new Promise((r) => setTimeout(r, 400));
-    const calls = await count(c, "kind = 'tool_call'");
-    const all = await count(c, "true");
-    if (calls >= base + d.sent() && all === seen) break;
-    if (Date.now() > until) c.fail("a phase settles", `${calls} tool calls of ${base + d.sent()}, events still moving`);
-    seen = all;
-  }
-  const move = (table: string, columns: string[]) => c.sql.query(
-    `update ${table} set ${columns.map((k) => `${k} = case when ${k} >= $1::timestamptz then ${k} + ($2::timestamptz - $1::timestamptz) else ${k} end`).join(", ")}
-      where ${columns.map((k) => `${k} >= $1::timestamptz`).join(" or ")}`, [start, new Date(target).toISOString()]);
-  await move("zz.event", ["ts"]);
-  await move("zz.initiative", ["opened_at", "closed_at"]);
-  await move("zz.knowledge_node", ["created_at", "updated_at"]);
 }
 
 /** The rows the door cannot be made to give, as their seeds write them: tool calls (a skill's among them), and runs. */
@@ -353,17 +285,17 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const ME: Who = { email: c.email, team: c.team };
   const route = (p: string): Route => g.routes.get(p) ?? c.fail("mount", `no route GET ${p}`);
   const everything: string[] = [];
-  const read = async (s: string, path: string, query: Record<string, string> = {}, who: Who = ME): Promise<Obj> => {
+  const read = async (s: string, path: string, query: Query = {}, who: Who = ME): Promise<Obj> => {
     const a = await answer(route(path), request(who, query));
     everything.push(JSON.stringify(a.body));
-    if (a.status !== 200) c.fail(s, `${path}?${new URLSearchParams(query)} answered ${a.status}: ${show(a.body)}`);
+    if (a.status !== 200) c.fail(s, `${path}?${spelled(query)} answered ${a.status}: ${show(a.body)}`);
     return a.body;
   };
   /** One prepared question, its groups and any folded rest summing to its total, as every answer must. */
-  const ask = async (s: string, query: Record<string, string>, who: Who = ME): Promise<WQ> => {
+  const ask = async (s: string, query: Query, who: Who = ME): Promise<WQ> => {
     const w = await read(s, "/api/console/work/query", query, who) as unknown as WQ;
     const sum = w.groups.reduce((n, x) => n + (x.value.value ?? 0), 0) + (w.rest?.value ?? 0);
-    if (sum !== (w.total.value ?? 0)) c.fail(s, `?${new URLSearchParams(query)}: the groups sum to ${sum}, the total is ${show(w.total)}`);
+    if (sum !== (w.total.value ?? 0)) c.fail(s, `?${spelled(query)}: the groups sum to ${sum}, the total is ${show(w.total)}`);
     return w;
   };
   const same = (s: string, found: unknown, expected: unknown): void => {
@@ -496,6 +428,34 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   same(step, previous(await ask(step, { measure: "skill_calls", by: "plugin", compare: "previous", ...WEEK3 })), { sdlc: 1, "zz-core": 0 });
   c.pass(step);
 
+  const k = { c, ask: (s: string, q: Query) => ask(s, q) };
+  // Five weeks to the last whole one, Monday to Sunday, as inclusive dates: every record but the second team's.
+  const DAYS: Days = { from: localDay(w0 - 5 * WEEK), to: localDay(w0 - 1) };
+  const weekly = async (measure: string): Promise<(number | null)[]> =>
+    (await ask(step, { measure, by: "week", ...DAYS })).groups.map((x) => x.value.value);
+
+  step = "a window of dates answers what the instants of its days' start and the next day's start answer";
+  c.pass(`${step}: ${await datesCases(k, step, MEASURES, DAYS)} questions, every measure by every dimension and bucket`);
+
+  step = "day, week, month and weekday answer every bucket in order, each the sum of the rows its drill answers";
+  const buckets = await bucketCases(k, step, MEASURES, DAYS);
+  same(step, await Promise.all(["calls", "refusals", "output", "skill_calls"].map(weekly)),
+    [[0, 1, 6, 2, 9], [0, 0, 1, 1, 6], [0, 0, 0, 500, 4000], [0, 1, 5, 0, 0]]);
+  c.pass(`${step}: ${buckets} buckets drilled, skill_calls' none; calls, refusals, output and skill_calls by week as the record holds them`);
+
+  step = "where filters on the measure's own dimensions, equality alone, at most four";
+  const filters = await whereCases(k, step, MEASURES, DAYS);
+  same(step, [(await ask(step, { measure: "calls", by: "tool", where: "refused=refused" })).total.value,
+    values(await ask(step, { measure: "refusals", by: "tool", where: ["owner=guardrail", `tool=${STATUS}`] }))], [6, { [STATUS]: 3 }]);
+  c.pass(`${step}: ${filters} filters, each its group's total; the refused calls are the refusals`);
+
+  step = "from=0001-01-01 answers from the first day the record holds";
+  const held = await firstDayCases(k, step, MEASURES, DAYS.to);
+  same(step, [(await ask(step, { measure: "skill_calls", by: "plugin", from: FIRST, to: DAYS.to })).window.from,
+    (await ask(step, { measure: "shelf", by: "kind", from: FIRST, to: DAYS.to })).window.from],
+    [iso(midnightOf(localDay(when([4, 20])))), iso(midnightOf(localDay(when([3, 10]))))]);
+  c.pass(`${step}: ${held} measures, skill_calls from its first call and the shelf from its first lesson`);
+
   step = "the second team's refusal message and question are in no answer";
   const leaked = everything.filter((t) => t.includes(SENTINEL) || t.includes("beacon ledger") || t.includes(THEIRS));
   if (leaked.length) c.fail(step, `${leaked.length} answers hold one: ${leaked[0].slice(0, 300)}`);
@@ -520,11 +480,19 @@ async function cases(c: Core, g: Gateway): Promise<void> {
       [{ measure: "shelf", by: "period" }, "shelf is grouped by one of kind, standing"],
       [{ measure: "calls", by: "owner" }, "tool, initiative, refused, period"],
       [{ measure: "refusals", by: "refused" }, "owner, tool, initiative, period"],
-      [{ measure: "output", by: "weekday" }, "skill, initiative, period"],
+      [{ measure: "output", by: "hour" }, "skill, initiative, period"],
       [{ measure: "skill_calls", by: "plugin", group: "sdlc" }, "its groups are its rows"],
-    ] as [Record<string, string>, string][]) {
+      [{ measure: "skill_calls", by: "plugin", rows: "5" }, "its groups are its rows"],
+      [{ measure: "shelf", by: "day" }, "shelf is grouped by one of kind, standing"],
+      [{ measure: "shelf", by: "week", from: "2026-10-01", to: "2026-10-07" }, "shelf is grouped by one of kind, standing"],
+      [{ measure: "calls", by: "tool", where: "owner=ours" }, "calls is filtered by one of tool, initiative, refused"],
+      [{ measure: "refusals", by: "tool", where: `owner=${THEIRS}` }, "a filter on owner takes one of guardrail, ours, theirs, other"],
+      [{ measure: "output", by: "skill", rows: "0" }, "1 to 20"],
+    ] as [Query, string][]) {
       const a = await answer(route("/api/console/work/query"), request(ME, query));
-      if (a.status !== 400 || !String(a.body.error).includes(says)) c.fail(step, `${show(query)} answered ${a.status}: ${show(a.body)}`);
+      if (a.status !== 400 || !String(a.body.error).includes(says) || show(a.body).includes(THEIRS)) {
+        c.fail(step, `${show(query)} answered ${a.status}: ${show(a.body)}`);
+      }
     }
   } finally {
     await c.sql.query("alter table zz.team_hidden rename to team");

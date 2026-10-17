@@ -20,6 +20,9 @@
  * stands or falls with the rows, and a failed read of them, of the cutoff or of the revisions waiting is the
  * response's.
  *
+ * The Platform prepared query (platform-query-measures.ts) counts the teams and answers their rows through
+ * `readBases`, `readFigures` and `rowOf`.
+ *
  * COUPLED: the console's `Teams`, `TeamRow` and `TeamDetail` in src/lib/fleet-shapes.ts, and its fake answer in
  * ../zz-stack-dashboard/scripts/fake-gateway/platform-teams.ts, which `checks/console-platform-teams.ts` compares these answers with, key
  * set by key set.
@@ -33,7 +36,7 @@ import { pendingRevisions } from "./pending.js";
 import { readGrid, type Grid } from "./platform-measures.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
-const STATUSES = ["active", "archived"] as const;
+export const STATUSES = ["active", "archived"] as const;
 const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 /** How many weeks a team's series reaches back, the running one included. */
 const WEEKS = 26;
@@ -44,7 +47,7 @@ const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z
 
 type Week = { fromMs: number; toMs: number };
 /** A team as `zz.team` and its counts hold it, before any figure is read beside it. */
-type Base = {
+export type Base = {
   id: string; slug: string; name: string; status: string; created: string;
   members: number; initiatives: number; documents: number; sources: number; knowledge: number;
   openWork: number; lessons: number; lastMs: number | null;
@@ -71,7 +74,7 @@ type TeamDetail = {
  *  zz-core's own rule, whatever type it was filed with, an audit round's stage name among them. `initiatives` counts
  *  initiatives holding a document and `knowledge` every node, as today's pages read them; `openWork` counts every
  *  initiative not closed and `lessons` the nodes standing. */
-async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
+export async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
   const { rows } = await db.query<{
     id: string; slug: string; name: string; status: string; created: string; members: number; initiatives: number;
     documents: number; sources: number; knowledge: number; open_work: number; lessons: number; last_ms: number | null;
@@ -139,8 +142,8 @@ type Figures = {
   waiting: Map<string, number>; pending: number;
 };
 
-async function readFigures(db: pg.Pool): Promise<Figures> {
-  const grid = await readGrid(db);
+export async function readFigures(db: pg.Pool, asOfMs?: number): Promise<Figures> {
+  const grid = await readGrid(db, asOfMs);
   const asOf = new Date(grid.asOfMs).toISOString();
   const weeks = await readWeeks(db, asOf);
   const calls = await readCalls(db, weeks[0].fromMs, asOf).catch((err: unknown) => {
@@ -179,7 +182,7 @@ function weekFigure(f: Figures, team: string, w: Week, of: "calls" | "sessions")
   return { window, figure, numerator: n, denominator: null };
 }
 
-function rowOf(b: Base, f: Figures): TeamRow {
+export function rowOf(b: Base, f: Figures): TeamRow {
   return {
     slug: b.slug, name: b.name, status: b.status, created: b.created,
     members: b.members, initiatives: b.initiatives, documents: b.documents, sources: b.sources, knowledge: b.knowledge,

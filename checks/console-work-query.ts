@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * checks/console-work-query.ts — Work's prepared queries: the agent asks the database what a page does not
- * show, and is answered with the figures the pages draw (AC-5.2, AC-5.3, AC-5.5, AC-5.7).
+ * show, and is answered with the figures the pages draw (AC-5.2, AC-5.3, AC-5.5, AC-5.7, AC-6.2 to AC-6.5).
  *
  *   node checks/console-work-query.ts   # needs Docker and a built tree (`npm run build`)
  *
@@ -22,12 +22,18 @@
  *   - the 20 largest groups are answered and the rest folded, the largest first;
  *   - compare=previous answers each group's value in the previous window of the same length;
  *   - a drill pages one group's rows in a stable order, an initiative's next move what initiative_status says;
- *   - a month-long window and a year-long one answer the grain grainFor chooses, by its periods;
+ *   - a month-long window and a year-long one answer the grain grainFor chooses, by its periods, never folded;
+ *   - over the record's four weeks as dates, every measure answers `checks/console-work-query-harness.ts`'s
+ *     cases: dates as their days' instants, every bucket in order and each the sum of its drilled rows, rows
+ *     newest first, where as its group's total, and from=0001-01-01 from the record's first day; closures by
+ *     week are 0, 0, 1 and 4, top keeps the latest 20 days and the largest outcome, and runs' weekday stays
+ *     its own dimension;
  *   - approvals are the caller's alone, and a second team's records, an import-made document and a maintenance
  *     client's lesson change no answer, neither does naming another team or the platform;
- *   - an unknown measure, an unknown dimension, a dimension the measure does not allow and an argument it
- *     cannot read are refused with 400 naming the allowed values, with every table hidden, so before anything
- *     is read; a read that fails makes the total and the groups unavailable and says so;
+ *   - an unknown measure, an unknown dimension, a dimension the measure does not allow, a date and an instant
+ *     in one window, a filter it does not take and an argument it cannot read are refused with 400 naming the
+ *     allowed values and never echoing a value sent, with every table hidden, so before anything is read; a
+ *     read that fails makes the total and the groups unavailable and says so;
  *   - reading it records no event, and the key sets match the console's fake answer.
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, eight hours ahead of UTC, so a week cut on UTC's
@@ -51,11 +57,15 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, seedSearches, type When } from "../scripts/schema/work-seed.ts";
+import {
+  FIRST, answer, bucketCases, bucketsOf, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request, shapeDiffs, show,
+  spelled, whereCases, type Days, type Obj, type Query, type Route, type Who,
+} from "./console-work-query-harness.ts";
 
 const NAME = "console-work-query";
-const DONE = "console-work-query: each measure by each dimension it allows answers the figures the pages draw, against " +
-  "the previous window and down to a group's rows, the approvals the caller's alone, refused before anything is read " +
-  "and recorded as nothing: ok";
+const DONE = "console-work-query: each measure by each dimension and bucket it allows answers the figures the pages draw, " +
+  "over instants or dates, against the previous window and down to a group's rows, each bucket the sum of its rows, the " +
+  "approvals the caller's alone, refused before anything is read and recorded as nothing: ok";
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work-query.ts");
 
@@ -65,6 +75,8 @@ const WORK = "zz-plugin";
 const LESSON = "Close a piece of work only after the person who asked for it has read what the agents wrote for them.";
 /** The lesson's words as the contracts count them: Home's words add them, and so do the query's, in a lessons group. */
 const LESSON_WORDS = 21;
+/** A filter value outside its dimension's vocabulary, which no refusal may echo. */
+const SECRET = "quokka-ledger";
 const MEASURES: Record<string, string[]> = {
   closures: ["outcome", "flow", "initiative", "period"], opened: ["flow", "period"], words: ["document", "initiative", "period"],
   approvals: ["presentation", "decision_basis", "initiative", "period"], lessons: ["kind", "period"],
@@ -72,9 +84,6 @@ const MEASURES: Record<string, string[]> = {
 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
-type Who = { email: string; team: string | null };
 type Figure = { value: number | null; why: string | null };
 type Win = { from: string; to: string; observedFrom: string | null; observedThrough: string | null; complete: boolean };
 type Group = { key: string; label: string; value: Figure; share: number | null; previous: Figure | null };
@@ -93,58 +102,12 @@ interface Built {
   transitions: (team: string, w: Span, asOf: string) => Promise<{ initiative: string; path: string; added: number }[]>;
 }
 
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-/** Its value with every object's keys in order: an answer's key order is no part of its contract. */
-const canonical = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(canonical)
-    : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
-const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
-const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
 /** `n` words: a heading of two, then `tag` words, twenty to a line. */
 function text(n: number, tag: string): string {
   const words = Array.from({ length: n - 2 }, (_, i) => (i === 0 ? `${tag}-start` : tag));
   const lines: string[] = [];
   for (let i = 0; i < words.length; i += 20) lines.push(words.slice(i, i + 20).join(" "));
   return `# ${tag}\n\n${lines.join("\n")}\n`;
-}
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
-}
-
-/** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
-function request(who: Who, query: Record<string, string>): Obj {
-  return {
-    params: {}, query, body: {},
-    zzIdentity: { email: who.email, displayName: "Work", platformRole: "member", via: "session",
-                  teams: who.team ? [{ slug: who.team, role: "admin" }] : [], activeTeam: who.team, patTeam: null, sessionTeam: who.team },
-    headers: {
-      "x-zz-user-email": who.email, "x-zz-user-name": "Work", "x-zz-user-id": "", "x-zz-user-role": "user",
-      "x-zz-via": "session", "x-zz-pat-team": "", "x-zz-session-team": who.team ?? "",
-    },
-  };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** The gateway's door to zz-core as server.ts mounts it, a PAT of the seeded person's, and the routes and figures
@@ -220,36 +183,6 @@ function door(c: Core, g: Gateway) {
     return reply;
   };
   return { call, sent: () => sent };
-}
-
-const count = async (c: Core, where: string): Promise<number> =>
-  (await c.sql.query<{ n: number }>(`select count(*)::int as n from zz.event where ${where}`)).rows[0].n;
-
-/** Runs `make`, waits until every row it leaves has landed, then moves every timestamp the phase wrote by one
- *  interval, so its first instant lands on `target`: one interval keeps a seal's written_at equal to its act's ts. */
-async function phase(c: Core, d: ReturnType<typeof door>, target: number, make: () => Promise<unknown>): Promise<void> {
-  const start = (await c.sql.query<{ t: string }>("select clock_timestamp()::text as t")).rows[0].t;
-  const base = await count(c, "kind = 'tool_call'") - d.sent();
-  await make();
-  const until = Date.now() + 15_000;
-  let seen = -1;
-  for (;;) {
-    await new Promise((r) => setTimeout(r, 400));
-    const calls = await count(c, "kind = 'tool_call'");
-    const all = await count(c, "true");
-    if (calls >= base + d.sent() && all === seen) break;
-    if (Date.now() > until) c.fail("a phase settles", `${calls} tool calls of ${base + d.sent()}, events still moving`);
-    seen = all;
-  }
-  const to = new Date(target).toISOString();
-  const move = (table: string, columns: string[]) => c.sql.query(
-    `update ${table} set ${columns.map((k) => `${k} = case when ${k} >= $1::timestamptz then ${k} + ($2::timestamptz - $1::timestamptz) else ${k} end`).join(", ")}
-      where ${columns.map((k) => `${k} >= $1::timestamptz`).join(" or ")}`, [start, to]);
-  await move("zz.event", ["ts"]);
-  await move("zz.doc_revision", ["written_at", "presented_at"]);
-  await move("zz.doc", ["created_at", "updated_at"]);
-  await move("zz.initiative", ["opened_at", "closed_at"]);
-  await move("zz.knowledge_node", ["created_at", "updated_at"]);
 }
 
 /** The runs, written as zz.skill_run rows as runs-seed.ts writes them: three whose first call is in the last whole
@@ -346,9 +279,9 @@ async function cases(c: Core, g: Gateway): Promise<void> {
 
   const OWNER: Who = { email: c.email, team: c.team };
   const MEMBER: Who = { email: member, team: c.team };
-  const ask = async (s: string, query: Record<string, string>, who: Who = OWNER): Promise<WQ> => {
+  const ask = async (s: string, query: Query, who: Who = OWNER): Promise<WQ> => {
     const a = await answer(f.query, request(who, query));
-    if (a.status !== 200) c.fail(s, `?${new URLSearchParams(query)} answered ${a.status}: ${show(a.body)}`);
+    if (a.status !== 200) c.fail(s, `?${spelled(query)} answered ${a.status}: ${show(a.body)}`);
     return a.body as unknown as WQ;
   };
   const read = async (s: string, route: Route, query: Record<string, string> = {}, who: Who = OWNER): Promise<Obj> => {
@@ -482,6 +415,45 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   }
   c.pass(step);
 
+  const k = { c, ask: (s: string, q: Query) => ask(s, q) };
+  // The record's four weeks, Monday to Sunday, as inclusive dates.
+  const DAYS: Days = { from: localDay(w0 - 4 * WEEK), to: localDay(w0 - 1) };
+  const keyed = (w: WQ): [string, number | null][] => w.groups.map((x) => [x.key, x.value.value]);
+
+  step = "a window of dates answers what the instants of its days' start and the next day's start answer";
+  c.pass(`${step}: ${await datesCases(k, step, MEASURES, DAYS)} questions, every measure by every dimension and bucket`);
+
+  step = "day, week, month and weekday answer every bucket in order, each the sum of the rows its drill answers";
+  const buckets = await bucketCases(k, step, MEASURES, DAYS);
+  same(step, [keyed(await ask(step, { measure: "closures", by: "week", ...DAYS })), (await ask(step, { measure: "words", by: "day", ...DAYS, top: "1" })).groups],
+    [[0, 1, 2, 3].map((b) => [localDay(w0 - (4 - b) * WEEK), [0, 0, 1, 4][b]]), [{ key: DAYS.to, label: DAYS.to, value: { value: 0, why: null }, share: 0, previous: null }]]);
+  // runs' weekday is its own dimension, as it was before the buckets: the weekdays it ran on, the most runs first.
+  same(step, [(await ask(step, { measure: "runs", by: "weekday", ...DAYS })).grain, keyed(await ask(step, { measure: "runs", by: "weekday" }))],
+    [null, [["Tuesday", 2], ["Wednesday", 1]]]);
+  c.pass(`${step}: ${buckets} buckets drilled; closures by week 0, 0, 1 and 4; runs' weekday still its dimension`);
+
+  step = "top keeps the latest buckets and the largest groups, folding the rest; period keeps every period";
+  const daily = await ask(step, { measure: "runs", by: "day", ...DAYS });
+  same(step, [daily.groups.map((x) => x.key), daily.rest, daily.total.value], [bucketsOf("day", DAYS).slice(8), { groups: 8, value: 4 }, 28]);
+  const largest = await ask(step, { measure: "closures", by: "outcome", top: "1" });
+  same(step, [keyed(largest), largest.rest], [[["abandoned", 2]], { groups: 2, value: 2 }]);
+  const yearly = await ask(step, { measure: "closures", by: "period", ...range(w0 - 52 * WEEK, w0) });
+  same(step, [yearly.grain, yearly.rest, yearly.groups.length > 12], ["month", null, true]);
+  c.pass(`${step}: 20 of 28 days with 4 runs folded, 1 of 3 outcomes, 13 months none folded`);
+
+  step = "where filters on the measure's own dimensions, equality alone, at most four";
+  const filters = await whereCases(k, step, MEASURES, DAYS);
+  same(step, [keyed(await ask(step, { measure: "runs", by: "skill", where: "weekday=Tuesday" })),
+    keyed(await ask(step, { measure: "runs", by: "skill", where: ["weekday=Tuesday", "hour=10"] }))], [[["q-plan", 1], ["q-spec", 1]], [["q-spec", 1]]]);
+  c.pass(`${step}: ${filters} filters, each its group's total; runs on a Tuesday, and at 10:00 on one`);
+
+  step = "from=0001-01-01 answers from the first day the record holds";
+  const held = await firstDayCases(k, step, MEASURES, DAYS.to);
+  same(step, [(await ask(step, { measure: "closures", by: "outcome", from: FIRST, to: DAYS.to })).window.from,
+    (await ask(step, { measure: "opened", by: "flow", from: FIRST, to: DAYS.to })).window.from],
+    [iso(midnightOf(localDay(when([2, 50])))), iso(midnightOf(localDay(when([3, 2]))))]);
+  c.pass(`${step}: ${held} measures, closures from the first close and opened from the first opening`);
+
   step = "approvals are the caller's alone";
   const theirs1 = await ask(step, { measure: "approvals", by: "initiative", group: slug("gamma") }, MEMBER);
   const mine = await ask(step, { measure: "approvals", by: "initiative", group: slug("gamma") });
@@ -521,9 +493,26 @@ async function cases(c: Core, g: Gateway): Promise<void> {
       [{ measure: "closures", by: "outcome", limit: "101" }, "1 to 100"],
       [{ measure: "closures", by: "outcome", from: iso(w0), to: iso(w0 - WEEK) }, "from before to"],
       [{ measure: "closures", by: "outcome", from: iso(w0 + WEEK) }, "from before to"],
-    ] as [Record<string, string>, string][]) {
+      [{ measure: "closures", by: "outcome", from: "2026-02-30", to: DAYS.to }, "from before to"],
+      [{ measure: "closures", by: "outcome", from: DAYS.from, to: iso(w0) }, "both dates or both instants"],
+      [{ measure: "closures", by: "outcome", from: FIRST, to: iso(w0) }, "both dates or both instants"],
+      [{ measure: "closures", by: "quarter" }, "outcome, flow, initiative, period, day, week, month, weekday"],
+      [{ measure: "closures", by: "outcome", where: "skill=q-spec" }, "closures is filtered by one of outcome, flow, initiative"],
+      [{ measure: "closures", by: "outcome", where: "period=x" }, "closures is filtered by one of outcome, flow, initiative"],
+      [{ measure: "closures", by: "outcome", where: `outcome=${SECRET}` }, "a filter on outcome takes one of delivered, accepted, abandoned"],
+      [{ measure: "runs", by: "skill", where: `hour=${SECRET}` }, "a filter on hour takes one of 00, 01"],
+      [{ measure: "closures", by: "outcome", where: ["flow=a", "flow=b", "flow=c", "flow=d", "flow=e"] }, "at most 4 filters"],
+      [{ measure: "closures", by: "outcome", where: "flow" }, "a dimension, an equals sign and a value"],
+      [{ measure: "closures", by: "outcome", top: "51" }, "1 to 50"],
+      [{ measure: "closures", by: "outcome", top: "0" }, "1 to 50"],
+      [{ measure: "closures", by: "period", top: "5" }, "so it takes no top"],
+      [{ measure: "closures", by: "outcome", rows: "21" }, "1 to 20"],
+      [{ measure: "closures", by: "outcome", rows: "5", group: "abandoned" }, "given without group, limit or offset"],
+    ] as [Query, string][]) {
       const a = await answer(f.query, request(OWNER, query));
-      if (a.status !== 400 || !String(a.body.error).includes(says)) c.fail(step, `${show(query)} answered ${a.status}: ${show(a.body)}`);
+      if (a.status !== 400 || !String(a.body.error).includes(says) || show(a.body).includes(SECRET)) {
+        c.fail(step, `${show(query)} answered ${a.status}: ${show(a.body)}`);
+      }
     }
   } finally {
     await c.sql.query("alter table zz.team_hidden rename to team");

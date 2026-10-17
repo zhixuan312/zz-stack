@@ -62,7 +62,7 @@ const SHOWN = 26;
 const TOP = 10;
 /** How many teams the superadmin's split names before `Other`. */
 const NAMED = 3;
-const UNREGISTERED = "Unregistered tools";
+export const UNREGISTERED = "Unregistered tools";
 
 type Tile = { weeks: PeriodFigure[]; last: PeriodFigure; previous: PeriodFigure };
 type ModelWeek = { window: Window; calls: number; failed: number; inputTokens: number; outputTokens: number };

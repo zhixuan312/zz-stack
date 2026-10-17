@@ -230,6 +230,15 @@ const notRegistered = new Map<string, string>([
   // alone it does nothing, so registering it would be a check green by absence.
   ["console-isolation-work.ts",
    "a module checks/console-isolation.ts and checks/console-isolation-destinations.ts import, not a check of its own"],
+  // Not a check, and not temporary: the request helpers and the shared window, bucket, rows, where and first-day
+  // cases checks/console-work-query.ts and checks/console-work-query-destinations.ts import (Phase 5, I-91), split out
+  // so neither passes the 700-line ceiling. Run alone it does nothing, so registering it would be a check green by absence.
+  ["console-work-query-harness.ts",
+   "a module checks/console-work-query.ts and checks/console-work-query-destinations.ts import, not a check of its own"],
+  // Not checks: the seed checks/console-platform-query.ts reads and the platform query's isolation round
+  // checks/console-isolation.ts runs (Phase 5, I-90), split out so neither passes the 700-line ceiling.
+  ["console-platform-query-seed.ts", "a module checks/console-platform-query.ts imports, not a check of its own"],
+  ["console-platform-query-isolation.ts", "a module checks/console-isolation.ts imports, not a check of its own"],
 ]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {

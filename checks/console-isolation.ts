@@ -51,7 +51,13 @@
  *     name and only their own tokens, a second person on the same team included, who in Access finds
  *     none of the first's tokens, applications, browsers or passkeys and whose revoke of the first's
  *     application or browser is 404 and changes nothing. `work/query` is asked with measures here too,
- *     since a request naming none is refused before anything is read.
+ *     since a request naming none is refused before anything is read;
+ *   - the Platform prepared query, in `console-platform-query-isolation.ts`'s round: every measure a member is answered,
+ *     by every dimension and bucket but the superadmin's, from the first recorded day, against the window before,
+ *     every group drilled where the measure is, holds nothing of the second team's and no link for the first team's
+ *     member, and every measure, dimension, filter or drill only the superadmin is shown answers them the one 403
+ *     body naming nobody. Its failure round asks it a measure, since a request naming none is refused before anything
+ *     is read.
  *
  * The other direction, the second team's member and a superadmin acting for that team asking Phase 4's
  * destinations about the first team's sentinels, is `checks/console-isolation-destinations.ts`.
@@ -81,6 +87,7 @@ import { PLANTED, seedIsolation, seedWork, seedWorkRecord } from "../scripts/sch
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 import { failureQuery, hrefs, leaks, queriesFor, routesOf, send, tally, workRounds, type Answer, type Route, type Sent } from "./console-isolation-work.ts";
+import { PLATFORM_QUERY, platformFailureQuery, platformQueryRound } from "./console-platform-query-isolation.ts";
 
 const NAME = "console-isolation";
 const DONE = "console-isolation: a member of one team asked every route the mounted console answers, with the other " +
@@ -91,7 +98,8 @@ const DONE = "console-isolation: a member of one team asked every route the moun
   "superadmin's Audit and Knowledge health held no body but the question that found nothing; Work, every measure by " +
   "every dimension drilled to rows but skill_calls, a close and a superadmin acting for their own team included, held nothing of the " +
   "other team's, and a second person on the same team read only their own approvals and tokens and, in Access, none of " +
-  "the first's tokens, applications, browsers or passkeys, their revokes of the first's 404: ok";
+  "the first's tokens, applications, browsers or passkeys, their revokes of the first's 404; the platform query, every measure " +
+  "a member is answered by every dimension drilled, held nothing of the other team's and refused the superadmin's alike: ok";
 /** Fields the platform's evaluation read never selects, so no superadmin read need answer them: the database
  *  is asked for them instead. COUPLED: platform-evaluation.ts. */
 const NOBODY_READS = ["decisionNote", "ownerRef"];
@@ -211,8 +219,8 @@ function forgedBody(s: Seeded): Record<string, unknown> {
  *  Activity's summary and log, Plugins and skills among them, `zz.initiative` for Work's prepared queries,
  *  `zz.eval_run` for evaluation, `zz.bug` for a report and its duplicates, `zz.knowledge_node` for Knowledge
  *  health and Knowledge's summary, so one part fails and the rest stand, and for its list and a lesson, which
- *  read no event, `zz.passkey` for People, `zz.skill_run` for Runs, and `zz.pat` for Access, whose read fails
- *  whole. A table the identity gate reads for a session (`zz.team`, `zz.principal`, `zz.console_session`) would
+ *  read no event, `zz.passkey` for People, `zz.skill_run` for Runs, `zz.pat` for Access, whose read fails
+ *  whole, and `zz.event` for the platform query. A table the identity gate reads for a session (`zz.team`, `zz.principal`, `zz.console_session`) would
  *  fail every request before its read. */
 function tableFor(path: string): string | null {
   if (/^\/api\/console\/platform\/(status|releases|releases\/:version|bugs|usage|audit)$/.test(path)) return "event";
@@ -224,6 +232,7 @@ function tableFor(path: string): string | null {
   if (/^\/api\/console\/platform\/bugs\/:id(\/duplicates)?$/.test(path)) return "bug";
   if (path === "/api/console/work/query") return "initiative";
   if (path === "/api/console/runs") return "skill_run";
+  if (path === PLATFORM_QUERY) return "event";
   if (/^\/api\/console\/(platform|settings)\//.test(path) || path === "/api/console/live") return null;
   return "event";
 }
@@ -393,6 +402,7 @@ async function run(c: Core): Promise<void> {
     const reads = routes.filter((r) => r.method === "get");
     const writes = routes.filter((r) => WRITES.includes(r.method));
     if (reads.length < 30 || writes.length < 10) c.fail(step, `${reads.length} reads and ${writes.length} writes read from the router`);
+    if (!reads.some((r) => r.path === PLATFORM_QUERY)) c.fail(step, `${PLATFORM_QUERY} is not among the reads the router answers`);
     c.pass(`${step}: ${reads.length} reads and ${writes.length} writes read from the mounted application, every one the gateway's source declares`);
 
     step = "the second team's rows as seeded";
@@ -460,7 +470,7 @@ async function run(c: Core): Promise<void> {
       console.error = () => undefined;
       try {
         for (const address of addresses(r.path, s, holds)) {
-          const req: Sent = { method: r.method, url: `${address}${failureQuery(r.path, s)}`, body: null };
+          const req: Sent = { method: r.method, url: `${address}${r.path === PLATFORM_QUERY ? platformFailureQuery() : failureQuery(r.path, s)}`, body: null };
           const a = await send(base, who.one.cookie, req);
           statuses.push(a.status);
           refused(r, a);
@@ -600,6 +610,7 @@ async function run(c: Core): Promise<void> {
     else c.pass(`${step}, ${NOBODY_READS.join(" and ")} among them`);
 
     await workRounds({ s, w, base, sql: c.sql, found, pass: c.pass, oracle: (r, a, cookie) => oracle(r, a, undefined, cookie) });
+    await platformQueryRound({ s, base, found, pass: c.pass });
 
     if (found.length) c.fail("isolation", `\n    ${found.join("\n    ")}`);
   } finally {

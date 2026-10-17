@@ -52,7 +52,8 @@
  * the shelf is that tool's own work and not a second implementation of it here.
  *
  * The platform's reads resolve no scope at all: `/api/console/platform/status`, `/releases`, `/bugs`,
- * `/evaluation`, `/usage`, `/knowledge` and `/audit` (console/platform-*.ts) are the platform's own,
+ * `/evaluation`, `/usage`, `/knowledge` and `/audit` (console/platform-*.ts), and `/query` (console/platform-query.ts),
+ * the prepared query that answers each of them, are the platform's own,
  * public by route through `platformPublic` (console/shared.ts), and answered to everybody the console
  * lets in, a person in no team included; a superadmin's answer adds only the fields each route names,
  * and a bug report, its duplicate targets and the audit are the superadmin's alone. The status read's
@@ -93,6 +94,7 @@ import { mountApprovals } from "./console/approvals.js";
 import { mountHome } from "./console/home.js";
 import { mountActivity } from "./console/activity.js";
 import { mountWorkQuery } from "./console/work-query.js";
+import { mountPlatformQuery } from "./console/platform-query.js";
 import { mountRecord } from "./console/record.js";
 import { mountConsoleClose } from "./console-close.js";
 
@@ -136,6 +138,8 @@ export function mountConsole(app: Express): void {
   mountPlatformKnowledge(app);
   // The superadmin's audit: recorded administration as sentences and the latest events as metadata, never a body.
   mountPlatformAudit(app);
+  // The Platform prepared query: one measure of the platform by a declared dimension or bucket, as each measure's page projects it to the caller.
+  mountPlatformQuery(app);
   // The one endpoint here that is not an answer: a stream held open, which is what keeps a tab fresh without polling.
   mountConsoleLive(app);
   // A page view, which records which page was opened and is counted as nothing else.

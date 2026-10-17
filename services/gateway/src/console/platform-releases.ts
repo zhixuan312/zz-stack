@@ -13,7 +13,9 @@
  *
  * The weekly malformed-call rate is the status read's own, `malformedMeasure` over `readGrid`'s weeks
  * (console/platform-measures.ts), so the two reads give the same figures; each week also counts the
- * releases tagged in it.
+ * releases tagged in it. The Platform prepared query (platform-query-measures.ts) counts the
+ * releases and the migrations, and answers these rows, through `releaseTimes`, `migrationTimes` and
+ * `releaseRows`.
  *
  * Public by route: mounted through `platformPublic`, it takes no team and no scope. No figure names a
  * team.
@@ -83,7 +85,7 @@ const NO_DATA: Figure = { value: null, why: "no_data" };
 
 /** Every release's version and time, newest first, `version` breaking a tie: what the tiles, the weeks
  *  and every window's overlapping releases are read from. */
-async function releaseTimes(db: pg.Pool): Promise<{ version: string; ms: number }[]> {
+export async function releaseTimes(db: pg.Pool): Promise<{ version: string; ms: number }[]> {
   return (await db.query<{ version: string; ms: number }>(
     `select r.version, (extract(epoch from r.released_at) * 1000)::float8 as ms
        from zz.release r
@@ -164,6 +166,30 @@ async function withWindows(db: pg.Pool, r: Stored, all: { version: string; ms: n
   };
 }
 
+/** The instant each migration was applied: what the tiles count as migrations applied. */
+export async function migrationTimes(db: pg.Pool): Promise<number[]> {
+  return (await db.query<{ ms: number }>(
+    "select (extract(epoch from m.applied_at) * 1000)::float8 as ms from zz.schema_migration m")).rows.map((r) => r.ms);
+}
+
+/** The rows of the versions named, in the order named, each with both its windows as this read draws them, at the
+ *  cutoff `asOfMs`. */
+export async function releaseRows(db: pg.Pool, versions: string[], asOfMs: number): Promise<ReleaseRow[]> {
+  if (!versions.length) return [];
+  const [stored, all, grid] = await Promise.all([
+    db.query<Stored>(
+      `select r.version, r.console_version, (extract(epoch from r.released_at) * 1000)::float8 as released_ms,
+              r.summary, r.client_action, r.changelog, r.upgrade_notes
+         from zz.release r
+        where r.version = any($1::text[])`, [versions]),
+    releaseTimes(db),
+    readGrid(db, asOfMs),
+  ]);
+  const of = new Map(stored.rows.map((r) => [r.version, r]));
+  const detailed = await Promise.all(versions.filter((v) => of.has(v)).map((v) => withWindows(db, of.get(v)!, all, grid.coverageMs, grid.asOfMs)));
+  return detailed.map(({ changelog: _c, upgradeNotes: _u, ...row }) => row);
+}
+
 export function mountPlatformReleases(app: Express): void {
   app.get("/api/console/platform/releases", platformPublic("the platform's releases", async (req, res) => {
     const limit = Number(req.query.limit ?? 10), offset = Number(req.query.offset ?? 0);
@@ -175,9 +201,7 @@ export function mountPlatformReleases(app: Express): void {
     const grid = await readGrid(db);
     const { asOfMs, coverageMs } = grid;
     const all = await releaseTimes(db);
-    const migrations = (await db.query<{ applied: number; last_ms: number | null }>(
-      `select count(*)::int as applied, (extract(epoch from max(m.applied_at)) * 1000)::float8 as last_ms
-         from zz.schema_migration m`)).rows[0];
+    const applied = await migrationTimes(db);
 
     const malformed = await malformedMeasure(db, grid);
     const weeks = malformed.weeks.map((w, i) => ({
@@ -212,7 +236,7 @@ export function mountPlatformReleases(app: Express): void {
         releases: all.length,
         lastWeek: all.filter((r) => r.ms >= asOfMs - 7 * 24 * 3_600_000 && r.ms < asOfMs).length,
         latest: all[0] ? { version: all[0].version, releasedAt: iso(all[0].ms) } : null,
-        migrations: { applied: migrations.applied, lastAt: migrations.last_ms === null ? null : iso(migrations.last_ms) },
+        migrations: { applied: applied.length, lastAt: applied.length ? iso(Math.max(...applied)) : null },
       },
       weeks,
       rows,

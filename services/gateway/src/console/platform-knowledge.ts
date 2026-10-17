@@ -33,7 +33,8 @@
  *
  * Public by route: mounted through `platformPublic`, it reads no team or scope from the request; a member's own shelf
  * is their active team as the identity resolved it. DELIBERATE: the one statement that selects a search's subject is
- * `readQuestions`, and only the superadmin's read calls it, so a member's read selects no question at all.
+ * `readQuestions`, and only the superadmin's reads call it, this one's and the Platform prepared query's drill of the
+ * searches, so a member's read selects no question at all.
  *
  * COUPLED: the console's `KnowledgeHealth` in src/lib/fleet-shapes.ts, and its fake answer in
  * ../zz-stack-dashboard/scripts/fake-gateway/platform-knowledge.ts, which `checks/console-platform-knowledge.ts` compares this route's
@@ -46,7 +47,7 @@ import { platformDb } from "../db.js";
 import { PLATFORM_TEAM } from "../identity.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { lessonImports } from "./imports.js";
-import { readGrid, searchesMeasure, type Grid } from "./platform-measures.js";
+import { readGrid, searchDays, searchesMeasure, type Grid } from "./platform-measures.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 const POPULATION = "standing lessons on every shelf, imports included; lessons made outside import cohorts; real-work searches";
@@ -69,7 +70,7 @@ type ShelfRow = {
   shelf: string; kind: ShelfKind; standing: number; superseded: number; imported: number;
   madeLastWeek: number; searchesLastWeek: number; noResult: PeriodFigure;
 };
-type Question = { question: string; shelf: string; asked: number; lastAskedAt: string };
+export type Question = { question: string; shelf: string; asked: number; lastAskedAt: string };
 type KnowledgeHealth = {
   meta: ReadMeta;
   tiles: Part<{
@@ -86,8 +87,9 @@ type KnowledgeHealth = {
   questions: Part<{ window: Window; rows: Question[]; total: number }> | null;
 };
 
-/** One lesson as the read counts it: its shelf's slug, its kind, whether it stands, and the week it was made in. */
-type Lesson = { id: string; shelf: string; kind: string; standing: boolean; fromMs: number };
+/** One lesson as the read counts it: its shelf's slug, its kind, whether it stands, the week it was made in (the instant
+ *  that week starts), and the local day and instant it was made. */
+export type Lesson = { id: string; shelf: string; kind: string; standing: boolean; fromMs: number; day: string; createdMs: number };
 /** Work searches carrying `detail.returned`, by week and the slug of the team that made them (null for none). */
 type SearchCount = { fromMs: number; shelf: string | null; searches: number; empty: number; results: number };
 
@@ -104,10 +106,12 @@ async function readLastTwo(db: pg.Pool, asOf: string): Promise<[Week, Week]> {
 }
 
 /** Every lesson made before `asOf`, and the instant of the first `knowledge.add` event that names its lesson. */
-async function readLessons(db: pg.Pool, asOf: string): Promise<{ lessons: Lesson[]; exactFromMs: number | null }> {
-  const { rows } = await db.query<{ id: string; shelf: string; kind: string; lifecycle: string; from_ms: number }>(
+export async function readLessons(db: pg.Pool, asOf: string): Promise<{ lessons: Lesson[]; exactFromMs: number | null }> {
+  const { rows } = await db.query<{ id: string; shelf: string; kind: string; lifecycle: string; from_ms: number; day: string; created_ms: number }>(
     `select n.id::text as id, t.slug as shelf, n.kind, n.lifecycle,
-            (extract(epoch from (date_trunc('week', n.created_at at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms
+            (extract(epoch from (date_trunc('week', n.created_at at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
+            to_char(n.created_at at time zone $1::text, 'YYYY-MM-DD') as day,
+            (extract(epoch from n.created_at) * 1000)::float8 as created_ms
        from zz.knowledge_node n
        join zz.team t on t.id = n.team_id
       where n.created_at < $2::timestamptz`, [ZZ_TZ, asOf]);
@@ -116,31 +120,31 @@ async function readLessons(db: pg.Pool, asOf: string): Promise<{ lessons: Lesson
        from zz.event e
       where e.kind = 'knowledge.add' and e.detail -> 'ids' ->> 'node' is not null and e.ts < $1::timestamptz`, [asOf])).rows[0];
   return {
-    lessons: rows.map((r) => ({ id: r.id, shelf: r.shelf, kind: r.kind, standing: r.lifecycle === "adopted", fromMs: r.from_ms })),
+    lessons: rows.map((r) => ({
+      id: r.id, shelf: r.shelf, kind: r.kind, standing: r.lifecycle === "adopted", fromMs: r.from_ms, day: r.day, createdMs: r.created_ms,
+    })),
     exactFromMs: first.first_ms,
   };
 }
 
 /** Work searches carrying `detail.returned` from `fromMs`, by week and team: how many, how many found nothing, and
- *  how many results they found in all. */
+ *  how many results they found in all, as `searchDays` counts them. */
 async function readSearches(db: pg.Pool, fromMs: number, asOf: string): Promise<SearchCount[]> {
-  const { rows } = await db.query<{ from_ms: number; shelf: string | null; searches: number; empty: number; results: number }>(
-    `select (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
-            t.slug as shelf,
-            count(*)::int as searches,
-            (count(*) filter (where not (jsonb_typeof(e.detail -> 'returned') = 'array' and e.detail -> 'returned' <> '[]'::jsonb)))::int as empty,
-            coalesce(sum(case when jsonb_typeof(e.detail -> 'returned') = 'array' then jsonb_array_length(e.detail -> 'returned') else 0 end), 0)::int as results
-       from zz.event e
-       left join zz.team t on t.id = e.team_id
-      where e.kind = 'knowledge.search' and e.origin = 'work' and e.detail ? 'returned'
-        and e.ts >= $2::timestamptz and e.ts < $3::timestamptz
-      group by 1, 2`, [ZZ_TZ, new Date(fromMs).toISOString(), asOf]);
-  return rows.map((r) => ({ fromMs: r.from_ms, shelf: r.shelf, searches: r.searches, empty: r.empty, results: r.results }));
+  const out = new Map<string, SearchCount>();
+  for (const d of await searchDays(db, asOf, new Date(fromMs).toISOString())) {
+    const at = `${d.week_ms}/${d.team ?? ""}`;
+    const was = out.get(at) ?? { fromMs: d.week_ms, shelf: d.team, searches: 0, empty: 0, results: 0 };
+    out.set(at, { ...was, searches: was.searches + d.searches, empty: was.empty + (d.found ? 0 : d.searches), results: was.results + d.results });
+  }
+  return [...out.values()];
 }
 
-/** The superadmin's alone: the work searches from `fromMs` that found nothing, by question and the slug of the team
- *  that asked, most asked first, then the latest asked, and how many such groups there are. */
-async function readQuestions(db: pg.Pool, fromMs: number, asOf: string): Promise<{ rows: Question[]; total: number }> {
+/** The superadmin's alone: the work searches in `[fromMs, toMs)` that found nothing, by question and the slug of the
+ *  team that asked, most asked first, then the latest asked, at most `limit` of them (null for every one), and how
+ *  many such groups there are. `widened`, when given, keeps the searches the engine widened (`widened`), those it
+ *  did not (`not_widened`) or those that recorded neither (the empty string). */
+export async function readQuestions(db: pg.Pool, fromMs: number, toMs: number, limit: number | null, widened: string | null = null):
+  Promise<{ rows: Question[]; total: number }> {
   const { rows } = await db.query<{ question: string; shelf: string; asked: number; last_ms: number; total: number }>(
     `select e.subject as question, t.slug as shelf, count(*)::int as asked,
             (extract(epoch from max(e.ts)) * 1000)::float8 as last_ms,
@@ -149,9 +153,11 @@ async function readQuestions(db: pg.Pool, fromMs: number, asOf: string): Promise
        join zz.team t on t.id = e.team_id
       where e.kind = 'knowledge.search' and e.origin = 'work' and e.detail -> 'returned' = '[]'::jsonb
         and e.ts >= $1::timestamptz and e.ts < $2::timestamptz
+        and ($4::text is null or coalesce(case when e.detail ? 'broadened'
+              then case when e.detail ->> 'broadened' = 'true' then 'widened' else 'not_widened' end end, '') = $4::text)
       group by e.subject, t.slug
       order by count(*) desc, max(e.ts) desc, e.subject, t.slug
-      limit $3`, [new Date(fromMs).toISOString(), asOf, QUESTIONS]);
+      limit $3`, [new Date(fromMs).toISOString(), new Date(toMs).toISOString(), limit, widened]);
   return {
     rows: rows.map((r) => ({ question: r.question, shelf: r.shelf, asked: r.asked, lastAskedAt: iso(r.last_ms) })),
     total: rows[0]?.total ?? 0,
@@ -159,7 +165,7 @@ async function readQuestions(db: pg.Pool, fromMs: number, asOf: string): Promise
 }
 
 /** Every team's slug, for the superadmin's shelves. */
-async function readSlugs(db: pg.Pool): Promise<string[]> {
+export async function readSlugs(db: pg.Pool): Promise<string[]> {
   return (await db.query<{ slug: string }>("select t.slug from zz.team t order by t.slug")).rows.map((r) => r.slug);
 }
 
@@ -224,7 +230,7 @@ export function mountPlatformKnowledge(app: Express): void {
       orNull("the searches", searchesMeasure(db, { ...grid, weeks: drawn })),
       orNull("the searches by shelf", readSearches(db, Math.min(fromMs, previous.fromMs), asOf)),
       superadmin ? orNull("the shelves", readSlugs(db)) : Promise.resolve([]),
-      superadmin ? orNull("the questions", readQuestions(db, fromMs, asOf)) : Promise.resolve(null),
+      superadmin ? orNull("the questions", readQuestions(db, fromMs, grid.asOfMs, QUESTIONS)) : Promise.resolve(null),
     ]);
 
     const failed = { state: "unavailable", reason: "query_failed" } as const;

@@ -18,18 +18,23 @@
  * A member is refused from `platformPublic`'s flag before anything is read, with no name in the
  * refusal. Nothing here writes.
  *
+ * The Platform prepared query (platform-query-measures.ts) counts every event but page views by day,
+ * kind and team through `auditDays`, and answers its rows through `auditEvents`, the statement this
+ * read lists them with.
+ *
  * COUPLED: the console's `Audit` and `AuditRow` in src/lib/fleet-shapes.ts, and its fake answer in
  * ../zz-stack-dashboard/scripts/fake-gateway/platform-audit.ts, whose sentences copy the templates below;
  * `checks/console-platform-audit.ts` compares this route's answers with the fake's, key set by key set.
  */
 import type { Express, Request } from "express";
+import type pg from "pg";
 
 import { platformDb } from "../db.js";
 import type { ReadMeta } from "./figures.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 const FILTERS = ["administration", "all"] as const;
-type Filter = (typeof FILTERS)[number];
+export type Filter = (typeof FILTERS)[number];
 
 /** The latest events a read reaches, after its filters. */
 const CEILING = 500;
@@ -43,7 +48,7 @@ const SAFE_SUBJECT = ["credential.set", "team.switch", "pat.self_revoke", "bug.r
 /** What administration leaves no event for, which the page names rather than shows. */
 const NOT_RECORDED = ["knowledge reindex", "knowledge reconcile", "client setup", "plugin registration", "release record"];
 
-const KIND = /^[a-z_]+(\.[a-z_]+)?$/;
+export const KIND = /^[a-z_]+(\.[a-z_]+)?$/;
 const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
@@ -126,6 +131,62 @@ function parse(req: Request): Asked | string {
   };
 }
 
+/** What the events statement narrows by: the filter, an event kind, a team's slug, and the instants an event is at or
+ *  after (`after`) and before (`before`), each null for no bound; and the latest `limit` events it reaches. A slug
+ *  nobody holds narrows to nothing rather than to no filter. */
+type EventFilter = { filter: Filter; kind: string | null; team: string | null; after: string | null; before: string | null; limit: number };
+
+/** The latest events `f` keeps up to `asOf`, newest first, page views left out, each as its row: metadata and a
+ *  sentence, never a body. */
+export async function auditEvents(db: pg.Pool, asOf: string, f: EventFilter): Promise<AuditRow[]> {
+  let teamId: string | null = null;
+  if (f.team !== null) {
+    const t = await db.query<{ id: string }>("select id::text as id from zz.team where slug = $1", [f.team]);
+    if (!t.rows.length) return [];
+    teamId = t.rows[0].id;
+  }
+  const events = (await db.query<Event>(
+    `select e.id::text as id, (extract(epoch from e.ts) * 1000)::float8 as ts_ms, p.email as actor, t.slug as team, e.kind,
+            case when e.kind = 'tool_call' then e.tool_key
+                 when e.kind like 'admin.%' or e.kind = any($7::text[]) then e.subject end as subject,
+            e.ok, e.refusal_owner, e.origin, coalesce(e.detail->>'via' = 'web', false) as in_console,
+            e.detail->>'role' as role, e.detail->>'status' as status, e.detail->>'reactivated' as reactivated,
+            e.detail->>'from' as "from", e.detail->>'team' as detail_team, e.detail->>'owner' as owner,
+            e.detail->>'patsRevoked' as pats_revoked, e.detail->>'sessionsRevoked' as sessions_revoked,
+            e.detail->>'enrolmentsSpent' as enrolments_spent
+       from zz.event e
+       left join zz.principal p on p.id = e.actor_id
+       left join zz.team t on t.id = e.team_id
+      where e.ts <= $1::timestamptz and e.kind <> 'console.page_view'
+        and ($2::text = 'all' or (e.kind like 'admin.%' and e.kind <> 'admin.list_oauth_clients') or e.kind = any($6::text[]))
+        and ($3::text is null or e.kind = $3::text)
+        and ($4::uuid is null or e.team_id = $4::uuid)
+        and ($5::timestamptz is null or e.ts < $5::timestamptz)
+        and ($9::timestamptz is null or e.ts >= $9::timestamptz)
+      order by e.ts desc, e.id desc
+      limit $8::int`,
+    [asOf, f.filter, f.kind, teamId, f.before, ADMINISTRATION, SAFE_SUBJECT, f.limit, f.after])).rows;
+  return events.map((e): AuditRow => ({
+    id: e.id, at: iso(e.ts_ms), actor: e.actor, team: e.team, kind: e.kind, subject: e.subject, ok: e.ok,
+    refusalOwner: e.refusal_owner, origin: e.origin, inConsole: e.in_console, sentence: sentence(e),
+  }));
+}
+
+/** Every event up to `asOf` but page views, by the local day it was recorded on, its kind and its team's slug (null
+ *  for none), with the latest of each: what Audit's `all` filter reaches, counted rather than listed. */
+type AuditDay = { day: string; kind: string; team: string | null; n: number; last_ms: number };
+
+export async function auditDays(db: pg.Pool, asOf: string): Promise<AuditDay[]> {
+  return (await db.query<AuditDay>(
+    `select to_char(e.ts at time zone $1::text, 'YYYY-MM-DD') as day, e.kind, t.slug as team,
+            count(*)::int as n,
+            (extract(epoch from max(e.ts)) * 1000)::float8 as last_ms
+       from zz.event e
+       left join zz.team t on t.id = e.team_id
+      where e.ts <= $2::timestamptz and e.kind <> 'console.page_view'
+      group by 1, 2, 3`, [ZZ_TZ, asOf])).rows;
+}
+
 export function mountPlatformAudit(app: Express): void {
   app.get("/api/console/platform/audit", platformPublic("the platform's audit", async (req, res, caller) => {
     if (!caller.superadmin) {
@@ -149,38 +210,11 @@ export function mountPlatformAudit(app: Express): void {
         where e.ts <= $1::timestamptz`, [asOf]);
     const coverageMs = cov.rows[0]?.first_ms ?? null;
 
-    // A team is named by its slug and filtered by its id, so a slug nobody holds narrows to nothing
-    // rather than to no filter.
-    let teamId: string | null = null;
-    if (asked.team !== null) {
-      const t = await db.query<{ id: string }>("select id::text as id from zz.team where slug = $1", [asked.team]);
-      teamId = t.rows[0]?.id ?? null;
-    }
-    const events = asked.team !== null && teamId === null ? [] : (await db.query<Event>(
-      `select e.id::text as id, (extract(epoch from e.ts) * 1000)::float8 as ts_ms, p.email as actor, t.slug as team, e.kind,
-              case when e.kind = 'tool_call' then e.tool_key
-                   when e.kind like 'admin.%' or e.kind = any($7::text[]) then e.subject end as subject,
-              e.ok, e.refusal_owner, e.origin, coalesce(e.detail->>'via' = 'web', false) as in_console,
-              e.detail->>'role' as role, e.detail->>'status' as status, e.detail->>'reactivated' as reactivated,
-              e.detail->>'from' as "from", e.detail->>'team' as detail_team, e.detail->>'owner' as owner,
-              e.detail->>'patsRevoked' as pats_revoked, e.detail->>'sessionsRevoked' as sessions_revoked,
-              e.detail->>'enrolmentsSpent' as enrolments_spent
-         from zz.event e
-         left join zz.principal p on p.id = e.actor_id
-         left join zz.team t on t.id = e.team_id
-        where e.ts <= $1::timestamptz and e.kind <> 'console.page_view'
-          and ($2::text = 'all' or (e.kind like 'admin.%' and e.kind <> 'admin.list_oauth_clients') or e.kind = any($6::text[]))
-          and ($3::text is null or e.kind = $3::text)
-          and ($4::uuid is null or e.team_id = $4::uuid)
-          and ($5::timestamptz is null or e.ts < $5::timestamptz)
-        order by e.ts desc, e.id desc
-        limit $8::int`,
-      [asOf, asked.filter, asked.kind, teamId, asked.before, ADMINISTRATION, SAFE_SUBJECT, CEILING])).rows;
+    const events = await auditEvents(db, asOf, {
+      filter: asked.filter, kind: asked.kind, team: asked.team, after: null, before: asked.before, limit: CEILING,
+    });
 
-    const rows = events.slice(asked.offset, asked.offset + asked.limit).map((e): AuditRow => ({
-      id: e.id, at: iso(e.ts_ms), actor: e.actor, team: e.team, kind: e.kind, subject: e.subject, ok: e.ok,
-      refusalOwner: e.refusal_owner, origin: e.origin, inConsole: e.in_console, sentence: sentence(e),
-    }));
+    const rows = events.slice(asked.offset, asked.offset + asked.limit);
     const answer: Audit = {
       meta: {
         asOf: iso(asOfMs), timezone: ZZ_TZ,

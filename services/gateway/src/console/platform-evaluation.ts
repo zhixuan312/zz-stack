@@ -14,8 +14,11 @@
  * a key and a pattern are the owning team's words. Nobody reads a finding's `decision_note`,
  * `owner_ref` or `evidence_refs`, or a run's team or initiative; none of them is selected.
  *
- * Each part is its own statement and fails alone, as `unavailable`, the others standing. The tiles
- * have no unavailable form, so a failed tile statement fails the read.
+ * Each part is its own statement and fails alone, as `unavailable`, the others standing, but the
+ * findings by decision and by owner, which count one read of the findings and fail together. The tiles
+ * have no unavailable form, so a failed tile statement fails the read. The Platform prepared query
+ * (platform-query-measures.ts) reads the plugins' latest scores, the counted findings and the waiting
+ * summaries through the functions this read draws them with.
  *
  * COUPLED: the console's `Evaluation` in src/lib/platform-shapes.ts, and its fake answer in
  * ../zz-stack-dashboard/scripts/fake-gateway/platform-evaluation.ts, which `checks/console-platform-evaluation.ts` compares
@@ -50,10 +53,7 @@ type SafeFinding = {
 type Evaluation = {
   meta: ReadMeta;
   tiles: { waiting: number; established: number; lastScored: string | null; daysScored: number };
-  plugins: Part<{
-    plugin: string; score: Figure; lower: number | null; upper: number | null; standing: Standing;
-    guardrails: "pass" | "fail" | "not_established"; protocol: Protocol; scoredAt: string;
-  }[]>;
+  plugins: Part<PluginRow[]>;
   history: Part<ScoreHistory[]>;
   byDecision: Part<Record<"applied" | "rejected" | "deferred", number>>;
   byOwner: Part<Record<string, number>>;
@@ -150,14 +150,87 @@ async function part<T>(name: string, read: () => Promise<T>): Promise<Part<T>> {
   }
 }
 
+/** Every plugin the platform knows, by name: what a finding or a score may be said to concern. */
+export async function pluginNames(): Promise<Set<string>> {
+  return new Set((await platformDb().query<{ name: string }>("select p.name from zz.plugin p")).rows.map((r) => r.name));
+}
+
+/** A plugin's latest scoring up to `asOf`, as Evaluation's plugin rows draw it; the protocol's key is the superadmin's
+ *  alone. */
+export type PluginRow = {
+  plugin: string; score: Figure; lower: number | null; upper: number | null; standing: Standing;
+  guardrails: "pass" | "fail" | "not_established"; protocol: Protocol; scoredAt: string;
+};
+
+/** Every plugin's latest scoring up to `asOf`, by plugin name. */
+export async function latestScores(asOf: string, superadmin: boolean): Promise<PluginRow[]> {
+  return (await platformDb().query<ScoredRow & { guardrails: "pass" | "fail" | "not_established" }>(
+    `select distinct on (p.name) p.name as plugin, pv.id::text as protocol_id, pv.protocol_key,
+            pv.version as protocol_version, (extract(epoch from r.scored_at) * 1000)::float8 as scored_ms,
+            r.score_status as standing, r.overall_score::float8 as score, r.score_lower::float8 as lower,
+            r.score_upper::float8 as upper, coalesce(r.guardrail_status, 'not_established') as guardrails
+       from zz.eval_run r
+       join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
+       join zz.plugin p on p.id = pv.plugin_id
+      where r.scored_at is not null and r.scored_at <= $1::timestamptz
+      order by p.name, r.scored_at desc, r.id desc`, [asOf])).rows.map((r) => ({
+    plugin: r.plugin,
+    score: r.score === null ? { value: null, why: "no_data" as const } : { value: r.score, why: null },
+    lower: r.lower, upper: r.upper, standing: r.standing, guardrails: r.guardrails,
+    protocol: { key: superadmin ? r.protocol_key : null, version: r.protocol_version }, scoredAt: iso(r.scored_ms),
+  }));
+}
+
+/** A finding as the counts count it: a defect or an unknown not superseded, made by `asOf`, its plugin, decision and
+ *  owner category, and the local day and instant it was made. A superseded finding is counted as the one that
+ *  replaced it, and a strength has no decision to count. */
+type CountedFinding = { id: string; plugin: string; decision: "applied" | "rejected" | "deferred"; owner: string; day: string; createdMs: number };
+
+export async function countedFindings(asOf: string): Promise<CountedFinding[]> {
+  return (await platformDb().query<{ id: string; plugin: string; decision: CountedFinding["decision"]; owner_kind: string; day: string; created_ms: number }>(
+    `select f.id::text as id, p.name as plugin, f.decision, f.owner_kind,
+            to_char(f.created_at at time zone $2::text, 'YYYY-MM-DD') as day,
+            (extract(epoch from f.created_at) * 1000)::float8 as created_ms
+       from zz.eval_finding f
+       join zz.eval_run r on r.id = f.eval_run_id
+       join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
+       join zz.plugin p on p.id = pv.plugin_id
+      where f.kind in ('defect', 'unknown') and f.superseded_by is null and f.created_at <= $1::timestamptz`, [asOf, ZZ_TZ])).rows
+    .map((r) => ({ id: r.id, plugin: r.plugin, decision: r.decision, owner: r.owner_kind, day: r.day, createdMs: r.created_ms }));
+}
+
+/** The findings waiting for a decision, oldest first, in their safe form: the pattern and the measure's key leave the
+ *  database only for the superadmin. */
+export async function waitingFindings(asOf: string, superadmin: boolean): Promise<(SafeFinding & { pattern?: string })[]> {
+  const rows = (await platformDb().query<{
+    id: string; plugin: string; kind: "defect" | "unknown"; owner_kind: string; measure: string | null;
+    since_ms: number; pattern: string | null;
+  }>(
+    `select f.id::text as id, p.name as plugin, f.kind, f.owner_kind,
+            case when $2::boolean then m.key end as measure,
+            (extract(epoch from f.created_at) * 1000)::float8 as since_ms,
+            case when $2::boolean then f.pattern end as pattern
+       from zz.eval_finding f
+       join zz.eval_run r on r.id = f.eval_run_id
+       join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
+       join zz.plugin p on p.id = pv.plugin_id
+       left join zz.eval_measure m on m.id = f.measure_id
+      where f.decision = 'deferred' and f.kind in ('defect', 'unknown') and f.superseded_by is null
+        and f.created_at <= $1::timestamptz
+      order by f.created_at, f.id`, [asOf, superadmin])).rows;
+  return rows.map((r) => ({
+    id: r.id, plugin: r.plugin, kind: r.kind, owner: r.owner_kind, measure: r.measure,
+    waitingSince: iso(r.since_ms), summary: summaryOf(r.plugin, r.owner_kind),
+    ...(superadmin ? { pattern: r.pattern ?? "" } : {}),
+  }));
+}
+
 export function mountPlatformEvaluation(app: Express): void {
   app.get("/api/console/platform/evaluation", platformPublic("the platform's evaluation", async (_req, res, { superadmin }) => {
     const db = platformDb();
     // One instant for every statement, in whole seconds so the cutoff is the `asOf` the answer states.
     const asOfMs = Math.floor(Date.now() / 1000) * 1000;
     const asOf = iso(asOfMs);
-    const protocol = (r: ScoredRow): Protocol => ({ key: superadmin ? r.protocol_key : null, version: r.protocol_version });
-
     // The tiles. A plugin's latest score is its most recent scoring; a day is a local date in ZZ_TZ.
     const tiles = (await db.query<{ established: number; first_ms: number | null; last_ms: number | null; days: number; waiting: number }>(
       `with scored as (
@@ -176,70 +249,25 @@ export function mountPlatformEvaluation(app: Express): void {
                 where f.decision = 'deferred' and f.kind in ('defect', 'unknown') and f.superseded_by is null
                   and f.created_at <= $1::timestamptz) as waiting`, [asOf, ZZ_TZ])).rows[0];
 
+    // byDecision and byOwner count one read of the findings, and either fails with it.
+    const counted = countedFindings(asOf);
+    counted.catch(() => undefined);
     const [plugins, history, byDecision, byOwner, waiting] = await Promise.all([
-      part("plugins", async () => (await db.query<ScoredRow & { guardrails: "pass" | "fail" | "not_established" }>(
-        `select distinct on (p.name) p.name as plugin, pv.id::text as protocol_id, pv.protocol_key,
-                pv.version as protocol_version, (extract(epoch from r.scored_at) * 1000)::float8 as scored_ms,
-                r.score_status as standing, r.overall_score::float8 as score, r.score_lower::float8 as lower,
-                r.score_upper::float8 as upper, coalesce(r.guardrail_status, 'not_established') as guardrails
-           from zz.eval_run r
-           join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
-           join zz.plugin p on p.id = pv.plugin_id
-          where r.scored_at is not null and r.scored_at <= $1::timestamptz
-          order by p.name, r.scored_at desc, r.id desc`, [asOf])).rows.map((r) => ({
-        plugin: r.plugin,
-        score: r.score === null ? { value: null, why: "no_data" as const } : { value: r.score, why: null },
-        lower: r.lower, upper: r.upper, standing: r.standing, guardrails: r.guardrails,
-        protocol: protocol(r), scoredAt: iso(r.scored_ms),
-      }))),
-
+      part("plugins", () => latestScores(asOf, superadmin)),
       part("history", () => scoreHistory(asOf, superadmin)),
-
-      // Findings are counted once each: a superseded finding is counted as the one that replaced it,
-      // and a strength has no decision to count.
       part("byDecision", async () => {
         const counts = { applied: 0, rejected: 0, deferred: 0 };
-        for (const r of (await db.query<{ decision: keyof typeof counts; n: number }>(
-          `select f.decision, count(*)::int as n
-             from zz.eval_finding f
-            where f.kind in ('defect', 'unknown') and f.superseded_by is null and f.created_at <= $1::timestamptz
-            group by f.decision`, [asOf])).rows) counts[r.decision] = r.n;
+        for (const f of await counted) counts[f.decision]++;
         return counts;
       }),
-
-      part("byOwner", async () => Object.fromEntries((await db.query<{ owner_kind: string; n: number }>(
-        `select f.owner_kind, count(*)::int as n
-           from zz.eval_finding f
-          where f.kind in ('defect', 'unknown') and f.superseded_by is null and f.created_at <= $1::timestamptz
-          group by f.owner_kind
-          order by n desc, f.owner_kind`, [asOf])).rows.map((r) => [r.owner_kind, r.n]))),
-
-      // Oldest first. The pattern and the measure's key leave the database only for the superadmin.
+      part("byOwner", async () => {
+        const by = new Map<string, number>();
+        for (const f of await counted) by.set(f.owner, (by.get(f.owner) ?? 0) + 1);
+        return Object.fromEntries([...by].sort(([a, n], [b, m]) => m - n || (a < b ? -1 : a > b ? 1 : 0)));
+      }),
       part("waiting", async () => {
-        const rows = (await db.query<{
-          id: string; plugin: string; kind: "defect" | "unknown"; owner_kind: string; measure: string | null;
-          since_ms: number; pattern: string | null;
-        }>(
-          `select f.id::text as id, p.name as plugin, f.kind, f.owner_kind,
-                  case when $2::boolean then m.key end as measure,
-                  (extract(epoch from f.created_at) * 1000)::float8 as since_ms,
-                  case when $2::boolean then f.pattern end as pattern
-             from zz.eval_finding f
-             join zz.eval_run r on r.id = f.eval_run_id
-             join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
-             join zz.plugin p on p.id = pv.plugin_id
-             left join zz.eval_measure m on m.id = f.measure_id
-            where f.decision = 'deferred' and f.kind in ('defect', 'unknown') and f.superseded_by is null
-              and f.created_at <= $1::timestamptz
-            order by f.created_at, f.id`, [asOf, superadmin])).rows;
-        return {
-          rows: rows.map((r) => ({
-            id: r.id, plugin: r.plugin, kind: r.kind, owner: r.owner_kind, measure: r.measure,
-            waitingSince: iso(r.since_ms), summary: summaryOf(r.plugin, r.owner_kind),
-            ...(superadmin ? { pattern: r.pattern ?? "" } : {}),
-          })),
-          total: rows.length,
-        };
+        const rows = await waitingFindings(asOf, superadmin);
+        return { rows, total: rows.length };
       }),
     ]);
 

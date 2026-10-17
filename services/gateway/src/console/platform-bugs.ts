@@ -13,6 +13,9 @@
  * refused from `platformPublic`'s flag before anything is read, with no name in the refusal. An id
  * that is not a UUID naming a row of `zz.bug` is a 404 with no body. Nothing here writes `zz.bug`.
  *
+ * The Platform prepared query (platform-query-measures.ts) counts the same real reports and answers
+ * the queue's rows through `realReports`, `publicRow` and `adminRows`.
+ *
  * COUPLED: the console's `Bugs`, `AdminBugRow` and `BugReport` in src/lib/platform-shapes.ts, and
  * its fake answer in ../zz-stack-dashboard/scripts/fake-gateway/platform-bugs.ts, whose `canonicalSurface` copies the rule
  * below; `checks/console-platform-bugs.ts` compares this route's answers with the fake's, key set by
@@ -26,9 +29,9 @@ import { platformPublic, ZZ_TZ } from "./shared.js";
 
 type Impact = "blocks_work" | "wrong_result" | "confusing" | "cosmetic";
 type Status = "open" | "fixed" | "not_a_bug" | "duplicate";
-const IMPACTS: readonly Impact[] = ["blocks_work", "wrong_result", "confusing", "cosmetic"];
-const STATUSES: readonly Status[] = ["open", "fixed", "not_a_bug", "duplicate"];
-const STATES = ["open", "resolved"] as const;
+export const IMPACTS: readonly Impact[] = ["blocks_work", "wrong_result", "confusing", "cosmetic"];
+export const STATUSES: readonly Status[] = ["open", "fixed", "not_a_bug", "duplicate"];
+export const STATES = ["open", "resolved"] as const;
 
 /** The words a surface is canonical in besides the doors' tool names. */
 const DOORS_AND_CONSOLE = ["core", "manage", "eval", "console"];
@@ -63,14 +66,14 @@ type BugReport = {
 
 /** A real report as every figure counts it: typed metadata and its canonical surface, and no text a
  *  reporter wrote. `teamId` is for a read narrowed to a team; no answer to a member carries it. */
-type RealReport = {
+export type RealReport = {
   id: string; teamId: string | null; impact: Impact; status: Status; surface: string | null;
   platformVersion: string | null; reportedMs: number; resolvedMs: number | null;
 };
 
 /** The surfaces a report may be said to concern: every tool name the three doors register in
  *  `zz.plugin_tool`, the door names, and `console`. */
-async function vocabulary(): Promise<Set<string>> {
+export async function vocabulary(): Promise<Set<string>> {
   const { rows } = await platformDb().query<{ name: string }>("select distinct name from zz.plugin_tool");
   return new Set([...rows.map((r) => r.name), ...DOORS_AND_CONSOLE]);
 }
@@ -120,7 +123,7 @@ const counted = (value: number): Figure => ({ value, why: null });
 
 /** The median hours from filing to resolution of the resolved reports among `of`; a report closed
  *  with no time recorded has no duration and is left out. */
-function medianHours(of: RealReport[]): Figure {
+export function medianHours(of: RealReport[]): Figure {
   const hours = of.filter((r) => r.status !== "open" && r.resolvedMs !== null)
     .map((r) => (r.resolvedMs! - r.reportedMs) / HOUR).sort((a, b) => a - b);
   if (!hours.length) return { value: null, why: "no_data" };
@@ -132,6 +135,32 @@ function medianHours(of: RealReport[]): Figure {
 const one = (v: unknown): string | null | false => (v === undefined ? null : typeof v === "string" ? v : false);
 
 type Filter = { state: string | null; impact: string | null; surface: string | null };
+
+/** The queue: the reports a filter keeps, newest first as `realReports` orders them. */
+export function queueOf(reports: RealReport[], filter: Filter): RealReport[] {
+  return reports
+    .filter((r) => filter.state === null || (filter.state === "open") === (r.status === "open"))
+    .filter((r) => filter.impact === null || r.impact === filter.impact)
+    .filter((r) => filter.surface === null || r.surface === filter.surface);
+}
+
+/** A report as anybody reads it in the queue: a title generated from its canonical surface, and typed metadata. */
+export function publicRow(r: RealReport): PublicBugRow {
+  return {
+    id: r.id, title: publicTitle(r.surface), impact: r.impact, surface: r.surface, filedAt: iso(r.reportedMs),
+    platformVersion: r.platformVersion, status: r.status, resolvedAt: r.resolvedMs === null ? null : iso(r.resolvedMs),
+  };
+}
+
+/** The superadmin's rows of a page of the queue: each public row with the reporter's own title and the team, read for
+ *  those rows alone. */
+export async function adminRows(page: RealReport[]): Promise<AdminBugRow[]> {
+  const internal = new Map((await platformDb().query<{ id: string; title: string; team: string | null }>(
+    `select b.id::text as id, b.title, t.slug as team
+       from zz.bug b left join zz.team t on t.id = b.team_id
+      where b.id = any($1::uuid[])`, [page.map((r) => r.id)])).rows.map((r) => [r.id, r]));
+  return page.map((r): AdminBugRow => ({ ...publicRow(r), internalTitle: internal.get(r.id)!.title, team: internal.get(r.id)!.team }));
+}
 
 /** The queue's filter and page, or the refusal: each filter a closed list, so nothing a caller
  *  types is matched as free text. */
@@ -207,24 +236,10 @@ export function mountPlatformBugs(app: Express): void {
       Object.fromEntries(keys.map((k) => [k, reports.filter((r) => of(r) === k).length])) as Record<K, number>;
 
     const { filter, limit, offset } = asked;
-    const queue = reports
-      .filter((r) => filter.state === null || (filter.state === "open") === (r.status === "open"))
-      .filter((r) => filter.impact === null || r.impact === filter.impact)
-      .filter((r) => filter.surface === null || r.surface === filter.surface);
+    const queue = queueOf(reports, filter);
     const page = queue.slice(offset, offset + limit);
-    const toPublic = (r: RealReport): PublicBugRow => ({
-      id: r.id, title: publicTitle(r.surface), impact: r.impact, surface: r.surface, filedAt: iso(r.reportedMs),
-      platformVersion: r.platformVersion, status: r.status, resolvedAt: r.resolvedMs === null ? null : iso(r.resolvedMs),
-    });
-    let rows: PublicBugRow[] = page.map(toPublic);
-    if (caller.superadmin) {
-      // The reporter's own words and the team, read for the superadmin's page of rows alone.
-      const internal = new Map((await db.query<{ id: string; title: string; team: string | null }>(
-        `select b.id::text as id, b.title, t.slug as team
-           from zz.bug b left join zz.team t on t.id = b.team_id
-          where b.id = any($1::uuid[])`, [page.map((r) => r.id)])).rows.map((r) => [r.id, r]));
-      rows = rows.map((r): AdminBugRow => ({ ...r, internalTitle: internal.get(r.id)!.title, team: internal.get(r.id)!.team }));
-    }
+    // The reporter's own words and the team, read for the superadmin's page of rows alone.
+    const rows: PublicBugRow[] = caller.superadmin ? await adminRows(page) : page.map(publicRow);
 
     const answer: Bugs = {
       meta: {

@@ -51,6 +51,9 @@ export { PLATFORM_CLIENTS, eventOrigin, type EventOrigin } from "./event-origin.
 // the gateway's Activity fold the same sentences together.
 export { normalizedRefusalSql } from "./refusal-normal.js";
 
+// The Platform prepared query's answer, `/api/console/platform/query` (console/platform-query.ts).
+export type { PlatformQuery, PlatformQueryFigure, PlatformQueryGroup } from "./platform-query.js";
+
 // The Evaluation Protocol contract (FR-6, spec v8): the durable measurement object a plugin
 // version is scored against. PROTOCOL_ENUMS and EVAL_STATE_ENUMS are the one source every
 // evaluation writer, and the gate's "every state the schema allows can actually be reached"

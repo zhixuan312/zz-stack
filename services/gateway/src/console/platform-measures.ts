@@ -23,6 +23,9 @@
  *
  * Each function here throws when its statement fails; the status read decides what a failure makes
  * of its answer. Narrowed to a team, a rate keeps no sample minimum: its counts stand beside it.
+ *
+ * The searches by day, which Status and Knowledge health both reduce, are counted here too, so the
+ * Platform prepared query (platform-query-measures.ts) reads the statement the pages it equals read.
  */
 import type pg from "pg";
 
@@ -82,12 +85,11 @@ const WIDENED: Spec = { better: "neutral", rate: true, precision: 1, label: "sha
 /** A figure only its weeks are read of: no direction, and nothing a finding says. */
 const UNNAMED: Spec = { better: "neutral", rate: false, precision: 0, label: "", countLabel: null };
 
-/** Reads the cutoff, where the record begins, and every week from then through the running one, a week
- *  with nothing in it included: a missing week stays a no-data point rather than closing the gap
- *  between its neighbours. Weeks are cut on local wall time, so a week a daylight-saving change falls
- *  in is as long as the clock says. */
-export async function readGrid(db: pg.Pool): Promise<Grid> {
-  const asOfMs = Math.floor(Date.now() / 1000) * 1000;
+/** Reads where the record begins at the cutoff, the read's moment in whole seconds unless one is given,
+ *  and every week from then through the running one, a week with nothing in it included: a missing week
+ *  stays a no-data point rather than closing the gap between its neighbours. Weeks are cut on local wall
+ *  time, so a week a daylight-saving change falls in is as long as the clock says. */
+export async function readGrid(db: pg.Pool, asOfMs = Math.floor(Date.now() / 1000) * 1000): Promise<Grid> {
   const asOf = new Date(asOfMs).toISOString();
   const cov = (await db.query<{ first_ms: number | null; first_day: string }>(
     `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms,
@@ -158,7 +160,10 @@ export const share = (n: number, of: number, scale: number): Counted =>
   ({ numerator: n, denominator: of, value: of === 0 ? null : (scale * n) / of, samples: of });
 export const tally = (n: number): Counted => ({ numerator: n, denominator: null, value: n, samples: n });
 
-/** Real-work calls, the malformed and every refusal among them, by week; `team` narrows to one team's. */
+/** Real-work calls, the malformed and every refusal among them, by week; `team` narrows to one team's.
+ *  DELIBERATE: a weekly statement of its own rather than a reduction of `callDays`, so each read takes one row a
+ *  week: Status reads it three times on a 1.0 s budget. checks/console-platform-query.ts holds the prepared
+ *  query's calls, malformed calls and refusals by week, read from `callDays`, equal to it. */
 export async function callWeeks(db: pg.Pool, grid: Grid, team: string | null) {
   return byWeek((await db.query<{ from_ms: number; calls: number; malformed: number; refusals: number }>(
     `select (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
@@ -225,6 +230,34 @@ export async function latencyMeasures(db: pg.Pool, grid: Grid): Promise<[StatusM
   return [percentile("call_p50_ms", "p50_ms"), percentile("call_p95_ms", "p95_ms")];
 }
 
+/** zz-core's work `knowledge.search` rows that carry `detail.returned`, of one local day (`day`, and the instant its
+ *  week starts) and one team (`team` its slug, null for none), split by whether the result set was not empty
+ *  (`found`) and whether the engine widened (`widened`, null where `detail.broadened` was not recorded), with the
+ *  results they found in all and the latest of each. The one count of searches Status, Knowledge health and the
+ *  prepared query reduce. */
+type SearchDay = {
+  day: string; week_ms: number; team: string | null; found: boolean; widened: boolean | null;
+  searches: number; results: number; last_ms: number;
+};
+
+/** Searches in `[from, to)`, `from` null for the whole record, as `SearchDay` rows. */
+export async function searchDays(db: pg.Pool, to: string, from: string | null): Promise<SearchDay[]> {
+  return (await db.query<SearchDay>(
+    `select to_char(e.ts at time zone $1::text, 'YYYY-MM-DD') as day,
+            (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as week_ms,
+            t.slug as team,
+            (jsonb_typeof(e.detail -> 'returned') = 'array' and e.detail -> 'returned' <> '[]'::jsonb) as found,
+            case when e.detail ? 'broadened' then e.detail ->> 'broadened' = 'true' end as widened,
+            count(*)::int as searches,
+            coalesce(sum(case when jsonb_typeof(e.detail -> 'returned') = 'array' then jsonb_array_length(e.detail -> 'returned') else 0 end), 0)::int as results,
+            (extract(epoch from max(e.ts)) * 1000)::float8 as last_ms
+       from zz.event e
+       left join zz.team t on t.id = e.team_id
+      where e.kind = 'knowledge.search' and e.origin = 'work' and e.detail ? 'returned'
+        and e.ts < $2::timestamptz and ($3::timestamptz is null or e.ts >= $3::timestamptz)
+      group by 1, 2, 3, 4, 5`, [ZZ_TZ, to, from])).rows;
+}
+
 /** Searches that found something: of zz-core's work `knowledge.search` rows that carry
  *  `detail.returned`, those whose result set is not empty, and beside them the share the engine
  *  widened (`detail.broadened`) and the `core:knowledge_search` calls that were refused, which are
@@ -237,15 +270,15 @@ export async function searchesMeasure(db: pg.Pool, grid: Grid): Promise<StatusMe
             (select to_char(min(e.ts) at time zone $2::text, 'YYYY-MM-DD') from zz.event e
               where e.kind = 'knowledge.search' and e.origin = 'work' and e.detail ? 'broadened' and e.ts < $1::timestamptz) as broadened_day`,
     [asOf, ZZ_TZ])).rows[0];
-  const at = byWeek((await db.query<{ from_ms: number; completed: number; found: number; told: number; widened: number }>(
-    `select (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
-            count(*)::int as completed,
-            (count(*) filter (where jsonb_typeof(e.detail -> 'returned') = 'array' and e.detail -> 'returned' <> '[]'::jsonb))::int as found,
-            (count(*) filter (where e.detail ? 'broadened'))::int as told,
-            (count(*) filter (where e.detail ->> 'broadened' = 'true'))::int as widened
-       from zz.event e
-      where e.kind = 'knowledge.search' and e.origin = 'work' and e.detail ? 'returned' and e.ts < $2::timestamptz
-      group by 1`, [ZZ_TZ, asOf])).rows);
+  const weeks = new Map<number, { from_ms: number; completed: number; found: number; told: number; widened: number }>();
+  for (const d of await searchDays(db, asOf, null)) {
+    const w = weeks.get(d.week_ms) ?? { from_ms: d.week_ms, completed: 0, found: 0, told: 0, widened: 0 };
+    weeks.set(d.week_ms, {
+      from_ms: d.week_ms, completed: w.completed + d.searches, found: w.found + (d.found ? d.searches : 0),
+      told: w.told + (d.widened === null ? 0 : d.searches), widened: w.widened + (d.widened ? d.searches : 0),
+    });
+  }
+  const at = byWeek([...weeks.values()]);
   const failed = byWeek((await db.query<{ from_ms: number; failed: number }>(
     `select (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
             count(*)::int as failed

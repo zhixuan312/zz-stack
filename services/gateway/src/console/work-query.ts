@@ -36,16 +36,28 @@
  * window is answered for it, so period is not its dimension.
  *
  * The window defaults to the last whole week; what it counts is inside it and before the cutoff, the
- * read's moment rounded up to a whole second, as Home's. A period group is a period of the window at
+ * read's moment rounded up to a whole second, as Home's. from and to are two instants, or two dates read
+ * as the reporting timezone's days, the window running from the first's midnight to the midnight after
+ * the second; a from of 0001-01-01, which ZZ Meridian's runner sends for all, is the first local day the
+ * measure's record holds, found before the where filters. A period group is a period of the window at
  * the grain grainFor draws it at, every one of them in order and none folded, its previous value the
- * same period of the previous window by position. Any other dimension answers its 20 largest groups,
- * the largest first and the key breaking a tie, the rest folded into one count. A drill answers the
- * group's rows newest first, the keys breaking a tie, so a page and the next never overlap; a drilled
- * initiative's next move is zz-core's, relayed as the person for the page's names alone.
+ * same period of the previous window by position. Every measure that takes period also takes the four
+ * buckets, day, week, month and weekday, as work-query-buckets.ts keys them, but for runs, whose
+ * weekday is its own dimension: every bucket of the window in order, the latest top of them answered
+ * and the earlier ones folded, a day, week or month's previous value the same bucket of the previous
+ * window by position, a weekday's the same weekday. Any other dimension answers its top largest
+ * groups, 20 when not asked, the largest first and the key breaking a tie, the rest folded into one
+ * count. where filters the rows on the measure's own dimensions, equality alone, at most four. A drill
+ * answers the group's rows newest first, the keys breaking a tie, so a page and the next never
+ * overlap; rows answers the newest of every row the filters and the window keep, as ZZ Meridian's
+ * runner drills; a drilled initiative's next move is zz-core's, relayed as the person for the page's
+ * names alone.
  *
- * An unknown measure, an unknown dimension or one the measure does not allow, and any argument it
- * cannot read, is refused with 400 naming what is allowed, before anything is read. A read that
- * fails makes the total and the groups unavailable, and the drilled rows with them, and says so.
+ * An unknown measure, an unknown dimension or one the measure does not allow, a filter on a dimension
+ * it does not take or outside a closed vocabulary, a date and an instant in one window, rows or a group
+ * of skill_calls, and any argument it cannot read, is refused with 400 naming what is allowed and never
+ * echoing a value sent, before anything is read. A read that fails makes the total and the groups
+ * unavailable, and the drilled rows with them, and says so.
  *
  * Work is the active team's, for the superadmin too, and reading it records nothing: its statements
  * write no row, and the next moves are relayed as the person's console session, for which
@@ -60,7 +72,7 @@
  * 400 sentences are the fake's, which the console's tests read. A drilled row is the row its page
  * draws, read by the page's own function: Activity's eventRows, Runs' runRow and the shelf's shelfRows.
  */
-import { REFUSAL_OWNERS } from "@zz/contracts";
+import { OUTCOMES, REFUSAL_OWNERS } from "@zz/contracts";
 import { catalogEntries, pluginName } from "@zz/catalog";
 import type { Mcp } from "@zz/mcp-client";
 import type { Express } from "express";
@@ -80,6 +92,7 @@ import { runRow } from "./runs.js";
 import { runsIn } from "./runs-observed.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 import { grainFor, lastWholeWeek, openedRows, periodsOf, type Grain, type Period } from "./work-figures.js";
+import { BUCKETS, WEEKDAYS, addDays, bucketLabel, bucketOf, bucketsOf, isDate, localDay, midnight, type Bucket } from "./work-query-buckets.js";
 import { lessonAdditions, transitions } from "./writing.js";
 
 /** Each measure and the dimensions it may be grouped by. */
@@ -100,6 +113,19 @@ const MEASURES = {
 type Measure = keyof typeof MEASURES;
 /** The groups a dimension always answers, an empty one as zero, so no owner or standing falls out of a chart. */
 const FIXED: Record<string, readonly string[]> = { owner: REFUSAL_OWNERS, refused: ["refused", "answered"], standing: ["standing", "superseded"] };
+/** The values a filter on a closed dimension may name; a free one, a tool or an initiative, takes any. */
+const VOCABULARY: Record<string, readonly string[]> = {
+  ...FIXED, found: ["found", "none"], outcome: OUTCOMES, weekday: WEEKDAYS, hour: Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0")),
+};
+
+/** What a measure may be grouped by: its dimensions, then the buckets where it takes period and has no dimension of the name. */
+const groupings = (m: Measure): readonly string[] => {
+  const dims: readonly string[] = MEASURES[m];
+  return dims.includes("period") ? [...dims, ...BUCKETS.filter((b) => !dims.includes(b))] : dims;
+};
+/** The bucket a grouping names, or null for a dimension or period. */
+const bucketFor = (m: Measure, by: string): Bucket | null =>
+  (BUCKETS as readonly string[]).includes(by) && !(MEASURES[m] as readonly string[]).includes(by) ? by as Bucket : null;
 
 type Span = { from: string; to: string };
 type Relay = Pick<Mcp, "call">;
@@ -122,7 +148,7 @@ type Group = { key: string; label: string; value: Counted; share: number | null;
 type WorkQuery = {
   meta: ReadMeta;
   measure: string; by: string; window: Window;
-  grain: Grain | null;
+  grain: Grain | Bucket | null;
   groups: Group[];
   rest: { groups: number; value: number } | null;
   total: Counted;
@@ -130,24 +156,31 @@ type WorkQuery = {
 };
 /** Initiatives' filters, as its list reads them. */
 type Filters = { state: InitiativeRow["state"] | null; flow: string | null; q: string };
+/** The window's start: an instant, or the first local day of the measure's record. */
+type From = number | typeof FIRST;
 type Asked = {
-  measure: Measure; by: string; compare: boolean; filters: Filters;
-  from: number | null; to: number | null; group: string | null; limit: number; offset: number;
+  measure: Measure; by: string; compare: boolean; filters: Filters; where: [string, string][]; top: number;
+  from: From | null; to: number | null; group: string | null; rows: number | null; limit: number; offset: number;
 };
 /** One row a measure counts: when it happened, what it adds (null for a run that measured no output), its key along
  *  each dimension but period, and its id where the record has one, the last to break a tie between two rows. */
 type Fact = { ms: number; value: number | null; keys: Record<string, string>; row: WorkQueryRow | null; id?: string; imported?: boolean };
 
-const PARAMS = ["measure", "by", "from", "to", "compare", "state", "flow", "q", "group", "limit", "offset"];
-/** The groups a dimension other than period answers; the rest are folded. */
+const PARAMS = ["measure", "by", "from", "to", "compare", "state", "flow", "q", "group", "rows", "top", "limit", "offset"];
+/** The groups a dimension or a bucket answers when top is not asked; the rest are folded. */
 const LARGEST = 20;
+const MOST_TOP = 50, MOST_ROWS = 20, MOST_FILTERS = 4;
+/** The from ZZ Meridian's runner sends for all. */
+const FIRST = "0001-01-01";
 /** Every row of a list read: the population is reduced here, never paged. */
 const ALL = Number.MAX_SAFE_INTEGER;
 /** The key of a group whose dimension the row has no value for: no flow, no initiative. */
 const NONE = "none";
 /** The group a lesson's words fall in when words are asked by document or initiative: a lesson is neither. */
 const LESSONS = "lessons";
-const BAD_WINDOW = "from and to must be ISO 8601 instants, from before to";
+const BAD_WINDOW = "from and to must be ISO 8601 instants or dates, YYYY-MM-DD, from before to";
+const MIXED_WINDOW = "from and to are both dates or both instants, not one of each";
+const NOT_DRILLED = "skill_calls is not drilled: its groups are its rows";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -160,26 +193,66 @@ function parse(query: Record<string, unknown>): Asked | string {
   const text = (k: string): string | null => (query[k] as string | undefined) ?? null;
   const measure = text("measure") ?? "";
   if (!(measure in MEASURES)) return `measure must be one of ${Object.keys(MEASURES).join(", ")}`;
-  const allowed: readonly string[] = MEASURES[measure as Measure];
+  const allowed = groupings(measure as Measure);
   const by = text("by") ?? "";
   if (!allowed.includes(by)) return `${measure} is grouped by one of ${allowed.join(", ")}`;
   const compare = text("compare");
   if (compare !== null && compare !== "previous") return "compare must be previous, or left out";
-  if (measure === "skill_calls" && text("group") !== null) return "skill_calls is not drilled: its groups are its rows";
+  if (measure === "skill_calls" && (text("group") !== null || text("rows") !== null)) return NOT_DRILLED;
+  const where = whereOf(measure as Measure, query.where);
+  if (typeof where === "string") return where;
+  const whole = (k: string, most: number): number | null | undefined => {
+    const n = text(k) === null ? null : Number(text(k));
+    return n === null || (Number.isInteger(n) && n >= 1 && n <= most) ? n : undefined;
+  };
+  const top = whole("top", MOST_TOP), rows = whole("rows", MOST_ROWS);
+  if (top === undefined) return `top must be a whole number from 1 to ${MOST_TOP}`;
+  if (top !== null && by === "period") return "period answers every period of the window, so it takes no top";
+  if (rows === undefined) return `rows must be a whole number from 1 to ${MOST_ROWS}`;
+  if (rows !== null && ["group", "limit", "offset"].some((k) => text(k) !== null)) {
+    return "rows is the newest of the window's rows, so it is given without group, limit or offset";
+  }
   // Initiatives' filters and the page, read as the list reads them.
   const list = listParams(query);
   if (typeof list === "string") return list;
-  // An instant in whole seconds, as every instant this route compares is stamped.
-  const instant = (k: string): number | null => (text(k) === null ? null : Math.floor(Date.parse(text(k)!) / 1000) * 1000);
-  const [from, to] = [instant("from"), instant("to")];
-  if ([from, to].some((t) => t !== null && !Number.isFinite(t)) || (from !== null && to !== null && from >= to)) {
-    return BAD_WINDOW;
-  }
+  // A date as its local day's midnight, or for to the next day's; an instant in whole seconds, as every
+  // instant this route compares is stamped. A text shaped as a date the calendar has not is neither.
+  const bound = (k: string): { ms: number; date: boolean } | null => {
+    const t = text(k);
+    if (t === null) return null;
+    if (isDate(t)) return { ms: midnight(k === "to" ? addDays(t, 1) : t), date: true };
+    return { ms: /^\d{4}-\d{2}-\d{2}$/.test(t) ? NaN : Math.floor(Date.parse(t) / 1000) * 1000, date: false };
+  };
+  const to = bound("to");
+  const from: ReturnType<typeof bound> | typeof FIRST = text("from") === FIRST ? FIRST : bound("from");
+  if ([from, to].some((b) => b !== null && b !== FIRST && !Number.isFinite(b.ms))) return BAD_WINDOW;
+  if (from !== null && to !== null && (from === FIRST || from.date) !== to.date) return MIXED_WINDOW;
+  if (from !== null && from !== FIRST && to !== null && from.ms >= to.ms) return BAD_WINDOW;
   return {
     measure: measure as Measure, by, compare: compare !== null,
-    filters: { state: list.state, flow: list.flow, q: list.q },
-    from, to, group: text("group"), limit: list.limit, offset: list.offset,
+    filters: { state: list.state, flow: list.flow, q: list.q }, where, top: top ?? LARGEST,
+    from: from === null || from === FIRST ? from : from.ms, to: to?.ms ?? null,
+    group: text("group"), rows, limit: list.limit, offset: list.offset,
   };
+}
+
+/** The where filters, each an equality on one of the measure's own dimensions, or the sentence a 400 says. */
+function whereOf(measure: Measure, raw: unknown): [string, string][] | string {
+  if (raw === undefined) return [];
+  const list = typeof raw === "string" ? [raw] : Array.isArray(raw) && raw.every((w) => typeof w === "string") ? raw as string[] : null;
+  if (list === null) return "each where is a dimension, an equals sign and a value";
+  if (list.length > MOST_FILTERS) return `where takes at most ${MOST_FILTERS} filters`;
+  const dims = (MEASURES[measure] as readonly string[]).filter((d) => d !== "period");
+  const out: [string, string][] = [];
+  for (const w of list) {
+    const at = w.indexOf("=");
+    if (at < 1) return "each where is a dimension, an equals sign and a value";
+    const [dim, value] = [w.slice(0, at), w.slice(at + 1)];
+    if (!dims.includes(dim)) return `${measure} is filtered by one of ${dims.join(", ")}`;
+    if (VOCABULARY[dim] && !VOCABULARY[dim].includes(value)) return `a filter on ${dim} takes one of ${VOCABULARY[dim].join(", ")}`;
+    out.push([dim, value]);
+  }
+  return out;
 }
 
 /** An instant on the reporting timezone's calendar: its local date, weekday and hour. */
@@ -188,19 +261,6 @@ function local(ms: number): { weekday: string; hour: string } {
     .formatToParts(new Date(ms));
   const of = (t: string): string => parts.find((p) => p.type === t)?.value ?? "";
   return { weekday: of("weekday"), hour: of("hour") };
-}
-
-/** The instant a local date begins in the reporting timezone: an approval recorded by its day alone. */
-function midnight(date: string): number {
-  const offset = (ms: number): number => {
-    const p = new Intl.DateTimeFormat("en-CA", {
-      timeZone: ZZ_TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
-    }).formatToParts(new Date(ms));
-    const n = (t: string): number => Number(p.find((x) => x.type === t)?.value);
-    return Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"), n("second")) - ms;
-  };
-  const guess = Date.parse(`${date}T00:00:00Z`);
-  return guess - offset(guess - offset(guess));
 }
 
 /** A relay that answers no initiative: the population read, which reduces rows and never draws a next move. */
@@ -357,10 +417,20 @@ function labelOf(by: string, key: string, grain: Grain | null): string {
   return by === "hour" ? `${key}:00` : key;
 }
 
-/** One prepared question over the window from one instant up to another, answered for the team at the
- *  cutoff, the approvals in it the caller's. */
-async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, caller: string, asOf: string, relay: Relay): Promise<WorkQuery> {
+/** One prepared question over the window from one instant, or the record's first local day, up to another,
+ *  answered for the team at the cutoff, the approvals in it the caller's. */
+async function workQuery(a: Asked, from: From, toMs: number, team: string, caller: string, asOf: string, relay: Relay): Promise<WorkQuery> {
   const asOfMs = Date.parse(asOf);
+  // The record's first day is found over everything before the window's end, which then holds the previous window too.
+  let read: Promise<Fact[]> | null = null;
+  let fromMs: number;
+  if (from === FIRST) {
+    read = factsOf(a, team, caller, { from: iso(0), to: iso(toMs) }, asOf);
+    const first = await read.then((fs) => fs.reduce((m, f) => (f.ms < toMs ? Math.min(m, f.ms) : m), Infinity), () => Infinity);
+    fromMs = midnight(localDay(Number.isFinite(first) ? first : toMs - 1));
+  } else {
+    fromMs = from;
+  }
   const meta: ReadMeta = {
     asOf, timezone: ZZ_TZ, period: { from: iso(fromMs), to: iso(toMs) },
     scope: a.measure === "approvals" ? "caller-in-active-team" : "active-team",
@@ -372,9 +442,11 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
     complete: toMs <= asOfMs,
   };
   const grain = a.by === "period" ? grainFor({ from: iso(fromMs), to: iso(toMs) }) : null;
+  const bucket = bucketFor(a.measure, a.by);
+  const drilling = a.group !== null || a.rows !== null;
   const unanswered = (): WorkQuery => ({
-    meta, measure: a.measure, by: a.by, window, grain, groups: [], rest: null, total: unread,
-    rows: a.group === null ? null : { state: "unavailable", reason: "query_failed" },
+    meta, measure: a.measure, by: a.by, window, grain: grain ?? bucket, groups: [], rest: null, total: unread,
+    rows: drilling ? { state: "unavailable", reason: "query_failed" } : null,
   });
 
   const spanMs = toMs - fromMs;
@@ -382,7 +454,7 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
   let facts: Fact[], periods: Period[], before: Period[];
   try {
     [facts, periods, before] = await Promise.all([
-      factsOf(a, team, caller, { from: iso(startMs), to: iso(toMs) }, asOf),
+      read ?? factsOf(a, team, caller, { from: iso(startMs), to: iso(toMs) }, asOf),
       grain ? periodsOf({ from: iso(fromMs), to: iso(toMs) }, asOf, grain) : [],
       grain && a.compare ? periodsOf({ from: iso(startMs), to: iso(fromMs) }, asOf, grain) : [],
     ]);
@@ -390,6 +462,7 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
     console.error(`console work query: ${a.measure} by ${a.by} could not be read:`, err);
     return unanswered();
   }
+  facts = facts.filter((f) => a.where.every(([dim, value]) => f.keys[dim] === value));
 
   const inside = (f: Fact, from: number, to: number): boolean => f.ms >= from && f.ms < Math.min(to, asOfMs);
   // A stock is counted as of the window's end, and nothing records it as of the end of the one before.
@@ -397,29 +470,43 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
   const now = stock ? facts : facts.filter((f) => inside(f, fromMs, toMs));
   const then = a.compare && !stock ? facts.filter((f) => inside(f, startMs, fromMs)) : [];
   const periodOf = (f: Fact, ps: Period[]): number => ps.findIndex((p) => f.ms >= p.fromMs && f.ms < p.toMs);
-  const keyOf = (f: Fact): string => (grain ? periods[periodOf(f, periods)]?.window.from ?? "" : f.keys[a.by]);
+  const keyOf = (f: Fact): string =>
+    (grain ? periods[periodOf(f, periods)]?.window.from ?? "" : bucket ? bucketOf(bucket, f.ms) : f.keys[a.by]);
   const count = (fs: Fact[]): Counted => countOf(a.measure, fs);
   const total = count(now);
+  const members = new Map<string, Fact[]>();
+  for (const f of now) {
+    const key = keyOf(f);
+    if (!members.has(key)) members.set(key, []);
+    members.get(key)!.push(f);
+  }
+  // A day, week or month of the previous window is matched to this one's by position, as a period is.
+  const series = bucket ? bucketsOf(bucket, fromMs, Math.min(toMs, asOfMs)) : [];
+  const earlier = bucket && bucket !== "weekday" && a.compare ? bucketsOf(bucket, startMs, Math.min(fromMs, asOfMs)) : [];
 
-  const keys = grain ? periods.map((p) => p.window.from) : [...new Set([...(FIXED[a.by] ?? []), ...now.map(keyOf)])];
+  const keys = grain ? periods.map((p) => p.window.from) : bucket ? series : [...new Set([...(FIXED[a.by] ?? []), ...members.keys()])];
   const groups = keys.map((key, i): Group => {
-    const value = count(now.filter((f) => keyOf(f) === key));
+    const value = count(members.get(key) ?? []);
     let previous: Counted | null = null;
     if (a.compare && !stock) {
-      previous = !grain ? count(then.filter((f) => f.keys[a.by] === key))
-        : i < before.length ? count(then.filter((f) => periodOf(f, before) === i)) : { ...count([]), value: null, why: "no_data" };
+      const noData = (): Counted => ({ ...count([]), value: null, why: "no_data" });
+      previous = grain ? (i < before.length ? count(then.filter((f) => periodOf(f, before) === i)) : noData())
+        : bucket && bucket !== "weekday" ? (i < earlier.length ? count(then.filter((f) => bucketOf(bucket, f.ms) === earlier[i])) : noData())
+        : count(then.filter((f) => (bucket ? bucketOf(bucket, f.ms) : f.keys[a.by]) === key));
     }
-    return { key, label: labelOf(a.by, key, grain), value, share: total.value ? (value.value ?? 0) / total.value : null, previous };
+    const label = bucket ? bucketLabel(bucket, key) : labelOf(a.by, key, grain);
+    return { key, label, value, share: total.value ? (value.value ?? 0) / total.value : null, previous };
   });
-  if (!grain) groups.sort((x, y) => (y.value.value ?? -1) - (x.value.value ?? -1) || x.key.localeCompare(y.key));
-  const kept = grain ? groups : groups.slice(0, LARGEST);
-  const folded = grain ? [] : groups.slice(LARGEST);
+  if (!grain && !bucket) groups.sort((x, y) => (y.value.value ?? -1) - (x.value.value ?? -1) || x.key.localeCompare(y.key));
+  // A bucket keeps the latest of the window, a dimension its largest; a period is never folded.
+  const cut = grain ? 0 : bucket ? Math.max(0, groups.length - a.top) : Math.min(a.top, groups.length);
+  const [kept, folded] = grain ? [groups, []] : bucket ? [groups.slice(cut), groups.slice(0, cut)] : [groups.slice(0, cut), groups.slice(cut)];
 
   let rows: WorkQuery["rows"] = null;
-  if (a.group !== null) {
+  if (drilling) {
     const order = (f: Fact): string => [...Object.values(f.keys), f.id ?? ""].join("\0");
-    const drilled = now.filter((f) => keyOf(f) === a.group).sort((x, y) => y.ms - x.ms || order(x).localeCompare(order(y)));
-    let page = drilled.slice(a.offset, a.offset + a.limit).map((f) => f.row!);
+    const drilled = [...(a.group !== null ? members.get(a.group) ?? [] : now)].sort((x, y) => y.ms - x.ms || order(x).localeCompare(order(y)));
+    let page = (a.rows !== null ? drilled.slice(0, a.rows) : drilled.slice(a.offset, a.offset + a.limit)).map((f) => f.row!);
     if (a.measure === "closures" || a.measure === "opened") {
       // The page's next moves, asked of zz-core for its names alone; a batch it does not answer leaves them null.
       const names = new Set(page.map((r) => (r as InitiativeRow).slug));
@@ -435,7 +522,7 @@ async function workQuery(a: Asked, fromMs: number, toMs: number, team: string, c
   }
 
   return {
-    meta, measure: a.measure, by: a.by, window, grain,
+    meta, measure: a.measure, by: a.by, window, grain: grain ?? bucket,
     groups: kept,
     rest: folded.length ? { groups: folded.length, value: folded.reduce((n, g) => n + (g.value.value ?? 0), 0) } : null,
     total,
@@ -460,7 +547,7 @@ export function mountWorkQuery(app: Express): void {
     // A bound left out is the last whole week's, which a bound given may still pass.
     const week = asked.from === null || asked.to === null ? await lastWholeWeek(asOf) : null;
     const from = asked.from ?? Date.parse(week!.from), to = asked.to ?? Date.parse(week!.to);
-    if (from >= to) {
+    if (from !== FIRST && from >= to) {
       res.status(400).json({ error: BAD_WINDOW });
       return;
     }

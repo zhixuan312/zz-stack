@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.25
+version: 1.26
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -65,7 +65,7 @@ finds each one the day it lands, not all of them in the last phase.
 whose dependencies are done run together as a wave in one checkout; overlapping owners must
 depend on one another, and shared files — registrations, changelogs, generated files — are
 `## Integration hotspots` that no task owns. Workers report hotspot lines; the orchestrator
-applies them, regenerates, runs the gate and commits after each wave. Who writes what is decided
+applies them, regenerates, runs the full-suite gate and commits after each wave. Who writes what is decided
 when the plan is written, because deciding it when two workers collide costs the work of both.
 
 **The plan says what and how-done, never a fact the tree will move under** — no migration
@@ -121,8 +121,8 @@ ledger, and the rules are fixed:
 |---|---|---|
 | S1 | security, data loss, or an authority bypass | yes |
 | S2 | a capability on the main path is broken | yes |
-| S3 | a wrong result on an edge path | no — fixed in a batch, the gate verifies it |
-| S4 | text, docs, naming | no — fixed in a batch, the gate verifies it |
+| S3 | a wrong result on an edge path | no — fixed in a batch, the full-suite gate verifies it |
+| S4 | text, docs, naming | no — fixed in a batch, the full-suite gate verifies it |
 
 - A round after the first reads ONLY the fix diff and its blast radius. A finding outside the
   declared scope goes to `review.md`'s Backlog and opens no round, unless it is S1 and reproduced.
@@ -280,7 +280,7 @@ Two consequences, and quality rests on both:
 correct test can time out. A timeout while the machine is loaded earns one retry, run when it is
 quieter. A second timeout is a defect to investigate, not a third run. Stop only processes you
 started, by the id you started them with, and never by name: a process found by name may be
-somebody else's gate.
+somebody else's full-suite gate.
 
 ## You are the quality gate
 

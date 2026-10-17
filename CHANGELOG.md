@@ -33,6 +33,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### zz-stack
+
+- **sdlc-flow says "full-suite gate" for the whole-project check.** "Gate" also names a document a
+  person approves, so a bare "the gate" in sdlc-execute, sdlc-method, sdlc-plan and sdlc-review now
+  reads "full-suite gate" wherever it means the plan's `## Full-suite gate`, and "approval gate"
+  where it means the approval. Wording only. sdlc-method 1.26, sdlc-execute 1.19, sdlc-review 1.19,
+  sdlc-plan 1.28.
+
 ## [0.96.0] — 2026-10-12 · console 0.27.0
 
 The console gets an assistant, Meridian's own, and the gateway stops answering questions. A person

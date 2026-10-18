@@ -35,6 +35,10 @@
  * initiative sentinel); a run of each team in its open initiative; and an empty initiative of the first
  * team for each of its admin and that superadmin to close.
  *
+ * `seedSharedCitations` adds a lesson on the shared shelf citing both teams' open initiatives, a lesson on
+ * each team's shelf citing its own, and a superadmin acting for the second team: what the citation checks
+ * (`checks/console-isolation.ts`'s Work rounds and `checks/knowledge-search-cited.ts`) ask about.
+ *
  * A helper, not a check: every `.ts` under `checks/` is a check the gate runs.
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -325,4 +329,69 @@ export async function seedWorkRecord(c: Pick<Core, "sql" | "client" | "ok">, s: 
     colleague, acting, cookies: { colleague: await signIn(db, colleague), acting: await signIn(db, acting) },
     approvals, tokens, closable,
   };
+}
+
+/** The shared shelf. COUPLED: PLATFORM_TEAM in services/gateway/src/identity.ts, KNOWLEDGE_TEAM in zz-core. */
+const SHARED = "zz-platform";
+/** The tag the shared lesson and each team's own lesson carry, so each team's is the shared one's neighbour. */
+const CITED_TAG = "isolation-citations";
+
+/** What `seedSharedCitations` wrote. */
+export interface SharedCitations {
+  /** A superadmin who is a member of the second team and acts for it, and their console cookie. */
+  actingTwo: string; cookie: string;
+  /** The shared lesson's address on its shelf, and the one word nothing else holds, which a search finds it by. */
+  node: string; word: string;
+  /** Each team's own lesson, on its own shelf, by its address. */
+  own: Record<"one" | "two", string>;
+}
+
+/** Seeds, beside `seedIsolation`'s rows, the shape production's shared shelf has (on 18 October 2026, 79 of
+ *  its lessons cited 83 initiatives of three other teams): the shared shelf's team, when there is none, and a
+ *  lesson on it citing each team's open initiative; a lesson on each team's own shelf citing its own open
+ *  initiative, tagged as the shared one is; and a superadmin acting for the second team, signed in. Its rows
+ *  are indexed by the caller (`knowledge_reindex`), as `seedIsolation`'s are.
+ *
+ *  Its own step, and called by the citation checks alone: the checks that read `seedIsolation` read the seed
+ *  they always read. */
+export async function seedSharedCitations(db: pg.ClientBase | pg.Pool, s: Isolation): Promise<SharedCitations> {
+  const one = async (sql: string, args: unknown[]): Promise<string> => (await db.query<{ id: string }>(sql, args)).rows[0].id;
+  await db.query(
+    `insert into zz.team (slug, name, created_by)
+     select $1, 'The shared shelf', p.id from zz.principal p where p.email = $2 and not exists (select 1 from zz.team where slug = $1)`,
+    [SHARED, s.superadmin]);
+  /** A lesson on `team`'s shelf at its next number, citing the open initiatives `cites` names: its address. */
+  const lesson = async (team: string, slug: string, title: string, body: string, tags: string[], cites: string[]): Promise<string> => {
+    const { rows: [n] } = await db.query<{ id: string; address: string }>(
+      `insert into zz.knowledge_node (kind, title, body, tags, team_id, node_ordinal, slug)
+       select 'decision', $2, $3, $4, t.id,
+              (select coalesce(max(k.node_ordinal::int), 0) + 1 from zz.knowledge_node k where k.team_id = t.id)::text, $5
+         from zz.team t where t.slug = $1
+       returning id, 'nodes/' || node_ordinal || '-' || slug || '.md' as address`, [team, title, body, tags, slug]);
+    await db.query(
+      `insert into zz.knowledge_node_evidence (node_id, initiative_id)
+       select $1, i.id from zz.initiative i join zz.team t on t.id = i.team_id
+        where (t.slug, i.slug) in (select * from unnest($2::text[], $3::text[]))`,
+      [n.id, cites.map((c) => c.split("/")[0]), cites.map((c) => c.split("/")[1])]);
+    return n.address;
+  };
+  const word = "zebrafish";
+  const node = await lesson(SHARED, "shared-citations-lesson", "Zebrafish cadence is learned across teams",
+    "Zebrafish cadence: both teams learned it, and the shared shelf keeps it.", [CITED_TAG, word],
+    [`${s.one.slug}/${s.one.initiative}`, `${s.two.slug}/${s.two.initiative}`]);
+  const own = {
+    one: await lesson(s.one.slug, "first-team-cited-lesson", "The first team keeps its own beside the shared one",
+      "Kept on the first team's shelf, learned in its own work.", [CITED_TAG], [`${s.one.slug}/${s.one.initiative}`]),
+    two: await lesson(s.two.slug, "second-team-cited-lesson", "The second team keeps its own beside the shared one",
+      "Kept on the second team's shelf, learned in its own work.", [CITED_TAG], [`${s.two.slug}/${s.two.initiative}`]),
+  };
+  const actingTwo = "superadmin-two@isolation.example.test";
+  const principal = await one(
+    "insert into zz.principal (email, display_name, role) values ($1, 'Isolation superadmin acting for the second team', 'superadmin') returning id",
+    [actingTwo]);
+  await db.query(
+    `insert into zz.membership (team_id, principal_id, role, added_by)
+     select t.id, $2, 'member', a.id from zz.team t, zz.principal a where t.slug = $1 and a.email = $3`, [s.two.slug, principal, s.two.email]);
+  await db.query("update zz.principal set active_team_id = (select id from zz.team where slug = $2) where id = $1", [principal, s.two.slug]);
+  return { actingTwo, cookie: await signIn(db, actingTwo), node, word, own };
 }

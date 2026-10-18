@@ -27,10 +27,15 @@
  *     request naming the second team's team, initiative, node, person, plugin or ids is sent again
  *     naming a phantom of the same shape no team holds, and the two answers, those names and every
  *     instant masked, must be alike: a member does not learn that another team's thing exists;
- *   - with each read's table renamed from the map below, each read answers again and its error body
+ *   - with each read's table renamed from `tableFor`'s map, each read answers again and its error body
  *     holds no sentinel; a read the map does not name is listed as not reached, and the map names every
  *     Fleet read; the reads refused to a member (Teams, a team, People, Audit) answer one body, 403 and
- *     naming nobody, to every request in both rounds;
+ *     naming nobody, to every request in both rounds; and, in `console-isolation-failures.ts`'s part, the
+ *     reads that answer another team's address before reading anything (Work's initiative and document),
+ *     the shared lesson, the shelf, the search and each settings read with a table of its own, asked at
+ *     the member's own addresses, each answer their own error body with that table renamed while every
+ *     read beside them that reads no such table answers as before, and the settings reads with no table
+ *     of their own and `live` are listed unreachable with why;
  *   - the member's direct request to every POST, PUT, PATCH and DELETE route, with the second team's
  *     ids (its admin's application and signed-in browser among them, for Access's revokes), forged
  *     parameters and a body naming the second team's rows, is refused, or answers as the member's own
@@ -52,7 +57,10 @@
  *     name and only their own tokens, a second person on the same team included, who in Access finds
  *     none of the first's tokens, applications, browsers or passkeys and whose revoke of the first's
  *     application or browser is 404 and changes nothing. `work/query` is asked with measures here too,
- *     since a request naming none is refused before anything is read;
+ *     since a request naming none is refused before anything is read. Over `seedSharedCitations`'s rows,
+ *     a superadmin acting for either team reads only their own team's initiative and document however
+ *     asked, and every reader of the shared lesson citing both teams' initiatives, the shelf and the search
+ *     is named their own team's and counts the other's;
  *   - the Platform prepared query, in `console-platform-query-isolation.ts`'s round: every measure a member is answered,
  *     by every dimension and bucket but the superadmin's, from the first recorded day, against the window before,
  *     every group drilled where the measure is, holds nothing of the second team's and no link for the first team's
@@ -84,9 +92,10 @@ import type { Express, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { PLANTED, seedIsolation, seedWork, seedWorkRecord } from "../scripts/schema/isolation-seed.ts";
+import { PLANTED, seedIsolation, seedSharedCitations, seedWork, seedWorkRecord } from "../scripts/schema/isolation-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
+import { ownFailures, tableFor } from "./console-isolation-failures.ts";
 import { failureQuery, hrefs, leaks, queriesFor, routesOf, send, tally, workRounds, type Answer, type Route, type Sent } from "./console-isolation-work.ts";
 import { PLATFORM_QUERY, platformFailureQuery, platformQueryRound } from "./console-platform-query-isolation.ts";
 
@@ -99,7 +108,9 @@ const DONE = "console-isolation: a member of one team asked every route the moun
   "superadmin's Audit and Knowledge health held no body but the question that found nothing; Work, every measure by " +
   "every dimension drilled to rows but skill_calls, a close and a superadmin acting for their own team included, held nothing of the " +
   "other team's, and a second person on the same team read only their own approvals and tokens and, in Access, none of " +
-  "the first's tokens, applications, browsers or passkeys, their revokes of the first's 404; the platform query, every measure " +
+  "the first's tokens, applications, browsers or passkeys, their revokes of the first's 404; a superadmin acting for either team " +
+  "read only their own team's initiative and document, and every reader of a shared lesson citing both teams was named their own " +
+  "team's initiative alone; the platform query, every measure " +
   "a member is answered by every dimension drilled, held nothing of the other team's and refused the superadmin's alike: ok";
 /** Fields the platform's evaluation read never selects, so no superadmin read need answer them: the database
  *  is asked for them instead. COUPLED: platform-evaluation.ts. */
@@ -108,8 +119,10 @@ const NOBODY_READS = ["decisionNote", "ownerRef"];
  *  must find their own document or node by its text: what a member of the first team's would be shown. */
 const OWN_READS = ["slug", "initiative", "docTitle", "docBody", "nodeTitle", "nodeBody", "eventDetail"];
 /** Fields only Work answers, the active team's for a superadmin too: the superadmin, who acts for no team, need
- *  not read them, and the second team's own member does (OWN_READS). */
-const WORK_ONLY = ["nodeTitle", "nodeBody", "eventDetail"];
+ *  not read them, and the second team's own member does (OWN_READS). The open initiative's slug and its
+ *  document's title and body are among them: Work's detail routes were where the superadmin read them, and no
+ *  Platform read names them. */
+const WORK_ONLY = ["nodeTitle", "nodeBody", "eventDetail", "initiative", "docTitle", "docBody"];
 const SEARCH = "/api/console/search";
 const WRITES = ["post", "put", "patch", "delete"];
 /** Fleet's reads, each of which the failure round must reach. */
@@ -215,29 +228,6 @@ function forgedBody(s: Seeded): Record<string, unknown> {
   };
 }
 
-/** The table a read is answered from, renamed for its failure round, or null for a read the map does not
- *  name: `zz.event` for the status, releases, bugs list, usage and audit reads, Teams and the Work pages,
- *  Activity's summary and log, Plugins and skills among them, `zz.initiative` for Work's prepared queries,
- *  `zz.eval_run` for evaluation, `zz.bug` for a report and its duplicates, `zz.knowledge_node` for Knowledge
- *  health and Knowledge's summary, so one part fails and the rest stand, and for its list and a lesson, which
- *  read no event, `zz.passkey` for People, `zz.skill_run` for Runs, `zz.pat` for Access, whose read fails
- *  whole, and `zz.event` for the platform query. A table the identity gate reads for a session (`zz.team`, `zz.principal`, `zz.console_session`) would
- *  fail every request before its read. */
-function tableFor(path: string): string | null {
-  if (/^\/api\/console\/platform\/(status|releases|releases\/:version|bugs|usage|audit)$/.test(path)) return "event";
-  if (/^\/api\/console\/teams(\/:slug)?$/.test(path)) return "event";
-  if (path === "/api/console/people") return "passkey";
-  if (path === HEALTH || /^\/api\/console\/knowledge(\/summary|\/:team\/\*)?$/.test(path)) return "knowledge_node";
-  if (path === "/api/console/access") return "pat";
-  if (path === "/api/console/platform/evaluation") return "eval_run";
-  if (/^\/api\/console\/platform\/bugs\/:id(\/duplicates)?$/.test(path)) return "bug";
-  if (path === "/api/console/work/query") return "initiative";
-  if (path === "/api/console/runs") return "skill_run";
-  if (path === PLATFORM_QUERY) return "event";
-  if (/^\/api\/console\/(platform|settings)\//.test(path) || path === "/api/console/live") return null;
-  return "event";
-}
-
 /** Every row of the second team's, hashed: the team, its admin and their tokens, browsers, passkeys and memberships, its
  *  initiatives, documents and revisions, reports, plugins, protocols, measures, runs and findings, nodes,
  *  and every event naming the team or its admin. */
@@ -331,6 +321,7 @@ async function run(c: Core): Promise<void> {
   const s = await seedIsolation(c.sql);
   await seedWork(c.sql, s);
   const w = await seedWorkRecord(c, s);
+  const cited = await seedSharedCitations(c.sql, s);
   const holds = await secondTeamHoldings(c.sql, s);
   const who = {
     one: { label: "the first team's member", cookie: s.cookies.one },
@@ -457,11 +448,11 @@ async function run(c: Core): Promise<void> {
 
     // The same reads with their table gone: an error body holds nothing either.
     step = "the failure round reaches every Fleet read";
-    const unreached = FLEET.filter((p) => !reads.some((r) => r.path === p) || tableFor(p) === null);
+    const unreached = FLEET.filter((p) => !reads.some((r) => r.path === p) || tableFor(p, PLATFORM_QUERY) === null);
     if (unreached.length) c.fail(step, `${unreached.join(", ")} not mounted or named by no table`);
-    c.pass(`${step}: ${FLEET.map((p) => `${p} by zz.${tableFor(p)}`).join(", ")}`);
+    c.pass(`${step}: ${FLEET.map((p) => `${p} by zz.${tableFor(p, PLATFORM_QUERY)}`).join(", ")}`);
     for (const r of reads) {
-      const table = tableFor(r.path);
+      const table = tableFor(r.path, PLATFORM_QUERY);
       if (!table) { line(who.one.label, r, "not reached by the failure round: the map names no table for it"); continue; }
       const statuses: number[] = [];
       const bad: string[] = [];
@@ -485,6 +476,7 @@ async function run(c: Core): Promise<void> {
         : `ok with zz.${table} renamed, answered ${tally(statuses)}`);
       found.push(...bad.map((b) => `${who.one.label} GET ${r.path} with zz.${table} renamed: ${b}`));
     }
+    await ownFailures({ s, cited, base, sql: c.sql, reads, found, pass: c.pass });
     step = "the member's refused reads answer one body";
     const bodies = new Set([...refusals.values()].flatMap((b) => [...b]));
     const [body] = bodies;
@@ -610,7 +602,7 @@ async function run(c: Core): Promise<void> {
     if (lost.length) found.push(`${step}: ${lost.join(", ")} no longer stored`);
     else c.pass(`${step}, ${NOBODY_READS.join(" and ")} among them`);
 
-    await workRounds({ s, w, base, sql: c.sql, found, pass: c.pass, oracle: (r, a, cookie) => oracle(r, a, undefined, cookie) });
+    await workRounds({ s, w, cited, base, sql: c.sql, found, pass: c.pass, oracle: (r, a, cookie) => oracle(r, a, undefined, cookie) });
     await platformQueryRound({ s, base, found, pass: c.pass });
 
     if (found.length) c.fail("isolation", `\n    ${found.join("\n    ")}`);

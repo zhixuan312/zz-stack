@@ -30,14 +30,24 @@
  *   - a close of the second team's initiative, under its own team and under the first, with a body that
  *     would close it, is 404 to the member and to the acting superadmin, alike about an initiative nobody
  *     has, and the initiative stays open with no close recorded; each of them closes an empty initiative
- *     of the first team and that answer holds none of the second team's sentinels.
+ *     of the first team and that answer holds none of the second team's sentinels;
+ *   - over `seedSharedCitations`'s rows, Work's two detail routes are the active team's for the superadmin
+ *     too (reconciliations 31, 39): a superadmin acting for the second team asks the first team's initiative
+ *     and its document, plainly and with `?scope=platform` and `?team=<first>`, and is answered 404, alike
+ *     about an initiative nobody has, holding neither its title nor its body; the superadmin acting for the
+ *     first team asks the second team's the same way and finds none of its sentinels; each reads their own
+ *     team's; a superadmin in no team is answered the routes' no-team sentence;
+ *   - each team's member and each team's acting superadmin open the shared lesson citing both teams' open
+ *     initiatives, list their shelf and search for the lesson's word, and every answer names their own
+ *     team's initiative, counts the other's in `cited_elsewhere` and holds the other's slug nowhere, the
+ *     node's neighbours and the list's rows carrying the same (reconciliation 81).
  */
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { Express } from "express";
 import type pg from "pg";
 
-import type { Isolation, WorkRecord } from "../scripts/schema/isolation-seed.ts";
+import type { Isolation, SharedCitations, WorkRecord } from "../scripts/schema/isolation-seed.ts";
 
 export type Answer = { status: number; text: string };
 export interface Route { method: string; path: string }
@@ -174,7 +184,7 @@ export const failureQuery = (path: string, s: Isolation): string => (path === WO
 
 /** What the rounds are handed by the harness. */
 export interface Context {
-  s: Isolation; w: WorkRecord; base: string; sql: pg.Client;
+  s: Isolation; w: WorkRecord; cited: SharedCitations; base: string; sql: pg.Client;
   /** The same request about a team nobody has: the difference in answers, "" when alike, null when the
    *  request names nothing of the second team's. */
   oracle: (r: Sent, a: Answer, cookie: string) => Promise<string | null>;
@@ -397,6 +407,104 @@ async function closes(c: Context, who: string, cookie: string, mine: string): Pr
     `closes nothing; their own close answers ${a.status} holding nothing of the second team's`);
 }
 
+/** The routes' no-team sentence. COUPLED: NO_TEAM in services/gateway/src/console/record.ts. */
+const NO_TEAM = "no team: Work is the active team's, and you act for none";
+
+/** One team's initiative and its document, by the addresses Work's detail routes take. */
+const details = (t: Isolation["one"]): string[] => [`/api/console/initiatives/${encodeURIComponent(t.slug)}/${encodeURIComponent(t.initiative)}`,
+  `/api/console/document/${encodeURIComponent(t.slug)}/${encodeURIComponent(t.initiative)}/${t.docPath}`];
+
+/** Work's detail routes as each superadmin: another team's initiative and document are an initiative nobody has, however
+ *  asked, their own team's are theirs, and with no team they are the no-team sentence. */
+async function detailRounds(c: Context): Promise<void> {
+  const { s, w, cited } = c;
+  const bad: string[] = [];
+  const nobody = `2026-10-01-nobody-${randomBytes(8).toString("hex")}`;
+  const forged = (t: Isolation["one"]) => ["", "?scope=platform", `?team=${encodeURIComponent(t.slug)}`];
+  // The second team's superadmin about the first team's: its words are plain, so they are looked for by name.
+  const firstWords = ["first team docTitle", "first team docBody"];
+  for (const url of details(s.one)) {
+    for (const q of forged(s.one)) {
+      const req: Sent = { method: "get", url: `${url}${q}`, body: null };
+      const a = await send(c.base, cited.cookie, req);
+      const g = await send(c.base, cited.cookie, { ...req, url: req.url.replace(s.one.initiative, nobody) });
+      const mask = (x: Answer) => `${x.status} ${x.text.replaceAll(s.one.initiative, "[initiative]").replaceAll(nobody, "[initiative]")}`;
+      if (a.status !== 404) bad.push(`the second team's superadmin's ${req.url} answered ${a.status}, not 404: ${a.text.slice(0, 200)}`);
+      for (const word of firstWords) if (a.text.includes(word)) bad.push(`the second team's superadmin's ${req.url} holds "${word}"`);
+      if (mask(a) !== mask(g)) bad.push(`an existence oracle: ${req.url} answered ${mask(a).slice(0, 200)}; one nobody has, ${mask(g).slice(0, 200)}`);
+    }
+  }
+  // The first team's superadmin about the second team's: its words are sentinels.
+  for (const url of details(s.two)) {
+    for (const q of forged(s.two)) {
+      const req: Sent = { method: "get", url: `${url}${q}`, body: null };
+      const a = await send(c.base, w.cookies.acting, req);
+      if (a.status !== 404) bad.push(`the first team's superadmin's ${req.url} answered ${a.status}, not 404: ${a.text.slice(0, 200)}`);
+      for (const l of leaks(s, req, a)) bad.push(`the ${l.field} sentinel in the first team's superadmin's ${req.url} at ${l.at}`);
+      const differs = await c.oracle(req, a, w.cookies.acting);
+      if (differs) bad.push(differs);
+    }
+  }
+  // Each reads their own: the 404s above are about whose, not about the routes.
+  for (const [cookie, t, words] of [[w.cookies.acting, s.one, firstWords], [cited.cookie, s.two, [s.sentinels.docTitle, s.sentinels.docBody]]] as const) {
+    for (const url of details(t)) {
+      const a = await send(c.base, cookie, { method: "get", url, body: null });
+      if (a.status !== 200 || !words.some((x) => a.text.includes(x))) bad.push(`${url} as its own team's superadmin answered ${a.status}: ${a.text.slice(0, 200)}`);
+    }
+  }
+  for (const url of details(s.one)) {
+    const a = await send(c.base, s.cookies.superadmin, { method: "get", url, body: null });
+    if (a.status !== 400 || a.text !== JSON.stringify({ error: NO_TEAM })) bad.push(`${url} as the superadmin in no team answered ${a.status} ${a.text.slice(0, 200)}`);
+  }
+  if (bad.length) c.found.push(...bad.map((b) => `Work's detail routes: ${b}`));
+  else c.pass("Work's initiative and document are the active team's for the superadmin too: another team's are 404 plainly, with " +
+    "?scope=platform and with ?team= naming it, alike about an initiative nobody has and holding nothing of it, their own team's " +
+    "answer 200, and a superadmin in no team is answered the no-team sentence");
+}
+
+/** The shared lesson, the shelf and the search as each team's member and acting superadmin: their own team's initiative
+ *  named, the other's counted and nowhere by name. */
+async function citationRounds(c: Context): Promise<void> {
+  const { s, w, cited } = c;
+  type Cited = { evidence?: unknown; cited_elsewhere?: unknown; path?: string; team?: string; shelf?: string; kind?: string };
+  const readers = [
+    { label: "the first team's member", cookie: s.cookies.one, own: s.one, other: s.two, lesson: cited.own.one },
+    { label: "the superadmin acting for the first team", cookie: w.cookies.acting, own: s.one, other: s.two, lesson: cited.own.one },
+    { label: "the second team's member", cookie: s.cookies.two, own: s.two, other: s.one, lesson: cited.own.two },
+    { label: "the superadmin acting for the second team", cookie: cited.cookie, own: s.two, other: s.one, lesson: cited.own.two },
+  ];
+  for (const r of readers) {
+    const bad: string[] = [];
+    const read = async (url: string): Promise<Record<string, unknown>> => {
+      const a = await send(c.base, r.cookie, { method: "get", url, body: null });
+      if (a.status !== 200) { bad.push(`${url} answered ${a.status}: ${a.text.slice(0, 200)}`); return {}; }
+      if (a.text.includes(r.other.initiative)) bad.push(`${url} names the other team's ${r.other.initiative} at ${where(a.text, r.other.initiative)}`);
+      return JSON.parse(a.text) as Record<string, unknown>;
+    };
+    const holds = (what: string, x: Cited | undefined, elsewhere: number): void => {
+      if (JSON.stringify(x?.evidence) !== JSON.stringify([r.own.initiative]) || x?.cited_elsewhere !== elsewhere) {
+        bad.push(`${what} answered evidence ${JSON.stringify(x?.evidence)} and cited_elsewhere ${JSON.stringify(x?.cited_elsewhere)}, ` +
+          `not ${r.own.initiative} and ${elsewhere} elsewhere`);
+      }
+    };
+    for (const q of ["", "?scope=platform", `?team=${encodeURIComponent(r.other.slug)}`]) {
+      const node = await read(`/api/console/knowledge/zz-platform/${cited.node}${q}`) as Cited & { evidence_in?: unknown; related?: Cited[] };
+      holds(`the shared lesson${q}`, node, 1);
+      if (JSON.stringify(node.evidence_in) !== JSON.stringify([{ name: r.own.initiative, team: r.own.slug }])) {
+        bad.push(`the shared lesson${q} answered evidence_in ${JSON.stringify(node.evidence_in)}`);
+      }
+      holds(`the shared lesson's neighbour on their shelf${q}`, node.related?.find((n) => n.path === r.lesson), 0);
+    }
+    const list = await read("/api/console/knowledge?limit=100") as { rows?: Cited[] };
+    holds("their shelf's own lesson", list.rows?.find((n) => n.path === r.lesson), 0);
+    const search = await read(`/api/console/search?q=${cited.word}`) as { results?: Cited[] };
+    holds("the search's shared lesson", search.results?.find((n) => n.kind === "node" && n.path === cited.node), 1);
+    if (bad.length) c.found.push(...bad.map((b) => `${r.label}, the citations: ${b}`));
+    else c.pass(`${r.label} reads the shared lesson, its neighbours, their shelf and the search naming their own team's initiative ` +
+      "alone, the other team's counted once in cited_elsewhere and nowhere by name");
+  }
+}
+
 /** Work's rounds, after the harness's own. */
 export async function workRounds(c: Context): Promise<void> {
   const { s, w } = c;
@@ -419,4 +527,6 @@ export async function workRounds(c: Context): Promise<void> {
                    { ...readers.colleague, held: await holdings(c.sql, w.colleague) }]);
   await closes(c, readers.one.label, readers.one.cookie, w.closable.one);
   await closes(c, readers.acting.label, readers.acting.cookie, w.closable.acting);
+  await detailRounds(c);
+  await citationRounds(c);
 }

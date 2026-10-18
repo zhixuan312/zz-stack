@@ -12,8 +12,12 @@
  * rather than read out of a column: the shelf is `team_id`, joined back to the slug this API
  * sends; the address is `node_ordinal` and `slug`, which is what the node file's name splits
  * into; the successor is `superseded_by_id`; the citations are rows in `knowledge_node_evidence`,
- * joined through `zz.initiative`. The JSON is exactly what it has always been — each field below
- * is built in JS from the derived column, which is why the SQL aliases are not those field names.
+ * joined through `zz.initiative`. Each field below is built in JS from the derived column, which is
+ * why the SQL aliases are not those field names.
+ *
+ * Wherever a node's citations are answered, those of the reader's active team are named and every
+ * other team's is counted as `cited_elsewhere` (reconciliation 81): a shared lesson is published, and
+ * the initiatives behind it are their teams' own.
  */
 import type { Express } from "express";
 
@@ -25,7 +29,7 @@ import { platformPublic, ZZ_TZ } from "./shared.js";
 /** One row of the list and detail queries below, as they are aliased there. */
 interface NodeRow {
   shelf: string; address: string; ordinal: string; type: string; status: string;
-  title: string; tags: string[] | null; citations: string[] | null; successor: string | null;
+  title: string; tags: string[] | null; citations: string[] | null; cited_elsewhere: number; successor: string | null;
   updated: string; bytes?: string; excerpt?: string; body?: string;
   evidence_in?: unknown;
 }
@@ -35,7 +39,7 @@ interface NodeRow {
 function listNode(r: NodeRow) {
   return {
     team: r.shelf, path: r.address, type: r.type, status: r.status, title: r.title,
-    tags: r.tags, evidence: r.citations, superseded_by: r.successor,
+    tags: r.tags, evidence: r.citations, cited_elsewhere: Number(r.cited_elsewhere), superseded_by: r.successor,
     updated: r.updated, bytes: Number(r.bytes), excerpt: r.excerpt,
     // The number is per team — every team numbers its own nodes from 0001, so two teams both
     // have a node 1. Shown as a number and keyed by team+path, because a list mixing teams
@@ -73,7 +77,8 @@ function shelfParams(query: Record<string, unknown>): ShelfParams | string {
 export async function shelfRows(team: string, end: string, p: { q: string; kind: string | null; limit: number | null; offset: number }):
   Promise<{ id: string; createdMs: number; standing: boolean; row: ReturnType<typeof listNode> }[]> {
   // Where the lesson came from: knowledge_node_evidence holds the initiatives the node cites, the only linkage the
-  // store records between a node and the work behind it. The order ends on the ordinal, unique on one shelf, so a
+  // store records between a node and the work behind it. Those of the team the shelf is, the reader's own, are
+  // named, and any other's counted (reconciliation 81). The order ends on the ordinal, unique on one shelf, so a
   // page never shuffles between reads.
   const { rows } = await platformDb().query<NodeRow & { id: string; created_ms: number }>(
     `select k.id::text as id, (extract(epoch from k.created_at) * 1000)::float8 as created_ms, t.slug as shelf,
@@ -82,7 +87,11 @@ export async function shelfRows(team: string, end: string, p: { q: string; kind:
             (select coalesce(array_agg(i.slug order by i.slug), '{}')
                from zz.knowledge_node_evidence ne
                join zz.initiative i on i.id = ne.initiative_id
-              where ne.node_id = k.id) as citations,
+              where ne.node_id = k.id and i.team_id = t.id) as citations,
+            (select count(*)::int
+               from zz.knowledge_node_evidence ne
+               join zz.initiative i on i.id = ne.initiative_id
+              where ne.node_id = k.id and i.team_id <> t.id) as cited_elsewhere,
             (select s.node_ordinal
                from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
             -- An instant, like every other time this API sends.
@@ -243,7 +252,10 @@ export function mountKnowledge(app: Express): void {
      * page downloaded all of them to show at most a handful of neighbours.
      *
      * The neighbours are read against the active team, not against the shelf the node is on, so a
-     * reader of a shared lesson does not see nodes belonging to another team. The parameters name
+     * reader of a shared lesson does not see nodes belonging to another team. So are the node's own
+     * citations and the neighbours': those of the active team are named, and every other team's is
+     * counted, never named, since a shared lesson is published and the work behind it is not
+     * (reconciliation 81). The parameters name
      * this node, so it is excluded
      * from its own neighbours and its tags are read in the same statement — no second round trip
      * to learn them.
@@ -262,25 +274,31 @@ export function mountKnowledge(app: Express): void {
               (select coalesce(array_agg(i.slug order by i.slug), '{}')
                  from zz.knowledge_node_evidence ne
                  join zz.initiative i on i.id = ne.initiative_id
-                where ne.node_id = k.id) as citations,
+                where ne.node_id = k.id and i.team_id = (select a.id from zz.team a where a.slug = $3)) as citations,
+              (select count(*)::int
+                 from zz.knowledge_node_evidence ne
+                 join zz.initiative i on i.id = ne.initiative_id
+                where ne.node_id = k.id
+                  and i.team_id is distinct from (select a.id from zz.team a where a.slug = $3)) as cited_elsewhere,
               (select s.node_ordinal
                  from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
               -- Which team each cited initiative lives in, read off the relation rather than
               -- resolved: the citation names the initiative, so its team is the initiative's own
-              -- and nothing has to be guessed from a slug two teams could both carry.
+              -- and nothing has to be guessed from a slug two teams could both carry. The active
+              -- team's alone, as the citations above.
               (select coalesce(jsonb_agg(jsonb_build_object('name', i.slug, 'team', t2.slug)
                                          order by i.slug), '[]'::jsonb)
                  from zz.knowledge_node_evidence ne
                  join zz.initiative i on i.id = ne.initiative_id
                  join zz.team t2 on t2.id = i.team_id
-                where ne.node_id = k.id) as evidence_in,
+                where ne.node_id = k.id and t2.slug = $3) as evidence_in,
               -- An instant, like the list route: the console's Time component reads a bare date as
               -- UTC midnight.
               to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated
          from zz.knowledge_node k
          join zz.team t on t.id = k.team_id
         where t.slug = $1 and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2`,
-      [req.params.team, address]),
+      [req.params.team, address, activeTeam]),
     db.query(
       `select t.slug as shelf,
               'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
@@ -288,7 +306,11 @@ export function mountKnowledge(app: Express): void {
               (select coalesce(array_agg(i.slug order by i.slug), '{}')
                  from zz.knowledge_node_evidence ne
                  join zz.initiative i on i.id = ne.initiative_id
-                where ne.node_id = k.id) as citations,
+                where ne.node_id = k.id and i.team_id = t.id) as citations,
+              (select count(*)::int
+                 from zz.knowledge_node_evidence ne
+                 join zz.initiative i on i.id = ne.initiative_id
+                where ne.node_id = k.id and i.team_id <> t.id) as cited_elsewhere,
               (select s.node_ordinal
                  from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
               to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
@@ -314,7 +336,7 @@ export function mountKnowledge(app: Express): void {
     const r = rows[0] as NodeRow;
     res.json({
       team: r.shelf, path: r.address, type: r.type, status: r.status, title: r.title,
-      tags: r.tags, body: r.body, evidence: r.citations, superseded_by: r.successor,
+      tags: r.tags, body: r.body, evidence: r.citations, cited_elsewhere: Number(r.cited_elsewhere), superseded_by: r.successor,
       evidence_in: r.evidence_in, updated: r.updated,
       // The number as the list shows it — per team, without its leading zeros — so the crumb above
       // the reader names the node the way the list they came from did.

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * checks/console-isolation-destinations.ts — the isolation harness's Phase 4 half: a member of the second
- * team, and a superadmin acting for it, ask Knowledge, Activity, Runs, Plugins, Access and the prepared
- * queries over their measures, and find nothing of the first team's (AC-6.3, AC-6.6, AC-1.16).
+ * checks/console-isolation-destinations.ts — the isolation harness's other direction: a member of the second
+ * team, and a superadmin acting for it, ask Home, Record, Approvals, Initiatives and Work's two detail routes,
+ * Knowledge, Activity, Runs, Plugins, Access and the prepared queries over their measures, and find nothing of
+ * the first team's (AC-6.3, AC-6.6, AC-1.16, AC-1.8).
  *
  *   node checks/console-isolation-destinations.ts   # needs Docker and a built tree (`npm run build`)
  *
@@ -10,15 +11,18 @@
  * `scripts/schema/isolation-seed.ts` declares (`seedIsolation`, `seedWork`), a superadmin who is a member of
  * the second team and acts for it, signed in, and a skill the catalog ships, and serves the gateway's built
  * identity middleware, JSON parser, `mountConsole` and `mountSettings` from this process in server.ts's order.
- * Phase 4's reads (`ROUTES`) must be among the routes that application's router answers. Then it plants, for
- * the first team, fresh sentinels where Phase 4 answers free text: a real-work refusal's message, a question
- * that found nothing, a run's skill and initiative, a lesson's title and body, and its admin's token label,
- * application name, browser user agent and passkey label; and calls of the shipped skill and runs, which only
- * figures could carry. What it establishes:
+ * The reads (`ROUTES`) must be among the routes that application's router answers. Then it plants, for the
+ * first team, fresh sentinels where those reads answer free text: a real-work refusal's message, a question
+ * that found nothing, a run's skill and initiative, a document waiting for approval in that initiative (its
+ * title and body), a lesson's title and body, and its admin's token label, application name, browser user
+ * agent and passkey label; and calls of the shipped skill and runs, which only figures could carry. What it
+ * establishes:
  *
  *   - the first team's own member reads every one of those sentinels in these reads, so their absence below
  *     is about who asks and not about what was planted;
- *   - the second team's member and the acting superadmin ask Activity's summary and log (by kind, tool,
+ *   - the second team's member and the acting superadmin ask Home, Record, Approvals in both tabs, Initiatives,
+ *     the first team's initiative and its document by their addresses, which answer as an initiative nobody
+ *     has, Activity's summary and log (by kind, tool,
  *     the first team's initiative and refused), Knowledge's summary, list (by the lesson's and the question's
  *     words), log and the first team's lesson by its address, Runs (by the first team's skill), Plugins, the
  *     skills and a skill, Access, and `work/query` by each of `MEASURES` and every dimension it allows,
@@ -54,13 +58,16 @@ import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 import { dimensions, routesOf, send, tally, wide, type Answer, type Query } from "./console-isolation-work.ts";
 
 const NAME = "console-isolation-destinations";
-const DONE = "console-isolation-destinations: the second team's member and a superadmin acting for it asked Activity, " +
+const DONE = "console-isolation-destinations: the second team's member and a superadmin acting for it asked Home, Record, " +
+  "Approvals, Initiatives, the first team's initiative and document, Activity, " +
   "Knowledge, Runs, Plugins and the skills, Access and the prepared queries over their measures, plainly and with the " +
   "first team and the platform named, and no answer held the first team's refusal message or any other of its " +
   "sentinels, answered otherwise than about a team nobody has, or moved when the first team's rows were planted: ok";
 const WORK = "/api/console/work/query";
-/** Phase 4's reads: every one must be mounted. */
-const ROUTES = ["/api/console/activity/summary", "/api/console/activity", "/api/console/knowledge/summary",
+/** The reads asked: every one must be mounted. */
+const ROUTES = ["/api/console/home", "/api/console/record", "/api/console/approvals", "/api/console/initiatives",
+  "/api/console/initiatives/:team/:slug", "/api/console/document/:team/:initiative/*",
+  "/api/console/activity/summary", "/api/console/activity", "/api/console/knowledge/summary",
   "/api/console/knowledge", "/api/console/knowledge/log", "/api/console/knowledge/:team/*", "/api/console/runs", "/api/console/plugins",
   "/api/console/skills", "/api/console/skills/:name", "/api/console/access", WORK];
 /** The prepared queries' measures over Phase 4's destinations, and the searches, whose drill now answers the
@@ -69,8 +76,8 @@ const MEASURES = ["calls", "refusals", "output", "skill_calls", "shelf", "search
 /** A skill the catalog ships, so its calls are a plugin's team figure. COUPLED: catalog/sdlc. */
 const SHIPPED = "sdlc-spec";
 /** The first team's fields that carry a sentinel. */
-const FIELDS = ["refusal", "question", "skill", "initiative", "nodeTitle", "nodeBody", "tokenLabel", "application",
-  "userAgent", "passkey"] as const;
+const FIELDS = ["refusal", "question", "skill", "initiative", "docTitle", "docBody", "nodeTitle", "nodeBody", "tokenLabel",
+  "application", "userAgent", "passkey"] as const;
 type Field = (typeof FIELDS)[number];
 
 class CaseFailure extends Error {}
@@ -83,6 +90,9 @@ function sentinels(): Record<Field, string> {
   const half = (): string => hex().replace(/^\d/, (d) => "abcdef"[Number(d) % 6]);
   return Object.fromEntries(FIELDS.map((f) => [f, `${f.toLowerCase()}-${half()}`])) as Record<Field, string>;
 }
+
+/** The document planted in the first team's initiative. */
+const DOC = "spec.md";
 
 /** What the first team's rows are named by in a request: its initiative's dated slug and its lesson's address. */
 interface Planted { initiative: string; node: string }
@@ -106,7 +116,8 @@ async function prepare(sql: pg.Client, s: Isolation): Promise<{ acting: string; 
 /** The first team's rows that carry `x`, each laid out as its writer lays it out, dated ten minutes and a week
  *  back so the last whole week and the running one both hold them: a real-work refusal of `core:document_write`
  *  in its initiative and under its skill, three real-work calls of the shipped skill, a search that found
- *  nothing, a run of each skill, a lesson, and its admin's labelled token, application, browser and passkey. */
+ *  nothing, a run of each skill, a document presented and waiting in the initiative, a lesson, and its admin's
+ *  labelled token, application, browser and passkey. */
 async function plant(sql: pg.Client, s: Isolation, x: Record<Field, string>, shipped: string): Promise<Planted> {
   const one = async (q: string, args: unknown[]): Promise<string> => (await sql.query<{ id: string }>(q, args)).rows[0].id;
   const { rows: [who] } = await sql.query<{ team: string; admin: string }>(
@@ -140,6 +151,18 @@ async function plant(sql: pg.Client, s: Isolation, x: Record<Field, string>, shi
        values ($1, $2, $3, $4, 4, 1, 4096, now() - interval '1 day', now() - interval '1 day' + interval '10 minutes')`,
       [who.team, initiative, version, `isolation-${hex()}`]);
   }
+  // The document and its one revision, presented and not approved, as the seed's own: it waits.
+  await sql.query("begin");
+  await sql.query("set constraints all deferred");
+  const doc = await one(
+    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, body, current_revision, current_version)
+     values ($1, $2, 'spec', 'draft', now() - interval '1 day', $3, $4, 1, 1) returning id`, [initiative, DOC, x.docTitle, x.docBody]);
+  await sql.query(
+    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                  written_at, presented_at)
+     values ($1, 1, 1, 'retained', $2, $3, '{}', $4, $5, now() - interval '1 day', now() - interval '1 day')`,
+    [doc, x.docTitle, x.docBody, `hash-${doc}`, who.admin]);
+  await sql.query("commit");
   const lesson = "first-team-kept-lesson";
   await sql.query(
     `insert into zz.knowledge_node (kind, title, body, team_id, node_ordinal, slug) values ('decision', $1, $2, $3, 2, $4)`,
@@ -170,7 +193,13 @@ function requests(s: Isolation, x: Record<Field, string>, p: Planted): string[] 
     forged.flatMap((f) => queries.map((q) => [f, q].filter(Boolean).join("&")).map((q) => (q ? `${path}?${q}` : path)));
   const words = (v: string): string => v.slice(v.indexOf("-") + 1);
   const node = (team: string): string => `/api/console/knowledge/${team}/${p.node}`;
+  const initiative = `/api/console/initiatives/${s.one.slug}/${p.initiative}`;
   return [
+    ...each("/api/console/home", [""]),
+    ...each("/api/console/record", ["period=all&limit=100"]),
+    ...each("/api/console/approvals", ["tab=waiting&limit=100", "tab=history&limit=100"]),
+    ...each("/api/console/initiatives", ["limit=100"]),
+    ...each(initiative, [""]), ...each(`/api/console/document/${s.one.slug}/${p.initiative}/${DOC}`, [""]),
     ...each("/api/console/activity/summary", [""]),
     ...each("/api/console/activity", ["", "limit=100", `initiative=${p.initiative}`, "kind=tool_call&refused=true&limit=100",
       "kind=knowledge.search&limit=100", "tool=core:document_write&limit=100"]),
@@ -295,7 +324,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       for (const [u, a] of answers) {
         const carried = decodeURIComponent(u);
         for (const f of FIELDS) if (a.text.includes(x[f]) && !carried.includes(x[f])) bad.push(`the ${f} sentinel in ${u} (${a.status})`);
-        const plain = !u.includes("team=") && !u.includes("scope=") && !u.includes(p.node);
+        // A read naming the first team's lesson, initiative or document by its address is answered as one nobody has.
+        const plain = !u.includes("team=") && !u.includes("scope=") && !u.includes(p.node) && !u.includes(`/${s.one.slug}/${p.initiative}`);
         if (plain && a.status !== 200) bad.push(`${u} answered ${a.status}: ${a.text.slice(0, 200)}`);
         const was = prior.get(u);
         if (!was) bad.push(`${u} was not asked before the first team's rows were planted`);
@@ -309,7 +339,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       }
       for (const u of prior.keys()) if (!answers.has(u)) bad.push(`${u} was asked before the first team's rows were planted and not after`);
       if (bad.length) found.push(...bad.map((b) => `${r.label}: ${b}`));
-      else pass(`${r.label} asked ${answers.size} reads of Activity, Knowledge, Runs, Plugins and the skills, Access and ` +
+      else pass(`${r.label} asked ${answers.size} reads of Home, Record, Approvals, Initiatives and its detail routes, Activity, ` +
+        "Knowledge, Runs, Plugins and the skills, Access and " +
         `${dims.length} prepared queries, answered ${tally([...answers.values()].map((a) => a.status))}: none held the first ` +
         `team's refusal message or another of its sentinels, ${compared} answered alike about a team nobody has, and none moved ` +
         "when the first team's rows were planted");

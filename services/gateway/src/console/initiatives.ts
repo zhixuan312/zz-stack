@@ -3,6 +3,9 @@
  * with its version history; the list is initiative-list.ts's. A document is returned as the store
  * holds it, envelope included, because the job here is to show what was approved rather than a
  * rendering of it.
+ *
+ * Both are Work's, so both are the active team's, for the superadmin too (reconciliations 31, 39): the
+ * team in the address must be the one the caller acts for, and nothing the request names widens it.
  */
 import type { Express } from "express";
 
@@ -11,7 +14,8 @@ import { decisionRows } from "@zz/indexing";
 
 import { platformDb } from "../db.js";
 import { mountInitiativeList } from "./initiative-list.js";
-import { flowShape, handler, stageOf, ZZ_TZ, type DocRow } from "./shared.js";
+import { NO_TEAM } from "./record.js";
+import { flowShape, platformPublic, stageOf, ZZ_TZ, type DocRow } from "./shared.js";
 
 /** The envelope keys the platform reserves; every other field is a flow's own. COUPLED:
  *  RESERVED_ENVELOPE in services/zz-core/src/document-rules.ts derives from the same schema. */
@@ -79,15 +83,18 @@ export function mountInitiatives(app: Express): void {
    * criterion is not judging whether it can be met. An empty verdict is reported as `null`
    * rather than `""`, the same rule skills.ts applies to an unmeasured average, and `counts`
    * below makes a blank column legible as "nothing here states a fit verdict". */
-  app.get("/api/console/initiatives/:team/:slug", handler("the initiative", async (req, res, scope) => {
+  app.get("/api/console/initiatives/:team/:slug", platformPublic("the initiative", async (req, res, { activeTeam }) => {
+    if (activeTeam === null) { res.status(400).json({ error: NO_TEAM }); return; }
     const db = platformDb();
-    const { team, slug } = req.params;
-    // A not-found rather than a refusal: a 403 for a team scope naming someone else's team would
-    // confirm the initiative exists there.
-    if (scope.kind === "team" && team !== scope.slug) {
-      res.status(404).json({ error: `no initiative ${team}/${slug}` });
+    const { slug } = req.params;
+    // A not-found rather than a refusal: a 403 for an address naming someone else's team would
+    // confirm the initiative exists there. Every statement below reads the active team, never the
+    // address's, so the address can name nothing else.
+    if (req.params.team !== activeTeam) {
+      res.status(404).json({ error: `no initiative ${req.params.team}/${slug}` });
       return;
     }
+    const team = activeTeam;
     const [docs, claimDocs, facts, anchor] = await Promise.all([
       // `flow`/`outcome` stay in this select as this document's own metadata — what the
       // dashboard renders per row. Neither drives `stageOf` below any more; the anchor query
@@ -184,16 +191,18 @@ export function mountInitiatives(app: Express): void {
    *
    * Reads zz.doc.body, the same text the index was built from, so what is shown and what is
    * searchable cannot disagree. */
-  app.get("/api/console/document/:team/:initiative/*", handler("the document", async (req, res, scope) => {
+  app.get("/api/console/document/:team/:initiative/*", platformPublic("the document", async (req, res, { activeTeam }) => {
+    if (activeTeam === null) { res.status(400).json({ error: NO_TEAM }); return; }
     const db = platformDb();
     const path = (req.params as Record<string, string>)[0];
-    const { team, initiative } = req.params;
-    // A not-found rather than a refusal: a team scope naming someone else's team gets the
-    // response it would get for a document that never existed.
-    if (scope.kind === "team" && team !== scope.slug) {
-      res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });
+    const { initiative } = req.params;
+    // A not-found rather than a refusal: an address naming someone else's team gets the response
+    // it would get for a document that never existed. Every statement below reads the active team.
+    if (req.params.team !== activeTeam) {
+      res.status(404).json({ error: `no document ${req.params.team}/${initiative}/${path}` });
       return;
     }
+    const team = activeTeam;
     // The document's address, with no snapshot name to strip: a version is a `doc_revision`
     // row, not a second `zz.doc` row filed under a snapshot name, so the path asked for IS the
     // document's own.

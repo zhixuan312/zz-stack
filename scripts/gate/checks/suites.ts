@@ -239,6 +239,9 @@ const notRegistered = new Map<string, string>([
   // checks/console-isolation.ts runs (Phase 5, I-90), split out so neither passes the 700-line ceiling.
   ["console-platform-query-seed.ts", "a module checks/console-platform-query.ts imports, not a check of its own"],
   ["console-platform-query-isolation.ts", "a module checks/console-isolation.ts imports, not a check of its own"],
+  // Not a check: the failure round's table map and its part at the member's own addresses, which
+  // checks/console-isolation.ts runs (Phase 7, I-121), split out so it does not pass the 700-line ceiling.
+  ["console-isolation-failures.ts", "a module checks/console-isolation.ts imports, not a check of its own"],
 ]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {

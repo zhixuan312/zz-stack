@@ -15,7 +15,8 @@
  *     with the team, the initiative and the path the console's document page is addressed by, and
  *     the matched text as its excerpt: the search reads content, not titles;
  *   - a question whose words are in a node's body finds that node, as `kind: "node"` with no
- *     initiative and the `nodes/<ordinal>-<slug>.md` path the console's knowledge page takes;
+ *     initiative and the `nodes/<ordinal>-<slug>.md` path the console's knowledge page takes, its
+ *     citation the team's own initiative and none counted elsewhere;
  *   - the search ran as the person signed in: zz-core's own `knowledge.search` row names them;
  *   - a question nothing matches answers 200 with no result, and says which kind of empty it is;
  *   - `limit` bounds what comes back, and a limit outside 1 to 50 is refused;
@@ -148,10 +149,11 @@ async function run(c: Core): Promise<void> {
     const lesson = rowsOf(node).find((r) => r.kind === "node");
     if (node.status !== 200 || !lesson || lesson.team !== c.team || lesson.initiative !== null
         || !/^nodes\/\d+-[a-z0-9-]+\.md$/.test(String(lesson.path)) || lesson.title !== "Cache expiry"
-        || lesson.type !== "decision" || !/wombat cache expires/.test(plain(lesson))) {
+        || lesson.type !== "decision" || !/wombat cache expires/.test(plain(lesson))
+        || JSON.stringify(lesson.evidence) !== JSON.stringify([initiative]) || lesson.cited_elsewhere !== 0) {
       c.fail(step, `answered ${node.status}: ${JSON.stringify(node.body)}`);
     }
-    c.pass("a question whose words are in a node's body finds it, with no initiative and the path its page takes");
+    c.pass("a question whose words are in a node's body finds it, with no initiative, the path its page takes and its own team's citation");
 
     step = "a limit bounds the answer";
     const one = await ask({ q: "quokka OR wombat", limit: "1" });

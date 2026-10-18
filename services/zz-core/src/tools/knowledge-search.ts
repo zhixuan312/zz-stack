@@ -28,12 +28,35 @@ import { SUBJECT_KINDS } from "./knowledge.js";
  *  across both shelves; `initiative/path` is not, since a team's lesson and the platform shelf's
  *  share one at the same ordinal and slug. The two id arrays are what the neighbour lane joins
  *  on — a node's citations are rows keyed by an initiative id, a document's are slugs, and
- *  neither is guessed at from the other. */
+ *  neither is guessed at from the other. `cited_in` is a node's citations as `<team>/<initiative>`, read
+ *  only where the answer is built, to name the caller's own team's and count the rest; a document's is
+ *  null, its citations being links inside its own team's store. */
 interface SearchRow extends KbRow {
   subject: string;
   id: string;
   initiative_id: string | null;
   cited_ids: string[] | null;
+  cited_in: string[] | null;
+}
+
+/** A result's citations as the caller is answered them: the initiatives of the team they act for, by slug, and
+ *  how many others it cites (reconciliation 81). A shared lesson is published material and the initiatives behind
+ *  it are not, so another team's is counted and never named.
+ *
+ *  DELIBERATE: chosen here, after the fusion, and not in the lanes' SQL. A lane's citations are what it matches
+ *  on, and ranking still reads every one of them, so no result moves; only what is answered about a result does.
+ *
+ *  A node's are read off `cited_in`. A document's citations are links to documents of its own team (zz-core's
+ *  `insertLinks` resolves them in the writer's team), so they are all the caller's when the document is on the
+ *  caller's team and none of them when it is on the shared shelf. */
+function citedFor(row: SearchRow, team: string): { evidence: string[]; cited_elsewhere: number } {
+  if (row.subject === "node") {
+    const all = row.cited_in ?? [];
+    const own = all.filter((c) => c.startsWith(`${team}/`)).map((c) => c.slice(team.length + 1));
+    return { evidence: own, cited_elsewhere: all.length - own.length };
+  }
+  const all = row.evidence ?? [];
+  return row.team_slug === team ? { evidence: all, cited_elsewhere: 0 } : { evidence: [], cited_elsewhere: all.length };
 }
 
 /** The order every lane ends on, after its own keys, and the fused order after the score: the
@@ -185,9 +208,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
       // `initiative_id` and `cited_ids` are the citation graph in keys: a document's own
       // initiative row, and the initiative ids its citations name. The neighbour lane below
       // matches on them, because a slug is team-scoped and two teams can each carry one.
+      //
+      // `cited_in` is read by no lane: it is what `citedFor` answers a returned row's citations from.
       const COLS = `initiative, path, flow, type, status, outcome, approved_by, approved_at,
                     updated_at, title, tags, evidence, superseded_by, team_slug, subject,
-                    initiative_id, cited_ids, id`;
+                    initiative_id, cited_ids, id, cited_in`;
       /* The two subjects, unioned here and nowhere else. A team's documents and the platform's
        * journal are separate tables because their lifecycles are: a document is `approved` when
        * a person agreed, a node is `adopted` until something better replaces it. Each side maps
@@ -229,7 +254,14 @@ export function registerKnowledgeSearch(server: McpServer): void {
                (select coalesce(array_agg(ne.initiative_id), '{}')
                   from zz.knowledge_node_evidence ne
                  where ne.node_id = k.id),
-               k.id
+               k.id,
+               -- Each citation with the team its initiative is in, as <team>/<initiative>: a team slug
+               -- holds no slash, so the pair splits back exactly.
+               (select coalesce(array_agg(ct.slug || '/' || i.slug order by i.slug, ct.slug), '{}')
+                  from zz.knowledge_node_evidence ne
+                  join zz.initiative i on i.id = ne.initiative_id
+                  join zz.team ct on ct.id = i.team_id
+                 where ne.node_id = k.id)
           from zz.knowledge_node k
           join zz.team t on t.id = k.team_id)`;
       const SOURCE = `(
@@ -256,7 +288,9 @@ export function registerKnowledgeSearch(server: McpServer): void {
                -- The union's column names come from this arm, so the two the node arm derives are
                -- named here: a bare i.id would arrive as id and a bare empty-array literal as
                -- ?column?, and the lanes below join on these two by name.
-               i.id as initiative_id, '{}'::uuid[] as cited_ids, d.id
+               i.id as initiative_id, '{}'::uuid[] as cited_ids, d.id,
+               -- A document's citations are its own team's: see citedFor.
+               null::text[] as cited_in
           from zz.doc d
           left join zz.initiative i on i.id = d.initiative_id
           left join zz.team t on t.id = i.team_id
@@ -467,7 +501,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
           // journal every team shares; document_read reaches them with scope: "platform".
           shelf: row.team_slug === team ? "team" : "platform",
           status: row.status, superseded_by: row.superseded_by ?? null,
-          tags: row.tags ?? [], evidence: row.evidence ?? [], flow: row.flow,
+          tags: row.tags ?? [], ...citedFor(row, team), flow: row.flow,
           outcome: row.outcome, approved_by: row.approved_by, approved_at: row.approved_at,
           updated_at: row.updated_at,
           snippet,

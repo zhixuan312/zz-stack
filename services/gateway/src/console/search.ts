@@ -54,7 +54,9 @@ interface SearchRow {
   status: string | null;
   superseded_by: string | number | null;
   tags: string[] | null;
+  /** The cited initiatives of the team the search ran as; `cited_elsewhere` counts every other team's. */
   evidence: string[] | null;
+  cited_elsewhere: number | null;
   flow: string | null;
   outcome: string | null;
   approved_by: string | null;
@@ -100,7 +102,10 @@ function linkable(r: SearchRow, team: string) {
     status: r.status || null,
     superseded_by: r.superseded_by === null || r.superseded_by === undefined ? null : String(r.superseded_by),
     tags: r.tags ?? [],
+    // The tool names the cited initiatives of the team it ran as alone and counts the rest (reconciliation
+    // 81), so neither is chosen again here.
     evidence: r.evidence ?? [],
+    cited_elsewhere: r.cited_elsewhere ?? 0,
     flow: r.flow || null,
     outcome: r.outcome ?? null,
     approved_by: r.approved_by ?? null,

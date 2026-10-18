@@ -156,7 +156,7 @@ export async function buildAccessServer(
         "knowledge store are that team's everywhere from here, and work you left unfinished stays " +
         "with the team you left it in, where its members can pick it up. It moves the team on " +
         "your principal, which every credential of yours reads; a signed-in console browser " +
-        "carries a team of its own and switches that in Settings. REFUSES any team " +
+        "carries a team of its own and switches that in Access. REFUSES any team " +
         "you are not a member of and any archived team, and names the ones you do have " +
         "instead — call team_mine first if you are not sure.",
       inputSchema: { team: z.string() },

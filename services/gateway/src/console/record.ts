@@ -9,6 +9,10 @@
  * its first initiative was opened, as Home reads it. Activity is counted over [start, cutoff), at the
  * grain grainFor draws that window at, so a year answers months. A team with no initiative has an empty
  * all. The period's start and the cutoff are the meta's period; the first record is its coverageFrom.
+ * Knowledge's searches and lessons adopted and Your agents' runs, which no initiative bounds, are counted
+ * from the later of the period's start and the first record, so a quarter or a year beginning before it
+ * counts nothing there, as all does, and a team with no initiative counts none in any period; Knowledge
+ * keeps the period's own periods.
  * When the period starts before the caller joined the team, the population says it is team history.
  *
  * Work is the active team's, for the superadmin too: nothing the request names widens it. Reading
@@ -37,7 +41,8 @@
  *               one of the team's documents to another first recorded in the period, a link dated by the
  *               revision that carries it, or by its document's creation when that revision has no time;
  *               a supports link is a source's bearing, counted under the gated documents, not a citation
- *   knowledge, agents, firsts   knowledgeSlice, agentsSlice and firstsSlice over the period
+ *   knowledge, agents, firsts   knowledgeSlice and agentsSlice over the period from its first record,
+ *               and firstsSlice over the period
  *   record      every initiative opened before the cutoff, newest first, the slug breaking a tie, paged:
  *               its outcome once closed, when it opened and closed, the hours it took, its flow documents
  *               and the lessons that cite it as evidence, inventories both, imports included; the summary
@@ -284,6 +289,8 @@ export async function recordOf(team: string, caller: string, period: PeriodName,
   const asOfMs = Date.parse(asOf);
   const startMs = period === "quarter" ? bounds.quarter_ms : period === "year" ? bounds.year_ms : bounds.first_ms ?? asOfMs;
   const window: Span = { from: iso(startMs), to: asOf };
+  // What no initiative bounds is counted from the first record on: none at all for a team with no initiative.
+  const since: Span = { from: iso(bounds.first_ms === null ? asOfMs : Math.max(startMs, bounds.first_ms)), to: asOf };
   const grain = grainFor(window);
 
   const [periods, stock, words, facts, mine, closures, toClose, toAbandon, open, opened, initiatives, lessons, gated, citations, retained,
@@ -303,8 +310,8 @@ export async function recordOf(team: string, caller: string, period: PeriodName,
     attempt("the sources under gated documents", () => sourcesUnderGated(team, window)),
     attempt("the citations", () => citationsIn(team, window)),
     attempt("the words each initiative retains", () => wordsByInitiative(team, asOf)),
-    attempt("the Knowledge slice", () => knowledgeSlice(team, window, asOf)),
-    attempt("the Your agents slice", () => agentsSlice(team, window, asOf)),
+    attempt("the Knowledge slice", () => knowledgeSlice(team, window, asOf, since.from)),
+    attempt("the Your agents slice", () => agentsSlice(team, since, asOf)),
     attempt("the Firsts and bests slice", () => firstsSlice(team, window, asOf)),
   ]);
 

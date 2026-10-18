@@ -76,8 +76,10 @@
  *     `destinationPages`). No page of the member's holds one of the second team's sentinels anywhere in its
  *     body, the flight payload included, nor a Work page or a page that names no team the status seed's
  *     second team;
- *   - the member's Teams, People, Audit, another team's page and the old `/teams` and `/people` each answer
- *     200 with the page that names nothing: the missing page, its words those of an address no page answers;
+ *   - the member's Teams, People, Audit and another team's page each answer 200 with the page that names
+ *     nothing: the missing page, its words those of an address no page answers;
+ *   - the removed `/teams`, `/teams/<slug>`, `/people` and `/settings`, as the member and as the superadmin, each
+ *     the missing page with no redirect, its words that person's unknown address's (scripts/skeleton-addresses.ts);
  *   - the console's explore probe (../zz-stack-dashboard/scripts/explore-probe.ts) on this gateway as the
  *     member: every view tool and every prepared query the member is offered asked through ZZ Meridian's
  *     runner over the console's prepared collections, none of their answers holding the second team's
@@ -110,6 +112,7 @@ import { root } from "./deployment.ts";
 import { seedIsolation } from "./schema/isolation-seed.ts";
 import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn, weekStart } from "./schema/status-seed.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
+import { nowhere, removedAddresses, words } from "./skeleton-addresses.ts";
 import { agentReads } from "./skeleton-agents.ts";
 import { destinationCases, destinationPages, probe } from "./skeleton-destinations.ts";
 import { answer, count, lead, startCore, stopCore, workCases, workPages, type ConsolePage, type PageContext } from "./skeleton-work.ts";
@@ -125,7 +128,8 @@ const DONE = "skeleton: the real gateway answers the platform's four reads, Usag
   "team's answers, the built console signs both in through it, draws the " +
   "seeded malformed-call rate on /platform, sends a signed-out request to sign in with its whole address, draws every " +
   "page's lead as the gateway answers it with none of another team's words on a member's page, answers a member's Teams, " +
-  "People and Audit as an address that names nothing, and the console's explore probe asks every view and prepared " +
+  "People and Audit as an address that names nothing, answers the removed /teams, /teams/<slug>, /people and /settings " +
+  "to both as the missing page, and the console's explore probe asks every view and prepared " +
   "query as the member with none of the second team's words in any answer and two agreeing with their pages, and " +
   "platform_status, release_list, activity_refusals, run_summary and record_read on the core door answer the member and " +
   "the acting superadmin their pages' lead figures with none of another team's words: ok";
@@ -470,14 +474,10 @@ async function cases(base: string, cookies: Map<string, string>, seeded: Seeded)
   }
 }
 
-/** What a person reads on a page, as a set of words: where Next streamed the title and the search box into the
- *  body does not tell two answers apart, and a word either holds that the other does not does. */
-const words = (p: ConsolePage): string => [...new Set(p.text.split(" "))].sort().join(" ");
-
 /**
  * Platform's pages from the built console, as the member and as the superadmin, each lead against the gateway's
- * answer read just before it; Teams, People and Audit the superadmin's, and to the member each of those, another
- * team's page and the old addresses the page that names nothing. COUPLED: the tiles' labels in
+ * answer read just before it; Teams, People and Audit the superadmin's, and to the member each of those and another
+ * team's page the page that names nothing. COUPLED: the tiles' labels in
  * ../zz-stack-dashboard/src/views/pages/platform-*.tsx, and the missing page's `data-missing-page` in
  * src/views/no-access.tsx.
  */
@@ -510,12 +510,12 @@ async function platformPages(ctx: PageContext, isolation: Isolation): Promise<vo
 
   const secret = ctx.cookies.get(MEMBER)!;
   // An address no page answers, in each workspace and in none: a refused page reads as one of them.
-  const nowhere = await Promise.all(["/platform", "/record", ""].map(async (at) => words(await ctx.page(`${at}/${randomBytes(8).toString("hex")}`, secret))));
-  for (const path of ["/platform/teams", "/platform/people", "/platform/audit", `/platform/teams/${isolation.sentinels.slug}`, "/teams", "/people"]) {
+  const unknown = await nowhere(ctx, secret);
+  for (const path of ["/platform/teams", "/platform/people", "/platform/audit", `/platform/teams/${isolation.sentinels.slug}`]) {
     const step = `the built console's ${path} as the member`;
     const p = await ctx.page(path, secret);
     const held = [...ctx.withheld, ctx.slug].filter((s) => p.body.includes(s) && !path.includes(s));
-    if (p.status !== 200 || !p.body.includes("data-missing-page") || !nowhere.includes(words(p)) || held.length) {
+    if (p.status !== 200 || !p.body.includes("data-missing-page") || !unknown.includes(words(p)) || held.length) {
       fail(step, `answered ${p.status}${held.length ? `, holding ${held.join(", ")}` : ""}, not the page an address that names nothing draws: ${p.text.slice(0, 400)}`);
     }
     pass(`${step} answers 200 with the page that names nothing, its words those of an address no page answers, and none of the ` +
@@ -607,6 +607,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     const ctx: PageContext = { gateway, page: (path, secret) => read(base, path, secret), cookies: new Map([...cookies, ...work.cookies]),
                                member: MEMBER, withheld: Object.values(isolation.sentinels), slug: TEAM_TWO, fail, pass };
     await platformPages(ctx, isolation);
+    await removedAddresses(ctx, [["the member", MEMBER], ["the superadmin", SUPERADMIN]], isolation.sentinels.slug);
     const readers: [string, string][] = [["the member", MEMBER], ["the acting superadmin", work.acting]];
     await workPages(ctx, readers);
     const drawn = await destinationPages(ctx, readers, made);

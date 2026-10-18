@@ -11,9 +11,10 @@
  * would, as a console session. What it establishes:
  *
  *   - a body that is not an object, a missing or empty feature, and a feature not in the closed
- *     list are each answered 400, and none of them writes an event;
+ *     list are each answered 400, and none of them writes an event — `settings` among them, the
+ *     page the console no longer has (AC-1.12);
  *   - no identity is answered 401, and a member's PAT 403, as every console route answers them;
- *   - a signed-in caller's view of a known feature answers 204 and writes exactly one
+ *   - a signed-in caller's view of each of the console's nineteen destinations answers 204 and writes exactly one
  *     `console.page_view` whose subject is the feature, whose detail is `{"workspace": …}` and
  *     nothing else — `main` for a Work destination and `platform` for a Platform one, decided by the
  *     gateway even when the body claims another and carries an address beside it — whose actor and
@@ -50,9 +51,19 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-page-view";
-const DONE = "console-page-view: a page view is one console.page_view event naming its feature and workspace, " +
-  "the caller's own, refused for anything outside the closed list, absent from the activity log, its summary and Home, " +
-  "and heard by no open tab: ok";
+const DONE = "console-page-view: a page view of each of the nineteen destinations is one console.page_view event naming its " +
+  "feature and workspace, the caller's own, refused for anything outside the closed list and for settings, absent from " +
+  "the activity log, its summary and Home, and heard by no open tab: ok";
+
+/** The console's destinations and the workspace each is in: the spec's destinations and the internal bug page.
+ *  `settings` is not one: the console answers its old address as an address no page answers. */
+const FEATURES: [string, "main" | "platform"][] = [
+  ["home", "main"], ["record", "main"], ["initiatives", "main"], ["approvals", "main"], ["knowledge", "main"],
+  ["activity", "main"], ["runs", "main"], ["plugins", "main"], ["access", "main"],
+  ["platform-status", "platform"], ["releases", "platform"], ["bugs", "platform"], ["bug", "platform"],
+  ["evaluation", "platform"], ["teams", "platform"], ["people", "platform"], ["usage", "platform"],
+  ["audit", "platform"], ["knowledge-health", "platform"],
+];
 
 /** The channel the console's change triggers notify on. COUPLED: `zz.console_hint` in
  *  services/gateway/migrations/003_console_live.sql. */
@@ -134,7 +145,7 @@ async function views(sql: pg.Client, n: number): Promise<Record<string, unknown>
     const { rows } = await sql.query(
       `select subject, detail::text as detail, origin, actor_id, team_id, initiative_id, run_id,
               skill_version_id, session
-         from zz.event where kind = 'console.page_view' order by subject`);
+         from zz.event where kind = 'console.page_view' order by subject collate "C"`);
     if (rows.length >= n || Date.now() > until) return rows;
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -213,6 +224,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       ["an empty feature", member, { feature: "" }, 400, /^feature required/],
       ["a feature that is not a string", member, { feature: 3 }, 400, /^feature required/],
       ["an unknown feature", member, { feature: "dashboard" }, 400, /^dashboard is not one of the console's destinations$/],
+      ["the old Settings page", member, { feature: "settings" }, 400, /^settings is not one of the console's destinations$/],
       ["an address", member, { feature: "/initiatives/secret-plan" }, 400, /is not one of the console's destinations$/],
       ["a feature in the wrong case", member, { feature: "Home" }, 400, /is not one of the console's destinations$/],
       ["an object's own property name", member, { feature: "constructor" }, 400, /is not one of the console's destinations$/],
@@ -222,19 +234,18 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       const error = String((a.body as { error?: unknown } | undefined)?.error ?? "");
       if (a.status !== status || !says.test(error)) fail(step, `${what} answered ${a.status}: ${JSON.stringify(a.body)}`);
     }
-    pass("no identity is 401, a member's PAT 403, and a body that is not an object, a missing feature and one outside the closed list are each 400");
+    pass("no identity is 401, a member's PAT 403, and a body that is not an object, a missing feature and one outside the closed list, " +
+         "settings among them, are each 400");
 
     // Listening from before the first view, so a hint any of them raised is heard.
     await listener.query("listen zz_console_change");
 
     step = "a recorded view";
-    const recorded: [Identity, unknown][] = [
-      // A claimed workspace and an address beside the feature: neither reaches the event.
-      [member, { feature: "home", workspace: "platform", url: "/initiatives/secret-plan?q=x" }],
-      [member, { feature: "platform-status" }],
-      [loner, { feature: "knowledge" }],
-      [member, { feature: "teams" }],
-    ];
+    // Every destination once: a claimed workspace and an address beside Home's feature, neither of which reaches
+    // the event, and Knowledge's from the caller in no team.
+    const recorded: [Identity, unknown][] = FEATURES.map(([feature]) =>
+      feature === "home" ? [member, { feature, workspace: "platform", url: "/initiatives/secret-plan?q=x" }]
+        : [feature === "knowledge" ? loner : member, { feature }]);
     for (const [id, body] of recorded) {
       const a = await post(id, body);
       if (a.status !== 204 || a.body !== undefined) fail(step, `${JSON.stringify(body)} answered ${a.status}: ${JSON.stringify(a.body)}`);
@@ -243,12 +254,11 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     // Every refused request was answered before the first of these was sent, so a row from one of
     // them would be here too.
     if (rows.length !== recorded.length) fail(step, `${rows.length} console.page_view rows, not ${recorded.length}: ${JSON.stringify(rows)}`);
-    const expected = [
-      { subject: "home", detail: '{"workspace": "main"}', actor_id: ids.member, team_id: ids.team },
-      { subject: "knowledge", detail: '{"workspace": "main"}', actor_id: ids.loner, team_id: null },
-      { subject: "platform-status", detail: '{"workspace": "platform"}', actor_id: ids.member, team_id: ids.team },
-      { subject: "teams", detail: '{"workspace": "platform"}', actor_id: ids.member, team_id: ids.team },
-    ];
+    // In `views`' order: by subject, byte by byte.
+    const expected = FEATURES.map(([subject, workspace]) => ({
+      subject, detail: `{"workspace": "${workspace}"}`,
+      actor_id: subject === "knowledge" ? ids.loner : ids.member, team_id: subject === "knowledge" ? null : ids.team,
+    })).sort((a, b) => (a.subject < b.subject ? -1 : 1));
     for (const [i, want] of expected.entries()) {
       const got = rows[i];
       if (got.subject !== want.subject || got.detail !== want.detail || got.actor_id !== want.actor_id
@@ -258,8 +268,9 @@ async function run(sql: pg.Client, url: string): Promise<void> {
                    "with no initiative, run, skill version or conversation");
       }
     }
-    pass("a view writes one console.page_view: subject the feature, detail only its workspace (main, or platform for a Platform " +
-         "destination, whatever the body claimed), the caller as actor, the caller's team, origin work, and nothing else");
+    pass(`a view of each of the ${FEATURES.length} destinations writes one console.page_view: subject the feature, detail only its ` +
+         "workspace (main, or platform for a Platform destination, whatever the body claimed), the caller as actor, the caller's " +
+         "team, origin work, and nothing else");
     pass("a caller in no team records a view with no team");
 
     step = "counted as nothing else";

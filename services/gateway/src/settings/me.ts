@@ -59,7 +59,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
    * (identity.ts) reads on every request and stamps as `x-zz-session-team`. Moving it here
    * moves this browser alone — the agents that authenticate as the same person keep reading
    * `principal.active_team_id`, which is what `team_switch` on /manage moves and what the
-   * console's Settings says it is not.
+   * console's Access says it is not.
    *
    * The update is the authorisation: the `from membership` join means a team the caller is not
    * in matches no row and is indistinguishable from one that does not exist — the same shape

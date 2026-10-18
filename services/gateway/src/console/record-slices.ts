@@ -2,7 +2,9 @@
  * Three of Record's slices for a team, a period window and the read's cutoff: Knowledge, Your agents,
  * and Firsts and bests. Every count is over the window and before the cutoff, but the as-of stocks,
  * which are the same whatever the window: the lessons by kind, the running total of lessons adopted,
- * and the firsts.
+ * and the firsts. Knowledge is cut into the window's periods and counts from countFrom, the window's
+ * start unless the read names a later instant: Record names its first record, so a period beginning
+ * before it counts nothing there, those periods answering no search.
  *
  * Knowledge.
  *   adopted             the team's lessons made inside the window outside an import cohort (lessonImports)
@@ -121,13 +123,16 @@ async function searchesIn(team: string, window: Span, asOf: string): Promise<str
   return rows.map((r) => (Array.isArray(r.returned) ? r.returned.filter((x): x is string => typeof x === "string") : []));
 }
 
-/** Record's Knowledge slice. */
-export async function knowledgeSlice(team: string, window: Span, asOf: string): Promise<KnowledgeSlice> {
+/** Record's Knowledge slice: the window's periods, at its grain, each counted from countFrom on. */
+export async function knowledgeSlice(team: string, window: Span, asOf: string, countFrom: string = window.from): Promise<KnowledgeSlice> {
   const grain = grainFor(window);
+  const counting: Span = { from: countFrom, to: window.to };
   const [lessons, searches, found, periods] = await Promise.all([
-    lessonsOf(team, asOf), searchesIn(team, window, asOf), searchesWithResults(team, window, asOf, grain), periodsOf(window, asOf, grain),
+    lessonsOf(team, asOf), searchesIn(team, counting, asOf), searchesWithResults(team, counting, asOf, grain), periodsOf(window, asOf, grain),
   ]);
-  const [fromMs, endMs] = boundsOf(window, asOf);
+  const [fromMs, endMs] = boundsOf(counting, asOf);
+  // A period that ends by countFrom has no counted part, and answers no search, as an empty period does.
+  const foundIn = new Map(found.map((f) => [f.window.from, f]));
   const adopted = lessons.filter((l) => !l.imported);
   const returned = searches.flat();
   const tally = <K extends string>(keys: K[]): [K, number][] => {
@@ -144,7 +149,10 @@ export async function knowledgeSlice(team: string, window: Span, asOf: string): 
     ownReturned: counted(returned.filter((r) => r.startsWith("team:_knowledge/")).length),
     meanResults: searches.length ? counted(returned.length / searches.length) : { value: null, why: "no_data" },
     sharedResults: counted(returned.filter((r) => r.startsWith("platform:")).length),
-    searchesWithResults: found,
+    searchesWithResults: periods.map((p): PeriodFigure => {
+      const f = foundIn.get(p.window.from);
+      return f ? { ...f, window: p.window } : { window: p.window, figure: { value: null, why: "no_data" }, numerator: 0, denominator: 0 };
+    }),
     returnedByKind: tally(returned.map(kindOf)).map(([kind, results]) => ({ kind, results })),
     byKind: tally(lessons.filter((l) => l.standing).map((l) => l.kind)).map(([kind, n]) => ({ kind, lessons: n })),
   };

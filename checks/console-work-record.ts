@@ -28,7 +28,9 @@
  *     typical piece of work; Documents: flow documents, versions, the median and largest sources under a
  *     gated document, citations, words added by period, the most rewritten documents, the coverage;
  *   - Knowledge, Your agents, and Firsts and bests are `knowledgeSlice`'s, `agentsSlice`'s and
- *     `firstsSlice`'s over the same window and cutoff;
+ *     `firstsSlice`'s at the same cutoff: Knowledge over the period's window counted from the later of
+ *     its start and the team's first initiative, Your agents over the window from that instant, and
+ *     Firsts and bests over the window;
  *   - the record: every initiative newest first, paged, with its outcome, hours, documents and lessons,
  *     and the summary by outcome and by flow over all of them;
  *   - the population says team history from before the caller joined; a second person reads none of the
@@ -101,7 +103,7 @@ type Part = { state: string; data?: Obj; reason?: string };
 type Slice = (team: string, window: Span, asOf: string) => Promise<Obj>;
 interface Gateway {
   url: string; token: string; record: Route;
-  slices: { knowledgeSlice: Slice; agentsSlice: Slice; firstsSlice: Slice };
+  slices: { knowledgeSlice: (team: string, window: Span, asOf: string, countFrom?: string) => Promise<Obj>; agentsSlice: Slice; firstsSlice: Slice };
   mostOpenAtOnce(team: string, window: Span, asOf: string): Promise<Obj>;
   stop(): Promise<void>;
 }
@@ -469,9 +471,12 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     if (p === "all") same(step, docs.coverage, COVERAGE);
     c.pass(step);
 
-    step = `Knowledge, Your agents, and Firsts and bests are the slices' own over the same window (${p})`;
-    same(`${step}: Knowledge`, ok(step, r.knowledge), await g.slices.knowledgeSlice(c.team, window, String(meta.asOf)));
-    same(`${step}: Your agents`, ok(step, r.agents), await g.slices.agentsSlice(c.team, window, String(meta.asOf)));
+    step = `Knowledge, Your agents, and Firsts and bests are the slices' own over the period from its first record (${p})`;
+    // Record counts runs and searches from the later of the period's start and its first record (Task I-131): in a run
+    // from about 17 December the seeded first initiative falls after 1 January, and the year counts from the initiative.
+    const since: Span = { from: starts[p] < starts.all ? starts.all : starts[p], to: window.to };
+    same(`${step}: Knowledge`, ok(step, r.knowledge), await g.slices.knowledgeSlice(c.team, window, String(meta.asOf), since.from));
+    same(`${step}: Your agents`, ok(step, r.agents), await g.slices.agentsSlice(c.team, since, String(meta.asOf)));
     same(`${step}: Firsts and bests`, ok(step, r.firsts), await g.slices.firstsSlice(c.team, window, String(meta.asOf)));
     c.pass(step);
   }

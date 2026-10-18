@@ -31,16 +31,16 @@ import { teamless } from "./shared.js";
 type Workspace = "main" | "platform";
 
 /** The features a page view may name, and the workspace each destination is in: the spec's
- *  destinations, the internal bug page's `bug`, and `settings`, the notice the old address still
- *  answers with a link to Access. Teams and People are Platform's Fleet pages, at `/platform/teams`
- *  and `/platform/people`.
+ *  destinations and the internal bug page's `bug`. Teams and People are Platform's Fleet pages, at
+ *  `/platform/teams` and `/platform/people`; `/settings` is gone, answered as an address no page
+ *  answers, so `settings` is refused as any other unknown feature.
  *
  *  COUPLED: the console's `src/data/features.ts` is its counterpart, and its fake gateway
  *  (`../zz-stack-dashboard/scripts/fake-gateway/server.ts`, `PAGE_FEATURES`) copies this list. */
 const FEATURES: ReadonlyMap<string, Workspace> = new Map<string, Workspace>([
   ["home", "main"], ["record", "main"], ["initiatives", "main"], ["approvals", "main"],
   ["knowledge", "main"], ["activity", "main"], ["runs", "main"], ["plugins", "main"],
-  ["access", "main"], ["settings", "main"],
+  ["access", "main"],
   ["platform-status", "platform"], ["releases", "platform"], ["bugs", "platform"],
   ["bug", "platform"], ["evaluation", "platform"], ["teams", "platform"], ["people", "platform"],
   ["usage", "platform"], ["audit", "platform"], ["knowledge-health", "platform"],

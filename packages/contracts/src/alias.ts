@@ -149,13 +149,13 @@ export const isDoor = (path: string): boolean => FIXED_DOORS.includes(path);
 
 /** What somebody with no token is told, in one place: the only onboarding this platform has.
  *
- * COUPLED: the gateway's `GET /` and `zz-tool` both print it, and
- * `scripts/gate/checks/catalog-servers.ts` holds the door's copy against this one.
+ * COUPLED: the gateway's `GET /` and `zz-tool` both print it, and `checks/access-words.ts` holds
+ * it to naming the console's Access.
  *
  * Written as lines rather than a paragraph because both readers print it to a terminal. */
 export const NO_TOKEN_ONBOARDING: readonly string[] = Object.freeze([
   "No token yet?",
-  "  Sign in to the console with your passkey and issue one under Settings:",
+  "  Sign in to the console with your passkey and issue one under Access:",
   "  it is shown once, carries your identity and your team's access, and",
   "  you can revoke it yourself at any time. No passkey yet? Ask a",
   "  superadmin for an enrolment link. `client_setup` on the access door",

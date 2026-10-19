@@ -21,7 +21,7 @@
  *     `scorer_version` differ; scores under two protocol versions, or two population kinds, read
  *     `Not comparable` with that reason;
  *   - findings by decision and by owner, a superseded finding and a strength counted in neither;
- *   - the findings waiting, oldest first, each in its fixed summary;
+ *   - the findings waiting, oldest first, each by its fixed name: its kind, plugin and owner category;
  *   - for a member, the protocol's and the measure's keys are null and no field and no text of the
  *     answer holds a pattern, a decision note, an owner reference, an evidence reference, a
  *     protocol's or a measure's key, the team or the initiative; the superadmin reads the keys and
@@ -115,6 +115,15 @@ const same = (step: string, what: string, got: unknown, want: unknown): void => 
   if (JSON.stringify(got) !== JSON.stringify(want)) fail(step, `${what} reads ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
 };
 
+/** Each waiting finding's fixed name, by the seed's finding: its kind, its plugin and its owner category, written here
+ *  rather than read from the seed, so a template that drifts reads as a failure. */
+const NAMES: Record<string, string> = {
+  "alpha-plugin": "A defect in alpha, owned by the plugin",
+  "beta-unknown": "An unknown in beta, owner not known",
+  "beta-environment": "A defect in beta, owned by the environment",
+  "gamma-platform": "A defect in gamma, owned by the platform",
+};
+
 /** The seed's expectation as one person reads it: a member's keys null, the superadmin's pattern added. */
 function expected(admin: boolean, ids: Map<string, string>) {
   const key = (p: { key: string; version: number }) => ({ key: admin ? p.key : null, version: p.version });
@@ -125,7 +134,8 @@ function expected(admin: boolean, ids: Map<string, string>) {
     })),
     waiting: {
       rows: EXPECTED.waiting.map(({ finding, ...w }) => ({
-        id: ids.get(finding), ...w, measure: admin ? w.measure : null, ...(admin ? { pattern: patternOf(finding) } : {}),
+        id: ids.get(finding), ...w, measure: admin ? w.measure : null, summary: NAMES[finding],
+        ...(admin ? { pattern: patternOf(finding) } : {}),
       })),
       total: EXPECTED.waiting.length,
     },
@@ -153,7 +163,7 @@ function readCases(who: string, a: Answer, admin: boolean, ids: Map<string, stri
        "calendar); each plugin's latest score with its range, standing, guardrails, protocol and date, the run never scored " +
        "named nowhere; alpha one series across two plugin versions and two scorer versions, beta not comparable for its " +
        "protocol version, gamma for its population; findings by decision and owner without the superseded one or the " +
-       "strength; four waiting, oldest first, in their fixed summaries");
+       "strength; four waiting, oldest first, by their fixed names");
 }
 
 /** What neither person may read, and what only the superadmin may. */

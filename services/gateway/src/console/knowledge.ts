@@ -208,7 +208,8 @@ export function mountKnowledge(app: Express): void {
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
               p.email as actor, t.slug as team, e.kind, e.subject as node,
               e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as successor_recorded,
-              d.title as node_title, d.lifecycle as node_status
+              d.title as node_title, d.lifecycle as node_status,
+              'nodes/' || d.node_ordinal || '-' || d.slug || '.md' as address
          from zz.event e
          join zz.team t on t.id = e.team_id
          left join zz.principal p on p.id = e.actor_id
@@ -221,7 +222,7 @@ export function mountKnowledge(app: Express): void {
     res.json({ entries: (rows as Record<string, unknown>[]).map((r) => ({
       ts: r.ts, actor: r.actor, team: r.team, kind: r.kind, node: r.node,
       recorded_title: r.recorded_title, superseded_by: r.successor_recorded,
-      node_title: r.node_title, node_status: r.node_status,
+      node_title: r.node_title, node_status: r.node_status, path: r.address,
     })) });
   }));
 

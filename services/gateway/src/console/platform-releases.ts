@@ -13,7 +13,9 @@
  *
  * The weekly malformed-call rate is the status read's own, `malformedMeasure` over `readGrid`'s weeks
  * (console/platform-measures.ts), so the two reads give the same figures; each week also counts the
- * releases tagged in it. The Platform prepared query (platform-query-measures.ts) counts the
+ * releases tagged in it. Weeks are Monday to Monday in the reporting timezone, the one the console
+ * prints a release's day in, so a release is in the week that holds the day its row prints. The
+ * Last week tile is the last whole week of that calendar, the one before the running week. The Platform prepared query (platform-query-measures.ts) counts the
  * releases and the migrations, and answers these rows, through `releaseTimes`, `migrationTimes` and
  * `releaseRows`.
  *
@@ -88,6 +90,17 @@ const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z
 
 const UNAVAILABLE: Figure = { value: null, why: "unavailable" };
 const NO_DATA: Figure = { value: null, why: "no_data" };
+
+/** The last whole week of the reporting calendar at the cutoff: from the Monday before the running
+ *  week's to the running week's, each at local midnight. */
+async function lastWholeWeek(db: pg.Pool, asOfMs: number): Promise<{ fromMs: number; toMs: number }> {
+  const w = (await db.query<{ from_ms: number; to_ms: number }>(
+    `select (extract(epoch from ((w - interval '1 week') at time zone $1::text)) * 1000)::float8 as from_ms,
+            (extract(epoch from (w at time zone $1::text)) * 1000)::float8 as to_ms
+       from date_trunc('week', $2::timestamptz at time zone $1::text) as w`,
+    [ZZ_TZ, iso(asOfMs)])).rows[0];
+  return { fromMs: w.from_ms, toMs: w.to_ms };
+}
 
 /** Every release's version and time, newest first, `version` breaking a tie: what the tiles, the weeks
  *  and every window's overlapping releases are read from. */
@@ -207,6 +220,7 @@ export async function releasesOf(page: { limit: number; offset: number; since: s
   const grid = await readGrid(db);
   const { asOfMs, coverageMs } = grid;
   const applied = await migrationTimes(db);
+  const whole = await lastWholeWeek(db, asOfMs);
 
   const malformed = await malformedMeasure(db, grid);
   const weeks = malformed.weeks.map((w, i) => ({
@@ -247,7 +261,7 @@ export async function releasesOf(page: { limit: number; offset: number; since: s
     },
     tiles: {
       releases: all.length,
-      lastWeek: all.filter((r) => r.ms >= asOfMs - 7 * 24 * 3_600_000 && r.ms < asOfMs).length,
+      lastWeek: all.filter((r) => r.ms >= whole.fromMs && r.ms < whole.toMs).length,
       latest: all[0] ? { version: all[0].version, releasedAt: iso(all[0].ms) } : null,
       migrations: { applied: applied.length, lastAt: applied.length ? iso(Math.max(...applied)) : null },
     },

@@ -115,7 +115,7 @@ interface ExpectedSide {
 }
 
 /** What a reader must find, written out by hand from the lists above and not computed from them. */
-export const EXPECTED: { releases: Record<string, { before: ExpectedSide; after: ExpectedSide }>; lastWeek: number } = {
+export const EXPECTED: { releases: Record<string, { before: ExpectedSide; after: ExpectedSide }> } = {
   releases: {
     "0.9.3": {
       before: { observed: "whole", calls: 200, malformed: 5, rate: 25, toolFailures: 1, p95: 400, rateWhy: null, p95Why: null, overlapping: ["0.9.2"] },
@@ -138,8 +138,6 @@ export const EXPECTED: { releases: Record<string, { before: ExpectedSide; after:
       after: { observed: "late", calls: 40, malformed: 2, rate: 50, toolFailures: 0, p95: 300, rateWhy: null, p95Why: null, overlapping: [] },
     },
   },
-  /** 0.9.3 and 0.9.2, in the seven days before the cutoff. */
-  lastWeek: 2,
 };
 
 /** What `seedReleases` wrote: the moment it read the clock, where the record begins, and each

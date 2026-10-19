@@ -22,6 +22,10 @@
  *   - no answer holds any text the seed planted in a `title`, `label`, `filename`, `reason`, `details`,
  *     `detail.detail`, a refusal or a search's question, and the module's SQL selects no `detail` but
  *     the allowed keys and never the `refusal` column;
+ *   - a deleted report is named by its filing alone: by Bugs' public title where the `bug_report` event
+ *     for its id records an impact and a surface (a surface outside the vocabulary read as none named),
+ *     by the day it was filed where that event records neither, and as one the record does not name
+ *     where there is no such event; never by the title its deletion or its filing recorded;
  *   - no sentence names a channel but `in the console`, and only for a console write;
  *   - a member is refused 403 with the fixed body before anything is read, whatever they ask; no
  *     session is 401 and a member's token 403; an unknown filter, a malformed instant or kind, a
@@ -67,7 +71,14 @@ const ADMINISTRATION_POPULATION = "recorded acts of administration";
 const ALL_POPULATION = "recorded events, page views left out";
 const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 /** The detail keys a sentence may read, and `via` for whether an act was made in the console. */
-const ALLOWED_DETAIL = ["role", "status", "reactivated", "from", "team", "owner", "patsRevoked", "sessionsRevoked", "enrolmentsSpent", "via"];
+const ALLOWED_DETAIL = ["role", "status", "reactivated", "from", "team", "owner", "patsRevoked", "sessionsRevoked", "enrolmentsSpent", "via",
+  // A deleted report's filing: the report it filed, and its typed impact and surface.
+  "bug", "impact", "surface"];
+/** The seed's deleted report has no filing event, so its act names none. DELIBERATE: written here over the seed's
+ *  expectation, which still reads the report's id (scripts/schema/audit-seed.ts, reported for the integration). */
+const UNNAMED_DELETION = `${SUPERADMIN} deleted a report the record does not name`;
+/** The day a report was filed as the gateway's sentence says it, in the check's time zone. */
+const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "2-digit", month: "short", year: "numeric" });
 /** Words that would name the door an act came through; only `in the console` may. */
 const CHANNEL = /mcp-oauth|\bMCP\b|OAuth|\bvia\b|\bweb\b|script/;
 
@@ -113,7 +124,7 @@ function expectedRows(seeded: SeededAudit): Obj[] {
     actor: e.actor === "super" ? SUPERADMIN : e.actor === "member" ? MEMBER : null,
     team: e.team === "one" ? TEAM_ONE : e.team === "two" ? TEAM_TWO : null,
     kind: e.kind, subject: e.expect.subject, ok: e.call?.ok ?? null, refusalOwner: e.call?.owner ?? null,
-    origin: e.origin ?? "work", inConsole: e.expect.inConsole, sentence: e.expect.sentence,
+    origin: e.origin ?? "work", inConsole: e.expect.inConsole, sentence: e.key === "delete" ? UNNAMED_DELETION : e.expect.sentence,
   }));
 }
 
@@ -276,8 +287,8 @@ function privacyCases(texts: string[], answers: Answer[]): void {
   const bad = details.filter((m) => !m[2] || !ALLOWED_DETAIL.includes(m[2])).map((m) => m[0]);
   if (!details.length || bad.length) fail(step, `the module's SQL reads ${bad.join(", ") || "no detail key at all"}`);
   if (/\brefusal\b(?!_owner)/.test(sql)) fail(step, "the module's SQL reads the refusal column");
-  pass("the module's SQL reads `detail` only through role, status, reactivated, from, team, owner, the three counts and " +
-       "via, and never the refusal column");
+  pass("the module's SQL reads `detail` only through role, status, reactivated, from, team, owner, the three counts, " +
+       "via, and a filing's bug, impact and surface, and never the refusal column");
 
   step = "no channel is named but the console";
   for (const a of answers) {
@@ -290,6 +301,55 @@ function privacyCases(texts: string[], answers: Answer[]): void {
     }
   }
   pass("a sentence ends `in the console` exactly when the act was a console write, and none names another door");
+}
+
+/**
+ * Three more deleted reports, each with a filing that records more or less of it, every free text a sentinel: the
+ * acts name each by its filing alone, and nothing the deletion or the filing recorded as text leaves. The rows are
+ * removed again, so no case after this one reads them.
+ */
+async function deletionCases(db: pg.Client, as: (q: string) => Promise<Answer>): Promise<void> {
+  const step = "a deleted report is named by its filing";
+  const actor = (await db.query<{ id: string }>("select id::text as id from zz.principal where email = $1", [SUPERADMIN])).rows[0].id;
+  const now = Math.floor(Date.now() / 1000) * 1000 - 3_600_000;
+  const filed = now - 20 * 86_400_000;
+  const reports: { id: string; filing: Obj; want: string }[] = [
+    { id: "c0000000-0000-4000-8000-0000000000a3", filing: { impact: "blocks_work", surface: "Console" },
+      want: `${SUPERADMIN} deleted report "Blocks work: console, filed ${FILED_DAY.format(new Date(filed))}"` },
+    { id: "c0000000-0000-4000-8000-0000000000a4", filing: {},
+      want: `${SUPERADMIN} deleted a report filed ${FILED_DAY.format(new Date(filed))}` },
+    { id: "c0000000-0000-4000-8000-0000000000a5", filing: { impact: "cosmetic", surface: `${SENTINEL} a surface nobody registered` },
+      want: `${SUPERADMIN} deleted report "Cosmetic: no surface named, filed ${FILED_DAY.format(new Date(filed))}"` },
+  ];
+  const inserted: string[] = [];
+  for (const [i, r] of reports.entries()) {
+    for (const [ts, kind, subject, detail] of [
+      [filed + i * 1000, "bug_report", "", { bug: r.id, title: `${SENTINEL} title of a filed report`, ...r.filing }],
+      [now + i * 1000, "bug.delete", r.id, { title: `${SENTINEL} title of a deleted report` }],
+    ] as const) {
+      const { rows } = await db.query<{ id: string }>(
+        `insert into zz.event (ts, kind, subject, detail, origin, actor_id) values ($1, $2, $3, $4::jsonb, 'work', $5) returning id::text as id`,
+        [new Date(ts).toISOString(), kind, subject, JSON.stringify(detail), actor]);
+      inserted.push(rows[0].id);
+    }
+  }
+  try {
+    const a = await as("?kind=bug.delete");
+    const rows = rowsOf(step, a);
+    for (const r of reports) {
+      const got = rows.find((x) => x.subject === r.id)?.sentence;
+      if (got !== r.want) fail(step, `report ${r.id} reads ${JSON.stringify(got)}, not ${JSON.stringify(r.want)}`);
+    }
+    if (rows.find((x) => x.subject !== null && !reports.some((r) => r.id === x.subject))?.sentence !== UNNAMED_DELETION) {
+      fail(step, `the seed's deletion reads ${JSON.stringify(rows.map((x) => x.sentence))}`);
+    }
+    if (a.text.includes(SENTINEL)) fail(step, `an answer holds ${a.text.slice(Math.max(0, a.text.indexOf(SENTINEL) - 80), a.text.indexOf(SENTINEL) + 80)}`);
+  } finally {
+    await db.query("delete from zz.event where id = any($1::bigint[])", [inserted]);
+  }
+  pass("a deleted report reads as Bugs' public title where its filing records an impact and a surface (none named for " +
+       "one outside the vocabulary), as the day it was filed where it records neither, and as one the record does not " +
+       "name with no filing; no title either act recorded leaves");
 }
 
 async function run(db: pg.Client, url: string): Promise<void> {
@@ -366,6 +426,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
     step = "nothing was written";
     if (await events() !== before) fail(step, `zz.event holds ${await events()} rows after the reads, not ${before}`);
     pass("no read wrote an event");
+
+    await deletionCases(db, as);
 
     step = "a query that fails";
     await db.query("alter table zz.event rename to event_hidden");

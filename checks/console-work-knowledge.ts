@@ -148,7 +148,7 @@ function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> 
 }
 
 type Weekly = (team: string, window: { from: string; to: string }, asOf: string, grain: "week") => Promise<PF[]>;
-interface Gateway { summary: Route; list: Route; node: Route; weekly: Weekly; stop(): Promise<void> }
+interface Gateway { summary: Route; list: Route; node: Route; log: Route; weekly: Weekly; stop(): Promise<void> }
 
 /** The gateway's Knowledge routes and searchesWithResults, loaded once the reporting timezone is set. */
 async function listen(c: Core): Promise<Gateway> {
@@ -168,6 +168,7 @@ async function listen(c: Core): Promise<Gateway> {
     summary: route("/api/console/knowledge/summary"),
     list: route("/api/console/knowledge"),
     node: route("/api/console/knowledge/:team/*"),
+    log: route("/api/console/knowledge/log"),
     weekly: ((await load("console/work-figures.js")) as { searchesWithResults: Weekly }).searchesWithResults,
     stop: async () => {
       await db.platformDb().end().catch(() => undefined);
@@ -425,6 +426,16 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const theirs = await open(OTHER_TEAM, await address(OTHER_TEAM, "Their private lesson"));
   if (theirs.status !== 404 || JSON.stringify(theirs.body).includes("Their private lesson")) c.fail(step, `another team's lesson: ${theirs.status} ${show(theirs.body)}`);
   c.pass(step);
+
+  step = "the knowledge log names a lesson's address while it is on the shelf, and that address opens it";
+  const log = await answer(g.log, request(ME, {}, {}));
+  if (log.status !== 200) c.fail(step, `the log answered ${log.status}: ${show(log.body)}`);
+  const entries = log.body.entries as { node: string; node_title: string | null; path: string | null }[];
+  for (const e of entries) if ((e.path === null) !== (e.node_title === null)) c.fail(step, `${show(e)}: an address without its lesson, or a lesson without its address`);
+  const shelved = entries.find((e) => e.path !== null) ?? c.fail(step, "no entry names a lesson on the shelf, so an address proves nothing");
+  const opened = await open(c.team, shelved.path!);
+  if (opened.status !== 200 || opened.body.title !== shelved.node_title) c.fail(step, `${shelved.path} opened ${opened.status} ${show(opened.body)}`);
+  c.pass(`${step}: ${entries.length} entries, ${shelved.path} among them`);
 
   step = "reading Knowledge records no event";
   const before = await count(c, "true");

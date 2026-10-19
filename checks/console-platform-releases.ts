@@ -23,10 +23,13 @@
  *     calls, page views and other events change nothing;
  *   - two releases inside 72 hours of each other each name the other, on the window it falls in;
  *   - every key set is exactly the contract's, so no field compares the two windows;
- *   - the tiles count the releases, those of the last seven days and the latest one, and the
+ *   - the tiles count the releases, those of the last whole week and the latest one, and the
  *     migrations `zz.schema_migration` holds; the weeks run Monday to Monday from the record's first
  *     week through the running one, each counting the releases tagged in it, and each is the status
  *     read's figure for that week exactly;
+ *   - a release tagged twenty minutes after a Monday's midnight in the reporting timezone, still the
+ *     Sunday before in UTC, is counted in that Monday's week, the week that holds the day its row
+ *     prints, and in the Last week tile when that week is the last whole one;
  *   - a release's page adds its changelog and upgrade notes, a section that published nothing reads
  *     `No changelog entry`, and an unknown version is a 404 with no body;
  *   - `limit` and `offset` page the rows, and a limit outside 1 to 100 or a negative offset is a 400;
@@ -213,11 +216,13 @@ async function tileAndWeekCases(db: pg.Client, s: Seeded, a: Answer, status: Ans
   const m = (await db.query<{ applied: number; last: Date | null }>(
     "select count(*)::int as applied, max(applied_at) as last from zz.schema_migration")).rows[0];
   const latest = RELEASES[0].version;
-  const want = { releases: RELEASES.length, lastWeek: EXPECTED.lastWeek, latest: { version: latest, releasedAt: iso(s.at.get(latest)!) },
+  // The last whole week is the one before the running week, Monday to Monday in the reporting timezone.
+  const lastWeek = [...s.at.values()].filter((t) => t >= weekStart(s.now, 1, TIMEZONE) && t < weekStart(s.now, 0, TIMEZONE)).length;
+  const want = { releases: RELEASES.length, lastWeek, latest: { version: latest, releasedAt: iso(s.at.get(latest)!) },
     migrations: { applied: m.applied, lastAt: m.last === null ? null : iso(m.last.getTime()) } };
   if (JSON.stringify(tiles) !== JSON.stringify(want)) fail(step, `${JSON.stringify(tiles)}, not ${JSON.stringify(want)}`);
   if (m.applied < 6) fail(step, `only ${m.applied} migrations recorded on a database the real runner migrated`);
-  pass(`the tiles read ${RELEASES.length} releases, ${EXPECTED.lastWeek} in the last seven days, ${latest} the latest, ` +
+  pass(`the tiles read ${RELEASES.length} releases, ${lastWeek} in the last whole week, ${latest} the latest, ` +
        `and the ${m.applied} migrations zz.schema_migration holds`);
 
   step = "the weeks";
@@ -337,6 +342,44 @@ async function failureCases(db: pg.Client, pool: pg.Pool, s: Seeded, as: (email:
   pass("a tile query that fails answers 500, could not read the platform's releases, and nothing else");
 }
 
+/** The calendar day an instant falls on in the reporting timezone: the day the console prints a
+ *  release's row on, the deployment's timezone being the console's. */
+const localDay = (ms: number): string =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(ms);
+
+/** One more release, tagged at 00:20 on the last whole week's Monday in the reporting timezone,
+ *  which is still Sunday in UTC: a week cut at UTC midnight would count it in the week before. It is
+ *  read, then deleted, so no other case sees it. */
+async function midnightCase(db: pg.Client, s: Seeded, as: (email: string, path?: string) => Promise<Answer>, before: Answer): Promise<void> {
+  const step = "a release tagged near midnight";
+  const monday = weekStart(s.now, 1, TIMEZONE), at = monday + 20 * 60_000;
+  if (localDay(at) !== localDay(monday) || new Date(at).getUTCDay() !== 0) {
+    fail(step, `00:20 on ${localDay(monday)} in ${TIMEZONE} is ${iso(at)}, not the Sunday before in UTC`);
+  }
+  await db.query(
+    `insert into zz.release (version, console_version, released_at, summary, changelog, upgrade_notes, client_action)
+     values ('0.9.1', null, $1, 'Tagged just after midnight.', '### Fixed\n\n- Tagged just after midnight.\n', null, null)`,
+    [new Date(at).toISOString()]);
+  let a: Answer;
+  try { a = await as(MEMBER); } finally { await db.query("delete from zz.release where version = '0.9.1'"); }
+  const weeks = a.body.weeks as Obj[], was = before.body.weeks as Obj[];
+  const holding = weeks.findIndex((w) => Date.parse(String((w.window as Obj).from)) <= at && at < Date.parse(String((w.window as Obj).to)));
+  const window = weeks[holding]?.window as Obj | undefined;
+  if (!window || window.from !== iso(monday) || localDay(Date.parse(String(window.from))) !== localDay(at)) {
+    fail(step, `the release at ${iso(at)} (${localDay(at)} in ${TIMEZONE}) falls in ${JSON.stringify(window)}, not the week from ${iso(monday)}`);
+  }
+  const counts = weeks.map((w, i) => Number(w.releases) - Number(was[i].releases));
+  if (counts.join() !== weeks.map((_, i) => (i === holding ? 1 : 0)).join()) {
+    fail(step, `the weeks' counts moved by ${counts.join(", ")}, not by one in the week of ${localDay(monday)} alone`);
+  }
+  const tiles = a.body.tiles as Obj, had = before.body.tiles as Obj;
+  if (tiles.lastWeek !== Number(had.lastWeek) + 1 || tiles.lastWeek !== weeks[weeks.length - 2].releases) {
+    fail(step, `the Last week tile reads ${String(tiles.lastWeek)}, not ${Number(had.lastWeek) + 1}, the last whole week's count`);
+  }
+  pass(`a release tagged at 00:20 on ${localDay(monday)} in ${TIMEZONE}, the Sunday before in UTC, is counted in that Monday's week ` +
+       "and in the Last week tile, the week the day its row prints falls in");
+}
+
 async function run(db: pg.Client, url: string): Promise<void> {
   const seeded = await seedReleases(db, TIMEZONE);
   const cookie = new Map<string, string>();
@@ -427,6 +470,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
     ];
     if (diffs.length) fail(step, diffs.join("; "));
     pass("the list and a release's page agree in shape with the console's fake ones, key set by key set");
+
+    await midnightCase(db, seeded, as, member);
 
     step = "no release recorded";
     await db.query("delete from zz.release");

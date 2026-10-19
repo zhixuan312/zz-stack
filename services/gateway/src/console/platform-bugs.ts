@@ -93,20 +93,20 @@ export function canonicalSurface(stored: string | null, words: Set<string>): str
 }
 
 /** The impacts as a withheld report's title says them. */
-const IMPACT_WORDS: Record<Impact, string> = {
+export const IMPACT_WORDS: Record<Impact, string> = {
   blocks_work: "Blocks work", wrong_result: "Wrong result", confusing: "Confusing", cosmetic: "Cosmetic",
 };
 
 /** The day a report was filed, as its withheld title says it and the console's Filed column draws it (its
  *  `formatDate`): `16 Sept 2026`, `03 Oct 2026`. */
-const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, day: "2-digit", month: "short", year: "numeric" });
+export const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, day: "2-digit", month: "short", year: "numeric" });
 
 /** The title of a report its reader may not read in full, built from what they may see of it: its
  *  impact, its canonical surface and the day it was filed in the reporting timezone, so two reports
  *  of a team read apart while nothing the reporter wrote is in it. `Blocks work: document_approve,
  *  filed 16 Sept 2026`, or `Cosmetic: no surface named, filed 03 Oct 2026`.
  *  COUPLED: the fake's `publicTitle` in ../zz-stack-dashboard/scripts/fake-gateway/platform-bugs.ts. */
-function publicTitle(r: Pick<RealReport, "impact" | "surface" | "reportedMs">): string {
+export function publicTitle(r: Pick<RealReport, "impact" | "surface" | "reportedMs">): string {
   return `${IMPACT_WORDS[r.impact]}: ${r.surface ?? "no surface named"}, filed ${FILED_DAY.format(new Date(r.reportedMs))}`;
 }
 

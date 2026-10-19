@@ -10,7 +10,7 @@
  * protocol versions or two populations says `Not comparable` and why.
  *
  * Public by route, through `platformPublic`. A member reads the protocol's version number and not its
- * key, a waiting finding's owner category and fixed summary and not its measure's key or its pattern:
+ * key, a waiting finding's owner category and fixed name and not its measure's key or its pattern:
  * a key and a pattern are the owning team's words. Nobody reads a finding's `decision_note`,
  * `owner_ref` or `evidence_refs`, or a run's team or initiative; none of them is selected.
  *
@@ -135,10 +135,17 @@ export function publicScore(history: ScoreHistory | undefined): { score: PluginS
   return latest ? { score: latest, comparability: history!.statement } : { score: null, comparability: "No score to compare" };
 }
 
-/** The fixed sentence a waiting finding is read by: its plugin and owner category, or neither when the
- *  category is `unknown`. */
-const summaryOf = (plugin: string, owner: string): string =>
-  owner === "unknown" ? "Evaluation finding awaiting a decision" : `A finding on ${plugin}, owned by ${owner}, awaiting a decision`;
+/** The owner categories as a finding's name says them. COUPLED: the fake's `OWNED_BY`. */
+const OWNED_BY: Record<string, string> = {
+  plugin: "owned by the plugin", dependency: "owned by a dependency", platform: "owned by the platform",
+  environment: "owned by the environment", user_input: "owned by user input", unknown: "owner not known",
+};
+
+/** The fixed name a waiting finding is read by, everything in it a member may read: its kind, its plugin
+ *  and its owner category, `A defect in sdlc, owned by the plugin` or `An unknown in zz-core, owner not
+ *  known`. Its pattern, what it found in the evaluation's own words, is the superadmin's alone. */
+const summaryOf = (kind: "defect" | "unknown", plugin: string, owner: string): string =>
+  `${kind === "defect" ? "A defect" : "An unknown"} in ${plugin}, ${OWNED_BY[owner] ?? `owned by ${owner.replace(/_/g, " ")}`}`;
 
 /** One part's statement, or `unavailable` when it fails: the other parts stand. */
 async function part<T>(name: string, read: () => Promise<T>): Promise<Part<T>> {
@@ -220,7 +227,7 @@ export async function waitingFindings(asOf: string, superadmin: boolean): Promis
       order by f.created_at, f.id`, [asOf, superadmin])).rows;
   return rows.map((r) => ({
     id: r.id, plugin: r.plugin, kind: r.kind, owner: r.owner_kind, measure: r.measure,
-    waitingSince: iso(r.since_ms), summary: summaryOf(r.plugin, r.owner_kind),
+    waitingSince: iso(r.since_ms), summary: summaryOf(r.kind, r.plugin, r.owner_kind),
     ...(superadmin ? { pattern: r.pattern ?? "" } : {}),
   }));
 }

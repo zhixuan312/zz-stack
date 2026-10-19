@@ -111,7 +111,7 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   title("recorded high, ahead of a clear rise", H.homeTitle(facts(plain({ closed: 7 }))), 3,
     "7 pieces of work closed last week, the most in a week yet");
   title("a tie is named", H.homeTitle(facts(plain({ closed: 6 }))), 3,
-    "6 pieces of work closed last week, the most in a week yet, tied with the week of 7 Sep");
+    "6 pieces of work closed last week, the most in a week yet, tied with the week of 7 Sept");
   title("words high", H.homeTitle(facts(plain({ words: 3500 }))), 3,
     "3,500 words added to your documents last week, the most in a week yet");
   title("closed before words", H.homeTitle(facts(plain({ closed: 7, words: 3500 }))), 3,
@@ -133,7 +133,7 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   title("rules 2 and 3 joined", H.homeTitle(facts(plain({ words: 3500 }), { closed: 51 })), 2,
     "Your 50th piece of work closed, in a week of 3,500 words added, the most yet");
   title("joined with a tie", H.homeTitle(facts(plain({ closed: 6 }), { closed: 51 })), 2,
-    "Your 50th piece of work closed, in a week of 6 closures, the most yet, tied with the week of 7 Sep");
+    "Your 50th piece of work closed, in a week of 6 closures, the most yet, tied with the week of 7 Sept");
 }
 
 // Rule 4: the agents' run of days, newly at 7, 14 or 30 inside the last whole week.
@@ -187,7 +187,7 @@ const days = (from: string, through: string, inactive: string[] = []) => {
   title("shortest median time to close", H.homeTitle(facts(plain({ medianHoursToClose: { hours: 6.04, cohort: 5 } }, {}, timed))), 6,
     "The shortest median time to close yet: 6 hours, over 5 pieces of work");
   title("a tie is named", H.homeTitle(facts(plain({ medianHoursToClose: { hours: 8, cohort: 4 } }, {}, timed))), 6,
-    "The shortest median time to close yet: 8 hours, over 4 pieces of work, tied with the week of 7 Sep");
+    "The shortest median time to close yet: 8 hours, over 4 pieces of work, tied with the week of 7 Sept");
   expect("not the shortest", H.homeTitle(facts(plain({ medianHoursToClose: { hours: 8.5, cohort: 4 } }, {}, timed))).rule === 8, null);
   expect("no week's median is no rule", H.homeTitle(facts(plain({ medianHoursToClose: null }, {}, timed))).rule === 8, null);
   expect("rule 5 before rule 6", H.homeTitle(facts(plain({ words: 2500, medianHoursToClose: { hours: 6, cohort: 5 } }, {}, timed))).rule === 5, null);
@@ -243,13 +243,13 @@ const days = (from: string, through: string, inactive: string[] = []) => {
   });
   const o = { label: "words added", better: "neutral", timezone: "UTC", precision: 0, coverageFrom: null, countLabel: null };
   const high = N.periodFinding([p(2, 40), p(3, 20), p(4, 90), p(5, 10, false)], o);
-  expect("a high with no stated start", high?.kind === "high_week" && high.text === "Most recorded words added in a week since 14 Sep" && high.dates.join() === "2026-09-28,2026-09-14", high);
+  expect("a high with no stated start", high?.kind === "high_week" && high.text === "Most recorded words added in a week since 14 Sept" && high.dates.join() === "2026-09-28,2026-09-14", high);
   const since = N.periodFinding([p(2, 40), p(3, 20), p(4, 90)], { ...o, coverageFrom: "2026-09-01" });
-  expect("a high since the record began", since?.text === "Most recorded words added in a week since 1 Sep", since);
+  expect("a high since the record began", since?.text === "Most recorded words added in a week since 1 Sept", since);
   const low = N.periodFinding([p(2, 40), p(3, 90), p(4, 40)], o);
-  expect("a low, tied", low?.kind === "low_week" && low.tie === true && low.text === "Fewest recorded words added in a week since 14 Sep, tied with 14 Sep", low);
+  expect("a low, tied", low?.kind === "low_week" && low.tie === true && low.text === "Fewest recorded words added in a week since 14 Sept, tied with 14 Sept", low);
   const best = N.periodFinding([p(2, 9), p(3, 8), p(4, 6)], { ...o, label: "median hours to close", better: "down", precision: 1 });
-  expect("a best", best?.kind === "best_week" && best.text === "Lowest observed median hours to close in a complete week, 28 Sep", best);
+  expect("a best", best?.kind === "best_week" && best.text === "Lowest observed median hours to close in a complete week, 28 Sept", best);
   expect("a gap leaves too few", N.periodFinding([p(2, 40), p(3, null), p(4, 90)], o)?.kind === "incomplete", null);
   expect("no rule and no counts", N.periodFinding([p(2, 40), p(3, 90), p(4, 60)], o) === null, null);
   const counted = N.periodFinding([{ ...p(2, 3), numerator: 3, denominator: 100 }, { ...p(3, 4), numerator: 4, denominator: 100 }, { ...p(4, 5), numerator: 5, denominator: 100 }],

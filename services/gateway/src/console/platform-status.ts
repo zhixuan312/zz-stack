@@ -16,8 +16,9 @@
  *   records   over every real-work call by local day, through the latest complete day: the days in a
  *             row with a call, the days under 1% tool failures, and the longest run of those
  *   running   the gateway's own version and what `zz.release` recorded of it and of the release
- *             before it, and the migrations `zz.schema_migration` holds; `unrecorded` when no row
- *             names the running version
+ *             before it, the latest tag recorded (Releases' newest row, which a tag not yet deployed
+ *             makes newer than the running one), and the migrations `zz.schema_migration` holds;
+ *             `unrecorded` when no row names the running version
  *   own       the reader's active team's malformed calls, refusals put right and sessions, counted by
  *             the same functions narrowed to that team with no sample minimum, and its real bug
  *             reports by how they stand
@@ -87,7 +88,9 @@ type Records = {
   daysWithWork: number; daysUnderOnePercent: number;
   longestUnderOnePercent: { days: number; from: string; to: string } | null;
 };
-type Running = { platform: string; console: string | null; releasedAt: string; previous: string | null; migrations: number | null };
+type Running = {
+  platform: string; console: string | null; releasedAt: string; previous: string | null; latest: string; migrations: number | null;
+};
 
 /** One tool's open real reports, for the agent read: their count, and where the record of bugs begins
  *  through the cutoff. */
@@ -204,14 +207,17 @@ function recordsOf(rows: DayRow[], grid: Grid): Records {
   return { daysWithWork, daysUnderOnePercent: under.filter(Boolean).length, longestUnderOnePercent: longest };
 }
 
-/** What is running: this gateway's version and its release row, the release before it by time, and
- *  the migrations applied; a count that cannot be read is null beside the row that was. */
+/** What is running: this gateway's version and its release row, the release before it by time, the
+ *  latest release recorded in Releases' order (the running one's own row when none is newer), and the
+ *  migrations applied; a count that cannot be read is null beside the row that was. */
 async function runningOf(db: pg.Pool): Promise<Part<Running>> {
-  const row = (await db.query<{ console_version: string | null; released_ms: number; previous: string | null }>(
+  const row = (await db.query<{ console_version: string | null; released_ms: number; previous: string | null; latest: string }>(
     `select r.console_version, (extract(epoch from r.released_at) * 1000)::float8 as released_ms,
             (select p.version from zz.release p
               where p.released_at < r.released_at
-              order by p.released_at desc, p.version desc limit 1) as previous
+              order by p.released_at desc, p.version desc limit 1) as previous,
+            (select l.version from zz.release l
+              order by l.released_at desc, l.version desc limit 1) as latest
        from zz.release r
       where r.version = $1`, [PLATFORM_VERSION])).rows[0];
   if (row === undefined) return { state: "unavailable", reason: "unrecorded" };
@@ -219,7 +225,10 @@ async function runningOf(db: pg.Pool): Promise<Part<Running>> {
     "select count(*)::int as n from zz.schema_migration").then((r) => r.rows[0].n));
   return {
     state: "ok",
-    data: { platform: PLATFORM_VERSION, console: row.console_version, releasedAt: iso(row.released_ms), previous: row.previous, migrations },
+    data: {
+      platform: PLATFORM_VERSION, console: row.console_version, releasedAt: iso(row.released_ms), previous: row.previous,
+      latest: row.latest, migrations,
+    },
   };
 }
 

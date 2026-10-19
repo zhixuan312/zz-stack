@@ -63,7 +63,7 @@ const rate = (weeks: W[], over: Record<string, unknown> = {}) =>
   const m = rate([week("2026-09-14", 3, 1000), week("2026-09-21", 3.04, 1000), week("2026-09-28", 3, 1000)]);
   expect("unchanged at one decimal", m.judgement === "unchanged", m.judgement);
   expect("tie chooses the earliest", m.best?.window.from === "2026-09-14T00:00:00.000Z", m.best);
-  expect("a tie is said", m.finding.kind === "best_week" && m.finding.tie === true && / tied with 14 Sep$/.test(m.finding.text), m.finding);
+  expect("a tie is said", m.finding.kind === "best_week" && m.finding.tie === true && / tied with 14 Sept$/.test(m.finding.text), m.finding);
 }
 // A neutral measure names highest and lowest, never best, and is never judged.
 const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({ key: "sessions", better: "neutral",
@@ -75,11 +75,11 @@ const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({
   expect("neutral highest", m.highest?.window.from === "2026-09-28T00:00:00.000Z", m.highest);
   expect("neutral lowest", m.lowest?.window.from === "2026-09-21T00:00:00.000Z", m.lowest);
   expect("neutral is not judged", m.judgement === "neutral", m.judgement);
-  expect("neutral high week", m.finding.kind === "high_week" && m.finding.text === "Most recorded sessions in a week since 14 Sep", m.finding);
+  expect("neutral high week", m.finding.kind === "high_week" && m.finding.text === "Most recorded sessions in a week since 14 Sept", m.finding);
   const low = neutral([40, 90, 20]);
-  expect("neutral low week", low.finding.kind === "low_week" && low.finding.text === "Fewest recorded sessions in a week since 14 Sep", low.finding);
+  expect("neutral low week", low.finding.kind === "low_week" && low.finding.text === "Fewest recorded sessions in a week since 14 Sept", low.finding);
   const tied = neutral([40, 90, 40], "2026-09-07");
-  expect("neutral tie", tied.finding.kind === "low_week" && tied.finding.tie === true && tied.finding.text === "Fewest recorded sessions in a week since 7 Sep, tied with 14 Sep", tied.finding);
+  expect("neutral tie", tied.finding.kind === "low_week" && tied.finding.tie === true && tied.finding.text === "Fewest recorded sessions in a week since 7 Sept, tied with 14 Sept", tied.finding);
   const middle = neutral([40, 90, 60]);
   expect("no rule holds and no counts: no finding", middle.finding === null, middle.finding);
 }
@@ -94,7 +94,7 @@ const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({
 {
   const m = rate([week("2026-09-14", 5, 100, {}, 8), week("2026-09-21", 4, 100, {}, 8), week("2026-09-28", 3, 100, {}, 8)], { timezone: "Asia/Singapore" });
   expect("the week starts on the instant before UTC midnight", m.last?.window.from === "2026-09-27T16:00:00.000Z", m.last);
-  expect("the finding names the local Monday", m.finding.dates[0] === "2026-09-28" && /, 28 Sep$/.test(m.finding.text), m.finding);
+  expect("the finding names the local Monday", m.finding.dates[0] === "2026-09-28" && /, 28 Sept$/.test(m.finding.text), m.finding);
 }
 // Findings that do not hold.
 {

@@ -391,7 +391,7 @@ type Week = [number | null, number | null, number | null, Why];
 const UNDEFINED: Week = [null, null, null, "unavailable"];
 
 /** A measure as the route must answer it: its weeks L-4 to L, the weeks it names by `back`, and its finding, whose
- *  `{n}` is the local Monday of the week `back` n as a sentence prints it (`28 Sep`). */
+ *  `{n}` is the local Monday of the week `back` n as a sentence prints it (`28 Sept`). */
 interface ExpectedMeasure {
   key: string; better: "up" | "down" | "neutral"; weeks: Week[];
   first: number | null; best: number | null; last: number; previous: number; highest: number | null; lowest: number | null;

@@ -21,6 +21,7 @@
  */
 import { platformDb } from "../db.js";
 import type { PeriodFigure } from "./figures.js";
+import { day, localDate } from "./findings.js";
 import type { PendingRevision } from "./pending.js";
 import type { realReports } from "./platform-bugs.js";
 import type { StatusMeasure } from "./platform-measures.js";
@@ -43,8 +44,8 @@ export type Needs = {
 export type DoorToday = { door: string; calls: number; toolFailures: number; firstFailureMs: number | null };
 
 /** The destinations released, each a page a link may open: every page of both workspaces. A row links
- *  to its kind's: Bugs, Evaluation, Usage (door, drift), and a team's own page under Teams for its
- *  approvals; a row whose destination is not among them links nowhere. COUPLED: the console's pages
+ *  to its kind's: Bugs filtered to open, Evaluation, Usage (door, drift), and a team's own page under
+ *  Teams for its approvals; a row whose destination is not among them links nowhere. COUPLED: the console's pages
  *  under `app/(dash)/`, which checks/console-platform-needs.ts opens each link against. */
 const RELEASED: ReadonlySet<string> = new Set([
   "/", "/record", "/initiatives", "/approvals", "/knowledge", "/activity", "/runs", "/plugins", "/access",
@@ -61,12 +62,11 @@ const KINDS: readonly NeedKind[] = ["bugs", "door", "evaluation", "approvals", "
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const count = (n: number): string => n.toLocaleString("en-GB");
 const counted = (n: number, one: string, many: string): string => `${count(n)} ${n === 1 ? one : many}`;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/** The local date an instant falls on, as a sentence prints it: `28 Sep`. */
-function day(instant: string, timezone: string): string {
-  const date = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(instant));
-  return `${Number(date.slice(8, 10))} ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
-}
+/** The local date an instant falls on, as a sentence prints it: `28 Sept`. */
+const dayOf = (instant: string, timezone: string): string => day(localDate(instant, timezone));
+
+/** Bugs filtered to open: the queue's own `state` filter, so the row opens the reports it counts. */
+const BUGS_OPEN = "/platform/bugs?state=open";
 
 /** Where a row links: `path` when the destination it belongs to is released, else nowhere. */
 const link = (destination: string, path = destination): string | null => (RELEASED.has(destination) ? path : null);
@@ -103,8 +103,8 @@ function drift(m: StatusMeasure, label: string, timezone: string): Instance | nu
   return {
     kind: "drift", key: m.key, tone: "warning", instanceCount: 1, oldestAt: last.window.from, href: link("/platform/usage"),
     title: `${label} has at least doubled`,
-    detail: `${count(last.figure.value!)} ms in the week of ${day(last.window.from, timezone)}, against ` +
-      `${count(first.figure.value!)} ms in the week of ${day(first.window.from, timezone)}`,
+    detail: `${count(last.figure.value!)} ms in the week of ${dayOf(last.window.from, timezone)}, against ` +
+      `${count(first.figure.value!)} ms in the week of ${dayOf(first.window.from, timezone)}`,
   };
 }
 
@@ -119,7 +119,7 @@ function instances(input: NeedsInput): { found: Instance[]; unavailable: NeedKin
       const blocking = open.filter((r) => r.impact === "blocks_work").length;
       found.push({
         kind: "bugs", key: "bugs", tone: blocking ? "critical" : "warning", instanceCount: 1,
-        oldestAt: iso(Math.min(...open.map((r) => r.reportedMs))), href: link("/platform/bugs"),
+        oldestAt: iso(Math.min(...open.map((r) => r.reportedMs))), href: link("/platform/bugs", BUGS_OPEN),
         title: "Bug reports are open",
         detail: `${counted(open.length, "open report", "open reports")}, ${count(blocking)} blocking work`,
       });

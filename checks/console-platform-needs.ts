@@ -21,8 +21,8 @@
  *     latencies doubled), the superadmin's five rows and the overflow by kind add up to the total, as
  *     do a member's, whose approvals fold into one row naming no team and linking nowhere; the
  *     wording differs as the spec says; each row links to its released page, which the console's
- *     checkout holds: bugs to Bugs, a door to Usage, evaluation to Evaluation and a team's
- *     approvals to that team's page under Platform; and no team's slug or id reaches the member;
+ *     checkout holds: bugs to Bugs filtered to open, a door to Usage, evaluation to Evaluation and a
+ *     team's approvals to that team's page under Platform; and no team's slug or id reaches the member;
  *   - each door's days run from where the record begins through today, today not complete; its
  *     totals, fault days, last fault day, run and finding are the seed's; a malformed call marks no
  *     fault day and a tool failure does, one of each on one day;
@@ -69,7 +69,7 @@ const CONSOLE = join(root, "..", "zz-stack-dashboard", "app", "(dash)");
  *  services/gateway/src/console/platform-needs.ts. Drift links to Usage as a door does; the seed's drifts
  *  are both in the overflow, so no row here shows one. */
 const PAGES: Record<string, { href: RegExp; file: string[] }> = {
-  bugs: { href: /^\/platform\/bugs$/, file: ["platform", "bugs", "page.tsx"] },
+  bugs: { href: /^\/platform\/bugs\?state=open$/, file: ["platform", "bugs", "page.tsx"] },
   door: { href: /^\/platform\/usage$/, file: ["platform", "usage", "page.tsx"] },
   drift: { href: /^\/platform\/usage$/, file: ["platform", "usage", "page.tsx"] },
   evaluation: { href: /^\/platform\/evaluation$/, file: ["platform", "evaluation", "page.tsx"] },
@@ -150,8 +150,9 @@ async function run(c: Core): Promise<void> {
     const open = await seedNeeds(c.sql, TIMEZONE, now);
     const date = (k: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(dayStart(now, k, TIMEZONE)));
     const coverage = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(weekStart(now, 6, TIMEZONE)));
-    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const said = (d: string): string => `${Number(d.slice(8))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
+    // A day as the console writes one in a sentence (its `formatDay`): `28 Sept`, `1 Oct`.
+    const said = (d: string): string => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" })
+      .format(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))));
 
     step = "the shared predicate";
     const pending = await pendingRevisions(new Date().toISOString());
@@ -247,11 +248,11 @@ async function run(c: Core): Promise<void> {
         linked.add(r.kind === "approvals" ? "a team's page" : r.href);
       }
     }
-    const opened = ["/platform/bugs", "/platform/usage", "/platform/evaluation", "a team's page"];
+    const opened = ["/platform/bugs?state=open", "/platform/usage", "/platform/evaluation", "a team's page"];
     if (opened.some((p) => !linked.has(p))) c.fail(step, `the rows link ${[...linked].join(", ")}, not each of ${opened.join(", ")}`);
-    c.pass("each need links to its released page, which the console serves: bugs to /platform/bugs, a door to /platform/usage, " +
-           "evaluation to /platform/evaluation and the superadmin's approvals to their team's /platform/teams/<slug>; a member's " +
-           "folded approvals link nowhere");
+    c.pass("each need links to its released page, which the console serves: bugs to /platform/bugs?state=open, a door to " +
+           "/platform/usage, evaluation to /platform/evaluation and the superadmin's approvals to their team's " +
+           "/platform/teams/<slug>; a member's folded approvals link nowhere");
 
     step = "a check that cannot be read";
     const pool = dbModule.platformDb();

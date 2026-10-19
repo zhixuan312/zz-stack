@@ -129,7 +129,7 @@ function where(text: string, needle: string): string {
 /** The pages a link in a member's answer may open: the released Platform pages a need links to that every
  *  person reads, which name no team. A team's page is not among them: a member's approvals fold into one row
  *  that links nowhere. COUPLED: `RELEASED` in services/gateway/src/console/platform-needs.ts. */
-const OPEN = new Set(["/platform/bugs", "/platform/evaluation", "/platform/usage"]);
+const OPEN = new Set(["/platform/bugs?state=open", "/platform/evaluation", "/platform/usage"]);
 
 /** Every `href` in a JSON answer: how many there are, and those that are neither null nor one of `OPEN`, by path. */
 export function hrefs(text: string): { count: number; set: string[] } {

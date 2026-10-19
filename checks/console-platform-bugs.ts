@@ -55,7 +55,7 @@ const DONE = "console-platform-bugs: the bug queue's figures and rows are answer
 const TIMEZONE = "Pacific/Auckland";
 /** A withheld title's words for an impact, and its day in the seed's timezone: `Blocks work: document_approve, filed 14 Sept 2026`. */
 const IMPACT_WORDS: Record<string, string> = { blocks_work: "Blocks work", wrong_result: "Wrong result", confusing: "Confusing", cosmetic: "Cosmetic" };
-const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "numeric", month: "short", year: "numeric" });
+const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "2-digit", month: "short", year: "numeric" });
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "platform-bugs.ts");
 const UNKNOWN = "b0000000-0000-4000-8000-0000000000ff";

@@ -4,7 +4,7 @@
  * record proves; where nothing holds, a week's finding is null and the page draws none.
  *
  * Pure: no database, no clock. Dates are local (`YYYY-MM-DD`) in the read's timezone, and a sentence
- * prints a day as `28 Sep`.
+ * prints a day as the console does, `28 Sept`.
  */
 import type { Measure, MeasureInput, PeriodFigure } from "./figures.js";
 
@@ -18,14 +18,17 @@ type Day = { date: string; calls: number | null; toolFailures: number | null; co
 /** One whole local day of a team's agents, oldest first: whether it had a real-work call. */
 export type AgentDay = { day: string; active: boolean };
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /** The local date an instant falls on. en-CA formats as YYYY-MM-DD. */
 export const localDate = (instant: string, timezone: string): string =>
   new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(instant));
 
-/** A local date as a sentence prints it: `28 Sep`. */
-export const day = (date: string): string => `${Number(date.slice(8, 10))} ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
+/** A calendar day as the console writes one in a sentence (its `formatDay`): en-GB's day and short month. The date
+ *  is already local, so it is read as that day in UTC. */
+const SENTENCE_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
+
+/** A local date as a sentence prints it: `28 Sept`, `1 Oct`. */
+export const day = (date: string): string =>
+  SENTENCE_DAY.format(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))));
 
 /** A count as a sentence prints it: `496,000`. */
 export const count = (n: number): string => n.toLocaleString("en-GB");

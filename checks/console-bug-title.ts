@@ -13,7 +13,8 @@
  *
  *   - each of the member's own team's reports (R1, R2, R6, R7, R10) is titled by its impact, its
  *     canonical surface or `no surface named`, and the day it was filed in the reporting timezone,
- *     exactly `<Impact>: <surface>, filed <day>`, and no two of them read alike; neither do the
+ *     exactly `<Impact>: <surface>, filed <day>`, the day as the console's Filed column draws it
+ *     (`06 Oct 2026`), and no two of them read alike; neither do the
  *     reports with no canonical surface, whatever their team (R3, R4, R6);
  *   - no word of any report's own title reaches the member: not the title anywhere in the answer,
  *     and not one of its words a template or a surface does not already say in a title they read;
@@ -54,8 +55,9 @@ const OWN = ["R1", "R2", "R6", "R7", "R10"] as const;
 const UNNAMED = ["R3", "R4", "R6"] as const;
 
 const IMPACT: Record<string, string> = { blocks_work: "Blocks work", wrong_result: "Wrong result", confusing: "Confusing", cosmetic: "Cosmetic" };
+/** A filed day as a withheld title says it, which is how the console's Filed column draws it: `06 Oct 2026`. */
 const dayIn = (timeZone: string, ms: number): string =>
-  new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(ms));
+  new Intl.DateTimeFormat("en-GB", { timeZone, day: "2-digit", month: "short", year: "numeric" }).format(new Date(ms));
 /** A withheld title, as the contract builds it. */
 const titleOf = (impact: string, surface: string | null, day: string): string => `${IMPACT[impact]}: ${surface ?? "no surface named"}, filed ${day}`;
 

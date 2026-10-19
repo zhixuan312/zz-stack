@@ -28,7 +28,8 @@
  *     one tool failure among them, and the other doors none; the records are answered;
  *   - what is running is `unrecorded` until `zz.release` holds the gateway's own version, and then
  *     names it, the console version recorded with it, its tagged time, the release tagged before it
- *     (the nearer of two) and the migrations `zz.schema_migration` holds;
+ *     (the nearer of two), the latest tag recorded (itself, until a tag recorded after it is the
+ *     latest while it still runs) and the migrations `zz.schema_migration` holds;
  *   - the answer agrees in shape with the console's fake one, read from the sibling checkout: where
  *     both hold an object their key sets are equal, where both hold an array their first elements are
  *     compared the same way, each measure with the fake's of the same key, and a null on either side is
@@ -244,7 +245,9 @@ async function thinLastWeek(db: pg.Client, seeded: Seeded, as: (email: string) =
 type Added = Awaited<ReturnType<typeof seedMeasures>>;
 type Week = (typeof MEASURES.widened)[number];
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** A local `YYYY-MM-DD` date as the console writes a day in a sentence (its `formatDay`): `28 Sept`, `1 Oct`. */
+const sentenceDay = (date: string): string => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" })
+  .format(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))));
 
 /** Where a week differs from `[numerator, denominator, value, why]`, or null. */
 function weekDiff(w: Obj, want: Week): string | null {
@@ -263,7 +266,7 @@ const unavailable = (weeks: Obj[]): boolean => weeks.length === 6 && weeks.every
 function heldToSeed(step: string, seeded: Seeded, a: Answer): void {
   const local = (back: number): string =>
     new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(seeded.starts.get(back)!));
-  const said = (back: number): string => `${Number(local(back).slice(8))} ${MONTHS[Number(local(back).slice(5, 7)) - 1]}`;
+  const said = (back: number): string => sentenceDay(local(back));
   const problems: string[] = [];
   const measures = measuresOf(step, a);
   for (const [i, want] of MEASURES.measures.entries()) {
@@ -409,10 +412,20 @@ async function runningCases(db: pg.Client, as: (email: string) => Promise<Answer
     [version, at(2), at(9), at(20)]);
   const migrations = (await db.query<{ n: number }>("select count(*)::int as n from zz.schema_migration")).rows[0].n;
   const after = (await as(MEMBER)).body.running;
-  const want = { state: "ok", data: { platform: version, console: "0.27.0", releasedAt: at(2), previous: "0.0.2", migrations } };
+  const want = { state: "ok", data: { platform: version, console: "0.27.0", releasedAt: at(2), previous: "0.0.2", latest: version, migrations } };
   if (JSON.stringify(after) !== JSON.stringify(want)) fail(step, `${JSON.stringify(after)}, not ${JSON.stringify(want)}`);
   pass(`what is running is unrecorded until zz.release names ${version}, then reads its console version, its tagged time, ` +
-       `the release tagged before it and the ${migrations} migrations applied`);
+       `the release tagged before it, itself as the latest tag and the ${migrations} migrations applied`);
+
+  // A tag recorded after the running one, not yet deployed: the latest moves to it, and nothing else does. Its number
+  // is lower than the running version's and it still leads, since Releases orders by the tag's time first.
+  await db.query(
+    `insert into zz.release (version, console_version, released_at, summary, changelog)
+     values ('0.0.3', null, $1, 'seeded', 'seeded')`, [at(1)]);
+  const tagged = (await as(MEMBER)).body.running;
+  const newer = { state: "ok", data: { ...want.data, latest: "0.0.3" } };
+  if (JSON.stringify(tagged) !== JSON.stringify(newer)) fail(step, `with a newer tag: ${JSON.stringify(tagged)}, not ${JSON.stringify(newer)}`);
+  pass(`a tag recorded after ${version} is the latest, ${version} still the running version with the same release before it`);
 }
 
 /** A measure with the running week's `observedThrough` left out: it is the request's own `asOf`,

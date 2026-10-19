@@ -80,9 +80,9 @@ const same = (step: string, what: string, got: unknown, want: unknown): void => 
  * Over this repository's catalog: `sdlc` and `zz-plugin-eval` are optional, `zz-core` and `zz-access`
  * required. Evaluations, each plugin owned by team one:
  *
- *   - `sdlc`, protocol `sdlc-protokey` version 1: established 6.2 on 20 Sep observed at 1.0.0, then
- *     established 7.1 on 26 Sep observed at the platform's own version, its release. One series.
- *   - `zz-plugin-eval`, protocol `eval-protokey`: established 5.0 under version 1 on 26 Sep, then not
+ *   - `sdlc`, protocol `sdlc-protokey` version 1: established 6.2 on 20 Sept observed at 1.0.0, then
+ *     established 7.1 on 26 Sept observed at the platform's own version, its release. One series.
+ *   - `zz-plugin-eval`, protocol `eval-protokey`: established 5.0 under version 1 on 26 Sept, then not
  *     established, with no score, under version 2 on 3 Oct. The Evaluation read's latest is the
  *     second; the catalog's score is the first, which has a value. Not comparable.
  *   - `zz-access`, a run never scored. `zz-core`, nothing.
@@ -296,7 +296,7 @@ async function cases(ask: (email: string | null, path: string, method?: string) 
   same(step, "zz-core's zz-platform", [skillOf(rows[0], "zz-platform")].map((s) => [s.calls, s.everRun, s.lastRun]),
     [[3, true, "2026-10-06T08:00:00Z"]]);
   pass("zz-core and zz-access required, sdlc and zz-plugin-eval optional, each with the platform's version, its skills and " +
-       "gates and its install line; sdlc 7.1 between 6.7 and 7.5 under protocol version 1 on 26 Sep with no key, zz-plugin-eval " +
+       "gates and its install line; sdlc 7.1 between 6.7 and 7.5 under protocol version 1 on 26 Sept with no key, zz-plugin-eval " +
        "5.0 under version 1, never-scored plugins null; team one's six sdlc calls, one refused, and three of zz-platform, the " +
        "unteamed call counted for nobody, rows by the team's last run");
 

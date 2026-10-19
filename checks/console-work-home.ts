@@ -96,7 +96,9 @@ type PF = { window: Win; figure: { value: number | null; why: string | null }; n
 type Part = { state: string; data?: Obj; reason?: string };
 
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** A local `YYYY-MM-DD` date as the console writes a day in a sentence (its `formatDay`): `28 Sept`, `1 Oct`. */
+const sentenceDay = (date: string): string => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" })
+  .format(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))));
 /** Its value with every object's keys in order: an answer's key order is no part of its contract. */
 const canonical = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(canonical)
@@ -355,7 +357,7 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const window = (b: number): Win => ({ from: iso(w0 - b * WEEK), to: iso(w0 - (b - 1) * WEEK), observedFrom: iso(w0 - b * WEEK),
                                         observedThrough: b === 0 ? asOf : iso(w0 - (b - 1) * WEEK), complete: b > 0 });
   const local = (b: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(w0 - b * WEEK));
-  const day = (b: number): string => `${Number(local(b).slice(8))} ${MONTHS[Number(local(b).slice(5, 7)) - 1]}`;
+  const day = (b: number): string => sentenceDay(local(b));
   const lastWeek = window(1);
   const LAST_WORDS = 500 + LESSON_WORDS;
   const RUNNING_WORDS = 2 * (EXPLORE_WORDS + SPEC_WORDS);

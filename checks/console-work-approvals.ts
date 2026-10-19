@@ -8,7 +8,7 @@
  * Two people on one team, the seeded one (A) and `member()` (B). Every document, presentation and
  * approval is made through zz-core's tools or the gateway's own console routes; the check then makes
  * only the direct writes the plan allows a check, each on rows it made itself: moving an initiative's
- * timestamps together by whole days, deleting the presentation rows of one approval's context (a
+ * timestamps together, by whole days or onto one instant, deleting the presentation rows of one approval's context (a
  * context that covered nothing of the revision), deleting one approval's event (a revision sealed
  * before the events began), and dropping the review context and content revision from one approval's
  * event (an approval recorded before those keys were). What it establishes, values written here:
@@ -28,7 +28,9 @@
  *     the weeks or the exported reads;
  *   - the tiles count waiting, the oldest wait, A's approvals and those with no presentation recorded
  *     of those since review contexts were recorded, and a list that cannot be read leaves its own tiles
- *     null; approvals by week count each one once;
+ *     null; approvals by week count each one once, in the reporting timezone's week: one made at 06:00
+ *     on a Monday in Asia/Singapore, still the Sunday before in UTC, is that Monday's (the third
+ *     re-review's Work P-1);
  *   - `tab` pages its own list while the other answers its first ten rows and its total; a tab, a page
  *     or a parameter the route does not take is 400; `?scope=platform` widens nothing;
  *   - `callerApprovals` and `callerApprovalRows` answer the same approvals by month and by span;
@@ -46,12 +48,14 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { WEEK, runningWeek } from "../scripts/schema/work-seed.ts";
 
 const NAME = "console-work-approvals";
 const DONE = "console-work-approvals: Waiting is the team's queue and History the caller's own approvals with their " +
   "presentation and decision basis, read by context and snapshot and never by time, counted once by week, paged by " +
   "tab, in the fake's shapes: ok";
 const TIMEZONE = "Asia/Singapore";
+const HOUR = 3_600_000;
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work-approvals.ts");
 const BODY = "# Notes\n\n## Alpha\n\nalpha line one\n\n## Beta\n\nbeta line one\n";
@@ -183,10 +187,9 @@ async function run(c: Core): Promise<void> {
     if (ok.status !== 200) c.fail(`console approve ${path}`, json(ok.body));
     return token;
   };
-  /** Moves every timestamp of an initiative back by whole days, together. */
-  const shift = async (path: string, days: number): Promise<void> => {
+  /** Moves every timestamp of an initiative back by `by`, an interval (`7 days`), together. */
+  const shift = async (path: string, by: string): Promise<void> => {
     const slug = path.split("/")[0];
-    const by = `${days} days`;
     await c.sql.query("update zz.event set ts = ts - $2::interval where initiative_id = (select id from zz.initiative where slug = $1)", [slug, by]);
     await c.sql.query(
       `update zz.doc_revision r set written_at = r.written_at - $2::interval, approved_at = r.approved_at - $2::interval,
@@ -211,7 +214,7 @@ async function run(c: Core): Promise<void> {
       await c.ok(step, "document_present", { path: `${initiative}/spec.md` });
       queue.push({ path: `${initiative}/spec.md`, token: await tokenOf(`${initiative}/spec.md`) });
     }
-    await shift(queue[0].path, 15);
+    await shift(queue[0].path, "15 days");
 
     const want: Want[] = [];
     const expect = (path: string, version: number, token: string, presentation: string, decisionBasis: string): void => {
@@ -260,12 +263,15 @@ async function run(c: Core): Promise<void> {
     const carried = await doc("carried-in");
     await sign(carried, {}, c.client({ client: "zz-migrate" }));
 
-    await shift(delegated, 7);
-    await shift(apart, 14);
+    await shift(delegated, "7 days");
+    // Onto 06:00 on the Monday two weeks back in the reporting timezone, still the Sunday before in UTC: a
+    // week cut on UTC's calendar would count it a week early.
+    const early = runningWeek(Date.now()) - 2 * WEEK + 6 * HOUR;
+    await shift(apart, `${((await approvalEvents(apart))[0].ms - early) / 1000} seconds`);
     const lostContext = (await approvalEvents(lost))[0].context;
     await c.sql.query("delete from zz.event where kind in ('document.shown', 'document.shown_part') and detail->>'review_context' = $1", [lostContext]);
     await c.sql.query("update zz.event set detail = detail - 'review_context' - 'content_revision' where kind = 'document.document_approve' and subject = $1", [unnamed]);
-    await shift(sealed, 60);
+    await shift(sealed, "60 days");
     await c.sql.query("delete from zz.event where kind = 'document.document_approve' and subject = $1", [sealed]);
     // The console's Approve logs its own row after answering.
     for (let i = 0; i < 100 && !(await c.sql.query("select 1 from zz.event where kind = 'document.approve'")).rowCount; i++) {
@@ -367,7 +373,14 @@ async function run(c: Core): Promise<void> {
       c.fail(step, `weeks count ${json(counts)}, where the approvals fall ${json(placed)}`);
     }
     if (weeks.at(-1)!.window.complete || !weeks.at(-2)!.window.complete) c.fail(step, "the running week is complete, or the last whole one is not");
-    c.pass(`approvals by week count each one once: ${json(counts)}, the running week not complete`);
+    const monday = want.find((a) => `${a.initiative}/${a.path}` === apart)!;
+    const holding = weeks.find((w) => monday.atMs >= Date.parse(w.window.from) && monday.atMs < Date.parse(w.window.to));
+    if (new Date(monday.atMs).getUTCDay() !== 0 || holding?.window.from !== iso(early - 6 * HOUR)) {
+      c.fail(step, `the approval at 06:00 on a Monday in ${TIMEZONE} (${iso(monday.atMs)}) is in the week from ${holding?.window.from}, ` +
+        `where that Monday's week begins ${iso(early - 6 * HOUR)}`);
+    }
+    c.pass(`approvals by week count each one once: ${json(counts)}, the running week not complete, and the one at 06:00 on a ` +
+      `Monday in ${TIMEZONE}, still Sunday in UTC, in that Monday's week`);
 
     step = "the exported reads";
     const span = { from: weeks[0].window.from, to: asOf };

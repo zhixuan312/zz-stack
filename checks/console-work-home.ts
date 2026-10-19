@@ -43,7 +43,8 @@
  * representative measure the plan asks for before anything is cached.
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, eight hours ahead of UTC, so a week cut on UTC's
- * calendar moves what the record places before 08:00 on a Monday.
+ * calendar moves what the record places before 08:00 on a Monday: the approval made at 06:00 on one, still the
+ * Sunday before in UTC, is counted in that Monday's week (the third re-review's Work P-1).
  *
  * DELIBERATE: what waits, the running week's writes and the active runs are made as the check runs, and the
  * weeks are counted from the running week it began in, so a run that crosses midnight into a Monday in that
@@ -286,10 +287,11 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   let step = "the record made";
   await phase(c, d, when([5, 10]), () => open("quiet-one"));
   await phase(c, d, when([4, 34]), async () => { await write(step, WORK, `${slug("quiet-one")}/alpha.md`, text(300, "alpha")); });
+  // 06:00 on a Monday in the reporting timezone, 22:00 on the Sunday before in UTC.
+  await phase(c, d, when([3, 6]), () => c.sign(`${slug("quiet-one")}/alpha.md`).then(() => undefined));
   await phase(c, d, when([3, 34]), async () => {
     await open("quiet-two");
     await write(step, WORK, `${slug("quiet-two")}/beta.md`, text(200, "beta"));
-    await c.sign(`${slug("quiet-one")}/alpha.md`);
   });
   await phase(c, d, when([2, 34]), () => open("accepted"));
   await phase(c, d, when([1, 10]), async () => { await open("abandoned"); await open("open-one"); });
@@ -382,6 +384,11 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const coverage = words.coverage as Obj;
   if (coverage.importMade !== 1 || coverage.unrecorded !== 0 || coverage.mixed !== 0) c.fail(step, `coverage ${show(coverage)}`);
   const approvals = ok(step, home.approvals);
+  // The approval at 06:00 on a Monday three weeks back is that Monday's week, not the one before it, as UTC's calendar has it.
+  const early = (await c.sql.query<{ ms: number }>(
+    `select (extract(epoch from e.ts) * 1000)::float8 as ms from zz.event e join zz.initiative i on i.id = e.initiative_id
+      where i.slug = $1 and e.kind = 'document.document_approve'`, [slug("quiet-one")])).rows;
+  if (early.length !== 1 || early[0].ms < when([3, 6]) || early[0].ms >= when([3, 8]) || new Date(early[0].ms).getUTCDay() !== 0) c.fail(step, `quiet-one's approval is at ${show(early)}`);
   same(step, (approvals.weeks as PF[]).map((p) => [p.window.from, p.figure.value]), backs.map((b, i) => [window(b).from, [0, 0, 1, 0, 1, 0][i]]));
   same(step, approvals.finding, { kind: "high_week", text: `Most recorded approvals in your name in a week since ${day(5)}, tied with ${day(3)}`,
                                   dates: [local(1), local(5), local(3)], tie: true });

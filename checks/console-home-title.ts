@@ -247,7 +247,8 @@ const days = (from: string, through: string, inactive: string[] = []) => {
   const since = N.periodFinding([p(2, 40), p(3, 20), p(4, 90)], { ...o, coverageFrom: "2026-09-01" });
   expect("a high since the record began", since?.text === "Most recorded words added in a week since 1 Sept", since);
   const low = N.periodFinding([p(2, 40), p(3, 90), p(4, 40)], o);
-  expect("a low, tied", low?.kind === "low_week" && low.tie === true && low.text === "Fewest recorded words added in a week since 14 Sept, tied with 14 Sept", low);
+  expect("a low, tied with the week it is counted from", low?.kind === "low_week" && low.tie === true
+    && low.text === "Fewest recorded words added in a week since 14 Sept, tied with that first week" && low.dates.join() === "2026-09-28,2026-09-14", low);
   const best = N.periodFinding([p(2, 9), p(3, 8), p(4, 6)], { ...o, label: "median hours to close", better: "down", precision: 1 });
   expect("a best", best?.kind === "best_week" && best.text === "Lowest observed median hours to close in a complete week, 28 Sept", best);
   expect("a gap leaves too few", N.periodFinding([p(2, 40), p(3, null), p(4, 90)], o)?.kind === "incomplete", null);

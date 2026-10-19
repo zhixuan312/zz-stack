@@ -68,7 +68,7 @@ const rate = (weeks: W[], over: Record<string, unknown> = {}) =>
 // A neutral measure names highest and lowest, never best, and is never judged.
 const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({ key: "sessions", better: "neutral",
   minSamples: 0, precision: 0, definedFrom: null, label: "sessions", countLabel: null, coverageFrom, timezone: "UTC",
-  weeks: values.map((v, i) => ({ ...week(["2026-09-14", "2026-09-21", "2026-09-28"][i], v, 1), value: v })) });
+  weeks: values.map((v, i) => ({ ...week(["2026-09-14", "2026-09-21", "2026-09-28", "2026-10-05"][i], v, 1), value: v })) });
 {
   const m = neutral([40, 20, 90]);
   expect("neutral has no best", m.best === null, m.best);
@@ -80,6 +80,16 @@ const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({
   expect("neutral low week", low.finding.kind === "low_week" && low.finding.text === "Fewest recorded sessions in a week since 14 Sept", low.finding);
   const tied = neutral([40, 90, 40], "2026-09-07");
   expect("neutral tie", tied.finding.kind === "low_week" && tied.finding.tie === true && tied.finding.text === "Fewest recorded sessions in a week since 7 Sept, tied with 14 Sept", tied.finding);
+  // Tied with the week the record is counted from: that week is named once, by the "since".
+  const first = neutral([40, 90, 60, 40]);
+  expect("neutral tie with the first week", first.finding.kind === "low_week" && first.finding.tie === true
+    && first.finding.text === "Fewest recorded sessions in a week since 14 Sept, tied with that first week", first.finding);
+  expect("the first week dated once", JSON.stringify(first.finding.dates) === JSON.stringify(["2026-10-05", "2026-09-14"]), first.finding.dates);
+  const both = neutral([40, 90, 40, 40]);
+  expect("neutral tie with the first week and a later one", both.finding.kind === "low_week"
+    && both.finding.text === "Fewest recorded sessions in a week since 14 Sept, tied with that first week and 28 Sept", both.finding);
+  const later = neutral([40, 90, 60, 40], "2026-09-07");
+  expect("a first week the record is not counted from is named", later.finding.text === "Fewest recorded sessions in a week since 7 Sept, tied with 14 Sept", later.finding);
   const middle = neutral([40, 90, 60]);
   expect("no rule holds and no counts: no finding", middle.finding === null, middle.finding);
 }

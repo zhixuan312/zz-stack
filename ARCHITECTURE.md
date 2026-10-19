@@ -164,7 +164,7 @@ rule is what the directory means:
   is the one that is not an answer: one Server-Sent Events stream per tab, fed by one `LISTEN`
   connection per process held from the gateway's start, which says that a collection changed and
   never what changed in it. `live-revision.ts` counts those changes per caller, so every console
-  read answers with its collection's revision and a tab's first stream, asked with it, is greeted
+  read answers with its collection's revision and a stream opened for a page, asked with it, is greeted
   `synced` or a `resync` naming only what moved.
 - **`services/gateway/src/admin/<subject>.ts` and `package/<part>.ts`** — the same rule one
   level down: authority, flows, teams and people for the admin surface; `skills.ts` and

@@ -42,7 +42,7 @@ import { countWords, type WritingCoverage } from "@zz/contracts";
 
 import { platformDb } from "../db.js";
 import type { PeriodFigure } from "./figures.js";
-import { importedDocuments, lessonImports } from "./imports.js";
+import { importedDocuments, lessonImports, shared } from "./imports.js";
 import { grainFor, periodsOf, type Period } from "./work-figures.js";
 
 /** A window as a caller names it: two instants, the first in it and the first after it. */
@@ -93,11 +93,22 @@ const us = (t: string | null): bigint | null => (t === null ? null : BigInt(t));
 const msOf = (t: bigint): number => Number(t) / 1000;
 
 /** Every revision of the team's flow documents made before the cutoff, with its words, its transition
- *  and its date; the documents' creation; and the team's lessons made before it outside an import
- *  cohort, with their words. */
+ *  and its date; the documents' creation; and, with withLessons, the team's lessons made before it
+ *  outside an import cohort, with their words. Each half is built once for every part of a read asking
+ *  at the same cutoff while it is under way (shared): Record asks from six parts and Home from four. */
 async function ledger(team: string, asOf: string, withLessons: boolean) {
+  const [documents, lessons] = await Promise.all([
+    shared(`document ledger ${team} ${asOf}`, () => documentLedger(team, asOf)),
+    withLessons ? shared(`lesson ledger ${team} ${asOf}`, () => lessonLedger(team, asOf)) : [],
+  ]);
+  return { ...documents, lessons };
+}
+
+/** The documents' half of the ledger: every revision with its words, its transition and its date, and
+ *  each document's creation. */
+async function documentLedger(team: string, asOf: string): Promise<{ rows: Row[]; created: { kind: Kind; atMs: number }[] }> {
   const db = platformDb();
-  const [revisions, acts, told, lessons, cohorts] = await Promise.all([
+  const [revisions, acts, told] = await Promise.all([
     db.query<{ doc_id: string; initiative_id: string; initiative: string; path: string; created_us: string; revision: number;
                retained: boolean; hash: string | null; written_us: string | null; closed_us: string | null }>(
       `select d.id::text as doc_id, i.id::text as initiative_id, i.slug as initiative, d.path,
@@ -119,33 +130,16 @@ async function ledger(team: string, asOf: string, withLessons: boolean) {
         where t.slug = $1 and e.kind = any($2::text[]) and e.initiative_id is not null`,
       [team, [...CONTENT_ACTS, SEAL_ACT], SEAL_ACT]),
     importedDocuments(asOf),
-    withLessons
-      ? db.query<{ id: string; updated_us: string; created_ms: number }>(
-          `select n.id::text as id, (extract(epoch from n.updated_at) * 1000000)::bigint::text as updated_us,
-                  (extract(epoch from n.created_at) * 1000)::float8 as created_ms
-             from zz.knowledge_node n
-             join zz.team t on t.id = n.team_id
-            where t.slug = $1 and n.created_at < $2::timestamptz`, [team, asOf])
-      : null,
-    withLessons ? lessonImports(asOf) : null,
   ]);
 
   // The bodies not yet counted, fetched by what names them; a body rewritten between the two reads is
   // kept under its new name and counted on the next read.
   const hashes = [...new Set(revisions.rows.filter((r) => r.retained && r.hash !== null && !counted.has(r.hash)).map((r) => r.hash!))];
   const docIds = [...new Set(revisions.rows.map((r) => r.doc_id))];
-  const lessonKey = (id: string, updatedUs: string): string => `lesson ${id} ${updatedUs}`;
-  const unread = (lessons?.rows ?? []).filter((l) => !counted.has(lessonKey(l.id, l.updated_us))).map((l) => l.id);
-  await Promise.all([
-    countMissing(hashes, async () => (await db.query<{ hash: string; body: string }>(
-      `select distinct on (r.content_hash) r.content_hash as hash, r.body
-         from zz.doc_revision r
-        where r.doc_id = any($1::uuid[]) and r.content_hash = any($2::text[])`, [docIds, hashes])).rows, (r) => r.hash),
-    countMissing(unread, async () => (await db.query<{ id: string; updated_us: string; body: string }>(
-      `select n.id::text as id, (extract(epoch from n.updated_at) * 1000000)::bigint::text as updated_us, n.body
-         from zz.knowledge_node n
-        where n.id = any($1::uuid[])`, [unread])).rows, (l) => lessonKey(l.id, l.updated_us)),
-  ]);
+  await countMissing(hashes, async () => (await db.query<{ hash: string; body: string }>(
+    `select distinct on (r.content_hash) r.content_hash as hash, r.body
+       from zz.doc_revision r
+      where r.doc_id = any($1::uuid[]) and r.content_hash = any($2::text[])`, [docIds, hashes])).rows, (r) => r.hash);
 
   // Each document's seals and content acts, by its initiative and its path within the team.
   const actsOf = new Map<string, { seals: Set<bigint>; content: bigint[] }>();
@@ -181,13 +175,32 @@ async function ledger(team: string, asOf: string, withLessons: boolean) {
     });
     before = { docId: r.doc_id, revision: r.revision, words };
   }
-  const imported = new Set(cohorts?.lessons.map((l) => l.id) ?? []);
-  return {
-    rows, created,
-    // A lesson rewritten between the two reads is left out of this one rather than counted as empty.
-    lessons: (lessons?.rows ?? []).filter((l) => !imported.has(l.id) && counted.has(lessonKey(l.id, l.updated_us)))
-      .map((l) => ({ words: counted.get(lessonKey(l.id, l.updated_us))!, atMs: l.created_ms })),
-  };
+  return { rows, created };
+}
+
+/** The lessons' half of the ledger: the team's lessons made before the cutoff outside an import cohort,
+ *  each with its words and the instant it was made. */
+async function lessonLedger(team: string, asOf: string): Promise<{ words: number; atMs: number }[]> {
+  const db = platformDb();
+  const [lessons, cohorts] = await Promise.all([
+    db.query<{ id: string; updated_us: string; created_ms: number }>(
+      `select n.id::text as id, (extract(epoch from n.updated_at) * 1000000)::bigint::text as updated_us,
+              (extract(epoch from n.created_at) * 1000)::float8 as created_ms
+         from zz.knowledge_node n
+         join zz.team t on t.id = n.team_id
+        where t.slug = $1 and n.created_at < $2::timestamptz`, [team, asOf]),
+    lessonImports(asOf),
+  ]);
+  const lessonKey = (id: string, updatedUs: string): string => `lesson ${id} ${updatedUs}`;
+  const unread = lessons.rows.filter((l) => !counted.has(lessonKey(l.id, l.updated_us))).map((l) => l.id);
+  await countMissing(unread, async () => (await db.query<{ id: string; updated_us: string; body: string }>(
+    `select n.id::text as id, (extract(epoch from n.updated_at) * 1000000)::bigint::text as updated_us, n.body
+       from zz.knowledge_node n
+      where n.id = any($1::uuid[])`, [unread])).rows, (l) => lessonKey(l.id, l.updated_us));
+  const imported = new Set(cohorts.lessons.map((l) => l.id));
+  // A lesson rewritten between the two reads is left out of this one rather than counted as empty.
+  return lessons.rows.filter((l) => !imported.has(l.id) && counted.has(lessonKey(l.id, l.updated_us)))
+    .map((l) => ({ words: counted.get(lessonKey(l.id, l.updated_us))!, atMs: l.created_ms }));
 }
 
 /** The instants a window counts from and up to: inside it and before the cutoff. */

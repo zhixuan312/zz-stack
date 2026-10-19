@@ -34,7 +34,10 @@
  *     skill_calls by week are the record's;
  *   - a dimension a measure does not allow, a bucket of the shelf, a filter it does not take, or a drill or rows of
  *     skill_calls, is refused with 400 before anything is read, never echoing a value sent;
- *     reading records no event; another team's records and maintenance change no answer; the key sets match the fake's.
+ *     reading records no event; another team's records and maintenance change no answer; the key sets match the fake's;
+ *   - calls and refusals from=0001-01-01 read the record grouped, never call by call: forty more calls on the record's
+ *     first day add forty to the total and not one row to what any statement answers, and the newest rows are drilled
+ *     from the newest days alone (rows counted on the gateway's own pool).
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, eight hours ahead of UTC, and nothing is placed in the running
  * week, so the expected values do not depend on the day the check runs.
@@ -97,7 +100,7 @@ async function patOf(c: Core, email: string): Promise<string> {
 }
 
 interface Gateway {
-  url: string; mine: string; theirs: string; routes: Map<string, Route>;
+  url: string; mine: string; theirs: string; routes: Map<string, Route>; pool: pg.Pool;
   refusalWeeks: (team: string, w: { from: string; to: string }, asOf: string, grain: string) => Promise<{ periods: Obj[] }>;
   stop(): Promise<void>;
 }
@@ -136,7 +139,7 @@ async function listen(c: Core): Promise<Gateway> {
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   return {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
-    mine: await patOf(c, c.email), theirs: await patOf(c, OTHER_EMAIL), routes,
+    mine: await patOf(c, c.email), theirs: await patOf(c, OTHER_EMAIL), routes, pool: db.platformDb(),
     refusalWeeks: ((await load("console/refusals.js")) as Pick<Gateway, "refusalWeeks">).refusalWeeks,
     stop: async () => {
       server.closeAllConnections();
@@ -471,6 +474,38 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const after = await Promise.all(QUESTIONS.map((q) => ask(step, q)));
   QUESTIONS.forEach((q, i) => same(`${step}: ${show(q)}`, [before[i].groups, before[i].total], [after[i].groups, after[i].total]));
   c.pass(`${step}: ${QUESTIONS.length} questions`);
+
+  step = "calls and refusals over all time read the record grouped, never call by call";
+  const answered: number[] = [];
+  const query = g.pool.query;
+  g.pool.query = (async (...args: unknown[]) => {
+    const r = await (query as (...a: unknown[]) => Promise<pg.QueryResult>).apply(g.pool, args);
+    answered.push(r.rowCount ?? r.rows.length);
+    return r;
+  }) as unknown as typeof query;
+  const allTime = async (): Promise<{ answers: WQ[]; most: number }> => {
+    answered.length = 0;
+    const answers = [await ask(step, { measure: "calls", by: "tool", from: FIRST, to: DAYS.to }),
+      await ask(step, { measure: "refusals", by: "owner", from: FIRST, to: DAYS.to }),
+      await ask(step, { measure: "calls", by: "tool", from: FIRST, to: DAYS.to, rows: "3" })];
+    return { answers, most: Math.max(...answered) };
+  };
+  try {
+    const was = await allTime();
+    // Forty more answered calls of the record's first call's own tool, on its day: forty more events, no more groups.
+    await c.sql.query(
+      `insert into zz.event (ts, kind, subject, ok, tool_key, origin, team_id)
+       select $2::timestamptz + make_interval(secs => n), 'tool_call', 'core:document_read', true, 'core:document_read', 'work', t.id
+         from zz.team t, generate_series(1, 40) as n where t.slug = $1`, [c.team, iso(when([4, 20]))]);
+    const now = await allTime();
+    same(step, [now.answers[0].total.value, now.answers[1].total, now.answers[2].rows?.data?.rows, now.answers[2].rows?.data?.total, now.most],
+      [(was.answers[0].total.value ?? 0) + 40, was.answers[1].total, was.answers[2].rows?.data?.rows, (was.answers[2].rows?.data?.total ?? 0) + 40, was.most]);
+    c.pass(`${step}: ${was.answers[0].total.value} calls then ${now.answers[0].total.value}, no statement answering more than ${was.most} rows either time`);
+  } finally {
+    g.pool.query = query;
+    await c.sql.query("delete from zz.event where kind = 'tool_call' and ts > $1::timestamptz and ts <= $1::timestamptz + interval '40 seconds' and team_id = (select id from zz.team where slug = $2)",
+      [iso(when([4, 20])), c.team]);
+  }
 
   step = "what a measure does not allow is refused with the allowed values, before anything is read";
   await c.sql.query("alter table zz.team rename to team_hidden");

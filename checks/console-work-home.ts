@@ -27,7 +27,10 @@
  *     whole week; the closures listed are that week's, with their outcomes;
  *   - runs active now, grouped by initiative above four, or with none the last run's time;
  *   - the four milestones over the totals as of the cutoff, and with a record older than the 24 whole
- *     weeks drawn, the totals still over all of it;
+ *     weeks drawn, the totals still over all of it, that read building the writing ledger once and
+ *     scanning the platform for imports once, documents and lessons each, though four of its parts read
+ *     them (statements counted on the gateway's own pool, matched by a fragment only that statement holds,
+ *     COUPLED: console/writing.ts ledger, console/imports.ts importedDocuments and lessonImports);
  *   - open work: the waiting first, then the most recently touched, four rows beside the folded quiet
  *     ones and their count, each row's next move what initiative_status answers for it;
  *   - an import-made document, a maintenance client's lesson and its calls add nothing to any of them;
@@ -156,7 +159,7 @@ function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> 
 
 /** The gateway's door to zz-core as server.ts mounts it, a PAT of the seeded person's, and Home's and the page
  *  view's routes, loaded once the reporting timezone is set. */
-interface Gateway { url: string; token: string; home: Route; pageView: Route; stop(): Promise<void> }
+interface Gateway { url: string; token: string; home: Route; pageView: Route; pool: pg.Pool; stop(): Promise<void> }
 
 async function listen(c: Core): Promise<Gateway> {
   process.env.TEAM_DB_URL = c.url;
@@ -193,6 +196,7 @@ async function listen(c: Core): Promise<Gateway> {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, token,
     home: routes.get("GET /api/console/home") ?? c.fail("mount", "no route GET /api/console/home"),
     pageView: routes.get("POST /api/console/page-view") ?? c.fail("mount", "no route POST /api/console/page-view"),
+    pool: db.platformDb(),
     stop: async () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -488,7 +492,16 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     await write(step, WORK, `${slug("old")}/notes.md`, text(100, "old"));
     await c.ok(step, "initiative_close", { initiative: slug("old"), disposition: "finished", document: "notes.md" });
   });
-  const long = await read(step);
+  const sent: string[] = [];
+  const query = g.pool.query;
+  g.pool.query = ((text: unknown, ...rest: unknown[]) => {
+    if (typeof text === "string") sent.push(text);
+    return (query as (...a: unknown[]) => unknown).call(g.pool, text, ...rest);
+  }) as typeof query;
+  const long = await read(step).finally(() => { g.pool.query = query; });
+  const times = (fragment: string): number => sent.filter((t) => t.includes(fragment)).length;
+  same(`${step}: the ledger and the import scans once`,
+    [times("content_state = 'retained' as retained"), times("'core:document_patch'"), times("tool_key = 'core:knowledge_add'")], [1, 1, 1]);
   const drawn = ok(step, long.words).weeks as PF[];
   const drawnFrom = ((long.meta as Obj).period as Obj).from;
   if (drawn.length !== 25 || drawn[0].window.from !== iso(w0 - 24 * WEEK) || drawnFrom !== drawn[0].window.from) {

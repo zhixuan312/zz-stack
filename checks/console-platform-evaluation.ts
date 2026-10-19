@@ -21,7 +21,8 @@
  *     `scorer_version` differ; scores under two protocol versions, or two population kinds, read
  *     `Not comparable` with that reason;
  *   - findings by decision and by owner, a superseded finding and a strength counted in neither;
- *   - the findings waiting, oldest first, each by its fixed name: its kind, plugin and owner category;
+ *   - the findings waiting, oldest first, each by its fixed name: its kind, plugin and owner category, or
+ *     `Evaluation finding awaiting a decision` when its owner category is not a public one (`unknown`);
  *   - for a member, the protocol's and the measure's keys are null and no field and no text of the
  *     answer holds a pattern, a decision note, an owner reference, an evidence reference, a
  *     protocol's or a measure's key, the team or the initiative; the superadmin reads the keys and
@@ -115,11 +116,12 @@ const same = (step: string, what: string, got: unknown, want: unknown): void => 
   if (JSON.stringify(got) !== JSON.stringify(want)) fail(step, `${what} reads ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
 };
 
-/** Each waiting finding's fixed name, by the seed's finding: its kind, its plugin and its owner category, written here
- *  rather than read from the seed, so a template that drifts reads as a failure. */
+/** Each waiting finding's fixed name, by the seed's finding: its kind, its plugin and its owner category, or the spec's
+ *  sentence for the one whose owner is not known, written here rather than read from the seed, so a template that
+ *  drifts reads as a failure. */
 const NAMES: Record<string, string> = {
   "alpha-plugin": "A defect in alpha, owned by the plugin",
-  "beta-unknown": "An unknown in beta, owner not known",
+  "beta-unknown": "Evaluation finding awaiting a decision",
   "beta-environment": "A defect in beta, owned by the environment",
   "gamma-platform": "A defect in gamma, owned by the platform",
 };
@@ -163,7 +165,8 @@ function readCases(who: string, a: Answer, admin: boolean, ids: Map<string, stri
        "calendar); each plugin's latest score with its range, standing, guardrails, protocol and date, the run never scored " +
        "named nowhere; alpha one series across two plugin versions and two scorer versions, beta not comparable for its " +
        "protocol version, gamma for its population; findings by decision and owner without the superseded one or the " +
-       "strength; four waiting, oldest first, by their fixed names");
+       "strength; four waiting, oldest first, by their fixed names, the one with no public owner category as " +
+       "\"Evaluation finding awaiting a decision\"");
 }
 
 /** What neither person may read, and what only the superadmin may. */

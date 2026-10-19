@@ -3,6 +3,9 @@
  *
  * Through `platformPublic`: a skill is the platform's, the same for everybody, and every figure here
  * is counted over the caller's active team's runs and calls alone. A person in no team is refused.
+ * Runs are real work as Runs counts them (COUPLED: runs-observed.ts, the maintenance join written out here too), each with its own calls,
+ * refusals and output, what a maintenance client added taken off, so a row's runs and its logged calls
+ * count one population.
  */
 import type { Express } from "express";
 
@@ -65,10 +68,10 @@ export function mountSkills(app: Express): void {
                 s.flow, s.retired,
                 count(*)                                            as runs,
                 count(*) filter (where r.ended_at > r.started_at)   as timed_runs,
-                coalesce(sum(r.calls),0)                            as calls,
-                round(avg(r.calls)::numeric,1)                      as calls_avg,
-                coalesce(max(r.calls),0)                            as calls_max,
-                coalesce(sum(r.refusals),0)                         as refusals,
+                coalesce(sum(r.calls - m.calls),0)                  as calls,
+                round(avg(r.calls - m.calls)::numeric,1)            as calls_avg,
+                coalesce(max(r.calls - m.calls),0)                  as calls_max,
+                coalesce(sum(r.refusals - m.refusals),0)            as refusals,
                 round(avg(extract(epoch from (r.ended_at-r.started_at)))
                       filter (where r.ended_at > r.started_at)::numeric,1) as dur_avg,
                 round(percentile_cont(0.5) within group
@@ -78,14 +81,23 @@ export function mountSkills(app: Express): void {
                       filter (where r.ended_at > r.started_at)::numeric,1) as dur_max,
                 round(sum(extract(epoch from (r.ended_at-r.started_at)))
                       filter (where r.ended_at > r.started_at)::numeric,1) as dur_total,
-                round(avg(r.bytes_total)/1024.0,1)                  as kb_avg,
-                round((sum(r.bytes_total)/1048576.0)::numeric,1)    as mb_total
+                round(avg(case when m.calls = 0 then r.bytes_total when m.measured = 0 then null
+                               else r.bytes_total - m.bytes end)/1024.0,1)  as kb_avg,
+                round((sum(case when m.calls = 0 then r.bytes_total when m.measured = 0 then null
+                                else r.bytes_total - m.bytes end)/1048576.0)::numeric,1) as mb_total
            from zz.skill_run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
            join zz.team t on t.id = r.team_id
+           cross join lateral (
+             select (count(*) filter (where e.origin = 'platform'))::int as calls,
+                    (count(*) filter (where e.origin = 'platform' and e.ok is false))::int as refusals,
+                    coalesce(sum(e.response_bytes) filter (where e.origin = 'platform'), 0) as bytes,
+                    count(e.response_bytes) filter (where e.origin = 'work') as measured
+               from zz.event e
+              where e.run_id = r.id) m
           where ($1::timestamptz is null or r.started_at >= $1)
-            and t.slug = $2
+            and t.slug = $2 and r.calls > m.calls
             and ($3::text[] is null or s.name = any($3))
           group by 1,2,3,4,5
           order by 1,2`, [since, activeTeam, names]),

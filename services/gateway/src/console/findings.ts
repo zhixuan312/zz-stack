@@ -30,6 +30,12 @@ const SENTENCE_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "n
 export const day = (date: string): string =>
   SENTENCE_DAY.format(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))));
 
+/** Local dates as a sentence lists them: `14 Sept`, `14 Sept and 28 Sept`, `7 Sept, 14 Sept and 28 Sept`. */
+export const days = (dates: string[]): string => {
+  const said = dates.map(day);
+  return said.length > 1 ? `${said.slice(0, -1).join(", ")} and ${said.at(-1)}` : said[0];
+};
+
 /** A count as a sentence prints it: `496,000`. */
 export const count = (n: number): string => n.toLocaleString("en-GB");
 const counted = (n: number, one: string, many: string): string => `${count(n)} ${n === 1 ? one : many}`;
@@ -45,10 +51,10 @@ type PeriodFindingOptions = {
 
 /** A finding about the last complete period, in order: too few comparable periods to say anything;
  *  the last period is the best (or, for a neutral figure, the highest or lowest) on record; the last
- *  period's counts; else null. Comparable is complete with a standing value; best is chosen among
- *  those, highest and lowest among complete periods with any value. A period ties when another
- *  comparable complete period has the same value at the printed precision, and the sentence names the
- *  earliest. */
+ *  period's counts; else null. Comparable is complete with a standing value, and every record is chosen
+ *  among those alone: a period too thin to stand neither holds a record nor takes one from a period that
+ *  stands. A period ties when another comparable complete period has the same value at the printed
+ *  precision, and the sentence names every period it ties with, earliest first. */
 export function periodFinding(periods: PeriodFigure[], options: PeriodFindingOptions): Finding | null {
   const at = (v: number): number => Math.round(v * 10 ** options.precision);
   const whole = periods.filter((p) => p.window.complete);
@@ -64,31 +70,30 @@ export function periodFinding(periods: PeriodFigure[], options: PeriodFindingOpt
     from.reduce<PeriodFigure | null>((b, p) => (b === null || ahead(at(p.figure.value!), at(b.figure.value!)) ? p : b), null);
   const below = (a: number, b: number): boolean => a < b;
   const above = (a: number, b: number): boolean => a > b;
-  // Whether the last period holds the record `against` names, and the earliest other period it ties with.
-  const holds = (against: PeriodFigure | null): { tie: string | null } | null => {
+  // Whether the last period holds the record `against` names, and every other period it ties with, earliest first.
+  const holds = (against: PeriodFigure | null): { ties: string[] } | null => {
     if (last.figure.why !== null || against === null || at(last.figure.value!) !== at(against.figure.value!)) return null;
-    const tied = comparable.find((p) => p !== last && at(p.figure.value!) === at(last.figure.value!));
-    return { tie: tied ? localDate(tied.window.from, options.timezone) : null };
+    const tied = comparable.filter((p) => p !== last && at(p.figure.value!) === at(last.figure.value!));
+    return { ties: tied.map((p) => localDate(p.window.from, options.timezone)) };
   };
-  const said = (kind: Finding["kind"], text: string, dates: string[], tie: string | null): Finding =>
-    tie === null
+  const said = (kind: Finding["kind"], text: string, dates: string[], ties: string[]): Finding =>
+    ties.length === 0
       ? { kind, text, dates, tie: false }
-      : { kind, text: `${text}, tied with ${day(tie)}`, dates: [...dates, tie], tie: true };
+      : { kind, text: `${text}, tied with ${days(ties)}`, dates: [...dates, ...ties], tie: true };
 
   if (options.better !== "neutral") {
     const best = holds(record(comparable, options.better === "down" ? below : above));
     if (best) {
       const which = options.better === "down" ? "Lowest" : "Highest";
-      return said("best_week", `${which} observed ${options.label} in a complete week, ${day(lastDate[0])}`, lastDate, best.tie);
+      return said("best_week", `${which} observed ${options.label} in a complete week, ${day(lastDate[0])}`, lastDate, best.ties);
     }
   } else {
     // With no stated start, the record begins with the first comparable period given.
     const from = options.coverageFrom ?? localDate(comparable[0].window.from, options.timezone);
-    const valued = whole.filter((p) => p.figure.value !== null);
-    const high = holds(record(valued, above));
-    if (high) return said("high_week", `Most recorded ${options.label} in a week since ${day(from)}`, [...lastDate, from], high.tie);
-    const low = holds(record(valued, below));
-    if (low) return said("low_week", `Fewest recorded ${options.label} in a week since ${day(from)}`, [...lastDate, from], low.tie);
+    const high = holds(record(comparable, above));
+    if (high) return said("high_week", `Most recorded ${options.label} in a week since ${day(from)}`, [...lastDate, from], high.ties);
+    const low = holds(record(comparable, below));
+    if (low) return said("low_week", `Fewest recorded ${options.label} in a week since ${day(from)}`, [...lastDate, from], low.ties);
   }
 
   if (last.numerator !== null && last.denominator !== null && options.countLabel !== null) {

@@ -7,6 +7,14 @@
  * last (ended_at), its skill named through its skill version. The record holds no running state and
  * every run has an end, so nothing here is called running and no interval is left open.
  *
+ * A run is the team's agents only for its real-work calls. Its counters are recomputed from every event
+ * of its session whatever client made it, so what a maintenance client added is read back from the
+ * events carrying the run's id with origin platform and taken off its calls, refusals and output
+ * below. A run every call of which was a maintenance client's is no run at all, here and wherever runs
+ * are read the same way: the skills read and Record's first run. A run
+ * whose events the record no longer holds, or never held, keeps its counters whole: nothing in it is
+ * attributable to maintenance.
+ *
  *   - Coverage is the length of the union of the runs' spans clipped to the window and the cutoff, so
  *     time two runs share is counted once; the summed duration adds each clipped span, so it is
  *     counted once per run. A run of one call has no length and covers nothing: it adds to neither,
@@ -53,6 +61,13 @@ type ObservedRuns = {
   days: { day: string; runs: number }[];
 };
 
+/* What a maintenance client added to a run r of zz.skill_run is joined beside it as m: its calls, refusals and output
+ * bytes, from the events carrying the run's id with origin platform, and how many of the run's real-work events measured
+ * output, one index lookup a run (event_run). A run is real work while r.calls > m.calls; its own calls, refusals and
+ * bytes are the counters less m's, and output a maintenance client alone measured is null, never zero. Written out
+ * whole in every statement that reads runs, so each is one literal check:sql can prepare.
+ * COUPLED: the same join and the same three expressions in skills.ts and record-slices.ts (firstActs). */
+
 const ACTIVE_MS = 5 * 60_000;
 /** Whether a run whose recorded end is endedMs is active at the cutoff: no more than five minutes before it and not after. */
 export const isActive = (endedMs: number, asOfMs: number): boolean => endedMs <= asOfMs && asOfMs - endedMs <= ACTIVE_MS;
@@ -83,7 +98,8 @@ async function rowsOf(team: string, window: Span, asOf: string): Promise<Row[]> 
     `select r.id::text as id, i.slug as initiative, s.name as skill,
             (extract(epoch from r.started_at) * 1000)::float8 as started_ms,
             (extract(epoch from r.ended_at) * 1000)::float8 as ended_ms,
-            r.calls, r.refusals, r.bytes_total::float8 as bytes,
+            (r.calls - m.calls) as calls, (r.refusals - m.refusals) as refusals,
+            (case when m.calls = 0 then r.bytes_total when m.measured = 0 then null else r.bytes_total - m.bytes end)::float8 as bytes,
             to_char(r.started_at at time zone $4::text, 'YYYY-MM-DD') as day,
             (extract(isodow from r.started_at at time zone $4::text) - 1)::int as weekday,
             extract(hour from r.started_at at time zone $4::text)::int as hour
@@ -92,7 +108,14 @@ async function rowsOf(team: string, window: Span, asOf: string): Promise<Row[]> 
        join zz.skill_version sv on sv.id = r.skill_version_id
        join zz.skill s on s.id = sv.skill_id
        left join zz.initiative i on i.id = r.initiative_id
-      where t.slug = $1 and r.started_at < $3::timestamptz and r.ended_at >= $2::timestamptz
+       cross join lateral (
+         select (count(*) filter (where e.origin = 'platform'))::int as calls,
+                (count(*) filter (where e.origin = 'platform' and e.ok is false))::int as refusals,
+                coalesce(sum(e.response_bytes) filter (where e.origin = 'platform'), 0) as bytes,
+                count(e.response_bytes) filter (where e.origin = 'work') as measured
+           from zz.event e
+          where e.run_id = r.id) m
+      where t.slug = $1 and r.started_at < $3::timestamptz and r.ended_at >= $2::timestamptz and r.calls > m.calls
       order by r.started_at, r.id`,
     [team, new Date(fromMs).toISOString(), new Date(endMs).toISOString(), ZZ_TZ]);
   return rows;
@@ -135,13 +158,27 @@ async function lately(team: string, asOf: string): Promise<{ active: Recent[]; l
          join zz.skill_version sv on sv.id = r.skill_version_id
          join zz.skill s on s.id = sv.skill_id
          left join zz.initiative i on i.id = r.initiative_id
-        where t.slug = $1 and r.ended_at >= $2::timestamptz and r.ended_at <= $3::timestamptz`,
+         cross join lateral (
+           select (count(*) filter (where e.origin = 'platform'))::int as calls,
+                  (count(*) filter (where e.origin = 'platform' and e.ok is false))::int as refusals,
+                  coalesce(sum(e.response_bytes) filter (where e.origin = 'platform'), 0) as bytes,
+                  count(e.response_bytes) filter (where e.origin = 'work') as measured
+             from zz.event e
+            where e.run_id = r.id) m
+        where t.slug = $1 and r.ended_at >= $2::timestamptz and r.ended_at <= $3::timestamptz and r.calls > m.calls`,
       [team, sinceIso, asOfIso]),
     platformDb().query<{ last_ms: number | null }>(
       `select (extract(epoch from max(r.ended_at)) * 1000)::float8 as last_ms
          from zz.skill_run r
          join zz.team t on t.id = r.team_id
-        where t.slug = $1 and r.ended_at <= $2::timestamptz`,
+         cross join lateral (
+           select (count(*) filter (where e.origin = 'platform'))::int as calls,
+                  (count(*) filter (where e.origin = 'platform' and e.ok is false))::int as refusals,
+                  coalesce(sum(e.response_bytes) filter (where e.origin = 'platform'), 0) as bytes,
+                  count(e.response_bytes) filter (where e.origin = 'work') as measured
+             from zz.event e
+            where e.run_id = r.id) m
+        where t.slug = $1 and r.ended_at <= $2::timestamptz and r.calls > m.calls`,
       [team, asOfIso]),
   ]);
   return { active: active.rows, last: last.rows[0]?.last_ms ?? null };

@@ -26,6 +26,9 @@
  *     ran answers nothing;
  *   - a bad limit or offset is refused 400, and so is a person in no team;
  *   - another team's runs change nothing;
+ *   - a run whose every call a maintenance client made is no run: not counted, never the largest, never
+ *     active or the last run, while a run of real work with maintenance calls in it counts only its own
+ *     calls, refusals and output, as observedRuns reads them too;
  *   - with the run record unreadable the read fails whole and names nobody;
  *   - no field or label says context, tokens or cost, and the key sets match the console's fake.
  *
@@ -260,6 +263,9 @@ async function cases(db: pg.Client, read: Reads, keyOf: Map<string, string>): Pr
   if (!isDeepStrictEqual(after, before)) fail(step, `an answer changed: ${show(after)}`);
   pass("the other team reads its own o1 and o2; with them deleted every answer is as before, o1's 900,000 bytes never the largest and its overlap with r3 to r5 counted for nobody else");
 
+  step = "a maintenance client's calls are no run";
+  await maintenanceCases(db, read, late, all);
+
   step = "with the run record unreadable the read fails whole";
   await db.query("alter table zz.skill_run rename to skill_run_hidden");
   const quiet = console.error;
@@ -274,6 +280,58 @@ async function cases(db: pg.Client, read: Reads, keyOf: Map<string, string>): Pr
     await db.query("alter table zz.skill_run_hidden rename to skill_run");
   }
   pass("every part is read from one statement, so with zz.skill_run gone the read throws and the route answers 500 naming no team, never a zero");
+}
+
+/** Two runs of the team beside the seed's, each with its events carrying its id: m1, every call a maintenance client's,
+ *  the largest output of any and ending a minute before the cutoff; m2, two real-work calls (one refused, 1,000 bytes
+ *  each) and two maintenance calls (one refused, 4,000 bytes each). Read, then deleted with their events. */
+async function maintenanceCases(db: pg.Client, read: Reads, late: string, before: Runs): Promise<void> {
+  const step = "a maintenance client's calls are no run";
+  const lateMs = Date.parse(late);
+  const at = (minutes: number): string => new Date(lateMs - minutes * 60_000).toISOString();
+  const { rows: [team] } = await db.query<{ id: string; version: string }>(
+    `select t.id::text as id, (select v.id::text from zz.skill_version v join zz.skill s on s.id = v.skill_id where s.name = 'runs-review') as version
+       from zz.team t where t.slug = $1`, [TEAM]);
+  const made: string[] = [];
+  // [session, calls, refusals, bytes, first, last, events as [origin, ok, bytes]]
+  for (const [session, calls, refusals, bytes, first, last, events] of [
+    ["maint-m1", 3, 0, 90_000, at(9), at(1), [["platform", true, 30_000], ["platform", true, 30_000], ["platform", true, 30_000]]],
+    ["mixed-m2", 4, 2, 10_000, at(200), at(190), [["work", true, 1_000], ["work", false, 1_000], ["platform", true, 4_000], ["platform", false, 4_000]]],
+  ] as [string, number, number, number, string, string, [string, boolean, number][]][]) {
+    const { rows: [r] } = await db.query<{ id: string }>(
+      `insert into zz.skill_run (team_id, skill_version_id, session, calls, refusals, bytes_total, started_at, ended_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8) returning id::text as id`, [team.id, team.version, session, calls, refusals, bytes, first, last]);
+    made.push(r.id);
+    for (const [i, [origin, answered, sent]] of events.entries()) {
+      await db.query(
+        `insert into zz.event (ts, kind, subject, ok, tool_key, origin, team_id, skill_version_id, session, run_id, response_bytes)
+         values ($1, 'tool_call', 'core:document_read', $2, 'core:document_read', $3, $4, $5, $6, $7, $8)`,
+        [i === 0 ? first : last, answered, origin, team.id, team.version, session, r.id, sent]);
+    }
+  }
+  try {
+    const all = await read.runsAt(TEAM, ALL, late);
+    const rows = ok(step, all.recent).rows;
+    const m2 = rows.find((r) => r.id === made[1]);
+    expect(step, {
+      runs: all.tiles.runs.value, m1: rows.some((r) => r.id === made[0]), largest: all.tiles.largest?.id,
+      m2: m2 && { calls: m2.calls, refusals: m2.refusals, bytes: m2.bytes },
+    }, {
+      runs: (before.tiles.runs.value ?? 0) + 1, m1: false, largest: before.tiles.largest?.id,
+      m2: { calls: 2, refusals: 1, bytes: 2_000 },
+    });
+    const observed = await read.observedRuns(TEAM, { from: before.since!, to: late }, late) as unknown as
+      { runs: number; lastRunAt: string | null; active: { runs: { skill: string; startedAt: string }[] }[] };
+    const m1Start = new Date(Date.parse(at(9))).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const m1Active = observed.active.some((g) => g.runs.some((x) => x.skill === "runs-review" && x.startedAt === m1Start));
+    expect(step, { runs: observed.runs, m1Active, lastRunAt: observed.lastRunAt },
+      { runs: (before.tiles.runs.value ?? 0) + 1, m1Active: false, lastRunAt: ok(step, before.recent).rows[0].lastCallAt });
+  } finally {
+    await db.query("delete from zz.event where run_id = any($1::uuid[])", [made]);
+    await db.query("delete from zz.skill_run where id = any($1::uuid[])", [made]);
+  }
+  pass("m1, every call a maintenance client's, is no run: not counted, not the largest at 90,000 bytes, not active and not the last; " +
+       "m2 counts its two real-work calls, one refused and 2,000 bytes, and none of its two maintenance calls");
 }
 
 async function run(db: pg.Client, url: string): Promise<void> {

@@ -36,7 +36,7 @@
  *                    revisions was sealed on a day before the platform recorded any approval, that day's
  *                    local midnight, which is all the seal records
  *   lesson           adopted a lesson outside an import cohort
- *   run              began an observed agent run
+ *   run              began an observed agent run of real work (COUPLED: runs-observed.ts, its maintenance join written out in firstActs)
  *   words_week       had a week of recorded word additions, at that week's start: the week of its
  *                    earliest transition adding words, or of its first lesson outside an import cohort
  * the earliest first, a first not yet reached left out.
@@ -218,7 +218,14 @@ async function firstActs(team: string, asOf: string) {
               where t.slug = $1 and e.kind = 'document.document_approve' and e.origin = 'work' and e.ts < $2::timestamptz) as approved_ms,
             (select (extract(epoch from min(r.started_at)) * 1000)::float8
                from zz.skill_run r join zz.team t on t.id = r.team_id
-              where t.slug = $1 and r.started_at < $2::timestamptz) as run_ms,
+               cross join lateral (
+                 select (count(*) filter (where e.origin = 'platform'))::int as calls,
+                        (count(*) filter (where e.origin = 'platform' and e.ok is false))::int as refusals,
+                        coalesce(sum(e.response_bytes) filter (where e.origin = 'platform'), 0) as bytes,
+                        count(e.response_bytes) filter (where e.origin = 'work') as measured
+                   from zz.event e
+                  where e.run_id = r.id) m
+              where t.slug = $1 and r.started_at < $2::timestamptz and r.calls > m.calls) as run_ms,
             s.day as sealed_day,
             (extract(epoch from (s.day::date::timestamp at time zone $3::text)) * 1000)::float8 as sealed_ms,
             (select to_char(min(e.ts) at time zone $3::text, 'YYYY-MM-DD')

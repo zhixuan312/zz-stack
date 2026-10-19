@@ -23,6 +23,10 @@
  *
  * The rule reads ids, counts, times and origins, never what anybody wrote. Each function throws when
  * its statement fails; the read that calls it says which of its parts that made unavailable.
+ *
+ * Each scan is platform-wide, over zz.event, and one read asks for it from several of its parts at once:
+ * Record from six, Home from four. So a scan is made once for every caller asking at one cutoff while it
+ * is under way (`shared`), and nothing is kept once it settles: the next read scans again.
  */
 import { platformDb } from "../db.js";
 import { PLATFORM_TEAM } from "../identity.js";
@@ -40,11 +44,29 @@ type DocRef = { docId: string; team: string; initiative: string; path: string };
 /** How a document's writes tell it: every one a maintenance client's, none recorded, or both kinds. */
 type Told = "imported" | "unrecorded" | "mixed";
 
+/** What is being read now, by the name of what it reads. */
+const underWay = new Map<string, Promise<unknown>>();
+
+/** `read`'s answer, made once for every caller naming `key` while it is under way: the parts of one read
+ *  asking at once share one statement and its answer, which none of them may change. Dropped as it
+ *  settles, a failure as well as an answer, so nothing outlives the read that made it. */
+export function shared<T>(key: string, read: () => Promise<T>): Promise<T> {
+  const was = underWay.get(key);
+  if (was) return was as Promise<T>;
+  const made = read().finally(() => underWay.delete(key));
+  underWay.set(key, made);
+  return made;
+}
+
 /**
  * Every lesson made before `asOf` that is an import, by shelf and ordinal, and every import day before
  * it, by day and shelf. A call, an event or a lesson recorded at or after `asOf` is not yet read.
  */
-export async function lessonImports(asOf: string): Promise<{ lessons: ImportedLesson[]; days: ImportDay[] }> {
+export function lessonImports(asOf: string): Promise<{ lessons: ImportedLesson[]; days: ImportDay[] }> {
+  return shared(`lesson imports ${asOf}`, () => readLessonImports(asOf));
+}
+
+async function readLessonImports(asOf: string): Promise<{ lessons: ImportedLesson[]; days: ImportDay[] }> {
   const db = platformDb();
   const days = (await db.query<{ shelf_id: string; shelf: string; day: string; platform: number; work: number }>(
     `select c.shelf_id::text as shelf_id, t.slug as shelf, c.day,
@@ -91,7 +113,11 @@ export async function lessonImports(asOf: string): Promise<{ lessons: ImportedLe
  * team, initiative and path. A document written only as work is in none of the three. A call recorded at
  * or after `asOf`, and a document made at or after it, is not yet read.
  */
-export async function importedDocuments(asOf: string): Promise<{ imported: DocRef[]; unrecorded: DocRef[]; mixed: DocRef[] }> {
+export function importedDocuments(asOf: string): Promise<{ imported: DocRef[]; unrecorded: DocRef[]; mixed: DocRef[] }> {
+  return shared(`imported documents ${asOf}`, () => readImportedDocuments(asOf));
+}
+
+async function readImportedDocuments(asOf: string): Promise<{ imported: DocRef[]; unrecorded: DocRef[]; mixed: DocRef[] }> {
   const { rows } = await platformDb().query<{ doc_id: string; team: string; initiative: string; path: string; told: Told }>(
     `with writes as (
        select e.team_id, ltrim(e.detail -> 'ids' ->> 'path', '/') as path,

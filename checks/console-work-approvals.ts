@@ -23,7 +23,9 @@
  *   - a console presentation seconds before an agent's approval in another context is not shown, and a
  *     revision presented again after a newer one was approved is not labelled by the newer one;
  *   - an approval B signed on A's behalf is A's, and one A signed on B's behalf is B's; B reads none of
- *     A's approvals in History or the tiles; the console's own `document.approve` row is never counted;
+ *     A's approvals in History or the tiles; the console's own `document.approve` row is never counted,
+ *     and neither is one a maintenance client (`zz-migrate`) signed in A's name, in History, the tiles,
+ *     the weeks or the exported reads;
  *   - the tiles count waiting, the oldest wait, A's approvals and those with no presentation recorded
  *     of those since review contexts were recorded, and a list that cannot be read leaves its own tiles
  *     null; approvals by week count each one once;
@@ -254,6 +256,9 @@ async function run(c: Core): Promise<void> {
     await sign(forB, { on_behalf_of: B });
     const bOwn = await doc("b-own");
     await sign(bOwn, {}, agentB);
+    // Signed in A's name by a maintenance client: no approval of A's.
+    const carried = await doc("carried-in");
+    await sign(carried, {}, c.client({ client: "zz-migrate" }));
 
     await shift(delegated, 7);
     await shift(apart, 14);
@@ -267,6 +272,10 @@ async function run(c: Core): Promise<void> {
       await new Promise((r) => setTimeout(r, 50));
     }
     if (!(await c.sql.query("select 1 from zz.event where kind = 'document.approve'")).rowCount) c.fail(step, "the console wrote no document.approve row");
+    const maintained = await c.sql.query(
+      "select 1 from zz.event where kind = 'document.document_approve' and subject = $1 and origin = 'platform' and lower(detail->>'signer') = lower($2)",
+      [carried, A]);
+    if (maintained.rowCount !== 1) c.fail(step, "the maintenance client's approval was not recorded in A's name as maintenance, so its absence would prove nothing");
 
     // Each expected approval's time, read from the record it was moved to.
     const seen = new Map<string, number>();
@@ -289,7 +298,7 @@ async function run(c: Core): Promise<void> {
     const rows = want.map(({ atMs: _, ...r }) => r);
     // The route's cutoff is the whole second it reads in; read from the next one, so it covers everything made.
     await new Promise((r) => setTimeout(r, 1100));
-    c.pass("the record is made: two specs waiting, eleven approvals in A's name and two in B's");
+    c.pass("the record is made: two specs waiting, eleven approvals in A's name, two in B's and one a maintenance client signed in A's name");
 
     step = "Waiting is the team's queue";
     const asOf = new Date().toISOString();

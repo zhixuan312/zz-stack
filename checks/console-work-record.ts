@@ -38,7 +38,13 @@
  *   - the answer carries what Copy as text copies (scope, cutoff, coverage, basis, pace) and nothing of
  *     weekends, days off, hours saved, a speedup or productivity;
  *   - each part fails alone; a person in no team, an unknown period and a bad page are refused; reading
- *     records no event; the key sets match the console's fake answer.
+ *     records no event; the key sets match the console's fake answer;
+ *   - one read builds the writing ledger once and scans the platform for imports once, documents and
+ *     lessons each, however many of its parts read them, and answers what it answered before.
+ *
+ * It intercepts the gateway's own pool to count the statements one read sends, matched by a fragment only
+ * that statement holds (COUPLED: console/writing.ts ledger, console/imports.ts importedDocuments and
+ * lessonImports).
  *
  * It prints how long one whole read took: the throwaway's record is small, so the number is a floor.
  *
@@ -102,7 +108,7 @@ type PF = { window: Win; figure: Fig; numerator: number | null; denominator: num
 type Part = { state: string; data?: Obj; reason?: string };
 type Slice = (team: string, window: Span, asOf: string) => Promise<Obj>;
 interface Gateway {
-  url: string; token: string; record: Route;
+  url: string; token: string; record: Route; pool: pg.Pool;
   slices: { knowledgeSlice: (team: string, window: Span, asOf: string, countFrom?: string) => Promise<Obj>; agentsSlice: Slice; firstsSlice: Slice };
   mostOpenAtOnce(team: string, window: Span, asOf: string): Promise<Obj>;
   stop(): Promise<void>;
@@ -228,6 +234,7 @@ async function listen(c: Core): Promise<Gateway> {
   return {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, token,
     record: routes.get("/api/console/record") ?? c.fail("mount", "no route GET /api/console/record"),
+    pool: db.platformDb(),
     slices: (await load("console/record-slices.js")) as Gateway["slices"],
     mostOpenAtOnce: ((await load("console/work-figures.js")) as Pick<Gateway, "mostOpenAtOnce">).mostOpenAtOnce,
     stop: async () => {
@@ -516,6 +523,26 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   await new Promise((r) => setTimeout(r, 1500));
   if (await count(c, "true") !== before) c.fail(step, `${(await count(c, "true")) - before} events were recorded by reading Record`);
   c.pass(`${step}: one whole read took ${took.toFixed(0)} ms on the throwaway's small record, a floor and not the representative measure`);
+
+  step = "one read builds the writing ledger once and scans for imports once";
+  const sent: string[] = [];
+  const query = g.pool.query;
+  g.pool.query = ((text: unknown, ...rest: unknown[]) => {
+    if (typeof text === "string") sent.push(text);
+    return (query as (...a: unknown[]) => unknown).call(g.pool, text, ...rest);
+  }) as typeof query;
+  let again: Obj;
+  try {
+    again = await read(step, {});
+  } finally {
+    g.pool.query = query;
+  }
+  const times = (fragment: string): number => sent.filter((t) => t.includes(fragment)).length;
+  // Each read's own cutoff, wherever the answer holds it, is the one thing two reads of the same record may differ in.
+  const cutoffless = (r: Obj): string => JSON.stringify(canonical(r)).replaceAll(String((r.meta as Obj).asOf), "<cutoff>");
+  same(step, [times("content_state = 'retained' as retained"), times("'core:document_patch'"), times("tool_key = 'core:knowledge_add'"),
+              cutoffless(again) === cutoffless(R.all)], [1, 1, 1, true]);
+  c.pass(`${step}: the revisions read once, the document and the lesson imports once each, of ${sent.length} statements, and the answer as before`);
 
   step = "each part fails alone: the lessons hidden";
   const hidden = async (table: string): Promise<Obj> => {

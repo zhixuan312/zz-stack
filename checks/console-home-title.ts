@@ -106,12 +106,12 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   expect("a missing total fires nothing", H.homeTitle(facts(plain(), { closed: null })).rule === 8, null);
 }
 
-// Rule 3: a recorded high, with at least two comparable weeks before it, a tie named; joined with rule 2.
+// Rule 3: a recorded high, with at least two comparable weeks before it, every tied week named; joined with rule 2.
 {
   title("recorded high, ahead of a clear rise", H.homeTitle(facts(plain({ closed: 7 }))), 3,
     "7 pieces of work closed last week, the most in a week yet");
   title("a tie is named", H.homeTitle(facts(plain({ closed: 6 }))), 3,
-    "6 pieces of work closed last week, the most in a week yet, tied with the week of 7 Sept");
+    "6 pieces of work closed last week, the most in a week yet, tied with the weeks of 7 Sept and 21 Sept");
   title("words high", H.homeTitle(facts(plain({ words: 3500 }))), 3,
     "3,500 words added to your documents last week, the most in a week yet");
   title("closed before words", H.homeTitle(facts(plain({ closed: 7, words: 3500 }))), 3,
@@ -133,7 +133,7 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   title("rules 2 and 3 joined", H.homeTitle(facts(plain({ words: 3500 }), { closed: 51 })), 2,
     "Your 50th piece of work closed, in a week of 3,500 words added, the most yet");
   title("joined with a tie", H.homeTitle(facts(plain({ closed: 6 }), { closed: 51 })), 2,
-    "Your 50th piece of work closed, in a week of 6 closures, the most yet, tied with the week of 7 Sept");
+    "Your 50th piece of work closed, in a week of 6 closures, the most yet, tied with the weeks of 7 Sept and 21 Sept");
 }
 
 // Rule 4: the agents' run of days, newly at 7, 14 or 30 inside the last whole week.

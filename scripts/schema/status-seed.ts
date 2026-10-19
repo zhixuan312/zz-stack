@@ -423,7 +423,7 @@ export const MEASURES = {
       finding: { kind: "incomplete", text: "Not enough complete weeks to compare yet" } },
     { key: "bugs_per_1000", better: "neutral",
       weeks: [[1, 161, 1_000 / 161, null], [0, 0, null, "no_data"], [0, 23, 0, "insufficient"], [2, 281, 2_000 / 281, null], [2, 213, 2_000 / 213, null]],
-      first: 5, best: null, last: 1, previous: 2, highest: 1, lowest: 3, judgement: "neutral",
+      first: 5, best: null, last: 1, previous: 2, highest: 1, lowest: 5, judgement: "neutral",
       finding: { kind: "high_week", text: "Most recorded bug reports per 1,000 calls in a week since {5}" } },
     { key: "sessions", better: "neutral",
       weeks: [[5, null, 5, null], [0, null, 0, null], [3, null, 3, null], [6, null, 6, null], [19, null, 19, null]],

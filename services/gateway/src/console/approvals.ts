@@ -11,7 +11,9 @@
  * and every revision sealed with `approved_by` the caller on a day before the first event naming a
  * signer, read from the revision and dated by that day. Before 8 October each approval wrote two such
  * events and only one named the signer, so the signer is what makes each approval one row. The
- * console's own `document.approve` row and the approve `tool_call` are other kinds and never counted.
+ * console's own `document.approve` row and the approve `tool_call` are other kinds and never counted,
+ * and an approval a maintenance client made in the caller's name (origin `platform`) is no approval of
+ * theirs: it counts nowhere, Home, Record and the prepared query reading through here too.
  *
  * An approval's presentation is read by joining its review context and content revision to the
  * `document.shown` and `document.shown_part` rows of the same context and target, never by time:
@@ -126,7 +128,7 @@ async function approvalsOf(team: string, caller: string, asOf: string): Promise<
          join zz.initiative i on i.id = e.initiative_id
          left join zz.doc d on d.initiative_id = i.id and d.path = substr(e.subject, length(i.slug) + 2)
          left join zz.doc_revision cur on cur.doc_id = d.id and cur.revision = d.current_revision
-        where t.slug = $1 and e.kind = 'document.document_approve'
+        where t.slug = $1 and e.kind = 'document.document_approve' and e.origin = 'work'
           and lower(e.detail->>'signer') = lower($2) and e.ts <= $3::timestamptz
         order by e.ts, e.id`, [team, caller, asOf]),
     // Every sealed revision of the team, whoever signed it: an event's content revision names its

@@ -70,7 +70,7 @@ export function describePackage(pkg: ClientPackage, target: string): string {
     `# ZZ setup for ${target}`,
     ``,
     `## 1. Get a token (once)`,
-    `Ask the **ZZ Access** agent for a token. It is shown ONCE. That agent is also`,
+    `Ask the **ZZ Access** agent for a token. It is shown once. That agent is also`,
     `where you revoke a token you no longer trust. Then \`export ZZ_TOKEN=<it>\``,
     `(PowerShell: \`$env:ZZ_TOKEN = "<it>"\`; cmd: \`set ZZ_TOKEN=<it>\`) for the commands below.`,
     ``,

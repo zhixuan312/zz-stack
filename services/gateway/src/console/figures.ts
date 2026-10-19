@@ -65,7 +65,9 @@ const startsBefore = (instant: string, date: string, timezone: string): boolean 
   new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(instant)) < date;
 
 /** Weeks of counts as the measure the page draws. Values are compared at the printed precision, a tie
- *  keeps the earliest week, and only complete weeks are ever named: a running week is drawn, never chosen. */
+ *  keeps the earliest week, and only complete weeks are ever named: a running week is drawn, never chosen.
+ *  A record, best or highest or lowest, is only ever a week whose figure stands: an insufficient one is
+ *  drawn with its value and holds none. */
 export function summarise(input: MeasureInput): Measure {
   const at = (v: number): number => Math.round(v * 10 ** input.precision);
   const weeks = input.weeks.map((w): PeriodFigure => {
@@ -82,7 +84,6 @@ export function summarise(input: MeasureInput): Measure {
 
   const whole = weeks.filter((w) => w.window.complete);
   const stands = whole.filter((w) => w.figure.why === null);
-  const valued = whole.filter((w) => w.figure.value !== null);
   // The first week strictly ahead in `ahead`'s order wins, so a tie keeps the earliest.
   const pick = (from: PeriodFigure[], ahead: (a: number, b: number) => boolean): PeriodFigure | null =>
     from.reduce<PeriodFigure | null>((b, w) => (b === null || ahead(at(w.figure.value!), at(b.figure.value!)) ? w : b), null);
@@ -105,8 +106,8 @@ export function summarise(input: MeasureInput): Measure {
     first: stands[0] ?? null,
     best: neutral ? null : pick(stands, input.better === "down" ? below : above),
     last, previous,
-    highest: neutral ? pick(valued, above) : null,
-    lowest: neutral ? pick(valued, below) : null,
+    highest: neutral ? pick(stands, above) : null,
+    lowest: neutral ? pick(stands, below) : null,
     better: input.better, judgement, finding: null,
   };
   measure.finding = weekFinding(measure, input);

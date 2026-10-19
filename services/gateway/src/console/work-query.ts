@@ -26,14 +26,16 @@
  *
  * A refusal is a real-work tool call with ok false, owned as refusalWeeks owns it, a row with no owner
  * counted as other, so the four owners sum to the total; grouped by owner, all four are answered, and
- * grouped by refused, both. Output is the bytes a run's own calls answered, summed over the runs that
- * measured it, those that measured none counted beside each figure as unmeasured; a group whose runs
- * all measured none is no_data, never zero. skill_calls counts what Plugins counts for the team, every
- * real-work tool call of a skill a shipped plugin ships, under the plugin that ships it; its groups are its
- * rows, so it is not drilled. The shelf is a stock: the team's lessons made before the window's end,
- * standing or superseded as they stand now, because nothing records when a lesson was superseded; each
- * figure says beside it how many of its standing lessons an import made, and no figure of an earlier
- * window is answered for it, so period is not its dimension.
+ * grouped by refused, both. Calls and refusals are counted in the database, never read one by one: a
+ * fact is the calls of one tool, initiative, refusal and owner on one local day on one side of the
+ * window's start, and a drill reads only the days its page falls on. Output is the bytes a run's own
+ * calls answered, summed over the runs that measured it, those that measured none counted beside each
+ * figure as unmeasured; a group whose runs all measured none is no_data, never zero. skill_calls counts
+ * what Plugins counts for the team, every real-work tool call of a skill a shipped plugin ships, under
+ * the plugin that ships it; its groups are its rows, so it is not drilled. The shelf is a stock: the
+ * team's lessons made before the window's end, standing or superseded as they stand now, because nothing
+ * records when a lesson was superseded; each figure says beside it how many of its standing lessons an
+ * import made, and no figure of an earlier window is answered for it, so period is not its dimension.
  *
  * The window defaults to the last whole week; what it counts is inside it and before the cutoff, the
  * read's moment rounded up to a whole second, as Home's. from and to are two instants, or two dates read
@@ -330,8 +332,71 @@ function pluginOfSkill(): Map<string, string> {
 }
 
 
-/** Every row the measure counts inside the span before the cutoff, for the team and, for approvals, the caller. */
-async function factsOf(a: Asked, team: string, caller: string, span: Span, asOf: string): Promise<Fact[]> {
+/** A call's keys along calls' and refusals' dimensions, from what Activity's log answers of it. */
+const callKeys = (tool: string | null, initiative: string | null, ok: boolean | null, owner: string | null): Record<string, string> =>
+  ({ tool: tool ?? NONE, initiative: initiative ?? NONE, refused: ok === false ? "refused" : "answered", owner: owner ?? "" });
+
+/** The team's real-work tool calls inside the span before the cutoff, the refused alone when refused, counted by tool,
+ *  initiative, refusal and owner, by local day and by whether the call is at or after split: each count one fact, dated
+ *  at its day's start, or at split or the span's start where that is later, so it falls in every period, bucket and
+ *  window its calls do. As Activity's log reads them (COUPLED: activity.ts eventRows), page views and maintenance aside. */
+async function callCounts(team: string, refused: boolean, [from, end]: [string, string], split: number): Promise<Fact[]> {
+  const { rows } = await platformDb().query<{
+    tool: string | null; initiative: string | null; ok: boolean | null; owner: string | null; day_ms: number; late: boolean; n: number;
+  }>(
+    `select e.tool_key as tool, i.slug as initiative, e.ok is not false as ok,
+            case when e.ok is false then coalesce(e.refusal_owner, 'other') end as owner,
+            (extract(epoch from (date_trunc('day', e.ts at time zone $5::text) at time zone $5::text)) * 1000)::float8 as day_ms,
+            e.ts >= $4::timestamptz as late, count(*)::int as n
+       from zz.event e
+       join zz.team t on t.id = e.team_id
+       left join zz.initiative i on i.id = e.initiative_id
+      where t.slug = $1 and e.kind = 'tool_call' and e.origin = 'work' and e.ts >= $2::timestamptz and e.ts < $3::timestamptz
+        and ($6::boolean is false or e.ok is false)
+      group by 1, 2, 3, 4, 5, 6`, [team, from, end, iso(split), ZZ_TZ, refused]);
+  const start = Date.parse(from);
+  return rows.map((r) => ({ ms: Math.max(r.day_ms, r.late ? split : start), value: r.n, keys: callKeys(r.tool, r.initiative, r.ok, r.owner), row: null }));
+}
+
+/** When the team's first real-work tool call before the instant was made, the refused alone when refused; null with none. */
+async function firstCall(team: string, refused: boolean, end: string): Promise<number | null> {
+  const { rows } = await platformDb().query<{ first_ms: number | null }>(
+    `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms
+       from zz.event e
+       join zz.team t on t.id = e.team_id
+      where t.slug = $1 and e.kind = 'tool_call' and e.origin = 'work' and e.ts < $2::timestamptz
+        and ($3::boolean is false or e.ok is false)`, [team, end, refused]);
+  return rows[0]?.first_ms ?? null;
+}
+
+/** Newest first, the keys and then the id breaking a tie, so a page and the next never overlap. */
+const order = (f: Fact): string => [...Object.values(f.keys), f.id ?? ""].join("\0");
+const newestFirst = (x: Fact, y: Fact): number => y.ms - x.ms || order(x).localeCompare(order(y));
+
+/** Rows lo to hi, newest first, of the calls or refusals counts holds, inside [from, end): the counts say which local days
+ *  hold them, and only those days' calls are read, as Activity's log reads its page (eventRows), then kept as the counts
+ *  were (keep) and ordered as every drill is. */
+async function callPage(a: Asked, team: string, counts: Fact[], [lo, hi]: [number, number], [from, end]: [number, number],
+                        keep: (f: Fact) => boolean): Promise<WorkQueryRow[]> {
+  const byDay = new Map<number, number>();
+  for (const f of counts) byDay.set(midnight(localDay(f.ms)), (byDay.get(midnight(localDay(f.ms))) ?? 0) + f.value!);
+  let seen = 0, newer = 0, newest: number | null = null, oldest = 0;
+  for (const [day, n] of [...byDay].sort((x, y) => y[0] - x[0])) {
+    if (seen + n <= lo) newer += n;
+    else { newest ??= day; oldest = day; }
+    seen += n;
+    if (seen >= hi) break;
+  }
+  if (newest === null) return [];
+  const read = await eventRows(team, iso(Math.min(midnight(addDays(localDay(newest), 1)), end)),
+    { kind: "tool_call", tool: null, initiative: null, refused: a.measure === "refusals" ? true : null, from: iso(Math.max(oldest, from)) }, null);
+  return read.map((c): Fact => ({ ms: c.ms, value: 1, id: c.row.id, row: c.row, keys: callKeys(c.row.tool, c.row.initiative, c.row.ok, c.row.owner) }))
+    .filter(keep).sort(newestFirst).slice(lo - newer, hi - newer).map((f) => f.row!);
+}
+
+/** Every row the measure counts inside the span before the cutoff, for the team and, for approvals, the caller; calls and
+ *  refusals as their counts, split at the window's start. */
+async function factsOf(a: Asked, team: string, caller: string, span: Span, asOf: string, split: number): Promise<Fact[]> {
   const bounds: [string, string] = [span.from, iso(Math.min(Date.parse(span.to), Date.parse(asOf)))];
   const list = () => initiativeList(team, { ...a.filters, limit: ALL, offset: 0 }, asOf, quiet);
   switch (a.measure) {
@@ -372,10 +437,7 @@ async function factsOf(a: Asked, team: string, caller: string, span: Span, asOf:
       ms: s.ms, value: 1, keys: { found: s.found ? "found" : NONE }, row: { at: iso(s.ms), found: s.found, question: s.question },
     }));
     case "calls":
-    case "refusals": return (await eventRows(team, bounds[1], { kind: "tool_call", tool: null, initiative: null, refused: null, from: bounds[0] }, null)).filter((c) => a.measure === "calls" || c.row.ok === false).map((c) => ({
-      ms: c.ms, value: 1, id: c.row.id, row: c.row,
-      keys: { tool: c.row.tool ?? NONE, initiative: c.row.initiative ?? NONE, refused: c.row.ok === false ? "refused" : "answered", owner: c.row.owner ?? "" },
-    }));
+    case "refusals": return callCounts(team, a.measure === "refusals", bounds, split);
     case "output": return (await runsIn(team, span, asOf)).map((r) => ({
       ms: Date.parse(r.startedAt), value: r.bytes, id: r.id, keys: { skill: r.skill, initiative: r.initiative ?? NONE },
       row: runRow(r, Date.parse(asOf)),
@@ -421,12 +483,17 @@ function labelOf(by: string, key: string, grain: Grain | null): string {
  *  answered for the team at the cutoff, the approvals in it the caller's. */
 async function workQuery(a: Asked, from: From, toMs: number, team: string, caller: string, asOf: string, relay: Relay): Promise<WorkQuery> {
   const asOfMs = Date.parse(asOf);
-  // The record's first day is found over everything before the window's end, which then holds the previous window too.
+  // The record's first day is found over everything before the window's end, which then holds the previous window too;
+  // calls and refusals ask for it alone, and read their counts once the window's start is known.
+  const counting = a.measure === "calls" || a.measure === "refusals";
   let read: Promise<Fact[]> | null = null;
   let fromMs: number;
   if (from === FIRST) {
-    read = factsOf(a, team, caller, { from: iso(0), to: iso(toMs) }, asOf);
-    const first = await read.then((fs) => fs.reduce((m, f) => (f.ms < toMs ? Math.min(m, f.ms) : m), Infinity), () => Infinity);
+    const found = counting
+      ? firstCall(team, a.measure === "refusals", iso(Math.min(toMs, asOfMs))).then((ms) => ms ?? Infinity)
+      : (read = factsOf(a, team, caller, { from: iso(0), to: iso(toMs) }, asOf, 0))
+        .then((fs) => fs.reduce((m, f) => (f.ms < toMs ? Math.min(m, f.ms) : m), Infinity));
+    const first = await found.catch((err: unknown) => { read = Promise.reject(err); return Infinity; });
     fromMs = midnight(localDay(Number.isFinite(first) ? first : toMs - 1));
   } else {
     fromMs = from;
@@ -454,7 +521,7 @@ async function workQuery(a: Asked, from: From, toMs: number, team: string, calle
   let facts: Fact[], periods: Period[], before: Period[];
   try {
     [facts, periods, before] = await Promise.all([
-      read ?? factsOf(a, team, caller, { from: iso(startMs), to: iso(toMs) }, asOf),
+      read ?? factsOf(a, team, caller, { from: iso(startMs), to: iso(toMs) }, asOf, fromMs),
       grain ? periodsOf({ from: iso(fromMs), to: iso(toMs) }, asOf, grain) : [],
       grain && a.compare ? periodsOf({ from: iso(startMs), to: iso(fromMs) }, asOf, grain) : [],
     ]);
@@ -504,9 +571,18 @@ async function workQuery(a: Asked, from: From, toMs: number, team: string, calle
 
   let rows: WorkQuery["rows"] = null;
   if (drilling) {
-    const order = (f: Fact): string => [...Object.values(f.keys), f.id ?? ""].join("\0");
-    const drilled = [...(a.group !== null ? members.get(a.group) ?? [] : now)].sort((x, y) => y.ms - x.ms || order(x).localeCompare(order(y)));
-    let page = (a.rows !== null ? drilled.slice(0, a.rows) : drilled.slice(a.offset, a.offset + a.limit)).map((f) => f.row!);
+    const drilled = [...(a.group !== null ? members.get(a.group) ?? [] : now)].sort(newestFirst);
+    const [lo, hi] = a.rows !== null ? [0, a.rows] : [a.offset, a.offset + a.limit];
+    let page: WorkQueryRow[];
+    try {
+      page = counting
+        ? await callPage(a, team, drilled, [lo, hi], [fromMs, Math.min(toMs, asOfMs)], (f) => inside(f, fromMs, toMs)
+            && a.where.every(([dim, value]) => f.keys[dim] === value) && (a.group === null || keyOf(f) === a.group))
+        : drilled.slice(lo, hi).map((f) => f.row!);
+    } catch (err) {
+      console.error(`console work query: ${a.measure}'s drilled rows could not be read:`, err);
+      return unanswered();
+    }
     if (a.measure === "closures" || a.measure === "opened") {
       // The page's next moves, asked of zz-core for its names alone; a batch it does not answer leaves them null.
       const names = new Set(page.map((r) => (r as InitiativeRow).slug));
@@ -518,7 +594,7 @@ async function workQuery(a: Asked, from: From, toMs: number, team: string, calle
         return unanswered();
       }
     }
-    rows = { state: "ok", data: { rows: page, total: drilled.length } };
+    rows = { state: "ok", data: { rows: page, total: counting ? drilled.reduce((n, f) => n + f.value!, 0) : drilled.length } };
   }
 
   return {

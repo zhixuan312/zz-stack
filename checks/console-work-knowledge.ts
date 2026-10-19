@@ -323,11 +323,11 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   });
   c.pass(`${step}: 11 standing, 2 imported, 1 superseded, 11 of last week's 14 searches found nothing`);
 
-  step = "the questions that found nothing: the team's own, normalised, most asked then latest, ten of their total";
+  step = "the questions that found nothing: the team's own, normalised, most asked then latest, every one of their total";
   const questions = ok(step, summary.questions) as { rows: { question: string; asked: number; lastAsked: string }[]; total: number };
   same(step, [questions.rows.map((r) => [r.question, r.asked]), questions.total], [[
     ["glorp vexmorn zibbet", 3], ["plindle snarf quazzle", 2], [RUNNING_ONCE, 1],
-    ...ONCE.slice(2).reverse().map((q) => [q, 1]),
+    ...[...ONCE].reverse().map((q) => [q, 1]),
   ], 12]);
   near(step, questions.rows[0].lastAsked, [1, 20]);
   near(step, questions.rows[1].lastAsked, [1, 20]);

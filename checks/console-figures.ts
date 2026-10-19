@@ -63,7 +63,7 @@ const rate = (weeks: W[], over: Record<string, unknown> = {}) =>
   const m = rate([week("2026-09-14", 3, 1000), week("2026-09-21", 3.04, 1000), week("2026-09-28", 3, 1000)]);
   expect("unchanged at one decimal", m.judgement === "unchanged", m.judgement);
   expect("tie chooses the earliest", m.best?.window.from === "2026-09-14T00:00:00.000Z", m.best);
-  expect("a tie is said", m.finding.kind === "best_week" && m.finding.tie === true && / tied with 14 Sept$/.test(m.finding.text), m.finding);
+  expect("every tie is said", m.finding.kind === "best_week" && m.finding.tie === true && / tied with 14 Sept and 21 Sept$/.test(m.finding.text), m.finding);
 }
 // A neutral measure names highest and lowest, never best, and is never judged.
 const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({ key: "sessions", better: "neutral",
@@ -82,6 +82,16 @@ const neutral = (values: number[], coverageFrom = "2026-09-14") => F.summarise({
   expect("neutral tie", tied.finding.kind === "low_week" && tied.finding.tie === true && tied.finding.text === "Fewest recorded sessions in a week since 7 Sept, tied with 14 Sept", tied.finding);
   const middle = neutral([40, 90, 60]);
   expect("no rule holds and no counts: no finding", middle.finding === null, middle.finding);
+}
+// A neutral rate's week under 30 samples holds no high or low record, and a standing week's stays in place.
+{
+  const m = F.summarise({ key: "bugs_per_1000", better: "neutral", minSamples: 30, precision: 1, definedFrom: null,
+    label: "bug reports per 1,000 calls", countLabel: null, coverageFrom: "2026-09-07", timezone: "UTC",
+    weeks: [week("2026-09-07", 0, 3), week("2026-09-14", 4, 100), week("2026-09-21", 2, 100), week("2026-09-28", 1, 5), week("2026-10-05", 9, 100)] });
+  expect("an insufficient week is never the highest", m.highest?.window.from === "2026-10-05T00:00:00.000Z", m.highest);
+  expect("an insufficient week is never the lowest", m.lowest?.window.from === "2026-09-21T00:00:00.000Z", m.lowest);
+  expect("the standing last week keeps its high record",
+    m.finding?.kind === "high_week" && m.finding.text === "Most recorded bug reports per 1,000 calls in a week since 7 Sept", m.finding);
 }
 // A changed definition: weeks before it are unavailable and nothing compares across it.
 {

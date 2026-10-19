@@ -18,7 +18,7 @@
  * COUPLED: the console's Home and Milestone in src/lib/work-shapes.ts.
  */
 import type { PeriodFigure, Window } from "./figures.js";
-import { agentsRunOf, count, day, localDate, periodFinding, type AgentDay, type Finding } from "./findings.js";
+import { agentsRunOf, count, days, localDate, periodFinding, type AgentDay, type Finding } from "./findings.js";
 
 /** One week of the team's facts, oldest first; the running week, when there is one, last. */
 type HomeWeek = {
@@ -105,7 +105,13 @@ function median(values: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 const hours = (h: number): string => { const r = Math.round(h * 10) / 10; return `${count(r)} ${r === 1 ? "hour" : "hours"}`; };
-const tied = (f: Finding): string => (f.tie ? `, tied with the week of ${day(f.dates.at(-1)!)}` : "");
+/** The weeks a finding ties with: its dates after the week itself and, for a high or a low, the week its record runs
+ *  from (periodFinding's order). */
+const tiesOf = (f: Finding): string[] => f.dates.slice(f.kind === "best_week" ? 1 : 2);
+const tied = (f: Finding): string => {
+  const ties = tiesOf(f);
+  return f.tie ? `, tied with the ${ties.length > 1 ? "weeks" : "week"} of ${days(ties)}` : "";
+};
 
 /** The sentence Home is titled with, and the rule that wrote it. */
 export function homeTitle(facts: HomeFacts): HomeTitle {

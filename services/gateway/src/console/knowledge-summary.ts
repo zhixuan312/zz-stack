@@ -57,8 +57,9 @@ const HOUR = 3_600_000;
 const WEEK = 7 * 24 * HOUR;
 /** The whole weeks drawn before the running one, at most. COUPLED: home.ts draws the same. */
 const WHOLE_WEEKS = 24;
-/** The questions answered, and the newest lessons. */
-const QUESTIONS = 10;
+/** The questions answered, five of the console's pages of ten, and the newest lessons. Ten answered of a total of 13
+ *  left the page with no way to the other three (the console's Work M-8). COUPLED: the console's fake answers the same. */
+const QUESTIONS = 50;
 const NEWEST = 5;
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
@@ -102,7 +103,7 @@ async function lessonsOf(team: string, asOf: string): Promise<Lesson[]> {
 }
 
 /** The team's real-work searches inside the window that found nothing, by the question normalised for case and
- *  spacing: most asked first, then the latest asked, ten of them, and how many such questions there are. */
+ *  spacing: most asked first, then the latest asked, QUESTIONS of them at most, and how many such questions there are. */
 async function questionsOf(team: string, window: { from: string; to: string }): Promise<{ rows: Question[]; total: number }> {
   const { rows } = await platformDb().query<{ question: string; asked: number; last_ms: number; total: number }>(
     `select q.question, count(*)::int as asked, (extract(epoch from max(q.ts)) * 1000)::float8 as last_ms,

@@ -14,7 +14,8 @@
  *                               `detail.returned` / those carrying it at all; the share widened beside it
  *   bugs_per_1000               1,000 × real reports filed (`realReports`) / calls
  *   sessions                    distinct (team, session) with a call, the empty session left out
- *   work_finished               initiatives closed as accepted or delivered
+ *   work_finished               initiatives closed as accepted or delivered, a release check's probe and a
+ *                               close a maintenance client made left out
  *
  * Each measure's `definedFrom` is read from the record when it is read, never written here: the local
  * day of the first real-work call for the tool-call measures and bug reports, of the first search
@@ -325,18 +326,27 @@ export async function sessionsMeasure(db: pg.Pool, grid: Grid, team: string | nu
 }
 
 /** Initiatives closed as accepted or delivered, by the week they closed in; abandoned work is closed
- *  and not finished. Defined from the first close of any outcome. */
+ *  and not finished. Defined from the first close of any outcome. Only a team's own closes, in both
+ *  statements, the condition written out in each so each is one literal check:sql can prepare: not a
+ *  release check's probe, the rule the bug figures and `scripts/ops/purge-probes.ts` tell one by, and not
+ *  closed by a maintenance client, which zz-core's own `initiative_close` row of the initiative records
+ *  with origin `platform`. */
 export async function finishedMeasure(db: pg.Pool, grid: Grid): Promise<Measure> {
   const asOf = new Date(grid.asOfMs).toISOString();
   const first = (await db.query<{ day: string | null }>(
     `select to_char(min(i.closed_at) at time zone $2::text, 'YYYY-MM-DD') as day
        from zz.initiative i
-      where i.closed_at < $1::timestamptz`, [asOf, ZZ_TZ])).rows[0];
+      where i.closed_at < $1::timestamptz and i.slug not like '%chain-check-%'
+        and not exists (select 1 from zz.event c
+                          where c.initiative_id = i.id and c.kind = 'initiative_close' and c.origin = 'platform')`,
+    [asOf, ZZ_TZ])).rows[0];
   const at = byWeek((await db.query<{ from_ms: number; finished: number }>(
     `select (extract(epoch from (date_trunc('week', i.closed_at at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
             count(*)::int as finished
        from zz.initiative i
-      where i.closed_at < $2::timestamptz and i.outcome in ('accepted', 'delivered')
+      where i.closed_at < $2::timestamptz and i.outcome in ('accepted', 'delivered') and i.slug not like '%chain-check-%'
+        and not exists (select 1 from zz.event c
+                          where c.initiative_id = i.id and c.kind = 'initiative_close' and c.origin = 'platform')
       group by 1`, [ZZ_TZ, asOf])).rows);
   return weekly(grid, "work_finished", SPECS.work_finished, null, first.day, (w) => tally(at(w, "finished")));
 }

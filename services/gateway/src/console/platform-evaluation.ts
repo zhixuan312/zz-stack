@@ -135,17 +135,21 @@ export function publicScore(history: ScoreHistory | undefined): { score: PluginS
   return latest ? { score: latest, comparability: history!.statement } : { score: null, comparability: "No score to compare" };
 }
 
-/** The owner categories as a finding's name says them. COUPLED: the fake's `OWNED_BY`. */
+/** The public owner categories as a finding's name says them; `unknown` is none. COUPLED: the fake's
+ *  `OWNED_BY`. */
 const OWNED_BY: Record<string, string> = {
   plugin: "owned by the plugin", dependency: "owned by a dependency", platform: "owned by the platform",
-  environment: "owned by the environment", user_input: "owned by user input", unknown: "owner not known",
+  environment: "owned by the environment", user_input: "owned by user input",
 };
 
 /** The fixed name a waiting finding is read by, everything in it a member may read: its kind, its plugin
- *  and its owner category, `A defect in sdlc, owned by the plugin` or `An unknown in zz-core, owner not
- *  known`. Its pattern, what it found in the evaluation's own words, is the superadmin's alone. */
+ *  and its owner category, `A defect in sdlc, owned by the plugin`, or the spec's public projection's own
+ *  sentence, `Evaluation finding awaiting a decision`, when no public category is known. Its pattern, what
+ *  it found in the evaluation's own words, is the superadmin's alone. */
 const summaryOf = (kind: "defect" | "unknown", plugin: string, owner: string): string =>
-  `${kind === "defect" ? "A defect" : "An unknown"} in ${plugin}, ${OWNED_BY[owner] ?? `owned by ${owner.replace(/_/g, " ")}`}`;
+  Object.hasOwn(OWNED_BY, owner)
+    ? `${kind === "defect" ? "A defect" : "An unknown"} in ${plugin}, ${OWNED_BY[owner]}`
+    : "Evaluation finding awaiting a decision";
 
 /** One part's statement, or `unavailable` when it fails: the other parts stand. */
 async function part<T>(name: string, read: () => Promise<T>): Promise<Part<T>> {

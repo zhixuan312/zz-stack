@@ -46,7 +46,9 @@
  *     and its real bug reports by how they stand, for the member, whatever team the request names;
  *     the superadmin and the person in no team read it `unavailable` with `no_team`;
  *   - maintenance calls, page views and events of other kinds on every day the rates are read
- *     (`seedNoise`) change no measure and nothing in `own`;
+ *     (`seedNoise`) change no measure and nothing in `own`, and neither do a release check's probe closed
+ *     as accepted before any real close nor a piece of work a maintenance client closed as delivered: no
+ *     work finished, and no earlier start to the measure's definition;
  *   - a measure whose statement fails answers every week unavailable while the others stand, and a
  *     failed read of the bug reports makes the rate unavailable and `own` `query_failed`;
  *   - with L thinned to its 8 malformed calls, under the 30 a rate stands on, `last` is still L, as
@@ -316,6 +318,28 @@ function heldToSeed(step: string, seeded: Seeded, a: Answer): void {
   if (problems.length) fail(step, problems.join("; "));
 }
 
+/** Two closes that are no work finished, in team one: a release check's probe closed as accepted two days into L-4,
+ *  before the seed's first real close, and a piece of work closed as delivered two days into L whose close a
+ *  maintenance client made (zz-core's own `initiative_close` row, origin `platform`). */
+async function seedClosesNotWork(db: pg.Client, seeded: Seeded): Promise<void> {
+  const { rows: [who] } = await db.query<{ member: string; team: string }>(
+    "select id::text as member, active_team_id::text as team from zz.principal where email = $1", [MEMBER]);
+  for (const [back, slug, outcome, maintenance] of [[4, "2026-09-08-chain-check-0908-a1b2c3", "accepted", false],
+                                                     [1, "2026-09-09-carried-in", "delivered", true]] as const) {
+    const closed = iso(seeded.starts.get(back)! + 2 * 86_400_000);
+    const { rows: [i] } = await db.query<{ id: string }>(
+      `insert into zz.initiative (team_id, slug, opened_at, closed_at, outcome, closed_by, accepted_by)
+       values ($1, $2, $3::timestamptz - interval '1 day', $3, $4, $5, case when $4 = 'accepted' then $5::uuid end)
+       returning id::text as id`, [who.team, slug, closed, outcome, who.member]);
+    if (maintenance) {
+      await db.query(
+        `insert into zz.event (ts, kind, subject, detail, origin, team_id, initiative_id, actor_id)
+         values ($1, 'initiative_close', $2, '{"outcome": "delivered"}'::jsonb, 'platform', $3, $4, $5)`,
+        [closed, slug, who.team, i.id, who.member]);
+    }
+  }
+}
+
 /** The eight measures and `own` over `seedMeasures`, then with `seedNoise` beside them, then with one statement
  *  failing at a time. Answers the work calls `seedMeasures` wrote. */
 async function measureCases(db: pg.Client, seeded: Seeded, as: (email: string, query?: string) => Promise<Answer>, pool: pg.Pool): Promise<Added> {
@@ -341,13 +365,15 @@ async function measureCases(db: pg.Client, seeded: Seeded, as: (email: string, q
 
   step = "noise changes nothing";
   await seedNoise(db, seeded);
+  await seedClosesNotWork(db, seeded);
   const noisy = await as(MEMBER);
   heldToSeed(step, seeded, noisy);
   if (settled([noisy.body.measures, noisy.body.own]) !== settled([good.body.measures, good.body.own])
       || (noisy.body.meta as Obj).coverageFrom !== (good.body.meta as Obj).coverageFrom) {
-    fail(step, "the answer moved when maintenance calls, page views and other kinds of event were added");
+    fail(step, "the answer moved when maintenance calls, page views, other kinds of event, a probe's close and a maintenance close were added");
   }
-  pass("maintenance calls, page views, maintenance searches and events of other kinds on every day the rates are read change no measure and nothing in own");
+  pass("maintenance calls, page views, maintenance searches and events of other kinds on every day the rates are read, a release " +
+       "check's probe closed as accepted in L-4 and a piece of work a maintenance client closed as delivered in L, change no measure and nothing in own");
 
   step = "a measure that cannot be counted";
   const real = pool.query.bind(pool) as (text: unknown, params?: unknown[]) => Promise<unknown>;

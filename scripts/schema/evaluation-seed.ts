@@ -157,13 +157,13 @@ export const EXPECTED = {
   /** Oldest first, by finding name; the superadmin's measure key, or null where the finding names none. */
   waiting: [
     { finding: "alpha-plugin", plugin: "alpha", kind: "defect", owner: "plugin", measure: "alpha-measurekey",
-      waitingSince: "2026-09-21T00:00:00Z", summary: "A finding on alpha, owned by plugin, awaiting a decision" },
+      waitingSince: "2026-09-21T00:00:00Z", summary: "A defect in alpha, owned by the plugin" },
     { finding: "beta-unknown", plugin: "beta", kind: "unknown", owner: "unknown", measure: null,
       waitingSince: "2026-09-27T00:00:00Z", summary: "Evaluation finding awaiting a decision" },
     { finding: "beta-environment", plugin: "beta", kind: "defect", owner: "environment", measure: "beta-measurekey",
-      waitingSince: "2026-09-28T00:00:00Z", summary: "A finding on beta, owned by environment, awaiting a decision" },
+      waitingSince: "2026-09-28T00:00:00Z", summary: "A defect in beta, owned by the environment" },
     { finding: "gamma-platform", plugin: "gamma", kind: "defect", owner: "platform", measure: "gamma-measurekey",
-      waitingSince: "2026-10-04T00:00:00Z", summary: "A finding on gamma, owned by platform, awaiting a decision" },
+      waitingSince: "2026-10-04T00:00:00Z", summary: "A defect in gamma, owned by the platform" },
   ],
 } as const;
 

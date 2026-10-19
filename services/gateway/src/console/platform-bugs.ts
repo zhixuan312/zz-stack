@@ -4,13 +4,16 @@
  *
  * `GET /platform/bugs` answers the counts, the oldest open report, the median hours to resolve, the
  * weekly cohorts and one page of the queue, over real reports only (`realReports`). A row anybody
- * reads holds a title generated from the report's canonical surface and typed metadata, nothing
- * else: never the reporter's title or detail, the team, the reporter, the initiative, the
- * resolution or the duplicate target. The superadmin's rows add the internal title and the team.
+ * reads holds a title built from the report's impact, canonical surface and filed day, and typed
+ * metadata, nothing else: never the reporter's title or detail, the team, the reporter, the
+ * initiative, the resolution or the duplicate target. The superadmin's rows add the internal title
+ * and the team.
  * Only the queue is filtered; every figure is over all real reports.
  *
  * `GET /platform/bugs/:id` and `/platform/bugs/:id/duplicates` are the superadmin's: a member is
- * refused from `platformPublic`'s flag before anything is read, with no name in the refusal. An id
+ * refused from `platformPublic`'s flag before anything is read, with no name in the refusal. A
+ * report's surface is spelt as the queue spells it when it is a word of the vocabulary, and as
+ * stored otherwise. An id
  * that is not a UUID naming a row of `zz.bug` is a 404 with no body. Nothing here writes `zz.bug`.
  *
  * The Platform prepared query (platform-query-measures.ts) counts the same real reports and answers
@@ -89,8 +92,22 @@ export function canonicalSurface(stored: string | null, words: Set<string>): str
   return words.has(word) ? word : null;
 }
 
-const publicTitle = (surface: string | null): string =>
-  surface === null ? "Platform issue reported" : `Report concerning ${surface}`;
+/** The impacts as a withheld report's title says them. */
+const IMPACT_WORDS: Record<Impact, string> = {
+  blocks_work: "Blocks work", wrong_result: "Wrong result", confusing: "Confusing", cosmetic: "Cosmetic",
+};
+
+/** The day a report was filed, as its withheld title says it: `16 Sept 2026`. */
+const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, day: "numeric", month: "short", year: "numeric" });
+
+/** The title of a report its reader may not read in full, built from what they may see of it: its
+ *  impact, its canonical surface and the day it was filed in the reporting timezone, so two reports
+ *  of a team read apart while nothing the reporter wrote is in it. `Blocks work: document_approve,
+ *  filed 16 Sept 2026`, or `Cosmetic: no surface named, filed 3 Oct 2026`.
+ *  COUPLED: the fake's `publicTitle` in ../zz-stack-dashboard/scripts/fake-gateway/platform-bugs.ts. */
+function publicTitle(r: Pick<RealReport, "impact" | "surface" | "reportedMs">): string {
+  return `${IMPACT_WORDS[r.impact]}: ${r.surface ?? "no surface named"}, filed ${FILED_DAY.format(new Date(r.reportedMs))}`;
+}
 
 /**
  * Every real report filed by `asOf`, newest first with the id breaking a tie. A report is real
@@ -154,10 +171,10 @@ export function queueOf(reports: RealReport[], filter: Filter): RealReport[] {
     .filter((r) => filter.surface === null || r.surface === filter.surface);
 }
 
-/** A report as anybody reads it in the queue: a title generated from its canonical surface, and typed metadata. */
+/** A report as anybody reads it in the queue: a title built from its impact, canonical surface and filed day, and typed metadata. */
 export function publicRow(r: RealReport): PublicBugRow {
   return {
-    id: r.id, title: publicTitle(r.surface), impact: r.impact, surface: r.surface, filedAt: iso(r.reportedMs),
+    id: r.id, title: publicTitle(r), impact: r.impact, surface: r.surface, filedAt: iso(r.reportedMs),
     platformVersion: r.platformVersion, status: r.status, resolvedAt: r.resolvedMs === null ? null : iso(r.resolvedMs),
   };
 }
@@ -296,7 +313,8 @@ export function mountPlatformBugs(app: Express): void {
       return;
     }
     const report: BugReport = {
-      id: r.id, title: r.title, detail: r.detail, surface: r.surface, impact: r.impact, status: r.status,
+      id: r.id, title: r.title, detail: r.detail, surface: canonicalSurface(r.surface, await vocabulary()) ?? r.surface,
+      impact: r.impact, status: r.status,
       platformVersion: r.platform_version, reportedAt: iso(r.reported_ms),
       resolvedAt: r.resolved_ms === null ? null : iso(r.resolved_ms),
       resolution: r.resolution, duplicateOf: r.duplicate_of, team: r.team,

@@ -79,6 +79,7 @@ import { mountAccess } from "./console/access.js";
 import { mountCatalog } from "./console/catalog.js";
 import { mountPluginEval } from "./console/plugin-eval.js";
 import { mountConsoleLive } from "./console/live.js";
+import { mountConsoleRevision } from "./console/live-revision.js";
 import { mountPlatformStatus } from "./console/platform-status.js";
 import { mountPageView } from "./console/page-view.js";
 import { mountPlatformBugResolve } from "./console/platform-bug-resolve.js";
@@ -99,6 +100,10 @@ import { mountConsoleClose } from "./console-close.js";
 
 
 export function mountConsole(app: Express): void {
+  // Every read below answered with its collection's revision, sampled before the read runs: what a page's first live
+  // stream asks with (console/live-revision.ts). First, so it stands in front of every read.
+  mountConsoleRevision(app);
+
   // The console's read API, by resource.
   // Who is looking, and whether the console answers them at all; answered even to a caller it refuses elsewhere.
   mountMe(app);

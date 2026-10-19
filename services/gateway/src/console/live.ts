@@ -14,6 +14,9 @@
  *   event: resync
  *   data: {"collections":["initiatives","knowledge"]}
  *
+ *   event: synced
+ *   data: {}
+ *
  *   event: change
  *   data: {"collection":"initiatives"}
  *
@@ -34,12 +37,14 @@
  * separately: `c` decides whether a tab follows the collection at all, `t` whether this caller may see that team. An
  * empty `t` means the change is nobody's team business (`plugins`, `settings`), and every console reader may hear it.
  */
+import { Socket } from "node:net";
+
 import type { Express, Request, Response } from "express";
 import pg from "pg";
 
 import { platformDbReady, platformDbUrl } from "../db.js";
 import { browserSession } from "../identity.js";
-import { resolveScope } from "../scope.js";
+import { COLLECTIONS, count, heardBy, listening, movedSince, notListening, type Change } from "./live-revision.js";
 import { mayReadConsole } from "./shared.js";
 
 /** The channel every writer notifies on. A payload is a team slug and a collection name, never a record.
@@ -51,20 +56,11 @@ import { mayReadConsole } from "./shared.js";
  *  error anywhere. Editing one of the three is editing all three. */
 const CONSOLE_CHANGE_CHANNEL = "zz_console_change";
 
-/** The collections a tab may follow: the console's reads, by their first path segment. */
-const COLLECTIONS = [
-  "me", "teams", "initiatives", "document", "knowledge", "plugins", "skills",
-  "people", "runs", "activity", "settings",
-] as const;
-
 const MAX_NAMES = 50;
 const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 /** The most hints waiting behind the authorization check; past that they collapse into one resync of every name. */
 const MAX_QUEUED = 100;
 const HEARTBEAT_MS = 15_000;
-
-/** One change out of the database: which team's business it is (empty when nobody's) and which collection it changed. */
-type Change = { t: string; c: string };
 
 type Subscriber = {
   /** The request the stream was opened on, kept so every frame can ask the session again. */
@@ -172,14 +168,23 @@ function deliver(change: Change): void {
   }
 }
 
-/* The process's one LISTEN connection. Every subscriber shares it; a second client would leak and duplicate hints. */
+/* The process's one LISTEN connection. Every subscriber shares it; a second client would leak and duplicate hints.
+ *
+ * It is open from the gateway's start, whether or not a tab is following anything, because a revision is a count of
+ * what it heard (`live-revision.ts`): a page's first read needs one before its tab's stream opens. Neither it nor its
+ * retry holds the process open, so a check that mounts the console and returns exits as it did, and a gateway is held
+ * open by its HTTP server, as it always was. */
 let listener: pg.Client | undefined;
 let opening: Promise<void> | undefined;
 let retry: ReturnType<typeof setTimeout> | undefined;
 let attempt = 0;
 
 function lost(client: pg.Client): void {
-  if (listener === client) listener = undefined;
+  if (listener === client) {
+    listener = undefined;
+    // What was raised while nothing listened is gone, so no count can stand for it: every revision goes with the boot.
+    notListening();
+  }
   client.removeAllListeners();
   client.on("error", () => {});
   void client.end().catch(() => {});
@@ -188,24 +193,34 @@ function lost(client: pg.Client): void {
 
 /** Bounded backoff: half a second, doubling, never more than thirty. */
 function schedule(): void {
-  if (retry || listener || subscribers.size === 0) return;
+  if (retry || listener) return;
   retry = setTimeout(() => { retry = undefined; connect(); }, Math.min(30_000, 500 * 2 ** attempt++));
+  retry.unref();
 }
 
 function connect(): void {
-  if (listener || opening || subscribers.size === 0) return;
+  if (listener || opening) return;
   const url = platformDbUrl();
   if (!url) return;
   opening = open(url).finally(() => { opening = undefined; });
 }
 
+/** The listener's socket, which never holds the process open on its own. */
+function unrefSocket(): Socket {
+  const socket = new Socket();
+  socket.unref();
+  return socket;
+}
+
 async function open(url: string): Promise<void> {
-  const client = new pg.Client({ connectionString: url, options: "-csearch_path=zz,public" });
+  const client = new pg.Client({ connectionString: url, options: "-csearch_path=zz,public", stream: unrefSocket });
   client.on("error", () => lost(client));
   client.on("end", () => lost(client));
   client.on("notification", (message) => {
     if (message.channel !== CONSOLE_CHANGE_CHANNEL) return;
     const change = parseChange(message.payload);
+    // Counted before it is delivered, so a read sampled after a hint went out carries a revision that includes it.
+    count(change);
     // A payload the listener cannot read is one it cannot route, so every tab reads again rather than none of them.
     if (change) deliver(change);
     else resyncEveryTab();
@@ -228,26 +243,16 @@ async function open(url: string): Promise<void> {
     lost(client);
     return;
   }
-  if (subscribers.size === 0) { void client.end().catch(() => {}); return; }
   listener = client;
   attempt = 0;
+  listening();
   // A notification sent while no connection was listening is gone: every subscriber reads again.
   resyncEveryTab();
 }
 
-function stopListening(): void {
-  clearTimeout(retry);
-  retry = undefined;
-  const client = listener;
-  listener = undefined;
-  if (!client) return;
-  client.removeAllListeners();
-  client.on("error", () => {});
-  void client.end().catch(() => {});
-}
-
-/** Hold `res` open as one tab's stream, with the admission check already made. */
-function serve(req: Request, res: Response, names: string[], teams: string[] | null): void {
+/** Hold `res` open as one tab's stream, with the admission check already made; `since` is the revisions the tab's page
+ *  was served, as the request sent them, or null. */
+function serve(req: Request, res: Response, names: string[], teams: string[] | null, since: string | null): void {
   res.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache, no-transform",
@@ -271,8 +276,6 @@ function serve(req: Request, res: Response, names: string[], teams: string[] | n
       clearInterval(timer);
       subscribers.delete(s);
       res.end();
-      // The last tab leaving closes the connection, so a console nobody is looking at holds none open.
-      if (subscribers.size === 0) stopListening();
     },
   };
 
@@ -280,39 +283,37 @@ function serve(req: Request, res: Response, names: string[], teams: string[] | n
   // whether or not the session still resolves, and the next real frame is what asks.
   timer = setInterval(() => s.write(`: beat ${Date.now()}\n\n`), HEARTBEAT_MS);
 
+  // Subscribed before the revisions are compared, in this one turn of the event loop: a change counted after the
+  // comparison is a hint this tab is sent, and none falls between the two.
   res.on("close", s.close);
   subscribers.add(s);
-  connect();
+  const moved = movedSince(names, since, teams);
   s.write("retry: 3000\n\n");
-  /* The stream opens with one resync of the collections this tab named: the greeting.
+  /* The stream opens with its greeting: `synced` when nothing this tab follows moved since the revisions its page was
+   * served, or one resync naming what did. A stream asked with no revisions resyncs every name it follows.
    *
-   * COUPLED: the console's `src/lib/live.ts`, which is ZZ Meridian's own file. It takes the first resync on a stream
-   * as the read the page already made while it mounted, and reads nothing for it; every later resync it reads. A stream
-   * that sent no greeting would have its first real resync, the one that says the tab missed changes, taken for the
-   * greeting and thrown away. checks/console-live-greeting.ts holds the opening.
-   *
-   * It costs no read. It used to cost three on a document route, when the console's own copy of that file answered
-   * every resync by reading every collection again and the paint the LCP is taken from landed at 2,676 ms; the
-   * release's file is what made the greeting free.
+   * COUPLED: the console's `src/lib/live.ts`, which is ZZ Meridian's own file. A stream opened with revisions waits for
+   * the greeting and reads only what a resync names; one opened without reads everything as it opens, and takes the
+   * first resync on it for that read, reading nothing for it; every later resync it reads. A stream that sent no
+   * greeting would have its first real resync, the one that says the tab missed changes, taken for the greeting and
+   * thrown away. checks/console-live-greeting.ts holds the opening without revisions, checks/console-live-since.ts the
+   * opening with them.
    *
    * After it, `resync` means what its name says: the tab missed changes. The two cases that are true of are below in
    * `resyncEveryTab`, when the `LISTEN` connection was down and every tab has a gap, and the queue overflow, where a
    * burst was collapsed because the frames could not be sent. */
-  s.write(resyncOf(s.names));
-}
-
-/** The team slugs a scope sees, or null when it sees every team. */
-function teamsOf(scope: Exclude<ReturnType<typeof resolveScope>, { kind: "refused" }>): string[] | null {
-  return scope.kind === "platform" ? null : [scope.slug];
+  s.write(moved.length > 0 ? resyncOf(moved) : frame("synced", {}));
 }
 
 /**
- * `GET /api/console/live?collections=…` — change hints for the collections the caller may read.
+ * `GET /api/console/live?collections=…&since=<name>:<boot>:<n>,…` — change hints for the collections the caller may
+ * read; `since` makes the greeting name only what moved.
  *
  * Mounted inside `mountConsole`, so `identityMiddleware` has already resolved `req.zzIdentity` for the admission check;
- * every frame after that one asks again for itself.
+ * every frame after that one asks again for itself. Mounting it starts the process's `LISTEN`.
  */
 export function mountConsoleLive(app: Express): void {
+  connect();
   app.get("/api/console/live", async (req: Request, res: Response) => {
     if (!platformDbReady()) { res.status(503).type("text/plain").send("platform database unavailable"); return; }
     const id = req.zzIdentity;
@@ -322,10 +323,10 @@ export function mountConsoleLive(app: Express): void {
     const parsed = parseNames(typeof req.query.collections === "string" ? req.query.collections : null);
     if ("status" in parsed) { res.status(parsed.status).type("text/plain").send(parsed.error); return; }
 
-    // The scope decides which teams' changes this tab may be told about: a superadmin who asked for the platform hears
-    // every team, anyone else hears their own.
-    const scope = resolveScope(id, req);
-    if (scope.kind === "refused") { res.status(scope.status).type("text/plain").send(scope.error); return; }
-    serve(req, res, parsed.names, teamsOf(scope));
+    // Which teams' changes this tab may be told about, as every revision this caller is handed counts them: a superadmin
+    // hears every team, anyone else their own.
+    const heard = heardBy(id, req);
+    if ("status" in heard) { res.status(heard.status).type("text/plain").send(heard.error); return; }
+    serve(req, res, parsed.names, heard.teams, typeof req.query.since === "string" ? req.query.since : null);
   });
 }

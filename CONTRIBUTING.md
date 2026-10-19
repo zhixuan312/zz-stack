@@ -65,7 +65,7 @@ driving the gateway's identity gate and its own route against one, the console's
 page-view, activity, activity summary and Home routes against one and listens on the console's change channel,
 the caller's own Access, its applications revoked and its other browsers signed out from a browser alone (`checks/console-access.ts`), which drives the gateway's identity gate, Access read and settings routes against one over HTTP,
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
-against one and reads its greeting, a team's observed agent runs, their coverage, peak overlap and what ran
+against one and reads its greeting, the revisions a console read carries and the greeting a first stream asked with them is given (`checks/console-live-since.ts`), which serves the gateway's identity gate, reads and live route over HTTP against one and writes events in two teams, a team's observed agent runs, their coverage, peak overlap and what ran
 lately (`checks/console-runs-observed.ts`), which calls the gateway's own reads over seeded runs,
 a team's refusals counted once under four owners by week and grouped by owner, tool and normalised message (`checks/console-refusals.ts`), which calls the gateway's own reads over seeded calls,
 the console's Runs, the active team's runs since its first with their observed output, by skill and lately

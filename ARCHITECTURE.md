@@ -161,8 +161,11 @@ rule is what the directory means:
 - **`services/gateway/src/console/<resource>.ts` — one resource per file.** The routes that
   answer for overviews, teams, initiatives, knowledge, skills and the catalog, split the way
   the console's own URLs are, with `shared.ts` for what more than one of them needs. `live.ts`
-  is the one that is not an answer: one Server-Sent Events stream per tab, holding a `LISTEN`
-  connection of its own, which says that a collection changed and never what changed in it.
+  is the one that is not an answer: one Server-Sent Events stream per tab, fed by one `LISTEN`
+  connection per process held from the gateway's start, which says that a collection changed and
+  never what changed in it. `live-revision.ts` counts those changes per caller, so every console
+  read answers with its collection's revision and a tab's first stream, asked with it, is greeted
+  `synced` or a `resync` naming only what moved.
 - **`services/gateway/src/admin/<subject>.ts` and `package/<part>.ts`** — the same rule one
   level down: authority, flows, teams and people for the admin surface; `skills.ts` and
   `describe.ts` for the shelf a person installs.

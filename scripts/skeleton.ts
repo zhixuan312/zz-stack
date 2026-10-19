@@ -489,7 +489,7 @@ async function platformPages(ctx: PageContext, isolation: Isolation): Promise<vo
     await lead(ctx, who, email, "/platform", "data-figures", ["Malformed calls per 1,000"], false);
     const releases = await json<{ tiles: { releases: number; latest: { version: string } | null } }>("/api/console/platform/releases");
     await lead(ctx, who, email, "/platform/releases", 'data-protagonist="Releases"',
-      [`Releases ${count(releases.tiles.releases)}`, `Latest release ${releases.tiles.latest?.version ?? "None recorded"}`], false);
+      [`Releases ${count(releases.tiles.releases)}`, `Latest tag ${releases.tiles.latest?.version ?? "None recorded"}`], false);
     const { open } = ok<{ open: number }>("/api/console/platform/bugs", (await json<{ counts: Part }>("/api/console/platform/bugs")).counts);
     await lead(ctx, who, email, "/platform/bugs", 'data-protagonist="Queue"', [`Open ${count(open)}`], false);
     const { waiting } = (await json<{ tiles: { waiting: number } }>("/api/console/platform/evaluation")).tiles;

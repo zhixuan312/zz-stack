@@ -104,7 +104,7 @@ export async function agentReads(ctx: AgentContext, readers: [string, string][])
     agree(step, "the latest release", releases.tiles.latest, releasesPage.tiles.latest);
     agree(step, "the releases", releases.tiles.releases, releasesPage.tiles.releases);
     const version = releases.tiles.latest?.version ?? "None recorded";
-    await lead(ctx, who, email, "/platform/releases", 'data-protagonist="Releases"', [`Latest release ${version}`], false);
+    await lead(ctx, who, email, "/platform/releases", 'data-protagonist="Releases"', [`Latest tag ${version}`], false);
     pass(`${step} answers the latest release ${version} of ${releases.tiles.releases}, as /platform/releases reads and draws it`);
 
     step = `activity_refusals as ${who}`;

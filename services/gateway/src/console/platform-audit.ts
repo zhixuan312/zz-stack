@@ -12,9 +12,8 @@
  * from and `via`, compared in the query and never returned; never the `refusal` column; and a subject
  * only for the kinds whose subject is a slug, an email, an id or a tool. A label, a title, a file's
  * name, a reason, a document's details and a search's question stay in the table. A deleted report is
- * named by what the record kept of its filing, never by the title its deletion recorded: the instant
- * of the `bug_report` event for its id and, where that event's detail records them, its typed impact
- * and canonical surface, in the form Bugs gives a reader who may not read its title. A console write is
+ * named by what the record holds of it, never by the title its deletion recorded: the day of the
+ * `bug_report` event for its id, which records the report and its title and nothing typed. A console write is
  * said to be one; no other door is recorded, so none is named. Acts recorded before every writer
  * stamped its origin read `work`, as they were recorded.
  *
@@ -34,7 +33,6 @@ import type pg from "pg";
 
 import { platformDb } from "../db.js";
 import type { ReadMeta } from "./figures.js";
-import { FILED_DAY, IMPACT_WORDS, canonicalSurface, publicTitle, vocabulary } from "./platform-bugs.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 const FILTERS = ["administration", "all"] as const;
@@ -58,6 +56,9 @@ const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one fro
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
+/** The day a deleted report was filed, in the reporting timezone: `16 Sept 2026`, `03 Oct 2026`. */
+const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, day: "2-digit", month: "short", year: "numeric" });
+
 type AuditRow = {
   id: string; at: string; actor: string | null; team: string | null; kind: string; subject: string | null;
   ok: boolean | null; refusalOwner: "guardrail" | "ours" | "theirs" | "other" | null; origin: "work" | "platform";
@@ -71,8 +72,8 @@ type Event = {
   ok: boolean | null; refusal_owner: AuditRow["refusalOwner"]; origin: AuditRow["origin"]; in_console: boolean;
   role: string | null; status: string | null; reactivated: string | null; from: string | null; detail_team: string | null;
   owner: string | null; pats_revoked: string | null; sessions_revoked: string | null; enrolments_spent: string | null;
-  /** A deleted report's filing, from the `bug_report` event for its id: when, and the impact and surface it records. */
-  filed_ms: number | null; filed_impact: string | null; filed_surface: string | null;
+  /** When a deleted report was filed, from the `bug_report` event for its id. */
+  filed_ms: number | null;
 };
 
 const isAdministration = (kind: string): boolean =>
@@ -80,21 +81,15 @@ const isAdministration = (kind: string): boolean =>
 
 const counted = (n: string, one: string): string => `${n} ${one}${n === "1" ? "" : "s"}`;
 
-/** A deleted report as an act names it, from its filing alone: `report "Blocks work: document_approve, filed
- *  12 Oct 2026"` where the filing records its impact and surface, by Bugs' own `publicTitle`; `a report filed
- *  12 Oct 2026` where it records only its instant; and `a report the record does not name` where no filing is
- *  recorded. */
-function deletedReport(e: Event, words: Set<string>): string {
-  if (e.filed_ms === null) return "a report the record does not name";
-  const impact = e.filed_impact;
-  if (impact === null || !Object.hasOwn(IMPACT_WORDS, impact) || e.filed_surface === null) return `a report filed ${FILED_DAY.format(new Date(e.filed_ms))}`;
-  const surface = canonicalSurface(e.filed_surface, words) ?? null;
-  return `report "${publicTitle({ impact: impact as keyof typeof IMPACT_WORDS, surface, reportedMs: e.filed_ms })}"`;
+/** A deleted report as an act names it, from what the record holds of it: `a report filed 12 Oct 2026`, the day
+ *  of its filing, and `a report the record does not name` where no filing is recorded. */
+function deletedReport(e: Event): string {
+  return e.filed_ms === null ? "a report the record does not name" : `a report filed ${FILED_DAY.format(new Date(e.filed_ms))}`;
 }
 
 /** The act said from its kind's one template, or null for an event that is not administration. A
  *  kind no template names, as a retired writer's, is said by the fallback. */
-function sentence(e: Event, words: Set<string>): string | null {
+function sentence(e: Event): string | null {
   if (!isAdministration(e.kind)) return null;
   const who = e.actor ?? "Someone not recorded";
   const s = e.subject ?? "";
@@ -120,7 +115,7 @@ function sentence(e: Event, words: Set<string>): string | null {
     "pat.self_revoke": () => `${who} revoked their own token ${s}`,
     "bug.resolve": () => `${who} resolved report ${s}${e.status ? ` as ${e.status.replace(/_/g, " ")}` : ""}`,
     "bug.console_resolve": () => `${who} resolved report ${s}${e.status ? ` as ${e.status.replace(/_/g, " ")}` : ""}`,
-    "bug.delete": () => `${who} deleted ${deletedReport(e, words)}`,
+    "bug.delete": () => `${who} deleted ${deletedReport(e)}`,
   };
   const said = templates[e.kind]?.() ?? `${who} recorded ${e.kind}${s ? ` for ${s}` : ""}`;
   return `${said}${e.origin === "platform" ? ", as platform maintenance" : ""}${e.in_console ? " in the console" : ""}`;
@@ -172,13 +167,12 @@ export async function auditEvents(db: pg.Pool, asOf: string, f: EventFilter): Pr
             e.detail->>'from' as "from", e.detail->>'team' as detail_team, e.detail->>'owner' as owner,
             e.detail->>'patsRevoked' as pats_revoked, e.detail->>'sessionsRevoked' as sessions_revoked,
             e.detail->>'enrolmentsSpent' as enrolments_spent,
-            filed.filed_ms, filed.filed_impact, filed.filed_surface
+            filed.filed_ms
        from zz.event e
        left join zz.principal p on p.id = e.actor_id
        left join zz.team t on t.id = e.team_id
        left join lateral (
-         select (extract(epoch from f.ts) * 1000)::float8 as filed_ms,
-                f.detail->>'impact' as filed_impact, f.detail->>'surface' as filed_surface
+         select (extract(epoch from f.ts) * 1000)::float8 as filed_ms
            from zz.event f
           where e.kind = 'bug.delete' and f.kind = 'bug_report' and f.detail->>'bug' = e.subject
             and f.ts <= $1::timestamptz
@@ -193,11 +187,9 @@ export async function auditEvents(db: pg.Pool, asOf: string, f: EventFilter): Pr
       order by e.ts desc, e.id desc
       limit $8::int`,
     [asOf, f.filter, f.kind, teamId, f.before, ADMINISTRATION, SAFE_SUBJECT, f.limit, f.after])).rows;
-  // The surfaces a deleted report's filing may be named by, read only when one records a surface.
-  const words = events.some((e) => e.filed_surface !== null) ? await vocabulary() : new Set<string>();
   return events.map((e): AuditRow => ({
     id: e.id, at: iso(e.ts_ms), actor: e.actor, team: e.team, kind: e.kind, subject: e.subject, ok: e.ok,
-    refusalOwner: e.refusal_owner, origin: e.origin, inConsole: e.in_console, sentence: sentence(e, words),
+    refusalOwner: e.refusal_owner, origin: e.origin, inConsole: e.in_console, sentence: sentence(e),
   }));
 }
 

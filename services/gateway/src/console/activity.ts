@@ -12,14 +12,15 @@
  * weeks at most and the running week, cut in the reporting timezone. Its parts:
  *
  *   tiles        the last whole week's real-work calls, its refusals with their four owners, and the
- *                tool refused most then, with its count and of how many
+ *                tool refused most then, with its count and of how many (none, when nothing was refused)
  *   weeks        refusalWeeks by week: the calls, and the refused by owner summing to the refused total
  *   groups       refusalGroups over the weeks: the 20 largest groups, the rest folded with their count
  *   maintenance  the maintenance calls and refusals over the weeks, counted apart
  *
- * Each part fails alone: weeks or groups unread is unavailable and the rest stands. The tiles and the
- * maintenance are read with the weeks; when that read fails, their figures are unavailable and the
- * counts beside them zero, never stated as read.
+ * Each part fails alone: weeks or groups unread is unavailable and the rest stands. The calls, the
+ * refused, its owners and the maintenance are read with the weeks; when that read fails, each of them
+ * is unavailable, never zero. The tool refused most is last week's refusals by tool, a read of its own:
+ * when it fails it is unavailable, never none, and the tiles beside it stand.
  *
  * The summary's body is summaryOf, which the agent read activity_refusals (console/agent-reads.ts) calls
  * too, with a first instant and an initiative the route never names: the weeks, the groups and the
@@ -48,12 +49,13 @@ import { platformPublic, ZZ_TZ } from "./shared.js";
 import { lastWholeWeek, periodsOf } from "./work-figures.js";
 
 type Owners = Record<RefusalOwner, number>;
+type MostRefused = { tool: string; count: number; of: number };
 export type ActivitySummary = {
   meta: ReadMeta;
-  tiles: { calls: PeriodFigure; refused: PeriodFigure & { owners: Owners }; mostRefused: { tool: string; count: number; of: number } | null };
+  tiles: { calls: PeriodFigure; refused: PeriodFigure & { owners: Part<Owners> }; mostRefused: Part<MostRefused | null> };
   weeks: Part<RefusalPeriod[]>;
   groups: Part<{ rows: RefusalGroup[]; groups: number; rest: { groups: number; count: number } | null }>;
-  maintenance: { calls: number; refused: number };
+  maintenance: Part<{ calls: number; refused: number }>;
 };
 type ActivityRow = {
   id: string; ts: string; kind: string; tool: string | null; initiative: string | null; step: string | null;
@@ -87,7 +89,8 @@ async function attempt<T>(what: string, read: () => Promise<T>): Promise<T | nul
     return null;
   }
 }
-const partOf = <T>(data: T | null): Part<T> => (data === null ? { state: "unavailable", reason: "query_failed" } : { state: "ok", data });
+const UNREAD = { state: "unavailable", reason: "query_failed" } as const;
+const partOf = <T>(data: T | null): Part<T> => (data === null ? UNREAD : { state: "ok", data });
 
 /** When the team's first real-work call was recorded before the cutoff; null with none. */
 async function firstCall(team: string, asOf: string): Promise<number | null> {
@@ -100,7 +103,7 @@ async function firstCall(team: string, asOf: string): Promise<number | null> {
 }
 
 /** The tool refused most among the groups, the count of its refusals and of all of them; null with none. */
-function mostRefusedOf(groups: RefusalGroup[]): { tool: string; count: number; of: number } | null {
+function mostRefusedOf(groups: RefusalGroup[]): MostRefused | null {
   const byTool = new Map<string, number>();
   for (const g of groups) byTool.set(g.tool, (byTool.get(g.tool) ?? 0) + g.count);
   const [top] = [...byTool].sort(([a, m], [b, n]) => n - m || (a < b ? -1 : a > b ? 1 : 0));
@@ -136,13 +139,14 @@ export async function summaryOf(team: string, asOf: string, ask: { from: string 
     tiles: {
       calls: last ? { window: last.window, figure: { value: last.calls, why: null }, numerator: last.calls, denominator: null } : unread(week),
       refused: last
-        ? { window: last.window, figure: { value: last.refused, why: null }, numerator: last.refused, denominator: last.calls, owners: last.owners }
-        : { ...unread(week), owners: { guardrail: 0, ours: 0, theirs: 0, other: 0 } },
-      mostRefused: lastWeek && mostRefusedOf(lastWeek.rows),
+        ? { window: last.window, figure: { value: last.refused, why: null }, numerator: last.refused, denominator: last.calls, owners: partOf(last.owners) }
+        : { ...unread(week), owners: UNREAD },
+      // Read, a week with nothing refused is none; unread, it is unavailable.
+      mostRefused: lastWeek ? { state: "ok", data: mostRefusedOf(lastWeek.rows) } : UNREAD,
     },
     weeks: partOf(weeks && weeks.periods),
     groups: partOf(groups),
-    maintenance: weeks ? weeks.maintenance : { calls: 0, refused: 0 },
+    maintenance: partOf(weeks && weeks.maintenance),
   };
 }
 

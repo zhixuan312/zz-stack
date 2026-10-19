@@ -356,8 +356,8 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const tiles = summary.tiles as { calls: { figure: Counted }; refused: { figure: Counted; owners: Obj }; mostRefused: Obj };
   const top = answers.refusals.tool.groups[0];
   same(step, [tiles.calls.figure.value, tiles.refused.figure.value, tiles.refused.owners, tiles.mostRefused],
-    [answers.calls.tool.total.value, answers.refusals.owner.total.value, values(answers.refusals.owner),
-     { tool: top.key, count: top.value.value, of: answers.refusals.owner.total.value }]);
+    [answers.calls.tool.total.value, answers.refusals.owner.total.value, { state: "ok", data: values(answers.refusals.owner) },
+     { state: "ok", data: { tool: top.key, count: top.value.value, of: answers.refusals.owner.total.value } }]);
   const weeks = (await g.refusalWeeks(c.team, { from: RECORD.from, to: RECORD.to }, asOf, "week")).periods as { window: { from: string }; calls: number; owners: Obj }[];
   for (const [b, from] of [[1, W1], [2, iso(w0 - 2 * WEEK)]] as [number, string][]) {
     const span = range(w0 - b * WEEK, w0 - (b - 1) * WEEK);

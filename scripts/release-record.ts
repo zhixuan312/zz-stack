@@ -5,11 +5,18 @@
  *
  *   node scripts/release-record.ts --correct <version>   # rewrite that version's row from the
  *                                                        # current changelog, printing it before and after
+ *   node scripts/release-record.ts --record <version>    # write the rows a release could not: that
+ *                                                        # version's, and every other tag's that has none
  *
  * The release records itself right after it writes its tag (`scripts/release.ts` step 7, and
  * `scripts/release/tag-live.ts` for a release tagged by `--verify-only`). Each call passes every
  * `v*` tag with its creation time, so the first release that has the table records every release
  * before it, and every later one adds only itself.
+ *
+ * A release whose row could not be written (the database did not answer, say) stays released, and its
+ * warning names `--record <version>`, which writes the row the same way once the database answers:
+ * from that version's tag, which must exist, and its changelog section. It is safe to run again: a row
+ * already there is left as it is.
  *
  * A row is inserted once and never compared again, except the version being recorded: a stored row
  * for it that differs from what its section says now is reported and left as it is, for an operator
@@ -258,32 +265,46 @@ export async function recordAfterTag(current: string, runSql: (sql: string) => P
       `zz.release already holds a row for ${v} that differs from its changelog section now, and it was left as it is. ` +
       `Correct the section if it is wrong, then run: node scripts/release-record.ts --correct ${v}`);
   } catch (e) {
-    return [`zz.release was not written for ${current}: ${String((e as Error)?.message ?? e).slice(0, 400)}`];
+    return [`zz.release was not written for ${current}: ${String((e as Error)?.message ?? e).slice(0, 400)}. ` +
+      `Once the deployment's database answers, run: node scripts/release-record.ts --record ${current}`];
   }
 }
 
 /** `--correct <version>`: that row rewritten from the current changelog, its tag time kept. */
-async function correct(version: string): Promise<number> {
+async function correct(version: string, runSql: (sql: string) => Promise<string>): Promise<number> {
   const r = releaseFromChangelog(readFileSync(join(root, "CHANGELOG.md"), "utf8"), version);
-  const before = await regSql(`select row_to_json(r) from zz.release r where r.version = ${literal(version)}`);
+  const before = await runSql(`select row_to_json(r) from zz.release r where r.version = ${literal(version)}`);
   if (!before) {
-    console.error(`release-record: zz.release holds no row for ${version}, so there is nothing to correct — a release records its own row`);
+    console.error(`release-record: zz.release holds no row for ${version}, so there is nothing to correct — ` +
+      `write it with: node scripts/release-record.ts --record ${version}`);
     return 1;
   }
   console.log(`before: ${before}`);
-  const after = await regSql(`update zz.release r set console_version = ${literal(r.consoleVersion)}, summary = ${literal(r.summary)},
+  const after = await runSql(`update zz.release r set console_version = ${literal(r.consoleVersion)}, summary = ${literal(r.summary)},
     changelog = ${literal(r.changelog)}, upgrade_notes = ${literal(r.upgradeNotes)}, client_action = ${literal(r.clientAction)}
     where r.version = ${literal(version)} returning row_to_json(r)`);
   console.log(`after:  ${after}`);
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [flag, version] = process.argv.slice(2);
-  if (flag !== "--correct" || !version || !new RegExp(`^${SEMVER}$`).test(version)) {
-    console.error("usage: node scripts/release-record.ts --correct <version>");
-    process.exitCode = 1;
-  } else {
-    process.exitCode = await correct(version);
+/** `--record <version>`: the rows a release could not write, as the release writes them once its tag exists. */
+async function record(version: string, runSql: (sql: string) => Promise<string>): Promise<number> {
+  const problems = await recordAfterTag(version, runSql);
+  for (const p of problems) console.error(`release-record: ${p}`);
+  return problems.length ? 1 : 0;
+}
+
+/** The operator's command, `--correct <version>` or `--record <version>`, against `runSql`, the deployment's
+ *  database unless a caller hands another; its exit code. */
+export async function operatorCommand(args: string[], runSql: (sql: string) => Promise<string> = regSql): Promise<number> {
+  const [flag, version] = args;
+  if ((flag !== "--correct" && flag !== "--record") || !version || !new RegExp(`^${SEMVER}$`).test(version)) {
+    console.error("usage: node scripts/release-record.ts --correct <version> | --record <version>");
+    return 1;
   }
+  return flag === "--correct" ? correct(version, runSql) : record(version, runSql);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await operatorCommand(process.argv.slice(2));
 }

@@ -14,19 +14,23 @@
  *     list are each answered 400, and none of them writes an event — `settings` among them, the
  *     page the console no longer has (AC-1.12);
  *   - no identity is answered 401, and a member's PAT 403, as every console route answers them;
- *   - a signed-in caller's view of each of the console's nineteen destinations answers 204 and writes exactly one
- *     `console.page_view` whose subject is the feature, whose detail is `{"workspace": …}` and
+ *   - a member's view of a destination only the superadmin may open (Teams, People, Audit and a bug's
+ *     own page) is answered 403 `not permitted`, the fixed refusal of those pages' own reads, and writes
+ *     nothing (FR-34: a view is recorded only for an authorised navigation);
+ *   - a signed-in caller's view of each of the console's nineteen destinations it may open answers 204 and
+ *     writes exactly one `console.page_view` whose subject is the feature, whose detail is `{"workspace": …}` and
  *     nothing else — `main` for a Work destination and `platform` for a Platform one, decided by the
  *     gateway even when the body claims another and carries an address beside it — whose actor and
  *     team are the caller's, whose origin is `work`, and which names no initiative, run, skill
- *     version or conversation;
+ *     version or conversation — the superadmin's for the four only they may open, the member's for the rest;
  *   - a caller in no team still records a view, with no team;
  *   - the team's activity log, its summary and Home, and the superadmin's activity log asked for the
  *     platform, answer byte for byte what they answered before those views were written, the read's
  *     own cutoff masked;
  *   - a page view raises no live hint: listening on the console's change channel from before the
- *     first view, the only hints heard are the three an ordinary team event written after the views
- *     raises — the positive control, without which hearing nothing would prove nothing.
+ *     first view, the only hints heard are the two an ordinary team event written after the views
+ *     raises, `activity` and `runs` and no `overview`, which no tab may follow — the positive control,
+ *     without which hearing nothing would prove nothing.
  *
  * DELIBERATE: the feature ids, the workspaces and the kind are written here and nothing is imported
  * from the gateway. A check that read them from the code under test would agree with whatever it
@@ -52,8 +56,8 @@ import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-page-view";
 const DONE = "console-page-view: a page view of each of the nineteen destinations is one console.page_view event naming its " +
-  "feature and workspace, the caller's own, refused for anything outside the closed list and for settings, absent from " +
-  "the activity log, its summary and Home, and heard by no open tab: ok";
+  "feature and workspace, the caller's own, refused for anything outside the closed list, for settings and for a member's " +
+  "view of a superadmin's page, absent from the activity log, its summary and Home, and heard by no open tab: ok";
 
 /** The console's destinations and the workspace each is in: the spec's destinations and the internal bug page.
  *  `settings` is not one: the console answers its old address as an address no page answers. */
@@ -64,6 +68,8 @@ const FEATURES: [string, "main" | "platform"][] = [
   ["evaluation", "platform"], ["teams", "platform"], ["people", "platform"], ["usage", "platform"],
   ["audit", "platform"], ["knowledge-health", "platform"],
 ];
+/** The destinations only the superadmin may open: Platform's Fleet pages, Audit and a bug's own page. */
+const SUPERADMIN_ONLY = ["audit", "bug", "people", "teams"];
 
 /** The channel the console's change triggers notify on. COUPLED: `zz.console_hint` in
  *  services/gateway/migrations/003_console_live.sql. */
@@ -103,12 +109,12 @@ function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
   });
 }
 
-async function seed(sql: pg.Client): Promise<{ member: string; loner: string; team: string; control: string }> {
+async function seed(sql: pg.Client): Promise<{ member: string; loner: string; admin: string; team: string; control: string }> {
   const person = async (email: string, role: string): Promise<string> => (await sql.query<{ id: string }>(
     "insert into zz.principal (email, display_name, role) values ($1, $2, $3) returning id", [email, email, role])).rows[0].id;
   const member = await person(MEMBER, "member");
   const loner = await person(LONER, "member");
-  await person(ADMIN, "superadmin");
+  const admin = await person(ADMIN, "superadmin");
   const team = (await sql.query<{ id: string }>(
     "insert into zz.team (slug, name, created_by) values ($1, 'Page team', $2) returning id", [TEAM, member])).rows[0].id;
   await sql.query("insert into zz.membership (team_id, principal_id, role, added_by) values ($1, $2, 'member', $2)", [team, member]);
@@ -134,7 +140,7 @@ async function seed(sql: pg.Client): Promise<{ member: string; loner: string; te
       [i, r.kind, r.tool ?? `seed-${i}`, r.ok ?? null, r.tool ?? null, r.refusal ?? null, r.owner ?? null,
        r.team ? team : null, member]);
   }
-  return { member, loner, team, control };
+  return { member, loner, admin, team, control };
 }
 
 /** The page views written so far, waited on until there are `n`: an event is written after the
@@ -228,24 +234,31 @@ async function run(sql: pg.Client, url: string): Promise<void> {
       ["an address", member, { feature: "/initiatives/secret-plan" }, 400, /is not one of the console's destinations$/],
       ["a feature in the wrong case", member, { feature: "Home" }, 400, /is not one of the console's destinations$/],
       ["an object's own property name", member, { feature: "constructor" }, 400, /is not one of the console's destinations$/],
+      ...SUPERADMIN_ONLY.map((feature): [string, Identity, unknown, number, RegExp] =>
+        [`a member's view of ${feature}`, member, { feature }, 403, /^not permitted$/]),
+      ["a view of audit by a member in no team", loner, { feature: "audit" }, 403, /^not permitted$/],
     ];
     for (const [what, id, body, status, says] of refused) {
       const a = await post(id, body);
       const error = String((a.body as { error?: unknown } | undefined)?.error ?? "");
       if (a.status !== status || !says.test(error)) fail(step, `${what} answered ${a.status}: ${JSON.stringify(a.body)}`);
+      if (says.test("not permitted") && JSON.stringify(a.body) !== JSON.stringify({ error: "not permitted" })) {
+        fail(step, `${what} answered ${JSON.stringify(a.body)}, not the fixed refusal alone`);
+      }
     }
-    pass("no identity is 401, a member's PAT 403, and a body that is not an object, a missing feature and one outside the closed list, " +
-         "settings among them, are each 400");
+    pass("no identity is 401, a member's PAT 403, a body that is not an object, a missing feature and one outside the closed list, " +
+         "settings among them, are each 400, and a member's view of teams, people, audit or bug is 403 `not permitted` alone");
 
     // Listening from before the first view, so a hint any of them raised is heard.
     await listener.query("listen zz_console_change");
 
     step = "a recorded view";
     // Every destination once: a claimed workspace and an address beside Home's feature, neither of which reaches
-    // the event, and Knowledge's from the caller in no team.
+    // the event, Knowledge's from the caller in no team, and the superadmin's own pages from the superadmin.
+    const viewer = (feature: string): Identity => (SUPERADMIN_ONLY.includes(feature) ? acting : feature === "knowledge" ? loner : member);
     const recorded: [Identity, unknown][] = FEATURES.map(([feature]) =>
       feature === "home" ? [member, { feature, workspace: "platform", url: "/initiatives/secret-plan?q=x" }]
-        : [feature === "knowledge" ? loner : member, { feature }]);
+        : [viewer(feature), { feature }]);
     for (const [id, body] of recorded) {
       const a = await post(id, body);
       if (a.status !== 204 || a.body !== undefined) fail(step, `${JSON.stringify(body)} answered ${a.status}: ${JSON.stringify(a.body)}`);
@@ -257,7 +270,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     // In `views`' order: by subject, byte by byte.
     const expected = FEATURES.map(([subject, workspace]) => ({
       subject, detail: `{"workspace": "${workspace}"}`,
-      actor_id: subject === "knowledge" ? ids.loner : ids.member, team_id: subject === "knowledge" ? null : ids.team,
+      actor_id: SUPERADMIN_ONLY.includes(subject) ? ids.admin : subject === "knowledge" ? ids.loner : ids.member,
+      team_id: subject === "knowledge" ? null : ids.team,
     })).sort((a, b) => (a.subject < b.subject ? -1 : 1));
     for (const [i, want] of expected.entries()) {
       const got = rows[i];
@@ -270,7 +284,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     }
     pass(`a view of each of the ${FEATURES.length} destinations writes one console.page_view: subject the feature, detail only its ` +
          "workspace (main, or platform for a Platform destination, whatever the body claimed), the caller as actor, the caller's " +
-         "team, origin work, and nothing else");
+         "team, origin work, and nothing else; the superadmin's views of teams, people, audit and bug among them");
     pass("a caller in no team records a view with no team");
 
     step = "counted as nothing else";
@@ -294,15 +308,17 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     // raised has been heard before them.
     await sql.query("insert into zz.event (kind, subject, team_id) values ('knowledge.add', 'control', $1)", [ids.control]);
     const until = Date.now() + 5000;
-    while (heard.filter((h) => h.t === CONTROL).length < 3 && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    while (heard.filter((h) => h.t === CONTROL).length < 2 && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    // A moment more, so a third hint the same statement raised is heard before the control is judged.
+    await new Promise((r) => setTimeout(r, 200));
     const control = heard.filter((h) => h.t === CONTROL).map((h) => h.c).sort().join(",");
-    if (control !== "activity,overview,runs") {
-      fail(step, `the control event raised [${control}] on ${CHANNEL}, not activity, overview and runs — the listener hears nothing, ` +
-                 `so it cannot say what a page view raised (heard ${JSON.stringify(heard)})`);
+    if (control !== "activity,runs") {
+      fail(step, `the control event raised [${control}] on ${CHANNEL}, not activity and runs alone — overview is no collection a tab ` +
+                 `may follow, and a listener that hears nothing cannot say what a page view raised (heard ${JSON.stringify(heard)})`);
     }
     const fromViews = heard.filter((h) => h.t !== CONTROL);
     if (fromViews.length) fail(step, `the page views raised ${fromViews.length} hints: ${JSON.stringify(fromViews)}`);
-    pass("a page view raises no live hint, while an ordinary team event written after it raises activity, overview and runs");
+    pass("a page view raises no live hint, while an ordinary team event written after it raises activity and runs, and no overview");
   } finally {
     await listener.end().catch(() => undefined);
     await db.platformDb().end().catch(() => undefined);

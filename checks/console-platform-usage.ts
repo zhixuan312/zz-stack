@@ -21,6 +21,7 @@
  *   - the superadmin's calls by week carry the three teams with the most calls over the weeks shown
  *     and `Other`, a team whose calls lie before the weeks shown not among them; a member's carry no
  *     parts, every other figure is the superadmin's, and no team's slug is anywhere in their answer;
+ *     the superadmin's answer is labelled `platform-admin` and the member's `platform-public` (ReadMeta);
  *   - the two maintenance-inclusive parts count maintenance and every other figure does not; a call
  *     that failed with no refusal owner is no refusal; a refusal with no session is unassessable;
  *   - a tool no door registers is counted under `Unregistered tools` and its name, like a refusal's
@@ -141,7 +142,7 @@ function heldToSeed(step: string, s: Seeded, a: Answer, admin: boolean): void {
   };
 
   const meta = a.body.meta as Obj;
-  if (meta?.scope !== "platform-public" || meta.timezone !== TIMEZONE || meta.coverageFrom !== iso(start(USAGE.coverageBack))
+  if (meta?.scope !== (admin ? "platform-admin" : "platform-public") || meta.timezone !== TIMEZONE || meta.coverageFrom !== iso(start(USAGE.coverageBack))
       || !isObj(meta.period) || meta.period.from !== iso(start(USAGE.oldestShownBack)) || meta.period.to !== meta.asOf
       || typeof meta.population !== "string" || !/real-work/.test(meta.population) || !/maintenance/.test(meta.population)) {
     out(`meta reads ${JSON.stringify(meta)}`);
@@ -250,7 +251,7 @@ function keysOf(v: unknown, out = new Set<string>()): Set<string> {
 
 /** A member's answer with no parts is the superadmin's with none. */
 const unsplit = (body: Obj): string => settled({
-  ...body, meta: { ...(body.meta as Obj), asOf: undefined },
+  ...body, meta: { ...(body.meta as Obj), asOf: undefined, scope: undefined },
   callsByWeek: { ...(body.callsByWeek as Obj), data: { weeks: ((((body.callsByWeek as Obj).data as Obj)?.weeks ?? []) as Obj[]).map((w) => ({ ...w, parts: null })) } },
 });
 
@@ -306,7 +307,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
     heldToSeed(step, seeded, member, false);
     if (unsplit(member.body) !== unsplit(admin.body)) fail(step, "the member's figures differ from the superadmin's beyond the parts");
     for (const slug of TEAMS) if (member.text.includes(slug)) fail(step, `the member's answer holds ${slug}`);
-    pass("a member reads the same figures with no split by team, and no team's slug anywhere in the answer");
+    pass("a member reads the same figures with no split by team, and no team's slug anywhere in the answer; the superadmin's " +
+         "answer is labelled platform-admin and the member's platform-public");
 
     step = "names and text no answer carries";
     const word = UNREGISTERED.split(":")[1];

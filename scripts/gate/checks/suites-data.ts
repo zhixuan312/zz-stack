@@ -183,5 +183,5 @@ check("every table and column carries its structured comment",
 // section of CHANGELOG.md.
 check("a release's record reads its summary, upgrade notes, client action and console version from its own changelog section, and a tag with no section is No changelog entry with its action unknown, never nothing to do",
       runsCheck("release-record.ts"));
-check("a release is recorded once at its first time, a conflicting record is reported and changes nothing, the backfill writes one row per tag and reconciles the count, and every tagged section of this changelog yields a summary, on a throwaway database",
+check("a release is recorded once at its first time, a conflicting record is reported and changes nothing, the backfill writes one row per tag and reconciles the count, a release whose row failed to write names `node scripts/release-record.ts --record <version>`, which writes every missing row once while `--correct` refuses a version with none, and every tagged section of this changelog yields a summary, on a throwaway database",
       runsCheck("release-record-db.ts"));

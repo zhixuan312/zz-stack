@@ -6,6 +6,12 @@
  *
  * Both are Work's, so both are the active team's, for the superadmin too (reconciliations 31, 39): the
  * team in the address must be the one the caller acts for, and nothing the request names widens it.
+ *
+ * An initiative is answered by its own row, documents or none: the list reads every `zz.initiative`
+ * row, so one opened and never written in is listed, and its page is where it is abandoned.
+ *
+ * A not-found is one fixed sentence per kind, whatever was asked: an answer that repeated the team,
+ * slug or path would hand back the name of something the caller may not read.
  */
 import type { Express } from "express";
 
@@ -25,6 +31,13 @@ const RESERVED = new Set(Object.keys(Envelope.shape));
  *  the role on every claim is stamped from — the reader that already knows the type does not
  *  have to be told it twice. */
 const CLAIM_ROLES = /^(selection|agreement|plan)$/;
+
+/** The not-found answers, each the same whatever the request named.
+ *  COUPLED: the close's 404 (console-close.ts) answers NO_INITIATIVE; checks/console-work-initiatives.ts and
+ *  checks/console-close.ts hold the sentences. */
+export const NO_INITIATIVE = "No initiative of the team you act for has that name.";
+const NO_DOCUMENT = "No document of the team you act for is at that address.";
+const NO_REVISION = "No snapshot of a document of the team you act for has that number.";
 
 /** One row of the claim ledger, before the fields that cannot state absence state it. */
 interface ClaimRow {
@@ -91,7 +104,7 @@ export function mountInitiatives(app: Express): void {
     // confirm the initiative exists there. Every statement below reads the active team, never the
     // address's, so the address can name nothing else.
     if (req.params.team !== activeTeam) {
-      res.status(404).json({ error: `no initiative ${req.params.team}/${slug}` });
+      res.status(404).json({ error: NO_INITIATIVE });
       return;
     }
     const team = activeTeam;
@@ -141,18 +154,19 @@ export function mountInitiatives(app: Express): void {
            join zz.team t on t.id = i.team_id
           where t.slug = $1 and i.slug = $2`, [team, slug]),
       // The initiative's own lifecycle — `flow`, whether it is closed, and its outcome — read
-      // from `zz.initiative`, the one authority for a state no document may answer any more.
+      // from `zz.initiative`, the one authority for a state no document may answer any more, and
+      // for whether the initiative exists at all.
       db.query<{ flow: string | null; closed: boolean; outcome: string | null }>(
         `select i.flow, i.closed_at is not null as closed, i.outcome
            from zz.initiative i join zz.team t on t.id = i.team_id
           where t.slug = $1 and i.slug = $2`, [team, slug]),
     ]);
-    if (!docs.rows.length) { res.status(404).json({ error: `no initiative ${team}/${slug}` }); return; }
+    // Its row, not its documents: an initiative opened and never written in has none, and is still
+    // listed. Every document joins this row, so no document is ever read without it.
+    const lifecycle = anchor.rows[0];
+    if (!lifecycle) { res.status(404).json({ error: NO_INITIATIVE }); return; }
     const decisions = claimsOf(claimDocs.rows);
     const factMap = Object.fromEntries(facts.rows.map((f) => [f.fact, f.value]));
-    // No `zz.initiative` row yet is the reconcile lag the schema review names: read as open, no
-    // declared flow.
-    const lifecycle = anchor.rows[0] ?? { flow: null, closed: false, outcome: null };
     const shape = flowShape(lifecycle.flow);
     res.json({
       team, slug,
@@ -199,7 +213,7 @@ export function mountInitiatives(app: Express): void {
     // A not-found rather than a refusal: an address naming someone else's team gets the response
     // it would get for a document that never existed. Every statement below reads the active team.
     if (req.params.team !== activeTeam) {
-      res.status(404).json({ error: `no document ${req.params.team}/${initiative}/${path}` });
+      res.status(404).json({ error: NO_DOCUMENT });
       return;
     }
     const team = activeTeam;
@@ -231,7 +245,7 @@ export function mountInitiatives(app: Express): void {
           where t.slug = $1 and i.slug = $2 and d.path = $3 and r.revision = $4`,
         [team, initiative, path, wantRevision]);
       if (!rows.length) {
-        res.status(404).json({ error: `no revision ${wantRevision} of ${team}/${initiative}/${path}` });
+        res.status(404).json({ error: NO_REVISION });
         return;
       }
       res.json({ version: +rows[0].version, revision: +rows[0].revision, body: rows[0].body ?? null });
@@ -360,7 +374,7 @@ export function mountInitiatives(app: Express): void {
           order by s.updated_at, s.path`, [team, initiative, base, ZZ_TZ]),
     ]);
     if (!doc.rows.length) {
-      res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });
+      res.status(404).json({ error: NO_DOCUMENT });
       return;
     }
     // What the flow says about this one, same as the initiative list computes for the table.

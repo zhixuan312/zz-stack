@@ -4,7 +4,8 @@
  *
  * The route decides three things itself and nothing about the close. Which initiative: Work is the
  * active team's, and `initiative_close` takes no team, so a `:team` other than the one the identity
- * acts for, or a slug that team does not hold, is a 404 before zz-core is asked. Which body it relays:
+ * acts for, or a slug that team does not hold, is a 404 before zz-core is asked, answered with the
+ * initiative page's own fixed sentence, which names nothing the request did. Which body it relays:
  * one naming `outcome` or `closed_by` is refused, because the platform records both; so is a
  * disposition outside the two, a sign-off field or `document` that is present and blank, and a
  * `document` the initiative does not hold. And how zz-core's answer reads as HTTP. Everything else —
@@ -38,6 +39,7 @@ import { McpError } from "@zz/mcp-client";
 import { platformDb } from "./db.js";
 import { coreFor } from "./core-as-caller.js";
 import { logEvent } from "./events.js";
+import { NO_INITIATIVE } from "./console/initiatives.js";
 import { platformPublic } from "./console/shared.js";
 
 /** The fields a close may not carry: the platform records them. */
@@ -64,7 +66,7 @@ export function mountConsoleClose(app: Express): void {
   app.post("/api/console/initiatives/:team/:slug/close", platformPublic("initiative close", async (req, res, { activeTeam }) => {
     const team = String(req.params.team ?? "");
     const slug = String(req.params.slug ?? "");
-    const missing = { error: `initiative ${team}/${slug} does not exist on this deployment` };
+    const missing = { error: NO_INITIATIVE };
     if (!activeTeam || team !== activeTeam) {
       res.status(404).json(missing);
       return;

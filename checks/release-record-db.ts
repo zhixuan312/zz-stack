@@ -16,6 +16,10 @@
  *     the row exactly as it was;
  *   - a call over three tags writes three rows and reports `tags 3, rows 3`, and the tag with no
  *     section is stored as `No changelog entry` with its client action unknown;
+ *   - a release whose row failed to write is told the command that writes it, and that command,
+ *     `node scripts/release-record.ts --record <version>` driven against this database, records the
+ *     newest tag of this checkout at its tag's time with its section's summary, every other tag with
+ *     it, and run again adds nothing; `--correct` still refuses a version with no row;
  *   - every tag of this checkout but `v0.31.1` reads, from this repository's own `CHANGELOG.md`, as
  *     a summary other than `No changelog entry` holding no `**`, no backtick and no `](`, and every
  *     section with upgrade notes names a client action.
@@ -32,7 +36,8 @@ import { join } from "node:path";
 
 import type pg from "pg";
 
-import { NO_CHANGELOG, UNKNOWN_ACTION, recordReleases, releaseFromChangelog } from "../scripts/release-record.ts";
+import * as releaseRecord from "../scripts/release-record.ts";
+import { NO_CHANGELOG, UNKNOWN_ACTION, recordAfterTag, recordReleases, releaseFromChangelog } from "../scripts/release-record.ts";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
@@ -134,6 +139,43 @@ async function run(db: pg.Client): Promise<void> {
     fail(step, `the current release was stored as ${JSON.stringify(current)}`);
   }
   ok(`${step}: tags ${three.tags}, rows ${three.rows}`);
+
+  await repairCases(db, sql);
+}
+
+/** The operator's command, as `node scripts/release-record.ts <args>` runs it, against `runSql` in place of the
+ *  deployment's database. Read off the module rather than imported by name, so a module without it fails a case. */
+type Operator = (args: string[], runSql: (sql: string) => Promise<string>) => Promise<number>;
+
+async function repairCases(db: pg.Client, sql: (q: string) => Promise<string>): Promise<void> {
+  let step = "a row that failed to write names the command that writes it";
+  const tags = execFileSync("git", ["for-each-ref", "--sort=-creatordate", "--format=%(refname:short) %(creatordate:iso-strict)", "refs/tags/v*"],
+    { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean).map((l) => l.split(" "));
+  if (!tags.length) fail(step, "this checkout holds no v* tag");
+  const [newest, taggedAt] = [tags[0][0].slice(1), tags[0][1]];
+  await db.query("delete from zz.release");
+  const problems = await recordAfterTag(newest, async () => { throw new Error("connection refused"); });
+  const command = `node scripts/release-record.ts --record ${newest}`;
+  if (problems.length !== 1 || !problems[0].includes(`zz.release was not written for ${newest}`) || !problems[0].includes(command)) {
+    fail(step, `a failed write reported ${JSON.stringify(problems)}, which does not name ${command}`);
+  }
+  if (await rowOf(db, newest)) fail(step, `${newest} has a row though its write failed`);
+  ok(`${step}: ${command}`);
+
+  step = "the operator's command records a release whose row is missing";
+  const operator = (releaseRecord as Record<string, unknown>).operatorCommand as Operator | undefined;
+  if (typeof operator !== "function") fail(step, "scripts/release-record.ts exports no operatorCommand, so no command can write a missing row");
+  if (await operator(["--correct", newest], sql) !== 1) fail(step, `--correct ${newest} did not refuse a version with no row`);
+  if (await operator(["--record", newest], sql) !== 0) fail(step, `--record ${newest} did not succeed`);
+  const row = await rowOf(db, newest);
+  const want = releaseFromChangelog(readFileSync(join(root, "CHANGELOG.md"), "utf8"), newest);
+  if (!row || Date.parse(String(row.released_at)) !== Date.parse(taggedAt) || row.summary !== want.summary || row.changelog !== want.changelog) {
+    fail(step, `${newest} reads ${JSON.stringify(row)?.slice(0, 300)}, not tagged at ${taggedAt} with ${JSON.stringify(want.summary)}`);
+  }
+  const count = async (): Promise<number> => (await db.query<{ n: number }>("select count(*)::int as n from zz.release")).rows[0].n;
+  if (await count() !== tags.length) fail(step, `zz.release holds ${await count()} rows for ${tags.length} tags`);
+  if (await operator(["--record", newest], sql) !== 0 || await count() !== tags.length) fail(step, "a second --record moved the table");
+  ok(`${step}: ${newest} at its tag's time with its section's summary, ${tags.length} tags, ${tags.length} rows, and a second run adds nothing`);
 }
 
 async function main(): Promise<number> {
@@ -149,7 +191,7 @@ async function main(): Promise<number> {
     return 1;
   }
   console.log("release-record-db: recorded once at its first time, a conflict reported and left as it is, the tags reconciled, " +
-              "and every tagged section of this changelog read as a summary: ok");
+              "a missing row written by the operator's command, and every tagged section of this changelog read as a summary: ok");
   return 0;
 }
 

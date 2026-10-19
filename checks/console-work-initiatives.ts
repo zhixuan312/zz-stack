@@ -9,8 +9,8 @@
  * It starts a throwaway PostgreSQL and a real zz-core on it (`withThrowawayCore`), makes the
  * initiatives `scripts/schema/work-seed.ts` declares through zz-core's own tools, moves each one's
  * timestamps into the weeks the seed names, writes the seed's searches, and calls the gateway's own
- * built list route (`services/gateway/dist/console/initiatives.js`, which mounts initiative-list.js)
- * the way Express would, signed in as a console session, its relay reaching that zz-core. What it
+ * built list, initiative and document routes (`services/gateway/dist/console/initiatives.js`, which
+ * mounts initiative-list.js) the way Express would, signed in as a console session, its relay reaching that zz-core. What it
  * establishes, with the expected values written in the seed:
  *
  *   - the tiles (open, waiting, closed by each outcome), the closures by week and outcome, and per row
@@ -26,6 +26,10 @@
  *     another team's slug widens it; a filter or a page the route does not take is a 400;
  *   - a batch zz-core does not answer leaves its rows' next move null and the answer partial, and
  *     none answered leaves it unavailable;
+ *   - an initiative with no documents opens to its page, with no documents and still open, so the close it may take
+ *     (an abandon, console-close.ts) is drawn; its answer has the key sets of the console's fake's empty initiative;
+ *   - every not-found answer of an initiative, a document or a snapshot, for another team's, under its own team or the
+ *     caller's, and for one no team holds, is one fixed message naming none of the team, slug or path asked for;
  *   - the key sets match the console's fake answer;
  *   - the shared figures over the seed: the grain a window is drawn at, closures by week and by month,
  *     the median hours to close and to abandon, each recomputed at its own grain, the most open at
@@ -62,6 +66,14 @@ const DONE = "console-work-initiatives: the active team's initiatives are filter
   "answer over the same record: ok";
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work-initiatives.ts");
+/** COUPLED: the fake's work fixture, whose initiatives the fake's detail route answers. */
+const FAKE_WORK = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work.ts");
+/** COUPLED: NO_INITIATIVE, NO_DOCUMENT and NO_REVISION in services/gateway/src/console/initiatives.ts. */
+const NOT_FOUND = {
+  initiative: "No initiative of the team you act for has that name.",
+  document: "No document of the team you act for is at that address.",
+  revision: "No snapshot of a document of the team you act for has that number.",
+};
 
 const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
 /** A spec the spec gate approves: every declared section, one phase, one core statement. */
@@ -87,6 +99,8 @@ type Relay = Pick<Mcp, "call">;
 type Params = { state: string | null; flow: string | null; q: string; limit: number; offset: number };
 interface Built {
   route: Route;
+  detail: Route;
+  document: Route;
   initiativeList: (team: string, params: Params, asOf: string, relay: Relay) => Promise<Obj>;
   grainFor: (w: { from: string; to: string }) => string;
   closuresByWeek: (team: string, w: { from: string; to: string }, asOf: string, grain: string) => Promise<Obj[]>;
@@ -125,9 +139,9 @@ function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string
 
 /** The request a console session's read arrives as, past the gateway's middleware: its resolved identity, and the
  *  `x-zz-*` headers it stamps, which the route's relay forwards to zz-core (COUPLED: identity.ts). */
-function request(who: Who, query: Record<string, string | string[]>): Obj {
+function request(who: Who, query: Record<string, string | string[]>, params: Record<string, string> = {}): Obj {
   return {
-    params: {}, query,
+    params, query,
     zzIdentity: { email: who.email, displayName: "Work", platformRole: who.role, via: "session",
                   teams: [{ slug: who.team, role: "admin" }], activeTeam: who.team, patTeam: null, sessionTeam: who.team },
     headers: {
@@ -196,10 +210,13 @@ async function load(c: Core): Promise<{ built: Built; end: () => Promise<void> }
   const { mountInitiatives } = (await dist("console/initiatives.js")) as { mountInitiatives: (app: unknown) => void };
   const routes = new Map<string, Route>();
   mountInitiatives({ get: (path: string, h: Route) => routes.set(path, h) });
-  const route = routes.get("/api/console/initiatives") ?? c.fail("mount", "no route GET /api/console/initiatives");
+  const mounted = (p: string): Route => routes.get(p) ?? c.fail("mount", `no route GET ${p}`);
+  const route = mounted("/api/console/initiatives");
+  const detail = mounted("/api/console/initiatives/:team/:slug");
+  const document = mounted("/api/console/document/:team/:initiative/*");
   const list = (await dist("console/initiative-list.js")) as Pick<Built, "initiativeList">;
-  const figures = (await dist("console/work-figures.js")) as Omit<Built, "route" | "initiativeList">;
-  return { built: { route, ...list, ...figures }, end: () => db.platformDb().end() };
+  const figures = (await dist("console/work-figures.js")) as Omit<Built, "route" | "detail" | "document" | "initiativeList">;
+  return { built: { route, detail, document, ...list, ...figures }, end: () => db.platformDb().end() };
 }
 
 async function run(c: Core): Promise<void> {
@@ -412,6 +429,8 @@ async function run(c: Core): Promise<void> {
     if (fakeStatus !== 200 || diffs.length) c.fail(step, diffs.join("; ") || `the fake answered ${fakeStatus}`);
     c.pass(step);
 
+    await opened(c, built, [SUPER, MEMBER], slug("o-empty"), theirSlug);
+
     await figures(c, built, w0, asOf, slug);
 
     step = "how long zz-core takes to answer a page of ten names";
@@ -429,6 +448,63 @@ async function run(c: Core): Promise<void> {
     delete process.env.CORE_MCP_URL;
     delete process.env.ZZ_CATALOG_DIR;
   }
+}
+
+/** An initiative with no documents opened to its page, and every not-found answer of an initiative, a document and a
+ *  snapshot one fixed message, for each of `people`. */
+async function opened(c: Core, built: Built, people: Who[], empty: string, theirSlug: string): Promise<void> {
+  const open = (who: Who, team: string, name: string) => answer(built.detail, request(who, {}, { team, slug: name }));
+  const doc = (who: Who, team: string, name: string, path: string, query: Record<string, string> = {}) =>
+    answer(built.document, request(who, query, { team, initiative: name, 0: path }));
+
+  let step = "an initiative with no documents opens to its page, with no documents and still open to its close";
+  for (const who of people) {
+    const page = await open(who, c.team, empty);
+    if (page.status !== 200 || !same(page.body.documents, []) || page.body.closed !== false || page.body.outcome !== null
+        || page.body.team !== c.team || page.body.slug !== empty) {
+      c.fail(step, `${who.role}: ${empty} answered ${page.status}: ${show(page.body)}`);
+    }
+  }
+  const page = await open(people[0], c.team, empty);
+  let work: { INITIATIVES: { team: string; slug: string; documents: number; closed: boolean }[]; initiativeDetail: (team: string, slug: string) => Obj | null };
+  try {
+    work = (await import(pathToFileURL(FAKE_WORK).href)) as typeof work;
+  } catch (err) {
+    return c.fail(step, `could not read the console's fake work fixture at ${FAKE_WORK}: ${(err as Error).message}`);
+  }
+  const fakeOne = work.INITIATIVES.find((i) => i.documents === 0 && !i.closed) ?? c.fail(step, "the fake holds no open initiative with no documents");
+  const fakeEmpty = work.initiativeDetail(fakeOne.team, fakeOne.slug) ?? c.fail(step, `the fake's ${fakeOne.slug} has no page`);
+  // The answer's own keys: below them a freeform initiative's fallback gates carry fewer than a flow's, which both sides
+  // answer alike, and the fake's empty initiative is on a flow.
+  const keys = (o: Obj) => Object.keys(o).sort().join(", ");
+  if (!same(fakeEmpty.documents, []) || keys(page.body) !== keys(fakeEmpty)) {
+    c.fail(step, `the answer has keys {${keys(page.body)}} where the fake's ${fakeOne.slug} has {${keys(fakeEmpty)}}, documents ${show(fakeEmpty.documents)}`);
+  }
+  c.pass(`${step}: ${empty} answers 200 to both people, and has the key sets of the fake's ${fakeOne.slug}`);
+
+  step = "every not-found answer is one fixed message naming nothing that was asked for";
+  const asked: [string, () => Promise<Answer>, string, string[]][] = [];
+  for (const who of people) {
+    asked.push(
+      [`${who.role}: another team's initiative under its own team`, () => open(who, OTHER_TEAM, theirSlug), NOT_FOUND.initiative, [OTHER_TEAM, theirSlug]],
+      [`${who.role}: another team's initiative under the caller's`, () => open(who, c.team, theirSlug), NOT_FOUND.initiative, [c.team, theirSlug]],
+      [`${who.role}: an initiative no team holds`, () => open(who, c.team, "2026-01-01-no-such-work"), NOT_FOUND.initiative, [c.team, "no-such-work"]],
+      [`${who.role}: another team's document`, () => doc(who, OTHER_TEAM, theirSlug, "notes.md"), NOT_FOUND.document, [OTHER_TEAM, theirSlug, "notes.md"]],
+      [`${who.role}: a document its initiative does not hold`, () => doc(who, c.team, empty, "missing-notes.md"), NOT_FOUND.document, [c.team, empty, "missing-notes"]],
+      // An address under a team the caller does not act for holds no document for them, whatever snapshot it names.
+      [`${who.role}: another team's snapshot`, () => doc(who, OTHER_TEAM, theirSlug, "notes.md", { revision: "1" }), NOT_FOUND.document, [OTHER_TEAM, theirSlug, "notes.md"]],
+      [`${who.role}: a snapshot no document holds`, () => doc(who, c.team, empty, "missing-notes.md", { revision: "9047" }), NOT_FOUND.revision, [c.team, empty, "missing-notes", "9047"]],
+    );
+  }
+  for (const [what, read, says, names] of asked) {
+    const a = await read();
+    const text = JSON.stringify(a.body);
+    const named = names.filter((n) => text.includes(n));
+    if (a.status !== 404 || !same(a.body, { error: says }) || named.length) {
+      c.fail(step, `${what} answered ${a.status} ${show(a.body)}${named.length ? `, naming ${named.join(", ")}` : ""}`);
+    }
+  }
+  c.pass(`${step}: ${asked.length} reads of an initiative, a document and a snapshot, as a member and as the superadmin`);
 }
 
 /** Work's shared figures over the seed, each against the values the seed writes. */

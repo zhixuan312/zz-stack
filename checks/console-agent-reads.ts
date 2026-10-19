@@ -28,7 +28,11 @@
  *   - `activity_refusals` answers the page's summary with `byTool`, the window's refusals summed by tool,
  *     and `messages`, its ten largest groups; with `since` the weeks and groups count only what happened
  *     from that date, the tiles staying the page's last whole week; with `initiative` only that
- *     initiative of the active team's, the second team's answering as one nobody has;
+ *     initiative of the active team's, the second team's answering as one nobody has; a read that fails is
+ *     unavailable, never zero or none: with the weekly refusals read failing in the gateway's own pool, the
+ *     calls, the refused, its owners, the weeks and the maintenance are each unavailable and the tool
+ *     refused most stands, and with last week's refusals by tool failing, the tool refused most is
+ *     unavailable and the rest stands;
  *   - `run_summary` with `since` counts only the runs from that date; the tools' own `since` is seven local
  *     days before the cutoff; a malformed or future date is an input error;
  *   - the superadmin in no team is answered the route's own no-team sentence by the three Work reads;
@@ -61,8 +65,8 @@ import { send } from "./console-isolation-work.ts";
 const NAME = "console-agent-reads";
 const DONE = "console-agent-reads: the five agent reads answer the first team's member, the second team's member, a " +
   "superadmin acting for the first team and a superadmin in no team what their pages' routes answer them, with a tool's " +
-  "open reports, releases after a version in recorded order, refusals and runs from a date and in an initiative, and " +
-  "an input error for every argument outside its bounds: ok";
+  "open reports, releases after a version in recorded order, refusals and runs from a date and in an initiative, a " +
+  "failed refusals read unavailable rather than zero or none, and an input error for every argument outside its bounds: ok";
 const TIMEZONE = "Asia/Singapore";
 /** The check's own route, behind the identity gate, as the agent door calls the functions. */
 const READ = "/check/agent-read";
@@ -77,6 +81,9 @@ type Obj = Record<string, unknown>;
 type Who = { label: string; email: string; cookie: string; team: string | null; superadmin: boolean };
 type Part = { state: string; data?: unknown; reason?: string };
 type Answer = { status: number; body: Obj; text: string };
+
+/** A part the gateway could not read. */
+const UNREAD = { state: "unavailable", reason: "query_failed" };
 
 /** The harness's own failure, set once it starts: the case and what was found. */
 let fail: Core["fail"] = (step, detail) => { throw new Error(`${step}: ${detail}`); };
@@ -151,7 +158,11 @@ async function seedReads(c: Core, s: Isolation): Promise<string> {
 }
 
 /** The gateway as server.ts mounts the console, and the check's own route calling the agent reads. */
-async function listen(c: Core): Promise<{ base: string; local: (date: string) => Promise<string>; stop: () => Promise<void> }> {
+async function listen(c: Core): Promise<{
+  base: string; local: (date: string) => Promise<string>;
+  failing: <T>(when: (sql: string, params: unknown[]) => boolean, f: () => Promise<T>) => Promise<T>;
+  stop: () => Promise<void>;
+}> {
   process.env.TEAM_DB_URL = c.url;
   process.env.ZZ_TZ = TIMEZONE;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
@@ -182,8 +193,16 @@ async function listen(c: Core): Promise<{ base: string; local: (date: string) =>
   });
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
+  const pool = db.platformDb();
+  const real = pool.query.bind(pool) as (text: unknown, params?: unknown[]) => Promise<unknown>;
   return {
     base: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+    // Every statement `when` picks fails in the gateway's own pool while `f` runs.
+    failing: async (when, f) => {
+      (pool as unknown as { query: unknown }).query = (text: unknown, params?: unknown[]) =>
+        typeof text === "string" && when(text, params ?? []) ? Promise.reject(new Error("injected by the check")) : real(text, params);
+      try { return await f(); } finally { (pool as unknown as { query: unknown }).query = real; }
+    },
     // A local date's first instant in the reporting timezone, as the database reads it.
     local: async (date) => (await c.sql.query<{ t: string }>(
       `select to_char(($1::date)::timestamp at time zone $2::text at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as t`, [date, TIMEZONE])).rows[0].t,
@@ -353,6 +372,31 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
   }
   pass("the first team's initiative counts its two refusals of the tool and not the search's outside it; the second team's " +
     "initiative answers exactly as a slug nobody has, nothing counted");
+
+  step = "activity_refusals keeps a failed read unavailable, never zero or none";
+  // What a fault leaves the answer saying: last week's calls, the refused's owners, the tool refused most, the maintenance,
+  // and whether the weeks, the groups and the refusals by tool were read.
+  const said = (a: Obj) => {
+    const t = a.tiles as { calls: { figure: unknown }; refused: { owners: unknown }; mostRefused: unknown };
+    return [t.calls.figure, t.refused.owners, t.mostRefused, a.maintenance, ...["weeks", "groups", "byTool"].map((k) => (a[k] as Part).state)];
+  };
+  const pageTiles = page.tiles as { calls: { window: { from: string } }; mostRefused: unknown };
+  // The weekly refusals read is the one statement over unnest's periods, asked here as the door asks the tool.
+  const weekly = await g.failing((sql) => sql.includes("with ordinality as p(lo, hi, n)"), () => read(step, member, "activity_refusals", {}, true));
+  const weeklyWant = [{ value: null, why: "unavailable" }, UNREAD, pageTiles.mostRefused, UNREAD, "unavailable", "ok", "ok"];
+  if (!isDeepStrictEqual(said(weekly), weeklyWant)) fail(step, `the weekly read failing, it reads ${show(said(weekly))}, expected ${show(weeklyWant)}`);
+  // Last week's refusals by tool is the grouping statement over the last whole week alone; from fifteen days back, the
+  // groups and the refusals by tool span more.
+  const lastFrom = pageTiles.calls.window.from;
+  const byTool = await g.failing((sql, params) => sql.includes("as normalized") && params[1] === lastFrom,
+    () => read(step, member, "activityRefusals", { since: fifteen }));
+  const byToolWant = [(longer.tiles as Obj & { calls: { figure: unknown } }).calls.figure, (longer.tiles as Obj & { refused: { owners: unknown } }).refused.owners,
+    UNREAD, longer.maintenance, "ok", "ok", "ok"];
+  if (!isDeepStrictEqual(said(byTool), byToolWant)) fail(step, `last week's by-tool read failing, it reads ${show(said(byTool))}, expected ${show(byToolWant)}`);
+  if ((longer.tiles as { mostRefused: Part }).mostRefused.state !== "ok" || (longer.maintenance as Part).state !== "ok") fail(step, `unfaulted, it reads ${show(said(longer))}`);
+  pass("the weekly read failing, the tool answers last week's calls, the owners, the weeks and the maintenance unavailable and " +
+    "the tool refused most as the page reads it; last week's by-tool read failing, the tool refused most is unavailable, never " +
+    "none, and the calls, the owners and the maintenance are the unfaulted read's");
 
   step = "run_summary from a date";
   const runs = (a: Obj): number => ((a.tiles as Obj).runs as { value: number }).value;

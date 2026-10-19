@@ -4,10 +4,10 @@
  *
  * `GET /platform/bugs` answers the counts, the oldest open report, the median hours to resolve, the
  * weekly cohorts and one page of the queue, over real reports only (`realReports`). A row anybody
- * reads holds a title built from the report's impact, canonical surface and filed day, and typed
- * metadata, nothing else: never the reporter's title or detail, the team, the reporter, the
- * initiative, the resolution or the duplicate target. The superadmin's rows add the internal title
- * and the team.
+ * reads holds the spec's public title, `Report concerning <canonical surface>` or `Platform issue
+ * reported`, and typed metadata, its impact, state and dates each a field of its own, nothing else:
+ * never the reporter's title or detail, the team, the reporter, the initiative, the resolution or the
+ * duplicate target. The superadmin's rows add the internal title and the team.
  * Only the queue is filtered; every figure is over all real reports.
  *
  * `GET /platform/bugs/:id` and `/platform/bugs/:id/duplicates` are the superadmin's: a member is
@@ -92,22 +92,12 @@ export function canonicalSurface(stored: string | null, words: Set<string>): str
   return words.has(word) ? word : null;
 }
 
-/** The impacts as a withheld report's title says them. */
-export const IMPACT_WORDS: Record<Impact, string> = {
-  blocks_work: "Blocks work", wrong_result: "Wrong result", confusing: "Confusing", cosmetic: "Cosmetic",
-};
-
-/** The day a report was filed, as its withheld title says it and the console's Filed column draws it (its
- *  `formatDate`): `16 Sept 2026`, `03 Oct 2026`. */
-export const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, day: "2-digit", month: "short", year: "numeric" });
-
-/** The title of a report its reader may not read in full, built from what they may see of it: its
- *  impact, its canonical surface and the day it was filed in the reporting timezone, so two reports
- *  of a team read apart while nothing the reporter wrote is in it. `Blocks work: document_approve,
- *  filed 16 Sept 2026`, or `Cosmetic: no surface named, filed 03 Oct 2026`.
+/** The spec's public bug title, frozen: `Report concerning <canonical surface>` when the surface is a
+ *  word of the vocabulary, `Platform issue reported` otherwise. Nothing the reporter wrote is in it, and
+ *  neither is the impact, the state or a date: those are the row's own fields.
  *  COUPLED: the fake's `publicTitle` in ../zz-stack-dashboard/scripts/fake-gateway/platform-bugs.ts. */
-export function publicTitle(r: Pick<RealReport, "impact" | "surface" | "reportedMs">): string {
-  return `${IMPACT_WORDS[r.impact]}: ${r.surface ?? "no surface named"}, filed ${FILED_DAY.format(new Date(r.reportedMs))}`;
+function publicTitle(surface: string | null): string {
+  return surface === null ? "Platform issue reported" : `Report concerning ${surface}`;
 }
 
 /**
@@ -172,10 +162,10 @@ export function queueOf(reports: RealReport[], filter: Filter): RealReport[] {
     .filter((r) => filter.surface === null || r.surface === filter.surface);
 }
 
-/** A report as anybody reads it in the queue: a title built from its impact, canonical surface and filed day, and typed metadata. */
+/** A report as anybody reads it in the queue: the public title of its canonical surface, and typed metadata. */
 export function publicRow(r: RealReport): PublicBugRow {
   return {
-    id: r.id, title: publicTitle(r), impact: r.impact, surface: r.surface, filedAt: iso(r.reportedMs),
+    id: r.id, title: publicTitle(r.surface), impact: r.impact, surface: r.surface, filedAt: iso(r.reportedMs),
     platformVersion: r.platformVersion, status: r.status, resolvedAt: r.resolvedMs === null ? null : iso(r.resolvedMs),
   };
 }

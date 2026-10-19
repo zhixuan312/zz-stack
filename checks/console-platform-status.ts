@@ -20,7 +20,9 @@
  *   - only the running week is not `complete`; `first` is L-4, `best` L-1, `last` L, `previous`
  *     L-1, `highest` and `lowest` are null, and the judgement is `worsened`;
  *   - a member of team one, a superadmin and a person in no team receive the same measure, a team or
- *     scope parameter changes nothing, and the member's answer holds no other team's slug;
+ *     scope parameter changes nothing, and the member's answer holds no other team's slug; the
+ *     superadmin's answer, whose needs may name a team, is labelled `platform-admin` and everybody
+ *     else's `platform-public` (ReadMeta);
  *   - no session is refused with 401, a member's token with 403, and a query that fails answers 500
  *     with the route's sentence and no partial body;
  *   - over the seed's first rows, nothing needs attention: the superadmin reads `Nothing needs you` and
@@ -511,9 +513,11 @@ async function run(db: pg.Client, url: string): Promise<void> {
       ["the superadmin sending ?scope=platform", await as(SUPERADMIN, "?scope=platform")],
     ] as const) {
       if (settled(measuresOf(step, a)) !== ref) fail(step, `${who} receives ${settled(measuresOf(step, a))}, the member ${ref}`);
-      if (a.body.meta === undefined || (a.body.meta as Obj).scope !== "platform-public") fail(step, `${who} reads meta ${JSON.stringify(a.body.meta)}`);
+      const scope = who.startsWith("the superadmin") ? "platform-admin" : "platform-public";
+      if (a.body.meta === undefined || (a.body.meta as Obj).scope !== scope) fail(step, `${who} reads meta ${JSON.stringify(a.body.meta)}, not scope ${scope}`);
     }
-    pass("a member of team one, a superadmin and a person in no team receive the same eight measures, and a team or scope parameter changes nothing");
+    pass("a member of team one, a superadmin and a person in no team receive the same eight measures, and a team or scope parameter changes " +
+         "nothing; the superadmin's answer is labelled platform-admin and the others platform-public");
 
     step = "no other team's slug";
     if (member.text.includes(TEAM_TWO)) fail(step, `the member's answer holds ${TEAM_TWO}: ${member.text.slice(0, 400)}`);

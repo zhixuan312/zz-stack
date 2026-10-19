@@ -26,8 +26,8 @@
  *   - a body naming `outcome` or `closed_by`, a disposition outside the two, a blank sign-off field and
  *     a document the initiative does not hold are the route's 400, and nothing closes;
  *   - another team's initiative, named under its own team or under the caller's, and a slug no team
- *     holds are the route's 404 before anything is relayed: zz-core is unreachable meanwhile, and a
- *     close that does reach for it is a 502;
+ *     holds are the route's 404 before anything is relayed, one fixed message naming none of the team
+ *     or slug asked for: zz-core is unreachable meanwhile, and a close that does reach for it is a 502;
  *   - one close records one `initiative_close`, and the route records its act once as the console's
  *     door, `via: "web"`;
  *   - the route's answers have the key sets of the console's fake answer, at 200, 400, 404 and 409.
@@ -57,6 +57,8 @@ const ACCEPTOR = "stakeholder@example.test";
 const REASON = "the person who asked for it moved on before signing off";
 const OTHER_EMAIL = "other@example.test";
 const OTHER_TEAM = "other-team";
+/** COUPLED: NO_INITIATIVE in services/gateway/src/console/initiatives.ts, which the close's 404 answers. */
+const NOT_FOUND = "No initiative of the team you act for has that name.";
 
 const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
 /** A spec the spec gate approves: every declared section, one phase, one core statement. */
@@ -349,14 +351,15 @@ async function run(c: Core): Promise<void> {
     const missing: [string, string][] = [[OTHER_TEAM, theirSlug], [c.team, theirSlug], [c.team, "2026-01-01-no-such-work"]];
     for (const [team, slug] of missing) {
       const got = await post(team, slug, { disposition: "abandoned" });
-      if (got.status !== 404 || got.body.error !== `initiative ${team}/${slug} does not exist on this deployment`) {
-        c.fail(step, `${team}/${slug} answered ${got.status} ${show(got.body)}`);
+      const named = [team, slug].filter((n) => JSON.stringify(got.body).includes(n));
+      if (got.status !== 404 || JSON.stringify(got.body) !== JSON.stringify({ error: NOT_FOUND }) || named.length) {
+        c.fail(step, `${team}/${slug} answered ${got.status} ${show(got.body)}${named.length ? `, naming ${named.join(", ")}` : ""}`);
       }
       answers[404] ??= got.body;
     }
     const theirRecord = await settled(c, theirSlug, OTHER_TEAM);
     if (theirRecord.closed) c.fail(step, `the other team's initiative reads ${show(theirRecord)}`);
-    c.pass(`${step}: under its own team, under the caller's, and a slug no team holds`);
+    c.pass(`${step}: under its own team, under the caller's, and a slug no team holds, each the one fixed message`);
 
     step = "a close that cannot reach zz-core is a 502";
     const unreached = await post(c.team, kept, { disposition: "abandoned" });

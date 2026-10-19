@@ -182,7 +182,9 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             release and the doctor alike), release.ts, release-record.ts (a
             release's row in zz.release, read from its changelog section and
             written by the release once its tag exists, every earlier tag with
-            it; `--correct <version>` rewrites one row from the current changelog),
+            it; `--correct <version>` rewrites one row from the current changelog;
+            `--record <version>` writes the rows a release could not, that
+            version's and every tag's that has none),
             build-marketplace.ts (renders the public Claude Code shelf into
             marketplace/ and .claude-plugin/, through the same buildClientPackage
             the gateway serves packages with — the gate fails a release whose

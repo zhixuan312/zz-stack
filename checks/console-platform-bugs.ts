@@ -18,8 +18,10 @@
  *     filed, resolved, still-open, reports per 1,000 real-work calls of the same week and median;
  *   - the queue newest first with the id breaking a tie, filtered by state, impact and a canonical
  *     surface, paged, and refusing a value it does not know;
- *   - a member's rows hold exactly the public keys, the title built from the impact, the canonical
- *     surface and the day filed, an unknown surface null, and the member's whole answer holds no title, detail,
+ *   - a member's rows hold exactly the public keys, the title exactly one of the spec's two forms,
+ *     `Report concerning <canonical surface>` or `Platform issue reported` for a surface outside the
+ *     vocabulary or none, with the impact, the state and the filed date their own fields and none of
+ *     them in the title, an unknown surface null, and the member's whole answer holds no title, detail,
  *     resolution, raw surface, team, reporter, initiative or email; the superadmin's answer differs
  *     only by its scope and the internal title and team on each row; a person in no team, and a
  *     `?team=` or `?scope=`, change nothing;
@@ -27,7 +29,8 @@
  *     no name, an unknown id answered 404 with no body, and the targets are exactly the reports
  *     `bug_resolve` would accept;
  *   - no session is 401 and a member's token 403; a query that fails is 500 with nothing partial;
- *   - every answer agrees in shape with the console's fake one, key set by key set;
+ *   - every answer agrees in shape with the console's fake one, key set by key set, and the fake titles
+ *     a member's rows by the same two forms;
  *   - no read changed a row of `zz.bug`.
  *
  * The only database it touches is the one it started.
@@ -53,9 +56,10 @@ const NAME = "console-platform-bugs";
 const DONE = "console-platform-bugs: the bug queue's figures and rows are answered over real reports, a member's in the " +
   "safe projection and the report and its duplicate targets to the superadmin alone, in the fake's shapes: ok";
 const TIMEZONE = "Pacific/Auckland";
-/** A withheld title's words for an impact, and its day in the seed's timezone: `Blocks work: document_approve, filed 14 Sept 2026`. */
-const IMPACT_WORDS: Record<string, string> = { blocks_work: "Blocks work", wrong_result: "Wrong result", confusing: "Confusing", cosmetic: "Cosmetic" };
-const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "2-digit", month: "short", year: "numeric" });
+/** The spec's public bug title, frozen: `Report concerning <canonical surface>` for a surface in the vocabulary,
+ *  `Platform issue reported` otherwise. DELIBERATE: written here, not imported from the gateway, so the check holds the
+ *  route to the spec's words rather than to whatever the route says. */
+const titleFor = (surface: string | null): string => (surface === null ? "Platform issue reported" : `Report concerning ${surface}`);
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "platform-bugs.ts");
 const UNKNOWN = "b0000000-0000-4000-8000-0000000000ff";
@@ -113,7 +117,7 @@ function publicRow(seeded: Seeded, key: Exclude<Key, "P1" | "P2">): Obj {
   const filed = seeded.starts.get(r.back)! + r.hours * 3_600_000;
   const surface = EXPECTED.surface[key];
   return {
-    id: r.id, title: `${IMPACT_WORDS[r.impact]}: ${surface ?? "no surface named"}, filed ${FILED_DAY.format(new Date(filed))}`, impact: r.impact,
+    id: r.id, title: titleFor(surface), impact: r.impact,
     surface, filedAt: iso(filed), platformVersion: r.platformVersion, status: r.status,
     resolvedAt: r.resolvedAfter === null ? null : iso(filed + r.resolvedAfter * 3_600_000),
   };
@@ -167,6 +171,29 @@ function sortDeep(v: unknown): unknown {
   return v;
 }
 
+/** Every row of the queue the reader is answered, ten to a page as the console asks for them. */
+async function allRows(as: (email: string, query?: string) => Promise<Answer>, email: string): Promise<Obj[]> {
+  const rows: Obj[] = [];
+  for (let offset = 0; ; offset += 10) {
+    const a = await as(email, `?limit=10&offset=${offset}`);
+    const page = rowsOf(`the queue from ${offset}`, a);
+    rows.push(...page);
+    if (rows.length >= Number((a.body.queue as { data: Obj }).data.total) || !page.length) return rows;
+  }
+}
+
+/** A public row held to the spec: its title exactly the form its surface takes, so it repeats no impact, state or date,
+ *  and the impact, the state and the filed date each a field of its own. */
+function frozenTitle(step: string, r: Obj): void {
+  const surface = r.surface === null || typeof r.surface === "string" ? r.surface : undefined;
+  if (surface === undefined || r.title !== titleFor(surface)) {
+    fail(step, `${keyOf(r.id)} is titled ${JSON.stringify(r.title)} on surface ${JSON.stringify(r.surface)}, not ${JSON.stringify(titleFor(surface ?? null))}`);
+  }
+  if (typeof r.impact !== "string" || typeof r.status !== "string" || typeof r.filedAt !== "string" || Number.isNaN(Date.parse(r.filedAt))) {
+    fail(step, `${keyOf(r.id)} carries no impact, state or filed date of its own: ${JSON.stringify(r)}`);
+  }
+}
+
 async function queueCases(seeded: Seeded, as: (email: string, query?: string) => Promise<Answer>, member: Answer): Promise<void> {
   let step = "the queue, newest first";
   const rows = rowsOf(step, member);
@@ -183,8 +210,13 @@ async function queueCases(seeded: Seeded, as: (email: string, query?: string) =>
     if (!same(sortDeep(r), sortDeep(want))) fail(step, `${EXPECTED.real[i]} reads ${JSON.stringify(r)}, not ${JSON.stringify(want)}`);
   }
   if (rows[1].title !== rows[2].title) fail(step, `R9 and R8 are titled ${String(rows[1].title)} and ${String(rows[2].title)}`);
-  pass("each row is the title built from impact, surface and day filed, and typed metadata only; `Bug_Report` and `bug_report` read one title, and a " +
-       "surface in no door's registered tools (team_switch), free text and none read `no surface named`, surface null");
+  pass("each row is its spec title and typed metadata only; `Bug_Report` and `bug_report` read one title, and a surface in no " +
+       "door's registered tools (team_switch), free text and none read `Platform issue reported`, surface null");
+
+  step = "a member's title is one of the spec's two forms";
+  for (const r of await allRows(as, MEMBER)) frozenTitle(step, r);
+  pass("every row a member reads, on every page, is titled `Report concerning <surface>` or `Platform issue reported` and nothing " +
+       "more, with its impact, state and filed date as their own fields");
 
   step = "nothing a reporter wrote reaches a member";
   const member2 = await as(MEMBER, "?limit=100");
@@ -367,7 +399,10 @@ async function run(db: pg.Client, url: string): Promise<void> {
       ...shapeDiffs((await get(`/${REPORTS.R1.id}/duplicates`, SUPERADMIN)).body, fake.duplicates(fakeWithTargets), "duplicates", []),
     ];
     if (diffs.length) fail(step, diffs.join("; "));
-    pass("the queue to a member and to the superadmin, a report and its targets agree in shape with the fake's, key set by key set");
+    const fakeQueue = fake.bugs(false, none3, 100, 0).queue as { data: { rows: Obj[] } };
+    for (const r of fakeQueue.data.rows) frozenTitle(`${step}: the fake's member rows`, r);
+    pass("the queue to a member and to the superadmin, a report and its targets agree in shape with the fake's, key set by key set, " +
+         "and the fake titles a member's rows by the spec's two forms");
 
     step = "nothing changed a report";
     if (await snapshot() !== before) fail(step, "a row of zz.bug differs from what was seeded after the reads");

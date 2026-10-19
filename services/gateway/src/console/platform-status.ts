@@ -30,7 +30,8 @@
  * Public by route: it is mounted through `platformPublic`, takes no team and no scope, and reads
  * neither from the request. No measure names a team; `own` is the caller's active team as the
  * identity resolved it, and `unavailable` with `no_team` for a person in none; only the superadmin's
- * needs name a team.
+ * needs name a team, so only the superadmin's answer is labelled `platform-admin` (ReadMeta), and
+ * everybody else's `platform-public`.
  *
  * The route's body is `statusOf`, which the agent read `platform_status` (console/agent-reads.ts) calls
  * too. Asked about one canonical tool, it adds `bugs`: that tool's open real reports as anybody reads them
@@ -294,7 +295,7 @@ export async function statusOf(
     meta: {
       asOf, timezone: ZZ_TZ,
       period: { from: grid.weeks[0] ? iso(grid.weeks[0].fromMs) : asOf, to: asOf },
-      scope: "platform-public", population: POPULATION,
+      scope: superadmin ? "platform-admin" : "platform-public", population: POPULATION,
       coverageFrom: grid.coverageMs === null ? null : iso(grid.coverageMs),
     },
     needs: needsOf({

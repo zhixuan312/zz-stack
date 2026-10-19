@@ -27,6 +27,8 @@
  *     most 100 in a stable order, with the whole filtered population counted by kind and standing; a bad page, an
  *     unknown kind or a repeated filter is refused;
  *   - a member opens a shared-shelf lesson by its node route, marked shared, and still cannot open another team's;
+ *     every not-found answer of a node, another team's or one no shelf holds, is one fixed message naming none of the
+ *     team or address asked for;
  *   - each part fails alone, reading records no event, a person in no team is refused, and the key sets match the
  *     console's fake answers.
  *
@@ -58,6 +60,8 @@ const DONE = "console-work-knowledge: Knowledge reads the active team's shelf, i
   "another team's question in no answer: ok";
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work-knowledge.ts");
+/** COUPLED: NO_NODE in services/gateway/src/console/knowledge.ts, which every not-found of the node route answers. */
+const NOT_FOUND = "No lesson on the team's shelf or the shared one is at that address.";
 /** The shared shelf. COUPLED: PLATFORM_TEAM in services/gateway/src/identity.ts. */
 const SHARED = "zz-platform";
 const MAINTENANCE = "zz-migrate";
@@ -426,6 +430,22 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const theirs = await open(OTHER_TEAM, await address(OTHER_TEAM, "Their private lesson"));
   if (theirs.status !== 404 || JSON.stringify(theirs.body).includes("Their private lesson")) c.fail(step, `another team's lesson: ${theirs.status} ${show(theirs.body)}`);
   c.pass(step);
+
+  step = "every not-found answer of a node is one fixed message naming nothing that was asked for";
+  const theirAddress = await address(OTHER_TEAM, "Their private lesson");
+  const nowhere = "nodes/9047-no-such-lesson.md";
+  const missing: [string, string, string[]][] = [
+    [OTHER_TEAM, theirAddress, [OTHER_TEAM, theirAddress]], [c.team, theirAddress, [c.team, theirAddress]],
+    [c.team, nowhere, [c.team, nowhere]], [SHARED, nowhere, [SHARED, nowhere]],
+  ];
+  for (const [team, path, names] of missing) {
+    const a = await open(team, path);
+    const named = names.filter((n) => JSON.stringify(a.body).includes(n));
+    if (a.status !== 404 || JSON.stringify(a.body) !== JSON.stringify({ error: NOT_FOUND }) || named.length) {
+      c.fail(step, `${team}/${path} answered ${a.status} ${show(a.body)}${named.length ? `, naming ${named.join(", ")}` : ""}`);
+    }
+  }
+  c.pass(`${step}: another team's lesson under its own team and the caller's, and an address no shelf holds`);
 
   step = "the knowledge log names a lesson's address while it is on the shelf, and that address opens it";
   const log = await answer(g.log, request(ME, {}, {}));

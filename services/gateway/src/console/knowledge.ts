@@ -26,6 +26,11 @@ import { PLATFORM_TEAM } from "../identity.js";
 import { KINDS } from "./platform-knowledge.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
+/** The node route's not-found, the same whatever the request named: one that repeated the team or the
+ *  address would hand back the name of a lesson the caller may not read.
+ *  COUPLED: checks/console-work-knowledge.ts holds the sentence. */
+const NO_NODE = "No lesson on the team's shelf or the shared one is at that address.";
+
 /** One row of the list and detail queries below, as they are aliased there. */
 interface NodeRow {
   shelf: string; address: string; ordinal: string; type: string; status: string;
@@ -241,7 +246,7 @@ export function mountKnowledge(app: Express): void {
     // get for a node that never existed. The shared shelf is not someone else's: its lessons are
     // every team's, read-only.
     if (req.params.team !== activeTeam && req.params.team !== PLATFORM_TEAM) {
-      res.status(404).json({ error: `no node ${address}` });
+      res.status(404).json({ error: NO_NODE });
       return;
     }
     /* The node, and the two facts the page beside it draws from the shelf rather than from this
@@ -333,7 +338,7 @@ export function mountKnowledge(app: Express): void {
         where t.slug = $1`, [activeTeam]),
     ]);
     const rows = node.rows;
-    if (!rows.length) { res.status(404).json({ error: `no node ${address}` }); return; }
+    if (!rows.length) { res.status(404).json({ error: NO_NODE }); return; }
     const r = rows[0] as NodeRow;
     res.json({
       team: r.shelf, path: r.address, type: r.type, status: r.status, title: r.title,

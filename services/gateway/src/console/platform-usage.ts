@@ -34,7 +34,8 @@
  * a direction better.
  *
  * Public by route: mounted through `platformPublic`, it reads no team and no scope from the request,
- * and the superadmin flag decides the split by team and nothing else.
+ * and the superadmin flag decides the split by team and nothing else; the answer that carries the split
+ * is labelled `platform-admin` (ReadMeta), a member's `platform-public`.
  *
  * COUPLED: the console's `Usage` in src/lib/fleet-shapes.ts, and its fake answer in
  * ../zz-stack-dashboard/scripts/fake-gateway/platform-usage.ts, which `checks/console-platform-usage.ts` compares this
@@ -241,7 +242,7 @@ export function mountPlatformUsage(app: Express): void {
       meta: {
         asOf, timezone: ZZ_TZ,
         period: { from: grid.weeks[0] ? iso(grid.weeks[0].fromMs) : asOf, to: asOf },
-        scope: "platform-public", population: POPULATION,
+        scope: superadmin ? "platform-admin" : "platform-public", population: POPULATION,
         coverageFrom: grid.coverageMs === null ? null : iso(grid.coverageMs),
       },
       tiles, callsByWeek,

@@ -8,6 +8,11 @@
  * because the only thing read from the body is a key that must already be in the list. The
  * workspace is the gateway's answer from the feature, never the caller's.
  *
+ * A view is recorded only for a navigation the caller was authorised to make (FR-34): a destination
+ * only the superadmin may open, Teams, People, Audit or a bug's own page, viewed by anybody else is
+ * answered 403 `not permitted`, the fixed refusal those pages' own reads give, and writes nothing.
+ * Every other destination is open to everybody the console lets in.
+ *
  * A POST, where console.ts is GET only. The console session cookie is SameSite=Lax, so a cross-site
  * form posting here arrives with no session and is answered 401, the same protection every route in
  * console-write.ts relies on; the most a forged view could do is add one row nobody counts.
@@ -26,6 +31,7 @@
 import type { Express } from "express";
 
 import { logEvent } from "../events.js";
+import { isSuper } from "../identity.js";
 import { teamless } from "./shared.js";
 
 type Workspace = "main" | "platform";
@@ -36,7 +42,8 @@ type Workspace = "main" | "platform";
  *  answers, so `settings` is refused as any other unknown feature.
  *
  *  COUPLED: the console's `src/data/features.ts` is its counterpart, and its fake gateway
- *  (`../zz-stack-dashboard/scripts/fake-gateway/server.ts`, `PAGE_FEATURES`) copies this list. */
+ *  (`../zz-stack-dashboard/scripts/fake-gateway/server.ts`, `PAGE_FEATURES`) copies this list and
+ *  `SUPERADMIN_ONLY` below. */
 const FEATURES: ReadonlyMap<string, Workspace> = new Map<string, Workspace>([
   ["home", "main"], ["record", "main"], ["initiatives", "main"], ["approvals", "main"],
   ["knowledge", "main"], ["activity", "main"], ["runs", "main"], ["plugins", "main"],
@@ -45,6 +52,9 @@ const FEATURES: ReadonlyMap<string, Workspace> = new Map<string, Workspace>([
   ["bug", "platform"], ["evaluation", "platform"], ["teams", "platform"], ["people", "platform"],
   ["usage", "platform"], ["audit", "platform"], ["knowledge-health", "platform"],
 ]);
+
+/** The destinations only the superadmin may open, the console's `fleet:read` pages. */
+const SUPERADMIN_ONLY: ReadonlySet<string> = new Set(["teams", "people", "audit", "bug"]);
 
 export function mountPageView(app: Express): void {
   app.post("/api/console/page-view", teamless("page view", async (req, res) => {
@@ -66,6 +76,10 @@ export function mountPageView(app: Express): void {
       return;
     }
     const id = req.zzIdentity!;
+    if (SUPERADMIN_ONLY.has(feature) && !isSuper(id)) {
+      res.status(403).json({ error: "not permitted" });
+      return;
+    }
     // No `via: "web"` and no request scope: the detail is the workspace and nothing else.
     logEvent({ actor: id.email, teamSlug: id.activeTeam, kind: "console.page_view", subject: feature,
                detail: { workspace } });

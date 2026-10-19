@@ -19,6 +19,10 @@
  *     its refusals with their four owners, and the tool refused most with its count and of how many;
  *   - its weeks run from the week of the team's first real-work call to the running one, each answering
  *     the four owners summing to the refused total; the maintenance is counted apart;
+ *   - a read that fails is unavailable, never zero or none: with the weekly refusals read failing, the
+ *     calls, the refused, its owners, the weeks and the maintenance are each unavailable and the tool
+ *     refused most stands; with last week's refusals by tool failing, the tool refused most is
+ *     unavailable and everything else stands. The faults are injected into the gateway's own pool;
  *   - its groups are refusalGroups' for the team: owner, tool, the newest text (null with none), count and
  *     last seen, the second team's identical refusal in none of them;
  *   - the log is the team's real-work events newest first, no page view among them, each with its id, kind,
@@ -60,13 +64,16 @@ import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } f
 const NAME = "console-work-activity";
 const DONE = "console-work-activity: Activity reads the active team's real work, its refusals under four owners by week " +
   "summing to the total, its messages grouped, and its log filtered before the 500 ceiling and paged, for a member and a " +
-  "superadmin acting for it, and no answer at any scope carries another team's refusal message: ok";
+  "superadmin acting for it; a failed weekly or by-tool read leaves each figure it feeds unavailable, never zero or none; " +
+  "and no answer at any scope carries another team's refusal message: ok";
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work-activity.ts");
 
 const WORK = "zz-plugin";
 const MAINTENANCE = "zz-migrate";
 const SUPERADMIN = "root@example.test";
+/** A part the gateway could not read. */
+const UNREAD = { state: "unavailable", reason: "query_failed" };
 /** The second team's refusal: no answer to the first team may hold it. */
 const SENTINEL = "ERROR: the beacon ledger is locked by the chargeback review";
 const STATUS = "core:initiative_status";
@@ -127,6 +134,8 @@ interface Gateway {
   url: string; mine: string; theirs: string;
   log: Route; summary: Route; pageView: Route;
   refusalGroups: (team: string, window: { from: string; to: string }, asOf: string) => Promise<Obj>;
+  /** Runs `f` with every statement `when` picks failing in the gateway's own pool, then restores it. */
+  failing<T>(when: (sql: string, params: unknown[]) => boolean, f: () => Promise<T>): Promise<T>;
   stop(): Promise<void>;
 }
 
@@ -169,11 +178,18 @@ async function listen(c: Core): Promise<Gateway> {
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const route = (key: string): Route => routes.get(key) ?? c.fail("mount", `no route ${key}`);
+  const pool = db.platformDb();
+  const real = pool.query.bind(pool) as (text: unknown, params?: unknown[]) => Promise<unknown>;
   return {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     mine: await patOf(c, c.email), theirs: await patOf(c, OTHER_EMAIL),
     log: route("GET /api/console/activity"), summary: route("GET /api/console/activity/summary"),
     pageView: route("POST /api/console/page-view"), refusalGroups,
+    failing: async (when, f) => {
+      (pool as unknown as { query: unknown }).query = (text: unknown, params?: unknown[]) =>
+        typeof text === "string" && when(text, params ?? []) ? Promise.reject(new Error("injected by the check")) : real(text, params);
+      try { return await f(); } finally { (pool as unknown as { query: unknown }).query = real; }
+    },
     stop: async () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -314,13 +330,34 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     if (!isDeepStrictEqual(found, want)) c.fail(s, `found ${show(found)}, expected ${show(want)}`);
   };
   const masked = (o: Obj): string => JSON.stringify(o).replaceAll(String((o.meta as Obj).asOf), "<asOf>");
+  const owners = (guardrail: number, ours: number, theirs: number, other: number) => ({ guardrail, ours, theirs, other });
+
+  step = "a failed read is unavailable, never zero or none";
+  // What the faults leave the summary saying: the tiles' figures, the owners, the tool refused most, and the state of
+  // the weeks, the groups and the maintenance.
+  const said = (a: Obj) => {
+    const t = a.tiles as { calls: { figure: unknown }; refused: { figure: unknown; numerator: unknown; owners: unknown }; mostRefused: unknown };
+    const state = (k: string) => (a[k] as { state: string }).state;
+    return [t.calls.figure, t.refused.figure, t.refused.numerator, t.refused.owners, t.mostRefused, state("weeks"), state("groups"), a.maintenance];
+  };
+  const unavailable = { value: null, why: "unavailable" };
+  const most = { state: "ok", data: { tool: STATUS, count: 3, of: 7 } };
+  // The weekly refusals read is the one statement over unnest's periods; the tiles and the maintenance are read with it.
+  const weekly = await g.failing((sql) => sql.includes("with ordinality as p(lo, hi, n)"), () => ask(step, g.summary, ME));
+  same(`${step}: the weekly refusals read failing`, said(weekly), [unavailable, unavailable, null, UNREAD, most, "unavailable", "ok", UNREAD]);
+  // Last week's refusals by tool is the grouping statement over the last whole week alone; the groups read spans the weeks.
+  const byTool = await g.failing((sql, params) => sql.includes("as normalized") && params[1] === iso(w0 - WEEK), () => ask(step, g.summary, ME));
+  same(`${step}: last week's refusals by tool failing`, said(byTool),
+    [{ value: 9, why: null }, { value: 7, why: null }, 7, { state: "ok", data: owners(3, 1, 1, 2) }, UNREAD, "ok", "ok", { state: "ok", data: { calls: 2, refused: 1 } }]);
+  c.pass(`${step}: the weekly read failing leaves the calls, the refused, its owners, the weeks and the maintenance unavailable ` +
+         `and ${STATUS} still refused most; last week's by-tool read failing leaves the tool refused most unavailable, not none, ` +
+         "beside 7 refused");
 
   step = "the summary: last whole week's tiles, the weeks by owner, the groups and the maintenance";
   const summary = await ask(step, g.summary, ME);
   const asOf = String((summary.meta as Obj).asOf);
   const window = (b: number) => ({ from: iso(w0 - b * WEEK), to: iso(w0 - (b - 1) * WEEK), observedFrom: iso(w0 - b * WEEK),
                                    observedThrough: b === 0 ? asOf : iso(w0 - (b - 1) * WEEK), complete: b > 0 });
-  const owners = (guardrail: number, ours: number, theirs: number, other: number) => ({ guardrail, ours, theirs, other });
   const first = (await c.sql.query<{ ms: number }>(
     `select (extract(epoch from min(e.ts)) * 1000)::float8 as ms from zz.event e join zz.team t on t.id = e.team_id
       where t.slug = $1 and e.kind = 'tool_call'`, [c.team])).rows[0].ms;
@@ -328,15 +365,15 @@ async function cases(c: Core, g: Gateway): Promise<void> {
                              population: `${c.team}'s real-work events, page views and the platform's maintenance left out`, coverageFrom: iso(first) });
   same(step, summary.tiles, {
     calls: { window: window(1), figure: { value: 9, why: null }, numerator: 9, denominator: null },
-    refused: { window: window(1), figure: { value: 7, why: null }, numerator: 7, denominator: 9, owners: owners(3, 1, 1, 2) },
-    mostRefused: { tool: STATUS, count: 3, of: 7 },
+    refused: { window: window(1), figure: { value: 7, why: null }, numerator: 7, denominator: 9, owners: { state: "ok", data: owners(3, 1, 1, 2) } },
+    mostRefused: most,
   });
   same(step, summary.weeks, { state: "ok", data: [
     { window: window(2), complete: true, calls: 2, refused: 1, owners: owners(1, 0, 0, 0) },
     { window: window(1), complete: true, calls: 9, refused: 7, owners: owners(3, 1, 1, 2) },
     { window: window(0), complete: false, calls: 2, refused: 1, owners: owners(1, 0, 0, 0) },
   ] });
-  same(step, summary.maintenance, { calls: 2, refused: 1 });
+  same(step, summary.maintenance, { state: "ok", data: { calls: 2, refused: 1 } });
   c.pass(`${step}: 9 calls last week, 7 refused (guardrail 3, ours 1, theirs 1, other 2 with the row of no owner), ` +
          `${STATUS} refused 3 of 7; the weeks from the first call's, each owners summing to its total; maintenance 2 and 1 apart`);
 

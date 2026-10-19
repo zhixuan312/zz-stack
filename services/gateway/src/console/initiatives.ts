@@ -168,8 +168,18 @@ export function mountInitiatives(app: Express): void {
     const decisions = claimsOf(claimDocs.rows);
     const factMap = Object.fromEntries(facts.rows.map((f) => [f.fact, f.value]));
     const shape = flowShape(lifecycle.flow);
+    // An initiative with no flow has no steps, no gates and no position to answer, and the console reads it as freeform
+    // from `flow`: its finished close names the document it lands on. stageOf's ops-flow fallback is for a flow the
+    // catalog cannot resolve, which keeps it; answered for no flow, it drew a stepper over work no flow governs.
+    // No flow asks for anything, so a finished close is complete and only an abandoned one is not, as the fake answers.
+    const flow = lifecycle.flow || null;
+    const { closed, outcome } = lifecycle;
+    const position = flow === null
+      ? { at: 0, of: 0, stage: "", steps: [], gates: [], closed, outcome, correction: null,
+          accepted: outcome === "accepted", complete: outcome != null && outcome !== "abandoned" }
+      : stageOf(docs.rows, flow, { closed, outcome }, factMap);
     res.json({
-      team, slug,
+      team, slug, flow,
       documents: docs.rows.map((d) => {
         // Every row here is a live document: a version is a revision row now, so no row is a
         // frozen copy of another and none of them answers to a neighbour's rules.
@@ -194,7 +204,7 @@ export function mountInitiatives(app: Express): void {
         withQualifier: decisions.filter((d) => d.qualifier).length,
         withChecker: decisions.filter((d) => d.checker).length,
       },
-      ...stageOf(docs.rows, lifecycle.flow, { closed: lifecycle.closed, outcome: lifecycle.outcome }, factMap),
+      ...position,
     });
   }));
 

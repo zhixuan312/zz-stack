@@ -28,6 +28,9 @@
  *     none answered leaves it unavailable;
  *   - an initiative with no documents opens to its page, with no documents and still open, so the close it may take
  *     (an abandon, console-close.ts) is drawn; its answer has the key sets of the console's fake's empty initiative;
+ *   - an initiative with no flow answers its flow as null and no steps, gates or position, so the page draws no stepper
+ *     and a finished close names the document it lands on, with the key sets of the fake's no-flow initiative; a flow
+ *     the catalog cannot resolve keeps the ops-flow fallback's steps;
  *   - every not-found answer of an initiative, a document or a snapshot, for another team's, under its own team or the
  *     caller's, and for one no team holds, is one fixed message naming none of the team, slug or path asked for;
  *   - the key sets match the console's fake answer;
@@ -429,7 +432,7 @@ async function run(c: Core): Promise<void> {
     if (fakeStatus !== 200 || diffs.length) c.fail(step, diffs.join("; ") || `the fake answered ${fakeStatus}`);
     c.pass(step);
 
-    await opened(c, built, [SUPER, MEMBER], slug("o-empty"), theirSlug);
+    await opened(c, built, [SUPER, MEMBER], slug("o-empty"), slug("o-fresh"), theirSlug);
 
     await figures(c, built, w0, asOf, slug);
 
@@ -450,9 +453,9 @@ async function run(c: Core): Promise<void> {
   }
 }
 
-/** An initiative with no documents opened to its page, and every not-found answer of an initiative, a document and a
- *  snapshot one fixed message, for each of `people`. */
-async function opened(c: Core, built: Built, people: Who[], empty: string, theirSlug: string): Promise<void> {
+/** An initiative with no documents opened to its page, one with no flow answered with no steps, and every not-found
+ *  answer of an initiative, a document and a snapshot one fixed message, for each of `people`. */
+async function opened(c: Core, built: Built, people: Who[], empty: string, freeform: string, theirSlug: string): Promise<void> {
   const open = (who: Who, team: string, name: string) => answer(built.detail, request(who, {}, { team, slug: name }));
   const doc = (who: Who, team: string, name: string, path: string, query: Record<string, string> = {}) =>
     answer(built.document, request(who, query, { team, initiative: name, 0: path }));
@@ -466,7 +469,8 @@ async function opened(c: Core, built: Built, people: Who[], empty: string, their
     }
   }
   const page = await open(people[0], c.team, empty);
-  let work: { INITIATIVES: { team: string; slug: string; documents: number; closed: boolean }[]; initiativeDetail: (team: string, slug: string) => Obj | null };
+  let work: { INITIATIVES: { team: string; slug: string; flow: string | null; documents: number; closed: boolean }[];
+              initiativeDetail: (team: string, slug: string) => Obj | null };
   try {
     work = (await import(pathToFileURL(FAKE_WORK).href)) as typeof work;
   } catch (err) {
@@ -474,13 +478,42 @@ async function opened(c: Core, built: Built, people: Who[], empty: string, their
   }
   const fakeOne = work.INITIATIVES.find((i) => i.documents === 0 && !i.closed) ?? c.fail(step, "the fake holds no open initiative with no documents");
   const fakeEmpty = work.initiativeDetail(fakeOne.team, fakeOne.slug) ?? c.fail(step, `the fake's ${fakeOne.slug} has no page`);
-  // The answer's own keys: below them a freeform initiative's fallback gates carry fewer than a flow's, which both sides
-  // answer alike, and the fake's empty initiative is on a flow.
+  // The answer's own keys: below them an initiative on a flow carries steps and gates one with no flow does not, and the
+  // fake's empty initiative is on a flow.
   const keys = (o: Obj) => Object.keys(o).sort().join(", ");
   if (!same(fakeEmpty.documents, []) || keys(page.body) !== keys(fakeEmpty)) {
     c.fail(step, `the answer has keys {${keys(page.body)}} where the fake's ${fakeOne.slug} has {${keys(fakeEmpty)}}, documents ${show(fakeEmpty.documents)}`);
   }
   c.pass(`${step}: ${empty} answers 200 to both people, and has the key sets of the fake's ${fakeOne.slug}`);
+
+  step = "an initiative with no flow answers its flow as null and no steps a stepper draws, as the fake's does";
+  for (const who of people) {
+    const page = await open(who, c.team, freeform);
+    const b = page.body;
+    if (page.status !== 200 || b.flow !== null || !same(b.steps, []) || !same(b.gates, []) || b.at !== 0 || b.of !== 0
+        || b.stage !== "" || !(b.documents as Obj[]).some((d) => d.path === "notes.md")) {
+      c.fail(step, `${who.role}: ${freeform} answered ${page.status}: ${show(b)}`);
+    }
+  }
+  const fakeFree = work.INITIATIVES.find((i) => i.flow === null && i.documents > 0 && !i.closed) ?? c.fail(step, "the fake holds no open initiative with no flow");
+  const fakeFreeDetail = work.initiativeDetail(fakeFree.team, fakeFree.slug) ?? c.fail(step, `the fake's ${fakeFree.slug} has no page`);
+  const free = (await open(people[0], c.team, freeform)).body;
+  if (fakeFreeDetail.flow !== null || !same(fakeFreeDetail.steps, []) || keys(free) !== keys(fakeFreeDetail)) {
+    c.fail(step, `the answer has keys {${keys(free)}} where the fake's ${fakeFree.slug} has {${keys(fakeFreeDetail)}}, its flow ${show(fakeFreeDetail.flow)}`);
+  }
+  // A flow the catalog cannot resolve is still a flow: it keeps the ops-flow fallback's steps. Set on the throwaway's
+  // row for this read alone, and put back, so the figures below read the seed as it was made.
+  await c.sql.query("update zz.initiative set flow = 'a-flow-the-catalog-retired' where slug = $1", [freeform]);
+  try {
+    const kept = (await open(people[0], c.team, freeform)).body;
+    if (kept.flow !== "a-flow-the-catalog-retired" || (kept.steps as Obj[]).length !== 9 || kept.of !== 7) {
+      c.fail(step, `a flow the catalog cannot resolve answered its flow ${show(kept.flow)}, ${(kept.steps as Obj[]).length} steps of ${String(kept.of)}`);
+    }
+  } finally {
+    await c.sql.query("update zz.initiative set flow = null where slug = $1", [freeform]);
+  }
+  c.pass(`${step}: ${freeform} answers no flow and no steps to both people, with the key sets of the fake's ${fakeFree.slug}; ` +
+    "a flow the catalog cannot resolve keeps the fallback's nine");
 
   step = "every not-found answer is one fixed message naming nothing that was asked for";
   const asked: [string, () => Promise<Answer>, string, string[]][] = [];

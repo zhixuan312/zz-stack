@@ -28,8 +28,10 @@ import { db, teamFor } from "../platform-db.js";
 
 /** COUPLED: catalog/zz/zz-plugin-eval/flow.json's stage that produces protocol.md. */
 const DEFINE_STAGE = "zz-plugin-define-qualify";
-/** The acts DEFINE/QUALIFY owes after protocol.md is approved, in the order they run. */
-const DEFINE_OWES = ["protocol_affirm", "evaluator_qualify"] as const;
+/** The keys DEFINE/QUALIFY's record owes after protocol.md is approved, in the order they are set: protocol_affirm
+ *  sets the bound document's path, and evaluator_qualify the measures it qualified once the last owed one has a state.
+ *  Named for what they hold, never for the tool that sets them, so no record key spells a tool. */
+const DEFINE_OWES = ["affirmed_path", "qualified_measures"] as const;
 
 async function located(initiative: string):
   Promise<{ p: pg.Pool; team: string; initiativeId: string } | { record_refused: string }> {
@@ -75,9 +77,9 @@ export async function recordAffirmed(
   contentDigest: string,
 ): Promise<{ record_refused?: string }> {
   return recordStage(initiative, DEFINE_STAGE, {
-    owes: DEFINE_OWES.join(","), protocol_version_id: protocolVersionId, protocol_affirm: path,
+    owes: DEFINE_OWES.join(","), protocol_version_id: protocolVersionId, affirmed_path: path,
     affirmed_digest: contentDigest, qualify_owed: qualifyOwed.join(","),
-    ...(qualifyOwed.length ? {} : { evaluator_qualify: "none owed" }),
+    ...(qualifyOwed.length ? {} : { qualified_measures: "none owed" }),
   }, true);
 }
 
@@ -108,5 +110,5 @@ export function qualifiedUpdate(
   const merged: Record<string, string> = { ...held, [`qualified.${measureKey}`]: state };
   const owed = (held.qualify_owed ?? "").split(",").filter(Boolean);
   const done = owed.length > 0 && owed.every((k) => merged[`qualified.${k}`]);
-  return { [`qualified.${measureKey}`]: state, ...(done ? { evaluator_qualify: owed.join(",") } : {}) };
+  return { [`qualified.${measureKey}`]: state, ...(done ? { qualified_measures: owed.join(",") } : {}) };
 }

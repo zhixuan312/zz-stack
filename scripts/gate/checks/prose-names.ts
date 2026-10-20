@@ -59,6 +59,14 @@ check("no shipped prose names a tool no door registers", () => {
     return `${swallowed.join(", ")} not read as a claim on the platform's surface — the derived ` +
            "exclusions have swallowed a tool name nobody serves, so a missing tool would pass";
   }
+  // A served tool zz-core also spells as a field or a next move is exempt from the sweep while it
+  // is served, and stays exempt once it is removed: the key would read as any other field. So none
+  // may be both (scripts/gate/facts.ts, its limit).
+  const spelled = [...s.served].filter((name) => s.fields.has(name) || s.actions.has(name));
+  if (spelled.length) {
+    return `${spelled.join(", ")} ${spelled.length === 1 ? "is a tool" : "are tools"} zz-core also spells as a field or a ` +
+           "next move — name the key for what it holds, so a skill still naming the tool after it is removed is caught";
+  }
   const md = sourceFiles(PROSE, [".md"]);
   const modules = sourceFiles([GATE], [".ts"]);
   // A sweep that reached nothing says so, rather than passing as coverage.

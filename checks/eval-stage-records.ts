@@ -149,11 +149,11 @@ n = await next();
 is(n.action === "run_stage" && n.stage === "evaluate", `protocol.md approved, nothing owed: next_move is ${JSON.stringify(n)}, not run_stage evaluate`);
 
 // protocol_read recorded what DEFINE owes: approved is not bound, bound is not qualified.
-await record("define", { owes: "protocol_affirm,evaluator_qualify" });
+await record("define", { owes: "affirmed_path,qualified_measures" });
 n = await next();
 is(n.action === "run_stage" && n.stage === "define" && /protocol_affirm\(/.test(n.why),
    `protocol.md approved, not affirmed: next_move is ${JSON.stringify(n)}, not run_stage define naming protocol_affirm`);
-await record("define", { protocol_version_id: "pv-1", protocol_affirm: `${I}/protocol.md`, qualify_owed: "m.a,m.b" });
+await record("define", { protocol_version_id: "pv-1", affirmed_path: `${I}/protocol.md`, qualify_owed: "m.a,m.b" });
 n = await next();
 is(n.action === "run_stage" && n.stage === "define" && /evaluator_qualify\("pv-1"/.test(n.why) && /m\.a, m\.b/.test(n.why),
    `affirmed, nothing qualified: next_move is ${JSON.stringify(n)}, not run_stage define naming evaluator_qualify for m.a, m.b`);

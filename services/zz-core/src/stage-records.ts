@@ -12,8 +12,9 @@
 /** What a stage's record says it still owes, first first, each as the sentence `next_move.why`
  *  carries. Empty for a record that owes nothing or has discharged it.
  *
- *  COUPLED: the record shape eval/stage-record.ts writes — `owes`, one key per act once it
- *  lands, `qualify_owed` and `qualified.<measure>`. Read here rather than imported: the
+ *  COUPLED: the record shape eval/stage-record.ts writes — `owes`, the keys still to be set, each
+ *  set once its act lands (`affirmed_path`, `qualified_measures`), `qualify_owed` and
+ *  `qualified.<measure>`. Read here rather than imported: the
  *  evaluation modules are reached from the evaluation side only (checks/eval-tools-moved.ts). */
 export function owedActs(
   record: Readonly<Record<string, string>> | undefined, initiative: string,
@@ -35,13 +36,13 @@ export function owedActs(
   // would affirm the old protocol under the new document.
   const version = record.protocol_version_id ?? "<the protocol_version_id protocol_record returned, the version protocol.md quotes>";
   const why: Record<string, string> = {
-    protocol_affirm: `protocol.md is approved but not bound to the protocol — call protocol_affirm("${version}", ` +
+    affirmed_path: `protocol.md is approved but not bound to the protocol — call protocol_affirm("${version}", ` +
       `initiative: "${initiative}"). Nothing qualifies or scores against an unaffirmed version`,
-    evaluator_qualify: `the affirmed protocol's model-backed evaluators are not all qualified — call ` +
+    qualified_measures: `the affirmed protocol's model-backed evaluators are not all qualified — call ` +
       `evaluator_qualify("${version}", measure_key, initiative: "${initiative}") for ` +
       `${owed.length ? owed.join(", ") : "each model-backed measure"} before EVALUATE scores`,
   };
-  return record.owes.split(",").filter((act) => act && !record[act]).map((act) => why[act] ?? `call ${act}`);
+  return record.owes.split(",").filter((key) => key && !record[key]).map((key) => why[key] ?? `the record owes ${key}`);
 }
 
 /** The platform's own closing step, told apart from the flow's own documents.

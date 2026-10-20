@@ -74,13 +74,39 @@ export const ANSWER_NAMES_INITIATIVE = /^initiative_(open|status)$/;
 /** One MCP call as it arrived, narrowed to what this file reads. */
 interface Call { readonly params?: { readonly name?: unknown; readonly arguments?: unknown } }
 
+/** The initiative one store path is inside, or null for a path that is inside none.
+ *
+ *  COUPLED: mirrors how zz-core resolves a path — `safePath` strips leading slashes and refuses
+ *  a dot segment, and `splitStorePath` takes the first segment as the initiative. A bare name
+ *  is inside nothing, and `_knowledge` is the journal shelf, not an initiative. */
+function initiativeOfPath(path: unknown): string | null {
+  if (typeof path !== "string" || path.includes("~/")) return null;
+  const rel = path.replace(/^\/+/, "");
+  if (/(^|\/)\.[^/]/.test(rel)) return null;
+  const [first, ...rest] = rel.split("/");
+  return first && first !== "_knowledge" && rest.join("/") ? first : null;
+}
+
+/** The initiative a call's `path` argument names: an array names one only when every entry
+ *  names the same one. A `scope: "platform"` read is the shelf every team shares, so it names
+ *  none whatever its path says. */
+function initiativeOfPaths(args: Record<string, unknown>): string | null {
+  if (args.scope === "platform") return null;
+  const named = (Array.isArray(args.path) ? args.path : [args.path]).map(initiativeOfPath);
+  return named.length && named.every((n) => n && n === named[0]) ? named[0] : null;
+}
+
 /**
  * Which initiative this exchange says is being worked on, or null when it says nothing.
  *
- * Two sources, and the answer outranks the argument. Any call carrying an `initiative`
- * argument names one, except the two in ANSWER_NAMES_INITIATIVE, where the answer is the
- * authority on whether it exists at all. Reading the argument of a failed `initiative_status`
- * takes a slug nobody created and keeps it for the rest of the conversation.
+ * Two sources, and the answer outranks the argument. Any call names one by its `initiative`
+ * argument or, failing that, by a `path` inside an initiative (`initiativeOfPaths`) — except
+ * the two in ANSWER_NAMES_INITIATIVE, where the answer is the authority on whether it exists
+ * at all. Reading the argument of a failed `initiative_status` takes a slug nobody created and
+ * keeps it for the rest of the conversation.
+ *
+ * The path matters because a document tool carries no `initiative` argument: without it, a
+ * read of `<initiative>/spec.md` was filed under whatever initiative the caller named before.
  *
  * `served` is the raw streamed answer, or null when the caller did not capture it, in which
  * case only the argument route can answer.
@@ -88,8 +114,10 @@ interface Call { readonly params?: { readonly name?: unknown; readonly arguments
 export function initiativeFrom(wanted: readonly Call[], served: string | null): string | null {
   for (const c of wanted) {
     if (ANSWER_NAMES_INITIATIVE.test(String(c.params?.name ?? ""))) continue;
-    const named = (c.params?.arguments as Record<string, unknown> | undefined)?.initiative;
-    if (typeof named === "string" && named) return named;
+    const args = (c.params?.arguments ?? {}) as Record<string, unknown>;
+    const named = typeof args.initiative === "string" && args.initiative
+      ? args.initiative : initiativeOfPaths(args);
+    if (named) return named;
   }
   if (served === null) return null;
   for (const c of wanted) {

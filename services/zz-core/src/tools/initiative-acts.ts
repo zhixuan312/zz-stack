@@ -35,14 +35,28 @@ import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
 import { specApprovalRefusal } from "../spec-gate.js";
 import { viewerOf } from "../review-context.js";
-import { loadDocument, NO_DB, principalId } from "../versions.js";
+import { dayOf, loadDocument, NO_DB, principalId } from "../versions.js";
 import { documentState, saveDocument, STATE_CHANGED } from "../document-save.js";
-import { isoToday, normalizeSections } from "../write-guards.js";
+import { normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
 import { registerInitiativeOpenTool } from "./initiative-open.js";
 import { assessmentsFor } from "../review-rounds.js";
 import { nextMoveLine } from "./initiative-status.js";
+
+/** An approval's two stamps, from ONE reading of the clock: `day` is what the envelope states,
+ *  in the reporting zone (`dayOf`, ZZ_TZ), and `at` is the instant the seal stores in
+ *  `zz.doc_revision.approved_at` — which `sources_after_approval` compares a source's filing with.
+ *
+ *  DELIBERATE: the system clock, not the database's `now()`. The seal is a value this act hands
+ *  to `saveDocument` beside the signer, the same `{ by, at }` a close carries forward (`sealOf`),
+ *  so no SQL learns a second kind of seal; and the day and the instant come from one reading, so
+ *  the day a reader is shown (`dayOf(at)`) is always the day the envelope stated. zz-core and its
+ *  database share one host's clock. */
+export function approvalStamp(now: Date = new Date()): { day: string; at: string } {
+  const at = now.toISOString();
+  return { day: dayOf(at), at };
+}
 
 export function registerInitiativeActTools(server: McpServer): void {
   // Opening is registered from here, in its own file because a tool whose refusals are the point
@@ -184,7 +198,8 @@ export function registerInitiativeActTools(server: McpServer): void {
       const already = loaded.doc.status === "approved";
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);
-      doc = putEnvelopeField(doc, "approved_at", isoToday());
+      const stamp = approvalStamp();
+      doc = putEnvelopeField(doc, "approved_at", stamp.day);
       // DELIBERATE: a heading the flow would rename is refused, not renamed. Every write renames a
       // near miss as it lands, so one here was stored before the flow's declared sections changed —
       // and renaming it now changes the content identity, so the seal would land on a new snapshot
@@ -210,7 +225,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       const sealed = await saveDocument({
         team, relPath, initiative: parts[0], text: doc, by: who.email,
         flow: chain.name ?? undefined, type: chain.roles[parts[1]],
-        mode: "rewrite", act: "document_approve", seal: { by: signer, at: isoToday() }, expect: state,
+        mode: "rewrite", act: "document_approve", seal: { by: signer, at: stamp.at }, expect: state,
         record: approvalRecord({ caller: who.email, signer, context: basis.context, target: basis.target,
                                  basis: decision_basis }),
       });

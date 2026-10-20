@@ -32,6 +32,8 @@
     "check:identity": "node services/gateway/dist/identity-check.js",
     "check:scope": "node services/gateway/dist/scope-check.js",
     "check:redaction": "node services/gateway/dist/redact-check.js",
+    "check:attribution": "node services/gateway/dist/call-attribution-check.js",
+    "check:stage-sources": "node services/gateway/dist/stage-sources-check.js",
     "plugin-surface": "node packages/tools/dist/ops/plugin-surface.js",
     "register-skills": "node packages/tools/dist/ops/register-skills.js",
     "register-plugins": "node packages/tools/dist/ops/register-plugins.js"
@@ -43,7 +45,7 @@
     "typescript": "^5.6.0",
     "@types/node": "^22.7.0"
   },
-  "version": "0.96.0",
+  "version": "0.97.0",
   "license": "MIT",
   "private": true
 }

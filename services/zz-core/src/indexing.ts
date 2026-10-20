@@ -244,11 +244,16 @@ export async function docRows(p: pg.Pool, team: string | null, initiative: strin
  *  the current revision of a document that is usually approved — a rewrite of a sealed revision
  *  without its seal is refused by `zz.doc_revision`'s own check, and rightly, because a
  *  signature has to cover the bytes it signed. A document carrying no approval returns null, and
- *  `saveDocument` then simply writes none. */
-export function sealOf(stamped: string): { by: string; at: string } | null {
-  const env = parseEnvelope(stamped);
-  const at = env.approved_at && /^\d{4}-\d{2}-\d{2}/.test(env.approved_at) ? env.approved_at : null;
-  return env.status === "approved" && env.approved_by && at ? { by: env.approved_by, at } : null;
+ *  `saveDocument` then simply writes none. `rev` is the current revision the writer loaded. */
+export function sealOf(
+  stamped: string, rev: { approved_by: string | null; approved_at: string | null } | null,
+): { by: string; at: string } | null {
+  // DELIBERATE: the seal is the one the revision holds, never the envelope's `approved_at`. The
+  // envelope states a day; carried forward, that day was cast back to its midnight and replaced
+  // the instant `document_approve` sealed. `rev.approved_at` is the column's own text, which
+  // `::timestamptz` reads back as the same instant.
+  return parseEnvelope(stamped).status === "approved" && rev?.approved_by && rev.approved_at
+    ? { by: rev.approved_by, at: rev.approved_at } : null;
 }
 /** A source document, written by source_add and by a captured `source_content` — same `type: source`,
  * same fields, same readers, so one builder rather than two hand-built envelopes.

@@ -8,8 +8,9 @@
  * Two people on one team, the seeded one (A) and `member()` (B). Every document, presentation and
  * approval is made through zz-core's tools or the gateway's own console routes; the check then makes
  * only the direct writes the plan allows a check, each on rows it made itself: moving an initiative's
- * timestamps together, by whole days or onto one instant, deleting the presentation rows of one approval's context (a
- * context that covered nothing of the revision), deleting one approval's event (a revision sealed
+ * timestamps together, by whole days or onto one instant, placing one seal at 18:00 UTC, deleting the
+ * presentation rows of one approval's context (a context that covered nothing of the revision),
+ * deleting one approval's event (a revision sealed
  * before the events began), and dropping the review context and content revision from one approval's
  * event (an approval recorded before those keys were). What it establishes, values written here:
  *
@@ -259,6 +260,12 @@ async function run(c: Core): Promise<void> {
     await c.sql.query("delete from zz.event where kind in ('document.shown', 'document.shown_part') and detail->>'review_context' = $1", [lostContext]);
     await c.sql.query("update zz.event set detail = detail - 'review_context' - 'content_revision' where kind = 'document.document_approve' and subject = $1", [unnamed]);
     await shift(sealed, "60 days");
+    // Its seal at 18:00 UTC, 02:00 the next day in Asia/Singapore: a seal is the instant it was given,
+    // and its day is the reporting zone's, which a UTC date would put a day early.
+    await c.sql.query(
+      `update zz.doc_revision r set approved_at = date_trunc('day', r.approved_at, 'UTC') + interval '18 hours'
+         from zz.doc d join zz.initiative i on i.id = d.initiative_id
+        where r.doc_id = d.id and i.slug = $1 and r.approved_at is not null`, [sealed.split("/")[0]]);
     await c.sql.query("delete from zz.event where kind = 'document.document_approve' and subject = $1", [sealed]);
     // The console's Approve logs its own row after answering.
     for (let i = 0; i < 100 && !(await c.sql.query("select 1 from zz.event where kind = 'document.approve'")).rowCount; i++) {
@@ -276,8 +283,8 @@ async function run(c: Core): Promise<void> {
       const path = `${w.initiative}/${w.path}`;
       if (path === sealed) {
         const { rows } = await c.sql.query<{ day: string }>(
-          `select to_char(r.approved_at, 'YYYY-MM-DD') as day from zz.doc_revision r join zz.doc d on d.id = r.doc_id
-             join zz.initiative i on i.id = d.initiative_id where i.slug = $1 and r.approved_at is not null`, [w.initiative]);
+          `select to_char(r.approved_at at time zone $2::text, 'YYYY-MM-DD') as day from zz.doc_revision r join zz.doc d on d.id = r.doc_id
+             join zz.initiative i on i.id = d.initiative_id where i.slug = $1 and r.approved_at is not null`, [w.initiative, TIMEZONE]);
         w.approvedAt = rows[0].day;
         w.atMs = Date.parse(`${rows[0].day}T00:00:00+08:00`);
         continue;

@@ -172,7 +172,9 @@ export const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset 
  * every document body, which the list route does not need. DocRow is structurally
  * assignable to this, so the detail route passes unchanged.
  *
- * `type` is read by the no-manifest fallback in `stageOf`. */
+ * `type` is read twice in `stageOf`: by the no-manifest fallback, and as the stage a source was
+ * recorded a round of. A source itself is told apart by `path` — relative to the initiative, so
+ * under `sources/` — as zz-core tells it. */
 export interface StageDoc {
   path: string; type: string; status: string | null;
   /** Which documents this one bears on, comma-joined — a source's own declaration. It
@@ -367,11 +369,13 @@ export function stageOf(
     //   a document  the flow declares it; done when it exists and any gate on it is
     //               approved — written but unapproved is `partial`, the one state that
     //               means waiting on a person
-    //   a source    supporting material, not a deliverable. Done when a source in the
-    //               initiative declares it `supports` that document. Never gated.
+    //   a source    an audit round, not a deliverable. Done when a round of this stage
+    //               declares it `supports` that document. Never gated.
     //   nothing     no artifact at all; the order pass below reads it from what came after
     const meta = new Map((manifest.stages ?? []).map((x) => [x.name, x]));
-    const sources = live.filter((d) => d.type === "source");
+    // A source by its path, under `sources/`. Which stage's round it is, by its `type`: source_add
+    // types a round by its stage (`sdlc-spec-audit`) and other material `source`.
+    const sources = live.filter((d) => d.path.startsWith("sources/"));
     const stageState = (n: string): "done" | "partial" | "empty" | "skipped" | "waiting" => {
       const produces = meta.get(n)?.produces;
       if (produces === "source") {
@@ -379,7 +383,10 @@ export function stageOf(
         // so it is read only after `produces` has said which shape this is.
         const st = meta.get(n);
         const target = st && "supports" in st ? st.supports : undefined;
-        const found = !!target && sources.some((d) => (d.supports ?? "").split(",")
+        // COUPLED: zz-core's own round rule, `roundsOf` in services/zz-core/src/audit-rounds.ts.
+        // Untyped material supporting the document is a decision, not a round, and an audit step
+        // means an audit ran.
+        const found = !!target && sources.some((d) => d.type === n && (d.supports ?? "").split(",")
           .map((x) => x.trim()).includes(target));
         return found ? "done" : "empty";
       }

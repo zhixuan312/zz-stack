@@ -437,7 +437,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         const closed = await saveDocument({
           team, relPath, initiative, text: stamped, by: who.email,
           flow: chain.name ?? undefined, act: `close_${record.outcome}`, mode: "rewrite",
-          seal: sealOf(stamped), expect: state,
+          seal: sealOf(stamped, loaded.rev), expect: state,
           closeAnchor: { outcome: record.outcome, closedBy: who.email, acceptedBy: signedBy || null,
                          noSignoffReason: (!signedBy && reason) ? reason : null },
         });

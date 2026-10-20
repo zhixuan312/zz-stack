@@ -293,7 +293,8 @@ export async function writeProposalDoc(
   const actor = parseCaller(requestHeaders()).email;
   const saved = await saveDocument({
     team, relPath: path, initiative: path.split("/")[0], text: stamped, by: actor,
-    flow: chain.name ?? undefined, act: "write", mode: "rewrite", seal: sealOf(stamped),
+    flow: chain.name ?? undefined, act: "write", mode: "rewrite",
+    seal: sealOf(stamped, existing.ok ? existing.rev : null),
   });
   if ("refusal" in saved) return saved.refusal;
   return { path, chars: stamped.length, candidates_included: candidatesIncluded };

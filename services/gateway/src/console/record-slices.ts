@@ -231,13 +231,13 @@ async function firstActs(team: string, asOf: string) {
             (select to_char(min(e.ts) at time zone $3::text, 'YYYY-MM-DD')
                from zz.event e
               where e.kind = 'document.document_approve' and e.ts < $2::timestamptz) as began_day
-       from (select to_char(min(r.approved_at::date), 'YYYY-MM-DD') as day
+       from (select to_char(min((r.approved_at at time zone $3::text)::date), 'YYYY-MM-DD') as day
                from zz.doc_revision r
                join zz.doc d on d.id = r.doc_id
                join zz.initiative i on i.id = d.initiative_id
                join zz.team t on t.id = i.team_id
               where t.slug = $1 and d.path not like 'sources/%' and i.slug <> '_knowledge'
-                and r.approved_at::date < ($2::timestamptz at time zone $3::text)::date) s`,
+                and (r.approved_at at time zone $3::text)::date < ($2::timestamptz at time zone $3::text)::date) s`,
     [team, asOf, ZZ_TZ]);
   return r;
 }

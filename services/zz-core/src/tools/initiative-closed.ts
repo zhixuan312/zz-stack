@@ -11,6 +11,7 @@ import { OUTCOME_STOPPED } from "@zz/contracts";
 
 import type { DocRow } from "../indexing.js";
 import { isHandover } from "../stage-records.js";
+import { dayOf } from "../versions.js";
 
 /** The document facts the closed branch reads — a subset of `initiativeState`'s own. */
 interface ClosedDoc {
@@ -74,7 +75,8 @@ export function closedMove(
   }
   const note = handover?.status === "approved"
     ? ` The handover is recorded: ${handover.name} was approved by ${handover.approved_by ?? "somebody"}` +
-      `${handover.approved_at ? ` on ${handover.approved_at}` : ""}.`
+      // A person reads this sentence, so the seal's instant is named by its day, as the envelope does.
+      `${handover.approved_at ? ` on ${dayOf(handover.approved_at)}` : ""}.`
     : outcome === OUTCOME_STOPPED
       ? " An abandoned close does not owe the handover; if the cycle taught something worth " +
         "keeping, `skill_read(\"zz-handover\")` mints it and writes handover.md."

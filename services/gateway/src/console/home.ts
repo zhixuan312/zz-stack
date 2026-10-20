@@ -11,7 +11,7 @@
  * The parts, each from one function:
  *
  *   title           homeTitle over the weeks of the team's record, the running week last
- *   waiting         pendingRevisions for the team: how many, the oldest, and the one when one
+ *   waiting         teamPendingRevisions: how many, the oldest, and the one when one
  *   words           additionsByPeriod by week, with periodFinding's finding and the coverage
  *   approvals       callerApprovals by week, the caller's alone, with periodFinding's finding
  *   foot            the last whole week's words at the stated pace (writingEstimate, basis
@@ -56,7 +56,7 @@ import { localDate, periodFinding, type AgentDay, type Finding } from "./finding
 import { homeTitle, nextMilestones, type HomeFacts, type Milestone } from "./home-findings.js";
 import { lessonImports } from "./imports.js";
 import { initiativeList } from "./initiative-list.js";
-import { pendingRevisions } from "./pending.js";
+import { teamPendingRevisions } from "./pending.js";
 import { observedRuns } from "./runs-observed.js";
 import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
@@ -161,10 +161,10 @@ async function agentDaysOf(team: string, week: Window): Promise<AgentDay[]> {
 
 /** What waits on the team: how many revisions, since when the oldest, and the one when there is one. */
 async function waitingOf(team: string, asOf: string): Promise<{ count: number; oldestSince: string | null; one: { initiative: string; path: string; version: number } | null }> {
-  const queue = (await pendingRevisions(asOf)).filter((p) => p.team === team);
+  const queue = await teamPendingRevisions(team, asOf);
   let one = null;
   if (queue.length === 1) {
-    // The public version of the revision waiting, which pendingRevisions names by its revision.
+    // The public version of the revision waiting, which teamPendingRevisions names by its revision.
     const [p] = queue;
     const { rows: [row] } = await platformDb().query<{ version: number }>(
       `select r.version

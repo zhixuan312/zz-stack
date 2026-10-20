@@ -30,7 +30,8 @@ import { BAD_PAGE, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
  *  address would hand back the name of a lesson the caller may not read.
  *  COUPLED: checks/console-work-knowledge.ts holds the sentence. */
 const NO_NODE = "No lesson on the team's shelf or the shared one is at that address.";
-/** The newest entries the knowledge log answers, its statement's limit; its totals count every entry. */
+/** The newest entries the knowledge log answers, passed to its statement as the limit, so the ceiling
+ *  the answer states is the one applied; its totals count every entry. */
 const LOG_CEILING = 500;
 
 /** One row of the list and detail queries below, as they are aliased there. */
@@ -206,8 +207,9 @@ export function mountKnowledge(app: Express): void {
    * The active team's log, for the superadmin too, as the rest of Work is: a team or a scope the request
    * names widens nothing, and a caller who acts for no team is answered 400.
    *
-   * The newest 500 entries before the cutoff, and beside them the totals over every entry before it: the
-   * entries, those recorded and those superseded, so a log past its ceiling is never counted by its page.
+   * The newest LOG_CEILING entries before the cutoff, and beside them the totals over every entry before
+   * it: the entries, those recorded and those superseded, so a log past its ceiling is never counted by
+   * its page.
    */
   app.get("/api/console/knowledge/log", platformPublic("the knowledge log", async (_req, res, { activeTeam }) => {
     if (activeTeam === null) {
@@ -231,8 +233,8 @@ export function mountKnowledge(app: Express): void {
         where e.kind in ('knowledge.add','knowledge.supersede')
           and e.ts < $2::timestamptz
           and t.slug = $1
-        order by e.ts desc limit 500`,
-      [activeTeam, asOf]),
+        order by e.ts desc limit $3::int`,
+      [activeTeam, asOf, LOG_CEILING]),
     db.query<{ entries: number; recorded: number; superseded: number }>(
       `select count(*)::int as entries,
               count(*) filter (where e.kind = 'knowledge.add')::int as recorded,

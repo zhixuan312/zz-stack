@@ -295,7 +295,10 @@ export async function assessAcceptance(p: pg.Pool, team: string, initiative: str
   for (let i = 0; i < due.length; i += 8) {
     answers.push(...await Promise.all(due.slice(i, i + 8).map((x) => assessFamily({
       family: "evidence_relation", subject: x.subject, context: x.row.evidence,
-      initiative, about: `${doc.name}#${x.row.id}#${x.digest}`, askedBy: by }))));
+      initiative, about: `${doc.name}#${x.row.id}#${x.digest}`, askedBy: by,
+      // Asked on a write and on an approval, and an approval asks every row it holds no reading for.
+      recover: `\`document_approve\` of ${initiative}/${doc.name} asks again every reading it holds no row for, ` +
+               "so approving it records this one." }))));
   }
   // No write back: every one of these answers is a `zz.assessment` row already, written by
   // `assessFamily` as it took it, and the memo above reads them from there next time.

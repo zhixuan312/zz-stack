@@ -93,8 +93,14 @@ export async function assessRound(p: pg.Pool, team: string, initiative: string,
   // Persisted by `assessFamily` itself as the answer was taken: the `zz.assessment` row IS the
   // memo, and the `<initiative>/_assessments/*.json` file this used to write was a second copy of
   // it. A second copy is what drifts.
+  // DELIBERATE: the recovery is `assess`, never the same `source_add`: the round is filed, and
+  // sending it again files a second round of the same version.
   const answer = await assessFamily({ family: "changes_commitment", subject: content, context: stripEnvelope(agreed),
-                                      initiative, about: `sources/${file}`, askedBy: by });
+                                      initiative, about: `sources/${file}`, askedBy: by,
+                                      recover: `Record it with \`assess\`: family "changes_commitment", initiative ` +
+                                               `"${initiative}", about "sources/${file}", subject the \`content\` this ` +
+                                               `call sent, and context ${document} as document_read answers it. Do not ` +
+                                               "send this source again: it is filed, and a second would be a second round." });
   return `assessed: ${answer.family} = ${answer.reading}` +
     (answer.probability !== null ? ` (p=${answer.probability.toFixed(2)})` : "") +
     (answer.reason ? ` — ${answer.reason}` : "");

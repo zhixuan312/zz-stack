@@ -274,7 +274,7 @@ async function precedence(c: Core): Promise<void> {
 
   step = "(4) an `upload` sent with another body change is INVALID_MODE; one that is nobody's, or not staged, is refused";
   const unknown = `up_${"a".repeat(26)}`;
-  await refusedUnchanged(c, step, p, { upload: unknown, content: "# x\n" }, /^ERROR: INVALID_MODE — send ONE body change/);
+  await refusedUnchanged(c, step, p, { upload: unknown, content: "# x\n" }, /^ERROR: INVALID_MODE — send ONE body change: an `upload` is the whole body(?![\s\S]*`file`)/);
   await refusedUnchanged(c, step, p, { upload: unknown }, /^ERROR: FORBIDDEN — /);
   const minted = JSON.parse(await c.ok(step, "upload_start", { filename: "notes.md" })) as { upload: string };
   await refusedUnchanged(c, step, p, { upload: minted.upload }, /^ERROR: UPLOAD_MISSING — /);

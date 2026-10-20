@@ -256,9 +256,18 @@ export async function assessReviewRound(p: pg.Pool, team: string, initiative: st
   if (!earlier.length || !asked.length) return "";
   const context = earlier.map((r) => `## Round ${r.ledger.round}\n` + r.ledger.findings
     .map((f) => `- ${f.id} [${f.impact}] ${f.locator}: ${f.claim}`).join("\n")).join("\n\n");
-  const answers = await Promise.all(asked.map((f) => assessFamily({
-    family: "repeats_finding", subject: `${f.id} [${f.impact}] ${f.locator}: ${f.claim}`, context,
-    initiative, about: `sources/${file}#${f.id}`, askedBy: by })));
+  // DELIBERATE: the recovery is `assess`, never the same `source_add`: the round is filed, and
+  // sending it again files a second round. Its subject is the one composed here, given whole.
+  const answers = await Promise.all(asked.map((f) => {
+    const subject = `${f.id} [${f.impact}] ${f.locator}: ${f.claim}`;
+    return assessFamily({
+      family: "repeats_finding", subject, context, initiative, about: `sources/${file}#${f.id}`, askedBy: by,
+      recover: `Record it with \`assess\`: family "repeats_finding", initiative "${initiative}", about ` +
+               `"sources/${file}#${f.id}", subject ${JSON.stringify(subject)}, and context every earlier round's ` +
+               "findings, each round under `## Round <n>` and each finding on its own line in the subject's shape. " +
+               "Any other S1/S2 finding this round introduced may need the same. Do not send this source again: " +
+               "it is filed, and a second would be a second round." });
+  }));
   // Persisted by `assessFamily` itself as each answer was taken, so the memo IS the record.
   return "assessed: " + answers.map((a, i) => `repeats_finding(${asked[i].id}) = ${a.reading}` +
     (a.probability !== null ? ` (p=${a.probability.toFixed(2)})` : "")).join("; ");

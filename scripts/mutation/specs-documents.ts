@@ -75,7 +75,7 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
     replace: '"abort_note":',
     all: true,
     planted: "every step of the activation runbook loses its abort point, so a cutover that " +
-      "goes wrong at step seven has no written way back written down anywhere",
+      "goes wrong at the restore, step five, has no way back written down anywhere",
   },
   {
     check: "scripts/gate/checks/activation-runbook.ts",

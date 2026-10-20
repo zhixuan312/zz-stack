@@ -163,16 +163,20 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
    *  whole authorisation check — its `principal_id = (select id from principal where
    *  email = $2)` makes a token id belonging to somebody else indistinguishable from one
    *  that never existed, so there is no separate ownership check to have forgotten here.
-   *  An id that is not a uuid names no token at all, and is answered 404 before the query. */
+   *  Every id that names no live token of the caller's is one 404 with one sentence — somebody
+   *  else's, one already revoked, one that never existed, and one that is not a uuid, which is
+   *  answered before the query — as the applications and browsers routes below answer 404 to one
+   *  that is not the caller's. */
   app.delete("/api/console/settings/me/tokens/:id", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
       const tokenId = req.params.id;
-      if (!UUID.test(tokenId)) { res.status(404).json({ error: "no such active token of yours" }); return; }
+      const missing = { error: "no such active token of yours" };
+      if (!UUID.test(tokenId)) { res.status(404).json(missing); return; }
       const ok = await deps.revokeMyAccessTokenFor(id.email, tokenId, { via: "web" }, id.origin);
-      if (!ok) { res.status(400).json({ error: "no such active token of yours" }); return; }
+      if (!ok) { res.status(404).json(missing); return; }
       await hintSettings();
       res.json(redact({ ok: true, revoked: tokenId }));
     })().catch((err: unknown) => {

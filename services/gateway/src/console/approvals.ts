@@ -2,7 +2,7 @@
  * /api/console/approvals — Approvals: the active team's revisions waiting, and the approvals signed in
  * the caller's name there, each with what the record holds of how it was shown and decided.
  *
- * Waiting is the team's queue: `pendingRevisions` for the active team, each revision once, oldest wait
+ * Waiting is the team's queue: `teamPendingRevisions` for the active team, each revision once, oldest wait
  * first. Nothing records who must decide a revision, so the queue is labelled `team` and no row is
  * assigned to anybody.
  *
@@ -30,7 +30,8 @@
  * their totals, so both tabs can show their counts. The summaries and the tiles are over the whole
  * record to the cutoff, never the page. A list whose query fails is `unavailable`, and the other stands.
  *
- * Work is the active team's, for a superadmin too: neither `?team=` nor `?scope=platform` widens it.
+ * Work is the active team's, for a superadmin too: neither `?team=` nor `?scope=platform` widens it,
+ * and a caller who acts for no team is answered Work's no-team sentence, whatever the request names.
  * Nothing here writes.
  *
  * COUPLED: the console's `Approvals`, `ApprovalRow`, `WaitingRow` and `ApprovalEvidence` in
@@ -42,8 +43,8 @@ import type { Express, Request } from "express";
 
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta } from "./figures.js";
-import { pendingRevisions } from "./pending.js";
-import { BAD_PAGE, handler, NO_TEAM, ZZ_TZ } from "./shared.js";
+import { teamPendingRevisions } from "./pending.js";
+import { BAD_PAGE, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { grainFor, periodsOf, type Grain, type Period } from "./work-figures.js";
 
 type Presentation = "console_revision_shown" | "agent_context_covered" | "not_recorded" | "unknown";
@@ -232,11 +233,11 @@ export async function callerApprovals(
   return { periods: figures(rows, await periodsOf(span, asOf, grain)), total: rows.length };
 }
 
-/** The active team's queue at the cutoff: `pendingRevisions`' rows of the team, each with the version
+/** The active team's queue at the cutoff: `teamPendingRevisions`' rows, each with the version
  *  and content revision of the snapshot waiting. */
 async function queueOf(team: string, asOf: string): Promise<WaitingRow[]> {
   const [pending, current] = await Promise.all([
-    pendingRevisions(asOf),
+    teamPendingRevisions(team, asOf),
     platformDb().query<{ initiative: string; path: string; revision: number; version: number; doc_id: string; generation: string }>(
       `select i.slug as initiative, d.path, r.revision, r.version, d.id::text as doc_id,
               coalesce(r.content_generation, d.content_generation)::text as generation
@@ -247,7 +248,7 @@ async function queueOf(team: string, asOf: string): Promise<WaitingRow[]> {
         where t.slug = $1 and i.closed_at is null and r.presented_at is not null and r.approved_at is null`, [team]),
   ]);
   const at = new Map(current.rows.map((r) => [`${r.initiative}\0${r.path}\0${r.revision}`, r]));
-  return pending.filter((p) => p.team === team).flatMap((p) => {
+  return pending.flatMap((p) => {
     const r = at.get(`${p.initiative}\0${p.path}\0${p.revision}`);
     return r ? [{
       initiative: p.initiative, path: p.path, version: r.version,
@@ -290,16 +291,17 @@ function parse(req: Request): { tab: (typeof TABS)[number]; limit: number; offse
 }
 
 export function mountApprovals(app: Express): void {
-  // The scope is resolved and refused by `handler`, and then not read: Work is the active team's.
-  app.get("/api/console/approvals", handler("approvals", async (req, res, _scope) => {
+  // DELIBERATE: `platformPublic`, not `handler`, as every other Work read: no scope is resolved from
+  // the request, so a caller in no team is answered NO_TEAM rather than scope.ts's sentence inviting
+  // a `?team=` that Work ignores.
+  app.get("/api/console/approvals", platformPublic("approvals", async (req, res, { activeTeam: team }) => {
+    if (team === null) {
+      res.status(400).json({ error: NO_TEAM });
+      return;
+    }
     const asked = parse(req);
     if (typeof asked === "string") {
       res.status(400).json({ error: asked });
-      return;
-    }
-    const team = req.zzIdentity!.activeTeam;
-    if (!team) {
-      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const caller = req.zzIdentity!.email;

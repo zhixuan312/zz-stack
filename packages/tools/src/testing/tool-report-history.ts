@@ -6,6 +6,10 @@
  * Rows are refusal classes, not accepted rates. A rate is governed by which tools a run
  * happened to call, so calling one failing tool twice instead of nine times moves it several
  * points with nothing fixed. A class is present or it is not.
+ *
+ * Only reports that counted the same calls — the same `origin` — are set side by side. A `work`
+ * run has none of chain-check's deliberate refusals and an `all` run has them, so across the two a
+ * class reads as closed or new, and the rate moves, by a change of population with nothing fixed.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -35,7 +39,7 @@ export function showLedger(directory: string): void {
       continue;
     }
     if (!isReport(report)) {
-      skipped.push(`${basename(f)} (JSON, but not a report — no calls/refusals)`);
+      skipped.push(`${basename(f)} (JSON, but not a report — no calls, refusals or origin)`);
       continue;
     }
     // DELIBERATE: ordered by when each report was taken, not by filename. A hand-named file
@@ -48,15 +52,22 @@ export function showLedger(directory: string): void {
     die(`no readable reports in ${directory} — ${files.length} .json file(s) there, none of ` +
         "them written by --json or --save");
   }
-  const loaded = parsed
-    .sort((a, b) => a.taken.localeCompare(b.taken))
-    .map((x) => [x.name, x.report] as const);
+  // One series per population, each in the order its runs were taken.
+  const series = new Map<ReportShape["origin"], (readonly [string, ReportShape])[]>();
+  for (const x of parsed.sort((a, b) => a.taken.localeCompare(b.taken))) {
+    series.set(x.report.origin, [...(series.get(x.report.origin) ?? []), [x.name, x.report] as const]);
+  }
+  for (const [origin, loaded] of series) showSeries(directory, origin, loaded);
+}
 
+/** One population's runs, as one row per refusal class. */
+function showSeries(directory: string, origin: ReportShape["origin"],
+                    loaded: (readonly [string, ReportShape])[]): void {
   // One run is a baseline, not a trend: every class in it would otherwise be marked new, which
   // reads as "these just appeared" when it means "nothing preceded this".
   const solo = loaded.length === 1;
   console.log(
-    `\n${loaded.length} run${solo ? "" : "s"} in ${directory}` +
+    `\n${loaded.length} run${solo ? "" : "s"} in ${directory} that counted ${origin} calls` +
       (solo ? "  — a baseline. Improvement is what the NEXT run does to these rows." : "") +
       "\n",
   );
@@ -103,9 +114,15 @@ export function showLedger(directory: string): void {
  * What changed since a previous report.
  *
  * Two numbers: the accepted rate, and which refusal classes appeared and which stopped. A
- * class that is gone is a fix; a class that is new is a regression.
+ * class that is gone is a fix; a class that is new is a regression — between two reports that
+ * counted the same calls, and only then, so two that did not are refused rather than compared.
  */
-export function showMovement(now: ReportShape, before: Partial<ReportShape>): void {
+export function showMovement(now: ReportShape, before: ReportShape): void {
+  if (before.origin !== now.origin) {
+    die(`the report compared against counted ${before.origin} calls and this run counted ${now.origin}: ` +
+        "between the two, a refusal class and the accepted rate move by which calls were counted, not by " +
+        `anything fixed. Run this one again with --origin ${before.origin} to compare them.`);
+  }
   const wasRate = before.accepted_rate ?? 0;
   console.log(`\nsince the report you compared against (${before.calls ?? 0} calls, ${wasRate}% accepted)`);
   console.log("-".repeat(69));

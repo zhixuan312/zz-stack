@@ -181,6 +181,8 @@ export async function families(c: Core, g: Gateway): Promise<void> {
   // COUPLED: zz-stack-dashboard renders a document's body through Prose — react-markdown with no
   // raw-HTML plugin, so `<script>` is text, and URLs through `safeMarkdownUrl`. Its one rehype plugin
   // is its own `labelCells`, which writes a column's heading on each body cell and parses nothing.
+  // Every `rehypePlugins` it passes must be an array literal this reads: one handed a variable could
+  // hold anything, so it is refused rather than read as empty.
   // Cited, not run: the dashboard's own check holds it, and checks/document-panel.ts already needs
   // the checkout here.
   step = "the console renders that body through the dashboard's safe markdown — Prose with no raw-HTML plugin, URLs through safeMarkdownUrl (cited)";
@@ -189,10 +191,13 @@ export async function families(c: Core, g: Gateway): Promise<void> {
   const policy = join(dash, "lib/safe-markdown.ts");
   if (!existsSync(prose) || !existsSync(policy)) c.fail(step, `the dashboard is not checked out beside this repository (${dash})`);
   const proseText = readFileSync(prose, "utf8");
-  const rehype = [...proseText.matchAll(/rehypePlugins=\{\[([^\]]*)\]\}/g)].flatMap((m) => m[1].split(",").map((s) => s.trim()).filter(Boolean));
-  if (/rehype-raw/.test(proseText) || rehype.some((p) => p !== "labelCells")
+  const literals = [...proseText.matchAll(/rehypePlugins=\{\[([^\]]*)\]\}/g)];
+  const rehype = literals.flatMap((m) => m[1].split(",").map((s) => s.trim()).filter(Boolean));
+  const passed = (proseText.match(/\brehypePlugins\b/g) ?? []).length;
+  if (/rehype-raw/.test(proseText) || passed !== literals.length || rehype.some((p) => p !== "labelCells")
       || !/<ReactMarkdown [^>]*urlTransform=\{safeMarkdownUrl\}/.test(proseText)) {
-    c.fail(step, "Prose renders raw HTML, or no longer routes URLs through safeMarkdownUrl");
+    c.fail(step, "Prose renders raw HTML, hands rehypePlugins something other than an array literal of labelCells, " +
+                 "or no longer routes URLs through safeMarkdownUrl");
   }
   c.pass(step);
 

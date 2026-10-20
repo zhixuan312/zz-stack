@@ -51,9 +51,9 @@ export function db(): pg.Pool | null {
 // pool. The package takes an accessor, because the pool is built lazily.
 //
 // At module level and not in server.ts: every path that indexes a document reaches teamFor() or
-// userRoot() first, so this module is loaded before any of them can run. A call in the entry point
-// is one an eval door, a test harness or a second entry point can forget, and forgetting it does
-// not fail loudly — it writes documents nothing can find.
+// anything else in this module first, so this module is loaded before any of them can run. A call
+// in the entry point is one an eval door, a test harness or a second entry point can forget, and
+// forgetting it does not fail loudly — it writes documents nothing can find.
 configureIndexing(db);
 const teamCache = new Map<string, { team: string | null; all: string[]; expires: number }>();
 /** Which team's store a person writes into.

@@ -17,7 +17,9 @@
  *   - a token issued while the settings hint throws is answered as issued: `POST /me/tokens` answers 200
  *     with the token, whose `zz.pat` row is live, and `DELETE /me/tokens/:id` of it answers 200 with the
  *     row revoked — the hint is told to the person's other tabs, and its failure is not the token's;
- *   - a token id that is not a uuid is answered 404 with the route's own sentence, and changes no token.
+ *   - a token id that is not a uuid is answered 404 with the route's own sentence, and changes no token;
+ *   - so is a well-formed id that names no token of the caller's: one nobody holds, and the token the
+ *     case above already revoked — one condition, one status, whatever the id's spelling.
  *
  * The only database it touches is the one it started.
  *
@@ -35,7 +37,8 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 
 const NAME = "review-round2-platform";
 const DONE = "review-round2-platform: an assessment the platform cannot keep fails the call that asked, a token " +
-  "is answered by its own outcome whatever the settings hint does, and a token id that is not a uuid is a 404: ok";
+  "is answered by its own outcome whatever the settings hint does, and a token id that names no live token of the " +
+  "caller's is a 404 whether or not it is a uuid: ok";
 
 /** The family both callers ask, and the one an audit round's routing reads. */
 const FAMILY = "changes_commitment";
@@ -165,6 +168,8 @@ async function routes(c: Core, found: string[], load: (p: string) => Promise<unk
 
   const { rows: [held] } = await c.sql.query<{ def: string }>(
     "select pg_get_functiondef('zz.console_hint(text, text)'::regprocedure) as def");
+  /** The token the revoke case ends, asked again below as one that is no longer live. */
+  let ended: string | null = null;
   // Only the person-wide hint the settings routes send is refused; a team's hints go on as before.
   await c.sql.query(
     `create or replace function zz.console_hint(team_slug text, collection text) returns void
@@ -190,6 +195,7 @@ async function routes(c: Core, found: string[], load: (p: string) => Promise<unk
       if (revoked.status !== 200 || revoked.body.revoked !== mine[0].id || !now?.revoked) {
         found.push(`${step}: the route answered ${revoked.status} ${show(revoked.body)}, the row revoked: ${now?.revoked}`);
       } else c.pass(`${step}: 200, and the row is revoked`);
+      ended = mine[0].id;
     } else found.push(`${step}: no token was issued to revoke`);
   } finally {
     await c.sql.query(held.def);
@@ -201,6 +207,18 @@ async function routes(c: Core, found: string[], load: (p: string) => Promise<unk
   if (odd.status !== 404 || odd.body.error !== NO_TOKEN || await tokens(c) !== before) {
     found.push(`${step}: the route answered ${odd.status} ${show(odd.body)}`);
   } else c.pass(`${step} with the route's own sentence, and no token changes`);
+
+  // The same condition with a well-formed id: the status is the condition's, never the spelling's.
+  for (const [what, tokenId] of [["a uuid nobody holds", "00000000-0000-4000-8000-000000000000"],
+                                 ["the token already revoked", ended]] as const) {
+    const named = `a token id that is ${what} is a 404`;
+    if (tokenId === null) { found.push(`${named}: no token was revoked to ask about`); continue; }
+    const was = await tokens(c);
+    const got = await ask("DELETE /api/console/settings/me/tokens/:id", { id: tokenId });
+    if (got.status !== 404 || got.body.error !== NO_TOKEN || await tokens(c) !== was) {
+      found.push(`${named}: the route answered ${got.status} ${show(got.body)}`);
+    } else c.pass(`${named} with the same sentence, and no token changes`);
+  }
 }
 
 async function run(c: Core): Promise<void> {

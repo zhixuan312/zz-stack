@@ -18,7 +18,7 @@
  *              closed since or not
  *
  * A row's state is its outcome once closed; open, it is waiting while a revision of it waits for
- * approval (pendingRevisions), quiet when nothing of it was written for 14 days or more before the
+ * approval (teamPendingRevisions), quiet when nothing of it was written for 14 days or more before the
  * cutoff, or, with nothing written, it was opened that long ago, and open otherwise. Presenting a
  * document stamps no revision, so reading an initiative never wakes it. Its gates are the gated
  * documents its flow declares, the handover left out, as stageOf reads them.
@@ -42,7 +42,7 @@ import type { Mcp } from "@zz/mcp-client";
 import { coreFor } from "../core-as-caller.js";
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
-import { pendingRevisions } from "./pending.js";
+import { teamPendingRevisions } from "./pending.js";
 import { BAD_PAGE, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
 import { closuresByWeek, grainFor, lastWholeWeek, periodsOf, type ClosureWeek } from "./work-figures.js";
 
@@ -195,13 +195,13 @@ export async function initiativeList(team: string, params: ListParams, asOf: str
          join zz.initiative i on i.id = f.initiative_id
          join zz.team t on t.id = i.team_id
         where t.slug = $1`, [team]),
-    pendingRevisions(asOf),
+    teamPendingRevisions(team, asOf),
   ]);
   const docsOf = new Map<string, StageDoc[]>();
   for (const d of docs.rows) docsOf.set(d.initiative, [...(docsOf.get(d.initiative) ?? []), d]);
   const factsOf = new Map<string, Record<string, string>>();
   for (const f of facts.rows) factsOf.set(f.initiative, { ...factsOf.get(f.initiative), [f.fact]: f.value });
-  const waiting = new Set(pending.filter((p) => p.team === team).map((p) => p.initiative));
+  const waiting = new Set(pending.map((p) => p.initiative));
 
   const all = anchors.rows.map((a): InitiativeRow => {
     const closed = a.closed_ms !== null && a.closed_ms <= asOfMs;

@@ -18,6 +18,7 @@
  * instead of the container below. This module only ever hands a caller a URL it minted itself.
  */
 import { execFileSync } from "node:child_process";
+import { constants as osConstants } from "node:os";
 import { pathToFileURL } from "node:url";
 
 import pg from "pg";
@@ -33,6 +34,9 @@ function dockerAvailable(): boolean {
     return false;
   }
 }
+
+/** The signals a gate stops its checks with, and a person interrupts one with. */
+const STOPS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 function run(cmd: string, args: string[]): string {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -105,6 +109,14 @@ export async function withThrowawayDb<T>(
   run("docker", ["run", "-d", "--rm", "--name", container, "-p", "127.0.0.1::5432",
     "-e", "POSTGRES_USER=zz", `-e`, `POSTGRES_PASSWORD=${pwd}`, "-e", "POSTGRES_DB=zz",
     pgsvc.image, ...pgsvc.command]);
+  // A signal skips every `finally`, and a gate that is stopped stops each check it is running with
+  // one: the container is removed here too, and the process then ends as the signal would have
+  // ended it.
+  const onStop = (signal: NodeJS.Signals): void => {
+    try { run("docker", ["rm", "-f", "-v", container]); } catch { /* nothing left to remove */ }
+    process.exit(128 + osConstants.signals[signal]);
+  };
+  for (const s of STOPS) process.on(s, onStop);
   try {
     await waitReady(container);
     const mapped = run("docker", ["port", container, "5432/tcp"]).split("\n")[0];
@@ -134,6 +146,7 @@ export async function withThrowawayDb<T>(
       await client.end();
     }
   } finally {
+    for (const s of STOPS) process.off(s, onStop);
     try { run("docker", ["rm", "-f", "-v", container]); } catch { /* nothing left to remove */ }
   }
 }

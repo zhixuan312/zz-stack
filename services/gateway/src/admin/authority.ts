@@ -10,10 +10,10 @@ import { isSuper, isTeamAdmin, type Identity } from "../identity.js";
 
 // COUPLED: the scope-aware checks in identity.ts, never a second pair that ignores scope — a
 // local copy reading only platformRole gives a member-scope token its owner's whole superadmin
-// authority. settings.ts's `/api/console/settings/platform/*` routes and scope-check.ts's
+// authority. settings/platform.ts's `/api/console/settings/platform/*` routes and scope-check.ts's
 // authority matrix both drive this function.
 export const superOnly = (id: Identity | null): id is Identity => !!id && isSuper(id);
-// COUPLED: settings.ts's `/api/console/settings/team/*` routes and scope-check.ts's authority
+// COUPLED: settings/team.ts's `/api/console/settings/team/*` routes and scope-check.ts's authority
 // matrix both drive this function. isTeamAdmin is where "a superadmin is every team" and "a
 // team-bound PAT is refused everywhere but its own team" are decided.
 export const teamAuthority = (id: Identity | null, slug: string): id is Identity =>

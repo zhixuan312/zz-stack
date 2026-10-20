@@ -4,7 +4,7 @@ How production is switched from the current deployment onto the new one: what mu
 first, the order it happens in, how each step is checked, and where each step is abandoned.
 
 **Nothing here has been executed, and nothing here authorises executing it.** This document and
-`deploy/activation-runbook.json` were written and rehearsed in part on copied fixtures. Every
+`deploy/activation-runbook.json` were written and rehearsed in part against nothing live. Every
 one of the eight preconditions is blocked today, so the procedure's own first step refuses.
 
 `deploy/RESTORE-AND-CUTOVER.md` is the rehearsal, and it says in its own preamble that it never

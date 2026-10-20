@@ -29,8 +29,9 @@
  *   - a read that finds the word-count cache past its bound counts every lesson it found cached as well
  *     as those it counted itself: the retained stock is every lesson's words, never only the newest's.
  *
- * DELIBERATE: the word-count cache's bound is 200,000 bodies and nothing sets it lower, so the last case
- * makes 200,001 lessons, which takes the throwaway some seconds.
+ * DELIBERATE: the last case makes one lesson more than the word-count cache's bound, read from the
+ * gateway's own source so a bound that moves is still passed; at 200,000 bodies that is 200,001 lessons,
+ * which takes the throwaway some seconds.
  *
  * The only database it touches is the one it started.
  *
@@ -38,6 +39,7 @@
  * Exit 1: a case failed — every case that did and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -56,8 +58,15 @@ const DONE = "review-round2-reads: activity_refusals answers no more than Activi
 const NO_INITIATIVE = "No initiative of the team you act for has that name.";
 const ONE = "round2-one", TWO = "round2-two", WRITING = "round2-writing";
 const OWN = "2026-10-01-round2-own", THEIRS = "2026-10-01-round2-theirs";
-/** The word-count cache's bound in services/gateway/src/console/writing.ts, and one lesson past it. */
-const PAST_BOUND = 200_001;
+/** One lesson past the word-count cache's bound. COUPLED: COUNTED_BOUND in services/gateway/src/console/writing.ts,
+ *  read from there rather than copied, so a raised bound is still passed and the case still reads past it. */
+const BOUND = /^const COUNTED_BOUND = ([\d_]+);$/m
+  .exec(readFileSync(join(root, "services/gateway/src/console/writing.ts"), "utf8"))?.[1];
+if (BOUND === undefined) {
+  console.error(`${NAME}: services/gateway/src/console/writing.ts no longer declares COUNTED_BOUND, so no case can pass it`);
+  process.exit(1);
+}
+const PAST_BOUND = Number(BOUND.replaceAll("_", "")) + 1;
 /** The knowledge log's ceiling, and the entries seeded past it. */
 const CEILING = 500;
 const RECORDED = 520, SUPERSEDED = 10;

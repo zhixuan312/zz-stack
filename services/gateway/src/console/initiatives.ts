@@ -20,8 +20,10 @@ import { decisionRows } from "@zz/indexing";
 
 import { platformDb } from "../db.js";
 import { mountInitiativeList, stateOf } from "./initiative-list.js";
-import { pendingRevisions } from "./pending.js";
+import { teamPendingRevisions } from "./pending.js";
 import { flowShape, NO_TEAM, platformPublic, stageOf, type DocRow, ZZ_TZ } from "./shared.js";
+
+const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** The envelope keys the platform reserves; every other field is a flow's own. COUPLED:
  *  RESERVED_ENVELOPE in services/zz-core/src/document-rules.ts derives from the same schema. */
@@ -109,8 +111,10 @@ export function mountInitiatives(app: Express): void {
       return;
     }
     const team = activeTeam;
-    // One instant for the whole read, as the list reads at its cutoff: the state below is the list's rule at it.
-    const asOf = new Date().toISOString();
+    // One instant for the whole read, cut as the list cuts it — in whole seconds, rounded up, so what
+    // was written in the second the read began is inside it — and the touched time and the waiting
+    // revisions read to it, so the state below is the list's rule at the list's cutoff.
+    const asOf = iso(Math.ceil(Date.now() / 1000) * 1000);
     const [docs, claimDocs, facts, anchor, pending] = await Promise.all([
       // `flow`/`outcome` stay in this select as this document's own metadata — what the
       // dashboard renders per row. Neither drives `stageOf` below any more; the anchor query
@@ -160,16 +164,18 @@ export function mountInitiatives(app: Express): void {
       // from `zz.initiative`, the one authority for a state no document may answer any more, and
       // for whether the initiative exists at all.
       // When it was last touched, as the list reads it: the newest revision written of any of its documents and
-      // sources, or, with none, when it was opened.
+      // sources by the cutoff, or, with none, when it was opened.
       db.query<{ flow: string | null; closed: boolean; outcome: string | null; touched_ms: number }>(
         `select i.flow, i.closed_at is not null as closed, i.outcome,
                 (extract(epoch from coalesce((select max(r.written_at)
                                                 from zz.doc d
                                                 join zz.doc_revision r on r.doc_id = d.id
-                                               where d.initiative_id = i.id), i.opened_at)) * 1000)::float8 as touched_ms
+                                               where d.initiative_id = i.id and r.written_at <= $3::timestamptz),
+                                             i.opened_at)) * 1000)::float8 as touched_ms
            from zz.initiative i join zz.team t on t.id = i.team_id
-          where t.slug = $1 and i.slug = $2`, [team, slug]),
-      pendingRevisions(asOf),
+          where t.slug = $1 and i.slug = $2`, [team, slug, asOf]),
+      // This initiative's waiting revisions alone, by the shared rule.
+      teamPendingRevisions(team, asOf, slug),
     ]);
     // Its row, not its documents: an initiative opened and never written in has none, and is still
     // listed. Every document joins this row, so no document is ever read without it.
@@ -184,7 +190,7 @@ export function mountInitiatives(app: Express): void {
     // No flow asks for anything, so a finished close is complete and only an abandoned one is not, as the fake answers.
     const flow = lifecycle.flow || null;
     const { closed, outcome } = lifecycle;
-    const waiting = pending.some((p) => p.team === team && p.initiative === slug);
+    const waiting = pending.length > 0;
     const state = stateOf({ outcome, closed, touchedMs: lifecycle.touched_ms }, waiting, Date.parse(asOf));
     const lastTouched = new Date(lifecycle.touched_ms).toISOString().replace(/\.\d{3}Z$/, "Z");
     const position = flow === null

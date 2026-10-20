@@ -19,6 +19,22 @@ if (!existsSync(LOCK)) fail(`${LOCK} does not exist — run plugin-versions.ts -
 
 const VICTIM = "catalog/sdlc/sdlc-flow/skills/sdlc-method/SKILL.md";
 if (!existsSync(VICTIM)) fail(`${VICTIM} is gone — repoint this break-test`);
+
+const body = readFileSync(VICTIM, "utf8");
+const lock = readFileSync(LOCK, "utf8");
+/** The derived paths as the baseline gate left them, once it has run; see DERIVED below. */
+let snapshot: string | null = null;
+// Every plant is undone however this ends: on exit, after a throw or a failed case, and on an
+// interrupt, which stops the gate in flight first. Registered before the first gate run, which is
+// detached and would otherwise go on in this tree after an interrupt ended this process. The
+// snapshot is gone once the run has restored from it itself, and then there is nothing derived
+// left to undo.
+restoreOnInterrupt(() => {
+  writeFileSync(VICTIM, body);
+  writeFileSync(LOCK, lock);
+  if (snapshot !== null && existsSync(snapshot)) { restoreDerived(snapshot); rmSync(snapshot, { recursive: true, force: true }); }
+});
+
 if (!(await green())) fail("the gate is already red before planting anything");
 
 // Every `gate()` below regenerates `marketplace/` out of `catalog/`, and the planted cases write
@@ -29,22 +45,12 @@ if (!(await green())) fail("the gate is already red before planting anything");
 // DELIBERATE: snapshotted rather than restored with `git checkout`. These paths are regenerated
 // constantly and somebody may have uncommitted work in them.
 const DERIVED = ["marketplace", "plugins.lock.json", "skills.lock.json"];
-const snapshot = mkdtempSync(join(tmpdir(), "zz-plugin-lock-derived-"));
-for (const path of DERIVED) cpSync(path, join(snapshot, path), { recursive: true });
-const restoreDerived = (): void => {
-  for (const path of DERIVED) cpSync(join(snapshot, path), path, { recursive: true });
+const restoreDerived = (from: string): void => {
+  for (const path of DERIVED) cpSync(join(from, path), path, { recursive: true });
 };
-
-const body = readFileSync(VICTIM, "utf8");
-const lock = readFileSync(LOCK, "utf8");
-// Every plant is undone however this ends: on exit, after a throw or a failed case, and on an
-// interrupt, which stops the gate in flight first. The snapshot is gone once the run has restored
-// from it itself, and then there is nothing derived left to undo.
-restoreOnInterrupt(() => {
-  writeFileSync(VICTIM, body);
-  writeFileSync(LOCK, lock);
-  if (existsSync(snapshot)) { restoreDerived(); rmSync(snapshot, { recursive: true, force: true }); }
-});
+const taken = mkdtempSync(join(tmpdir(), "zz-plugin-lock-derived-"));
+for (const path of DERIVED) cpSync(path, join(taken, path), { recursive: true });
+snapshot = taken;
 
 // 1 — content moves, the declared version does not.
 writeFileSync(VICTIM, body + "\n<!-- planted by checks/gate-plugin-lock.ts -->\n");
@@ -114,8 +120,8 @@ if (!redStale) {
        "and nothing anywhere would say so");
 }
 
-restoreDerived();
-rmSync(snapshot, { recursive: true, force: true });
+restoreDerived(taken);
+rmSync(taken, { recursive: true, force: true });
 if (!(await green())) fail("the gate did not return to GREEN after restoring everything");
 console.log("PASS: red on a frozen-version content change, red on an extra member, red on a " +
             "missing member, red on a plugin the catalog does not ship, red on a lock a " +

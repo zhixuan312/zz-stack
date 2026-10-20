@@ -18,12 +18,12 @@ import { type PlatformWriteOutcome } from "./people.js";
 // imports it, so there is no cycle here for dependency injection to avoid.
 //
 // Each write takes `extraDetail`, merged into its own `auditAdmin` call's detail — a tool call
-// passes none, settings.ts's routes pass `{ via: "web" }`. The marker is added by the caller;
-// the gate's "every console write route records the door it came through" reads that literal
-// text back out of the route body.
+// passes none, the routes in settings/team.ts and settings/platform.ts pass `{ via: "web" }`. The
+// marker is added by the caller; the gate's "every console write route records the door it came
+// through" reads that literal text back out of the route body.
 //
-// Not exported: settings.ts imports the four functions below as values and lets their return
-// type infer, so nothing outside this file needs to name this shape.
+// Not exported: settings/team.ts and admin.ts import the two member writes below as values and let
+// their return type infer, so nothing outside this file needs to name this shape.
 type TeamWriteOutcome = { ok: true; message: string } | { ok: false; status: 400 | 403; error: string };
 /** Add a principal to a team, or change their role — the same call, because the insert's
  * own `on conflict (team_id, principal_id) do update set role = excluded.role` already

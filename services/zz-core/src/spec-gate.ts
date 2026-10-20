@@ -166,7 +166,10 @@ export async function specApprovalRefusal(
     const batch = due.slice(i, i + 8);
     const answers = await Promise.all(batch.map((x) => assessFamily({
       family: "evidence_relation", subject: `${x.r.id}: ${x.r.statement}`, context: x.r.evidence,
-      initiative, about: `${memoDoc}#${x.r.id}#${x.digest}`, askedBy: by })));
+      initiative, about: `${memoDoc}#${x.r.id}#${x.digest}`, askedBy: by,
+      // This approval failed with it, and the next one asks every statement it holds no reading for.
+      recover: `Call \`document_approve\` of ${initiative}/${name} again: it asks again every reading it ` +
+               "holds no row for." })));
     // The answers just taken are judged now, not read back on the next approval. `cache` was read
     // before they existed, so judging from it alone reported every row asked here as unavailable
     // and approved over a `no` (CS-8, 2026-10-06). From the answer itself rather than a re-read:

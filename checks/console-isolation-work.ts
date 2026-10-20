@@ -452,14 +452,14 @@ async function detailRounds(c: Context): Promise<void> {
       if (a.status !== 200 || !words.some((x) => a.text.includes(x))) bad.push(`${url} as its own team's superadmin answered ${a.status}: ${a.text.slice(0, 200)}`);
     }
   }
-  for (const url of details(s.one)) {
+  for (const url of [...details(s.one), "/api/console/approvals", "/api/console/approvals?tab=history&limit=100"]) {
     const a = await send(c.base, s.cookies.superadmin, { method: "get", url, body: null });
     if (a.status !== 400 || a.text !== JSON.stringify({ error: NO_TEAM })) bad.push(`${url} as the superadmin in no team answered ${a.status} ${a.text.slice(0, 200)}`);
   }
   if (bad.length) c.found.push(...bad.map((b) => `Work's detail routes: ${b}`));
   else c.pass("Work's initiative and document are the active team's for the superadmin too: another team's are 404 plainly, with " +
     "?scope=platform and with ?team= naming it, alike about an initiative nobody has and holding nothing of it, their own team's " +
-    "answer 200, and a superadmin in no team is answered the no-team sentence");
+    "answer 200, and a superadmin in no team is answered the no-team sentence there and on Approvals");
 }
 
 /** The shared lesson, the shelf and the search as each team's member and acting superadmin: their own team's initiative

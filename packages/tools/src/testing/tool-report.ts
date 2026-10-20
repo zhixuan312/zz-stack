@@ -18,7 +18,9 @@
  * Work only by default: a call whose `origin` is `platform` is the platform maintaining itself —
  * chain-check's deliberate refusals, zz-doctor, zz-migrate — and counted with work it moves the
  * accepted rate and --fail-under by traffic nobody's work made. The calls left out are counted
- * aside and said; `--origin platform` reports them alone, `--origin all` with work.
+ * aside and said; `--origin platform` reports them alone, `--origin all` with work. A saved report
+ * says which it counted, and --compare and --ledger set only reports that counted the same calls
+ * side by side: across two populations a class that is not in one reads as fixed, or as new.
  *
  * Run it on the deployment host: it reads the platform database through the compose project, the
  * same way backup.sh and issue-first-pat.sh do. --psql overrides that for anywhere else.
@@ -236,10 +238,12 @@ type Origin = (typeof ORIGINS)[number];
  *
  * --ledger needs it so a stray `notes.json` beside the saved runs is named and skipped rather than
  * crashing the listing; --compare needs it because showMovement reads fields tolerantly, so any
- * other JSON file compares cleanly against zeros and reports the whole run as new. */
+ * other JSON file compares cleanly against zeros and reports the whole run as new. A report that
+ * does not say which calls it counted is not one: what it would be compared with cannot be known. */
 export function isReport(r: unknown): r is ReportShape {
   return typeof r === "object" && r !== null &&
-    typeof (r as ReportShape).calls === "number" && Array.isArray((r as ReportShape).refusals);
+    typeof (r as ReportShape).calls === "number" && Array.isArray((r as ReportShape).refusals) &&
+    (ORIGINS as readonly unknown[]).includes((r as ReportShape).origin);
 }
 
 function main(argv: string[]): number {
@@ -549,7 +553,7 @@ function main(argv: string[]): number {
     // ?? 0`, `before.refusals ?? []` — so any other JSON file compares cleanly against zeros and
     // reports every refusal class in this run as new.
     if (!isReport(before)) {
-      return die(`--compare ${compare} is JSON but not a report — it carries no calls/refusals. ` +
+      return die(`--compare ${compare} is JSON but not a report — it carries no calls, refusals or origin. ` +
                  "It takes a file written by --json or --save.");
     }
     showMovement(report, before);

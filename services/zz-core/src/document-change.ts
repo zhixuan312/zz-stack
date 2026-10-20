@@ -45,7 +45,7 @@ import { sourceDocument } from "./indexing.js";
 import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
 import { baseConflict } from "./stale-base.js";
-import { type Consumption, fileSource, type FileSource, type OpenAIFile, type Staged, stagedUpload,
+import { type Consumption, fileHosts, fileSource, type FileSource, type OpenAIFile, type Staged, stagedUpload,
          uploadContent, uploadLines } from "./upload-consume.js";
 import { documentAt, loadDocument, principalId, splitStorePath } from "./versions.js";
 import { type Chain, envelopeFor, isoToday, normalizeSections } from "./write-guards.js";
@@ -356,13 +356,18 @@ async function refused(p: pg.Pool, who: string, team: string, path: string, line
   return { reply: await settleRefusal(p, { who, team, path }, refusalText(lines)) };
 }
 
-/** Which body mode a call sends, or the INVALID_MODE that says why it sends none or two. */
+/** Which body mode a call sends, or the INVALID_MODE that says why it sends none or two. `file` is
+ *  named only where the tools declare it, as `oneBody` names it: with no file host it is an argument
+ *  no tool takes. */
 function modeOf(a: EditArgs): "edits" | "section" | "content" | "upload" | "file" | "metadata" | { refusal: string } {
   const invalid = (why: string) => ({ refusal: `ERROR: INVALID_MODE — ${why}` });
   const sent = [a.edits, a.section ?? a.content, a.upload, a.file].filter((x) => x !== undefined).length;
   if ((a.upload !== undefined || a.file !== undefined) && sent > 1) {
-    return invalid("send ONE body change: an `upload` or a `file` is the whole body, and comes alone — without " +
-      "`edits`, `section`, `content` or the other.");
+    return invalid(fileHosts().length
+      ? "send ONE body change: an `upload` or a `file` is the whole body, and comes alone — without " +
+        "`edits`, `section`, `content` or the other."
+      : "send ONE body change: an `upload` is the whole body, and comes alone — without `edits`, " +
+        "`section` or `content`.");
   }
   if (a.section === undefined && (a.section_level !== undefined || a.section_occurrence !== undefined)) {
     return invalid("`section_level` and `section_occurrence` choose among headings `section` names; send `section` with them.");

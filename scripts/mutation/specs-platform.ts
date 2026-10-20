@@ -44,8 +44,8 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/console.ts",
     target: "a console query cannot fall back to every team",
     subject: "services/gateway/src/console/knowledge.ts",
-    find: "          and t.slug = $1\n        order by e.ts desc limit 500`,",
-    replace: "          and ($1::text is null or t.slug = $1)\n        order by e.ts desc limit 500`,",
+    find: "          and t.slug = $1\n        order by e.ts desc limit $3::int`,",
+    replace: "          and ($1::text is null or t.slug = $1)\n        order by e.ts desc limit $3::int`,",
     planted: "a null team parameter makes the predicate true for every row, so the knowledge log's " +
       "query no longer keeps itself to one team: the refusal in front of it for a caller who acts " +
       "for no team is all that stands between a null and every team's log",

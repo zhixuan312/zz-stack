@@ -73,7 +73,10 @@ the console's Runs, the active team's runs since its first with their observed o
 the console's Plugins and skills, each plugin's requirement, install command and public score with its comparability beside the active team's own calls, and the team's skills narrowed by plugin
 (`checks/console-work-plugins.ts`), which drives the gateway's identity gate and its plugin, skill, evaluation and owner's evaluation routes over seeded scores, calls and runs,
 a second team's member and a superadmin acting for it finding nothing of the first team's in Activity, Knowledge, Runs, Plugins and the skills, Access or the prepared queries over their measures, its refusal message, question, run, lesson and token, application, browser and passkey sentinels and its figures alike (`checks/console-isolation-destinations.ts`), which drives the gateway's identity gate, whole console and settings against one,
-and the thirty-six that run a real zz-core against one: the rule that tells an import from a team's
+Record counting nothing before a team's first record (`checks/console-record-coverage.ts`) and the
+gateway reads review round 2 found wrong answering only what their routes answer (`checks/review-round2-reads.ts`),
+each calling the gateway's own reads over a seeded one,
+and those that run a real zz-core against one: the rule that tells an import from a team's
 own work (`checks/console-imports.ts`), which calls the gateway's own rule over what a real zz-core
 recorded, the writing ledger, words added by period and the retained stock from the revisions kept
 (`checks/console-writing.ts`), which calls the gateway's own ledger over what a real zz-core recorded, the console's document reads, presentation and approval (`checks/console-versions.ts`),
@@ -106,11 +109,10 @@ the node a lesson's event names and the team a supersede is recorded under
 (`checks/knowledge-events.ts`), `initiative_status` answering a page of named initiatives
 while a console session's read records nothing (`checks/initiative-status-names.ts`), the five
 reads the core door offers answering what their pages' routes answer (`checks/console-agent-reads.ts`)
-and reaching zz-core through the gateway's agent door alone (`checks/core-agent-reads.ts`), Record
-counting nothing before a team's first record (`checks/console-record-coverage.ts`),
+and reaching zz-core through the gateway's agent door alone (`checks/core-agent-reads.ts`),
 `knowledge_search` naming only the caller's team's cited initiatives and counting the rest
-(`checks/knowledge-search-cited.ts`), and review round 2's platform defects and reads
-(`checks/review-round2-platform.ts`, `checks/review-round2-reads.ts`); a release's record, written once and reconciled with the tags, on a
+(`checks/knowledge-search-cited.ts`), and review round 2's platform defects
+(`checks/review-round2-platform.ts`); a release's record, written once and reconciled with the tags, on a
 database migrated by the real runner (`checks/release-record-db.ts`); and the rollback boundary
 (`checks/rollback-boundary.ts`), which fills new-format data through a real zz-core and runs the
 previous release's own statements against it. Each exits 2 when Docker is absent rather

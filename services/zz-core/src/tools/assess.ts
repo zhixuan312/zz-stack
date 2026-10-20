@@ -45,7 +45,8 @@ export function registerAssessTool(server: McpServer): void {
       try {
         const a = await assessFamily({ family, subject, context, initiative: initiative ?? null,
                                        about: about ?? null,
-                                       askedBy: parseCaller(requestHeaders()).email });
+                                       askedBy: parseCaller(requestHeaders()).email,
+                                       recover: "Call `assess` again with the same arguments to record it." });
         return text(JSON.stringify({
           family: a.family, reading: a.reading, probability: a.probability,
           bands: READING_BANDS, question_digest: a.question_digest,

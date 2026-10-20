@@ -41,10 +41,9 @@
  * evaluator is defined, and resolved here by `evaluator_version_id`. Both callers share one
  * insert builder (`insertAssessmentRow`), so the two identity shapes (`family` xor
  * `evaluator_version_id`, enforced by 001's own check) land in one table through one
- * code path — but they keep their own error behaviour: `assessFamily`'s provenance write is
- * best-effort (an answer in hand is not lost to a database hiccup), while
- * `recordEvaluatorAssessment`'s is not — a plugin-eval measure with no recorded assessment_id is
- * a measure that silently never happened, so its insert failure is thrown, not swallowed.
+ * code path, and neither swallows a failed insert: `assessFamily` fails the call that asked
+ * (`persistAssessment` says why), and `recordEvaluatorAssessment` throws, because a plugin-eval
+ * measure with no recorded assessment_id is a measure that silently never happened.
  */
 import { createHash } from "node:crypto";
 import { QUESTION_FAMILIES } from "@zz/contracts";
@@ -160,10 +159,14 @@ interface AssessmentCall { made: boolean; model_call_id: number | null }
 
 /** Ask one family about one subject. An unavailable service is an answer, recorded with its
  *  reason; the refusals are a family that does not exist and a reading whose row cannot be
- *  written (`persistAssessment`). */
+ *  written (`persistAssessment`).
+ *
+ *  `recover` is the caller's own sentence for how the row this call could not write gets written,
+ *  because only the caller knows: an approval asks again every reading it holds no row for, while
+ *  a source that asked is already filed, and sending it again files a second one. */
 export async function assessFamily(opts: {
   family: string; subject: string; context?: string;
-  initiative?: string | null; about?: string | null; askedBy: string;
+  initiative?: string | null; about?: string | null; askedBy: string; recover: string;
 }): Promise<Assessment> {
   const { family } = opts;
   if (!FAMILY_INSTRUCTIONS[family]) {
@@ -205,7 +208,7 @@ export async function assessFamily(opts: {
               reason: err instanceof Error ? err.message.replace(/^ERROR:\s*/, "").slice(0, 300) : String(err) };
     }
   }
-  await persistAssessment(out, call);
+  await persistAssessment(out, call, opts.recover);
   return out;
 }
 
@@ -249,6 +252,10 @@ interface AssessmentInsertRow {
   team: string | null;
 }
 
+/** An insert refused for a cause that asking again does not change: no database, nobody who carries
+ *  the address, or nobody's live team to name. Every other failure may pass on a second try. */
+class Unattributable extends Error {}
+
 /** The one insert both callers share. Returns the new row's id — `recordEvaluatorAssessment`
  *  needs it for `assessment_id`; `assessFamily`'s `Assessment` has never carried one and does
  *  not start now. Throws on any failure: whether that is swallowed or not is each caller's own
@@ -282,7 +289,7 @@ interface AssessmentInsertRow {
  *  which is `actingTeam` in @zz/contracts, the same rule every other caller resolves through. */
 async function insertAssessmentRow(row: AssessmentInsertRow, runner?: Queryable): Promise<number> {
   const p = runner ?? db();
-  if (!p) throw new Error("no platform database configured");
+  if (!p) throw new Unattributable("this deployment has no platform database");
   if (row.call_made && row.model_call_id === null) {
     throw new Error("this assessment came from a typed call that wrote no zz.model_call row, so " +
                     "it cannot name the call that produced it");
@@ -345,17 +352,17 @@ async function insertAssessmentRow(row: AssessmentInsertRow, runner?: Queryable)
         else 'changed' end as who`, [email]);
     switch (why[0]?.who) {
       case "no_team":
-        throw new Error(`"${email}" acts for no live team, so this assessment cannot name one — ` +
-                        "the platform will not invent an attribution it does not have. Nothing " +
-                        "was written.");
+        throw new Unattributable(`"${email}" acts for no live team, so this assessment cannot ` +
+                                 "name one — the platform will not invent an attribution it does not " +
+                                 "have. Nothing was written.");
       case "changed":
         throw new Error(`the team this assessment would name is not one "${email}" acts for — it ` +
                         "changed between resolving it and writing the row, or the credential " +
                         "making the call names a team they are not in. Nothing was written; ask " +
                         "again.");
       default:
-        throw new Error(`no zz.principal carries the address "${email}", so this assessment ` +
-                        "cannot say who asked for it. Nothing was written.");
+        throw new Unattributable(`no zz.principal carries the address "${email}", so this ` +
+                                 "assessment cannot say who asked for it. Nothing was written.");
     }
   }
   return Number(id);
@@ -368,9 +375,10 @@ async function insertAssessmentRow(row: AssessmentInsertRow, runner?: Queryable)
  *  `unavailable` and passes on the deterministic rules alone (`acceptanceApprovalRefusal`), and an
  *  audit round with none reopens nothing (`auditMove`), so a `no` or a `yes` whose row was lost
  *  would let an approval or a settled audit through on the very answer that should have stopped it.
- *  Whatever the call wrote before asking stands; `assess` with the same family, initiative and
- *  `about` writes the row those readers read. */
-async function persistAssessment(a: Assessment, call: AssessmentCall): Promise<void> {
+ *  Whatever the call wrote before asking stands. The refusal ends with the caller's `recover` when a
+ *  second try can write the row, and says that asking again is refused alike when it cannot
+ *  (`Unattributable`), so nobody is sent to repeat a call that cannot succeed. */
+async function persistAssessment(a: Assessment, call: AssessmentCall, recover: string): Promise<void> {
   try {
     await insertAssessmentRow({
       family: a.family, evaluator_version_id: null, instruction_version: a.instruction_version,
@@ -384,13 +392,11 @@ async function persistAssessment(a: Assessment, call: AssessmentCall): Promise<v
     });
   } catch (err) {
     const cause = err instanceof Error ? err.message.replace(/^ERROR:\s*/, "").slice(0, 300) : String(err);
-    const same = [`family "${a.family}"`, a.initiative && `initiative "${a.initiative}"`,
-                  a.about && `about "${a.about}"`].filter(Boolean).join(", ");
     throw new Refusal(
       `ERROR: the ${a.family} reading${a.about ? ` of ${a.about}` : ""} was taken but could not be ` +
       `recorded (${cause}), and nothing may route on a reading the platform does not hold, so this ` +
-      `call fails. Anything it wrote before asking stands. Ask again: \`assess\` with ${same} and ` +
-      "the same subject records it.");
+      "call fails. Anything it wrote before asking stands. " +
+      (err instanceof Unattributable ? "Asking again is refused the same way until that is put right." : recover));
   }
 }
 

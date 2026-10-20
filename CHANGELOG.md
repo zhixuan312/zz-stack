@@ -33,6 +33,242 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.97.0] — 2026-10-20 · console 0.28.0
+
+The console becomes two workspaces, Work and Platform, each drawn for the person signed in. A member
+sees their own team's work and the platform's public health; a superadmin sees the same and, under
+Platform, the fleet. Every page is decided on the console's server before it renders, Work is the
+team the person acts for (a superadmin included), and a page a person may not open is the same
+missing page as an address nobody serves. Behind it the gateway answers one read per page, the core
+door gains five tools that answer an agent what those pages answer a person, and three migrations
+apply. Every installed client must re-pull: the plugins now run their helper through `node`.
+
+### zz-stack 0.97.0
+
+- **The console reads one gateway route per page, in the reader's projection.** New under
+  `/api/console`: for Work, `home`, `record`, `approvals`, `activity/summary`, `knowledge/summary`,
+  `access`, `work/query`, `search` and `POST initiatives/:team/:slug/close`; for Platform,
+  `platform/status`, `platform/releases` and `/:version`, `platform/bugs` with `/:id`,
+  `/:id/duplicates` and `POST /:id/resolve`, `platform/evaluation`, `platform/usage`,
+  `platform/audit`, `platform/knowledge` and `platform/query`; and `POST page-view`. A Work read
+  answers the caller's active team and nothing else; a Platform read answers a member its public
+  projection and the superadmin the whole. A part that cannot be counted is answered unavailable
+  while the others stand, never as a zero. `work/query` and `platform/query` are the prepared
+  queries an agent asks: one measure by a declared dimension, against the window before and down to
+  a group's rows, each equal to the figure its page draws, never a body or a question's text.
+- **Removed and reshaped console routes.** `GET /api/console/overview` is gone, with the `overview`
+  live collection: a stream that names it is refused 403. `/initiatives?waiting=1`, the bell's read,
+  answers 404; Home and Approvals replace both. `/initiatives` answers a paged list and ignores
+  `team` and `scope`. `/activity`, `/knowledge`, `/runs`, `/plugins` and `/skills` answer new
+  shapes: `/knowledge` is `{ meta, rows, total, summary }` where it was `{ nodes }`, and a `/plugins`
+  row drops `latestEval`, `calls`, `failed` and `lastRun` and gains `required`, `install`, `score`,
+  `comparability` and `yourTeam`. `/teams`, `/teams/:slug` and `/people` page at 10 (ask
+  `limit=100`) and carry only what their pages draw: no team row holds members, initiatives,
+  documents, sources, knowledge or counts, and no person row holds `status`, `active_team`,
+  `activeTeam`, `tokens` or `last_used`. The initiative detail gains `flow` (null for an initiative
+  with none, which no longer answers the fallback's nine steps), `state` and `lastTouched`; the
+  knowledge node loses `multi_team`, which was always false; the knowledge log is
+  `{ entries, totals, ceiling }`; the activity summary's owners, most refused and maintenance are
+  each `{ state, data }`. A console not-found answers a fixed sentence and no longer echoes the
+  address. `DELETE settings/me/tokens/:id` answers 404 for an id that names no live token of the
+  caller's. `work/query` reads a bare `from=YYYY-MM-DD` as the reporting time zone's day, not UTC
+  midnight, and refuses a bad `top`, `rows` or `where` with 400 where it ignored them.
+- **A reader is answered their own team, and a member is refused what is not theirs.** A member
+  gets 403 on `/teams`, `/teams/:slug`, `/people`, the Audit read and a bug report's own read. The
+  initiative, document, lesson and knowledge log reads answer the active team for everyone, so a
+  superadmin no longer reads another team's through `?team=` or `?scope=platform`; they switch
+  team. Three leaks are closed: a plugin's evaluation read was teamless, so any member read another
+  team's finding text (it now answers the superadmin and the plugin's owning team); Activity answered
+  a superadmin another team's search question; and the node route still resolved a scope. A new
+  gate check signs in as two teams, asks every console route with the other team's names, ids and
+  forged scopes, and finds none of the other team's words in any answer, error or stream frame.
+- **Five core tools answer an agent what the console's pages answer a person.** `platform_status`,
+  `release_list`, `activity_refusals`, `run_summary` and `record_read` are on `/core/mcp` for every
+  caller, a member's token included, with no team argument; each tool's figures are its page's by
+  construction. zz-core reaches them through the gateway's new `POST /internal/agent-read/<tool>`,
+  which answers only the hosts `CORE_PEERS` names and rebuilds the caller from the forwarded
+  identity. The new `GATEWAY_INTERNAL_URL` (zz-core) and `CORE_PEERS` (gateway) are in compose with
+  defaults.
+- **Tool arguments and answers that changed.** `document_approve` takes `decision_basis`
+  (`explicit` or `delegation`) and records it on the approval; the console's Approve sends
+  `explicit`. `initiative_status` also takes `initiatives`, one to ten names answered each as alone,
+  and counts a plan's audit rounds per phase, so a phase planned after an approved one is no longer
+  sent to the stakeholder after one round. `bug_report` refuses a blank title or detail and
+  `bug_resolve` a blank resolution, both whitespace they used to accept; the cross-team duplicate
+  refusal is reworded. `initiative_open` refuses a slug holding characters it used to cut silently,
+  naming them, and creates nothing. With `OPENAI_FILE_HOSTS` empty, `document_write`,
+  `document_edit` and `source_add` no longer declare `file`. `team_switch`'s description names Access
+  rather than Settings. An assessment the platform cannot record now fails the call that asked it,
+  with the exact call that recovers it, where it was logged and the call answered.
+- **`knowledge_search` names only your team's cited initiatives.** A shared-shelf lesson's evidence
+  handed every reader the slugs of the other teams' initiatives it cites; it now names the active
+  team's and counts the rest in `cited_elsewhere`, chosen after ranking so no result moves. The
+  console's node, list, related rows and search follow the same rule.
+- **Search finds the number in a hyphenated word, and answers one order.** `ticket-1234` was
+  indexed as `ticket` plus the integer `-1234`, so a search for `1234` missed it; each hyphenated
+  word holding a digit is now also stored with its hyphens read as spaces. The analyzer generation
+  moves to `zz-lexical-v4`. Every lane breaks ties on the row's own key, so one question answers one
+  order through the console, its assistant and MCP; a shared-shelf lesson at the same address as a
+  team lesson now answers as its own row instead of being merged into it with the scores summed.
+- **Every event says whether it was work or the platform maintaining itself.** `zz.event.origin` is
+  `work` or `platform`, stamped by both writers from the `x-zz-client` name: `chain-check`,
+  `zz-migrate` and `zz-doctor` are `platform`. Work's figures, Status and Usage count real work, and
+  finished work, approvals and runs leave out maintenance acts and probe initiatives. One
+  `console.page_view` is recorded per opened destination, from a closed list of nineteen, and left
+  out of the activity log and every count. `knowledge_add`'s event names the node it made, and
+  `knowledge_supersede` records under the shelf's team with no second, actor-less copy.
+- **A release records itself in `zz.release`.** `scripts/release-record.ts` runs after the tag and
+  writes the version's row from its changelog section: the opening paragraph's first sentence is
+  the summary, and the first upgrade note's bold lead is the client action. The first release with
+  the table also records every earlier `v*` tag at its tag's time; a tag with no section is "No
+  changelog entry" with its client action unknown. Releases and Status read it. `release.ts
+  --verify-only` exits 1 when the record needs attention, and a failed write names
+  `release-record.ts --record <version>`.
+- **Figures and sentences that moved.** Record's quarter and year agent and search figures count
+  from the later of the period's start and the team's first record, so they drop for a team that
+  ran before its first initiative. Releases' `lastWeek` (and `release_list`'s) is the last whole
+  Monday week, not the seven days before the cutoff. A tied high or low names every week it ties
+  with, and one tied with its first week reads "tied with that first week". `knowledge/summary`
+  answers up to 50 unanswered questions, not 10. A Status need links its released page
+  (`/platform/bugs`, `/platform/usage`, `/platform/evaluation`, `/platform/teams/<slug>`) where it
+  was null or `/teams/<slug>`. Activity's no-team refusal is the shared `NO_TEAM` sentence.
+  Deactivating an unknown email, and adding a person with a malformed one, answer 400.
+- **Home and Record count each revision's words once.** The writing ledger fetched every retained
+  revision body of the team on every request; it now keeps counts by content hash and fetches only
+  metadata and the bodies it has not counted.
+- **The client package runs on Windows, and the skill-report hook records the front doors.** The
+  token helper and the hook run through `node` (`scripts/zz-mcp-headers.mjs`) instead of a `.sh` no
+  Windows shell runs, and `client_setup` offers a `node` line that writes `~/.zz/token` from
+  PowerShell or cmd. Dynamic Client Registration accepts a `localhost` loopback redirect beside
+  `127.0.0.1` and `[::1]`, as Claude Code sends. The hook sent a command-typed skill's command name,
+  which zz-core cannot resolve, so the platform's own front doors left no event; it now sends the
+  skill's own name.
+- **Skill text.** `zz-platform` 3.87 to 3.89 (a slug is lowercase ASCII and another script is
+  refused rather than cut; a row for the five console reads; ChatGPT's `file` is declared only once
+  hosts are listed). `sdlc-method` 1.25 to 1.26 (`decision_basis`). `zz-plugin-evaluate` 1.3 to 1.5
+  (the DEFINE/QUALIFY record owes `affirmed_path` and `qualified_measures`, which replace
+  `protocol_affirm` and `evaluator_qualify`). `zz-admin` passes a duplicate's id as `duplicate_of`;
+  `sdlc-flow` states the per-phase audit budget; the `zz-router` and `zz-access` descriptions no
+  longer promise a load the body refuses or end mid-word.
+- **`deploy/init-record-layout.sh` is deleted**, with the activation rehearsal's step that ran it:
+  it laid out a file store retired at 0.86.0. `deploy/Caddyfile` answers `/internal/*` with 404 on
+  the gateway's host.
+- **For contributors.** `platformPublic`'s handler takes `activeTeam`; `importedRevisions` is
+  `importedDocuments`; `NORMALIZED_REFUSAL_SQL` is `normalizedRefusalSql` in `@zz/contracts`;
+  `tagVerifiedLive` is async; `persistAssessment` throws where it logged; `assessFamily` requires
+  `recover`; `scripts/gate/read.ts` no longer exports `execOutput`, and `testing/gate-plant.ts`'s
+  `run()` and `failing()` are async. `tool-report` selects `e.origin`, so it needs migration 004, and
+  `--compare` refuses a saved report with no `origin`. `npm run skeleton` runs the built console on
+  the real gateway as a member and a superadmin, and the gate is 579 checks.
+
+### zz-stack-dashboard 0.28.0
+
+- **Two workspaces, each drawn for the person signed in.** Work: Home, Record, Initiatives,
+  Approvals and Knowledge; Activity and Runs under Agents; Plugins under Catalog; Access under
+  Account. Platform: Status, Releases, Bugs and Evaluation under Health; Teams, People, Usage, Audit
+  and Knowledge health under Fleet. A member is offered fifteen destinations and a superadmin
+  eighteen: Teams, People and Audit are the superadmin's, and so is a bug report's own page, which
+  is on no rail.
+- **Every page asks the gate on the console's server before it renders anything.** One `/me` read
+  per request, with the caller's own `zz_console` cookie, decides the page, the rail and the command
+  palette; the browser's own gate is deleted. A page a person may not open draws the same in-shell
+  missing page, tab title and status as an address no page answers, naming nothing. The
+  superadmin's The platform / Your team control is deleted with its stored value: Work is the team
+  a person acts for, and to read another team a superadmin switches team.
+- **`/teams`, `/teams/<slug>`, `/people` and `/settings` are gone,** and draw the missing page like
+  any unknown address, with no redirect. Their pages are `/platform/teams`, `/platform/people` and
+  `/access`.
+- **Work.** Home replaces the Overview at `/`: what waits, last week beside the week before, open
+  work, runs, milestones and what closed; the bell reads Approvals' Waiting tab. Record draws the
+  retained text, the period's work, a year of days and the record of every initiative, and copies
+  itself as text. Initiatives pages on the server and closes an initiative through a dialog; an
+  empty initiative offers only Abandoned, and one with no flow is drawn freeform. Approvals has
+  Waiting and History, and Approve now asks "Approve this document as your own decision?".
+  Knowledge searches with the ranked engine, lists the team's questions that found nothing and opens
+  a shared-shelf lesson read-only. Plugins carries each install command with a Copy control and each
+  score with its comparability. Access replaces Settings: tokens, client setup, connected
+  applications, signed-in browsers, passkeys and the team acted for.
+- **Platform.** Status leads with what needs attention, then the eight measures, the team's own
+  tiles, how each door did and what is running, naming a newer tag when one is recorded. Releases
+  lists the recorded releases with each one's before and after windows, and a release's page draws
+  its published changelog and upgrade notes. Bugs is the queue by state, impact and surface; the
+  superadmin resolves a report from its page. Evaluation, Usage, Audit, Teams, People and Knowledge
+  health draw the fleet's reads; a member reads the public projection of each one they are offered.
+- **The assistant reads, and says where a change is made.** It searches document text through the
+  platform's ranked search (`view_search`) and asks each page's prepared query (`explore_<view>`)
+  where it asked `query_<name>` tools, read uncached with the caller's cookie; it never writes SQL
+  and has no tool that changes anything. Its view tools take each page's own filters, `limit` and
+  `offset`: `view_activity` answers `{ summary, log }`, `view_knowledge`'s `q` filters the shelf,
+  `view_plugin` answers a withheld evaluation as `null`, and `view_access` replaces
+  `view_settings`. A page that makes a change says the change is made by its own control. A failed
+  tool answers one fixed sentence that names no path, person or team. A team switch clears the
+  thread, and a stored thread stamped for someone else is cleared before the panel draws.
+- **A page paints what the server read.** Every page makes its first read on the console's server;
+  a document's body is in the first paint, where it waited for every script and hydration. A read
+  that does not answer draws its error with Retry within 5 seconds, a failed read keeps its Retry in
+  place while it reads again, a figure the gateway sent as null is never drawn as 0, and every table
+  pages at ten. A tab's live stream opens with the revisions its page was served and is greeted
+  synced when nothing moved, so a page loaded directly reads nothing twice.
+- **Security fixes.** Next.js 16.3.8 to 16.4.2, with the fixes for two critical advisories
+  (GHSA-673q-mjm6-r5xr, GHSA-2464-fhr4-w9xw) and one high (GHSA-p3m5-59mp-jv5r). A signed-in
+  person opening `/login?next=//evil.example` left the site; `next` is now held to a path on this
+  site. A store-path segment holding `..%2F` reached the gateway as another route with the person's
+  cookie; an address that does not decode, or holds `.` or `..`, now draws the missing page and
+  reads nothing. A newly issued token and an enrolment link are shown in a dialog outside the text
+  the assistant sends with every message, so an Ask while either is on screen no longer puts it in
+  the model's context.
+- **The assistant has its product brief again.** `.dockerignore` excluded `docs`, so the image
+  shipped without `docs/brief.md` and every reply in production was written without its Product,
+  Users and Glossary sections. The console's own check now refuses an exclusion of a traced path.
+- **On ZZ Meridian 0.24.0**, from 0.14.1. Two kept divergences remain in `.meridian/keep.json`
+  (`use-query-state.ts` and `period.ts`), each with its upstream report, where there were ten. Every
+  route is held to its own recorded first-load size and every page to its own gzipped HTML size,
+  with no single cap. `pnpm verify` has quick, change, complete and timed tiers, and CI runs full
+  and timed on push.
+- **For contributors.** Platform, Fleet, Work and destination types live in
+  `platform-shapes.ts`, `fleet-shapes.ts`, `work-shapes.ts` and `destination-shapes.ts`; `NavItem`
+  requires `feature`; `consoleMutate` resolves on a 204; `PluginEval` is a union on `found`;
+  `respond()` requires a stamp; `DocumentView` takes the server's read; `decodePath` returns
+  `string | null`; `InitiativeDetail` requires `flow`, `state` and `lastTouched`; `/login?reason=`
+  carries a code and `Me.why` is gone; `PeriodProvider`, `usePeriod`, `showPeriod`, `periodCutoff`,
+  `DEFAULT_PERIOD` and `useAddressParam` are removed; the fake gateway's people, team and token
+  exports moved to their per-read modules, and its calendar is the reporting time zone's.
+
+### Upgrade notes
+
+- **Every installed client must re-pull: `/zz-access:update` in Claude Code, `$zz-access:update` in
+  Codex.** Required by `ef87d26e`: each plugin's `.mcp.json` and zz-core's hook now run
+  `node ".../scripts/zz-mcp-headers.mjs"`, and the `.sh` they named no longer ships. Skill text
+  changed too. Restart Claude Code after the update.
+- **Refresh any client that caches tool schemas** (the ChatGPT connector: refresh, or remove and add
+  it again). It needs the refresh to see the five new core tools, to stop offering `file` when no
+  file host is configured, and to show `team_switch`'s new description.
+- **Set `ZZ_GATEWAY` in the console's `.env` before it starts** (`/root/zz-stack-dashboard/.env`).
+  It is required for every page now, not only the assistant, and the console's compose file refuses
+  to start without it. It is the gateway's public address (the `api.` host).
+- **Three migrations apply on the gateway's next start.** `004_event_origin.sql` adds
+  `zz.event.origin` (`work` by default, checked to `work` or `platform`) and, in one `UPDATE`, marks
+  `platform` every existing row whose recorded client is `chain-check`, `zz-migrate` or
+  `zz-doctor`: the one statement that changes rows of this insert-only table, and it raises one
+  live hint per team it marked. `005_page_view_no_hint.sql` replaces `zz.console_change_event()`
+  so an event hints `activity` and `runs` and a page view hints nothing; no row moves and the
+  triggers are unchanged. `006_release.sql` creates `zz.release` empty. None is marked
+  `-- rollback: refused`: the previous image runs on all three, and a rollback leaves them in place.
+- **zz-core re-derives every search vector at boot under `zz-lexical-v4`.** It is not awaited: zz-core
+  serves while it runs, and a row not yet re-derived answers under the older analysis. Let it finish,
+  every `zz.doc` and `zz.knowledge_node` row on `zz-lexical-v4`, before running doctor.
+- **Re-apply the Caddyfile with `./deploy/install-caddy.sh <ssh-host>`.** The gateway's host now
+  answers `/internal/*` with 404 before the proxy. The gateway already refuses every peer but
+  zz-core there; the release itself does not touch Caddy.
+- **`GATEWAY_INTERNAL_URL` and `CORE_PEERS` need nothing set.** Compose defaults them to
+  `http://cred-proxy:8000` and `zz-core`; set them only when the doors run as other services.
+- **Release the console with the platform.** A console older than 0.28.0 reads
+  `/api/console/overview`, which is gone, and the old shapes of the reshaped routes; 0.28.0 needs
+  this gateway's routes. Released together, the window is the length of one image pull.
+- **This release writes `zz.release` for itself and every tag before it.** Until the row is written,
+  Status answers what is running as unavailable, `unrecorded`; if the write fails, the release
+  stands and the warning names `release-record.ts --record 0.97.0`, which is safe to run again.
+
 ## [0.96.0] — 2026-10-12 · console 0.27.0
 
 The console gets an assistant, Meridian's own, and the gateway stops answering questions. A person

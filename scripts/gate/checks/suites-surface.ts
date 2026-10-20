@@ -40,6 +40,8 @@ check("the core door introduces itself to a client that reads nothing else, and 
 
 check("opening is explicit and dated by the platform, and freeform gets no next move",
       runsCheck("initiative-open.ts"));
+check("an approval is sealed at its instant, only a source filed after it is listed, and a carried seal keeps the instant",
+      runsCheck("approval-instant.ts"));
 check("initiative_status carries the current plan's waves, hotspots and violations, and an approved plan that does not validate says so in its next move",
       runsCheck("plan-waves-status.ts"));
 

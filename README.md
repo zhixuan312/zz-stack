@@ -67,7 +67,7 @@ services/gateway/     the one door: identity (PATs, and a passkey for the consol
                       arrive through when a model must not carry them — they only
                       stage; the write that uses an upload is zz-core's (see
                       deploy/README.md)
-                      Three offline checks live beside the code they are about:
+                      Five offline checks live beside the code they are about:
                       identity-check (the adapter walk, whose ordering is an
                       authentication property no reading of the loop shows),
                       scope-check (the real resolveScope over ten callers, so a
@@ -77,7 +77,13 @@ services/gateway/     the one door: identity (PATs, and a passkey for the consol
                       credential value or a stored token never survives — nested
                       or not — while the metadata beside it still does, and a
                       field nobody named yet is caught on its name alone rather
-                      than left to be remembered)
+                      than left to be remembered), call-attribution-check (the
+                      real initiativeFrom, so a call is filed under the
+                      initiative its argument or its path names, and nothing
+                      for a shelf, a bare name or a path across two
+                      initiatives), and stage-sources-check (the real stageOf
+                      over the sdlc-flow manifest, so an audit step is credited
+                      only by a round under sources/ typed by its stage)
 catalog/    the flows and platform capabilities, one directory per owner. A
             flow.json says what each is; `shelved: true` marks a capability
             every person gets from the shelf rather than one a team installs:

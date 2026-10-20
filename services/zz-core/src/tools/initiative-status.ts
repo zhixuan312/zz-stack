@@ -106,18 +106,19 @@ function sourceRows(rows: Map<string, DocRow>): DocRow[] {
 /** The initiative's registered sources, and which of them landed after the document they
  *  support was approved. Reached from both returns of initiativeState.
  *
- * Compares the platform's own instants, not the dates people type: `approved_at` is
- * day-granular and hand-written, while a source's `updated_at` is a timestamp the platform
- * wrote when it filed the row. */
+ * Compares two instants the platform wrote: a source's `updated_at`, stamped when it filed the
+ * row, and the seal's `approved_at`, the instant `document_approve` was given (`approvalStamp`).
+ * A row sealed before 0.97.0 holds the UTC midnight of its approval day and is kept as it was, so
+ * on such a document a source filed earlier that day still lists. */
 function sourceReport(rows: Map<string, DocRow>): {
   sourceFiles: string[];
   needsRefinement: Array<{ document: string; source: string; title: string }>;
 } {
   const sources = sourceRows(rows);
   const sourceFiles = sources.map((d) => d.path.slice("sources/".length));
-  // The two instants this compares are the database's own: when the source was last written and
-  // when the document it bears on was approved. Both are timestamps the platform wrote, and
-  // comparing them as instants rather than as text is what keeps two offsets from deciding.
+  // When the source was last written and when the document it bears on was approved — the
+  // database's clock and zz-core's, one host's. Comparing them as instants rather than as text is
+  // what keeps two offsets from deciding.
   const at = (ts: string | null): number => (ts ? Date.parse(ts) : 0);
   const needsRefinement: Array<{ document: string; source: string; title: string }> = [];
   for (const src of sources) {

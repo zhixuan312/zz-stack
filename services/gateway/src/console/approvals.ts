@@ -132,22 +132,23 @@ async function approvalsOf(team: string, caller: string, asOf: string): Promise<
           and lower(e.detail->>'signer') = lower($2) and e.ts <= $3::timestamptz
         order by e.ts, e.id`, [team, caller, asOf]),
     // Every sealed revision of the team, whoever signed it: an event's content revision names its
-    // snapshot whoever holds the seal now. A seal is the reporting calendar's day, written as a date, so
-    // it is read and compared as one: its date, and its local midnight as the instant it is placed at.
-    // DELIBERATE: `approved_at::date`, not `at time zone ZZ_TZ`. The date was cast to a timestamptz in the
-    // database session's zone, which both pools share (production holds every seal at UTC midnight), so
-    // only the session's own zone gives the written date back; ZZ_TZ would move it a day west of UTC.
+    // snapshot whoever holds the seal now. A seal is read and compared by its day in the reporting zone:
+    // its date, and its local midnight as the instant it is placed at.
+    // DELIBERATE: `at time zone ZZ_TZ`, not the session's `::date`. A seal is the instant of the approval
+    // (0.97.0 on), and its UTC date is the day before the envelope's for one sealed before 08:00 in
+    // Asia/Singapore. A seal written earlier is UTC midnight of its day, which every zone east of UTC
+    // (ZZ_TZ in production) reads back as that same day; a zone west of UTC would read it a day early.
     db.query<Sealed>(
       `select d.id::text as doc_id, i.slug as initiative, d.path, r.revision, r.version,
               coalesce(r.content_generation, case when r.revision = d.current_revision then d.content_generation end)::text as generation,
-              lower(a.email) as signer, to_char(r.approved_at::date, 'YYYY-MM-DD') as day,
-              (extract(epoch from (r.approved_at::date::timestamp at time zone $2::text)) * 1000)::float8 as day_ms
+              lower(a.email) as signer, to_char(r.approved_at at time zone $2::text, 'YYYY-MM-DD') as day,
+              (extract(epoch from ((r.approved_at at time zone $2::text)::date::timestamp at time zone $2::text)) * 1000)::float8 as day_ms
          from zz.doc d
          join zz.initiative i on i.id = d.initiative_id
          join zz.team t on t.id = i.team_id
          join zz.doc_revision r on r.doc_id = d.id
          join zz.principal a on a.id = r.approved_by
-        where t.slug = $1 and r.approved_at::date <= ($3::timestamptz at time zone $2::text)::date
+        where t.slug = $1 and (r.approved_at at time zone $2::text)::date <= ($3::timestamptz at time zone $2::text)::date
         order by d.id, r.revision`, [team, ZZ_TZ, asOf]),
     db.query<{ began_ms: number | null; day: string | null }>(
       `select (extract(epoch from min(e.ts)) * 1000)::float8 as began_ms, to_char(min(e.ts) at time zone $2::text, 'YYYY-MM-DD') as day

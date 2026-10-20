@@ -133,6 +133,24 @@ apply. Every installed client must re-pull: the plugins now run their helper thr
   (`/platform/bugs`, `/platform/usage`, `/platform/evaluation`, `/platform/teams/<slug>`) where it
   was null or `/teams/<slug>`. Activity's no-team refusal is the shared `NO_TEAM` sentence.
   Deactivating an unknown email, and adding a person with a malformed one, answer 400.
+- **The record files a call, an approval and an audit step where they happened.**
+  - **Calls are filed under the initiative their path names.** A document tool carries no
+    `initiative` argument, so a read or edit of `<initiative>/spec.md` was filed under whichever
+    initiative the caller had named last. One initiative had 113 of its own path's calls filed
+    under six others. Now a call is filed under the initiative its `path` names. Every path in an
+    array must name the same one, and a `scope: "platform"` read or a `_knowledge` path names
+    none.
+  - **An approval records its moment, not the day's midnight.** `document_approve` now stores
+    the moment of the approval in the revision's `approved_at`, and a close keeps that moment.
+    So `initiative_status.sources_after_approval` no longer lists a source filed earlier on the
+    approval day. Approvals made before this release keep their midnight. The frontmatter still
+    reads the day. The console dates a sealed approval (Approvals' History, Record's first
+    sealed day) by its day in the reporting time zone rather than its UTC date. A closed
+    initiative names its handover's approval by that day.
+  - **The initiative page credits an audit step with a real round.** A spec or plan audit step
+    is now done only when a source under `sources/`, typed by that audit stage and supporting
+    its document, exists: zz-core's own rule (`roundsOf`). Before, it looked for type `source`,
+    which no round carries, so every audit step was drawn empty.
 - **Home and Record count each revision's words once.** The writing ledger fetched every retained
   revision body of the team on every request; it now keeps counts by content hash and fetches only
   metadata and the bodies it has not counted.
@@ -159,7 +177,7 @@ apply. Every installed client must re-pull: the plugins now run their helper thr
   `recover`; `scripts/gate/read.ts` no longer exports `execOutput`, and `testing/gate-plant.ts`'s
   `run()` and `failing()` are async. `tool-report` selects `e.origin`, so it needs migration 004, and
   `--compare` refuses a saved report with no `origin`. `npm run skeleton` runs the built console on
-  the real gateway as a member and a superadmin, and the gate is 579 checks.
+  the real gateway as a member and a superadmin, and the gate is 582 checks.
 
 ### zz-stack-dashboard 0.28.0
 

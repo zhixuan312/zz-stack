@@ -94,6 +94,11 @@ check("redaction lets no secret through, on the real predicate", runsClean("reda
 
 check("scope and authority refuse what they say they refuse", runsClean("scope-check"));
 
+check("a call is filed under the initiative its argument or path names", runsClean("call-attribution-check"));
+
+check("a stage that produces a source is credited only by its own rounds: under sources/, typed by the stage, supporting its document",
+      runsClean("stage-sources-check"));
+
 /* A released version whose changelog entry still says "Unreleased".
  *
  * Stamping the section is a judgement step done by hand on a release branch — nothing in

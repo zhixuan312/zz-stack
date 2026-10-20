@@ -45,6 +45,7 @@ import { root } from "../scripts/deployment.ts";
 import { MEMBER, SUPERADMIN, seedEvaluation } from "../scripts/schema/evaluation-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 /*
  * One plugin's evaluation in each state the plugin evaluation read answers, seeded into a throwaway
@@ -162,20 +163,6 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 
 interface Answer { status: number; body: Obj; text: string }
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold,
- *  the first elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** The value at a dotted path, `[0]` reading an array's first element. */
 const at = (v: unknown, path: string): unknown =>

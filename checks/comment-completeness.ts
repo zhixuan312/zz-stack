@@ -7,10 +7,7 @@
 // It is also the only thing that reads the SHAPE of a target comment. `scripts/schema/compare.ts`
 // holds the target and the migrated catalog to each other, so drift between them is refused — but
 // two comments that AGREE can both break the standard, and nothing in a comparison can see that.
-// These rules lived in `scripts/schema/comments.ts`, which rendered the target's comments into
-// `COMMENT ON` statements; that rendering has run, its output is folded into `001_init.sql`, and
-// the file was dead. The rendering was redundant, the ASSERTIONS were not, so they moved here —
-// this reads `schema-target.ts` directly and renders nothing.
+// This reads `schema-target.ts` directly and renders nothing.
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -35,9 +32,8 @@ const KEYS = ["class", "authority", "question", "transitions", "rebuilt_from", "
  *  regex. `question` is `<one sentence>`, and a sentence may contain a semicolon: `zz.event.detail`
  *  asks about "section headings, cause paths, normalisations and diagnostics; on a document.refused
  *  row ...; and on a document.shown or document.shown_part row ...", which a split on `; ` cuts in
- *  half so that the question reads as ending mid-clause. The parser this replaced — in the
- *  now-deleted `scripts/schema/comments.ts` — did exactly that, so its `question` rule was red
- *  against a target that was in fact correct, and being dead nobody ever saw it.
+ *  half so that the question reads as ending mid-clause, and the `question` rule would be red
+ *  against a target that is correct.
  *
  *  So a field starts at the string's own start or after `; `, and a value runs to wherever the
  *  NEXT known key starts, less the `; ` that separates them. A `; ` inside a sentence is inside

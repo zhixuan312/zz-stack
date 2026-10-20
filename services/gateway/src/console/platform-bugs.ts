@@ -31,7 +31,7 @@ import type { Express, Request } from "express";
 
 import { platformDb } from "../db.js";
 import type { Figure, Part, ReadMeta } from "./figures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
 
 type Impact = "blocks_work" | "wrong_result" | "confusing" | "cosmetic";
 type Status = "open" | "fixed" | "not_a_bug" | "duplicate";
@@ -47,7 +47,6 @@ const MIN_CALLS = 30;
 const HOUR = 3_600_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");

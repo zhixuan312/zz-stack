@@ -46,7 +46,7 @@ import type { Express, Request } from "express";
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { refusalGroups, refusalWeeks, type RefusalGroup, type RefusalPeriod } from "./refusals.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { lastWholeWeek, periodsOf } from "./work-figures.js";
 
 type Owners = Record<RefusalOwner, number>;
@@ -71,8 +71,6 @@ const WEEK = 7 * 24 * HOUR;
 const WHOLE_WEEKS = 24;
 /** The latest events the log reaches, after its filters. */
 const CEILING = 500;
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
-export const NO_TEAM = "you act for no team, so there is no team whose work to read: switch to one of your teams first";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");

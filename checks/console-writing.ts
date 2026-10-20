@@ -80,7 +80,7 @@ const MAINTENANCE = "zz-migrate";
 const WORK = "zz-plugin";
 const HOUR = 3_600_000;
 
-/** `n` words: a heading of two, then words of `tag` with `first` leading, twenty to a line. */
+/** `n` words: a heading of two, then words of `tag`, the first of them `<tag>-start`, twenty to a line. */
 function text(n: number, tag: string): string {
   const words = Array.from({ length: n - 2 }, (_, i) => (i === 0 ? `${tag}-start` : tag));
   const lines: string[] = [];

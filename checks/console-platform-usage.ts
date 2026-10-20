@@ -56,6 +56,7 @@ import {
   MEMBER, REFUSAL_TEXT, SUPERADMIN, TEAMS, UNREGISTERED, USAGE, seedUsage, seedUsageNoise, type Seeded, type Week,
 } from "../scripts/schema/usage-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-usage";
 const DONE = "console-platform-usage: the platform's usage is answered part by part with its populations named, real work " +
@@ -79,20 +80,6 @@ const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 interface Answer { status: number; body: Obj; text: string }
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first
- *  elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** An answer with the running week's `observedThrough` left out: it is the request's own `asOf`, which moves
  *  between two requests a second apart. */

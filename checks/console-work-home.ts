@@ -68,6 +68,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { EXPECTED, TIMEZONE, WEEK, at, runningWeek, seedSearches, type When } from "../scripts/schema/work-seed.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-work-home";
 const DONE = "console-work-home: Home reads the active team's last whole week, what waits and what is open at one cutoff, " +
@@ -107,7 +108,6 @@ const sentenceDay = (date: string): string => new Intl.DateTimeFormat("en-GB", {
 const canonical = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(canonical)
     : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
-const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
 /** `n` words: a heading of two, then `tag` words, twenty to a line. */
 function text(n: number, tag: string): string {
@@ -115,20 +115,6 @@ function text(n: number, tag: string): string {
   const lines: string[] = [];
   for (let i = 0; i < words.length; i += 20) lines.push(words.slice(i, i + 20).join(" "));
   return `# ${tag}\n\n${lines.join("\n")}\n`;
-}
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
 }
 
 /** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */

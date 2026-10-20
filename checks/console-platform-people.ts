@@ -47,6 +47,7 @@ import { root } from "../scripts/deployment.ts";
 import { DOMAIN, EXPECTED, MEMBER, PEOPLE, SUPERADMIN, instant, seedPeople, type SeededPeople } from "../scripts/schema/people-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-people";
 const DONE = "console-platform-people: the superadmin reads every person's role, teams, passkeys, last recorded sign-in " +
@@ -82,20 +83,6 @@ function sortDeep(v: unknown): unknown {
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b));
 
 interface Answer { status: number; body: Obj; text: string }
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold,
- *  the first elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** The seed's name for the person an email belongs to. */
 const localOf = (email: unknown): string => String(email).replace(`@${DOMAIN}`, "");
@@ -162,8 +149,8 @@ function readCases(s: SeededPeople, a: Answer): void {
   const nulls = rows.filter((r) => r.lastSignIn === null).map((r) => localOf(r.email)).sort();
   if (nulls.join() !== ["bo", "di", "fay", "member", "zed-1", "zed-2"].join()) fail(step, `lastSignIn is null for ${nulls.join(", ")}`);
   pass("each row reads its role, state, teams (both of ada's), passkeys and latest recorded sign-in as seeded, and no " +
-       "field People does not draw; lastSignIn is null for bo, di, fay and member, never a date from a session, a token " +
-       "or a passkey registration");
+       "field People does not draw; lastSignIn is null for bo, di, fay, member, zed-1 and zed-2, never a date from a session, " +
+       "a token or a passkey registration");
 }
 
 async function filterCases(as: (email: string, query?: string) => Promise<Answer>, whole: Answer): Promise<void> {

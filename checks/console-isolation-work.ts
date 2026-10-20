@@ -407,7 +407,7 @@ async function closes(c: Context, who: string, cookie: string, mine: string): Pr
     `closes nothing; their own close answers ${a.status} holding nothing of the second team's`);
 }
 
-/** The routes' no-team sentence. COUPLED: NO_TEAM in services/gateway/src/console/record.ts. */
+/** The routes' no-team sentence. COUPLED: NO_TEAM in services/gateway/src/console/shared.ts. */
 const NO_TEAM = "no team: Work is the active team's, and you act for none";
 
 /** One team's initiative and its document, by the addresses Work's detail routes take. */

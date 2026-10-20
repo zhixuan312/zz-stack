@@ -63,6 +63,7 @@ import {
 } from "../scripts/schema/releases-seed.ts";
 import { signIn, weekStart } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-releases";
 const DONE = "console-platform-releases: each release is read with the calls, malformed calls, tool failures and p95 " +
@@ -90,20 +91,6 @@ const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z
 const keys = (o: unknown): string => (isObj(o) ? Object.keys(o).sort().join() : `not an object: ${JSON.stringify(o)}`);
 
 interface Answer { status: number; body: Obj; text: string }
-
-/** Where two answers' shapes differ, by the contract's rule: at an object both hold, the key sets;
- *  at an array both hold, the first elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** An answer without what moves between two requests a second apart: the cutoff, and the bound a
  *  window still running is observed through. */

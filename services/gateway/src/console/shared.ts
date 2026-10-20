@@ -155,6 +155,12 @@ export function periodCutoff(req: Request): Date | null {
  */
 export const ZZ_TZ = (process.env.ZZ_TZ ?? "").trim() || "Asia/Singapore";
 
+/** Every Work read's 400 to a caller who acts for no team: Work is the active team's, for everyone. */
+export const NO_TEAM = "no team: Work is the active team's, and you act for none";
+
+/** Every paged read's 400 to a page it cannot draw. */
+export const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
+
 /* Times go out as an instant, never as a pre-formatted local string: ISO 8601 in UTC with
  * the Z, formatted by the browser in the reader's own zone. Dates without a time carry no
  * zone and are sent as they are.

@@ -10,16 +10,17 @@
 // checks that failed are kept, and each plant is judged on the failure it adds and on that
 // failure naming the planted file.
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+
+import { gate, restoreOnInterrupt } from "../testing/gate-plant.ts";
 
 const fail = [];
 const SUITES = "scripts/gate/checks/suites.ts";
 const PROBE = "checks/zz-temp-wiring-probe.ts";
 const ONLINE = "checks/zz-temp-online-probe.ts";
 
-// Every plant is removed even if this dies, and by exact path: three named files, no
-// directory, and the original of the one file that is edited is held in memory and written
-// back.
+// Every plant is removed however this ends — on exit, after a throw, and on an interrupt, which
+// stops the gate in flight first — and by exact path: three named files, no directory, and the
+// original of the one file that is edited is held in memory and written back.
 const original = readFileSync(SUITES, "utf8");
 if (!original.trim()) { console.error(`FAIL: ${SUITES} is empty`); process.exit(1); }
 const cleanup = () => {
@@ -27,17 +28,16 @@ const cleanup = () => {
   rmSync(PROBE, { force: true });
   rmSync(ONLINE, { force: true });
 };
-process.on("exit", cleanup);
+restoreOnInterrupt(cleanup);
 
 /** The gate's failing check names, and its whole output. `--quiet` still prints every failure
  *  with its detail; it drops the passing lines, which are what makes the output long. */
-const gate = () => {
-  const r = spawnSync("node", ["scripts/gate.ts", "--quiet"], { encoding: "utf8" });
-  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+const failures = async () => {
+  const { out } = await gate(["--quiet"]);
   return { out, names: new Set([...out.matchAll(/^\s*✗ (.+)$/gm)].map((m) => m[1])) };
 };
 
-const base = gate();
+const base = await failures();
 const WIRED = "every check in checks/ is registered here, or named here with a reason";
 if (!base.out.includes("GATE")) {
   console.error(`FAIL: the gate produced no verdict at all\n${base.out.slice(-2000)}`);
@@ -49,10 +49,10 @@ if (base.names.has(WIRED)) {
 }
 
 /** Plant `file` with `body`, run the gate, remove the file, and return what the plant added. */
-const planted = (file: string, body: string) => {
+const planted = async (file: string, body: string) => {
   writeFileSync(file, body);
   try {
-    const run = gate();
+    const run = await failures();
     return { ...run, added: [...run.names].filter((n) => !base.names.has(n)) };
   } finally {
     rmSync(file, { force: true });
@@ -64,7 +64,7 @@ const planted = (file: string, body: string) => {
 // Nothing else in the repository is touched: no registration is added, no list is edited, the
 // file simply exists.
 {
-  const r = planted(PROBE, "// planted by checks/all-checks-wired.ts\nprocess.exit(1);\n");
+  const r = await planted(PROBE, "// planted by checks/all-checks-wired.ts\nprocess.exit(1);\n");
   if (!r.names.has(WIRED)) {
     fail.push(`a newly added FAILING check did not turn the gate red — it added ` +
               `${JSON.stringify(r.added)} and none of it is the wiring check`);
@@ -79,7 +79,7 @@ const planted = (file: string, body: string) => {
 // A check that works and is not registered is the worse case: its author has evidence it passes
 // and believes the gate is holding it. Same path, same absence of any list edit, exit 0.
 {
-  const r = planted(PROBE, "// planted by checks/all-checks-wired.ts\nprocess.exit(0);\n");
+  const r = await planted(PROBE, "// planted by checks/all-checks-wired.ts\nprocess.exit(0);\n");
   if (!r.names.has(WIRED)) {
     fail.push(`a newly added PASSING check did not turn the gate red — it added ` +
               `${JSON.stringify(r.added)} and none of it is the wiring check`);
@@ -104,7 +104,7 @@ const registerIn = (file: string) => writeFileSync(SUITES,
 const REACHES = `${ONLINE} is registered in this gate and reaches a deployment`;
 {
   registerIn(ONLINE);
-  const r = planted(ONLINE,
+  const r = await planted(ONLINE,
     "// planted by checks/all-checks-wired.ts\n" +
     "const where = process.env.ZZ_GATEWAY;\nif (!where) process.exit(0);\nprocess.exit(0);\n");
   writeFileSync(SUITES, original);
@@ -119,7 +119,7 @@ const REACHES = `${ONLINE} is registered in this gate and reaches a deployment`;
 // rather than by the dependency.
 {
   registerIn(ONLINE);
-  const r = planted(ONLINE, "// planted by checks/all-checks-wired.ts\nprocess.exit(0);\n");
+  const r = await planted(ONLINE, "// planted by checks/all-checks-wired.ts\nprocess.exit(0);\n");
   writeFileSync(SUITES, original);
   if (r.out.includes(REACHES)) {
     fail.push("a registered check that reads no deployment variable was reported as reaching a " +
@@ -136,7 +136,7 @@ const REACHES = `${ONLINE} is registered in this gate and reaches a deployment`;
 // exact paths it wrote. Drift is somebody else editing the same checkout: it does not mean the
 // plants failed, it means they were judged against a tree that no longer exists.
 {
-  const after = gate();
+  const after = await failures();
   const moved = [...new Set([...after.names, ...base.names])]
     .filter((n) => after.names.has(n) !== base.names.has(n));
   if (readFileSync(SUITES, "utf8") !== original) fail.push(`${SUITES} was not restored`);

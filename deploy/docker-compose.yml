@@ -56,7 +56,7 @@ services:
       - GATEWAY_INTERNAL_URL=${GATEWAY_INTERNAL_URL:-http://cred-proxy:8000}
       # The hosts a ChatGPT-attached `file` may be fetched from, comma-separated. zz-core does that
       # fetch, over HTTPS, to public addresses only, read once at start. Empty by default, which
-      # keeps the route off: a `file` is answered with upload_start instead.
+      # keeps the route off: no tool declares a `file` argument, and a file goes through upload_start.
       - OPENAI_FILE_HOSTS=${OPENAI_FILE_HOSTS:-}
       # The reading judge — failure_discover's critic proposes a description through it.
       # DELIBERATE: a different model from the one the flows' agents run on; a critic exactly as
@@ -123,8 +123,8 @@ services:
       - PLATFORM_DB_URL=${PLATFORM_DB_URL:-}
       - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL:-}
       # The first team. A deployment with a superadmin and no team looks healthy and
-      # is not: teamFor() returns null, so every document lands in a per-user store
-      # instead of the team's, and nobody notices until they go looking for it.
+      # is not: teamFor() returns null, so every document tool refuses for want of a
+      # team, and there is no other store for a document to land in.
       - BOOTSTRAP_TEAM=${BOOTSTRAP_TEAM:-}
       # The model the flows' own agents run on. The judge must not be this one.
       - PLATFORM_BASE_MODEL=${PLATFORM_BASE_MODEL:-}
@@ -139,8 +139,8 @@ services:
       - ZZ_DB_STATEMENT_TIMEOUT_MS=${ZZ_DB_STATEMENT_TIMEOUT_MS:-}
       - ZZ_DB_CONNECT_TIMEOUT_MS=${ZZ_DB_CONNECT_TIMEOUT_MS:-}
       # Origins other than loopback that an MCP client may register a redirect on,
-      # comma-separated. Normally empty: native clients redirect to 127.0.0.1, which is
-      # allowed by rule (RFC 8252). Set this only for a browser front end.
+      # comma-separated. Normally empty: native clients redirect to localhost, 127.0.0.1
+      # or [::1], which is allowed by rule (RFC 8252). Set this only for a browser front end.
       - OAUTH_REDIRECT_ORIGINS=${OAUTH_REDIRECT_ORIGINS:-}
       # The admin console's passkey sign-in. This one value IS the relying party: its
       # hostname becomes the RP ID and its origin the expected origin, so the two can never
@@ -193,8 +193,8 @@ services:
       # deploy/RESTORE-AND-CUTOVER.md.
       - postgres-data-17:/var/lib/postgresql/data
     ports: ["${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"]   # bind to a tailscale IP to make the DB tailnet-only
-    # COUPLED: the `depends_on` above waits on this. zz-core's boot reindex, which removes rows
-    # for files deleted while it was down, does not retry, so it must not run before the
+    # COUPLED: the `depends_on` above waits on this. zz-core's boot reindex, which re-derives
+    # each row's search vector an older analyzer built, does not retry, so it must not run before the
     # database accepts connections. No arguments: a role name here would be a second place to
     # keep POSTGRES_USER in step.
     healthcheck:

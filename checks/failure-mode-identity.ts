@@ -34,7 +34,7 @@
  *
  *   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` declares the
  *   split table, the phase-3 migration that made it having folded back into it; the file that
- *   retires a name is exactly the file that must still spell it. `checks/catalog-eval-columns.ts:44-48` carries this
+ *   retires a name is exactly the file that must still spell it. `checks/catalog-eval-columns.ts` carries this
  *   exemption for the same reason.
  *
  *   `scripts/mutation/specs*.ts` — a mutation spec quotes a statement in order to plant a defect

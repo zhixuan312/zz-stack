@@ -21,7 +21,7 @@ import { installLine, PLATFORM_VERSION } from "../client-package.js";
 import { platformDb } from "../db.js";
 import { BASELINE, platformPlugins } from "../package/skills.js";
 import { publicScore, scoreHistory } from "./platform-evaluation.js";
-import { platformPublic, teamless } from "./shared.js";
+import { NO_TEAM, platformPublic, teamless } from "./shared.js";
 import { PLATFORM_SKILLS_DIR, type ShippedSkill, readSkillAt, skillsIn } from "./skill-source.js";
 
 /** One plugin as it sits on disk, before the store is asked anything about it. */
@@ -128,7 +128,7 @@ export function mountCatalog(app: Express): void {
    * error. */
   app.get("/api/console/plugins", platformPublic("plugins", async (_req, res, { superadmin, activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const db = platformDb();

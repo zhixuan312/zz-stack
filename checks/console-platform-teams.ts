@@ -47,6 +47,7 @@ import {
 } from "../scripts/schema/fleet-seed.ts";
 import { signIn, weekStart, type Seeded } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-teams";
 const DONE = "console-platform-teams: the superadmin reads every team's counts against its own past and each team's page, " +
@@ -77,20 +78,6 @@ function sortDeep(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sortDeep);
   if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]));
   return v;
-}
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
 }
 
 interface Answer { status: number; body: Obj; text: string }

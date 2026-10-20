@@ -33,7 +33,7 @@ import type pg from "pg";
 
 import { platformDb } from "../db.js";
 import type { ReadMeta } from "./figures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
 
 const FILTERS = ["administration", "all"] as const;
 export type Filter = (typeof FILTERS)[number];
@@ -51,7 +51,6 @@ const SAFE_SUBJECT = ["credential.set", "team.switch", "pat.self_revoke", "bug.r
 const NOT_RECORDED = ["knowledge reindex", "knowledge reconcile", "client setup", "plugin registration", "release record"];
 
 export const KIND = /^[a-z_]+(\.[a-z_]+)?$/;
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");

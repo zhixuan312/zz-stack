@@ -19,9 +19,9 @@ import { contentRevision, Envelope } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
 
 import { platformDb } from "../db.js";
-import { mountInitiativeList } from "./initiative-list.js";
-import { NO_TEAM } from "./record.js";
-import { flowShape, platformPublic, stageOf, ZZ_TZ, type DocRow } from "./shared.js";
+import { mountInitiativeList, stateOf } from "./initiative-list.js";
+import { pendingRevisions } from "./pending.js";
+import { flowShape, NO_TEAM, platformPublic, stageOf, type DocRow, ZZ_TZ } from "./shared.js";
 
 /** The envelope keys the platform reserves; every other field is a flow's own. COUPLED:
  *  RESERVED_ENVELOPE in services/zz-core/src/document-rules.ts derives from the same schema. */
@@ -86,7 +86,8 @@ export function mountInitiatives(app: Express): void {
   const claimRow = (row: ClaimRow) => ({ ...row, verdict: row.verdict || null,
                                          qualifier: row.qualifier || null, checker: row.checker || null });
 
-  /** One initiative: every document, and the acceptance-criterion ledger.
+  /** One initiative: every document, the acceptance-criterion ledger, and its state as the list says it (stateOf in
+   * initiative-list.ts, at the read's own instant), so the list and the page name one state in one set of words.
    *
    * The ledger is computed from the documents' own bodies — every numbered claim a selection, an
    * agreement or a plan states, parsed back out of the text the stage wrote for a reader.
@@ -108,7 +109,9 @@ export function mountInitiatives(app: Express): void {
       return;
     }
     const team = activeTeam;
-    const [docs, claimDocs, facts, anchor] = await Promise.all([
+    // One instant for the whole read, as the list reads at its cutoff: the state below is the list's rule at it.
+    const asOf = new Date().toISOString();
+    const [docs, claimDocs, facts, anchor, pending] = await Promise.all([
       // `flow`/`outcome` stay in this select as this document's own metadata — what the
       // dashboard renders per row. Neither drives `stageOf` below any more; the anchor query
       // does, and both are read from where they live now: the initiative's `flow`, and the
@@ -156,10 +159,17 @@ export function mountInitiatives(app: Express): void {
       // The initiative's own lifecycle — `flow`, whether it is closed, and its outcome — read
       // from `zz.initiative`, the one authority for a state no document may answer any more, and
       // for whether the initiative exists at all.
-      db.query<{ flow: string | null; closed: boolean; outcome: string | null }>(
-        `select i.flow, i.closed_at is not null as closed, i.outcome
+      // When it was last touched, as the list reads it: the newest revision written of any of its documents and
+      // sources, or, with none, when it was opened.
+      db.query<{ flow: string | null; closed: boolean; outcome: string | null; touched_ms: number }>(
+        `select i.flow, i.closed_at is not null as closed, i.outcome,
+                (extract(epoch from coalesce((select max(r.written_at)
+                                                from zz.doc d
+                                                join zz.doc_revision r on r.doc_id = d.id
+                                               where d.initiative_id = i.id), i.opened_at)) * 1000)::float8 as touched_ms
            from zz.initiative i join zz.team t on t.id = i.team_id
           where t.slug = $1 and i.slug = $2`, [team, slug]),
+      pendingRevisions(asOf),
     ]);
     // Its row, not its documents: an initiative opened and never written in has none, and is still
     // listed. Every document joins this row, so no document is ever read without it.
@@ -174,12 +184,15 @@ export function mountInitiatives(app: Express): void {
     // No flow asks for anything, so a finished close is complete and only an abandoned one is not, as the fake answers.
     const flow = lifecycle.flow || null;
     const { closed, outcome } = lifecycle;
+    const waiting = pending.some((p) => p.team === team && p.initiative === slug);
+    const state = stateOf({ outcome, closed, touchedMs: lifecycle.touched_ms }, waiting, Date.parse(asOf));
+    const lastTouched = new Date(lifecycle.touched_ms).toISOString().replace(/\.\d{3}Z$/, "Z");
     const position = flow === null
       ? { at: 0, of: 0, stage: "", steps: [], gates: [], closed, outcome, correction: null,
           accepted: outcome === "accepted", complete: outcome != null && outcome !== "abandoned" }
       : stageOf(docs.rows, flow, { closed, outcome }, factMap);
     res.json({
-      team, slug, flow,
+      team, slug, flow, state, lastTouched,
       documents: docs.rows.map((d) => {
         // Every row here is a live document: a version is a revision row now, so no row is a
         // frozen copy of another and none of them answers to a neighbour's rules.

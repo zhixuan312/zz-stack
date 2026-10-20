@@ -29,8 +29,8 @@ export function execFields(err: unknown): { stdout: string; stderr: string } {
  *
  * DELIBERATE: spawning the gate is the marker for the second kind, not the `gate-` prefix,
  * which is a naming convention over it. `all-checks-wired.ts` spawns the gate and carries no
- * prefix. The check at the bottom of this file reads each file's own text and reports a
- * `gate-` prefix on a file that spawns nothing. */
+ * prefix. The check in `suites.ts` that every file in checks/ is registered reads each file's own
+ * text and reports a `gate-` prefix on a file that spawns nothing. */
 export const runsCheck = (file: string) => (): string | null => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;

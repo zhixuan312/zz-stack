@@ -205,9 +205,13 @@ check("a column the platform enforces is a column something can write", () => {
   // a named list, so a column added tomorrow is covered the day it is added.
   const src = sourceFiles(["services", "packages"], [".ts"])
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
-  // A writer may also be a release script: `zz.release` and the registries are written by the
-  // release itself, never by a service.
+  // A writer may also be the release: `zz.release` is written by `scripts/release-record.ts`,
+  // never by a service. Only the release's own scripts count, never the rest of `scripts/`: a
+  // seed sets a column for a fixture, a gate module quotes a statement to check it, and a mutation
+  // spec quotes the very statement it removes, so any of them would keep this green over a
+  // column production never sets.
   const writers = src + "\n" + sourceFiles(["scripts"], [".ts"])
+    .filter((f) => /^scripts\/release(?:\.ts|-record\.ts|\/)/.test(f))
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
   const bad = [];
   for (const [table, t] of Object.entries(SCHEMA_TARGET.tables).sort(([a], [b]) => a.localeCompare(b))) {

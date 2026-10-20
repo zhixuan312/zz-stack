@@ -45,6 +45,7 @@ import {
 } from "../scripts/schema/knowledge-health-seed.ts";
 import { signIn, weekStart } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-knowledge";
 const DONE = "console-platform-knowledge: the superadmin reads every shelf, the imports labelled and the questions with no " +
@@ -71,20 +72,6 @@ function sortDeep(v: unknown): unknown {
 const text = (v: unknown): string => JSON.stringify(sortDeep(v));
 function expectSame(step: string, what: string, found: unknown, want: unknown): void {
   if (text(found) !== text(want)) fail(step, `${what} reads\n${text(found)}\nnot\n${text(want)}`);
-}
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
 }
 
 interface Answer { status: number; body: Obj; text: string }

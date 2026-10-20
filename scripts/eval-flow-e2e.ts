@@ -92,7 +92,7 @@ function report(ok: boolean, stubLog: string | null): void {
     i += n - 1;
   }
   console.log(`\n  model stub, questions by family: ${[...asked.entries()].map(([k, v]) => `${k}=${v}`).join(", ")}`);
-  // The path only when there is still something at it: an ordinary run deletes the log below.
+  // The path only when there is still something at it: a passed run, unless kept, deletes the log below.
   if (stubLog) console.log(`  every question the stub answered: ${stubLog}`);
   console.log(ok ? "\n  eval-flow-e2e: ok" : "\n  eval-flow-e2e: FAILED");
 }
@@ -112,9 +112,12 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error(`\n  FAILED — ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    // The stub's log is this run's own temp file, not a record: only a kept run keeps one.
-    if (!keep) rmSync(stubLog, { force: true });
-    report(ok, keep ? stubLog : null);
+    // The stub's log is this run's own temp file, not a record: a run that passed drops it unless
+    // kept, and a run that failed keeps it and names it, since every question the stub answered is
+    // what a failed walk is diagnosed from.
+    const kept = keep || !ok;
+    if (!kept) rmSync(stubLog, { force: true });
+    report(ok, kept ? stubLog : null);
     if (stack && keep) console.log(`  kept: ${stack.work} (containers ${stack.prefix}-*)`);
     else if (stack) down(stack);
     server.close();

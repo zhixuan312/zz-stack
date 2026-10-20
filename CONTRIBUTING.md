@@ -19,7 +19,7 @@ the floor.
 
 ```bash
 npm install
-npm run gate          # offline, a few seconds; it prints how many checks ran
+npm run gate          # offline; Docker for the checks that start a PostgreSQL; it prints how many checks ran
 ```
 
 Everything this project believes about itself is a check in there. They are named as
@@ -42,13 +42,13 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the sixty that start a PostgreSQL
+node scripts/gate.ts                             # every check; needs Docker for the ones that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
-**Docker is needed by the sixty gate checks that migrate a real PostgreSQL** — the schema inventory,
+**Docker is needed by every gate check that migrates a real PostgreSQL** (each starts one through `scripts/schema/throwaway.ts`) — the schema inventory,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `services/gateway/migrations/`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives
@@ -103,8 +103,14 @@ carries, from the migration's backfill and from both of its writers
 (`checks/event-origin-db.ts`), the origin of every act the gateway writes, an administration
 act, a team switch and a console write on either door (`checks/event-origin-gateway.ts`),
 the node a lesson's event names and the team a supersede is recorded under
-(`checks/knowledge-events.ts`), and `initiative_status` answering a page of named initiatives
-while a console session's read records nothing (`checks/initiative-status-names.ts`); a release's record, written once and reconciled with the tags, on a
+(`checks/knowledge-events.ts`), `initiative_status` answering a page of named initiatives
+while a console session's read records nothing (`checks/initiative-status-names.ts`), the five
+reads the core door offers answering what their pages' routes answer (`checks/console-agent-reads.ts`)
+and reaching zz-core through the gateway's agent door alone (`checks/core-agent-reads.ts`), Record
+counting nothing before a team's first record (`checks/console-record-coverage.ts`),
+`knowledge_search` naming only the caller's team's cited initiatives and counting the rest
+(`checks/knowledge-search-cited.ts`), and review round 2's platform defects and reads
+(`checks/review-round2-platform.ts`, `checks/review-round2-reads.ts`); a release's record, written once and reconciled with the tags, on a
 database migrated by the real runner (`checks/release-record-db.ts`); and the rollback boundary
 (`checks/rollback-boundary.ts`), which fills new-format data through a real zz-core and runs the
 previous release's own statements against it. Each exits 2 when Docker is absent rather
@@ -113,7 +119,7 @@ The rehearsal (`scripts/rehearse.ts`) needs Docker too; it is its own command, n
 Everything else in the gate, and the whole of `tsc`, runs without it, and
 `.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
 PostgreSQL image on the runner. So a machine that never
-runs those sixty checks or the rehearsal never needs Docker.
+runs those checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to

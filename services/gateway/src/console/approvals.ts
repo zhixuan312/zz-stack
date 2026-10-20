@@ -43,7 +43,7 @@ import type { Express, Request } from "express";
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { pendingRevisions } from "./pending.js";
-import { handler, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, handler, NO_TEAM, ZZ_TZ } from "./shared.js";
 import { grainFor, periodsOf, type Grain, type Period } from "./work-figures.js";
 
 type Presentation = "console_revision_shown" | "agent_context_covered" | "not_recorded" | "unknown";
@@ -79,7 +79,6 @@ const FIRST_PAGE = 10;
 const SHOWN = 26;
 /** How long a revision waits before the summary counts it as old. */
 const OLD_MS = 14 * 24 * 3_600_000;
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -300,7 +299,7 @@ export function mountApprovals(app: Express): void {
     }
     const team = req.zzIdentity!.activeTeam;
     if (!team) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const caller = req.zzIdentity!.email;

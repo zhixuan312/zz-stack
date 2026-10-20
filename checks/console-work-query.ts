@@ -55,10 +55,11 @@ import type { Request, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, seedSearches, type When } from "../scripts/schema/work-seed.ts";
 import {
-  FIRST, answer, bucketCases, bucketsOf, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request, shapeDiffs, show,
+  FIRST, answer, bucketCases, bucketsOf, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request, show,
   spelled, whereCases, type Days, type Obj, type Query, type Route, type Who,
 } from "./console-work-query-harness.ts";
 

@@ -458,8 +458,9 @@ check("every route this gateway serves has a caller", () => {
                      ":(glob)deploy/**", ":(glob)packages/**",
                      ":(glob)skills/**", ":(glob)catalog/**",
                      ":(glob)services/gateway/src/client-package.ts",
-                     // zz-core is the agent door's caller (services/zz-core/src/tools/agent-reads.ts).
-                     ":(glob)services/zz-core/src/**"]);
+                     // The agent door's one caller, and nothing else in zz-core: a comment there
+                     // naming a route would vouch for it as the gate's own prose would.
+                     "services/zz-core/src/tools/agent-reads.ts"]);
     if (!called) bad.push(`${r.file.replace("services/gateway/src/", "")}:${r.line} serves ${r.path} and nothing calls it`);
   }
   // The console is the only caller of the /api/console routes, so without the sibling checkout

@@ -1,8 +1,7 @@
 /**
  * checks/console-work-query-harness.ts — what `checks/console-work-query.ts` and
  * `checks/console-work-query-destinations.ts` share: the request a console session's read arrives as, a mounted route
- * called as Express would, a phase of the record moved into its week, the key-set comparison with the console's fake,
- * and the cases every measure answers alike over a window of dates (AC-5.2, AC-6.2 to AC-6.5). Not a check of its own:
+ * called as Express would, a phase of the record moved into its week, and the cases every measure answers alike over a window of dates (AC-5.2, AC-6.2 to AC-6.5). Not a check of its own:
  * each of the two imports it and runs the cases on its own seeded record, so neither passes the 700-line ceiling.
  *
  * The cases, each over every measure it is handed:
@@ -48,7 +47,6 @@ export const iso = (ms: number): string => new Date(ms).toISOString().replace(/\
 export const canonical = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(canonical)
     : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
-const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 export const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
 /** A question as its URL spells it, a repeated argument once a value. */
 export const spelled = (q: Query): string =>
@@ -69,20 +67,6 @@ export function bucketsOf(bucket: string, days: Days): string[] {
     : bucket === "weekday" ? weekdayOf(d) : addDays(d, -WEEKDAYS.indexOf(weekdayOf(d))));
   const held = [...new Set(keys)];
   return bucket === "weekday" ? WEEKDAYS.filter((w) => held.includes(w)) : held;
-}
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-export function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
 }
 
 /** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). A repeated

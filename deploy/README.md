@@ -85,15 +85,16 @@ better value than we already know.
 | `LLM_BASE_URL` + `LLM_API_KEY` | any OpenAI-compatible endpoint and a key for it |
 | `GATEWAY_PUBLIC_URL` | this platform's public gateway address. **Every client package generated here embeds it**, so a wrong value hands out unreachable URLs to everyone who installs. It must be reachable from a laptop, not just from inside the network |
 | `SUPERADMIN_EMAIL` | the platform superadmin — who can create teams, add people and issue tokens |
-| `BOOTSTRAP_TEAM` | the first team, created on boot with the superadmin as its admin. **Set it.** A deployment with a superadmin and no team looks perfectly healthy and is not: every document lands in a per-user store instead of the team's, and nobody notices until they go looking for it. **It is re-seeded on every boot** — `on conflict do nothing`, so it is a no-op once the team exists, but a team named here cannot be deleted: it returns on the next restart. Point it at a team you actually use, and change it rather than deleting what it names |
+| `BOOTSTRAP_TEAM` | the first team, created on boot with the superadmin as its admin. **Set it.** A deployment with a superadmin and no team looks perfectly healthy and is not: nobody acts for a team, so every document tool refuses for want of one, and there is no other store for a document to land in. **It is re-seeded on every boot** — `on conflict do nothing`, so it is a no-op once the team exists, but a team named here cannot be deleted: it returns on the next restart. Point it at a team you actually use, and change it rather than deleting what it names |
 | `POSTGRES_PASSWORD` | the platform database's own password |
 | `CONSOLE_PUBLIC_URL` | only if you run the console — see below |
 | `OPENAI_FILE_HOSTS` | leave it empty. The hosts a file attached in ChatGPT may be fetched from, comma-separated; zz-core fetches over HTTPS, from public addresses only, within 30 seconds and 8 MiB. Empty keeps that route off: no tool offers ChatGPT a `file` argument, and a file goes through `upload_start`, which works in every client. Which hosts ChatGPT serves files from is not established yet |
 
 ### The admin console, if you want it (optional)
 
-A browser app showing every team's work in one place. It is **not in this bundle** and not in
-this compose file: it has its own compose file, from the `zz-stack-dashboard` repository, at
+A browser app showing each person the work of the team they act for, and the platform around
+it, every team's at once only for the superadmin. It is **not in this bundle** and not in this
+compose file: it has its own compose file, from the `zz-stack-dashboard` repository, at
 its own path on the host. It is still released by `zz-stack/scripts/release.ts` — one
 release, two components — so what runs there is a published image
 (`ghcr.io/zhixuan312/zz-stack-dashboard`) and the only file the host holds is that compose

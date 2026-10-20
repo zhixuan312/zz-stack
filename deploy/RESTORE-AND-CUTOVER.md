@@ -175,8 +175,7 @@ in `zz-core`'s `tenant-info`, and the whole artifact/search layer went in 0.86.0
 mounts an owner store, because there is no owner store — phase 6 moved every team's documents into
 `zz.doc`, `zz.doc_revision` and `zz.doc_link`.
 
-`deploy/init-record-layout.sh` is kept in the tree as the script that did it. Nothing in this
-procedure calls it, and no deployment target needs it.
+The script that did it is deleted.
 
 **The rule it enforced outlives it, and is the part worth keeping.** A failed mount must never be
 read as a tenant with no documents, because the next thing that happens to an empty tenant is that

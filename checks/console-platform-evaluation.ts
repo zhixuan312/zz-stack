@@ -55,6 +55,7 @@ import {
 } from "../scripts/schema/evaluation-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-evaluation";
 const DONE = "console-platform-evaluation: each plugin's latest score, every score in the series it is comparable " +
@@ -80,23 +81,6 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 
 interface Answer { status: number; body: Obj; text: string }
-
-/** Where two answers' shapes differ, by the contract's rule: at an object both hold, the key sets;
- *  at an array both hold, the first elements, the same way; a null on either side, nothing.
- *  `byOwner.data` is keyed by the data, so its values are held to numbers instead. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (at === "byOwner.data") {
-    if (!isObj(a) || !Object.values(a).every((n) => Number.isInteger(n))) out.push(`${at} is ${JSON.stringify(a)}, not counts by owner`);
-  } else if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** Every field name anywhere in a value. */
 function keysIn(v: unknown, out = new Set<string>()): Set<string> {
@@ -305,8 +289,9 @@ async function run(db: pg.Client, url: string): Promise<void> {
     }
     if (typeof fake !== "function") fail(step, `${FAKE} exports no evaluation function`);
     const diffs = [
-      ...shapeDiffs(member.body, fake(false), "", []).map((d) => `the member's: ${d}`),
-      ...shapeDiffs(admin.body, fake(true), "", []).map((d) => `the superadmin's: ${d}`),
+      // `byOwner.data` is keyed by the owners the record holds, so its values are held to counts instead.
+      ...shapeDiffs(member.body, fake(false), "", [], { counts: ["byOwner.data"] }).map((d) => `the member's: ${d}`),
+      ...shapeDiffs(admin.body, fake(true), "", [], { counts: ["byOwner.data"] }).map((d) => `the superadmin's: ${d}`),
     ];
     if (diffs.length) fail(step, diffs.join("; "));
     pass("each person's answer agrees in shape with the console's fake one, key set by key set");

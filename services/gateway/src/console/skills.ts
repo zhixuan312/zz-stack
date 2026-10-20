@@ -11,7 +11,7 @@ import type { Express } from "express";
 
 import { platformDb } from "../db.js";
 import { skillsOf } from "./catalog.js";
-import { periodCutoff, platformPublic } from "./shared.js";
+import { NO_TEAM, periodCutoff, platformPublic } from "./shared.js";
 
 /** A SQL aggregate that saw nothing measurable, kept as null instead of becoming 0. `avg` and
  *  `sum` skip nulls and return null when every input was null, and `+null` is 0, which reads
@@ -23,7 +23,7 @@ export function mountSkills(app: Express): void {
    * narrows it to the skills that plugin ships, and a plugin this image does not ship answers none. */
   app.get("/api/console/skills", platformPublic("skills", async (req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const plugin = req.query.plugin;
@@ -150,7 +150,7 @@ export function mountSkills(app: Express): void {
    * per-skill score or finding. The scores are on the plugin. */
   app.get("/api/console/skills/:name", platformPublic("the skill", async (req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const db = platformDb();

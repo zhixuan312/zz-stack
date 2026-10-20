@@ -59,7 +59,8 @@ const S = SUPERADMIN, M = MEMBER;
 export const EVENTS: readonly Event[] = [
   { key: "delete", kind: "bug.delete", actor: "super", team: null, subject: DELETED,
     detail: { title: `${SENTINEL} title of a deleted report` },
-    expect: { subject: DELETED, sentence: `${S} deleted report ${DELETED}`, inConsole: false } },
+    // The report's filing is not in the record, so the act names no day it was filed.
+    expect: { subject: DELETED, sentence: `${S} deleted a report the record does not name`, inConsole: false } },
   { key: "reactivate", kind: "admin.create_team", actor: "super", team: "two", subject: TEAM_TWO,
     detail: { reactivated: true },
     expect: { subject: TEAM_TWO, sentence: `${S} reactivated team ${TEAM_TWO}`, inConsole: false } },

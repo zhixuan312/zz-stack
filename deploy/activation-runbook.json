@@ -101,10 +101,9 @@
       "requires": "every owner store the new deployment will serve carrying a complete `.zz/{blobs,commits}` record layout, on the volume the new deployment will mount",
       "read_from": "a listing of each owner store root on the artifact volume the new unit will mount, checked for all three directories",
       "recorded_here": null,
-      "evidence": "deploy/RESTORE-AND-CUTOVER.md step 5a; deploy/init-record-layout.sh",
+      "evidence": "deploy/RESTORE-AND-CUTOVER.md section 5a, which records the layout step as retired",
       "reading": "SUPERSEDED, not merely blocked. The check that established this — `services/zz-core/src/tenant-info/record.ts` and its STORE_UNAVAILABLE refusal — was removed in 0.86.0 with the artifact/search layer, and the `.zz/{blobs,commits}` record layout no longer exists anywhere in the platform. The store is not adopted into `zz.artifact` projections; it moves into `doc` and `doc_revision` under phase 6 of the schema first-principles review (`2026-09-21-schema-first-principles-review`), which carries every revision byte-for-byte and represents what the old store never held as `missing_legacy`. Production held 0 rows in `zz.artifact` at the 2026-09-21 reading, consistent with a deployment whose stores were never adopted — and that table is now dropped, so the reading is a record rather than a query anyone can repeat. The refusal's reason survives as a rule even though its module does not: a volume that failed to mount must never be read as a tenant with no documents.",
-      "partial_is_worse_than_missing": "A store with `.zz/` and `.zz/blobs` but no `.zz/commits` refuses every write exactly as a store with nothing does, while looking initialised to anybody who lists the directory. deploy/init-record-layout.sh repairs that state rather than refusing it, and step 7 below verifies all three directories rather than the parent.",
-      "would_unblock": "running deploy/init-record-layout.sh once per owner store on the NEW artifact volume, after the restore and before the checks, and recording the resulting listing"
+      "would_unblock": "nothing satisfies it: the `.zz/` record layout exists nowhere in the platform and no service in deploy/docker-compose.yml mounts an owner store, so there is nothing to initialise. The entry is struck rather than met, and striking it is a decision for whoever holds `switch_authorization`, recorded against a digest of this runbook"
     },
     "database_version": {
       "state": "blocked",
@@ -215,14 +214,14 @@
       "n": 2,
       "title": "Take a complete backup set and build its manifest",
       "does": "Run deploy/backup.sh on the production host, copy one complete stamped set off-host, and build the manifest with deploy/backup-manifest.sh.",
-      "verification": "deploy/backup-manifest.sh produced a manifest listing all five components with their SHA-256 hashes, and refused nothing. Its refusals are real findings about the backup: an incomplete set, a store whose history does not bundle, or an archive carrying a half-initialised `.zz/`.",
+      "verification": "deploy/backup-manifest.sh produced a manifest listing all three components with their SHA-256 hashes — the `zz` schema, the gateway's data volume and deploy/.env — and refused nothing. A set that still holds `zz-artifacts-<stamp>.tar.gz` is an older set from before the artifacts volume was retired, not the current shape. Each refusal is a real finding about the backup, not a problem with the script.",
       "abort": "Stop. Production is untouched and still serving. A set that will not manifest is a set that would not restore, and discovering that now is the cheapest this discovery ever gets.",
       "reversible": true
     },
     {
       "n": 3,
       "title": "Suspend: revoke future grants and admissions, and let in-flight work settle",
-      "does": "Put the three mutation paths — request, background and legacy client — into maintenance so no new work is admitted, stop issuing grants that would authorise more, and wait for in-flight work to finish. Record the file commit watermark per store and the database write boundary at the freeze.",
+      "does": "Put the three mutation paths — request, background and legacy client — into maintenance so no new work is admitted, stop issuing grants that would authorise more, and wait for in-flight work to finish. Record the database write boundary at the freeze.",
       "verification": "Each mutation path reports maintenance true, and in-flight reaches zero within the timeout. If it does not, the count is recorded as STILL RUNNING AND UNKNOWN, never as stopped, and step 4 does not begin.",
       "abort": "Lift maintenance and resume admissions. The old deployment continues on its own data. No content has moved.",
       "reversible": true
@@ -230,17 +229,17 @@
     {
       "n": 4,
       "title": "Freeze the old unit and record it as one matched thing",
-      "does": "Record the old application image digest, database identity and artifact volume together, and make the old artifact volume read-only. Resolve the volume from the Compose project rather than from a name somebody typed.",
-      "verification": "The recorded old unit names all three parts, the volume was resolved from the project, outbound integrations are disabled, and the old volume is genuinely read-only rather than merely intended to be.",
-      "abort": "Restore write access to the old volume and lift maintenance. Nothing new exists yet.",
+      "does": "Record the old application image digest and database identity together, and make the old database read-only. Resolve the unit from the Compose project rather than from a name somebody typed. There is no artifact volume to record: a document, its revisions and its citations are rows in the database this step already freezes.",
+      "verification": "The recorded old unit names both parts, it was resolved from the project, outbound integrations are disabled, and the old database is genuinely read-only rather than merely intended to be.",
+      "abort": "Restore write access to the old database and lift maintenance. Nothing new exists yet.",
       "reversible": true
     },
     {
       "n": 5,
-      "title": "Restore into a NEW database and a NEW volume",
-      "does": "Logical restore of the database dump into a newly created cluster, and extraction of the artifacts archive onto a separate new volume. Never mount an older major version's data directory into the new one, and never restore onto the old volume.",
-      "verification": "The restore completed with no errors — any error is fatal here, because a partial restore that looks finished is the failure this whole procedure exists to find. The new volume is a different volume from the old one, and the old one has not been written to.",
-      "abort": "Discard the new database and the new volume. The old unit is byte-identical to what step 4 froze and can simply be unfrozen.",
+      "title": "Restore into a NEW database",
+      "does": "Logical restore of the database dump into a newly created cluster. Never mount an older major version's data directory into the new one, and never restore onto the old cluster. There is no separate artifacts restore: the dump carries every team's documents, revisions, citations and knowledge.",
+      "verification": "The restore completed with no errors — any error is fatal here, because a partial restore that looks finished is the failure this whole procedure exists to find. The new cluster is a different cluster from the old one, and the old one has not been written to.",
+      "abort": "Discard the new database. The old unit is byte-identical to what step 4 froze and can simply be unfrozen.",
       "reversible": true
     },
     {
@@ -253,10 +252,10 @@
     },
     {
       "n": 7,
-      "title": "Initialise the record layout on each owner store, on the NEW volume only",
-      "does": "Run deploy/init-record-layout.sh once per owner store root on the new artifact volume, with each path visible in the invocation. List the stores first and read the list before acting on it. The script takes exactly one existing directory, never searches, and has no recursive mode and no default.",
-      "verification": "Every owner store on the new volume carries all three of `.zz/`, `.zz/blobs` and `.zz/commits`. A second run on any store reports `already complete` and changes nothing, and the non-`.zz` content of each store hashes the same before and after — the script creates two empty directories and rewrites no document byte.",
-      "abort": "Nothing to undo: this step only ever touches the new volume, and abandoning the activation discards that volume whole. Were a layout ever created on a store that then went back to the old path, it would be two empty directories the old code never opens.",
+      "title": "Retired: the record layout this initialised exists nowhere in the platform",
+      "does": "Nothing. This step initialised the `.zz/{blobs,commits}` record layout on each owner store on the new artifact volume; the layer that needed the layout went with the artifact/search layer in 0.86.0, no service mounts an owner store, and the script that did it is deleted. It keeps its number so the steps after it do not renumber silently. What survives is the rule its refusal enforced: a volume that failed to mount must never be read as a tenant with no documents.",
+      "verification": "Nothing to verify, and that is the finding rather than an omission: there is no store to initialise and no volume to initialise it on.",
+      "abort": "Not applicable: this step does nothing.",
       "reversible": true
     },
     {
@@ -279,7 +278,7 @@
     {
       "n": 10,
       "title": "Switch traffic to the new unit",
-      "does": "Point the front door at the new application and its new database and volume. Writes remain suspended.",
+      "does": "Point the front door at the new application and its new database. Writes remain suspended.",
       "verification": "Every request is served by the new unit; no request is still reaching the old one. The old unit remains frozen and read-only rather than stopped, so step 9's return is still physically available until step 11 accepts a write.",
       "abort": "Point the front door back at the old unit and discard the new one. Still clean, because no write has been accepted anywhere since the freeze — but this is the last moment that sentence is true.",
       "reversible": true
@@ -307,7 +306,7 @@
       "Stops admitting new work on the three mutation paths — request, background and legacy client — by putting each into maintenance.",
       "Revokes the grants that would authorise further work, so nothing new becomes authorised while the switch is under way.",
       "Waits for work already in flight to finish, and records the count that is still outstanding when the wait ends.",
-      "Records a boundary — a per-store commit watermark and a database write boundary — so that what happened before the freeze and what happened after it can be told apart later."
+      "Records a boundary — a database write boundary — so that what happened before the freeze and what happened after it can be told apart later. The team file stores' per-store commit watermark went with the stores, and the database boundary is now the whole of it."
     ],
     "what_it_cannot_do": [
       "It cannot guarantee a worker stopped. Suspension withdraws admission and authority; it does not reach into a process and halt it. A worker that is mid-operation when maintenance begins keeps running until it finishes or fails, and a worker that has stopped responding is indistinguishable from one that is working slowly.",
@@ -320,7 +319,7 @@
   },
   "rollback": {
     "weakensCurrentSecurity": false,
-    "returns_to": "the matched old unit recorded at step 4 — the old application image, its database and its artifact volume, all three together",
+    "returns_to": "the matched old unit recorded at step 4 — the old application image and its database, together. There is no artifact volume to return beside them: every team's documents, revisions, citations and knowledge are rows in the database",
     "clean_until": "the end of step 10. Step 11 accepts a write on the new unit, and from that moment a return to the old unit either carries those writes forward or loses them.",
     "after_that": "forward recovery from the new unit, with every recovered write enumerated and the loss, if any, recorded as a decision somebody made rather than as a rollback that happened",
     "invariants_a_rollback_may_not_trade_away": [
@@ -336,27 +335,23 @@
     "default_off_scope": "Default-off prevents unintended enrolment. It is not a general safety property and it does not bound regressions in shared code."
   },
   "rehearsal": {
-    "is_not_an_execution": "Everything recorded here was done on copies in a temporary directory. No step was performed against production, no database was contacted, and steps 2 through 6 and 8 through 12 were not performed at all. A rehearsal that reached production would be an execution, and this procedure has not been executed.",
+    "is_not_an_execution": "Nothing recorded here touched a deployment. No step was performed against production, no database was contacted, and steps 2 through 12 were not performed at all. A rehearsal that reached production would be an execution, and this procedure has not been executed.",
     "performed_by": "scripts/activation-rehearsal.ts",
-    "performed_at": "2026-09-21T16:31:31.066Z",
+    "performed_at": "2026-10-20T02:08:00.523Z",
     "established": [
       "the activation gate refuses while any precondition is blocked: 8 of 8 are blocked today and the derived verdict is REFUSE",
       "the blocker list is derived from the eight precondition states alone — a copy of the runbook carrying waivePreconditions, activation_allowed and executed derives the identical list, so there is no path past a blocked precondition",
-      "every step carries a verification and an abort point, and exactly one step is marked as the last moment at which aborting is a clean return",
-      "step 7 turns a copied store with no record layout into one carrying all three of .zz/, .zz/blobs and .zz/commits",
-      "step 7 is idempotent on a copied store: a second run reports the layout already complete and changes nothing",
-      "step 7 repairs a half-initialised copied store rather than refusing it — the state that refuses every write while looking initialised to anybody who lists the directory",
-      "the copied store's documents hash identically before and after all three runs (sha256 55bda3554cfc4c46), so step 7 creates directories and rewrites no document byte"
+      "every step carries a verification and an abort point, and exactly one step is marked as the last moment at which aborting is a clean return"
     ],
     "did_not_establish": [
       "It did not run the activation. No step was performed against production and no database was contacted; this script refuses to start if a connection variable is set.",
-      "It did not rehearse steps 2 to 6 or 8 to 12. Backup and manifest, drain, freeze, restore, migration, rederivation, the frozen-write checks, the traffic switch, the resume and the activation record all need a deployment, and rehearsing them needs the throwaway host deploy/RESTORE-AND-CUTOVER.md describes rather than this checkout.",
-      "It did not produce restore evidence or parity evidence. Exercising step 7 on a copied store says nothing about whether a restored deployment serves what the old one held.",
+      "It did not rehearse steps 2 to 12. Step 7 is retired and does nothing; backup and manifest, drain, freeze, restore, migration, rederivation, the frozen-write checks, the traffic switch, the resume and the activation record all need a deployment, and rehearsing them needs the throwaway host deploy/RESTORE-AND-CUTOVER.md describes rather than this checkout.",
+      "It did not produce restore evidence or parity evidence. Nothing rehearsed here says whether a restored deployment serves what the old one held.",
       "It did not establish native readiness. A migration staged in the working tree and a procedure describing how to apply it are not the same claim as a platform ready to apply it, and nothing rehearsed on a copy speaks for the unmigrated production rows.",
       "It did not verify that suspension stops a worker, because suspension does not do that and no rehearsal could show that it did."
     ],
     "note": "The MEASURED fields of this block — performed_at, fixtures, derived_gate, blocked_preconditions, established and did_not_establish — are written by scripts/activation-rehearsal.ts and by nothing else. `is_not_an_execution` and this note were written by hand and are carried through a recording unchanged. The script may write this block and refuses to modify any precondition, so a rehearsal cannot mark its own gate met.",
-    "fixtures": "a store-shaped directory in a temporary path, holding copies of real files from this repository; removed when the run ends",
+    "fixtures": "none: it reads this runbook and an in-memory copy of it, and writes nothing but this block",
     "derived_gate": "REFUSE",
     "blocked_preconditions": 8
   }

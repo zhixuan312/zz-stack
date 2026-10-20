@@ -62,6 +62,7 @@ import {
   EXPECTED, MADE, ORDER, OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, place, runningWeek, seedSearches, touchedOf,
   type When,
 } from "../scripts/schema/work-seed.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-work-initiatives";
 const DONE = "console-work-initiatives: the active team's initiatives are filtered and paged on the server with " +
@@ -125,20 +126,6 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(canonical(a)) =
  *  through different instants, and nothing else of the summary may differ. */
 const summaryOf = (l: Obj): string => JSON.stringify(l.summary).replaceAll(String((l.meta as Obj).asOf), "<asOf>");
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 600);
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** The request a console session's read arrives as, past the gateway's middleware: its resolved identity, and the
  *  `x-zz-*` headers it stamps, which the route's relay forwards to zz-core (COUPLED: identity.ts). */
@@ -472,9 +459,11 @@ async function opened(c: Core, built: Built, people: Who[], empty: string, freef
   let work: { INITIATIVES: { team: string; slug: string; flow: string | null; documents: number; closed: boolean }[];
               initiativeDetail: (team: string, slug: string) => Obj | null };
   try {
-    work = (await import(pathToFileURL(FAKE_WORK).href)) as typeof work;
+    const { INITIATIVES } = (await import(pathToFileURL(FAKE_WORK).href)) as Pick<typeof work, "INITIATIVES">;
+    const { initiativeDetail } = (await import(pathToFileURL(FAKE).href)) as Pick<typeof work, "initiativeDetail">;
+    work = { INITIATIVES, initiativeDetail };
   } catch (err) {
-    return c.fail(step, `could not read the console's fake work fixture at ${FAKE_WORK}: ${(err as Error).message}`);
+    return c.fail(step, `could not read the console's fake work fixtures at ${FAKE_WORK} and ${FAKE}: ${(err as Error).message}`);
   }
   const fakeOne = work.INITIATIVES.find((i) => i.documents === 0 && !i.closed) ?? c.fail(step, "the fake holds no open initiative with no documents");
   const fakeEmpty = work.initiativeDetail(fakeOne.team, fakeOne.slug) ?? c.fail(step, `the fake's ${fakeOne.slug} has no page`);

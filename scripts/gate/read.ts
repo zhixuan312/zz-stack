@@ -466,18 +466,6 @@ export function errMessage(err: unknown): string {
   return String(err);
 }
 
-/** The child's output from a thrown execFileSync, stdout then stderr, or the message when the
- *  value carries neither. Four gate-plant checks read a spawned gate's failure this way. */
-export function execOutput(err: unknown): string {
-  if (err && typeof err === "object") {
-    const rec = err as Record<string, unknown>;
-    const stdout = typeof rec.stdout === "string" ? rec.stdout : "";
-    const stderr = typeof rec.stderr === "string" ? rec.stderr : "";
-    return `${stdout}${stderr}`;
-  }
-  return String(err);
-}
-
 /** What a spawned probe with `stdio: ["ignore", "pipe", "pipe"]` said on stderr when it failed —
  *  the child's own words, which is what a check reporting a failed probe has to quote. The
  *  message is the fallback for a spawn that never produced one. */

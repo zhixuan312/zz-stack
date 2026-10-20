@@ -43,12 +43,12 @@ import { coreFor } from "../core-as-caller.js";
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { pendingRevisions } from "./pending.js";
-import { platformPublic, stageOf, ZZ_TZ, type StageDoc } from "./shared.js";
+import { BAD_PAGE, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
 import { closuresByWeek, grainFor, lastWholeWeek, periodsOf, type ClosureWeek } from "./work-figures.js";
 
 /** Where an initiative goes next, as initiative_status answers it, its keys spelled as the console's. */
 type NextMove = { action: string; stage: string | null; document: string | null; waitingOn: string | null; why: string };
-type State = "open" | "waiting" | "quiet" | (typeof OUTCOMES)[number];
+export type State = "open" | "waiting" | "quiet" | (typeof OUTCOMES)[number];
 type InitiativeRow = {
   slug: string; flow: string | null; nextMove: NextMove | null; state: State;
   gates: { passed: number; of: number };
@@ -78,6 +78,14 @@ const STATES: readonly State[] = ["open", "waiting", "quiet", ...OUTCOMES];
 const DAY = 24 * 3_600_000;
 /** Open, and nothing of it written for this long before the cutoff. */
 const QUIET_AFTER = 14 * DAY;
+/** An initiative's state at `asOfMs`, the one rule the list and the initiative's own page answer: its outcome once
+ *  closed; open, waiting while a revision of it waits for approval, quiet when it was last touched QUIET_AFTER or more
+ *  before, and open otherwise. */
+export function stateOf(a: { outcome: string | null; closed: boolean; touchedMs: number }, waiting: boolean, asOfMs: number): State {
+  if (a.closed && a.outcome !== null) return a.outcome as State;
+  return waiting ? "waiting" : asOfMs - a.touchedMs >= QUIET_AFTER ? "quiet" : "open";
+}
+
 /** The most names one initiative_status call answers. */
 const BATCH = 10;
 
@@ -95,7 +103,7 @@ export function listParams(query: Record<string, unknown>): ListParams | string 
   if (state !== null && !STATES.includes(state as State)) return `state must be one of ${STATES.join(", ")}`;
   const limit = Number(text("limit") ?? 10), offset = Number(text("offset") ?? 0);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
-    return "limit must be a whole number from 1 to 100, and offset one from 0";
+    return BAD_PAGE;
   }
   return { state: state as State | null, flow: text("flow"), q: (text("q") ?? "").trim().toLowerCase(), limit, offset };
 }
@@ -199,8 +207,7 @@ export async function initiativeList(team: string, params: ListParams, asOf: str
     const closed = a.closed_ms !== null && a.closed_ms <= asOfMs;
     const outcome = closed ? a.outcome : null;
     const touched = a.written_ms ?? a.opened_ms;
-    const state: State = outcome !== null ? outcome as State
-      : waiting.has(a.slug) ? "waiting" : asOfMs - touched >= QUIET_AFTER ? "quiet" : "open";
+    const state = stateOf({ outcome, closed, touchedMs: touched }, waiting.has(a.slug), asOfMs);
     // The manifest's gated documents alone: a flow nothing resolves, or none, declares no gate.
     const gates = stageOf(docsOf.get(a.slug) ?? [], a.flow, { closed, outcome }, factsOf.get(a.slug) ?? {}).gates
       .filter((g) => g.written !== undefined && g.role !== "handover");
@@ -277,7 +284,7 @@ export function mountInitiativeList(app: Express): void {
       return;
     }
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const params = listParams(req.query as Record<string, unknown>);

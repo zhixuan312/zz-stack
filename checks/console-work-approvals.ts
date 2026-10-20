@@ -49,6 +49,7 @@ import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { WEEK, runningWeek } from "../scripts/schema/work-seed.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-work-approvals";
 const DONE = "console-work-approvals: Waiting is the team's queue and History the caller's own approvals with their " +
@@ -76,20 +77,6 @@ type Answer = { status: number; body: Obj };
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const json = (v: unknown): string => JSON.stringify(v);
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold,
- *  the first elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** A console session's request, past the gateway's middleware (COUPLED: identity.ts, which stamps
  *  these headers; the console's write routes forward exactly them to zz-core). */

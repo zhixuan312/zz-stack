@@ -164,14 +164,6 @@ whose stores have never been adopted.
 Twelve, each with what it does, how it is checked, and where it is abandoned. Steps 1 and 7 were
 the only ones ever rehearsed; the rest need a deployment, and step 7 has since been retired.
 
-> **This section is the current reading, and its machine twin lags it.** `deploy/activation-runbook.json`
-> still carries the pre-retirement wording for steps 2, 4, 5 and 7, for `rollback.returns_to` and for
-> the per-store commit watermark in `suspension.what_it_does` — every one of them names the
-> artifacts volume or the `.zz/` record layout this platform no longer has (phase 6, Tasks I-41 and
-> I-45). The prose below says what the platform is; the JSON has not been re-recorded yet, and it is
-> the JSON a program reads. The divergence is reported rather than papered over, and re-recording
-> the JSON is an operator's edit to a file this task does not own.
-
 **Step 1 — re-derive the preconditions and stop if any is blocked.**
 Run `node scripts/activation-rehearsal.ts` and read the blocker list.
 *Verify:* zero blockers and a zero exit.
@@ -233,8 +225,7 @@ This step initialised the `.zz/{blobs,commits}` record layout on each owner stor
 artifact volume. The layer it initialised the layout FOR went with the artifact/search layer in
 0.86.0, the layout exists nowhere in the platform, and no service in `deploy/docker-compose.yml`
 mounts an owner store — so there is no store to initialise and no volume to initialise it on.
-`deploy/init-record-layout.sh` remains in the tree as the script that did it; nothing in this
-procedure calls it. What survives is the rule its refusal enforced, which is not about the layout:
+The script that did it is deleted. What survives is the rule its refusal enforced, which is not about the layout:
 **a volume that failed to mount must never be read as a tenant with no documents.**
 *Verify:* nothing. There is nothing here to verify, and that is the finding rather than an
 omission — the step is kept as a numbered position so the steps after it do not renumber silently.
@@ -353,7 +344,7 @@ And the same limit suspension has: rollback does not unsend what was sent.
 
 ## 7. What the rehearsal established, and what it did not
 
-`node scripts/activation-rehearsal.ts` rehearses on copies in a temporary directory. It refuses
+`node scripts/activation-rehearsal.ts` rehearses against nothing live. It refuses
 to start if `TEAM_DB_URL`, `PLATFORM_DB_URL`, `DATABASE_URL`,
 `ZZ_TENANT_INFO_ISOLATED_DB_URL`, `POSTGRES_URL`, `PGHOST` or `PGDATABASE` is set, because a
 connection string lying around in the environment is how a rehearsal becomes an execution.
@@ -380,25 +371,16 @@ report, that a structurally valid one is not a passing one.
   `waivePreconditions`, `activation_allowed` and `executed` derives the identical list.
 - Every step carries a verification and an abort point, and exactly one is marked as the last
   clean abort point.
-- Step 7, on a store-shaped directory holding copies of real files from this repository: it turns
-  a store with no layout into one carrying all three directories; a second run reports `already
-  complete`; a half-initialised store is **repaired** rather than refused — the state that
-  refuses every write while looking initialised to anybody who lists it; and the store's
-  documents hash identically before and after all three runs, so the step creates two empty
-  directories and rewrites no document byte.
-  **The script still does all of that; the layer that needed the layout does not exist any more.**
-  Step 7 is retired from the procedure (section 4), and what this bullet establishes is a fact
-  about `deploy/init-record-layout.sh` rather than about any deployment this platform now has.
 
 **Not established, and worth stating in the same breath.**
 
 - It did not run the activation. No step was performed against production and no database was
   contacted.
 - It did not rehearse steps 2–6 or 8–12. Those need a deployment, and rehearsing them needs the
-  throwaway host `RESTORE-AND-CUTOVER.md` describes rather than this checkout.
-- It did not produce restore evidence or parity evidence. Exercising step 7 on a copied store
-  says nothing about whether a restored deployment serves what the old one held — and that step is
-  retired besides, so even its own subject is gone.
+  throwaway host `RESTORE-AND-CUTOVER.md` describes rather than this checkout. Step 7 is retired
+  and has nothing to rehearse.
+- It did not produce restore evidence or parity evidence. Nothing rehearsed here says whether a
+  restored deployment serves what the old one held.
 - **It did not establish native readiness.** A migration staged in the working tree and a
   procedure describing how to apply it are not the same claim as a platform ready to apply it.
   The new framework may be built and exercised on copied fixtures while the operational migration
@@ -420,7 +402,6 @@ that could edit a precondition could mark its own gate met.
 |---|---|
 | `deploy/ACTIVATION.md` | this document — the procedure and its reasoning |
 | `deploy/activation-runbook.json` | the same procedure, for a program: preconditions, steps, suspension, rollback, rehearsal |
-| `scripts/activation-rehearsal.ts` | derives the gate, and rehearses step 1 and step 7 on copied fixtures |
+| `scripts/activation-rehearsal.ts` | derives the gate, and rehearses step 1 |
 | `deploy/RESTORE-AND-CUTOVER.md` | the rehearsal procedure, which never switches production. Step 5a and the artifacts restore it used to describe were retired with the `.zz/` record layout and the artifacts volume |
-| `deploy/init-record-layout.sh` | step 7's script, kept although step 7 is retired — see section 4 |
 | `deploy/backup.sh` | the three-component set an activation starts from — schema, gateway data, `.env`. It wrote four until the artifacts volume was retired |

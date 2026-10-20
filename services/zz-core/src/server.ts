@@ -230,8 +230,9 @@ refuseIssuanceOnDoors(OWN_TOOLS);
 const port = listenPort(process.argv);
 app.listen(port, "0.0.0.0", () => {
   console.log(`zz-core (TS) listening on :${port} (/mcp /eval-mcp)`);
-  // The files are the truth and this index is derived, so it is rebuilt from them at boot.
-  // Not awaited: the service serves while it runs, and a partial index beats a dead port.
+  // The search vectors are derived from each row's own text, so every row an older analyzer built
+  // is re-derived at boot. Not awaited: the service serves while it runs, and a partial index
+  // beats a dead port.
   void reindexAllTeams().catch((err: unknown) => console.error("boot reindex failed:", err));
   // The doors were built above, before the port opened, so OWN_TOOLS is already filled and
   // this only has to write it down. Recording stays here because it is a database write.

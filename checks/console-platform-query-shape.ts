@@ -39,6 +39,7 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 import { SUPERADMIN, seedPlatformQuery } from "./console-platform-query-seed.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-query-shape";
 const DONE = "console-platform-query-shape: every measure, grouped and drilled, is answered by the console's fake in the " +
@@ -70,20 +71,6 @@ type Query = Record<string, string | string[]>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 500);
 const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first
- *  elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
 function request(who: Who, query: Query): Obj {

@@ -58,7 +58,7 @@ import { lessonImports } from "./imports.js";
 import { initiativeList } from "./initiative-list.js";
 import { pendingRevisions } from "./pending.js";
 import { observedRuns } from "./runs-observed.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
   closuresByWeek, grainFor, lastWholeWeek, medianHoursToClose, periodsOf, searchesWithResults, type ClosureWeek, type Period,
 } from "./work-figures.js";
@@ -299,7 +299,7 @@ export function mountHome(app: Express): void {
   /** Home, for the team the caller's identity acts for and no other, the approvals the caller's own. */
   app.get("/api/console/home", platformPublic("home", async (req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.

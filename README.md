@@ -16,7 +16,7 @@ identity, a team's document store, and the rules about who may write what.
 result to be auditable by someone who was not in the room.
 
 ```bash
-npm install && npm run gate     # every offline check, a few seconds
+npm install && npm run gate     # every check; the ones that start a PostgreSQL need Docker
 ```
 
 **Start there.** The gate is the most useful thing in this repository: its checks are
@@ -251,8 +251,7 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             workspace, the planting and
             one spec per check, and the answer lands in
             testing/mutation-report.json), activation-rehearsal.ts (rehearses
-            deploy/activation-runbook.json on copied fixtures and against nothing
-            live: it derives the blocker list from the runbook itself, proves a
+            deploy/activation-runbook.json against nothing live: it derives the blocker list from the runbook itself, proves a
             precondition cannot be waived by deep-copying the document and trying,
             and refuses to start if any database URL is set in the environment —
             it exits non-zero while a precondition is blocked, which today is all

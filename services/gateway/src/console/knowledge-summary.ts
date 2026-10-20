@@ -38,7 +38,7 @@ import type { Express } from "express";
 import { platformDb } from "../db.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { lessonImports } from "./imports.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { lastWholeWeek, periodsOf, searchesWithResults } from "./work-figures.js";
 
 type Question = { question: string; asked: number; lastAsked: string };
@@ -178,7 +178,7 @@ export function mountKnowledgeSummary(app: Express): void {
   /** Knowledge, for the team the caller's identity acts for and no other. */
   app.get("/api/console/knowledge/summary", platformPublic("the knowledge summary", async (_req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.

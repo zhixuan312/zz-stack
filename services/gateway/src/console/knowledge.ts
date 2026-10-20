@@ -24,7 +24,7 @@ import type { Express } from "express";
 import { platformDb } from "../db.js";
 import { PLATFORM_TEAM } from "../identity.js";
 import { KINDS } from "./platform-knowledge.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 
 /** The node route's not-found, the same whatever the request named: one that repeated the team or the
  *  address would hand back the name of a lesson the caller may not read.
@@ -72,7 +72,7 @@ function shelfParams(query: Record<string, unknown>): ShelfParams | string {
   if (kind !== null && !(KINDS as readonly string[]).includes(kind)) return `kind must be one of ${KINDS.join(", ")}`;
   const limit = Number(text("limit") ?? 10), offset = Number(text("offset") ?? 0);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
-    return "limit must be a whole number from 1 to 100, and offset one from 0";
+    return BAD_PAGE;
   }
   return { q: (text("q") ?? "").trim().toLowerCase(), kind, limit, offset };
 }
@@ -176,7 +176,7 @@ export function mountKnowledge(app: Express): void {
    *  shelf, which a search reads beside the team's own, is not on it. */
   app.get("/api/console/knowledge", platformPublic("the knowledge base", async (req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const params = shelfParams(req.query as Record<string, unknown>);
@@ -211,7 +211,7 @@ export function mountKnowledge(app: Express): void {
    */
   app.get("/api/console/knowledge/log", platformPublic("the knowledge log", async (_req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
@@ -259,7 +259,7 @@ export function mountKnowledge(app: Express): void {
    *  request names widens nothing. */
   app.get("/api/console/knowledge/:team/*", platformPublic("the node", async (req, res, { activeTeam }) => {
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     const db = platformDb();

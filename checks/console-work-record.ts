@@ -75,6 +75,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-work-record";
 const DONE = "console-work-record: Record reads the retained text as of the cutoff, the same in every period, beside the period's " +
@@ -144,7 +145,6 @@ const show = (v: unknown): string => JSON.stringify(v).slice(0, 900);
 const canonical = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(canonical)
     : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
-const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 /** A local date, YYYY-MM-DD; and a local instant as "Mon, YYYY-MM-DD, HH:MM". */
 const dateOf = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(ms));
 const stamp = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, hourCycle: "h23",
@@ -161,21 +161,6 @@ function median(values: number[]): number | null {
   if (!values.length) return null;
   const s = [...values].sort((a, b) => a - b), mid = s.length >> 1;
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-    else if (a.length !== b.length) out.push(`${path} is empty on one side, so its elements were not compared`);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
 }
 
 /** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
@@ -576,7 +561,7 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     return c.fail(step, `could not read the console's fake answer at ${FAKE}: ${(err as Error).message}`);
   }
   const [status, body] = fake.record({ activeTeam: "atlas", email: "ava.lindqvist@example.com" }, new URLSearchParams());
-  const diffs = status === 200 ? shapeDiffs(R.all, body, "", []) : [`the fake answered ${status}`];
+  const diffs = status === 200 ? shapeDiffs(R.all, body, "", [], { bothFilled: true }) : [`the fake answered ${status}`];
   if (diffs.length) c.fail(step, diffs.join("; "));
   c.pass(step);
 }

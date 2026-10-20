@@ -31,16 +31,16 @@
  * checks/console-agent-reads.ts compares each function's answer with its route's.
  */
 import { platformDb } from "../db.js";
-import { NO_TEAM as NO_ACTIVITY_TEAM, cutoff, summaryOf, type ActivitySummary } from "./activity.js";
+import { cutoff, summaryOf, type ActivitySummary } from "./activity.js";
 import type { Part } from "./figures.js";
 import { NO_INITIATIVE } from "./initiatives.js";
 import { canonicalSurface, vocabulary } from "./platform-bugs.js";
 import { releasesOf, type ReleaseDetail, type Releases } from "./platform-releases.js";
 import { statusOf, type PlatformStatus } from "./platform-status.js";
-import { BAD_PAGE as BAD_RECORD_PAGE, NO_TEAM as NO_RECORD_TEAM, PERIODS, recordOf, type PeriodName, type RecordRead } from "./record.js";
+import { PERIODS, recordOf, type PeriodName, type RecordRead } from "./record.js";
 import { refusalGroups, type RefusalGroup } from "./refusals.js";
-import { BAD_PAGE, NO_TEAM, runsAt, type Runs } from "./runs.js";
-import { ZZ_TZ } from "./shared.js";
+import { runsAt, type Runs } from "./runs.js";
+import { BAD_PAGE, NO_TEAM, ZZ_TZ } from "./shared.js";
 import { addDays, isDate, localDay, midnight } from "./work-query-buckets.js";
 
 /** Who asks: the identity's address, and the role and active team platformPublic resolves from it. */
@@ -106,7 +106,7 @@ export async function releaseList(_caller: Caller, args: { limit?: number; offse
 /** Activity's summary for the active team, from since and in the initiative when asked, with the window's
  *  refusals summed by tool and its ten largest groups. */
 export async function activityRefusals(caller: Caller, args: { since?: string; initiative?: string }, asOf = cutoff()): Promise<ActivityRefusals | InputError> {
-  if (caller.activeTeam === null) return { inputError: NO_ACTIVITY_TEAM };
+  if (caller.activeTeam === null) return { inputError: NO_TEAM };
   if (!dateOk(args.since, asOf)) return { inputError: SINCE };
   if (args.initiative !== undefined && !text(args.initiative)) return { inputError: "initiative must be the slug of one of your team's initiatives" };
   const team = caller.activeTeam, initiative = args.initiative ?? null;
@@ -139,10 +139,10 @@ export async function runSummary(caller: Caller, args: { since?: string; skill?:
 
 /** Record for the active team over the period, the approvals in it the caller's. */
 export async function recordRead(caller: Caller, args: { period?: string; limit?: number; offset?: number }, asOf = cutoff()): Promise<RecordRead | InputError> {
-  if (caller.activeTeam === null) return { inputError: NO_RECORD_TEAM };
+  if (caller.activeTeam === null) return { inputError: NO_TEAM };
   const period = args.period ?? "all";
   if (!PERIODS.includes(period as PeriodName)) return { inputError: `period must be one of ${PERIODS.join(", ")}` };
-  const page = pageOf(args, { default: 10, max: 100 }, BAD_RECORD_PAGE);
+  const page = pageOf(args, { default: 10, max: 100 }, BAD_PAGE);
   if (typeof page === "string") return { inputError: page };
   return recordOf(caller.activeTeam, caller.email, period as PeriodName, page, asOf);
 }

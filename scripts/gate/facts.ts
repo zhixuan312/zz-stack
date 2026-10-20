@@ -300,8 +300,13 @@ export function platformSurface(): PlatformSurface {
   // blanked first, so a sentence or a SQL column cannot add one.
   //
   // Its limit: a tool name that zz-core also spells as a field or a next move reads as that, not
-  // as a missing tool. A field is `<noun>_id`, `<noun>_refs`, `<noun>_mode`, never a verb, and
-  // `run_status`, a column the migrations dropped, is in neither set because no code spells it.
+  // as a missing tool. Two served tools are such fields today, `protocol_affirm` and
+  // `evaluator_qualify`: a stage's record keys the acts it still owes by the tool's name
+  // (services/zz-core/src/eval/stage-record.ts, stage-records.ts). Removing either tool while
+  // those keys stay would let a skill go on naming it. No rule read from this surface can close
+  // that: a removed tool leaves `served`, and the verbs drawn from it, in the same edit, so the
+  // key is left looking like any other field. `run_status`, a column the migrations dropped, is in
+  // neither set because no code spells it.
   const actions = new Set<string>();
   const fields = new Set<string>();
   for (const rel of sourceFiles(["services/zz-core/src"], [".ts"])) {

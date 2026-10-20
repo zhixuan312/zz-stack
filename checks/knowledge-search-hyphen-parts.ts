@@ -17,7 +17,11 @@
  *     substring, a version (`0.96.0`), a compound as a whole and by each of its parts, and the whole
  *     hyphenated word; a word in one document's title still ranks it above one holding it in its body;
  *   - a row with no number-like hyphenated word stores exactly the vector it stored before, and a
- *     row with one ranks as before for every query naming none of its parts;
+ *     row with one in its body ranks as before for every query naming none of its parts whose
+ *     terms all sit in the Latin text of one field, or all in its Han text. The parts are appended
+ *     to their field's Latin text, which moves every later half's positions along (the Han text
+ *     of the same field included): a cover spanning that text and a later one grows, and ranks
+ *     lower. Only the body case is seeded here;
  *   - rows still carrying the previous generation's vector are re-derived when zz-core boots, the
  *     way a release reaches production's rows, and are found afterwards. It prints how long the
  *     boot pass took over the rows seeded here, about as many lessons as the largest shelf holds.
@@ -126,8 +130,10 @@ async function run(c: Core): Promise<void> {
     `select d.path, d.body_tsv = (${bodyTsvSql(1)}) as same from zz.doc d where d.path = $9`,
     [...previousParams(await rowOf(c, "zz.doc", "deck.md")), "deck.md"]);
   if (!same.rows[0]?.same) c.fail("an ordinary row is unchanged", `deck.md's vector differs from its text's own: ${JSON.stringify(same.rows)}`);
-  // A row that does gain parts ranks as before for any query not naming one: `ts_rank_cd` without a
-  // normalization reads only the covers of the query's own terms, and the parts come after them.
+  // A row whose body gains parts ranks as before for a query naming none of them whose terms sit in
+  // one half of one field: `ts_rank_cd` without a normalization reads only the covers of the query's
+  // own terms, and the parts come after the body's own Latin text. A cover spanning two halves is
+  // not asked here.
   const ranked = await c.sql.query<{ q: string; now: number; before: number }>(
     `select q, ts_rank_cd(d.body_tsv, websearch_to_tsquery($1::regconfig, q)) as now,
             ts_rank_cd(${bodyTsvSql(1)}, websearch_to_tsquery($1::regconfig, q)) as before
@@ -135,7 +141,8 @@ async function run(c: Core): Promise<void> {
     [...previousParams(await rowOf(c, "zz.doc", "notes.md")), "notes.md", ["quokka", '"ledger reconciles"', "sdlc-deck", "deck", "迁移"]]);
   const moved = ranked.rows.filter((r) => r.now !== r.before);
   if (ranked.rows.length !== 5 || moved.length) c.fail("a row with parts ranks as before", JSON.stringify(ranked.rows));
-  c.pass("a row with no number-like hyphenated word stores the vector it stored before, and one with parts ranks as before for every query naming none");
+  c.pass("a row with no number-like hyphenated word stores the vector it stored before, and one with parts in its body ranks " +
+         "as before for every query here naming none, each answered within one half of one field");
 
   // The release: every row back to what the previous generation stored, plus a shelf's worth of
   // lessons, then a boot.

@@ -53,9 +53,8 @@ interface TableExpectation {
    * data the migration wrote rather than of anything that survived it.
    *
    * DELIBERATE: `scripts/rehearse/diff.ts` honours this field — a table declared created that was
-   * present before the migration, or absent after it, is reported as a disagreement. Phase 3 was
-   * the first to create tables rather than reshape them, and so the first to declare one; no
-   * pending migration declares one today.
+   * present before the migration, or absent after it, is reported as a disagreement.
+   * `002_document_versions.sql` declares three below and `006_release.sql` one.
    */
   added?: boolean;
 }

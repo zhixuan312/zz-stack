@@ -65,7 +65,7 @@ check("nothing in testing/ computes — it drives, and the computing lives in pa
     const body = readFileSync(join(dir, f), "utf8");
     const code = body.split("\n")
       .filter((l) => l.trim() && !/^\s*(#|\/\/|\*|\/\*)/.test(l.trim())).join("\n");
-    if (!/\bfetch\s*\(|createServer|execFileSync|execSync|spawnSync|psql/.test(code)) {
+    if (!/\bfetch\s*\(|createServer|execFileSync|execSync|spawnSync|\bspawn\s*\(|psql/.test(code)) {
       bad.push(`testing/${f} reaches no deployment and no database, so it computes rather ` +
                "than drives. Move it to packages/tools/src/testing and leave a caller.");
     }

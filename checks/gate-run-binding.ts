@@ -6,14 +6,17 @@
 // the identity tuple never holds, and no run is created for any call. A skill whose runs stop
 // being recorded is indistinguishable, in every query, from one nobody used.
 import { readFileSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+
+import { gate, restoreOnInterrupt } from "../testing/gate-plant.ts";
 
 const FILE = "services/gateway/src/runs.ts";
-const gate = () => spawnSync("node", ["scripts/gate.ts", "--quiet"], { encoding: "utf8" });
 function fail(m: string): never { console.error("FAIL: " + m); process.exit(1); }
 
 const original = readFileSync(FILE, "utf8");
-if (gate().status !== 0) fail("the gate is already red before planting anything");
+// The bound is restored however this ends: on exit, after a throw, and on an interrupt, which
+// stops the gate in flight first.
+restoreOnInterrupt(() => writeFileSync(FILE, original));
+if ((await gate(["--quiet"])).status !== 0) fail("the gate is already red before planting anything");
 
 // COUPLED: services/gateway/src/runs.ts must keep spelling the bound as a single
 // `v.released_at <= ${at}`, or this regex matches nothing. One function feeds both of the door's
@@ -26,13 +29,13 @@ if (planted === original) {
        "break-test is not testing anything. Re-point it at whatever runs.ts actually says.");
 }
 writeFileSync(FILE, planted);
-const red = gate();
+const red = await gate(["--quiet"]);
 writeFileSync(FILE, original);
-const green = gate();
+const green = await gate(["--quiet"]);
 
 if (red.status === 0) {
   fail("the gate stayed GREEN with the bound flipped — the check does not work, and every call " +
        "would leave the per-version report it exists for with nothing to say so");
 }
-if (green.status !== 0) fail("the gate did not return to GREEN after restoring:\n" + green.stdout);
+if (green.status !== 0) fail("the gate did not return to GREEN after restoring:\n" + green.out);
 console.log("PASS: red with the bound flipped, green with the time binding.");

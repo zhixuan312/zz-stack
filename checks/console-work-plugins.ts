@@ -46,6 +46,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-work-plugins";
 const DONE = "console-work-plugins: each plugin answers whether it is required, its install command and its public " +
@@ -253,20 +254,6 @@ const DETAIL_ONE = {
   surfaces: [{ surface: "core", calls: 4, failed: 1, tools: 2 }],
   busiestTools: [{ tool: "core:document_write", calls: 3, failed: 0 }, { tool: "core:document_read", calls: 1, failed: 1 }],
 };
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first
- *  elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
-}
 
 type Row = Obj & { plugin: string; skills: Obj[]; documents: { gate: boolean }[]; yourTeam: Obj };
 const rowsOf = (step: string, a: Answer): Row[] => {

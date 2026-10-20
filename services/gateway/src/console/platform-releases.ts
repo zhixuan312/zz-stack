@@ -38,7 +38,7 @@ import type pg from "pg";
 import { platformDb } from "../db.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { malformedMeasure, readGrid } from "./platform-measures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
 
 /** How far either side of a release its windows reach. */
 const WINDOW_MS = 72 * 3_600_000;
@@ -52,7 +52,6 @@ const NO_CHANGELOG = "No changelog entry";
 /** What the read counts, as `meta.population` says it. */
 const POPULATION = "recorded releases, and real-work tool calls around them";
 
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 
 type ReleaseWindow = {
   window: Window; calls: Figure; malformed: Figure;

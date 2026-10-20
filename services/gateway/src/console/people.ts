@@ -24,10 +24,9 @@ import type pg from "pg";
 
 import { platformDb } from "../db.js";
 import type { PeriodFigure, ReadMeta, Window } from "./figures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
 
 export const STATES = ["active", "deactivated"] as const;
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 const POPULATION = "people, their passkeys and their recorded console sign-ins";
 
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */

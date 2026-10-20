@@ -130,8 +130,8 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
     // the wrong database — and reporting every one of them as "unreachable" sends an operator to
     // the wrong thing to check.
     //
-    // A `Refusal`, not a plain `Error`: teamFor() is called bare from userRoot() and from most
-    // tools, and the registerTool wrapper turns a `Refusal` into `text(message)`. Every write this
+    // A `Refusal`, not a plain `Error`: teamFor() is called bare from most tools, and the
+    // registerTool wrapper turns a `Refusal` into `text(message)`. Every write this
     // failure could interrupt happens after this resolves, so "nothing was written" is true
     // whenever it fires.
     throw new Refusal(

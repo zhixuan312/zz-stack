@@ -92,7 +92,7 @@ import { initiativeList, listParams } from "./initiative-list.js";
 import { shelfRows } from "./knowledge.js";
 import { runRow } from "./runs.js";
 import { runsIn } from "./runs-observed.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { grainFor, lastWholeWeek, openedRows, periodsOf, type Grain, type Period } from "./work-figures.js";
 import { BUCKETS, WEEKDAYS, addDays, bucketLabel, bucketOf, bucketsOf, isDate, localDay, midnight, type Bucket } from "./work-query-buckets.js";
 import { lessonAdditions, transitions } from "./writing.js";
@@ -615,7 +615,7 @@ export function mountWorkQuery(app: Express): void {
       return;
     }
     if (activeTeam === null) {
-      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
+      res.status(400).json({ error: NO_TEAM });
       return;
     }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.

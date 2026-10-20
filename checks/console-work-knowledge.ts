@@ -53,6 +53,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-work-knowledge";
 const DONE = "console-work-knowledge: Knowledge reads the active team's shelf, its own questions that found nothing and its " +
@@ -108,22 +109,7 @@ const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z
 const canonical = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(canonical)
     : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
-const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. A record whose keys are data, the list's count by kind, is not a shape. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null || path.endsWith("summary.byKind")) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
 function request(who: Who, query: Obj = {}, params: Obj = {}): Obj {
@@ -507,11 +493,13 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   }
   const persona = { activeTeam: "atlas", email: "ava.lindqvist@example.com", superadmin: false };
   const sharedPath = fake.SHELF.find((n) => n.team === fake.SHARED_TEAM)?.path ?? c.fail(step, "the fake has no shared-shelf lesson");
+  // The count by kind is keyed by the kinds the shelf holds, so its keys are data, not a shape.
+  const kindsAreData = { keyedByData: ["summary.byKind"] };
   const diffs = [
-    ...shapeDiffs(summary, fake.knowledgeSummary(persona)[1], "summary", []),
-    ...shapeDiffs(first, fake.knowledgeList(persona, new URLSearchParams())[1], "list", []),
-    ...shapeDiffs(shared.body, fake.lesson(fake.SHARED_TEAM, sharedPath, "atlas"), "shared lesson", []),
-    ...shapeDiffs(own.body, fake.lesson("atlas", fake.SHELF.find((n) => n.team === "atlas")!.path, "atlas"), "lesson", []),
+    ...shapeDiffs(summary, fake.knowledgeSummary(persona)[1], "summary", [], kindsAreData),
+    ...shapeDiffs(first, fake.knowledgeList(persona, new URLSearchParams())[1], "list", [], kindsAreData),
+    ...shapeDiffs(shared.body, fake.lesson(fake.SHARED_TEAM, sharedPath, "atlas"), "shared lesson", [], kindsAreData),
+    ...shapeDiffs(own.body, fake.lesson("atlas", fake.SHELF.find((n) => n.team === "atlas")!.path, "atlas"), "lesson", [], kindsAreData),
   ];
   if (diffs.length) c.fail(step, diffs.join("; "));
   const fakeShared = fake.lesson(fake.SHARED_TEAM, sharedPath, "atlas") as Obj | null;

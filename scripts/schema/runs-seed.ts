@@ -257,7 +257,7 @@ export const RUNS_READ = {
 } as const;
 
 /**
- * Seeds a person, both teams, their initiatives, the three skills and every run above into `db`, and
+ * Seeds a person, both teams, their initiatives, the skills the runs name and every run above into `db`, and
  * answers each run's id by its key. The database must hold no other run.
  */
 export async function seedRuns(db: pg.ClientBase | pg.Pool): Promise<Map<string, string>> {

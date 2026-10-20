@@ -499,8 +499,8 @@ if (ledger) {
     statements.push({ at: m.index, text: literalAround(ledger, m.index) });
   }
   if (statements.length === 0) {
-    fail.push(`FAIL: ${LEDGER} has no statement naming zz.eval_idempotency — the ledger is read " +
-              "and written somewhere else, and this check is not reading it`);
+    fail.push(`FAIL: ${LEDGER} has no statement naming zz.eval_idempotency — the ledger is read ` +
+              "and written somewhere else, and this check is not reading it");
   }
   for (const { at, text } of statements) {
     const line = ledger.slice(0, at).split("\n").length;

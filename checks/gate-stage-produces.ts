@@ -24,7 +24,7 @@
  */
 import { cpSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
-import { run } from "../testing/gate-plant.ts";
+import { restoreOnInterrupt, run } from "../testing/gate-plant.ts";
 
 interface Stage { name: string; produces?: string; [key: string]: unknown }
 interface Doc { name: string; stage?: string; [key: string]: unknown }
@@ -56,6 +56,7 @@ for (const [path, keep] of Object.entries(KEEP)) {
 }
 
 const restore = () => { for (const [path, keep] of Object.entries(KEEP)) cpSync(keep, path); };
+restoreOnInterrupt(restore);
 /** Mutate one manifest through a function of its parsed self. One file at a time. */
 const mutate = (path: string, fn: (m: Manifest) => void) => {
   const m: Manifest = JSON.parse(original[path]);
@@ -69,8 +70,8 @@ const fail: string[] = [];
 /** Assert, for one mutation: the named checks ran, the ones that should fire did, the ones that
  *  should not did not. DELIBERATE: everything else the gate says is ignored — the lock and the
  *  marketplace go red on any manifest edit at all. */
-function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; quiet?: string[] }) {
-  const { ran, failed } = run();
+async function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; quiet?: string[] }) {
+  const { ran, failed } = await run();
   for (const name of [...fires, ...quiet]) {
     if (!ran.has(name)) { fail.push(`${what}: "${name}" never ran — the gate did not reach it, so nothing here was measured`); return; }
   }
@@ -87,7 +88,7 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
 // start green. DELIBERATE: outside the try — process.exit skips a finally, and nothing is
 // planted yet, so there is nothing to clean up.
 {
-  const { ran, failed } = run();
+  const { ran, failed } = await run();
   for (const name of [MINE, SDLC_DOCS, CONFORM, DOC_STAGE]) {
     if (!ran.has(name)) fail.push(`"${name}" did not run at all — this plant cannot measure it`);
     else if (failed.has(name)) fail.push(`"${name}" is already failing before anything was planted: ${failed.get(name)}`);
@@ -120,21 +121,21 @@ try {
   //    fires too, because it names zz-plugin-eval in a list of four; a fifth flow would be
   //    covered only by MINE.
   mutate(EVAL, (m) => { delete (m.stages ?? []).find((s) => s.name === "zz-plugin-identify")!.produces; });
-  measure("a stage with no produces", { fires: [MINE, CONFORM], quiet: [SDLC_DOCS, DOC_STAGE] });
+  await measure("a stage with no produces", { fires: [MINE, CONFORM], quiet: [SDLC_DOCS, DOC_STAGE] });
   restore();
 
   // 2. `produces` naming a document the manifest does not declare. On the same record-producing
   //    stage, for the same reason: nothing is orphaned, so the only thing broken is the forward
   //    claim.
   mutate(EVAL, (m) => { (m.stages ?? []).find((s) => s.name === "zz-plugin-identify")!.produces = "invented.md"; });
-  measure("produces naming a document the flow does not declare",
+  await measure("produces naming a document the flow does not declare",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
   // 3. A declared document produced by no stage, with no `stage` field, which is what makes it
   //    invisible to catalog-stages.ts — that check skips a document with no stage.
   mutate(EVAL, (m) => { m.documents!.push({ name: "orphan.md", role: "ground" }); });
-  measure("a declared document produced by no stage",
+  await measure("a declared document produced by no stage",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
@@ -142,7 +143,7 @@ try {
   //    "record" — while zz-plugin-explain goes on producing findings.md. Forward resolution
   //    passes and no document is orphaned; only reciprocity breaks.
   mutate(EVAL, (m) => { (m.documents ?? []).find((d) => d.name === "findings.md")!.stage = "zz-plugin-evaluate"; });
-  measure("a document naming a stage that produces something else",
+  await measure("a document naming a stage that produces something else",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
@@ -155,7 +156,7 @@ try {
   mutate(EVAL, (m) => {
     (m.stages ?? []).find((s) => s.name === "zz-plugin-observe")!.produces = "nothing";
   });
-  measure('CONTROL: a non-document stage answers "nothing" instead of "record"',
+  await measure('CONTROL: a non-document stage answers "nothing" instead of "record"',
           { quiet: [MINE, SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
@@ -164,7 +165,7 @@ try {
   //    existence. SDLC_DOCS is not in `quiet`: it asserts sdlc-execute declares "nothing" by
   //    name, so it fires on this edit, correctly.
   mutate(SDLC, (m) => { (m.stages ?? []).find((s) => s.name === "sdlc-execute")!.produces = "record"; });
-  measure('CONTROL: sdlc-execute, whose output is the repository, declares "record"',
+  await measure('CONTROL: sdlc-execute, whose output is the repository, declares "record"',
           { quiet: [MINE, DOC_STAGE] });
   restore();
 
@@ -174,13 +175,13 @@ try {
   //    nor the phantom-stage rule fires. CONFORM is not in `quiet`: it names zz-access and
   //    demands produces of every stage whether or not it is a flow, and MINE must not.
   mutate(ACCESS, (m) => { m.stages = [{ name: "zz-doctor" }]; });
-  measure("CONTROL: a non-flow package with a stage that declares no produces",
+  await measure("CONTROL: a non-flow package with a stage that declares no produces",
           { quiet: [MINE, SDLC_DOCS, DOC_STAGE] });
   restore();
 
   // 8. And it stops when the planting does. A check still red after restore is measuring the
   //    tree it was run in rather than the defect.
-  measure("after restore", { quiet: [MINE, SDLC_DOCS, CONFORM, DOC_STAGE] });
+  await measure("after restore", { quiet: [MINE, SDLC_DOCS, CONFORM, DOC_STAGE] });
 } finally {
   restore();
 }

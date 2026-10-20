@@ -33,10 +33,9 @@ import { platformDb } from "../db.js";
 import type { Figure, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { pendingRevisions } from "./pending.js";
 import { readGrid, type Grid } from "./platform-measures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
 
 export const STATUSES = ["active", "archived"] as const;
-const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one from 0";
 /** How many weeks a team's series reaches back, the running one included. */
 const WEEKS = 26;
 const POPULATION = "teams, their members, open work, revisions waiting, standing lessons and real-work tool calls";

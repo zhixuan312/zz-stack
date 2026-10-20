@@ -13,20 +13,11 @@
  * which sits beside the catalog rather than inside it. That is the measurement saying this
  * rule generalises the older one rather than repeating it.
  */
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
-import { run } from "../testing/gate-plant.ts";
+import { restoreOnInterrupt, run } from "../testing/gate-plant.ts";
 
 const MF = "catalog/zz/zz-plugin-eval/flow.json";
-/** The manifest's kept copy, in a directory of this run's own — a fixed path would be shared by
- *  two runs at once, and a run that died would leave it behind. */
-const KEEP_DIR = mkdtempSync(join(tmpdir(), "zz-gate-plugin-declaration-"));
-const KEEP = join(KEEP_DIR, "flow.json.keep");
-// Removed however this ends, including the exits below that `process.exit` takes before the
-// `finally` that would otherwise sweep it.
-process.on("exit", () => rmSync(KEEP_DIR, { recursive: true, force: true }));
 
 const DECLARES = "a plugin declares every skill it ships, and ships every skill it declares";
 const PURPOSE = "a plugin manifest says what the plugin is for";
@@ -43,11 +34,12 @@ const DEBRIS = ["marketplace/zz-plugin-eval/skills/zz-plugin-stray",
 
 const original = readFileSync(MF, "utf8");
 if (!original.trim()) { console.error(`${MF} is empty — refusing to plant into it`); process.exit(1); }
-cpSync(MF, KEEP);
-if (!statSync(KEEP).size) { console.error(`${KEEP} is empty — refusing to plant`); process.exit(1); }
 
-const restore = () => cpSync(KEEP, MF);
+const restore = () => writeFileSync(MF, original);
 const sweep = () => { for (const p of [STRAY_EVAL, STRAY_CORE, ...DEBRIS]) rmSync(p, { recursive: true, force: true }); };
+// The manifest is restored and the planted skills swept however this ends: on exit, after a
+// throw, and on an interrupt, which stops the gate in flight first.
+restoreOnInterrupt(() => { restore(); sweep(); });
 
 const plantSkill = (dir: string, name: string) => {
   mkdirSync(dir, { recursive: true });
@@ -60,8 +52,8 @@ const fail: string[] = [];
 
 /** Assert, for one mutation: the named checks ran, the ones that should fire did, the ones
  *  that should not did not. Everything else the gate says is deliberately not its business. */
-function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; quiet?: string[] }) {
-  const { ran, failed } = run();
+async function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; quiet?: string[] }) {
+  const { ran, failed } = await run();
   for (const name of [...fires, ...quiet]) {
     if (!ran.has(name)) { fail.push(`${what}: "${name}" never ran — the gate did not reach it, so nothing here was measured`); return; }
   }
@@ -79,7 +71,7 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
 //
 // DELIBERATE: outside the try. process.exit skips a finally, and nothing is planted yet.
 {
-  const { ran, failed } = run();
+  const { ran, failed } = await run();
   for (const name of [DECLARES, PURPOSE, CONFORM]) {
     if (!ran.has(name)) fail.push(`"${name}" did not run at all — this plant cannot measure it`);
     else if (failed.has(name)) fail.push(`"${name}" is already failing before anything was planted: ${failed.get(name)}`);
@@ -90,14 +82,14 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
 try {
   // 1. A shipped skill the manifest declares nowhere.
   plantSkill(STRAY_EVAL, "zz-plugin-stray");
-  measure("a shipped skill zz-plugin-eval declares nowhere", { fires: [DECLARES], quiet: [PURPOSE] });
+  await measure("a shipped skill zz-plugin-eval declares nowhere", { fires: [DECLARES], quiet: [PURPOSE] });
   sweep();
 
   // 2. The same defect in the baseline's tree at skills/, beside the catalog. The older rule
   //    reads catalog/zz/zz-core/skills, finds no directory and reports an empty set, so it
   //    must stay green here while this one fires.
   plantSkill(STRAY_CORE, "zz-stray-core");
-  measure("a shipped skill zz-core declares nowhere", { fires: [DECLARES], quiet: [PURPOSE, CONFORM] });
+  await measure("a shipped skill zz-core declares nowhere", { fires: [DECLARES], quiet: [PURPOSE, CONFORM] });
   sweep();
 
   // 3. A declared skill that is not shipped, through `libraries` — the one declaring field
@@ -106,7 +98,7 @@ try {
     const m = JSON.parse(original);
     m.libraries = [...(m.libraries ?? []), "zz-plugin-absent"];
     writeFileSync(MF, JSON.stringify(m, null, 2));
-    measure("a library zz-plugin-eval declares and does not ship", { fires: [DECLARES], quiet: [PURPOSE] });
+    await measure("a library zz-plugin-eval declares and does not ship", { fires: [DECLARES], quiet: [PURPOSE] });
     restore();
   }
 
@@ -115,7 +107,7 @@ try {
     const m = JSON.parse(original);
     delete m.purpose;
     writeFileSync(MF, JSON.stringify(m, null, 2));
-    measure("a manifest with no purpose", { fires: [PURPOSE], quiet: [DECLARES] });
+    await measure("a manifest with no purpose", { fires: [PURPOSE], quiet: [DECLARES] });
     restore();
   }
 
@@ -125,18 +117,17 @@ try {
     const m = JSON.parse(original);
     m.description = `${m.description} It measures and never changes.`;
     writeFileSync(MF, JSON.stringify(m, null, 2));
-    measure("CONTROL: a harmless description edit", { quiet: [DECLARES, PURPOSE] });
+    await measure("CONTROL: a harmless description edit", { quiet: [DECLARES, PURPOSE] });
     restore();
   }
 
   // 6. And it stops when the planting does. A check still red after restore is measuring the
   //    tree it was run in rather than the defect.
   sweep();
-  measure("after restore", { quiet: [DECLARES, PURPOSE, CONFORM] });
+  await measure("after restore", { quiet: [DECLARES, PURPOSE, CONFORM] });
 } finally {
   restore();
   sweep();
-  rmSync(KEEP_DIR, { recursive: true, force: true });
 }
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

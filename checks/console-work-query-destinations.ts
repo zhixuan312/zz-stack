@@ -58,10 +58,11 @@ import type { Request, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import {
-  FIRST, answer, bucketCases, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request, shapeDiffs, show,
+  FIRST, answer, bucketCases, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request, show,
   spelled, whereCases, type Days, type Obj, type Query, type Route, type Who,
 } from "./console-work-query-harness.ts";
 
@@ -283,7 +284,7 @@ async function cases(c: Core, g: Gateway): Promise<void> {
       c.fail(step, `the second team's ${what} was not recorded as its own, so its absence would prove nothing`);
     }
   }
-  c.pass(`${step}: four lessons and six searches through zz-core, ten calls through the door, and the rows beside them`);
+  c.pass(`${step}: four lessons and six searches through zz-core, nine calls through the door, and the rows beside them`);
 
   const ME: Who = { email: c.email, team: c.team };
   const route = (p: string): Route => g.routes.get(p) ?? c.fail("mount", `no route GET ${p}`);

@@ -52,6 +52,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { CUTOFFS, OTHER, RUNS_READ, TEAM, TIMEZONE, seedRuns } from "../scripts/schema/runs-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-work-runs";
 const DONE = "console-work-runs: Runs reads the active team's runs since its first, their observed output, by skill and " +
@@ -100,20 +101,6 @@ function expect(step: string, found: Obj, want: Obj): void {
 function ok<T>(step: string, part: Part<T>): T {
   if (part.state !== "ok") fail(step, `the part answered ${show(part)}`);
   return part.data;
-}
-
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold, the first elements,
- *  the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, path: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out);
-  }
-  return out;
 }
 
 /** Every key and every text an answer holds, at any depth. */

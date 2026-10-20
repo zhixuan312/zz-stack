@@ -83,6 +83,7 @@ import {
   type Seeded,
 } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-status";
 const DONE = "console-platform-status: the platform's eight measures are answered week by week in the reporting " +
@@ -103,21 +104,6 @@ const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 interface Answer { status: number; body: Obj; text: string }
-
-/** Where two answers' shapes differ, by the contract's rule: at an object both hold, the key sets;
- *  at an array both hold, the first elements, the same way; a null on either side, nothing; a record
- *  keyed by data (`needs.overflowByKind`), nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null || at === "needs.overflowByKind") return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
 
 /** The eight measures' keys, in the spec's order. */
 const KEYS = ["malformed_per_1000", "same_tool_followup_pct", "call_p50_ms", "call_p95_ms", "searches_with_results_pct",
@@ -551,7 +537,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
     if (!isObj(fake)) fail(step, `${FAKE} exports no PLATFORM_STATUS object`);
     // Read again: what is running is recorded now.
     const recorded = await as(MEMBER);
-    const diffs = shapeDiffs(recorded.body, fake, "", []);
+    // The overflow is counted per kind of need, so its keys are data, not a shape.
+    const diffs = shapeDiffs(recorded.body, fake, "", [], { keyedByData: ["needs.overflowByKind"] });
     const theirs = (fake as Obj).measures as Obj[];
     for (const m of measuresOf(step, recorded)) shapeDiffs(m, theirs.find((f) => f.key === m.key) ?? {}, `measures.${String(m.key)}`, diffs);
     if (diffs.length) fail(step, diffs.join("; "));

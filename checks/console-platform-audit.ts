@@ -54,6 +54,7 @@ import {
 } from "../scripts/schema/audit-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-audit";
 const DONE = "console-platform-audit: recorded administration is answered as sentences and the latest 500 events as " +
@@ -74,9 +75,6 @@ const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one fro
 const ALLOWED_DETAIL = ["role", "status", "reactivated", "from", "team", "owner", "patsRevoked", "sessionsRevoked", "enrolmentsSpent", "via",
   // A deleted report's filing: the report it filed.
   "bug"];
-/** The seed's deleted report has no filing event, so its act names none. DELIBERATE: written here over the seed's
- *  expectation, which still reads the report's id (scripts/schema/audit-seed.ts, reported for the integration). */
-const UNNAMED_DELETION = `${SUPERADMIN} deleted a report the record does not name`;
 /** The day a report was filed as the gateway's sentence says it, in the check's time zone. */
 const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "numeric", month: "short", year: "numeric" });
 /** Words that would name the door an act came through; only `in the console` may. */
@@ -103,20 +101,6 @@ function sortDeep(v: unknown): unknown {
 
 interface Answer { status: number; body: Obj; text: string }
 
-/** Where two answers' shapes differ: at an object both hold, the key sets; at an array both hold,
- *  the first elements, the same way; a null on either side, nothing. */
-function shapeDiffs(a: unknown, b: unknown, at: string, out: string[]): string[] {
-  if (a === null || b === null) return out;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length && b.length) shapeDiffs(a[0], b[0], `${at}[0]`, out);
-  } else if (isObj(a) && isObj(b)) {
-    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-    if (ka.join() !== kb.join()) out.push(`${at || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
-    for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], at ? `${at}.${k}` : k, out);
-  }
-  return out;
-}
-
 /** What each seeded event's row must read, newest first, from the seed's written values. */
 function expectedRows(seeded: SeededAudit): Obj[] {
   return [...EVENTS].reverse().map((e) => ({
@@ -124,7 +108,7 @@ function expectedRows(seeded: SeededAudit): Obj[] {
     actor: e.actor === "super" ? SUPERADMIN : e.actor === "member" ? MEMBER : null,
     team: e.team === "one" ? TEAM_ONE : e.team === "two" ? TEAM_TWO : null,
     kind: e.kind, subject: e.expect.subject, ok: e.call?.ok ?? null, refusalOwner: e.call?.owner ?? null,
-    origin: e.origin ?? "work", inConsole: e.expect.inConsole, sentence: e.key === "delete" ? UNNAMED_DELETION : e.expect.sentence,
+    origin: e.origin ?? "work", inConsole: e.expect.inConsole, sentence: e.expect.sentence,
   }));
 }
 
@@ -340,7 +324,8 @@ async function deletionCases(db: pg.Client, as: (q: string) => Promise<Answer>):
       const got = rows.find((x) => x.subject === r.id)?.sentence;
       if (got !== r.want) fail(step, `report ${r.id} reads ${JSON.stringify(got)}, not ${JSON.stringify(r.want)}`);
     }
-    if (rows.find((x) => x.subject !== null && !reports.some((r) => r.id === x.subject))?.sentence !== UNNAMED_DELETION) {
+    const unnamed = EVENTS.find((e) => e.key === "delete")!.expect.sentence;
+    if (rows.find((x) => x.subject !== null && !reports.some((r) => r.id === x.subject))?.sentence !== unnamed) {
       fail(step, `the seed's deletion reads ${JSON.stringify(rows.map((x) => x.sentence))}`);
     }
     if (a.text.includes(SENTINEL)) fail(step, `an answer holds ${a.text.slice(Math.max(0, a.text.indexOf(SENTINEL) - 80), a.text.indexOf(SENTINEL) + 80)}`);

@@ -16,7 +16,7 @@
  *     and 30, in the reporting timezone's week; a clear rise of at least 25% over a nonzero median of
  *     four prior weeks; the shortest median time to close with its cohort; a quieter week; a plain week;
  *   - rules 2 and 3 are joined and no others; a metric with no coverage wins no rule; within a rule
- *     closed work comes before word additions, approvals in the caller's name and lesson adoptions;
+ *     closed work comes before word additions, approvals in the caller's name and lessons made;
  *     with no weekly count at all the title is `Your work at a glance`; lessons an import cohort made
  *     are not in the facts and fire no milestone;
  *   - the next milestone of each count is the next threshold of its ladder, with the last one passed;
@@ -77,7 +77,7 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   title("no count in the last whole week", H.homeTitle(facts([...PRIOR, wk(5, { documentsCreated: 4 })])), "fallback", "Your work at a glance");
   title("only a running week", H.homeTitle(facts([wk(6, LAST, false)])), "fallback", "Your work at a glance");
   title("first observed week", H.homeTitle(facts([wk(4), wk(5, { closed: 3, words: 0, approvals: null, lessons: 6 })])), 1,
-    "Your first observed week: 3 closures and 6 lesson adoptions");
+    "Your first observed week: 3 closures and 6 lessons made");
   title("first week before a round number", H.homeTitle(facts([wk(5, { closed: 12 })], { closed: 12 })), 1,
     "Your first observed week: 12 closures");
   title("first week before a quiet week", H.homeTitle(facts([wk(5, { closed: 0, words: null })])), 1,
@@ -88,20 +88,20 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
 {
   title("50th closure", H.homeTitle(facts(plain(), { closed: 51 })), 2, "Your 50th piece of work closed");
   title("a crossing in an earlier week does not fire", H.homeTitle(facts(plain(), { closed: 56 })), 8,
-    "5 pieces of work closed; 2,000 words added to your documents; 7 approvals recorded in your name; 3 lessons adopted last week");
+    "5 pieces of work closed; 2,000 words added to your documents; 7 approvals recorded in your name; 3 lessons made last week");
   expect("a crossing in the running week does not fire", H.homeTitle(facts(plain({}, { closed: 3 }), { closed: 51 })).rule === 8, null);
   expect("the running week's count unknown loses the rule", H.homeTitle(facts(plain({}, { closed: null }), { closed: 51 })).rule === 8, null);
   title("one million words", H.homeTitle(facts(plain(), { words: 1_000_500 })), 2, "One million words added to your documents in all");
   title("one and a half million words", H.homeTitle(facts(plain(), { words: 1_501_000 })), 2, "1.5 million words added to your documents in all");
-  title("25th lesson", H.homeTitle(facts(plain(), { lessons: 26 })), 2, "Your 25th lesson adopted");
+  title("25th lesson", H.homeTitle(facts(plain(), { lessons: 26 })), 2, "Your 25th lesson made");
   title("100th document", H.homeTitle(facts(plain(), { documents: 101 })), 2, "Your 100th document created");
   title("the highest threshold crossed is named", H.homeTitle(facts(plain({ closed: 5 }), { closed: 26 })), 2, "Your 25th piece of work closed");
   title("closed before words", H.homeTitle(facts(plain(), { closed: 51, words: 1_000_500 })), 2, "Your 50th piece of work closed");
   title("words before lessons", H.homeTitle(facts(plain(), { lessons: 26, words: 1_000_500 })), 2, "One million words added to your documents in all");
-  title("lessons before documents", H.homeTitle(facts(plain(), { lessons: 26, documents: 101 })), 2, "Your 25th lesson adopted");
-  // An import of 830 lessons: counted, it would cross 800; outside the cohort, the week adopted 3.
+  title("lessons before documents", H.homeTitle(facts(plain(), { lessons: 26, documents: 101 })), 2, "Your 25th lesson made");
+  // An import of 830 lessons: counted, it would cross 800; outside the cohort, the week made 3.
   title("counted, an import would fire", H.homeTitle(facts(plain({ lessons: 833 }), { lessons: 853 })), 2,
-    "Your 800th lesson adopted, in a week of 833 lesson adoptions, the most yet");
+    "Your 800th lesson made, in a week of 833 lessons made, the most yet");
   expect("an import cohort fires no milestone", H.homeTitle(facts(plain(), { lessons: 23 })).rule === 8, H.homeTitle(facts(plain(), { lessons: 23 })));
   expect("a missing total fires nothing", H.homeTitle(facts(plain(), { closed: null })).rule === 8, null);
 }
@@ -125,15 +125,23 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   // Words recorded in only one earlier week: 5,000 cannot be a high or a rise.
   const thin = PRIOR.map((w, i) => ({ ...w, words: i === 4 ? 1000 : null }));
   title("a metric with no coverage wins no rule", H.homeTitle(facts(plain({ words: 5000 }, {}, thin))), 8,
-    "5 pieces of work closed; 5,000 words added to your documents; 7 approvals recorded in your name; 3 lessons adopted last week");
+    "5 pieces of work closed; 5,000 words added to your documents; 7 approvals recorded in your name; 3 lessons made last week");
   title("a missing count is left out", H.homeTitle(facts(plain({ words: null }))), 8,
-    "5 pieces of work closed; 7 approvals recorded in your name; 3 lessons adopted last week");
+    "5 pieces of work closed; 7 approvals recorded in your name; 3 lessons made last week");
   const zeros = PRIOR.map((w) => ({ ...w, approvals: 0 }));
   expect("a high of zero is no record", H.homeTitle(facts(plain({ approvals: 0 }, {}, zeros))).rule === 8, H.homeTitle(facts(plain({ approvals: 0 }, {}, zeros))));
   title("rules 2 and 3 joined", H.homeTitle(facts(plain({ words: 3500 }), { closed: 51 })), 2,
     "Your 50th piece of work closed, in a week of 3,500 words added, the most yet");
   title("joined with a tie", H.homeTitle(facts(plain({ closed: 6 }), { closed: 51 })), 2,
     "Your 50th piece of work closed, in a week of 6 closures, the most yet, tied with the weeks of 7 Sept and 21 Sept");
+  // The first comparable week tied: closures from the week of 7 Sept, the last whole week 28 Sept.
+  const fromSept7 = (closed: number[]) => closed.map((n, i) => wk(i + 1, { closed: n }));
+  title("a tie with the first comparable week alone", H.homeTitle(facts(fromSept7([6, 2, 3, 6]))), 3,
+    "6 pieces of work closed last week, the most in a week yet, tied with the week of 7 Sept");
+  title("a tie with the first comparable week and a later one", H.homeTitle(facts(fromSept7([6, 2, 6, 6]))), 3,
+    "6 pieces of work closed last week, the most in a week yet, tied with the weeks of 7 Sept and 21 Sept");
+  title("joined with a tie with the first comparable week", H.homeTitle(facts(fromSept7([6, 2, 3, 6]), { closed: 51 })), 2,
+    "Your 50th piece of work closed, in a week of 6 closures, the most yet, tied with the week of 7 Sept");
 }
 
 // Rule 4: the agents' run of days, newly at 7, 14 or 30 inside the last whole week.
@@ -200,7 +208,7 @@ const days = (from: string, through: string, inactive: string[] = []) => {
   title("rule 5 before a quieter week", H.homeTitle(facts(plain({ closed: 3, words: 2500 }))), 5,
     "25% more words added to your documents than your recent weekly median");
   title("a plain week", H.homeTitle(facts(plain())), 8,
-    "5 pieces of work closed; 2,000 words added to your documents; 7 approvals recorded in your name; 3 lessons adopted last week");
+    "5 pieces of work closed; 2,000 words added to your documents; 7 approvals recorded in your name; 3 lessons made last week");
   title("a plain week names what was counted above zero", H.homeTitle(facts(plain({ words: 0, lessons: 0 }))), 8,
     "5 pieces of work closed; 7 approvals recorded in your name last week");
 }

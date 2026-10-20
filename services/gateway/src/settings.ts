@@ -10,8 +10,8 @@
  * The credential and access-token logic already exists as `/manage/mcp` tools. server.ts hands
  * this file the same functions through `SettingsDeps`, passed into `mountSettings` as an
  * argument rather than imported as a value: server.ts imports `mountSettings` from here, so
- * importing back as values would make the two modules import each other at runtime. The only
- * import from server.ts is `import type` for the result shapes, erased by `tsc`.
+ * importing back as values would make the two modules import each other at runtime. Nothing here
+ * imports server.ts; the result shapes are `import type` from credentials.ts, erased by `tsc`.
  *
  * `via: "web"` is added at the call site, never inside the shared function: an agent's chat turn
  * and a browser's button press reach the same function, and neither should inherit the other's
@@ -19,11 +19,11 @@
  * function's `logEvent` detail. COUPLED: the gate's "every console write route records the door
  * it came through" recognises this pattern as well as a literal `logEvent(...)` in a route body.
  *
- * The team routes import `addMember`, `removeMember` and `teamAuthority` from admin.js as
- * values, since admin.ts never imports this file. Every team write is validated by
- * `teamAuthority` inside the shared function, not by `resolveScope`: a team admin managing this
- * surface is not necessarily acting for the team they administer, so the team is named
- * explicitly in the request rather than read off the caller's active scope.
+ * The team routes (settings/team.ts) import `addMember` and `removeMember` from admin/teams.js and
+ * `teamAuthority` from admin/authority.js as values, since neither imports this file. Every team
+ * write is validated by `teamAuthority` inside the shared function, not by `resolveScope`: a team
+ * admin managing this surface is not necessarily acting for the team they administer, so the team
+ * is named explicitly in the request rather than read off the caller's active scope.
  *
  * Every response is wrapped in `redact()` (redact.ts) except the two that hand back a live
  * credential exactly once: `POST /me/tokens` returns a freshly issued access token, and
@@ -58,7 +58,7 @@ export interface SettingsDeps {
 
 /** The caller's teams, and which one they act for — the same rule `team_mine` (access-door.ts)
  *  answers over MCP. It only reads the `Identity` the middleware resolved, so it lives here and
- *  server.ts imports it rather than the other way round. */
+ *  its readers — settings/me.ts, access-door.ts and console/access.ts — import it from this file. */
 export function myTeamsSummary(id: Identity):
   | { ok: true; actingFor: string; teams: { team: string; role: string; active: boolean }[]; note?: string }
   | { ok: false; error: string } {

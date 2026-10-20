@@ -12,8 +12,8 @@
     "sha": "3ba3c323ae8a"
   },
   "sdlc-flow": {
-    "version": "2.16",
-    "sha": "1c6f610b670c"
+    "version": "2.17",
+    "sha": "0e9c12600eed"
   },
   "sdlc-investigate": {
     "version": "1.5",
@@ -56,8 +56,8 @@
     "sha": "ec96b567b786"
   },
   "zz-admin": {
-    "version": "2.10",
-    "sha": "c75fcb2c56a7"
+    "version": "2.11",
+    "sha": "b9a0a039e803"
   },
   "zz-doctor": {
     "version": "1.4",
@@ -84,8 +84,8 @@
     "sha": "bcd63e18d6fb"
   },
   "zz-plugin-evaluate": {
-    "version": "1.4",
-    "sha": "560ff163c51e"
+    "version": "1.5",
+    "sha": "db2810cc69e5"
   },
   "zz-plugin-explain": {
     "version": "0.6",

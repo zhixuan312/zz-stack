@@ -14,10 +14,9 @@ import { superOnly } from "./authority.js";
 // The guarded bodies behind person_list, person_add, person_deactivate, team_create and
 // team_archive.
 //
-// COUPLED: the admin tools and settings.ts's `/api/console/settings/platform/*` routes call
-// these same functions behind the same `superOnly` check. `superOnly` is exported for that —
-// settings.ts imports it as a value (no cycle: this module never imports settings.ts) and
-// scope-check.ts drives it directly, the way it drives `teamAuthority`.
+// COUPLED: the admin tools and settings/platform.ts's `/api/console/settings/platform/*` routes
+// call these same functions behind the same `superOnly` check (admin/authority.ts), which
+// scope-check.ts also drives directly, the way it drives `teamAuthority`.
 export type PlatformWriteOutcome = { ok: true; message: string } | { ok: false; status: 400 | 403; error: string };
 /** Every principal, each with the teams they are in and who added them. Read-only, but still
  *  behind `superOnly` — this is the roster a plain member never sees, on MCP or the console. */

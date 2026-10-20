@@ -15,8 +15,10 @@
  * team's and answer a caller in none the route's own no-team sentence.
  *
  * An argument outside its vocabulary or bounds, a malformed or future date and a version no release
- * records are an input error naming the argument, before anything is read; a read that fails keeps the
- * page's own unavailable parts, and one the page answers 500 throws.
+ * records are an input error naming the argument, before anything is read; an initiative the active team
+ * does not hold is one too, in the initiative route's own not-found sentence, whether another team holds
+ * that slug or nobody does. A read that fails keeps the page's own unavailable parts, and one the page
+ * answers 500 throws.
  *
  * Absent, an argument means what the route means without it: since on Activity and Runs is the route's
  * whole window. The tools' own defaults are AGENT_READS': since seven local days before the read's cutoff
@@ -28,8 +30,10 @@
  * COUPLED: the core door's agent-read tools, registered by zz-core, declare the arguments AGENT_READS takes;
  * checks/console-agent-reads.ts compares each function's answer with its route's.
  */
+import { platformDb } from "../db.js";
 import { NO_TEAM as NO_ACTIVITY_TEAM, cutoff, summaryOf, type ActivitySummary } from "./activity.js";
 import type { Part } from "./figures.js";
+import { NO_INITIATIVE } from "./initiatives.js";
 import { canonicalSurface, vocabulary } from "./platform-bugs.js";
 import { releasesOf, type ReleaseDetail, type Releases } from "./platform-releases.js";
 import { statusOf, type PlatformStatus } from "./platform-status.js";
@@ -66,6 +70,12 @@ const whole = (v: unknown, lo: number, hi: number): boolean => typeof v === "num
 const text = (v: unknown): boolean => typeof v === "string" && v.trim() !== "";
 /** A local date on or before the cutoff's, or absent. */
 const dateOk = (v: unknown, asOf: string): boolean => v === undefined || (typeof v === "string" && isDate(v) && v <= localDay(Date.parse(asOf)));
+/** Whether the team holds an initiative of the slug. */
+async function holds(team: string, slug: string): Promise<boolean> {
+  const { rows } = await platformDb().query(
+    `select 1 from zz.initiative i join zz.team t on t.id = i.team_id where t.slug = $1 and i.slug = $2`, [team, slug]);
+  return rows.length > 0;
+}
 /** A page, or the sentence that refuses it. */
 function pageOf(args: { limit?: unknown; offset?: unknown }, limit: { default: number; max: number }, bad: string): { limit: number; offset: number } | string {
   const page = { limit: args.limit ?? limit.default, offset: args.offset ?? 0 };
@@ -100,6 +110,7 @@ export async function activityRefusals(caller: Caller, args: { since?: string; i
   if (!dateOk(args.since, asOf)) return { inputError: SINCE };
   if (args.initiative !== undefined && !text(args.initiative)) return { inputError: "initiative must be the slug of one of your team's initiatives" };
   const team = caller.activeTeam, initiative = args.initiative ?? null;
+  if (initiative !== null && !(await holds(team, initiative))) return { inputError: NO_INITIATIVE };
   const summary = await summaryOf(team, asOf, { from: args.since === undefined ? null : iso(midnight(args.since)), initiative });
   let byTool: ActivityRefusals["byTool"];
   try {

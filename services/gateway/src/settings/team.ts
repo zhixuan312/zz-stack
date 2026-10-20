@@ -48,7 +48,7 @@ export function mountTeamSettings(app: Express): void {
     });
   });
 
-  /** Add a member, or change one's role: `addMember` (admin.js) does both in one call through
+  /** Add a member, or change one's role: `addMember` (admin/teams.ts) does both in one call through
    *  `on conflict ... do update set role`, so this route needs no second path for "already a
    *  member". */
   app.post("/api/console/settings/team/members", (req: Request, res: Response) => {

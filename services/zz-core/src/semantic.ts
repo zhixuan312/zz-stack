@@ -18,7 +18,9 @@
  * Every answer is written once and to one place: `zz.assessment`, the provenance record — the
  * question, the digest, the reading, and the call that produced it. Its `model_call_id` is the
  * `zz.model_call` row the same call wrote, and a row that came from a call it cannot name is not
- * written at all — a record claiming an attribution it does not have is worse than no record.
+ * written at all — a record claiming an attribution it does not have is worse than no record. A
+ * reading whose row is not written fails the call that asked, because every routing reader reads
+ * the row and would take its absence for a reading of nothing.
  * The `<initiative>/_assessments/*.json` copy that used to sit beside it is gone with the store,
  * and the row is the only record there is.
  *
@@ -157,7 +159,8 @@ const clip = (s: string) => (s.length > MAX_PART ? `${s.slice(0, MAX_PART)}\n[�
 interface AssessmentCall { made: boolean; model_call_id: number | null }
 
 /** Ask one family about one subject. An unavailable service is an answer, recorded with its
- *  reason; the only refusal is a family that does not exist. */
+ *  reason; the refusals are a family that does not exist and a reading whose row cannot be
+ *  written (`persistAssessment`). */
 export async function assessFamily(opts: {
   family: string; subject: string; context?: string;
   initiative?: string | null; about?: string | null; askedBy: string;
@@ -358,8 +361,15 @@ async function insertAssessmentRow(row: AssessmentInsertRow, runner?: Queryable)
   return Number(id);
 }
 
-/** The provenance row for a family question. Never throws: an answer in hand is not lost to a
- *  database hiccup — the row is the record, and a caller that needs it again asks again. */
+/** The provenance row for a family question, or the refusal that fails the call that asked.
+ *
+ *  DELIBERATE: a row that cannot be written is the call's failure, not a reading held in memory.
+ *  The routing readers read the row, never the answer in hand: an acceptance row with no reading is
+ *  `unavailable` and passes on the deterministic rules alone (`acceptanceApprovalRefusal`), and an
+ *  audit round with none reopens nothing (`auditMove`), so a `no` or a `yes` whose row was lost
+ *  would let an approval or a settled audit through on the very answer that should have stopped it.
+ *  Whatever the call wrote before asking stands; `assess` with the same family, initiative and
+ *  `about` writes the row those readers read. */
 async function persistAssessment(a: Assessment, call: AssessmentCall): Promise<void> {
   try {
     await insertAssessmentRow({
@@ -372,7 +382,16 @@ async function persistAssessment(a: Assessment, call: AssessmentCall): Promise<v
       // Asked here and carried in, not resolved by the insert: see `AssessmentInsertRow.team`.
       team: await teamFor(a.asked_by),
     });
-  } catch { /* the row is best-effort; the answer already in hand is what the caller uses */ }
+  } catch (err) {
+    const cause = err instanceof Error ? err.message.replace(/^ERROR:\s*/, "").slice(0, 300) : String(err);
+    const same = [`family "${a.family}"`, a.initiative && `initiative "${a.initiative}"`,
+                  a.about && `about "${a.about}"`].filter(Boolean).join(", ");
+    throw new Refusal(
+      `ERROR: the ${a.family} reading${a.about ? ` of ${a.about}` : ""} was taken but could not be ` +
+      `recorded (${cause}), and nothing may route on a reading the platform does not hold, so this ` +
+      `call fails. Anything it wrote before asking stands. Ask again: \`assess\` with ${same} and ` +
+      "the same subject records it.");
+  }
 }
 
 /** `zz.eval_evaluator_version` as `recordEvaluatorAssessment` needs to read it: the exact row

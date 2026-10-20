@@ -28,7 +28,7 @@
  *   - `activity_refusals` answers the page's summary with `byTool`, the window's refusals summed by tool,
  *     and `messages`, its ten largest groups; with `since` the weeks and groups count only what happened
  *     from that date, the tiles staying the page's last whole week; with `initiative` only that
- *     initiative of the active team's, the second team's answering as one nobody has; a read that fails is
+ *     initiative of the active team's, the second team's refused as one nobody has; a read that fails is
  *     unavailable, never zero or none: with the weekly refusals read failing in the gateway's own pool, the
  *     calls, the refused, its owners, the weeks and the maintenance are each unavailable and the tool
  *     refused most stands, and with last week's refusals by tool failing, the tool refused most is
@@ -82,6 +82,9 @@ type Who = { label: string; email: string; cookie: string; team: string | null; 
 type Part = { state: string; data?: unknown; reason?: string };
 type Answer = { status: number; body: Obj; text: string };
 
+/** The initiative route's not-found, which activity_refusals answers for a slug the team does not hold.
+ *  COUPLED: NO_INITIATIVE in services/gateway/src/console/initiatives.ts. */
+const NO_INITIATIVE = "No initiative of the team you act for has that name.";
 /** A part the gateway could not read. */
 const UNREAD = { state: "unavailable", reason: "query_failed" };
 
@@ -367,11 +370,11 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
   const ghost = `2026-10-01-nobody-${randomBytes(4).toString("hex")}`;
   const foreign = await read(step, member, "activityRefusals", { since: fifteen, initiative: s.two.initiative });
   const nobody = await read(step, member, "activityRefusals", { since: fifteen, initiative: ghost });
-  if (refusedIn(foreign) !== 0 || masked(foreign).replaceAll(s.two.initiative, "[slug]") !== masked(nobody).replaceAll(ghost, "[slug]")) {
-    fail(step, `the second team's initiative reads ${show(foreign)} where one nobody has reads ${show(nobody)}`);
+  for (const [what, a] of [["the second team's initiative", foreign], ["a slug nobody has", nobody]] as [string, Obj][]) {
+    if (!isDeepStrictEqual(a, { inputError: NO_INITIATIVE })) fail(step, `${what} reads ${show(a)}, not the initiative route's own not-found sentence`);
   }
   pass("the first team's initiative counts its two refusals of the tool and not the search's outside it; the second team's " +
-    "initiative answers exactly as a slug nobody has, nothing counted");
+    "initiative is refused exactly as a slug nobody has, in the initiative route's own not-found sentence, nothing counted");
 
   step = "activity_refusals keeps a failed read unavailable, never zero or none";
   // What a fault leaves the answer saying: last week's calls, the refused's owners, the tool refused most, the maintenance,

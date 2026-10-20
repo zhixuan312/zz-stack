@@ -7,7 +7,7 @@
  * 5 a clear rise over the recent weekly median, 6 the shortest median time to close, 7 a quieter
  * week, 8 a plain week; with no weekly count at all, the fixed fallback. Rules 2 and 3 may be joined,
  * and no others. A missing fact is null and loses every rule that needs it. Within a rule the metric
- * priority is closed work, word additions, approvals in the caller's name, lesson adoptions; a round
+ * priority is closed work, word additions, approvals in the caller's name, lessons made; a round
  * number of documents created comes after those. The title is worded for a team of one, never asks
  * for another day of work and never says whether the person rested.
  *
@@ -18,7 +18,7 @@
  * COUPLED: the console's Home and Milestone in src/lib/work-shapes.ts.
  */
 import type { PeriodFigure, Window } from "./figures.js";
-import { agentsRunOf, count, days, localDate, periodFinding, type AgentDay, type Finding } from "./findings.js";
+import { agentsRunOf, count, days, localDate, periodFinding, type AgentDay } from "./findings.js";
 
 /** One week of the team's facts, oldest first; the running week, when there is one, last. */
 type HomeWeek = {
@@ -44,13 +44,13 @@ const PRIORITY: Metric[] = ["closed", "words", "approvals", "lessons"];
 /** What a count of each metric is called: in a list of the week's tallies, and as a thing done. */
 const TALLY: Record<Metric, [string, string]> = {
   closed: ["closure", "closures"], words: ["word added", "words added"],
-  approvals: ["approval in your name", "approvals in your name"], lessons: ["lesson adoption", "lesson adoptions"],
+  approvals: ["approval in your name", "approvals in your name"], lessons: ["lesson made", "lessons made"],
 };
 const DONE: Record<Metric, [string, string]> = {
   closed: ["piece of work closed", "pieces of work closed"],
   words: ["word added to your documents", "words added to your documents"],
   approvals: ["approval recorded in your name", "approvals recorded in your name"],
-  lessons: ["lesson adopted", "lessons adopted"],
+  lessons: ["lesson made", "lessons made"],
 };
 const say = (n: number, [one, many]: [string, string]): string => `${count(n)} ${n === 1 ? one : many}`;
 
@@ -91,7 +91,7 @@ const ordinal = (n: number): string => {
 const ROUND: Record<Milestone["count"], (t: number) => string> = {
   closed: (t) => `Your ${ordinal(t)} piece of work closed`,
   documents: (t) => `Your ${ordinal(t)} document created`,
-  lessons: (t) => `Your ${ordinal(t)} lesson adopted`,
+  lessons: (t) => `Your ${ordinal(t)} lesson made`,
   words: (t) => `${t === 1_000_000 ? "One" : count(t / 1_000_000)} million words added to your documents in all`,
 };
 /** Rule 2's counts in the order they are tested, with the weekly fact each total is counted by. */
@@ -105,13 +105,16 @@ function median(values: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 const hours = (h: number): string => { const r = Math.round(h * 10) / 10; return `${count(r)} ${r === 1 ? "hour" : "hours"}`; };
-/** The weeks a finding ties with: its dates after the week itself and, for a high or a low, the week its record runs
- *  from (periodFinding's order). */
-const tiesOf = (f: Finding): string[] => f.dates.slice(f.kind === "best_week" ? 1 : 2);
-const tied = (f: Finding): string => {
-  const ties = tiesOf(f);
-  return f.tie ? `, tied with the ${ties.length > 1 ? "weeks" : "week"} of ${days(ties)}` : "";
-};
+/** The weeks the period at index at ties with, earliest first: every other comparable complete period of the same value
+ *  at the printed precision, as periodFinding compares them. Read from the periods rather than from the finding,
+ *  whose dates name the week a high's record runs from once, tied or not. */
+function tiesIn(periods: PeriodFigure[], at: number, precision: number, timezone: string): string[] {
+  const printed = (v: number): number => Math.round(v * 10 ** precision);
+  const value = printed(periods[at].figure.value!);
+  return periods.flatMap((p, i) => (i !== at && p.window.complete && p.figure.why === null && printed(p.figure.value!) === value
+    ? [localDate(p.window.from, timezone)] : []));
+}
+const tied = (ties: string[]): string => (ties.length ? `, tied with the ${ties.length > 1 ? "weeks" : "week"} of ${days(ties)}` : "");
 
 /** The sentence Home is titled with, and the rule that wrote it. */
 export function homeTitle(facts: HomeFacts): HomeTitle {
@@ -155,12 +158,12 @@ export function homeTitle(facts: HomeFacts): HomeTitle {
       figure: w[m] === null ? { value: null, why: "unavailable" } : { value: w[m], why: null },
     }));
     const f = periodFinding(periods, { label: m, better: "neutral", timezone: facts.timezone, precision: 0, coverageFrom: null, countLabel: null });
-    return f?.kind === "high_week" ? { m, value, f } : null;
+    return f?.kind === "high_week" ? { m, value, ties: tiesIn(periods, at, 0, facts.timezone) } : null;
   }).find((h) => h !== null);
 
-  if (round && high) return { sentence: `${round}, in a week of ${say(high.value, TALLY[high.m])}, the most yet${tied(high.f)}`, rule: 2 };
+  if (round && high) return { sentence: `${round}, in a week of ${say(high.value, TALLY[high.m])}, the most yet${tied(high.ties)}`, rule: 2 };
   if (round) return { sentence: round, rule: 2 };
-  if (high) return { sentence: `${say(high.value, DONE[high.m])} last week, the most in a week yet${tied(high.f)}`, rule: 3 };
+  if (high) return { sentence: `${say(high.value, DONE[high.m])} last week, the most in a week yet${tied(high.ties)}`, rule: 3 };
 
   // 4. On a day of the week the agents' run newly reached 7, 14 or 30; a run that reaches the first
   //    day given is of unknown length and never fires.
@@ -200,7 +203,8 @@ export function homeTitle(facts: HomeFacts): HomeTitle {
     const f = periodFinding(periods, { label: "median time to close", better: "down", timezone: facts.timezone, precision: 1, coverageFrom: null, countLabel: null });
     if (f?.kind === "best_week") {
       const { hours: h, cohort } = week.medianHoursToClose;
-      return { sentence: `The shortest median time to close yet: ${hours(h)}, over ${say(cohort, ["piece of work", "pieces of work"])}${tied(f)}`, rule: 6 };
+      const ties = tiesIn(periods, at, 1, facts.timezone);
+      return { sentence: `The shortest median time to close yet: ${hours(h)}, over ${say(cohort, ["piece of work", "pieces of work"])}${tied(ties)}`, rule: 6 };
     }
   }
 

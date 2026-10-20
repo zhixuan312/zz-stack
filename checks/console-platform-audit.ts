@@ -78,7 +78,7 @@ const ALLOWED_DETAIL = ["role", "status", "reactivated", "from", "team", "owner"
  *  expectation, which still reads the report's id (scripts/schema/audit-seed.ts, reported for the integration). */
 const UNNAMED_DELETION = `${SUPERADMIN} deleted a report the record does not name`;
 /** The day a report was filed as the gateway's sentence says it, in the check's time zone. */
-const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "2-digit", month: "short", year: "numeric" });
+const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "numeric", month: "short", year: "numeric" });
 /** Words that would name the door an act came through; only `in the console` may. */
 const CHANNEL = /mcp-oauth|\bMCP\b|OAuth|\bvia\b|\bweb\b|script/;
 

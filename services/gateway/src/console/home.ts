@@ -230,7 +230,7 @@ async function homeOf(team: string, caller: string, asOf: string, relay: Relay):
       attempt("the median hours to close", () => medianHoursToClose(team, span, asOf, "week")),
       attempt("the searches with results", () => searchesWithResults(team, lastWeek, asOf, "week")),
       attempt("the observed runs", () => observedRuns(team, lastWeek, asOf)),
-      attempt("the lessons adopted", () => lessonsMade(team, asOf)),
+      attempt("the lessons made", () => lessonsMade(team, asOf)),
       attempt("the agents' days", () => agentDaysOf(team, week)),
       attempt("what waits", () => waitingOf(team, asOf)),
       attempt("the open work", () => openWorkOf(team, asOf, relay)),

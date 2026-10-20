@@ -34,7 +34,7 @@ export function mountPlatformSettings(app: Express): void {
   });
 
   /** Create a principal, or reactivate a deactivated one on the same email — `addPerson`'s
-   *  own `on conflict` (admin.ts) is why there is no second path for "already exists". An email
+   *  own `on conflict` (admin/people.ts) is why there is no second path for "already exists". An email
    *  `person_add`'s schema refuses is refused by `addPerson` too, so this route needs no schema. */
   app.post("/api/console/settings/platform/people", (req: Request, res: Response) => {
     void (async () => {
@@ -79,7 +79,7 @@ export function mountPlatformSettings(app: Express): void {
   });
 
   /** Deactivate a principal. `confirm` must repeat the email exactly, and an email no principal
-   *  has is refused — `deactivatePerson`'s own rules (admin.ts), surfaced here rather than
+   *  has is refused — `deactivatePerson`'s own rules (admin/people.ts), surfaced here rather than
    *  duplicated. This is the gateway's independent check regardless of what the browser sent. */
   app.delete("/api/console/settings/platform/people", (req: Request, res: Response) => {
     void (async () => {
@@ -100,7 +100,7 @@ export function mountPlatformSettings(app: Express): void {
   });
 
   /** Create a team, or reactivate an archived one on the same slug — `createTeam`'s own
-   *  `on conflict` (admin.ts) is why. */
+   *  `on conflict` (admin/teams.ts) is why. */
   app.post("/api/console/settings/platform/teams", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
@@ -125,7 +125,7 @@ export function mountPlatformSettings(app: Express): void {
   });
 
   /** Archive a team. `confirm` must repeat the team slug exactly — `archiveTeam`'s own rule
-   *  (admin.ts), surfaced here rather than duplicated. */
+   *  (admin/teams.ts), surfaced here rather than duplicated. */
   app.delete("/api/console/settings/platform/teams", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;

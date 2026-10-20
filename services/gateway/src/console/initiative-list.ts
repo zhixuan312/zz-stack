@@ -14,7 +14,8 @@
  *              the slug breaking a tie, each with its next move as initiative_status answers it
  *   total      how many initiatives the filters hold
  *   summary    over every filtered initiative, never the page: by state, by flow, when each was
- *              last touched, and how many were open by the end of the last whole week
+ *              last touched, and how many of them had been opened by the end of the last whole week,
+ *              closed since or not
  *
  * A row's state is its outcome once closed; open, it is waiting while a revision of it waits for
  * approval (pendingRevisions), quiet when nothing of it was written for 14 days or more before the

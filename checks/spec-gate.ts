@@ -72,6 +72,10 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
     return one(world.get(String(values[0]))?.docs ?? []);
   }
+  // A reading is kept as the database keeps it, one row with its id, and so is the model call that produced it: an
+  // assessment the platform cannot record fails the call that asked (semantic.ts's persistAssessment), so the stub
+  // writes both as a real database would.
+  if (/insert into zz\.(assessment|model_call)\b/.test(sql)) return one([{ id: `a${++seq}` }]);
   // The statement memo: the readings already taken, keyed by the `about` they were asked under.
   if (/select a\.about, a\.reading/.test(sql)) {
     const prefix = String(values[2]).replace(/%$/, "");

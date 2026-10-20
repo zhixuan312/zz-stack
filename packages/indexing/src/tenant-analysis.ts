@@ -8,9 +8,10 @@
  * analyzer, passage shape, projection shape and source content hash — changing `analyzer`
  * alone changes it, which is how a rebuild tells a stale derivation from a changed source).
  *
- * COUPLED: `index.ts` writes `zz.doc` with a fixed 200,000-character cutoff and is the live
- * indexing path; this file's passages feed the derived search tables. Do not unify the
- * cutoffs.
+ * COUPLED: every analyzed body goes through `buildRowVector` below — a document write
+ * (`document-save.ts`), a journal node (`index.ts`'s `indexNode`), a team reindex and the
+ * rederivation pass — and this file's passages feed the derived search tables. No writer cuts a
+ * body: `MAX_INPUT_BYTES` is the only bound, and a body past it is refused, never shortened.
  *
  * DELIBERATE: `identifierTokens` has no operator syntax. The query lexer strips quotes, OR and
  * exclusions first, so a `/` or `-` inside a path cannot trip it.

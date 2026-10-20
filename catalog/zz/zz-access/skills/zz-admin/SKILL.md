@@ -1,6 +1,6 @@
 ---
 name: zz-admin
-version: 2.10
+version: 2.11
 description: "Running the platform itself: who exists, which teams they are in, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
 when_to_use: "Someone needs a principal created or deactivated, a team made or retired, a person added to or removed from a team, a PAT issued or revoked, or a passkey enrolment link minted. Also for an access review — who has what, and who gave it to them."
 ---

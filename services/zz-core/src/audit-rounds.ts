@@ -120,7 +120,10 @@ export function auditMove(initiative: string, stage: string, document: string,
   if (!rounds.length) {
     // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.
     return { action: "add_source", document, waiting_on: "agent",
-             why: `${stage} is the next stage this flow declares and no round of it exists yet. ` +
+             why: `${stage} is the next stage this flow declares and ` +
+                  (since ? `no round of it has read a version after v${since}, the last one approved — ` +
+                           "this phase is audited on its own budget. "
+                         : "no round of it exists yet. ") +
                   `Dispatch round 1 on ${document} v${version}, then record it with ${call}. ` +
                   "Only a source naming its stage counts as a round." };
   }

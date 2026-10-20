@@ -81,7 +81,8 @@ const mint = (seed: string, now: number): string =>
 /** The correlation key everything in this module is keyed by, spelled once.
  *
  * COUPLED: the telemetry writer (`tool-telemetry.ts`) calls this rather than building the key.
- * A second spelling finds an empty trace and lets every call through, which fails silently.
+ * A second spelling finds an empty trace and records every call with no step, flow or initiative,
+ * which fails silently.
  *
  * DELIBERATE: read from the header, not from req.zzIdentity. identityMiddleware writes the
  * canonical address onto the header after authenticating, so the two agree today. */

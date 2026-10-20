@@ -65,11 +65,20 @@ const used = (id: string): string =>
   `ERROR: UPLOAD_USED — ${id} was consumed by an earlier write, and an upload is used once; call ` +
   "upload_start again to send the same file to another write.";
 
-/** Exactly one of `content`, `upload` and `file`, or the INVALID_MODE that says so. */
+/** The hosts a ChatGPT `file` is fetched from, `OPENAI_FILE_HOSTS` as a list. Empty — the default — and
+ *  the `file` route is off (`fileArgument`). */
+export function fileHosts(): string[] {
+  return (process.env.OPENAI_FILE_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
+}
+
+/** Exactly one of `content`, `upload` and `file`, or the INVALID_MODE that says so — naming `file` only
+ *  where the tools declare it, since with no host it is an argument no tool takes. */
 export function oneBody(a: { content?: string; upload?: string; file?: OpenAIFile }): string | null {
   if ([a.content, a.upload, a.file].filter((x) => x !== undefined).length === 1) return null;
-  return "ERROR: INVALID_MODE — send the body ONE way: `content` (the words), `upload` (the id " +
-    "upload_start answered, once its file is staged) or `file` (a file ChatGPT attached) — one, not two, and not none.";
+  const upload = "`upload` (the id upload_start answered, once its file is staged)";
+  return "ERROR: INVALID_MODE — send the body ONE way: `content` (the words), " +
+    (fileHosts().length ? `${upload} or \`file\` (a file ChatGPT attached)` : `or ${upload}`) +
+    " — one, not two, and not none.";
 }
 
 /** (2) and (3): the caller's own staged, unexpired, unconsumed upload, decoded — or the refusal that

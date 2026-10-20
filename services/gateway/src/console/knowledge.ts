@@ -30,6 +30,8 @@ import { platformPublic, ZZ_TZ } from "./shared.js";
  *  address would hand back the name of a lesson the caller may not read.
  *  COUPLED: checks/console-work-knowledge.ts holds the sentence. */
 const NO_NODE = "No lesson on the team's shelf or the shared one is at that address.";
+/** The newest entries the knowledge log answers, its statement's limit; its totals count every entry. */
+const LOG_CEILING = 500;
 
 /** One row of the list and detail queries below, as they are aliased there. */
 interface NodeRow {
@@ -203,13 +205,19 @@ export function mountKnowledge(app: Express): void {
    *
    * The active team's log, for the superadmin too, as the rest of Work is: a team or a scope the request
    * names widens nothing, and a caller who acts for no team is answered 400.
+   *
+   * The newest 500 entries before the cutoff, and beside them the totals over every entry before it: the
+   * entries, those recorded and those superseded, so a log past its ceiling is never counted by its page.
    */
   app.get("/api/console/knowledge/log", platformPublic("the knowledge log", async (_req, res, { activeTeam }) => {
     if (activeTeam === null) {
       res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
       return;
     }
-    const { rows } = await platformDb().query(
+    // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
+    const asOf = iso(Math.ceil(Date.now() / 1000) * 1000);
+    const db = platformDb();
+    const [{ rows }, totals] = await Promise.all([db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
               p.email as actor, t.slug as team, e.kind, e.subject as node,
               e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as successor_recorded,
@@ -221,14 +229,28 @@ export function mountKnowledge(app: Express): void {
          left join zz.knowledge_node d on d.team_id = t.id
                            and d.node_ordinal = e.subject
         where e.kind in ('knowledge.add','knowledge.supersede')
+          and e.ts < $2::timestamptz
           and t.slug = $1
         order by e.ts desc limit 500`,
-      [activeTeam]);
-    res.json({ entries: (rows as Record<string, unknown>[]).map((r) => ({
-      ts: r.ts, actor: r.actor, team: r.team, kind: r.kind, node: r.node,
-      recorded_title: r.recorded_title, superseded_by: r.successor_recorded,
-      node_title: r.node_title, node_status: r.node_status, path: r.address,
-    })) });
+      [activeTeam, asOf]),
+    db.query<{ entries: number; recorded: number; superseded: number }>(
+      `select count(*)::int as entries,
+              count(*) filter (where e.kind = 'knowledge.add')::int as recorded,
+              count(*) filter (where e.kind = 'knowledge.supersede')::int as superseded
+         from zz.event e
+         join zz.team t on t.id = e.team_id
+        where e.kind in ('knowledge.add','knowledge.supersede')
+          and t.slug = $1 and e.ts < $2::timestamptz`,
+      [activeTeam, asOf]),
+    ]);
+    res.json({
+      entries: (rows as Record<string, unknown>[]).map((r) => ({
+        ts: r.ts, actor: r.actor, team: r.team, kind: r.kind, node: r.node,
+        recorded_title: r.recorded_title, superseded_by: r.successor_recorded,
+        node_title: r.node_title, node_status: r.node_status, path: r.address,
+      })),
+      totals: totals.rows[0], ceiling: LOG_CEILING,
+    });
   }));
 
   /** One node, whole. The console's reading pane.
@@ -249,9 +271,8 @@ export function mountKnowledge(app: Express): void {
       res.status(404).json({ error: NO_NODE });
       return;
     }
-    /* The node, and the two facts the page beside it draws from the shelf rather than from this
-     * node: which other nodes share one of its tags — the only link the store records between two
-     * nodes — and whether the shelf it is on spans more than one team.
+    /* The node, and the fact the page beside it draws from the shelf rather than from this node:
+     * which other nodes share one of its tags — the only link the store records between two nodes.
      *
      * DELIBERATE: answered here rather than by the reading pane fetching the whole list. It did,
      * and a shelf is hundreds of nodes with a title, tags, an excerpt and a byte count each: the
@@ -271,7 +292,7 @@ export function mountKnowledge(app: Express): void {
      * that check its SQL, and a backtick in prose opens a template literal they then read as code.
      * initiatives.ts carries the same note about the console's own scanner, where exactly this
      * broke the check the comment was describing. */
-    const [node, neighbours, shelves] = await Promise.all([
+    const [node, neighbours] = await Promise.all([
     db.query(
       `select t.slug as shelf,
               'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
@@ -332,10 +353,6 @@ export function mountKnowledge(app: Express): void {
           and not (t.slug = $1
                    and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2)
         order by k.node_ordinal`, [req.params.team, address, activeTeam]),
-    db.query<{ multi_team: boolean }>(
-      `select count(distinct t.slug) > 1 as multi_team
-         from zz.knowledge_node k join zz.team t on t.id = k.team_id
-        where t.slug = $1`, [activeTeam]),
     ]);
     const rows = node.rows;
     if (!rows.length) { res.status(404).json({ error: NO_NODE }); return; }
@@ -348,7 +365,6 @@ export function mountKnowledge(app: Express): void {
       // the reader names the node the way the list they came from did.
       num: String(Number(r.ordinal)),
       related: (neighbours.rows as NodeRow[]).map(listNode),
-      multi_team: shelves.rows[0]?.multi_team ?? false,
       shelf: r.shelf === PLATFORM_TEAM ? "shared" : "team",
     });
   }));

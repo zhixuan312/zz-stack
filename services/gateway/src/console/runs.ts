@@ -31,7 +31,9 @@
  * The route's body is runsAt, which the agent read run_summary (console/agent-reads.ts) calls too, with a
  * first local date the route never names: then the runs are those that touch the window from that date's
  * start in the reporting timezone to the cutoff, a run under way at its start among them, as runsIn reads
- * any window.
+ * any window. The coverage clips each run's span at that start as at the cutoff, and since names the
+ * later of the window's start and the earliest run's; a run's own row, its length among it, is the
+ * run's whole.
  *
  * DELIBERATE: no backticks in the comments of this file. check:sql reads it as text, and a backtick in
  * a comment opens a template literal it then parses as code.
@@ -118,17 +120,19 @@ export function runRow(r: Awaited<ReturnType<typeof runsIn>>[number], asOfMs: nu
 export async function runsAt(team: string, params: RunsParams, asOf: string): Promise<Runs> {
   const asOfMs = Date.parse(asOf);
   const from = params.since ? iso(midnight(params.since)) : null;
+  const fromMs = from === null ? -Infinity : Date.parse(from);
   // The earliest first, as runsIn orders them.
   const runs = (await runsIn(team, { from: from ?? ALL_TIME, to: asOf }, asOf))
     .filter((r) => params.skill === null || r.skill === params.skill)
     .map((r) => runRow(r, asOfMs));
-  const since = runs.length ? runs[0].startedAt : null;
+  // The record read starts at the earliest run's start, or at the window's when that run was under way then.
+  const since = runs.length ? iso(Math.max(Date.parse(runs[0].startedAt), fromMs)) : null;
   const newest = [...runs].sort((a, b) => b.lastCallAt.localeCompare(a.lastCallAt) || a.id.localeCompare(b.id));
   const measured = newest.filter((r) => r.bytes !== null);
   const output = mean(measured.map((r) => r.bytes!));
   const largest = measured.reduce<RunRow | null>((a, r) => (!a || r.bytes! > a.bytes! ? r : a), null);
-  // Each span up to the cutoff, as observedRuns clips it.
-  const spans = runs.map((r): [number, number] => [Date.parse(r.startedAt), Math.min(Date.parse(r.lastCallAt), asOfMs)]);
+  // Each span from the window's start up to the cutoff, as observedRuns clips it.
+  const spans = runs.map((r): [number, number] => [Math.max(Date.parse(r.startedAt), fromMs), Math.min(Date.parse(r.lastCallAt), asOfMs)]);
   const skills = [...new Set(runs.map((r) => r.skill))];
 
   return {

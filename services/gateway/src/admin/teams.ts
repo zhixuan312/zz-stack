@@ -13,9 +13,9 @@ import { type PlatformWriteOutcome } from "./people.js";
 // ---------------------------------------------------------------- shared team-write logic
 //
 // COUPLED: the guarded bodies behind member_add and member_remove. The admin tools below and
-// settings.ts's browser routes call the same function rather than a second copy of the
-// authority check and the query. settings.ts imports these as values; this module never
-// imports settings.ts, so there is no cycle here for dependency injection to avoid.
+// settings/team.ts's browser routes call the same function rather than a second copy of the
+// authority check and the query. settings/team.ts imports these as values; this module never
+// imports it, so there is no cycle here for dependency injection to avoid.
 //
 // Each write takes `extraDetail`, merged into its own `auditAdmin` call's detail — a tool call
 // passes none, settings.ts's routes pass `{ via: "web" }`. The marker is added by the caller;

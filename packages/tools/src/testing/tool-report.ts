@@ -13,6 +13,12 @@
  *   npm run tool-report -- --save runs/                     # keep this one, named to sort
  *   npm run tool-report -- --ledger runs/                   # every saved run, by refusal class
  *   npm run tool-report -- --fail-under 90                  # non-zero below that accepted rate
+ *   npm run tool-report -- --origin all                     # the platform's own calls counted too
+ *
+ * Work only by default: a call whose `origin` is `platform` is the platform maintaining itself —
+ * chain-check's deliberate refusals, zz-doctor, zz-migrate — and counted with work it moves the
+ * accepted rate and --fail-under by traffic nobody's work made. The calls left out are counted
+ * aside and said; `--origin platform` reports them alone, `--origin all` with work.
  *
  * Run it on the deployment host: it reads the platform database through the compose project, the
  * same way backup.sh and issue-first-pat.sh do. --psql overrides that for anywhere else.
@@ -21,7 +27,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { refusalClass, resolveStep, resolveToolKey } from "@zz/contracts";
+import { PLATFORM_CLIENTS, refusalClass, resolveStep, resolveToolKey } from "@zz/contracts";
 
 import { die, optional, parseArgs } from "../lib/cli.js";
 import { showLedger, showMovement } from "./tool-report-history.js";
@@ -86,7 +92,7 @@ interface CallRow {
   response_bytes: number | null;
   batched: boolean;
   /** Whether the call was work or the platform maintaining itself, stamped at write from the
-   * client's own name by @zz/contracts' eventOrigin(). Never null. */
+   * client's own name by @zz/contracts' eventOrigin(). Never null. What `--origin` keeps. */
   origin: "work" | "platform";
 
   /** Read, never filtered on — which is exactly what a jsonb column is good at. */
@@ -198,6 +204,10 @@ export interface ReportShape {
   generated: string;
   since: string;
   actor: string | null;
+  /** Which calls were counted: `work` (the default), `platform` or `all`. */
+  origin: Origin;
+  /** The calls in the window that `origin` left out, counted aside rather than dropped unsaid. */
+  left_out: number;
   calls: number;
   accepted: number;
   refused: number;
@@ -219,6 +229,9 @@ export interface ReportShape {
 
 interface ClientStat { client: string; calls: number; refused: number; tools: number }
 
+const ORIGINS = ["work", "platform", "all"] as const;
+type Origin = (typeof ORIGINS)[number];
+
 /** Whether a parsed file is one of this tool's own reports.
  *
  * --ledger needs it so a stray `notes.json` beside the saved runs is named and skipped rather than
@@ -238,6 +251,11 @@ function main(argv: string[]): number {
   // while the operator reads it as one evaluation run's calls.
   const surface = optional(args, "surface", "a surface to narrow to, e.g. `core` or `eval`");
   const actor = optional(args, "actor", "the address whose calls to report on");
+  const originRaw = optional(args, "origin", "work, platform or all") ?? "work";
+  if (!(ORIGINS as readonly string[]).includes(originRaw)) {
+    die(`--origin takes work, platform or all, got ${JSON.stringify(originRaw)}`);
+  }
+  const origin = originRaw as Origin;
   const psql = args.flags.get("psql") || DEFAULT_PSQL;
   // Validated, because this is the one flag here that decides an exit code. `Number("9o")` is NaN
   // and `rate < NaN` is false, so a typo silently removes the gate. optional() answers the empty
@@ -268,9 +286,15 @@ function main(argv: string[]): number {
     return 0;
   }
 
-  const events = rows(psql, since, surface, actor);
+  const all = rows(psql, since, surface, actor);
+  const events = origin === "all" ? all : all.filter((e) => e.origin === origin);
+  const leftOut = all.length - events.length;
+  /** What a left-out call was, in the words the report says it with. */
+  const aside = origin === "work" ? `the platform maintaining itself (${PLATFORM_CLIENTS.join(", ")})` : "work";
   if (events.length === 0) {
-    const where = (surface ? ` on ${surface}` : "") + (actor ? ` by ${actor}` : "");
+    const where = (surface ? ` on ${surface}` : "") + (actor ? ` by ${actor}` : "") +
+      (origin === "all" ? "" : ` of origin ${origin}`) +
+      (leftOut ? ` (${leftOut} more were ${aside}, left out; --origin all counts them)` : "");
     console.log(`no tool calls in the last ${since}${where}`);
     // A gate that cannot fail is not a gate. The accepted rate of no calls is not 100%; there is
     // no rate, and a caller who asked for a floor asked to be told when the floor cannot be
@@ -364,6 +388,8 @@ function main(argv: string[]): number {
     generated: localStamp(),
     since,
     actor,
+    origin,
+    left_out: leftOut,
     calls: events.length,
     accepted,
     refused: judged - accepted,
@@ -413,6 +439,11 @@ function main(argv: string[]): number {
         // than dropped, and said out loud so an operator goes and reads that row.
         (report.unparseable ? `, ${report.unparseable} unparseable subject(s)` : ""),
     );
+    // Said out loud, for the same reason as the batched rows below: a narrowed denominator unsaid
+    // reads as the whole of the traffic.
+    if (leftOut) {
+      console.log(`  ${leftOut} more were ${aside} — left out of every count here; --origin all counts them`);
+    }
     // Said out loud, because a silently narrowed denominator is how a timing number lies.
     if (batched) {
       console.log(`  ${batched} of them shared a request with another call, so their timing ` +

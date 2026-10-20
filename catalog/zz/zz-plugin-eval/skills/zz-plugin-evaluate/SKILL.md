@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 1.4
+version: 1.5
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -126,8 +126,10 @@ quietly reduces that dimension's coverage.
 ❌ **Reporting `overall_score` without `score_status`.** A provisional number read as established
 is the exact failure the status field exists to prevent.
 
-❌ **Re-running `evaluation_score` hoping for a different number.** It is pure over what is
-stored — assess more evidence first if the coverage is what you want to change.
+❌ **Re-running `evaluation_score` hoping for a different number.** A scored run refuses a second
+score, and the number is pure over what is stored. To change the coverage, assess more evidence
+BEFORE scoring; once a run is scored, a wider one is a new `evaluation_start`, assessed and scored
+in its own right.
 
 ## Skill contract
 

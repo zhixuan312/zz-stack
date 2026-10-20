@@ -1,12 +1,12 @@
 {
   "sdlc": {
     "version": "0.96.0",
-    "digest": "1ddbe07a",
+    "digest": "239d72a0",
     "skills": {
       "sdlc-audit-criteria": "401d0c71603a",
       "sdlc-execute": "f927fe1b25e1",
       "sdlc-explore": "3ba3c323ae8a",
-      "sdlc-flow": "1c6f610b670c",
+      "sdlc-flow": "0e9c12600eed",
       "sdlc-investigate": "15e674f6b8a1",
       "sdlc-method": "f17e871339af",
       "sdlc-plan": "aa1fd9304ac5",
@@ -20,10 +20,10 @@
   },
   "zz-access": {
     "version": "0.96.0",
-    "digest": "a371fde0",
+    "digest": "0ab1080a",
     "skills": {
       "zz-access": "ec96b567b786",
-      "zz-admin": "c75fcb2c56a7",
+      "zz-admin": "b9a0a039e803",
       "zz-doctor": "859c424ba2e1",
       "zz-migrate": "fd0aa752aae0",
       "zz-update": "a5d73e2d40eb"
@@ -43,12 +43,12 @@
   },
   "zz-plugin-eval": {
     "version": "0.96.0",
-    "digest": "5a34f203",
+    "digest": "425b20c3",
     "skills": {
       "zz-plugin-define-qualify": "54502e8e3900",
       "zz-plugin-discover": "c37151a84a42",
       "zz-plugin-eval": "bcd63e18d6fb",
-      "zz-plugin-evaluate": "560ff163c51e",
+      "zz-plugin-evaluate": "db2810cc69e5",
       "zz-plugin-explain": "14acd54c4c14",
       "zz-plugin-identify": "ce809f4918a9",
       "zz-plugin-improve": "681710337d79",

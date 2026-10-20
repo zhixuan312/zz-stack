@@ -144,11 +144,15 @@ export function agentsRunFinding(days: AgentDay[]): Finding | null {
   return { kind: "run", text: `Your agents ran ${run.atLeast ? "at least " : ""}${run.days} days in a row`, dates: [run.through], tie: false };
 }
 
-/** A door's finding about its days, in order: no tool failure recorded on any day, counting every
- *  day's calls, today's included; else its run; else its counts. */
+/** A door's finding about its days, in order: no call recorded on any day, today's included, which
+ *  says nothing of failures; no tool failure recorded on any day, counting every day's calls; else its
+ *  run; else its counts. */
 export function runFinding(days: Day[]): Finding {
   const calls = days.reduce((n, d) => n + (d.calls ?? 0), 0);
   const failures = days.reduce((n, d) => n + (d.toolFailures ?? 0), 0);
+  if (days.length > 0 && calls === 0) {
+    return { kind: "count", text: `No call recorded since ${day(days[0].date)}`, dates: [days[0].date], tie: false };
+  }
   if (days.length > 0 && failures === 0) {
     return { kind: "no_failure", text: `No tool failure recorded in ${counted(calls, "call", "calls")} since ${day(days[0].date)}`,
              dates: [days[0].date], tie: false };

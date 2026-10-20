@@ -169,8 +169,8 @@ export async function specApprovalRefusal(
       initiative, about: `${memoDoc}#${x.r.id}#${x.digest}`, askedBy: by })));
     // The answers just taken are judged now, not read back on the next approval. `cache` was read
     // before they existed, so judging from it alone reported every row asked here as unavailable
-    // and approved over a `no` (CS-8, 2026-10-06). From the answer itself rather than a re-read,
-    // because `assessFamily` persists best-effort and an answer in hand is the reading.
+    // and approved over a `no` (CS-8, 2026-10-06). From the answer itself rather than a re-read:
+    // an answer `assessFamily` returns is a row it wrote, or the call has already failed.
     batch.forEach((x, k) => (cache[x.r.id] ??= []).push({
       digest: x.digest, reading: answers[k].reading, probability: answers[k].probability,
       reason: answers[k].reason, asked_at: answers[k].asked_at }));

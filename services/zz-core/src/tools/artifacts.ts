@@ -40,7 +40,7 @@ import { documentAt, documentPaths, loadDocument, loadSnapshot, NO_DB, recordAct
 import { saveDocument } from "../document-save.js";
 import { citedRevisions, sourceReceipt } from "../source-receipt.js";
 import { acceptanceLine, consumptionOf, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor, requestOf } from "../document-change.js";
-import { fileArgument, fileSource, oneBody, stagedUpload, uploadContent, uploadLines } from "../upload-consume.js";
+import { fileArgument, fileHosts, fileSource, oneBody, stagedUpload, uploadContent, uploadLines } from "../upload-consume.js";
 import { present } from "../document-present.js";
 import { type PanelDocument, PRESENT_META } from "../document-panel.js";
 import { CONTEXT_INPUT, presentRefusal, viewerOf } from "../review-context.js";
@@ -63,7 +63,7 @@ const PART_INPUT = {
 /** The ChatGPT `file` route, built once at start: the hosts files are fetched from, and nothing else
  *  from the environment. Empty — the default — and the route is off: no tool declares `file`
  *  (upload-consume.ts). */
-const HOSTS = (process.env.OPENAI_FILE_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
+const HOSTS = fileHosts();
 const FILES = fileSource({ hosts: HOSTS });
 const FILE_ARG = fileArgument(HOSTS);
 

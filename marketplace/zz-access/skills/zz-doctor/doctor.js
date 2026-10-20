@@ -8,8 +8,10 @@
  * have the repository, so it must never grow a check that needs one.
  *
  * Everything is derived from the machine. The token comes off disk in the same order the MCP header
- * helper reads it; the gateway URL comes out of the installed plugin rather than being written here,
- * because a hardcoded base tells you the platform the script was written against is healthy.
+ * helper reads it; the gateway URL comes out of the installed plugin, because a hardcoded base tells
+ * you the platform the script was written against is healthy. The published gateway is written here
+ * once, as the fallback when no installed plugin declares a door, and checking it is a WARN that
+ * says so rather than a PASS.
  *
  * Exit 0 = nothing to do. 1 = at least one FAIL.
  */

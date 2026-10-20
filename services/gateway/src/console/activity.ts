@@ -24,9 +24,10 @@
  *
  * The summary's body is summaryOf, which the agent read activity_refusals (console/agent-reads.ts) calls
  * too, with a first instant and an initiative the route never names: the weeks, the groups and the
- * maintenance are then counted from that instant to the cutoff, and every part, the tiles included, only
- * in the team's initiative of that slug. The tiles stay the last whole week's, read on their own when the
- * window starts inside it.
+ * maintenance are then counted from that instant to the cutoff, or from the start of the route's own
+ * window when that instant is before it, and every part, the tiles included, only in the team's
+ * initiative of that slug. The tiles stay the last whole week's, read on their own when the window starts
+ * inside it.
  *
  * The log is the team's real-work events newest first, narrowed by kind, tool, initiative (a slug of
  * the active team) and refused before the latest 500 are taken, then paged; its total is the matches
@@ -119,7 +120,9 @@ export async function summaryOf(team: string, asOf: string, ask: { from: string 
   // From the first call's week, the last whole week at the latest and the newest WHOLE_WEEKS at most. A
   // Monday noon is the probe, so a daylight saving hour cannot carry it into the week before.
   const probe = Math.max(Math.min(firstMs ?? weekMs, weekMs), weekMs - (WHOLE_WEEKS - 1) * WEEK + 12 * HOUR);
-  const span = { from: ask.from ?? iso((await periodsOf({ from: iso(probe), to: asOf }, asOf, "week"))[0].fromMs), to: asOf };
+  // An instant asked before that window starts at the window, so no answer reaches further than the route's.
+  const windowFrom = (await periodsOf({ from: iso(probe), to: asOf }, asOf, "week"))[0].fromMs;
+  const span = { from: ask.from !== null && Date.parse(ask.from) > windowFrom ? ask.from : iso(windowFrom), to: asOf };
   // A window starting inside the last whole week does not hold all of it, so the tiles read that week alone.
   const whole = Date.parse(span.from) <= weekMs;
 

@@ -18,17 +18,27 @@ import { logEvent } from "../events.js";
 import { platformDb, platformDbReady } from "../db.js";
 import { renderClientSetup } from "../admin/flows.js";
 
-/** A console session's id: a uuid, so anything else names no browser and is answered as one that is not yours. */
-const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A console session's or a token's id: a uuid, so anything else names no browser or token and is answered as one
+ *  that is not yours, before it reaches a `uuid` comparison that would throw. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Why a token-borne caller is refused Access's two revokes: each acts on what signs a person in. */
 const BROWSER_ONLY = "revoke this from the console, signed in: a token cannot revoke what signs you in";
 
 /** Tells every console tab that a person's own tokens or browsers changed, so their other browsers read Access again.
  *  `settings`, with no team: a token or a session is a person's, not a team's. A call here rather than a trigger, as
  *  migrations/003_console_live.sql has for team rows: `zz.pat` and `zz.console_session` are written on every request
- *  (`last_used_at`, `last_seen_at`), and a trigger would put a hint, or the work of deciding against one, on each. */
+ *  (`last_used_at`, `last_seen_at`), and a trigger would put a hint, or the work of deciding against one, on each.
+ *
+ *  DELIBERATE: never throws. It runs after the write has committed, so a hint that fails is logged and the route still
+ *  answers by the write's own outcome: a 500 there would report an issued token, whose plaintext is shown once and
+ *  never again, as not issued, and a revoke that committed as not done. The other tabs then read Access on their next
+ *  load instead of at once. */
 async function hintSettings(): Promise<void> {
-  await platformDb().query("select zz.console_hint('', 'settings')");
+  try {
+    await platformDb().query("select zz.console_hint('', 'settings')");
+  } catch (err) {
+    console.error("settings hint failed (the write it follows stands):", err);
+  }
 }
 
 /** The caller's client setup: the Claude Code install steps, pointing here. Its bearer header is
@@ -152,13 +162,15 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
   /** Revoke one of the caller's own tokens. `revokeMyAccessTokenFor`'s own query is the
    *  whole authorisation check — its `principal_id = (select id from principal where
    *  email = $2)` makes a token id belonging to somebody else indistinguishable from one
-   *  that never existed, so there is no separate ownership check to have forgotten here. */
+   *  that never existed, so there is no separate ownership check to have forgotten here.
+   *  An id that is not a uuid names no token at all, and is answered 404 before the query. */
   app.delete("/api/console/settings/me/tokens/:id", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
       const tokenId = req.params.id;
+      if (!UUID.test(tokenId)) { res.status(404).json({ error: "no such active token of yours" }); return; }
       const ok = await deps.revokeMyAccessTokenFor(id.email, tokenId, { via: "web" }, id.origin);
       if (!ok) { res.status(400).json({ error: "no such active token of yours" }); return; }
       await hintSettings();
@@ -223,7 +235,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       if (id.via !== "session" || !cookie) { res.status(400).json({ error: BROWSER_ONLY }); return; }
       const session = req.params.id;
       const missing = { error: "no browser of yours is signed in with that id" };
-      if (!SESSION_ID.test(session)) { res.status(404).json(missing); return; }
+      if (!UUID.test(session)) { res.status(404).json(missing); return; }
       const r = await platformDb().query<{ is_current: boolean | null; revoked: number }>(
         `with target as (
            select s.id, s.token_hash = $3 as is_current

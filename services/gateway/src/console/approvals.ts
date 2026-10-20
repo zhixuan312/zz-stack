@@ -300,7 +300,7 @@ export function mountApprovals(app: Express): void {
     }
     const team = req.zzIdentity!.activeTeam;
     if (!team) {
-      res.status(400).json({ error: "no active team — join a team first" });
+      res.status(400).json({ error: "no team: Work is the active team's, and you act for none" });
       return;
     }
     const caller = req.zzIdentity!.email;

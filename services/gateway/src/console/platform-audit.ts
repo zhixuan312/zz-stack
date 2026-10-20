@@ -56,8 +56,9 @@ const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset one fro
 /** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-/** The day a deleted report was filed, in the reporting timezone: `16 Sept 2026`, `03 Oct 2026`. */
-const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, day: "2-digit", month: "short", year: "numeric" });
+/** The day a deleted report was filed, in the reporting timezone, as a sentence writes a day: `16 Sept 2026`,
+ *  `3 Oct 2026`. */
+const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, day: "numeric", month: "short", year: "numeric" });
 
 type AuditRow = {
   id: string; at: string; actor: string | null; team: string | null; kind: string; subject: string | null;

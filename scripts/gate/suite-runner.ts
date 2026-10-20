@@ -39,7 +39,10 @@ export const runsCheck = (file: string) => (): string | null => {
                  { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     return null;
   } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`.trim();
+    // DELIBERATE: stderr first, stdout last. A check that starts a real zz-core collects that
+    // service's boot log on stderr, and appended after stdout it filled the whole tail: gate 4590
+    // reported only zz-core's plugin_version warnings, and the check's own FAILED line was cut.
+    const out = `${execFields(err).stderr}${execFields(err).stdout}`.trim();
     return tailOf(out.split("\n").filter((l) => l.trim()).join("; "))
       || `checks/${file} exited non-zero`;
   }

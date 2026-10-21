@@ -31,6 +31,8 @@
  *      a stop's fallback approved at the close and corrected after it does, whichever document it is
  *  13. each plan phase has its own budget: rounds that audited an approved phase do not count
  *      against the next
+ *  14. an approved plan version no round read still owes its round, and the stakeholder's material
+ *      after that approval waives it
  *
  * Run: node checks/audit-rounds.ts   (also run by scripts/gate.ts)
  */
@@ -399,6 +401,34 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
   // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
   is(pm?.action === "add_source" && /Round 2 checks the new version/.test(pm?.why ?? ""),
      `a new plan phase's revision went to the stakeholder on the earlier phase's spent budget: ${JSON.stringify(pm)}`);
+}
+
+// 14. An approved plan version no round has read still owes its round; the stakeholder may waive it.
+//     Bug 12ec9d99: an amendment approved as v124 after v123, with no round after v123, was sent to
+//     round 1 with no way to record that the stakeholder accepts it unaudited. Material the stakeholder
+//     files after the current version's approval settles it; material filed before that approval, such
+//     as the phase's execution report, does not.
+{
+  const p = await fresh(1);
+  round(p.name, 1, 1);
+  world.get(p.name)!.docs.push(docRow(p.name, "plan.md", { title: "Plan", flow: "sdlc-flow", status: "approved",
+    current_revision: 10, current_version: 5, approved_before: 4, approved_by: "ada@zz.test",
+    // The column's own text, as `docRows` reads it: not ISO, so a string comparison with an ISO
+    // `added_at` would put a space before a "T".
+    approved_at: "2026-09-27 08:00:00.5+00", body: "# Plan\n\n## Phase 1 — skeleton\n" }));
+  const planMaterial = (at: string) => world.get(p.name)!.docs.push(docRow(p.name,
+    `sources/2026-09-27-stakeholder-${at.replace(/\W/g, "")}.md`, { title: "Stakeholder on the amendment",
+      body: "Proceed with v5 unaudited.", supports: ["plan.md"], fields: { added_at: at } }));
+  planMaterial("2026-09-27T07:00:00.000Z");
+  let pm = await move(p);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(pm?.action === "add_source" && pm?.document === "plan.md" && /Dispatch round 1 on plan\.md v5/.test(pm?.why ?? "")
+       && /unaudited/.test(pm?.why ?? ""),
+     `an approved amendment no round read, with material only from before its approval, did not owe its round and name the waiver: ${JSON.stringify(pm)}`);
+  planMaterial("2026-09-27T08:30:00.000Z");
+  pm = await move(p);
+  is(pm?.document !== "plan.md",
+     `the stakeholder's material after the amendment's approval did not settle its audit: ${JSON.stringify(pm)}`);
 }
 
 if (fail.length) {

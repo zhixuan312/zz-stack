@@ -76,6 +76,17 @@ function decidedSince(sources: readonly DocRow[], document: string, since: strin
     !stageOf(d) && supportsOf(d).includes(document) && addedAtOf(d) > since);
 }
 
+/** An instant as milliseconds, from an ISO string or from a `timestamptz` column's own text
+ *  (`2026-10-19 08:00:00.5+00`), which a string comparison with an ISO one would misorder. */
+const msOf = (s: string): number => Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
+
+/** Material supporting the document, not itself a round, filed after the document's current version
+ *  was approved: where a stakeholder accepts an approved version no round has read. */
+function waivedAfter(sources: readonly DocRow[], document: string, approvedAt: string): boolean {
+  const sealed = msOf(approvedAt);
+  return sources.some((d) => !stageOf(d) && supportsOf(d).includes(document) && msOf(addedAtOf(d)) > sealed);
+}
+
 /**
  * Ask the one question an audit round's routing depends on — does it reopen something already
  * agreed — record it, and say what came back. Runs inside `source_add`; an unavailable service is
@@ -116,14 +127,20 @@ interface AuditMove { action: string; document: string; waiting_on: string; why:
  * current one, because each phase is audited on its own budget and an approved phase's rounds
  * are spent on that phase; 0 for every other document. Asked of an approved document, and of the plan while it
  * is a draft: a plan phase is audited before its approval, so the round is owed before that gate
- * (`initiative_status`'s `auditedWhile`).
+ * (`initiative_status`'s `auditedWhile`). `approvedAt` is the current version's own seal when it is
+ * approved, null otherwise: what a stakeholder's acceptance of it unaudited must come after.
  */
 export function auditMove(initiative: string, stage: string, document: string,
                           version: number, sources: readonly DocRow[],
-                          answers: RoundAssessments, since = 0): AuditMove | null {
+                          answers: RoundAssessments, since = 0, approvedAt: string | null = null): AuditMove | null {
   const rounds = roundsOf(sources, stage, document, since);
   const call = `source_add(initiative: "${initiative}", title, content, supports: ["${document}"], stage: "${stage}")`;
   if (!rounds.length) {
+    // An approved version no round has read still owes its round (checks/document-version-causes.ts):
+    // approving without the audit does not settle it. The stakeholder may accept it unaudited, as a
+    // spent budget's decision does, by material filed after that approval (bug 12ec9d99). Material
+    // from before it, such as the phase's execution report, is not that decision.
+    if (approvedAt && waivedAfter(sources, document, approvedAt)) return null;
     // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.
     return { action: "add_source", document, waiting_on: "agent",
              why: `${stage} is the next stage this flow declares and ` +
@@ -131,7 +148,9 @@ export function auditMove(initiative: string, stage: string, document: string,
                            "this phase is audited on its own budget. "
                          : "no round of it exists yet. ") +
                   `Dispatch round 1 on ${document} v${version}, then record it with ${call}. ` +
-                  "Only a source naming its stage counts as a round." };
+                  "Only a source naming its stage counts as a round." +
+                  (approvedAt ? ` v${version} is approved: if the stakeholder accepts it unaudited, record their ` +
+                                `decision with source_add(supports: ["${document}"]) and no stage instead.` : "") };
   }
   const last = rounds[rounds.length - 1];
   const n = rounds.length;

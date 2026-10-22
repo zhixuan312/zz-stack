@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { everySkill, readLock, readSkill, stateOf } from "../../skill-versions.ts";
+import { everySkill, readLock, readSkill, refusedByWrite, stateOf } from "../../skill-versions.ts";
 import { root, sourceFiles } from "../read.ts";
 import { check } from "../run.ts";
 import { flows, platformSkills, skillsOf } from "../facts.ts";
@@ -120,4 +120,21 @@ check("a skill that changed says so in its version", () => {
     if (!names.has(name)) bad.push(`skills.lock.json still lists ${name}, which no SKILL.md declares — re-run \`node scripts/skill-versions.ts --write\``);
   }
   return bad.length ? bad.join("; ") : null;
+});
+
+check("recording the skills' baseline refuses a skill whose text moved while its version did not", () => {
+  // The check above compares against skills.lock.json, and `skill-versions.ts --write` is what
+  // writes it. A write that recorded the new hash under the old version laundered the change: the
+  // lock then agreed with the skill, this gate passed, and only the release's register-skills
+  // refused it against the live registry (0.97.1, sdlc-flow 2.17), after the gate, the dry run and
+  // the preflight had all passed.
+  const prev = { kept: { version: "1.2", sha: "aaaaaaaaaaaa" }, moved: { version: "1.2", sha: "aaaaaaaaaaaa" },
+                 bumped: { version: "1.2", sha: "aaaaaaaaaaaa" } };
+  const got = refusedByWrite([
+    { name: "kept", version: "1.2", sha: "aaaaaaaaaaaa" },
+    { name: "moved", version: "1.2", sha: "bbbbbbbbbbbb" },
+    { name: "bumped", version: "1.3", sha: "bbbbbbbbbbbb" },
+    { name: "new", version: "1.0", sha: "cccccccccccc" },
+  ], prev);
+  return got.length === 1 && got[0].startsWith("moved ") ? null : `refused ${JSON.stringify(got)}, expected only "moved"`;
 });

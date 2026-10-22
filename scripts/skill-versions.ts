@@ -3,7 +3,8 @@
  * The version each skill declares, beside the hash of what it actually says.
  *
  *   node scripts/skill-versions.ts            # print the table
- *   node scripts/skill-versions.ts --write    # record the current state as the baseline
+ *   node scripts/skill-versions.ts --write    # record the current state as the baseline; refuses a
+ *                                             # skill whose text moved while its version did not
  *
  * A declared version is a claim; the hash is what makes it true. This file records both, the
  * gate compares them, and a skill whose text changed without its version changing is refused.
@@ -103,6 +104,14 @@ export function stateOf(skill: SkillRecord, prev: Record<string, LockedSkill>): 
   return { moved: major(was.version) !== major(skill.version) ? "major" : "minor", from: was.version };
 }
 
+/** The skills `--write` refuses to record: each whose text changed while its version did not, as
+ *  the line saying so. Recording one would make the lock agree with it, and the gate's version
+ *  check reads the lock, so the change would pass unannounced. A skill new to the lock is recorded. */
+export function refusedByWrite(skills: SkillRecord[], prev: Record<string, LockedSkill>): string[] {
+  return skills.filter((s) => prev[s.name] && WELL_FORMED.test(s.version) && stateOf(s, prev).bad)
+    .map((s) => `${s.name} ${stateOf(s, prev).bad} — bump its \`version:\`, then write again`);
+}
+
 // Run only when invoked directly. Imported, this file is a library and must do nothing.
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith("skill-versions.ts");
 const rows = invokedDirectly ? everySkill().map(readSkill) : [];
@@ -110,6 +119,11 @@ const rows = invokedDirectly ? everySkill().map(readSkill) : [];
 if (!invokedDirectly) {
   // nothing
 } else if (process.argv.includes("--write")) {
+  const refused = refusedByWrite(rows, readLock());
+  if (refused.length) {
+    console.error(`  skills.lock.json not written:\n  ${refused.join("\n  ")}`);
+    process.exit(1);
+  }
   const lock = Object.fromEntries(rows.map((r) => [r.name, { version: r.version, sha: r.sha }]));
   writeFileSync(LOCK, `${JSON.stringify(lock, null, 2)}\n`);
   console.log(`  recorded ${rows.length} skill(s) in skills.lock.json`);

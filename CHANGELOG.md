@@ -33,6 +33,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.97.1] — 2026-10-22 · console 0.28.1
+
+A plan amendment approved before any audit round read it can now be accepted unaudited by its
+stakeholder. The console's tables now space their columns evenly. No migration, no env key. Clients
+re-pull only for the one line added to sdlc-flow's routing table.
+
+### zz-stack 0.97.1
+
+- **Fixed: an approved plan amendment no round had read could not move on.** 0.97.0 gave each
+  approved plan version its own audit budget. So an amendment approved after the version before it,
+  with no audit round on the amendment, was routed to round 1 after its approval, and nothing short
+  of that round settled it. Before 0.97.0, a spent budget and a recorded stakeholder decision had let
+  such an amendment pass. The round is still owed: approving without the audit does not settle it.
+  The stakeholder may now accept the version unaudited, with material supporting `plan.md`, with no
+  stage, filed after that version's approval. `initiative_status` names this option when the version
+  is approved. Material filed before the approval, such as a phase's execution report, does not waive
+  the round.
+- **sdlc-flow's routing table** gains that row.
+
+### zz-stack-dashboard 0.28.1
+
+- **Tables space their columns evenly.** The console is on ZZ Meridian 0.26.0. A table is laid out as
+  a grid: every column is as wide as its content, and the spare width sits evenly in the gaps between
+  columns, no longer all after the lead column. A cut value keeps its column's alignment, and its
+  whole text is in its title.
+- **Two empty tables say so under the table, not in a row of it.** A protocol with no dimension, on a
+  plugin's evaluation, and a person on no team, under Access. In a grid, a row spanning every column
+  is drawn in the first column only.
+- **`pnpm verify` holds at most one browser per two CPUs and per 4 GiB of memory at once.** Before, a
+  full run opened every browser suite together, which on a 32 GB laptop pushed the machine about
+  17 GB into swap.
+
+### Upgrade notes
+
+- Re-pull the shelf and update `sdlc`, so the new routing row reaches the client:
+  `claude plugin marketplace update zz-stack`, then `claude plugin update sdlc@zz-stack`.
+
 ## [0.97.0] — 2026-10-20 · console 0.28.0
 
 The console becomes two workspaces, Work and Platform, each drawn for the person signed in. A member

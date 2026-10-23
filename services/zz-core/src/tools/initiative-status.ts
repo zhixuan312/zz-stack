@@ -508,8 +508,8 @@ export async function initiativeState(
     }
   }
   if (next.action !== "closed") {
-    next.why += planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null);
-    if (settledNote) next.why = `${next.why.replace(/[^.!?]$/, "$&.")} ${settledNote}`;
+    for (const note of [planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null), settledNote])
+      if (note) next.why = `${next.why.replace(/[^.!?]$/, "$&.")} ${note}`;
   }
   const { sourceFiles, needsRefinement } = sourceReport(rows);
   const corrections = outcome ? correctionsOf(outcome, own?.closed_at ?? null, states, rows).map((d) => d.name) : [];

@@ -20,6 +20,8 @@
  *   7. a round raising high on the current version, not yet revised: no audit move and no note
  *   8. a round raising critical and high, plan revised: the weights in the manifest's order
  *   9. the spec audit, which declares no policy, on a round raising only low: today's routing
+ *  10. case 2's plan failing structural validation: its note and the settled note each follow a
+ *      finished sentence
  *
  * Run: node checks/audit-round-policy.ts   (also run by scripts/gate.ts)
  */
@@ -212,7 +214,20 @@ for (const [label, body] of [
   is(!m?.why?.includes("settled after"), `case 9: the spec audit carries a settled note: ${said(m)}`);
 }
 
-is(ROUND_BUDGET === 3, `ROUND_BUDGET is ${ROUND_BUDGET}; it stays 3 for every stage that declares no budget`);
+// 10. The same approved plan with no Output or Dependencies lines: the plan's own structure note is
+//     appended as well, and neither note runs on from a sentence that ends without a stop.
+{
+  const p = fresh(2, "approved");
+  planRound(p, 1, 1, ledger("medium"));
+  const planRow = world.get(p)!.find((d) => d.path === "plan.md")!;
+  planRow.body = String(planRow.body).replace("**Output:** `run.sh`\n**Dependencies:** none\n", "");
+  const m = await move(p);
+  is(/built\. NOTE: the approved plan\.md fails structural validation/.test(m?.why ?? ""),
+     `case 10: the plan-structure note runs on from an unfinished sentence: ${said(m)}`);
+  is(m?.why?.endsWith(`in parallel. ${NOTE}`), `case 10: the settled note does not follow the plan-structure note: ${said(m)}`);
+}
+
+is(ROUND_BUDGET === 3,`ROUND_BUDGET is ${ROUND_BUDGET}; it stays 3 for every stage that declares no budget`);
 
 if (fail.length) {
   for (const f of fail) console.log(`FAIL: ${f}`);

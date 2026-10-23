@@ -11,22 +11,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { asExecError, envToken, initFrame, publicUrl, root, run } from "../../deployment.ts";
+import { envToken, initFrame, mcpFrame, publicUrl, root, type McpFrame } from "../../deployment.ts";
 import { zzCoreTools } from "../../gate/read.ts";
 import { layer, probe } from "../run.ts";
-
-/** The three shapes this file actually reads off a live MCP frame. Every field is optional —
- *  the transport may answer with a JSON-RPC error, a frame missing the result a caller asked
- *  for, or this file's own `unreachable` marker — so the honest type is one no live answer can
- *  fail to satisfy, rather than a schema nothing here validates. */
-interface McpFrame {
-  unreachable?: string;
-  error?: unknown;
-  result?: {
-    tools?: { name: string }[];
-    serverInfo?: { version?: string };
-  };
-}
 
 layer("contract", "is the live surface the one the source declares", ["services/zz-core/src", "packages/contracts/src"]);
 
@@ -41,39 +28,8 @@ function token() {
   return t;
 }
 
-/** One MCP call, parsed. The transport may answer as SSE or as plain JSON, so the last
- *  non-empty line is taken and the `data: ` prefix dropped if it is there. */
-function mcp(path: string, body: string): McpFrame {
-  // The preconditions are resolved outside the try, and that placement is the whole rule. Inside
-  // it, a `url()` that could not find an address is caught by the catch below and returned as "the
-  // door could not be reached" — a disagreement — so an unreachable host produces verdicts saying
-  // the platform's contract is wrong when nothing looked at the platform at all.
-  const addr = url(), bearer = token();
-  let out: string;
-  // From here on a throw is the platform's answer, not a missing precondition, so it is
-  // returned. A door that is down, or a Caddy 502 in front of it, must not become `unknown` —
-  // a release does not roll back on `unknown`.
-  try {
-    out = run("curl", ["-s", "-m", "30",
-      "-H", `Authorization: Bearer ${bearer}`, "-H", "content-type: application/json",
-      "-H", "accept: application/json, text/event-stream",
-      "-d", body, `${addr}${path}`]);
-  } catch (err) {
-    const e = asExecError(err);
-    return { unreachable: `the door could not be reached: ${(e.stderr ?? e.message).trim().slice(0, 160)}` };
-  }
-  const line = out.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
-  // The parse is defensive for the same reason one layer down: a 502 hands back an HTML error
-  // page, JSON.parse throws SyntaxError on it, and the runner would call that the doctor's own bug
-  // while the platform really was broken.
-  try {
-    const parsed: unknown = JSON.parse(line.replace(/^data:\s*/, ""));
-    return parsed && typeof parsed === "object" ? (parsed as McpFrame)
-      : { unreachable: `the door answered ${JSON.stringify(parsed)}, which is not an MCP frame` };
-  } catch {
-    return { unreachable: `the door answered something that is not JSON: ${(line || "(empty)").slice(0, 160)}` };
-  }
-}
+/** One MCP call to a door, with this layer's own address and token resolved first. */
+const mcp = (path: string, body: string): McpFrame => mcpFrame(url(), token(), path, body);
 
 probe("every tool the source registers is on the live door", () => {
   // The initialize handshake first: the doors are stateless, but a server that throws at

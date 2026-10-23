@@ -35,7 +35,8 @@ than how much code moved.
 
 ## [0.98.2] — 2026-10-23
 
-`initiative_status` reads as sentences again when an approved plan fails structural validation.
+`initiative_status` reads as sentences again when an approved plan fails structural validation, and a
+release waits for zz-core before it verifies.
 
 ### zz-stack 0.98.2
 
@@ -44,6 +45,14 @@ than how much code moved.
   sentence ended without a stop — "…once every phase is built NOTE: the approved plan.md fails
   structural validation…". The note now follows a finished sentence, joined the same way as the
   settled-review note beside it.
+- **A release no longer rolls back over its own restart of zz-core.** Step 5 started verifying
+  once the gateway's `/health` answered, and that answers for the gateway alone: the first run of
+  this release verified while zz-core was still booting, the contract probe met the gateway's
+  "not reachable right now" refusal, and a working release rolled back to 0.98.1. Step 5 now also
+  waits for `/core/mcp` and `/eval/mcp` to answer initialize.
+- **The doctor's `MCP initialize` probes read the answer, not only its status.** The gateway
+  answers a door whose upstream is down with HTTP 200 and a JSON-RPC error, so these probes printed
+  a refusing `/core/mcp` green. They now fail on an error frame and name it.
 
 ### Upgrade notes
 

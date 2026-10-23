@@ -59,7 +59,7 @@ import { basename, join } from "node:path";
 import { buildAndSmoke, buildBundle, setConsoleVersion } from "./release/build.ts";
 import { requireCiGreen } from "./release/ci-runs.ts";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.ts";
-import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
+import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, initializeRefusal, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
 import { chainCheck } from "./release/chain-live.ts";
 import { purgeProbes } from "./release/probe-purge.ts";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
@@ -475,16 +475,20 @@ purgeProbes();
 // come up, and on a slower host the probes below ran against a gateway that was still starting —
 // so a working release rolled back, and the verification failure reported was about the clock.
 //
+// The doors the gateway relays to are asked too. /health answers for the gateway alone, and step 4
+// restarts zz-core beside it (registries.ts): 0.98.2's first run started verifying while zz-core
+// was still booting, and the contract probe's refusal rolled a good release back.
+//
 // DELIBERATE: it gives up rather than dying. A gateway that never answered is a probe that could
 // not run, which is this release's THIRD outcome — live and untagged, with the probe named — and
 // dying here would leave the release half-done instead of saying which probes could not look.
+const readyBearer = envToken();
 for (let i = 0; i < 60; i++) {
   try {
     execFileSync("curl", ["-fsS", "-m", "5", "-o", "/dev/null", `${publicUrl()}/health`], { stdio: "ignore" });
-    break;
-  } catch {
-    execFileSync("sleep", ["1"]);
-  }
+    if (!readyBearer || ["/core/mcp", "/eval/mcp"].every((d) => !initializeRefusal(publicUrl(), readyBearer, d, "release"))) break;
+  } catch { /* the gateway is not answering yet */ }
+  execFileSync("sleep", ["1"]);
 }
 const verdict = verifyLive();
 // A registry the release could not write is a failed verification (registries.ts).

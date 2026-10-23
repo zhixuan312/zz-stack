@@ -10,7 +10,7 @@
  * an operator is most likely to act on it. Here a missing token is a probe that did not run,
  * which is never a verdict about the platform. See run.ts.
  */
-import { DASH_REMOTE, HOST, REMOTE, asExecError, envToken, initFrame, publicUrl, run, ssh } from "../../deployment.ts";
+import { DASH_REMOTE, HOST, REMOTE, asExecError, envToken, initializeRefusal, publicUrl, run, ssh } from "../../deployment.ts";
 import { layer, probe } from "../run.ts";
 
 layer("doors", "does every door answer", ["services/gateway/src"]);
@@ -50,14 +50,13 @@ probe("gateway /health", () => {
 // The MCP server is built per request, so a throw at construction — a duplicate tool
 // registration, a bad import — 500s every endpoint while /health stays green.
 //
+// The frame, not the status: a door whose upstream is down answers HTTP 200 with a JSON-RPC
+// error (initializeRefusal), and reading the status alone printed a refusing /core/mcp green.
+//
 // Every door this gateway serves, including the one added last. A door left out of this list is
 // a door whose failure to mount looks exactly like a healthy deployment.
 for (const path of ["/core/mcp", "/eval/mcp", "/manage/mcp"]) {
-  probe(`MCP initialize ${path}`, () => {
-    const c = code(["-H", `Authorization: Bearer ${token()}`, "-H", "content-type: application/json",
-      "-H", "accept: application/json, text/event-stream", "-d", initFrame("doctor"), `${url()}${path}`]);
-    return c === "200" ? null : `http ${c}`;
-  });
+  probe(`MCP initialize ${path}`, () => initializeRefusal(url(), token(), path, "doctor"));
 }
 
 // Public, and emitted at request time from the live zod schemas — so a construct the emitter

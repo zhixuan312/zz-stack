@@ -201,11 +201,18 @@ async function recordOf(c: Core, team: string, slug: string): Promise<CloseRecor
 }
 
 /** The record once nothing more lands: the close's own ledger event is written after the reply, so a
- *  record read at once can be a row short — the same three reads in a row, as document-version.ts waits. */
+ *  record read at once can be a row short — the same three reads in a row, as document-version.ts waits.
+ *
+ *  DELIBERATE: a closed record also waits for its close's event. Three equal reads are 600 ms, and
+ *  `platformEvent` resolves the team and inserts after the reply, on a pool the gate's other checks
+ *  load: an event later than that read as `closes: 0`, a count the product never recorded. A 1.5 s
+ *  delay on the event reproduces it, and it is the likely cause of gates 4838 and 2691, whose reasons
+ *  were cut from their reports. A give-up fails by name, as `doors` does. */
 async function settled(c: Core, slug: string, team = c.team): Promise<CloseRecord> {
   let last = JSON.stringify(await recordOf(c, team, slug));
-  for (let same = 0, i = 0; same < 3; i++) {
-    if (i > 100) c.fail(`record of ${slug}`, "the record never settled");
+  const owed = (r: string) => { const rec = JSON.parse(r) as CloseRecord; return rec.closed && rec.closes < 1; };
+  for (let same = 0, i = 0; same < 3 || owed(last); i++) {
+    if (i > 100) c.fail(`record of ${slug}`, owed(last) ? "it closed, and its initiative_close event never landed within 20 s" : "the record never settled");
     await new Promise((r) => setTimeout(r, 200));
     const now = JSON.stringify(await recordOf(c, team, slug));
     same = now === last ? same + 1 : 0;

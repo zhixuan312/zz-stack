@@ -33,6 +33,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.3] — 2026-10-24
+
+Two gate checks no longer go red on a ledger event that lands late on a loaded machine.
+
+### zz-stack 0.98.3
+
+- **The console-close check waits for the close it is counting.** A close records its
+  `initiative_close` event after it answers, and the check took three equal reads 600 ms apart
+  as the final record; on a loaded machine the event came later and the check reported a count of
+  zero closes that the platform never recorded. This failed two gates out of about 160, one of
+  them in this release cycle. A closed record now waits for its event, and names it if it never
+  lands. The check also now asserts that a refused close records no close.
+- **The rollback check's migration re-run is not blamed for the check's own late events.** It
+  compares every table before and after re-running the migrations, and an event from one of its
+  own earlier calls could land in between. Those rows are left out of the comparison; anything the
+  migration runner writes is still compared.
+
+### Upgrade notes
+
+- Every plugin's version moves to 0.98.3 with an unchanged digest: no skill text changed, so
+  re-pulling the shelf is optional.
+
 ## [0.98.2] — 2026-10-23
 
 `initiative_status` reads as sentences again when an approved plan fails structural validation, and a

@@ -33,6 +33,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.1] — 2026-10-23 · console 0.28.3
+
+The console's Approve sends one approval however Confirm is pressed. The platform carries the
+console release and changes nothing of its own.
+
+### zz-stack 0.98.1
+
+- **No change of its own.** No route, tool, skill, schema, migration or environment key moved;
+  this number carries console 0.28.3, because a release's record reads the console version from
+  the platform's changelog section.
+
+### zz-stack-dashboard 0.28.3
+
+- **Pressing Enter twice on Confirm no longer approves a document twice.** Confirm refused the
+  second click of a double-click by its click count, and a keyboard press carries none, so a
+  second Enter reached Confirm before the busy state was drawn: walked in a real Chrome against
+  the fake gateway, Enter twice sent two approvals and showed two "Approved" notices. Confirm now
+  holds the press itself until the answer arrives, and a second one sends nothing.
+
+### Upgrade notes
+
+- Every plugin's version moves to 0.98.1 with an unchanged digest: no skill text changed, so
+  re-pulling the shelf is optional.
+
 ## [0.98.0] — 2026-10-23 · console 0.28.2
 
 sdlc-flow now plans a piece of work by what its user sees, feels and never notices, and the plan

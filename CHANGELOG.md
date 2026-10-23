@@ -33,6 +33,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.4] — 2026-10-24
+
+Words an agent passes as an edit's cause no longer count as the stakeholder's decision, so a
+spent audit budget goes to the stakeholder again.
+
+### zz-stack 0.98.4
+
+- **An edit's own cause is never a decision.** `document_edit` and `document_write` file the words
+  passed as `source_content` as a source supporting the document. Every router read any such
+  source, filed after the last round, as the stakeholder deciding. So a plan revised after its
+  second audit round, with its answer pasted in, was routed to `await_approval` and skipped the
+  stakeholder's `decide`. The same mistake had two more effects:
+  - On `review.md`, those words could renew the review budget and accept a finding they named as
+    residual.
+  - On `spec.md`, they could vouch for a core statement or an unclear row.
+
+  A captured cause now carries a `cause_of` envelope field, declared in the published schema. The
+  audit and review routers, and the approval rules that read stakeholder sources, all leave it
+  out. A decision is filed with `source_add` and no stage, as every routing message already said.
+- **sdlc-spec, sdlc-flow and sdlc-review say so.** sdlc-spec taught a person's decision on a
+  finding only as `source_content`. It now files a decision taken at `decide` with `source_add`
+  first, then names it.
+
+### Upgrade notes
+
+- The `sdlc` plugin's skills changed: sdlc-spec 1.23, sdlc-flow 2.21 and sdlc-review 1.19. Re-pull
+  the shelf: `claude plugin marketplace update zz-stack`, then `claude plugin update sdlc@zz-stack`.
+- Only causes filed from this release carry `cause_of`. Causes captured before it still read as
+  decisions, as they did before. Nothing is rewritten.
+
 ## [0.98.3] — 2026-10-24
 
 Two gate checks no longer go red on a ledger event that lands late on a loaded machine.

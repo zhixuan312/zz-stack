@@ -370,15 +370,22 @@ export function textCases(): void {
   pass(step);
 }
 
-/** Every table of the `zz` schema as a row count and a digest of its rows. */
+/** Every table of the `zz` schema as a row count and a digest of its rows.
+ *
+ *  DELIBERATE: `zz.event` leaves out the rows this check's own principal acted. Its tool calls record
+ *  their acts through `platformEvent` after the reply, and on a loaded host one can land after
+ *  `settled`'s three equal reads, where it would be blamed on whatever ran next. The migration runner
+ *  acts as nobody, so every row it could write is still compared. */
 async function tables(c: Core): Promise<Map<string, string>> {
   const names = (await c.sql.query<{ t: string }>(
     `select table_name as t from information_schema.tables
       where table_schema = 'zz' and table_type = 'BASE TABLE' order by 1`)).rows.map((r) => r.t);
   const out = new Map<string, string>();
   for (const t of names) {
+    const own = t === "event" ? " where x.actor_id is distinct from (select id from zz.principal where email = $1)" : "";
     const { rows } = await c.sql.query<{ s: string }>(
-      `select count(*) || ':' || coalesce(md5(string_agg(x::text, E'\\n' order by x::text)), '') as s from zz."${t}" x`);
+      `select count(*) || ':' || coalesce(md5(string_agg(x::text, E'\\n' order by x::text)), '') as s from zz."${t}" x${own}`,
+      own ? [c.email] : []);
     out.set(t, rows[0].s);
   }
   return out;

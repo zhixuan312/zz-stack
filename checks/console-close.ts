@@ -204,7 +204,7 @@ async function recordOf(c: Core, team: string, slug: string): Promise<CloseRecor
  *  record read at once can be a row short — the same three reads in a row, as document-version.ts waits.
  *
  *  DELIBERATE: a closed record also waits for its close's event. Three equal reads are 600 ms, and
- *  `platformEvent` resolves the team and inserts after the reply, on a pool the gate's other checks
+ *  `platformEvent` resolves the team and inserts after the reply, on a host the gate's other checks
  *  load: an event later than that read as `closes: 0`, a count the product never recorded. A 1.5 s
  *  delay on the event reproduces it, and it is the likely cause of gates 4838 and 2691, whose reasons
  *  were cut from their reports. A give-up fails by name, as `doors` does. */
@@ -310,7 +310,7 @@ async function run(c: Core): Promise<void> {
       const same = String(got.body.error).replaceAll(b, a) === said;
       if (!k.says?.test(said) || !same) c.fail(k.step, `${shown}; the tool's refusal should match ${k.says}`);
       if (k.want === "refused") {
-        if (got.status !== 400 || rb.closed || sb.outcome) c.fail(k.step, `${shown}; the record is ${show(rb)}`);
+        if (got.status !== 400 || rb.closed || rb.closes !== 0 || sb.outcome) c.fail(k.step, `${shown}; the record is ${show(rb)}`);
         c.pass(`${k.step}: the route answers 400 with the tool's own sentence, and nothing closes`);
         continue;
       }

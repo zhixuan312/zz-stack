@@ -53,6 +53,8 @@ check("review rounds follow evidence — fix, run_experiment, decide at the budg
 
 check("a spec is approved on a phase outline covering every AC and on core statements a spike actually tested",
       runsCheck("spec-gate.ts"));
+check("a tiered flow's spec outline and phase-by-phase plan are read as the platform reads them",
+      runsCheck("tiered-flow.ts"));
 
 check("a document's `when` decides applicability by code from durable facts, never by confidence",
       runsCheck("flow-when.ts"));

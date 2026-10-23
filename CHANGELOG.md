@@ -33,6 +33,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.0] — 2026-10-23 · console 0.28.2
+
+sdlc-flow now plans a piece of work by what its user sees, feels and never notices, and the plan
+audit stops after at most two rounds per phase. zz-core takes a `--host` flag. No migration, no
+env key. Clients re-pull for the sdlc skill changes.
+
+### zz-stack 0.98.0
+
+- **Phases are cut by tier: Skeleton, See, Feel, Unseen.** `sdlc-spec` orders the phase outline by
+  tier, states an empty tier in one line and gives the reason for a phase out of order, with worked
+  examples for software, a report, a quantitative study and a handoff pack. Basics (security, data
+  loss, authority, the truth of what is shown) are never deferred to a later tier. `sdlc-plan`
+  carries the tier in every phase heading and every full-suite gate line, and plans Feel and Unseen
+  work as phases, never as follow-ups.
+- **A wave is held by the skeleton and its own tier.** `sdlc-execute` holds a wave on the walking
+  skeleton and the gate lines of the current tier or an earlier one. It fixes S1 and S2 findings
+  now, fixes a finding of the current or an earlier tier now, and queues a later tier's S3 or S4 in
+  the As built as `Queued for Phase N`, which becomes a task of that phase. It tells the owner at
+  two moments: a preview after the first See phase, and "validation can start" after the last.
+- **The plan audit is at most two rounds per phase.** `sdlc-plan-audit` declares `round_budget` 2
+  and `continue_on` critical and high in `flow.json`. A second round is owed only when the first
+  raised a critical or high finding or filed no readable ledger, and it reads only what changed.
+  After a second serious round, the stakeholder decides. A round that raises neither settles the
+  audit, and `initiative_status` says so: "sdlc-plan-audit settled after round 1: it raised no
+  critical or high finding." Before, any revision after a round owed another round, up to three.
+- **The plan audit checks the tier cut (point 15).** Every phase heading carries its tier, the
+  phases run in tier order, every gate line carries its tier label, and every queued line has
+  become a task of its phase.
+- **`zz-core --host <ip>`** names the address zz-core binds, beside `--port`. With neither it binds
+  0.0.0.0:8000 as before. A value that is not an IP address, an empty value or a repeat stops
+  startup by name. The gate's throwaway instances and the skeleton now bind 127.0.0.1.
+- **The published manifest schema carries number bounds and array lengths.** A stage's
+  `round_budget` publishes its minimum, and `continue_on` publishes `minItems: 1`; before, both were
+  published unbounded.
+- **The sdlc-flow rule registry** records the new rules. `execute.gate_runs_after_every_task` is now
+  `execute.wave_held_by_skeleton_and_current_tier`, and `spec.eight_headings_required_at_approval` is
+  now `spec.ten_sections_required_at_approval`.
+
+### zz-stack-dashboard 0.28.2
+
+- **No change a person sees.** A Home test asserted a run coverage that holds only early in the
+  week; it now reads the figure off the fixture's answer, as the rest of the file does.
+
+### Upgrade notes
+
+- Breaking: the rule ids `execute.gate_runs_after_every_task` and
+  `spec.eight_headings_required_at_approval` are gone from `catalog/sdlc/sdlc-flow/rules.json`;
+  anything that names them uses the new ids above.
+- Re-pull the shelf and update `sdlc`, so the new skill text reaches the client:
+  `claude plugin marketplace update zz-stack`, then `claude plugin update sdlc@zz-stack`, and
+  `claude plugin update zz-core@zz-stack` for the `zz-platform` routing rows.
+
 ## [0.97.1] — 2026-10-22 · console 0.28.1
 
 A plan amendment approved before any audit round read it can now be accepted unaudited by its

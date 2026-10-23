@@ -121,7 +121,11 @@ export function walkToolChain(version: string | undefined): void {
     // minted wrong is not a slow boot.
     let refused: string | null = null;
     waitFor(() => `zz-core's doors — the last answer was ${refused}`, () =>
-      ["/core/mcp", "/eval/mcp"].every((d) => !(refused = initializeRefusal(base, token, d, "release", 5))));
+      ["/core/mcp", "/eval/mcp"].every((d) => {
+        const why = initializeRefusal(base, token, d, "release", 5);
+        if (why) refused = `${d}: ${why}`;
+        return !why;
+      }));
 
     log("  walking the tool chain against this release's own image");
     execFileSync("node", [join(root, "packages/tools/dist/testing/chain-check.js")],

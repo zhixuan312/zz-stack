@@ -87,12 +87,14 @@ is(/probe\(`MCP initialize \$\{path\}`, \(\) =>\s*initializeRefusal\(/.test(door
    "the doors layer's MCP initialize probe does not ask initializeRefusal — it can pass a refusing door again");
 const rel = readFileSync("scripts/release.ts", "utf8");
 const step5 = rel.indexOf('step(5, "verify")');
-const poll = rel.slice(step5, rel.indexOf("verifyLive()", step5));
-is(step5 > 0 && /^\s*if \(.*initializeRefusal\(.*\)\) break;$/m.test(poll),
+const verifiedAt = rel.indexOf("verifyLive()", step5);
+const poll = rel.slice(step5, verifiedAt);
+is(step5 > 0 && verifiedAt > step5 && /^\s*if \(.*initializeRefusal\(.*\)\) break;$/m.test(poll),
    "release step 5 starts verifyLive without its readiness poll's break waiting on the doors the gateway relays to");
 const chain = readFileSync("scripts/release/tool-chain.ts", "utf8");
-const walk = chain.slice(0, chain.indexOf('"packages/tools/dist/testing/chain-check.js"'));
-is(walk.length < chain.length && /waitFor\(\(\) => `zz-core's doors[^`]*`, \(\) =>\s*\[[^\]]*\]\.every\(\(d\) => !\(refused = initializeRefusal\(/.test(walk),
+const walkedAt = chain.indexOf('"packages/tools/dist/testing/chain-check.js"');
+const walk = chain.slice(0, walkedAt);
+is(walkedAt > 0 && /waitFor\(\(\) => `zz-core's doors[^`]*`, \(\) =>\s*\[[^\]]*\]\.every\(\(d\) => \{\s*const why = initializeRefusal\(/.test(walk),
    "the pre-push tool-chain walk starts without waiting for zz-core's doors");
 
 if (fail.length) {

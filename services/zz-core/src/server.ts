@@ -21,7 +21,7 @@ import express from "express";
 
 import { OWN_TOOLS, recordingDoor } from "./door.js";
 import { buildEvalServer } from "./eval-door.js";
-import { listenPort } from "./listen-port.js";
+import { listenHost, listenPort } from "./listen-port.js";
 import { refuseIssuanceOnDoors, reviewedModuleHost,
          type ReviewedModuleHost } from "./host/index.js";
 import { packagedModules } from "./reviewed-modules.js";
@@ -226,9 +226,9 @@ buildEvalServer();
 // state must not come up.
 refuseIssuanceOnDoors(OWN_TOOLS);
 
-// Also above `listen`: a bad `--port` has to stop the process before anything is bound.
+// Also above `listen`: a bad `--port` or `--host` has to stop the process before anything is bound.
 const port = listenPort(process.argv);
-app.listen(port, "0.0.0.0", () => {
+app.listen(port, listenHost(process.argv), () => {
   console.log(`zz-core (TS) listening on :${port} (/mcp /eval-mcp)`);
   // The search vectors are derived from each row's own text, so every row an older analyzer built
   // is re-derived at boot. Not awaited: the service serves while it runs, and a partial index

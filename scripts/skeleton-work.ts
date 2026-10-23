@@ -106,7 +106,7 @@ export async function startCore(url: string, gateway: string, fail: WorkContext[
     const s = net.createServer();
     s.listen(0, "127.0.0.1", () => { const p = (s.address() as net.AddressInfo).port; s.close(() => resolve(p)); });
   });
-  const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port)], {
+  const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port), "--host", "127.0.0.1"], {
     cwd: root, stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, TEAM_DB_URL: url, TRUSTED_PEERS: "localhost", GATEWAY_INTERNAL_URL: gateway,
            ZZ_CATALOG_DIR: join(root, "catalog"), ZZ_SKILLS_DIR: join(root, "skills") },

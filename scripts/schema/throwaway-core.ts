@@ -187,7 +187,7 @@ async function startOnFreePort(name: string, url: string, catalog: string): Prom
 /** Starts zz-core and resolves once it says it is listening on `port`. */
 function startCore(name: string, url: string, port: number, catalog: string): Promise<Child> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port)], {
+    const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port), "--host", "127.0.0.1"], {
       cwd: root,
       env: {
         ...process.env,

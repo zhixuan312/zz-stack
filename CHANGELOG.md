@@ -35,8 +35,8 @@ than how much code moved.
 
 ## [0.98.4] — 2026-10-24
 
-Words an agent passes as an edit's cause no longer count as the stakeholder's decision, so a
-spent audit budget goes to the stakeholder again.
+The words an edit passes as its cause no longer count as the decision to proceed unaudited, so a
+spent audit budget asks for that decision again. Who typed the words makes no difference.
 
 ### zz-stack 0.98.4
 

@@ -128,8 +128,9 @@ A budget is a resource limit, never a pass: a spent budget does not mean the doc
 the person decides whether it proceeds unaudited or goes back to the stage that wrote it. Their
 decision is recorded as material supporting the document — `source_add` with no stage — and
 that is what lets the flow move on. Words passed as an edit's `source_content` are its cause and
-never count as that decision. If the audits keep finding the same thing, take the document
-back to its stage and say what they kept finding.
+never count as that decision. When the person has delegated it, you record that decision yourself,
+under their delegation, and the flow moves on (`sdlc-method`). If the audits keep finding the same
+thing, take the document back to its stage and say what they kept finding.
 
 ### 4 · Plan is yours, audited, and then approved
 

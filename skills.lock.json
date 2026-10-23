@@ -12,16 +12,16 @@
     "sha": "3ba3c323ae8a"
   },
   "sdlc-flow": {
-    "version": "2.21",
-    "sha": "5837d2a82fd4"
+    "version": "2.22",
+    "sha": "23efbaa50103"
   },
   "sdlc-investigate": {
     "version": "1.5",
     "sha": "15e674f6b8a1"
   },
   "sdlc-method": {
-    "version": "1.28",
-    "sha": "52d6e66cc2a5"
+    "version": "1.29",
+    "sha": "8e5dd1adfab6"
   },
   "sdlc-plan-audit": {
     "version": "2.11",

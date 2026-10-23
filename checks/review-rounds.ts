@@ -265,6 +265,8 @@ const move = async (i: Fixture) =>
   m = await move(g);
   is(m?.action === "decide" && m?.waiting_on === "stakeholder",
      `${ROUND_BUDGET} rounds each raising a new blocker is the stakeholder's call: ${JSON.stringify(m)}`);
+  is(/If the person delegated this decision, record it yourself under their delegation/.test(m?.why ?? ""),
+     `the review budget's decide did not say a delegated decision is the agent's to record: ${JSON.stringify(m)}`);
   stakeholder(g, "2026-09-26T03:30:00.000Z", "Keep going.");
   m = await move(g);
   is(m?.action === "fix", `a decision naming no id renews the budget: ${JSON.stringify(m)}`);

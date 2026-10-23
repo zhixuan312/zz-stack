@@ -209,6 +209,8 @@ for (let i = 1; i <= ROUND_BUDGET; i++) round(b.name, i, i);
 m = await move(b);
 is(m?.action === "decide" && m?.waiting_on === "stakeholder",
    `${ROUND_BUDGET} rounds spent and v4 unaudited was treated as a pass: ${JSON.stringify(m)}`);
+is(/If the person delegated this decision, record it yourself under their delegation/.test(m?.why ?? ""),
+   `a spent budget's decide did not say a delegated decision is the agent's to record: ${JSON.stringify(m)}`);
 material(b.name, "2026-09-24T09:00:00.000Z");
 m = await move(b);
 is(m?.action === "write_document" && m?.document === "plan.md",
@@ -221,6 +223,8 @@ answered(c.name, `sources/${f}`, "changes_commitment", "yes", 0.9);
 m = await move(c);
 is(m?.action === "decide" && m?.waiting_on === "stakeholder" && /reopens/.test(m?.why ?? ""),
    `a round the assessor read as reopening an agreement did not go to the stakeholder: ${JSON.stringify(m)}`);
+is(/If the person delegated this decision, record it yourself under their delegation/.test(m?.why ?? ""),
+   `a reopened agreement's decide did not say a delegated decision is the agent's to record: ${JSON.stringify(m)}`);
 material(c.name, "2026-09-24T02:00:00.000Z");
 m = await move(c);
 is(m?.action === "write_document" && m?.document === "plan.md",

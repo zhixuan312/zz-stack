@@ -39,6 +39,13 @@ const auditsVersionOf = (d: DocRow): number => Number(d.fields?.audits_version) 
 const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
 const sourceName = (d: DocRow): string => d.path.slice("sources/".length);
 
+/** What every `decide` says after its call: the person may have delegated the decision, and then it
+ *  is the agent's to record. A standing delegation is the person's decision made in advance; the
+ *  router cannot see it, so it says what to do when one exists rather than waiting on a person who
+ *  already answered. */
+export const DELEGATED_DECISION = " If the person delegated this decision, record it yourself under their " +
+  "delegation, as that source, say so in it, and carry on.";
+
 /** Rounds an audit may use before the stakeholder decides. The approved control-loop design:
  *  "up to three independent auditor dispatches as a provisional resource limit, never as a
  *  pass criterion". */
@@ -213,7 +220,7 @@ export function auditMove(initiative: string, stage: string, document: string,
                   `(changes_commitment p=${a?.probability?.toFixed(2)}). That is the ` +
                   `stakeholder's to decide, not the audit's: if they change the agreement, ` +
                   `document_edit ${document} with sources/${last.file} as its cause; if they keep it, record ` +
-                  `their decision with source_add(supports: ["${document}"]) and the audit continues.` };
+                  `their decision with source_add(supports: ["${document}"]) and the audit continues.` + DELEGATED_DECISION };
   }
   if (last.version < version) {
     const serious = policy.continueOn ? seriousOf(last, policy.continueOn) : null;
@@ -235,7 +242,7 @@ export function auditMove(initiative: string, stage: string, document: string,
                     `version after round ${n} — has not been audited. The budget is a resource ` +
                     "limit, not a pass: the stakeholder decides whether v" + version + " proceeds " +
                     `unaudited or ${document} goes back to its stage. Record the decision with ` +
-                    `source_add(supports: ["${document}"]).` };
+                    `source_add(supports: ["${document}"]).` + DELEGATED_DECISION };
     }
   }
   return null;

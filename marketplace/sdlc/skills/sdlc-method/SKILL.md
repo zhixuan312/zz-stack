@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.28
+version: 1.29
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -174,6 +174,10 @@ theirs to say.** Delegation is an ordinary answer, and it keeps standing until t
 otherwise; do not treat it as a special case to be re-confirmed each time. Record which it was:
 an approval made under their delegation is `document_approve(path, decision_basis: "delegation", ...)`,
 and one they decided themselves passes `decision_basis: "explicit"`.
+A delegation covers a `decide` the same way. When the budget is spent, or a round reopens an
+agreement, and the person has delegated that decision, you record it yourself with `source_add`
+and no stage. Say in it that it was decided under their delegation, then carry on: they answered
+in advance, so waiting on them asks again.
 
 The gate constrains YOU, not them. Whatever they decide, it becomes a recorded state
 transition on the document, under their name, written by you in the same turn — because the

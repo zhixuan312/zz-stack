@@ -31,7 +31,7 @@
  */
 import type pg from "pg";
 
-import { ROUND_BUDGET } from "./audit-rounds.js";
+import { DELEGATED_DECISION, ROUND_BUDGET } from "./audit-rounds.js";
 import { refusalText } from "./document-details.js";
 import { docRows, isCapturedCause, type DocRow } from "./indexing.js";
 import { assessFamily, type Assessment } from "./semantic.js";
@@ -346,7 +346,8 @@ function routeReview(initiative: string, stage: string, document: string, rounds
                   `converging — and ${ids(blocking)} still block. The budget is a resource limit, not a pass: the ` +
                   "stakeholder decides. Record it with " +
                   `source_add(initiative: "${initiative}", title, content, supports: ["${document}"]): ` +
-                  "any such source renews the budget, and one naming a finding's id also accepts it as residual." };
+                  "any such source renews the budget, and one naming a finding's id also accepts it as residual." +
+                  DELEGATED_DECISION };
   }
   const evidenced = blocking.filter((s) => s.finding.evidence !== "inferred");
   if (evidenced.length) {

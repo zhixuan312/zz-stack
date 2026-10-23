@@ -57,11 +57,11 @@ export function auditRoundOf(chain: Chain, stage: string | undefined,
 
 interface Round { file: string; version: number; added_at: string; body: string }
 
-export type AuditWeight = "critical" | "high" | "medium" | "low";
+type AuditWeight = "critical" | "high" | "medium" | "low";
 
 /** What a flow declares about how an audit stage is routed: the rounds it may use, and the finding
  *  weights that owe another round once the document is revised (null: any revision owes one). */
-export interface AuditPolicy { budget: number; continueOn: readonly AuditWeight[] | null }
+interface AuditPolicy { budget: number; continueOn: readonly AuditWeight[] | null }
 
 const NO_POLICY: AuditPolicy = { budget: ROUND_BUDGET, continueOn: null };
 

@@ -109,6 +109,7 @@ async function move(name: string): Promise<{ action?: string; document?: string;
   return (await initiativeState(db()!, TEAM, name, chain, chain.documents)).next_move ?? null;
 }
 const said = (m: unknown) => JSON.stringify(m);
+// NOT A TOOL: `add_source` and `decide` are next_move's own action vocabulary, not tool names.
 const auditOwed = (m: { action?: string; document?: string } | null) =>
   m?.document === "plan.md" && (m?.action === "add_source" || m?.action === "decide");
 

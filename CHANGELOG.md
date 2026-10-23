@@ -33,6 +33,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.5] — 2026-10-24
+
+A decision the person delegated is recorded by the agent at `decide`, not asked again.
+
+### zz-stack 0.98.5
+
+- **Every `decide` says what to do under a delegation.** These cases answered
+  `waiting_on: stakeholder` with no word about a standing delegation:
+  - a spent plan or spec audit budget;
+  - a round that reopens an agreement;
+  - a review that is not converging.
+
+  So an agent the person had told "auto" stopped and asked again. Each message now ends: record
+  the decision yourself under their delegation, as the `source_add` it names, say so in it, and
+  carry on. sdlc-method says a delegation covers a `decide` the same way it covers an approval.
+
+### Upgrade notes
+
+- sdlc-method 1.29 and sdlc-flow 2.22. Re-pull the shelf: `claude plugin marketplace update
+  zz-stack`, then `claude plugin update sdlc@zz-stack`.
+
 ## [0.98.4] — 2026-10-24
 
 The words an edit passes as its cause no longer count as the decision to proceed unaudited, so a

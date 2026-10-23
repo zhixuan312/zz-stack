@@ -509,7 +509,7 @@ export async function initiativeState(
   }
   if (next.action !== "closed") {
     next.why += planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null);
-    if (settledNote) next.why += ` ${settledNote}`;
+    if (settledNote) next.why = `${next.why.replace(/[^.!?]$/, "$&.")} ${settledNote}`;
   }
   const { sourceFiles, needsRefinement } = sourceReport(rows);
   const corrections = outcome ? correctionsOf(outcome, own?.closed_at ?? null, states, rows).map((d) => d.name) : [];

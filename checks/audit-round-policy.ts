@@ -119,6 +119,8 @@ const auditOwed = (m: { action?: string; document?: string } | null) =>
   const m = await move(p);
   is(!auditOwed(m), `case 1: a revision after a round raising only medium and low still owes a round: ${said(m)}`);
   is(m?.why?.endsWith(` ${NOTE}`), `case 1: the settled note is not appended after one space: ${said(m)}`);
+  // The draft's own answer ends without a stop; the note must not run on from it.
+  is(m?.why?.endsWith(`recorded. ${NOTE}`), `case 1: the settled note runs on from an unfinished sentence: ${said(m)}`);
 }
 
 // 2. The same plan approved: no audit move, and the note still says why the audit settled.

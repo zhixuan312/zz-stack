@@ -477,6 +477,22 @@ export function jsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
       }
       return out;
     }
+    case "ZodNumber": {
+      // DELIBERATE: as with strings, an unknown number check throws rather than being dropped.
+      const out: Record<string, unknown> = { type: "number" };
+      for (const c of (def.checks ?? []) as { kind: string; value?: number; inclusive?: boolean }[]) {
+        if (c.kind === "int") out.type = "integer";
+        else if (c.kind === "min") out[c.inclusive ? "minimum" : "exclusiveMinimum"] = c.value;
+        else if (c.kind === "max") out[c.inclusive ? "maximum" : "exclusiveMaximum"] = c.value;
+        else {
+          throw new Error(
+            `jsonSchema: no rule for the number check '${c.kind}'. Add one deliberately — ` +
+            "dropping it here would publish a schema weaker than the one being validated against.",
+          );
+        }
+      }
+      return out;
+    }
     case "ZodBoolean": return { type: "boolean" };
     case "ZodUnknown": return {};
     case "ZodLiteral": return { const: def.value };
@@ -485,7 +501,16 @@ export function jsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
     // A union publishes as `anyOf`, which is exactly as strict as zod's union.
     case "ZodUnion":
       return { anyOf: (def.options as z.ZodTypeAny[]).map((o) => jsonSchema(o)) };
-    case "ZodArray": return { type: "array", items: jsonSchema(def.type as z.ZodTypeAny) };
+    case "ZodArray": {
+      // A length the validator enforces is published, or the rulebook admits an empty list the
+      // validator refuses.
+      const out: Record<string, unknown> = { type: "array", items: jsonSchema(def.type as z.ZodTypeAny) };
+      const len = (k: string) => (def[k] as { value: number } | null)?.value;
+      const exact = len("exactLength");
+      if (len("minLength") ?? exact) out.minItems = len("minLength") ?? exact;
+      if (len("maxLength") ?? exact) out.maxItems = len("maxLength") ?? exact;
+      return out;
+    }
     case "ZodRecord":
       return { type: "object", additionalProperties: jsonSchema(def.valueType as z.ZodTypeAny) };
     case "ZodObject": {

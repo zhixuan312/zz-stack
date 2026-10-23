@@ -412,15 +412,45 @@ check("the published schema is exactly as strict as the validator", () => {
     const walk = (schema, path, emitted) => {
       const d = schema._def;
       if (d.typeName === "ZodOptional") return walk(d.innerType, path, emitted);
-      if (d.typeName === "ZodArray") return walk(d.type, path + "[]", emitted && emitted.items);
+      if (d.typeName === "ZodUnion") {
+        return d.options.forEach((o, i) => walk(o, path + "|" + i, emitted && emitted.anyOf && emitted.anyOf[i]));
+      }
+      if (d.typeName === "ZodArray") {
+        for (const [kw, len] of [["minItems", d.minLength || d.exactLength], ["maxItems", d.maxLength || d.exactLength]]) {
+          if (len && (!emitted || emitted[kw] !== len.value)) {
+            bad.push(path + " is validated with " + kw + " " + len.value + " and publishes as " +
+                     JSON.stringify(emitted) + " — the rulebook is weaker than the rule");
+          }
+        }
+        return walk(d.type, path + "[]", emitted && emitted.items);
+      }
       if (d.typeName === "ZodObject") {
         for (const [k, v] of Object.entries(d.shape())) {
           walk(v, path + "." + k, emitted && emitted.properties && emitted.properties[k]);
         }
         return;
       }
+      if (d.typeName === "ZodNumber") {
+        for (const c of d.checks || []) {
+          const want = c.kind === "int" ? ["type", "integer"] : c.kind === "min" && c.inclusive ? ["minimum", c.value]
+            : c.kind === "max" && c.inclusive ? ["maximum", c.value] : null;
+          if (!want) bad.push(path + " carries a number check '" + c.kind + "' the emitter has no rule for");
+          else if (!emitted || emitted[want[0]] !== want[1]) {
+            bad.push(path + " is validated with " + c.kind + "(" + (c.value ?? "") + ") and publishes as " +
+                     JSON.stringify(emitted) + " — the rulebook is weaker than the rule");
+          }
+        }
+        return;
+      }
       if (d.typeName !== "ZodString") return;
       for (const c of d.checks || []) {
+        if (c.kind === "regex") {
+          if (!emitted || emitted.pattern !== c.regex.source) {
+            bad.push(path + " is validated with " + c.regex + " and publishes as " + JSON.stringify(emitted) +
+                     " — the rulebook is weaker than the rule");
+          }
+          continue;
+        }
         const kw = c.kind === "min" ? "minLength" : c.kind === "max" ? "maxLength" : null;
         if (!kw) bad.push(path + " carries a string check '" + c.kind + "' the emitter has no rule for");
         else if (!emitted || emitted[kw] !== c.value) {
@@ -435,6 +465,10 @@ check("the published schema is exactly as strict as the validator", () => {
     try {
       jsonSchema({ _def: { typeName: "ZodString", checks: [{ kind: "url" }] } });
       bad.push("jsonSchema dropped a string check it has no rule for instead of throwing");
+    } catch (e) { /* the throw is the behaviour under test */ }
+    try {
+      jsonSchema({ _def: { typeName: "ZodNumber", checks: [{ kind: "multipleOf", value: 2 }] } });
+      bad.push("jsonSchema dropped a number check it has no rule for instead of throwing");
     } catch (e) { /* the throw is the behaviour under test */ }
     process.stdout.write(bad.join("; "));
   `;

@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.19
+version: 1.20
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -125,7 +125,7 @@ their decision is recorded with `source_add`). Never write it down as `holds` an
 ## Phase 3 — confirm the whole set
 
 When every component is clear, present the confirmed decisions as a numbered list, one line per
-component — with the phase outline and every core statement's result. **This is the last checkpoint before the document exists.** They may revise anything,
+component — with the phase outline, each phase named with its tier, and every core statement's result. **This is the last checkpoint before the document exists.** They may revise anything,
 add a constraint, or cut scope. Only continue once they confirm.
 
 ## Then continue into Part two
@@ -207,7 +207,7 @@ eight):
 
 | Section | What it holds | What approval refuses |
 |---|---|---|
-| `## Phase outline` | The phases to the final shape, one line each: `- **Phase N — name:** one or two sentences. Covers AC-x.y, AC-x.z.` | No `Phase N` line; an `AC-N.N` the spec declares that no phase names (list each id — a range is not read); an id the spec does not declare |
+| `## Phase outline` | The phases to the final shape, cut by tier (see "Cut the phases by tier" below), one line each: `- **Phase N — <name>** (<Tier>): <what exists when it is built>. Covers AC-x.y, AC-x.z.` | No `Phase N` line; an `AC-N.N` the spec declares that no phase names (list each id — a range is not read); an id the spec does not declare |
 | `## Core statements` | One row per statement: `\| ID \| Statement \| If false \| Status \| Evidence \| Note \|` with `CS-N` ids | A row without the statement or what breaks if false; a status other than `holds`, `fails`, `partial`; evidence without a `check:`, `run:` or `test:` locator and the spike's decisive output quoted in backticks; a `fails` or `partial` row whose note is not `resolved-by-design-change: <what changed>` and that no stakeholder source names |
 
 A `holds` row is also read by `evidence_relation` — the statement as the claim, its evidence as
@@ -249,6 +249,55 @@ enforces. A second field saying the same thing is a second answer to "has this b
 - `human` — the claim needs authority, accountability, or a normative decision (for example, a professional sign-off). A claim requiring professional authority is always `human`, never `agent-review` — do not soften this for convenience.
 
 Derive every field from what the person actually told you in the design decisions; never invent a criterion the decisions do not support, and never leave `acceptance` empty. Where the decisions leave a fact genuinely unstated, propose your best plain-language reading and flag it in the spec's own prose (not silently) so the human notices it while confirming.
+
+## Cut the phases by tier
+
+The `## Phase outline` is cut by what the person who asked will **see, feel, and never notice**,
+not by build order. The guiding rule is: make it work first, then make it work well. Everything
+is still done; the tier decides the order, not the scope. This holds for any deliverable, a
+program, a report, a study or a specification, so the tiers are defined by one question:
+*who notices it, and how?*
+
+| Tier | Meaning | Ends when |
+|---|---|---|
+| **Skeleton** | The thinnest thing the person who asked can run or read end to end. | It runs or reads end to end. Every later phase keeps it running. |
+| **See** | Everything the person who asked uses or reads directly: every function, output, page, section and persona's access, with its visible presentation. Includes the basics (below). | The person can validate the whole result. |
+| **Feel** | The quality they perceive while using it: speed, loading, empty and error states, mobile, reading comfort, structure and order for the reader. | It feels right in use. |
+| **Unseen** | What nobody notices but must be done: budgets, hardening, test and evidence infrastructure, reproducibility, cleanup. | Every remaining requirement is met. |
+
+**Worked examples**, one row per kind of deliverable:
+
+| Deliverable kind | Skeleton | See | Feel | Unseen |
+|---|---|---|---|---|
+| Software or pipeline (a console) | one command renders one page from a stub read | every page and function, for every persona, on real or fake data, with its visible polish | first paint, loading, empty and error states, mobile | HTML and first-load budgets, wasted reads, cleanup after an upstream fix |
+| Research or analysis report | a readable draft in the reader's format: every section's answer in a paragraph, one section complete | every section written, each shown claim true and sourced | the reading edition, an answer-first front page, figures, typography, translation | the claims register, neutrality and overreach lint, hashed inputs, reproducible figure data |
+| Quantitative study, model or backtest | one scenario's result table end to end on a frozen snapshot | every scenario's result and the written headline, on locked definitions | per-day ledgers, sensitivity tables, a summary page, an interactive workbench | provenance manifests, negative tests, leak checks, calibration against archives |
+| Specification or handoff pack | the decisions the builder cannot avoid, with one worked example | every requirement and contract the builder needs | how easily the builder or presenter uses it | source provenance, traceability from requirement to check |
+
+**Phase 0 is the Skeleton, and what it is depends on the deliverable.**
+- **Software:** one command that runs the deliverable with stubs.
+- **A document deliverable** (a report, a study, a specification): a readable draft in the reader's own format, with every section's answer in a paragraph and one section complete.
+
+**Basics are never deferred.** Build them in the phase that first shows or exposes them, never in a later tier. The basics are:
+- security, data loss and authority;
+- the truth of what is shown, including the evidence, frozen definitions and frozen data that a shown claim or result rests on.
+
+A readable draft whose claims are false is not a See result, so the evidence behind a shown claim is built with it, not left to Unseen.
+
+**Feel is often discovered by reading.** So say in the spec that the owner is shown a preview after the first See phase, one that does not stop the build, and that what they say feeds the Feel phases.
+
+**The outline lines.** Order the phases Skeleton, See, Feel, Unseen, with one or more phases per tier, and put each AC in the phase that delivers it. Each line has one of these shapes:
+
+```
+- **Phase N — <name>** (<Tier>): <what exists when it is built>. Covers AC-x.y, AC-x.z.
+- **Phase N — <name>** (<Tier>, out of order: <one-line reason>): … Covers AC-x.y.
+- No <Tier> phase: <one-line reason>.
+```
+
+- `<Tier>` is one of `Skeleton`, `See`, `Feel`, `Unseen`.
+- **An empty tier is stated, never invented.** Use the third line, with the reason, for example `No Feel phase: the deliverable is a routing rule, and nothing in it has a speed or a loading state.`
+- **A phase out of tier order carries its reason** in the second shape. The reason is one of: a dependency the earlier tier cannot be built without, an external gate (a stakeholder review, an event date), or a basic.
+- **The spec gate does not read the tier.** The labels are the method's: `sdlc-plan-audit` checks them, and `document_approve` still checks only that each AC is named by a phase. An outline without tiers is not refused, and is not what this skill teaches.
 
 ## Constraints
 
@@ -437,9 +486,11 @@ elsewhere. EVERY functional requirement must map to at least one acceptance crit
 workstream if multiple workstreams exist.]
 
 ## Phase outline
-[One line per phase to the final shape: `- **Phase N — name:** what exists when it is built.
-Covers AC-x.y, …`. Phase 0 is the walking skeleton, the thinnest thing that runs end to end. Every AC above appears in
-exactly the phase that delivers it. The plan is written one phase at a time from this.]
+[One line per phase to the final shape, in tier order Skeleton, See, Feel, Unseen, in the shapes
+under "Cut the phases by tier": `- **Phase N — <name>** (<Tier>): <what exists when it is built>.
+Covers AC-x.y, …`. An empty tier is one line saying so, with the reason. Phase 0 is the Skeleton,
+the thinnest thing the person can run or read end to end. Every AC above appears in exactly the
+phase that delivers it. The plan is written one phase at a time from this.]
 
 ## Core statements
 [| ID | Statement | If false | Status | Evidence | Note | — one CS-N row per assumption the
@@ -489,6 +540,7 @@ Before finishing, verify:
 - If multiple workstreams exist, they are explicitly enumerated in Delivery order
 - Blocking prerequisites are flagged with artifact paths and unblocking conditions
 - Every `AC-N.N` is named, by id, in exactly one line of `## Phase outline`
+- Every phase line carries its tier, the lines run Skeleton, See, Feel, Unseen, each empty tier has its one-line reason, each out-of-order phase has its reason, and the basics sit in the phase that first shows or exposes them
 - Every core statement has a spike you actually ran, its decisive output quoted, and every `fails` or `partial` row is settled by a design change or a recorded stakeholder decision
 
 ## Output
@@ -557,7 +609,7 @@ approval recorded afresh, on the snapshot that present names. The audit's next r
 
 **Outcome:** `spec.md` in the initiative — all eight canonical components under their exact
 labels, a proposed deliverable contract under `## Context`, every `FR-N` mapped to at least one
-checkable `AC-N.N`, every `AC-N.N` placed in a phase of `## Phase outline`, every core statement
+checkable `AC-N.N`, every `AC-N.N` placed in a tiered phase of `## Phase outline`, every core statement
 backed by a spike's quoted output, zero surviving brief markers — presented to the person in full and carrying
 their recorded agreement.
 

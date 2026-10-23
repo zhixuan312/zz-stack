@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.18
+version: 1.19
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no approved plan, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -177,7 +177,8 @@ text, version stamps — yourself, in one pass, then run whatever regenerates ge
 `## Full-suite gate` — and record the run (`sdlc-method`). Per-task checks prove the task did its
 own job. They cannot prove it left the rest of the project working, and **every check green with
 the suite red is the actual failure mode** of a plan executed task by task. Run the gate after
-every wave, not only after the last one.
+every wave, not only after the last one. Every gate line carries a tier label, and the label decides
+whether a red line holds the wave (below).
 
 **Every task's checks run on the integrated tree, once.** The worker's report is a claim; a
 recorded run on the tree you accept is the fact. A task check the gate discovers runs inside the
@@ -192,8 +193,67 @@ wave's gate already ran on this tree; do not run it again, unless the tree moved
 
 Then commit the wave, if the person has agreed to commits along the way.
 
-If the gate or the skeleton goes red, stop. Do not start the next wave on a broken tree — the next
-workers will inherit the breakage and spend their turn on someone else's bug.
+## What holds a wave — the skeleton and the current tier
+
+A phase's heading names its tier (`## Phase N — <Tier>: <what works at the end>`), and each
+`## Full-suite gate` line is labelled `- [<Tier>] \`<command>\` — <what it proves>`. The tier of
+the phase you are building is the current tier. Tiers run in this order: Skeleton, See, Feel,
+Unseen.
+
+- **The walking skeleton holds every wave and every phase end, whatever the tier.** If it goes red,
+  stop.
+- **A gate line of the current tier or an earlier one holds the wave.** `[Skeleton]` lines hold
+  every phase; `[See]` lines hold every wave from the first See phase on; a later tier's lines
+  hold waves from that tier's first phase on. If one goes red, stop. Do not start the next wave on a
+  broken tree — the next workers will inherit the breakage and spend their turn on someone else's
+  bug.
+- **A line of a later tier does not hold the wave.** Run it where it is cheap, record the run
+  (`sdlc-method`), and carry on. Its red result is a finding of that later tier, routed below, not a
+  stop. It holds waves again from that tier's first phase on.
+
+The same applies to a software deliverable and to a report, a study or a specification: a later
+tier's check, such as a reading-edition lint on a report whose sections are still being written,
+is recorded now and holds from its own tier.
+
+## Routing a finding raised during the build
+
+A finding is anything that surfaces while you execute: a red check, a worker's report, something
+the owner says at a preview. You, the agent running the flow, rate its **impact** on the rubric
+`sdlc-review` uses, and give it the **tier of what it affects**, by the tier table in `sdlc-spec`.
+
+| Impact | Means |
+|---|---|
+| S1 | security, data loss, or an authority bypass |
+| S2 | a capability on the main path is broken |
+| S3 | a wrong result on an edge path |
+| S4 | text, docs, naming |
+
+Then route it:
+
+1. **S1 or S2 is fixed now, whatever its tier.** It stops everything until it is fixed.
+2. **Otherwise, a finding of the current tier or an earlier one is fixed now,** in this phase.
+3. **An S3 or S4 of a later tier is queued, not fixed now.** List it in this phase's `### As built`
+   as `Queued for Phase N: <finding>`, where N is the phase of its tier. It becomes a task of
+   Phase N when `sdlc-plan` plans that phase, citing the finding. A later tier's phase is still
+   unplanned when the finding arises, because one phase is planned at a time, so queuing costs no
+   extra plan version, approval or audit round.
+4. **A tier with no phase queues to the next later phase that exists.** When no later phase exists,
+   the finding is fixed now.
+
+Queuing never drops work: `sdlc-review` needs a row for every plan task, and a queued finding is
+one. Do not add a follow-up task to the approved current phase for a later tier's finding.
+
+## Two moments the owner is told
+
+- **After the first See phase is built, show the owner the result as a preview.** It does not stop
+  the build: the next phase goes ahead while they look. What they say is rated and routed like any
+  finding (above); most of it will be Feel work and feeds the Feel phases.
+- **When the last See phase is built, tell the owner that everything works and that validation can start.**
+  Say it in plain words, in the report that closes the phase. This is the moment the whole
+  result can be used or read; Feel and Unseen phases follow.
+
+If the outline has a single See phase, both moments fall at its end: show the preview and say that
+validation can start in the same message.
 
 ## When a task fails
 
@@ -214,8 +274,8 @@ phase's heading** in `plan.md` with a section edit of that phase, citing what ha
 ```
 document_edit(
   path: "<initiative>/plan.md",
-  section: "Phase 1 — <what works at the end>",
-  content: "## Phase 1 — <what works at the end>\n\n<the phase as it reads>\n\n### As built\n\n<what landed>",
+  section: "Phase 1 — <Tier>: <what works at the end>",
+  content: "## Phase 1 — <Tier>: <what works at the end>\n\n<the phase as it reads>\n\n### As built\n\n<what landed>\n\nQueued for Phase N: <finding>",
   source_content: "<the skeleton's output, the gate result, the deviations>",
   source_title: "Phase 1 execution report",
   base: "<the content revision that read stated>")
@@ -228,13 +288,14 @@ supports: ["plan.md"], request_id: "<one per report, reused on every retry>")`, 
 section edit with `sources: ["sources/<the name that reply filed>"]` in place of `source_content`
 and `source_title`. `upload` on `document_edit` itself would replace the whole plan.
 
-`document_read("<initiative>/plan.md", section: "Phase 1 — <what works at the end>")` returns
+`document_read("<initiative>/plan.md", section: "Phase 1 — <Tier>: <what works at the end>")` returns
 exactly the text the edit replaces and the plan's `content revision`; send the text back with the
 as-built appended and nothing else changed, and the revision as `base`, so a plan that moved
 since the read is refused rather than overwritten. The plan is approved, so the report is the
 cause that opens its next version — a change with none is refused. The as-built says, briefly
 and from the tree: which tasks landed, what differs from their contracts and why, decisions
-taken on the way, and the skeleton command's decisive output line. This is what the next phase is planned from, and what makes the finished
+taken on the way, the skeleton command's decisive output line, and one `Queued for Phase N: <finding>`
+line for each later-tier S3/S4 finding queued during the build. This is what the next phase is planned from, and what makes the finished
 plan the record of what was built.
 
 **A phase that disproves a spec core statement stops the loop.** If what was built shows an
@@ -244,6 +305,9 @@ phase is planned. Otherwise the next move is `sdlc-plan` for the next phase, or 
 outline's last phase is built — the end-of-plan report below.
 
 ## When every task is done
+
+**Say first whether the owner has been told the result works.** If the last See phase is built,
+validation can start; make sure the owner has heard it (above).
 
 **Report what changed, from the tree rather than from the reports.** `git diff --name-only`
 against where you started, not the union of what the workers said they did.
@@ -284,6 +348,13 @@ and costs the same time again.
 ❌ **Skipping the full-suite gate between waves, or the skeleton at a phase end.** This is the
 failure mode, not an optimisation.
 
+❌ **Letting a later tier's check hold the wave, or letting a later tier's small finding become a
+follow-up that holds it.** Record the check, queue the S3/S4 as `Queued for Phase N`. S1 and S2 are
+never queued.
+
+❌ **Waiting for the end of the build to show the owner anything.** Preview after the first See
+phase; say validation can start after the last.
+
 ❌ **Re-dispatching the whole plan after one failure.** Scope it to what failed.
 
 ❌ **Reporting a task failed because its check could not run.** See above.
@@ -298,7 +369,9 @@ reported from the tree, and appended to `plan.md` as the phase's `### As built`.
 memory of the conversation. Each task's checks recorded on the integrated tree — inside the gate's
 log where the gate discovers them, run once otherwise — because the worker's report is a claim and
 a recorded run on the tree you accept is the fact. Every changed path inside a task's Owns. The full-suite gate after every wave
-and the walking skeleton at every phase end, not only after the last. The active
+(held by the current tier's lines and earlier, later tiers' lines recorded) and the walking skeleton
+at every phase end, not only after the last. Each finding rated S1 to S4 with its tier, and every
+later-tier S3/S4 listed as `Queued for Phase N` in the as-built. The active
 check's bytes compared by you against its frozen copy after each wave, where any byte difference
 means the task failed whatever else it reports. And `git diff --name-only` against where you started, not the
 union of what the workers said they did.
@@ -324,13 +397,14 @@ on, so none is asked.
 wave: activate its checks, dispatch its tasks together, check ownership, compare the hashes,
 integrate the hotspots, run the full-suite gate once on the integrated tree with every task check
 it discovers (and, once, any it does not), then the skeleton at a phase end; at the phase end,
-append `### As built`. Five
+append `### As built`, with its queued findings, and tell the owner what the tier now allows: a
+preview after the first See phase, validation after the last. Five
 exits. The phase built and more remain, so back to `sdlc-plan` for the next phase. Every phase
 built, so report from the tree, ask about committing, and hand to `sdlc-review`. A phase that
 disproved a core statement, so back to `sdlc-spec`.
 A contract defect, or the same failure twice, so back to `sdlc-plan` naming the unmet clause or
-the faulty check. The gate red, so stop — the next worker would inherit the breakage and spend its
-turn on somebody else's bug.
+the faulty check. The skeleton, or a gate line of the current tier or earlier, red, so stop — the next worker would
+inherit the breakage and spend its turn on somebody else's bug.
 
 **Degraded behaviour:** a partial run is reported as a partial run, naming the outstanding task
 ids — a shortfall is not a failure, and it is also not done. A check that could not run is named

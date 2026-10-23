@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.27
+version: 1.28
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -49,9 +49,9 @@ Only then is the next phase planned, from what the last one really produced. The
 is a record of what happened, not a forecast.
 
 - **First cycle:** `document_write` the header (Goal … File Structure), then EVERY phase heading
-  from the spec's outline with its "what works at the end" line and the same number. Only the
-  current phase — Phase 0 — carries tasks; every later phase says `Planned after Phase N is
-  built.` and nothing else. Then `## Integration hotspots`, `## Full-suite gate` and the
+  from the spec's outline, each under its tier (see *Phases — the build story, by tier*) with its
+  "what works at the end" line and the same number. Only the current phase — Phase 0 — carries
+  tasks; every later phase says `Planned after Phase N is built.` and nothing else. Then `## Integration hotspots`, `## Full-suite gate` and the
   traceability table for the ACs planned so far.
 - **Every later cycle:** read the last phase's `### As built` first. If it disproved a core
   statement from the spec, stop: this is not a planning problem, it goes back to `sdlc-spec`, and
@@ -61,6 +61,13 @@ is a record of what happened, not a forecast.
   the execution report in `sources`, so only the phase is sent: a plan that grows a phase at a
   time outgrows one tool call long before it is finished. Task ids
   continue straight through: Phase 2's first task follows Phase 1's last.
+- **Queued findings become tasks.** The earlier phases' `### As built` sections may carry lines
+  `Queued for Phase N: <finding>`, written by `sdlc-execute` for a small defect of a later tier.
+  When you plan Phase N, read every such line and make each one a task of Phase N that cites
+  the finding in its contract and technical acceptance criterion. A queued line is never
+  dropped, merged away or left for a follow-up, and queuing costs no extra plan version: the
+  phase it lands in was still unplanned. A line whose tier has no phase was already moved by
+  `sdlc-execute` to the next later phase that exists; take the line as written.
 - **Only written phases are validated.** `validatePlan` checks every task written and lists a
   phase with no tasks as not yet planned; `initiative_status`'s `plan` reports the current phase
   (the first with tasks and no `### As built`) and that phase's waves.
@@ -86,26 +93,67 @@ check is OPTIONAL: a task with no check still needs a precise, unambiguous contr
 reviewer and the executor have nothing else to go on. If a contract is ambiguous or a check is wrong,
 the executor reports failure rather than guessing — so make both precise.
 
-### Phases — the build story
+### Phases — the build story, by tier
 
-Group the implementation into **sequential phases that tell the build story**. Each phase leaves a
-working increment a human could verify, and each carries one line: **what works at the end of it.**
+Group the implementation into **sequential phases that tell the build story**, ordered by who
+notices the work and how: **Skeleton, then See, then Feel, then Unseen**. The spec's
+`## Phase outline` already cut the phases by tier; this stage keeps that order and that
+numbering. Each phase leaves a working increment a human could verify, and each carries one
+line: **what works at the end of it.**
+
+| Tier | Meaning | Ends when |
+|---|---|---|
+| **Skeleton** | The thinnest thing the person who asked can run or read end to end. | It runs or reads end to end. Every later phase keeps it running. |
+| **See** | Everything the person who asked uses or reads directly: every function, output, page, section and persona's access, with its visible presentation. Includes the basics. | The person can validate the whole result. |
+| **Feel** | The quality they perceive while using it: speed, loading, empty and error states, mobile, reading comfort, structure and order for the reader. | It feels right in use. |
+| **Unseen** | What nobody notices but must be done: budgets, hardening, test and evidence infrastructure, reproducibility, cleanup. | Every remaining requirement is met. |
+
 For example, a new endpoint:
 
 - **Phase 0 — Skeleton:** the endpoint accepts a request and returns a stub response end-to-end,
   run by one command.
-- **Phase 1 — Source mapping:** each response section is populated from its source system — one task
-  per source (section 1 ← System A, section 2 ← System B) — and the skeleton still runs.
-- **Phase 2 — Aggregate & respond:** the sections are combined into the real, spec-shaped output,
-  proved by running the skeleton.
+- **Phase 1 — See:** each response section is populated from its source system — one task per
+  source (section 1 ← System A, section 2 ← System B) — the sections are combined into the real,
+  spec-shaped output, and the skeleton still runs.
+- **Phase 2 — Feel:** latency, empty-source and error responses read well for the caller.
+- **Phase 3 — Unseen:** rate budgets, retries, load tests and cleanup.
+
+The same order holds for a deliverable that is not software. A research report is a readable
+draft of every section's answer (Skeleton), every section written with each shown claim true and
+sourced (See), the reading edition, answer-first front page and figures (Feel), then the claims
+register and reproducible figure data (Unseen). A quantitative study is one scenario's result
+table on a frozen snapshot, then every scenario's result on locked definitions, then the
+per-day ledgers and summary page, then provenance manifests and leak checks.
+
+**Heading, exactly.** Write each phase as:
+
+```
+## Phase N — <Tier>: <what works at the end>
+```
+
+`<Tier>` is one of `Skeleton`, `See`, `Feel`, `Unseen`; tasks live under the heading. The
+heading is still a phase to the platform, which reads only `## Phase N`.
+
+- **Feel and Unseen work are planned phases, never follow-ups.** Making it work well is
+  scheduled work with its own tasks, checks and "what works at the end" line. It is not
+  something that arrives later as an extra task held against the current wave.
+- **An empty tier is stated, not invented.** If the spec's outline says a tier has no work, the
+  plan has no phase for it; do not add one to fill the pattern.
+- **Basics are never deferred.** Security, data loss and authority, and the truth of what is
+  shown — including the evidence, frozen definitions and frozen data that a shown claim or
+  result rests on — are built in the phase that first shows or exposes them. A readable draft
+  whose claims are false is not a See result. Never place a basic in a later tier's phase to
+  keep an earlier one thin.
+- **A phase out of tier order keeps the reason the spec gave** (a dependency the earlier tier
+  cannot be built without, an external gate, or a basic); carry the reason into the phase's
+  intro line.
 
 Phases are for human comprehension: they show how the solution comes together, stage by stage. A human
-executing the plan would build Phase 0, see it run, then Phase 1, see it still run, and so on. Write phases as
-`## Phase N — <name>: <what works at the end>` headings; tasks live under them.
+executing the plan would build Phase 0, see it run, then Phase 1, see it still run, and so on.
 
 ### Phase 0 — the walking skeleton, run from the first day
 
-**Phase 0 is always an end-to-end harness that runs the whole deliverable**, with stubs wherever
+**Phase 0 is the Skeleton tier and is always an end-to-end harness that runs the whole deliverable**, with stubs wherever
 the real part does not exist yet: the endpoint that returns a canned body, the flow that walks
 every stage against placeholder documents, the report assembled from empty sections. Its
 `**Output:**` is the one command that runs it, and that command is the thing every later phase
@@ -235,7 +283,7 @@ or later at delivery, rather than when the plan is written.
 Two stages read this file by its shape, so the shape is a contract rather than a style: **`sdlc-execute`**
 names a single task by its id when it dispatches a worker for it, and **`sdlc-plan-audit`** checks
 these conventions explicitly and reports a break as a finding. Use them EXACTLY:
-- **Phase headings are level-2** — `## Phase N — <name>: <what works at the end>`. Not `#`, not `###`.
+- **Phase headings are level-2** — `## Phase N — <Tier>: <what works at the end>`. Not `#`, not `###`.
   Tasks are grouped by the `##` heading above them; a `#` phase heading breaks that grouping.
 - **Task headings are level-3, roman-numbered** — `### Task I-N: <title> (← AC-X.X)`. The `I-N`
   (roman-`I` + `-N`) is what `sdlc-execute` names when it dispatches a worker for one task.
@@ -314,6 +362,23 @@ everything `Full-suite gate` says is renamed to it, and the reply to that call i
 you are ever told. Keep that line and hand it to `sdlc-plan-audit` along with the version it
 should read; nothing in the stored plan records that a heading was ever worded differently.
 
+**Label every line with its tier.** Each line of the section names the tier it belongs to, in
+exactly this shape:
+
+```
+- [<Tier>] `<command>` — <what it proves>
+```
+
+`<Tier>` is `Skeleton`, `See`, `Feel` or `Unseen`. The label decides what a line holds:
+
+- `[Skeleton]` lines are the walking skeleton and hold every phase end.
+- `[See]` lines hold every wave from the first See phase on.
+- A later tier's lines (`[Feel]`, `[Unseen]`) hold waves from that tier's first phase on; before
+  then `sdlc-execute` runs them where cheap and records the result without holding the wave.
+
+A project-wide command that belongs to no later tier (the repository's own build or test
+entry point) is labelled by the earliest tier from which it must hold.
+
 Per-task checks prove the task did its own job. They cannot prove the task left the rest of the
 project working, and that is the failure a plan executed task-by-task actually produces: each check
 green, the suite red. State the gate once, at the end, so an executor knows what must hold after
@@ -344,7 +409,8 @@ has not decided how anyone will know it still works.
 2. **Business AC → technical AC, traced.** Every task cites the spec business AC(s) it delivers
    (`← AC-N.N`) and states its own technical acceptance criterion. Every spec AC the current phase
    covers in the spec's `## Phase outline` maps to at least one of its tasks; by the last phase,
-   every spec AC does.
+   every spec AC does. Every `Queued for Phase N` line of an earlier `### As built` is a task of
+   Phase N, citing the finding.
 3. **Every path is exact**, verified against ground truth at HEAD. No guessed paths.
 4. **Every `Run:` command** uses the project's real check runner and is a whitespace-delimited argv
    with **no shell metacharacters** (`| & ; < > $ \` ( )` or quotes).
@@ -386,8 +452,8 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    a one-line **execution note** (`> **Execution:** implemented by \`sdlc-execute\`, one
    subagent per task and one wave at a time; each task's declared checks gate it and the Phase 0
    skeleton runs at every phase end.`), then Goal, Architecture, Tech Stack, Ground truth at HEAD,
-   File Structure — followed by `## Phase 0` and the other phase headings each with their "what
-   works at the end" line, every task heading with its `**Output:**` / `**Dependencies:**` /
+   File Structure — followed by `## Phase 0 — Skeleton: …` and the other phase headings, each
+   under its tier with its "what works at the end" line, every task heading with its `**Output:**` / `**Dependencies:**` /
    `**Owns:**` lines and `← AC` refs, leaving each task's body as a single
    `<!-- enrich: I-N -->` slot carrying that task's own id. Do not reference another
    methodology's skills; this flow executes its own plans.
@@ -511,9 +577,10 @@ read last time.
 phase from the spec's outline headed, built phases carrying `### As built`, a Phase 0 walking
 skeleton every later phase ends by running, phases each stating what works at the end, `### Task I-N` headings numbered straight
 through with a one-line `**Output:**`, `**Dependencies:**` and `**Owns:**`, an
-`## Integration hotspots` list, no volatile facts about the tree, a
+`## Integration hotspots` list, phases headed `## Phase N — <Tier>: …` in tier order, Feel and
+Unseen work planned as phases, every queued line a task of its phase, no volatile facts about the tree, a
 five-bullet contract and a technical acceptance criterion traced `← AC-N.N`, plan-authored checks
-wherever the claim is machine-decidable, a `## Full-suite gate` section and a spec-coverage
+wherever the claim is machine-decidable, a `## Full-suite gate` section whose every line is labelled `- [<Tier>] …` and a spec-coverage
 traceability table — presented to the person and carrying their recorded approval.
 
 **Required evidence:** the approved spec. Ground truth at HEAD: every path, figure, symbol or

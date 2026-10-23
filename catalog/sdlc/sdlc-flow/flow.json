@@ -43,7 +43,12 @@
     {
       "name": "sdlc-plan-audit",
       "produces": "source",
-      "supports": "plan.md"
+      "supports": "plan.md",
+      "round_budget": 2,
+      "continue_on": [
+        "critical",
+        "high"
+      ]
     },
     {
       "name": "sdlc-execute",

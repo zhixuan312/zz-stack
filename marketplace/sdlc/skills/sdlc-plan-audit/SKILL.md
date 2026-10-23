@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.10
+version: 2.11
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -36,6 +36,22 @@ the plan read it, and it is what the platform requires the next version of the p
 is not a document of the flow: an audit report is the material that makes a revision necessary.
 `sdlc-audit-criteria` carries how to write it and the exact call.
 
+**The round's single fenced `json` ledger goes in the `source_add` content**, after the prose
+findings: exactly one block, in the envelope `sdlc-audit-criteria` defines, with the four
+lowercase weights and `findings: []` when the round found nothing. The platform reads only each
+finding's weight from it, and a round whose source has no such block, more than one, or one that
+does not parse is routed as having raised a critical or high finding. If you cannot produce a
+ledger, still file your prose; the cost is the second round.
+
+## Two rounds, the second reads only the fix
+
+The budget is this stage's own: **two rounds per phase**, not the three the spec audit has. Round 1
+reads the phase. A second round is owed only when round 1 raised a critical or high finding, or
+filed no readable ledger; a round that raised only medium or low findings settles the phase's
+audit, and the platform says so. Round 2 reads **only what changed to answer round 1**: confirm
+each fix, and look at what the changes introduced. It does not re-audit the rest of the phase. If
+round 2 still raises a critical or high finding, the stakeholder decides, not a third round.
+
 ## Audit the current phase only
 
 The plan grows one phase at a time (`sdlc-plan`), so a round audits **the current phase** — the
@@ -56,7 +72,7 @@ it is not a plan finding. Later phases with no tasks yet are not gaps. Keep it l
 
 The contract points below apply to the current phase's tasks.
 
-## Twelve: the plan's own contract
+## Fifteen: the plan's own contract
 
 The eleven failure modes in `sdlc-audit-criteria` are about prose. These are about what makes a plan executable, and a
 plan fails here far more often than it fails as prose.
@@ -86,7 +102,7 @@ plan fails here far more often than it fails as prose.
    the first error line. Where nothing can compile it here, report the check unverified rather
    than passing it.
 5. **The format the executor depends on.** Phase headings are level-2
-   `## Phase N — <name>: <what works at the end>`. Task headings are level-3 `### Task I-N:` with N
+   `## Phase N — <Tier>: <what works at the end>`. Task headings are level-3 `### Task I-N:` with N
    as an arabic digit, numbered straight through regardless of phase. `**Output:**`,
    `**Dependencies:**` and `**Owns:**` are one line each, immediately after the heading. `sdlc-execute` names a task
    by that id when it dispatches, so an ambiguous or duplicated id makes a task undispatchable.
@@ -121,6 +137,15 @@ plan fails here far more often than it fails as prose.
     fixes it — the tree will have moved by the time the task runs.
 14. **Every `command` AC names its evidence kind** — `check:`, `run:`, `probe:` or `test:` — the
     kinds `sdlc-review`'s `## Acceptance evidence` table accepts.
+15. **The plan is cut by tier.** Every phase heading carries its tier, one of Skeleton, See,
+    Feel or Unseen. The phases run in that order, or the plan says in one line why a phase is
+    out of order (a dependency the earlier tier cannot be built without, an external gate, or a
+    basic); a tier with no phase is stated, not silently absent. Feel and Unseen work is planned
+    as phases, not left as follow-ups. Every `## Full-suite gate` line carries its tier label
+    as `- [<Tier>] ...`. And every `Queued for Phase N` line in an earlier phase's `### As built`
+    is a task of Phase N once Phase N is planned, citing the finding; one that is not has
+    been dropped, and that is a finding. This holds for a report, a study or a specification as
+    much as for software.
 
 Add `plan-contract` to `criteriaCovered` when you have walked these.
 
@@ -136,10 +161,11 @@ nothing else in the flow is positioned to see it.
 ## Skill contract
 
 **Outcome:** one round's findings on the current phase of `plan.md` — the eleven prose failure
-modes plus the fourteen points of the plan's own contract, read against the structural report and
+modes plus the fifteen points of the plan's own contract, read against the structural report and
 the previous phase's `### As built` — registered with `source_add` as a SOURCE supporting that
-document, and handed back to the caller as one JSON block. This round writes no document of the
-flow and changes nothing in the plan.
+document, with the round's single fenced `json` ledger in its content. The final reply to the
+caller may repeat the ledger. This round writes no document of the flow and changes nothing in
+the plan.
 
 **Required evidence:** every finding in one of the four evidence shapes, each opening with its
 source in square brackets. For a path claim, the tree at HEAD — verify the specific paths the plan
@@ -159,7 +185,7 @@ because nothing else in the flow is positioned to see it.
 who owns the plan decides what to fix, and you present nothing to them. The consumer everything
 here is calibrated against is a low-judgement worker that follows the plan literally and will not
 stop to check. Where the caller said what the last round raised, confirm each fix and look
-instead for what the changes introduced. The platform asks one bounded question of your round
+instead for what the changes introduced; that is the whole of round 2. The platform asks one bounded question of your round
 when it is recorded, and routes on it; you ask none, and severity stays yours to calibrate.
 
 **Checkpoints:**
@@ -169,8 +195,8 @@ when it is recorded, and routes on it; you ask none, and severity stays yours to
 | When `source_add` records your round — asked by the platform | `changes_commitment` | whether the round reopens something the document records as agreed — `yes` makes the next move `decide`, waiting on the stakeholder, instead of another round |
 
 **Action and exit paths:** the action is the eleven failure modes one at a time, then the plan's
-fourteen, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
-findings and naming `plan.md`, and the JSON block as your final text. The round loop, and the
+fifteen, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
+findings and the ledger and naming `plan.md`, and your final text, which may repeat the ledger. The round loop, and the
 decision to send the plan back to `sdlc-plan`, belong to the caller. The exit that does not exist
 is repairing the plan yourself.
 

@@ -344,6 +344,12 @@ const SourceStage = z.object({
   ...stageBase,
   produces: z.literal("source"),
   supports: z.string().regex(/^[a-z0-9][a-z0-9-]*\.md$/, "a document name, like \"spec.md\""),
+  /** How many audit rounds the platform may ask for on this stage's target, 1..3. Absent: the
+   *  platform's `ROUND_BUDGET` (3). */
+  round_budget: z.number().int().min(1).max(3).optional(),
+  /** The finding weights that owe another round: a round whose findings include any of these
+   *  asks for the next one. Absent: any revision owes a round. */
+  continue_on: z.array(z.enum(["critical", "high", "medium", "low"])).min(1).optional(),
 }).strict();
 
 /** Every other stage: writes a main document the flow declares, writes rows in the platform's

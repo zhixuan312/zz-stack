@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.12
+version: 2.13
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -13,7 +13,9 @@ the same.
 
 **You were dispatched for one round on one document.** The caller runs rounds sequentially,
 each reading what the last one produced; how many is the platform's answer from the record, with
-three as a resource limit rather than a pass.
+the stage's declared budget as a resource limit rather than a pass. The spec audit has three; the
+plan audit has two and owes the second only when the first raised a critical or high finding
+(`sdlc-plan-audit` says so).
 
 **Read the round you are in.** If the caller told you what the previous round raised and what
 changed, do not re-find it. Confirm what was fixed, say plainly what was not, and look for what the
@@ -87,16 +89,17 @@ returns that reading in the result — pass the result line back to the caller w
 
 **Do not write a document.** The flow declares four — explore, spec, plan, review — and an
 audit is not one of them. A document beside the source would put one round on the record
-twice, and a reader then has two accounts of it and no way to tell which was read. The JSON block below is
-still your FINAL text response and is still never written to a file: the report is how the main
-agent decides what happens next, and the source is how anyone reading the initiative later
-knows this round happened at all. Both, every round.
+twice, and a reader then has two accounts of it and no way to tell which was read. The JSON ledger
+below goes into the `source_add` content, as one fenced `json` block after the prose findings, and
+your FINAL text response may repeat it: the source is how anyone reading the initiative later knows
+this round happened at all, and it is what the platform routes the next round on, reading each
+finding's weight from the ledger. Both, every round.
 
-**Each round is its own source.** `source_add` writes a new file every time, so three rounds
-leave three sources and none overwrites another — nothing to read first and nothing to append
+**Each round is its own source.** `source_add` writes a new file every time, so every round
+leaves its own source and none overwrites another — nothing to read first and nothing to append
 to. Title yours so the order is readable at a glance (`<stage> round 2 — …`), and send the
-findings as the body, and no envelope: the platform writes a source's, and stores what you
-send as the words you sent.
+findings and the ledger as the body: the platform writes a source's own header, and stores
+what you send as the words you sent.
 
 **A source is immutable and ungated.** Nobody approves your round — evidence is not agreed to —
 and nothing edits it afterwards. If a later round changes what you concluded, that is the later
@@ -187,7 +190,7 @@ Read the document. Do similar items in a list/table follow the same shape? If on
 Read the document. For living/revised documents: is there a "last updated" / "as of" / version stamp? When findings claim "still unfixed in version X", is there a date timeline that supports the claim? Record findings.
 
 ### Step 13: Consolidate
-Collect all findings across all failure modes, assign severities. Your FINAL response must be the JSON block below as plain text — the JSON itself is never written to a file, and neither is a document. Your findings go to a SOURCE, with `source_add`, as set out above — an audit is not one of this flow's four documents, and writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared.
+Collect all findings across all failure modes, assign severities. The JSON block below goes into the `source_add` content, and your FINAL response may repeat it as plain text; it is never written to a file, and neither is a document. Your findings go to a SOURCE, with `source_add`, as set out above — an audit is not one of this flow's four documents, and writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared.
 
 ### Evidence Grounding (REQUIRED for every finding)
 
@@ -237,7 +240,7 @@ Findings that fail any check should be downgraded or dropped. Logical-coherence 
 
 ## Output
 
-After consolidating all failure-mode passes, your FINAL text response must be exactly one JSON block (the JSON itself is never written to a file — the prose findings go to a `source_add` source, as above, never to a document):
+After consolidating all failure-mode passes, the round's ledger is exactly one fenced `json` block, and it goes in the `source_add` content after the prose findings, as above, never in a document or a file. Your FINAL text response may repeat it. Routing reads only each finding's `weight`, which is one of the four lowercase values below, and `findings` is `[]` when the round found nothing. Where the stage routes on its ledger (the plan audit does), a source with no such block, more than one, or one that does not parse is read as a round that raised a critical or high finding, so a round that cannot produce a ledger still files its prose:
 
 ```json
 {"criteriaCovered": ["recommendation-coherence", "internal-contradiction", "cross-item-duplication", "independence-claimed-without-evidence", "argument-soundness", "completeness-against-constraints", "fix-actionability", "drift-staleness", "scope-creep-framing", "structural-consistency", "metadata-completeness"], "findings": [{"weight": "critical|high|medium|low", "category": "<criterion-slug>", "claim": "<one sentence>", "evidence": "<quoted text or absence reference>", "suggestion": "<concrete fix>"}]}
@@ -274,8 +277,8 @@ re-runs it after you.
 **Checkpoints:** none. No bounded question at this stage has an answer the platform routes
 on, so none is asked.
 
-**Action and exit paths:** the action is the eleven criteria, then consolidation. Two exits, both taken every round: `source_add` carrying the prose findings
-and naming the document they bear on, and the JSON block as your final text. Neither is a document
+**Action and exit paths:** the action is the eleven criteria, then consolidation. Two exits, both taken every round: `source_add` carrying the prose findings and the
+ledger and naming the document they bear on, and your final text, which may repeat the ledger. Neither is a document
 of the flow, and neither is ever written to a file. The exit that does not exist is editing the
 document you were given.
 

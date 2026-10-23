@@ -278,13 +278,20 @@ pair, and the gate requires the name to resolve to a document the same flow decl
 field is what lets the platform refuse `plan.md`'s next version until the round is cited, with
 nothing anywhere knowing the word "audit".
 
+A source step may also declare its own round policy, and only a `produces: "source"` step may:
+`round_budget` (an integer 1..3; absent means the platform's `ROUND_BUDGET`, 3) is how many
+rounds the platform may ask for on the target (per phase, for a plan), and `continue_on` (a non-empty list of
+`critical`, `high`, `medium`, `low`; absent means any revision owes a round) is the finding
+weights that owe another round. Any other step declaring either is refused.
+
 **3 · Does it need a person?** `gate: true` on the declared document, and only there. A gate is
 a verdict a person records with `document_approve`; the platform stamps `status` only where a
 gate exists, and refuses to approve a document that carries none. A source is never gated.
 
 ```json
 { "name": "sdlc-plan",       "produces": "plan.md" },
-{ "name": "sdlc-plan-audit", "produces": "source", "supports": "plan.md" },
+{ "name": "sdlc-plan-audit", "produces": "source", "supports": "plan.md",
+  "round_budget": 2, "continue_on": ["critical", "high"] },
 { "name": "sdlc-execute",    "produces": "nothing" }
 ```
 

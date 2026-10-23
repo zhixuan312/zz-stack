@@ -29,10 +29,12 @@ const tag = (what: string): string => `zz-chain-${what}-${process.pid}`;
  * for the length of one release, in a database that is dropped after it. */
 const OPERATOR = "chain-check@zz.invalid";
 
-function waitFor(what: string, attempt: () => boolean, limit = 90): void {
+/** `what` may be read only at the end, so a wait can name the last answer it got rather than only
+ *  what it waited for. */
+function waitFor(what: string | (() => string), attempt: () => boolean, limit = 90): void {
   for (let i = 0; ; i++) {
     if (attempt()) return;
-    if (i > limit) die(`the release's own stack never became ready: ${what}`);
+    if (i > limit) die(`the release's own stack never became ready: ${typeof what === "string" ? what : what()}`);
     execFileSync("sleep", ["1"]);
   }
 }
@@ -115,9 +117,11 @@ export function walkToolChain(version: string | undefined): void {
 
     // zz-core boots beside the gateway, and the gateway's seed says nothing about it: a walk that
     // started first would meet the gateway's "not reachable right now" refusal and call it a
-    // broken chain.
-    waitFor("zz-core's doors", () =>
-      ["/core/mcp", "/eval/mcp"].every((d) => !initializeRefusal(base, token, d, "release", 5)));
+    // broken chain. The last refusal is named if they never answer: a 401 from a token this walk
+    // minted wrong is not a slow boot.
+    let refused: string | null = null;
+    waitFor(() => `zz-core's doors — the last answer was ${refused}`, () =>
+      ["/core/mcp", "/eval/mcp"].every((d) => !(refused = initializeRefusal(base, token, d, "release", 5))));
 
     log("  walking the tool chain against this release's own image");
     execFileSync("node", [join(root, "packages/tools/dist/testing/chain-check.js")],

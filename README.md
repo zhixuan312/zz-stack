@@ -185,7 +185,9 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             there is one list rather than a second that is only ever read during
             a release), deployment.ts (the one description of the deployment —
             its address, paths, images and how to speak to it — read by the
-            release and the doctor alike), release.ts, release-record.ts (a
+            release and the doctor alike), door-frame.ts (one MCP call through a
+            live door, read by its frame and its status — a door whose upstream
+            is down answers HTTP 200 with an error), release.ts, release-record.ts (a
             release's row in zz.release, read from its changelog section and
             written by the release once its tag exists, every earlier tag with
             it; `--correct <version>` rewrites one row from the current changelog;

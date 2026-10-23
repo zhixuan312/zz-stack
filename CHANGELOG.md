@@ -50,7 +50,8 @@ release waits for zz-core before it verifies.
   this release verified while zz-core was still booting, the contract probe met the gateway's
   "not reachable right now" refusal, and a working release rolled back to 0.98.1. Step 5 now also
   waits for `/core/mcp` and `/eval/mcp` to answer initialize, up to three minutes, and the
-  pre-push tool-chain walk waits for them the same way.
+  pre-push tool-chain walk waits for them before it starts, naming the door's last answer if
+  they never come up.
 - **The doctor's `MCP initialize` probes read the answer, not only its status.** The gateway
   answers a door whose upstream is down with HTTP 200 and a JSON-RPC error, so these probes printed
   a refusing `/core/mcp` green. They now fail on an error frame and name it, and a status other

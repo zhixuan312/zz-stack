@@ -78,7 +78,7 @@ try {
   const closed = initializeRefusal("http://127.0.0.1:9", "stub-token", "/core/mcp", "check", 5);
   is(closed && /could not be reached: \S/.test(closed), `a refused connection was named with no reason: ${JSON.stringify(closed)}`);
 } finally {
-  if (stub.exitCode === null && stub.pid) process.kill(stub.pid);
+  if (stub.exitCode === null && stub.signalCode === null && stub.pid) process.kill(stub.pid);
 }
 
 // 5
@@ -90,7 +90,9 @@ const step5 = rel.indexOf('step(5, "verify")');
 const poll = rel.slice(step5, rel.indexOf("verifyLive()", step5));
 is(step5 > 0 && /^\s*if \(.*initializeRefusal\(.*\)\) break;$/m.test(poll),
    "release step 5 starts verifyLive without its readiness poll's break waiting on the doors the gateway relays to");
-is(/waitFor\("zz-core's doors", \(\) =>\s*\[[^\]]*\]\.every\(\(d\) => !initializeRefusal\(/.test(readFileSync("scripts/release/tool-chain.ts", "utf8")),
+const chain = readFileSync("scripts/release/tool-chain.ts", "utf8");
+const walk = chain.slice(0, chain.indexOf('"packages/tools/dist/testing/chain-check.js"'));
+is(walk.length < chain.length && /waitFor\(\(\) => `zz-core's doors[^`]*`, \(\) =>\s*\[[^\]]*\]\.every\(\(d\) => !\(refused = initializeRefusal\(/.test(walk),
    "the pre-push tool-chain walk starts without waiting for zz-core's doors");
 
 if (fail.length) {

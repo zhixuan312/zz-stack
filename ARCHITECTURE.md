@@ -195,6 +195,10 @@ rule is what the directory means:
   the runner, and it is the only place that decides what a probe's outcome means.
 - **`scripts/deployment.ts`** is the one description of the deployment — its address, its
   paths, its images, how to speak to it. It is not under either subtree because both read it.
+  **`scripts/door-frame.ts`** beside it reads what a door answers, by its JSON-RPC frame and its
+  HTTP status: a door whose upstream is down answers 200 with an error, so a status alone reads
+  it as up. It is its own file because the gate holds a file that both builds the handshake and
+  reads the answer to be a second MCP client.
 
 The common shape: **the entry file states the order or the door, the modules hold the work.**
 `gate.ts`, `release.ts` and `doctor.ts` are all three that, and a reader who knows one

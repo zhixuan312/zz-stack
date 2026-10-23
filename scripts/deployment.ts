@@ -149,61 +149,6 @@ export const initFrame = (who: string): string =>
                    params: { protocolVersion: mcpProtocol(), capabilities: {},
                              clientInfo: { name: who, version: "1" } } });
 
-/** The three shapes the live probes read off an MCP frame. Every field is optional — the
- *  transport may answer with a JSON-RPC error, a frame missing the result a caller asked for, or
- *  this file's own `unreachable` marker — so the honest type is one no live answer can fail to
- *  satisfy, rather than a schema nothing here validates. */
-export interface McpFrame {
-  unreachable?: string;
-  error?: unknown;
-  result?: {
-    tools?: { name: string }[];
-    serverInfo?: { version?: string };
-  };
-}
-
-/** One MCP call through a door, parsed. The transport may answer as SSE or as plain JSON, so the
- *  last non-empty line is taken and the `data: ` prefix dropped if it is there.
- *
- *  The caller resolves `addr` and `bearer` first, and that placement is the whole rule: a missing
- *  precondition must throw where the doctor reads it as `unknown`. From the request on, a failure
- *  is the platform's answer and is returned — a door that is down, or a Caddy 502 in front of it,
- *  must not become `unknown`, because a release does not roll back on `unknown`. */
-export function mcpFrame(addr: string, bearer: string, path: string, body: string): McpFrame {
-  let out: string;
-  try {
-    out = run("curl", ["-s", "-m", "30",
-      "-H", `Authorization: Bearer ${bearer}`, "-H", "content-type: application/json",
-      "-H", "accept: application/json, text/event-stream",
-      "-d", body, `${addr}${path}`]);
-  } catch (err) {
-    const e = asExecError(err);
-    return { unreachable: `the door could not be reached: ${(e.stderr ?? e.message).trim().slice(0, 160)}` };
-  }
-  const line = out.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
-  // Defensive for the same reason: a 502 hands back an HTML page, JSON.parse throws SyntaxError on
-  // it, and the doctor's runner would call that its own bug while the platform really was broken.
-  try {
-    const parsed: unknown = JSON.parse(line.replace(/^data:\s*/, ""));
-    return parsed && typeof parsed === "object" ? (parsed as McpFrame)
-      : { unreachable: `the door answered ${JSON.stringify(parsed)}, which is not an MCP frame` };
-  } catch {
-    return { unreachable: `the door answered something that is not JSON: ${(line || "(empty)").slice(0, 160)}` };
-  }
-}
-
-/** Why a door's initialize did not answer as a working MCP server, or null when it did.
- *
- *  A status code cannot say: the gateway answers a dead upstream with HTTP 200 and a JSON-RPC
- *  error frame (services/gateway/src/relay.ts `mcpRefusal`), so only the frame tells a refusing
- *  door from a working one. Release 0.98.2's first run printed a refusing /core/mcp as answering. */
-export function initializeRefusal(addr: string, bearer: string, path: string, who: string): string | null {
-  const hello = mcpFrame(addr, bearer, path, initFrame(who));
-  if (hello.unreachable) return hello.unreachable;
-  if (hello.error) return `refused initialize: ${JSON.stringify(hello.error).slice(0, 200)}`;
-  return hello.result ? null : "the handshake answered no result";
-}
-
 /** Credentials never reach a failure message: execFileSync throws with the whole command in
  *  its message, and a failure message is what somebody pastes into an issue. */
 export const redact = (m: unknown): string => String(m).replace(/zzp_[A-Za-z0-9]+/g, "zzp_<redacted>");

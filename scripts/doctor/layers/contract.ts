@@ -11,7 +11,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { envToken, initFrame, mcpFrame, publicUrl, root, type McpFrame } from "../../deployment.ts";
+import { envToken, initFrame, publicUrl, root } from "../../deployment.ts";
+import { mcpFrame, type McpFrame } from "../../door-frame.ts";
 import { zzCoreTools } from "../../gate/read.ts";
 import { layer, probe } from "../run.ts";
 

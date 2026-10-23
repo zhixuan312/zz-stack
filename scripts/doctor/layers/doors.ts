@@ -10,7 +10,8 @@
  * an operator is most likely to act on it. Here a missing token is a probe that did not run,
  * which is never a verdict about the platform. See run.ts.
  */
-import { DASH_REMOTE, HOST, REMOTE, asExecError, envToken, initializeRefusal, publicUrl, run, ssh } from "../../deployment.ts";
+import { DASH_REMOTE, HOST, REMOTE, asExecError, envToken, publicUrl, run, ssh } from "../../deployment.ts";
+import { initializeRefusal } from "../../door-frame.ts";
 import { layer, probe } from "../run.ts";
 
 layer("doors", "does every door answer", ["services/gateway/src"]);

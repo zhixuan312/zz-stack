@@ -17,6 +17,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 import { IMAGE, die, log, reapLeaked, root, run } from "../deployment.ts";
+import { initializeRefusal } from "../door-frame.ts";
 import { postgresService } from "./postgres-service.ts";
 
 /** A throwaway name per process, so two releases on one machine cannot collide. */
@@ -111,6 +112,12 @@ export function walkToolChain(version: string | undefined): void {
                       select id, '${hash}', 'release chain-check'
                       from zz.principal where email = '${OPERATOR}';
                     commit;`]);
+
+    // zz-core boots beside the gateway, and the gateway's seed says nothing about it: a walk that
+    // started first would meet the gateway's "not reachable right now" refusal and call it a
+    // broken chain.
+    waitFor("zz-core's doors", () =>
+      ["/core/mcp", "/eval/mcp"].every((d) => !initializeRefusal(base, token, d, "release", 5)));
 
     log("  walking the tool chain against this release's own image");
     execFileSync("node", [join(root, "packages/tools/dist/testing/chain-check.js")],

@@ -313,4 +313,4 @@ check("connecting one application never revokes another's token: one live OAuth 
       runsCheck("oauth-token-label.ts"));
 check("the live chain check walks with a superadmin probe token, and a missing token or a skipped superadmin probe is unknown", runsCheck("release-probe-token.ts"));
 check("the doctor's pre-deploy subset holds the status-gate probe, excludes migrations, and runs before step 4", runsCheck("doctor-predeploy.ts"));
-check("a door refusing initialize with HTTP 200 and an error frame is named as refusing, and the doctor's initialize probes and release step 5's readiness poll both read the frame", runsCheck("door-initialize-refusal.ts"));
+check("a door refusing initialize with HTTP 200 and an error frame is named as refusing, a non-2xx status is named with its code, and the doctor's initialize probes, release step 5's readiness poll and the pre-push tool-chain walk all read the frame", runsCheck("door-initialize-refusal.ts"));

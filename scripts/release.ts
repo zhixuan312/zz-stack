@@ -59,7 +59,8 @@ import { basename, join } from "node:path";
 import { buildAndSmoke, buildBundle, setConsoleVersion } from "./release/build.ts";
 import { requireCiGreen } from "./release/ci-runs.ts";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.ts";
-import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, initializeRefusal, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
+import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
+import { initializeRefusal } from "./door-frame.ts";
 import { chainCheck } from "./release/chain-live.ts";
 import { purgeProbes } from "./release/probe-purge.ts";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
@@ -482,12 +483,20 @@ purgeProbes();
 // DELIBERATE: it gives up rather than dying. A gateway that never answered is a probe that could
 // not run, which is this release's THIRD outcome — live and untagged, with the probe named — and
 // dying here would leave the release half-done instead of saying which probes could not look.
+//
+// A deadline, not a count of tries: each try can take as long as its requests' own timeouts, and a
+// door that accepts and never answers would otherwise stretch sixty tries to an hour.
 const readyBearer = envToken();
-for (let i = 0; i < 60; i++) {
+const readyBy = Date.now() + 180_000;
+for (;;) {
   try {
     execFileSync("curl", ["-fsS", "-m", "5", "-o", "/dev/null", `${publicUrl()}/health`], { stdio: "ignore" });
-    if (!readyBearer || ["/core/mcp", "/eval/mcp"].every((d) => !initializeRefusal(publicUrl(), readyBearer, d, "release"))) break;
+    if (!readyBearer || ["/core/mcp", "/eval/mcp"].every((d) => !initializeRefusal(publicUrl(), readyBearer, d, "release", 5))) break;
   } catch { /* the gateway is not answering yet */ }
+  if (Date.now() > readyBy) {
+    warn("  the gateway and its doors did not all answer within 3 minutes — verifying as they are");
+    break;
+  }
   execFileSync("sleep", ["1"]);
 }
 const verdict = verifyLive();

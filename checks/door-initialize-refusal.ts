@@ -13,15 +13,17 @@
  *   1. the stub's refusal is HTTP 200, which is why a status code cannot tell;
  *   2. initializeRefusal names a refusal frame, and the code it carries;
  *   3. it passes a result frame, plain or as SSE;
- *   4. it names an answer that is not JSON, as a Caddy 502 page is;
- *   5. the doors layer's initialize probe and release step 5's readiness poll both ask it.
+ *   4. it names a status other than 2xx with its code, a 502 page and a 401 alike, and a
+ *      refused connection with curl's own reason;
+ *   5. the doors layer's initialize probe, release step 5's readiness poll and the pre-push
+ *      tool-chain walk all ask it, and the poll's `break` waits on it.
  *
  * Run: node checks/door-initialize-refusal.ts
  */
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { initializeRefusal } from "../scripts/deployment.ts";
+import { initializeRefusal } from "../scripts/door-frame.ts";
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
@@ -35,6 +37,7 @@ const server = http.createServer((req, res) => {
   req.on("end", () => {
     if (req.url.startsWith("/refusing/")) { res.writeHead(200, {"content-type": "application/json"}); res.end(JSON.stringify(refusal)); }
     else if (req.url.startsWith("/working/")) { res.writeHead(200, {"content-type": "application/json"}); res.end(JSON.stringify(result)); }
+    else if (req.url.startsWith("/unauthorised/")) { res.writeHead(401, {"content-type": "application/json"}); res.end(JSON.stringify({error: "the token is not valid"})); }
     else if (req.url.startsWith("/sse/")) { res.writeHead(200, {"content-type": "text/event-stream"}); res.end("event: message\\ndata: " + JSON.stringify(result) + "\\n\\n"); }
     else { res.writeHead(502, {"content-type": "text/html"}); res.end("<html><body>502 Bad Gateway</body></html>"); }
   });
@@ -45,8 +48,9 @@ server.listen(0, "127.0.0.1", () => console.log(server.address().port));
 const stub = spawn(process.execPath, ["-e", STUB], { stdio: ["ignore", "pipe", "inherit"] });
 try {
   const port = await new Promise<string>((resolve, reject) => {
-    stub.stdout.once("data", (b: Buffer) => resolve(String(b).trim()));
-    stub.once("exit", (c) => reject(new Error(`the stub door exited (${c}) before it listened`)));
+    const late = setTimeout(() => reject(new Error("the stub door did not listen within 10 s")), 10_000);
+    stub.stdout.once("data", (b: Buffer) => { clearTimeout(late); resolve(String(b).trim()); });
+    stub.once("exit", (c) => { clearTimeout(late); reject(new Error(`the stub door exited (${c}) before it listened`)); });
   });
   const base = `http://127.0.0.1:${port}`;
 
@@ -68,9 +72,13 @@ try {
 
   // 4
   const html = initializeRefusal(`${base}/broken`, "stub-token", "/core/mcp", "check");
-  is(html && /not JSON/.test(html), `a 502 page was not named as an answer that is not JSON: ${JSON.stringify(html)}`);
+  is(html && /^http 502: /.test(html), `a 502 page was not named with its status: ${JSON.stringify(html)}`);
+  const denied = initializeRefusal(`${base}/unauthorised`, "stub-token", "/core/mcp", "check");
+  is(denied && /^http 401: /.test(denied), `a 401 from the identity gate read as a door's refusal: ${JSON.stringify(denied)}`);
+  const closed = initializeRefusal("http://127.0.0.1:9", "stub-token", "/core/mcp", "check", 5);
+  is(closed && /could not be reached: \S/.test(closed), `a refused connection was named with no reason: ${JSON.stringify(closed)}`);
 } finally {
-  if (stub.pid) process.kill(stub.pid);
+  if (stub.exitCode === null && stub.pid) process.kill(stub.pid);
 }
 
 // 5
@@ -79,14 +87,15 @@ is(/probe\(`MCP initialize \$\{path\}`, \(\) =>\s*initializeRefusal\(/.test(door
    "the doors layer's MCP initialize probe does not ask initializeRefusal — it can pass a refusing door again");
 const rel = readFileSync("scripts/release.ts", "utf8");
 const step5 = rel.indexOf('step(5, "verify")');
-const asked = rel.indexOf("initializeRefusal(", step5);
-const verified = rel.indexOf("verifyLive()", step5);
-is(step5 > 0 && asked > step5 && asked < verified,
-   "release step 5 starts verifyLive without waiting for the doors the gateway relays to");
+const poll = rel.slice(step5, rel.indexOf("verifyLive()", step5));
+is(step5 > 0 && /^\s*if \(.*initializeRefusal\(.*\)\) break;$/m.test(poll),
+   "release step 5 starts verifyLive without its readiness poll's break waiting on the doors the gateway relays to");
+is(/waitFor\("zz-core's doors", \(\) =>\s*\[[^\]]*\]\.every\(\(d\) => !initializeRefusal\(/.test(readFileSync("scripts/release/tool-chain.ts", "utf8")),
+   "the pre-push tool-chain walk starts without waiting for zz-core's doors");
 
 if (fail.length) {
   console.error(`door-initialize-refusal: ${fail.length} failure(s)`);
   for (const f of fail) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("door-initialize-refusal: a refusal frame is named, a result passes, and the doctor and the release both ask");
+console.log("door-initialize-refusal: a refusal frame and a non-2xx status are named, a result passes, and the doctor, step 5 and the tool-chain walk all ask");

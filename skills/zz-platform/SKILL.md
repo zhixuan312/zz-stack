@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.89
+version: 3.90
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -75,8 +75,8 @@ and why. These are the situations it distinguishes:
 |---|---|
 | the next document the flow declares is not there, or is there and still draft | you |
 | a gated document is written and nobody has recorded a verdict on it | the stakeholder |
-| a round is owed: none yet, a new version after the last audit round, or a review round left a shown S1/S2 finding to `fix` or an inferred one to reproduce (`run_experiment`). The plan's audit is owed on the draft, before its approval; the spec's once it is approved | you |
-| an audit round reopened an agreement, or the round budget is spent with the work still unaudited or blocked | the stakeholder |
+| a round is owed: none yet, a new version after the last audit round (a stage may declare a smaller budget and the finding weights that owe another round; when the last round raised none of them the audit is settled, and the `why` says so), or a review round left a shown S1/S2 finding to `fix` or an inferred one to reproduce (`run_experiment`). The plan's audit is owed on the draft, before its approval; the spec's once it is approved | you |
+| an audit round reopened an agreement, or the stage's own round budget is spent with the work still unaudited or blocked | the stakeholder |
 | a finished close's handover is not written yet, or is written and awaiting its verdict — run `zz-handover`, then the person approves handover.md | you, then the person |
 | the chain's last document is ready and the initiative can be closed | you |
 | an outcome is recorded and nothing is owed: an abandoned close, or a finished one whose handover is approved | nobody |

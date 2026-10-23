@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.26
+version: 1.27
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -86,6 +86,22 @@ The plan is then written one phase at a time, and each loop is:
 plan Phase N (its tasks only) → audit Phase N (structural report + Phase N-1's as-built) → approve
   → execute Phase N (waves, skeleton) → append "### As built" → plan Phase N+1
 ```
+
+**The phases run in tier order: Skeleton, See, Feel, Unseen.** One question sorts a piece of work:
+who notices it, and how? The Skeleton is the thinnest thing the person who asked can run or read
+end to end; See is everything they use or read directly, basics included, so they can validate the
+whole result; Feel is the quality they perceive in use; Unseen is what nobody notices but must be
+done. This holds for a report, a study or a specification as much as for code: a report's Skeleton
+is a readable draft in the reader's format, not a command. `sdlc-spec` defines the tiers and cuts
+the outline by them, `sdlc-plan` writes each phase under its tier, and the basics (security, data
+loss, authority, and the truth of what is shown) are built in the phase that first shows them.
+
+**A wave is held by the skeleton and by the checks of the current tier and earlier.** A later
+tier's check is run where cheap and recorded, and does not hold the wave. A finding raised while
+building is rated on the review rubric below and given the tier of what it affects: S1 and S2 are
+fixed now whatever the tier, a small finding of a later tier is queued into that tier's phase. The
+owner sees a preview after the first See phase and is told when the last one is built.
+`sdlc-execute` has the rule in full.
 
 So each phase is planned from what the last one actually produced, and the finished plan is
 what happened. Per-phase approvals are quick: the audit round and the structural report are the

@@ -19,7 +19,7 @@ import { documentApplies, parseCaller, type Applicability, type FlowDoc } from "
 import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { auditMove } from "../audit-rounds.js";
+import { auditMove, auditPolicyOf, auditSettledNote } from "../audit-rounds.js";
 import { assessmentsFor, reviewMove } from "../review-rounds.js";
 import { factsFor, recordsFor } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
@@ -274,6 +274,8 @@ export async function initiativeState(
 
   // the next move, in the flow's own declared order
   let next: Move;
+  // Why an audit needs no further round, when one settled on its stage's declared policy.
+  let settledNote = "";
   // The current plan's structure: waves an executor may run in parallel, or why it cannot. Read
   // here because `current_phase` below decides which move the chain answers.
   //
@@ -351,15 +353,27 @@ export async function initiativeState(
     // round. Every other audited document keeps its order: agreed, then audited.
     const auditedWhile = (doc: string): boolean =>
       doc === planDoc?.name ? states.some((x) => x.name === doc && x.exists) : requirementMet(doc);
-    const owedAudit = (chain.stages ?? [])
+    const auditStages = (chain.stages ?? [])
       .filter((st): st is Extract<typeof st, { produces: "source" }> => st.produces === "source")
       .filter((st) => Boolean(st.supports) && appliesOf(st.supports as string) !== "not_applicable"
-                     && auditedWhile(st.supports as string))
-      .map((st) => auditMove(name, st.name ?? "", st.supports as string,
-                             rows.get(st.supports as string)?.current_version ?? 1, sources, answers,
-                             st.supports === planDoc?.name ? rows.get(st.supports as string)?.approved_before ?? 0 : 0,
-                             st.supports === planDoc?.name && rows.get(st.supports as string)?.status === "approved"
-                               ? rows.get(st.supports as string)?.approved_at ?? null : null))
+                     && auditedWhile(st.supports as string));
+    const auditArgs = (st: (typeof auditStages)[number]) => {
+      const doc = st.supports as string;
+      const planned = doc === planDoc?.name;
+      return { version: rows.get(doc)?.current_version ?? 1, since: planned ? rows.get(doc)?.approved_before ?? 0 : 0,
+               approvedAt: planned && rows.get(doc)?.status === "approved" ? rows.get(doc)?.approved_at ?? null : null,
+               policy: auditPolicyOf(st) };
+    };
+    settledNote = auditStages.map((st) => {
+      const a = auditArgs(st);
+      return auditSettledNote(st.name ?? "", st.supports as string, a.version, sources, a.policy, a.since);
+    }).filter(Boolean).join(" ");
+    const owedAudit = auditStages
+      .map((st) => {
+        const a = auditArgs(st);
+        return auditMove(name, st.name ?? "", st.supports as string, a.version, sources, answers,
+                         a.since, a.approvedAt, a.policy);
+      })
       .find((m): m is NonNullable<typeof m> => m !== null);
     // A stage that produces a `record` writes no document, so `pending` cannot see it. The first
     // such stage ahead of the pending document's own stage that has recorded nothing is what runs
@@ -495,6 +509,7 @@ export async function initiativeState(
   }
   if (next.action !== "closed") {
     next.why += planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null);
+    if (settledNote) next.why += ` ${settledNote}`;
   }
   const { sourceFiles, needsRefinement } = sourceReport(rows);
   const corrections = outcome ? correctionsOf(outcome, own?.closed_at ?? null, states, rows).map((d) => d.name) : [];

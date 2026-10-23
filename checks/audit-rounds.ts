@@ -293,7 +293,7 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
   plan(2);
   pm = await move(p);
   // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
-  is(pm?.action === "add_source" && pm?.document === "plan.md" && /Round 2 checks the new version/.test(pm?.why ?? ""),
+  is(pm?.action === "add_source" && pm?.document === "plan.md" && /round 1 carries no readable ledger; round 2 reads only what changed/.test(pm?.why ?? ""),
      `a revised draft plan did not owe the next audit round: ${JSON.stringify(pm)}`);
 
   // The spec keeps its order: a draft spec is approved first, and audited once it is.
@@ -399,7 +399,7 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
   plan(6, 4);
   pm = await move(p);
   // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
-  is(pm?.action === "add_source" && /Round 2 checks the new version/.test(pm?.why ?? ""),
+  is(pm?.action === "add_source" && /round 1 carries no readable ledger; round 2 reads only what changed/.test(pm?.why ?? ""),
      `a new plan phase's revision went to the stakeholder on the earlier phase's spent budget: ${JSON.stringify(pm)}`);
 }
 

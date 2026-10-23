@@ -47,6 +47,8 @@ check("initiative_status carries the current plan's waves, hotspots and violatio
 
 check("audit rounds follow evidence, a spent budget or a reopened agreement waits on the stakeholder",
       runsCheck("audit-rounds.ts"));
+check("a declared budget and threshold route the plan audit, and the spec audit routes as before",
+      runsCheck("audit-round-policy.ts"));
 
 check("review rounds follow evidence — fix, run_experiment, decide at the budget, settle — and a verifying document is approved on one acceptance-evidence row per declared criterion",
       runsCheck("review-rounds.ts"));

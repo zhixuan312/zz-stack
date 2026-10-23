@@ -35,7 +35,8 @@ explore → spec → audit → plan → audit → execute → review → close (
 
 Not a ratchet. An audit that finds the spec rests on an unsettled decision sends you back into
 `sdlc-spec`, and that is the method working. And plan → audit → execute is a loop, one phase
-per turn: the spec's `## Phase outline` names the phases, `sdlc-plan` writes one, it is audited
+per turn: the spec's `## Phase outline` names the phases in tier order, Skeleton, See, Feel, Unseen
+(who notices the work, and how), `sdlc-plan` writes one under its tier heading, it is audited
 and approved, `sdlc-execute` builds it and appends `### As built`, and the next phase is planned
 from that — until the outline's last phase is built, and review runs. A phase that disproves a
 spec core statement goes back to `sdlc-spec` (see `sdlc-method`).
@@ -46,8 +47,8 @@ spec core statement goes back to `sdlc-spec` (see `sdlc-method`).
 | 2 | `sdlc-spec` | `spec.md` | **main agent** → the person agrees |
 | 3 | `sdlc-spec-audit` | a SOURCE supporting `spec.md` | subagent per round, sequential, rounds routed by evidence |
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
-| 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, rounds routed by evidence |
-| 6 | `sdlc-execute` | the change itself, and the phase's `### As built` in `plan.md` | subagent per plan item |
+| 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, at most two rounds per phase, routed by evidence |
+| 6 | `sdlc-execute` | the change itself, and the phase's `### As built` in `plan.md` | subagent per plan item; a wave is held by the skeleton and the current tier's checks and earlier |
 | 7 | `sdlc-review` | `review.md` — and it closes the initiative — plus a SOURCE per sweep round | **main agent** for the evidence; subagent per round, sequential, rounds routed by evidence |
 
 Four documents, and the audits produce none of them. An audit report is a SOURCE: it is the
@@ -106,18 +107,24 @@ re-find the same things. A round is a source naming its stage —
 stage is not a round, however it is titled.
 
 **How many rounds is the platform's answer, not a count you keep.** `initiative_status` — and
-the `Next move:` line every document call ends with — computes it from the record:
+the `Next move:` line every document call ends with — computes it from the record, on the budget
+each audit stage declares in this flow's manifest, and says why a round is owed or why the audit
+settled:
 
-| The record | Next move |
-|---|---|
-| no round yet | round 1 is owed |
-| the document reached a new version after the last round read it | the next round checks the new version |
-| the last round read the current version | the audit is settled; move on |
-| the last round reopens something the person agreed (the platform asks `changes_commitment` the moment the round lands) | the stakeholder decides |
-| three rounds are spent and the latest version was never audited (for the plan, three in the phase being planned: an approved phase's rounds were spent on it) | the stakeholder decides |
-| a plan version was approved before any round read it, such as an amendment | its round is still owed, unless the stakeholder accepts it unaudited in material filed after that approval |
+| | Spec audit | Plan audit |
+|---|---|---|
+| Budget | three rounds | two rounds per phase |
+| Round 1 | owed when there is no round yet | owed for the phase being planned |
+| A later round is owed when | the document reached a new version after the last round read it | the last round raised a critical or high finding, or filed no readable ledger |
+| A later round reads | the new version | only the fix that answered the last round |
+| Settled when | the last round read the current version | the last round read the current version, or the plan was revised after a round that raised only medium or low findings, or none |
+| The stakeholder decides when | the budget is spent and the latest version was never audited, or a round reopens something the person agreed (`changes_commitment`) | the plan is revised again after a second round that raised a critical or high finding, or a round reopens something the person agreed |
 
-Three is a resource limit, never a pass: a spent budget does not mean the document is fine, so
+The plan audit's ledger is the round's JSON block in its source; `sdlc-plan-audit` has the rules.
+A plan version approved before any round read it, such as an amendment, still owes its round,
+unless the stakeholder accepts it unaudited in material filed after that approval.
+
+A budget is a resource limit, never a pass: a spent budget does not mean the document is fine, so
 the person decides whether it proceeds unaudited or goes back to the stage that wrote it. Their
 decision is recorded as material supporting the document — `source_add` with no stage — and
 that is what lets the flow move on. If the audits keep finding the same thing, take the document

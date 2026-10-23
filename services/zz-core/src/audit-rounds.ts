@@ -11,7 +11,9 @@
  * How many rounds is a question of evidence, not of a count. `ROUND_BUDGET` is a resource limit
  * and never a pass criterion:
  *   - no round yet                         -> the first round is owed
- *   - the latest round read an older version -> the revision it caused is checked by another round
+ *   - the latest round read an older version -> the revision it caused is checked by another round,
+ *     unless the stage declares `continue_on` and that round raised none of those weights: the
+ *     revision answered findings that owe no further reading, and the audit is settled
  *   - the latest round reopens an agreement  -> the stakeholder decides, before anything proceeds
  *   - the budget is spent and the latest revision is unaudited -> the stakeholder decides
  *   - the latest round read the current version and reopened nothing -> the audit is settled
@@ -53,7 +55,50 @@ export function auditRoundOf(chain: Chain, stage: string | undefined,
   return doc && supports.includes(doc) ? { stage, document: doc } : null;
 }
 
-interface Round { file: string; version: number; added_at: string }
+interface Round { file: string; version: number; added_at: string; body: string }
+
+export type AuditWeight = "critical" | "high" | "medium" | "low";
+
+/** What a flow declares about how an audit stage is routed: the rounds it may use, and the finding
+ *  weights that owe another round once the document is revised (null: any revision owes one). */
+export interface AuditPolicy { budget: number; continueOn: readonly AuditWeight[] | null }
+
+const NO_POLICY: AuditPolicy = { budget: ROUND_BUDGET, continueOn: null };
+
+/** The policy a stage's manifest entry declares; a stage declaring neither field routes on `ROUND_BUDGET`. */
+export const auditPolicyOf = (stage: { round_budget?: number; continue_on?: readonly AuditWeight[] }): AuditPolicy =>
+  ({ budget: stage.round_budget ?? ROUND_BUDGET, continueOn: stage.continue_on ?? null });
+
+const WEIGHTS: readonly string[] = ["critical", "high", "medium", "low"];
+const LEDGER_BLOCK = /^```json\r?\n([\s\S]*?)\r?\n```[ \t]*$/gm;
+
+/** The weights a round's ledger raised, or null when it has no readable ledger: not exactly one
+ *  ```json block, a block that does not parse, a `findings` that is not an array, or a weight
+ *  outside the four lowercase values. */
+function weightsRaised(round: Round): Set<string> | null {
+  const blocks = [...stripEnvelope(round.body).matchAll(LEDGER_BLOCK)];
+  if (blocks.length !== 1) return null;
+  let ledger: unknown;
+  try { ledger = JSON.parse(blocks[0][1]); } catch { return null; }
+  const findings = ledger && typeof ledger === "object" ? (ledger as { findings?: unknown }).findings : undefined;
+  if (!Array.isArray(findings)) return null;
+  const out = new Set<string>();
+  for (const f of findings) {
+    const w = f && typeof f === "object" ? (f as { weight?: unknown }).weight : undefined;
+    if (typeof w !== "string" || !WEIGHTS.includes(w)) return null;
+    out.add(w);
+  }
+  return out;
+}
+
+/** The `continue_on` weights a round raised, in the manifest's order. An unreadable ledger is read
+ *  as raising all of them: the conservative reading, which is today's behaviour. `readable` says
+ *  which. */
+function seriousOf(round: Round, continueOn: readonly AuditWeight[]): { raised: AuditWeight[]; readable: boolean } {
+  const w = weightsRaised(round);
+  return w ? { raised: continueOn.filter((c) => w.has(c)), readable: true }
+           : { raised: [...continueOn], readable: false };
+}
 
 /** The documents a source bears on — the `doc_link` rows of kind `supports` its revision
  *  filed, which `docRows` reads onto the row. */
@@ -64,7 +109,7 @@ function roundsOf(sources: readonly DocRow[], stage: string, document: string, s
   const out: Round[] = [];
   for (const d of sources) {
     if (stageOf(d) !== stage || !supportsOf(d).includes(document) || auditsVersionOf(d) <= since) continue;
-    out.push({ file: sourceName(d), version: auditsVersionOf(d), added_at: addedAtOf(d) });
+    out.push({ file: sourceName(d), version: auditsVersionOf(d), added_at: addedAtOf(d), body: d.body });
   }
   return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
 }
@@ -129,10 +174,13 @@ interface AuditMove { action: string; document: string; waiting_on: string; why:
  * is a draft: a plan phase is audited before its approval, so the round is owed before that gate
  * (`initiative_status`'s `auditedWhile`). `approvedAt` is the current version's own seal when it is
  * approved, null otherwise: what a stakeholder's acceptance of it unaudited must come after.
+ * `policy` is what the stage's manifest declares; absent, the round budget is `ROUND_BUDGET` and any
+ * revision owes a round.
  */
 export function auditMove(initiative: string, stage: string, document: string,
                           version: number, sources: readonly DocRow[],
-                          answers: RoundAssessments, since = 0, approvedAt: string | null = null): AuditMove | null {
+                          answers: RoundAssessments, since = 0, approvedAt: string | null = null,
+                          policy: AuditPolicy = NO_POLICY): AuditMove | null {
   const rounds = roundsOf(sources, stage, document, since);
   const call = `source_add(initiative: "${initiative}", title, content, supports: ["${document}"], stage: "${stage}")`;
   if (!rounds.length) {
@@ -166,15 +214,22 @@ export function auditMove(initiative: string, stage: string, document: string,
                   `their decision with source_add(supports: ["${document}"]) and the audit continues.` };
   }
   if (last.version < version) {
-    if (n < ROUND_BUDGET) {
+    const serious = policy.continueOn ? seriousOf(last, policy.continueOn) : null;
+    // The revision answered findings that owe no further reading: settled (`auditSettledNote` says so).
+    if (serious && !serious.raised.length) return null;
+    if (n < policy.budget) {
       // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.
       return { action: "add_source", document, waiting_on: "agent",
-               why: `${document} is v${version}; round ${n} read v${last.version}. ` +
-                    `Round ${n + 1} checks the new version — dispatch it, then ${call}.` };
+               why: serious
+                 ? `round ${n} ${serious.readable ? `raised ${serious.raised.join(" and ")}` : "carries no readable ledger"}; ` +
+                   `round ${n + 1} reads only what changed to answer it — dispatch it on ` +
+                   `${document} v${version}, then ${call}.`
+                 : `${document} is v${version}; round ${n} read v${last.version}. ` +
+                   `Round ${n + 1} checks the new version — dispatch it, then ${call}.` };
     }
     if (!decided) {
       return { action: "decide", document, waiting_on: "stakeholder",
-               why: `${ROUND_BUDGET} rounds of ${stage} are spent and ${document} v${version} — the ` +
+               why: `${policy.budget} rounds of ${stage} are spent and ${document} v${version} — the ` +
                     `version after round ${n} — has not been audited. The budget is a resource ` +
                     "limit, not a pass: the stakeholder decides whether v" + version + " proceeds " +
                     `unaudited or ${document} goes back to its stage. Record the decision with ` +
@@ -182,4 +237,19 @@ export function auditMove(initiative: string, stage: string, document: string,
     }
   }
   return null;
+}
+
+/**
+ * The sentence that says why an audit needs no further round, or null. Returned only when the
+ * stage declares `continue_on`, its latest round read a version before the current one, and that
+ * round's ledger raised none of those weights (the first branch of `auditMove`'s third rule).
+ * The stage name and the weights come from the manifest, never from this code.
+ */
+export function auditSettledNote(stage: string, document: string, version: number,
+                                 sources: readonly DocRow[], policy: AuditPolicy, since = 0): string | null {
+  if (!policy.continueOn) return null;
+  const rounds = roundsOf(sources, stage, document, since);
+  const last = rounds[rounds.length - 1];
+  if (!last || last.version >= version || seriousOf(last, policy.continueOn).raised.length) return null;
+  return `${stage} settled after round ${rounds.length}: it raised no ${policy.continueOn.join(" or ")} finding.`;
 }

@@ -387,16 +387,21 @@
       "note": "Nothing in this repository freezes, stores or re-hashes a plan-authored check. The whole procedure is carried out by the orchestrating agent, and the hash comparison is a shell command it chooses to run."
     },
     {
-      "rule_id": "execute.gate_runs_after_every_task",
+      "rule_id": "execute.wave_held_by_skeleton_and_current_tier",
       "skill": "sdlc-execute",
-      "locator": "**5. Run the gate.**",
-      "claim": "Run the gate after every task, not only after the last one. If the gate goes red, stop.",
+      "locator": "## What holds a wave — the skeleton and the current tier",
+      "claim": "The walking skeleton holds every wave and every phase end, whatever the tier. A gate line of the current tier or an earlier one holds the wave.",
       "enforcement_class": "convention",
       "verified_by": "the main agent running sdlc-execute",
       "schema": null,
       "handler": null,
       "behavioural_test": null,
-      "note": "scripts/gate/run.ts exists and runs the suite, but nothing sequences it against task dispatch. A worker that never runs the gate is not refused by anything."
+      "note": "scripts/gate/run.ts exists and runs the suite, but nothing sequences it against task dispatch, and nothing reads a gate line's tier. A worker that never runs the gate, or a main agent that lets a red line of the current tier pass, is not refused by anything.",
+      "also_claimed_in": [
+        "sdlc-flow/SKILL.md",
+        "sdlc-method/SKILL.md",
+        "sdlc-plan/SKILL.md"
+      ]
     },
     {
       "rule_id": "checkpoints.question_ids_are_registered",
@@ -486,10 +491,58 @@
       "claim": "How many rounds is the platform's answer, not a count you keep.",
       "enforcement_class": "flow_controller",
       "schema": null,
-      "handler": "services/zz-core/src/audit-rounds.ts::auditMove, called by services/zz-core/src/tools/initiative-status.ts::initiativeState for every stage that produces a source; a round is a source whose envelope names its stage (services/zz-core/src/tools/artifacts.ts source_add)",
-      "behavioural_test": "checks/audit-rounds.ts §1-§5 — material is not a round, a round on the current version settles it, a revision owes the next round, a spent budget and a reopened agreement wait on the stakeholder, and a recorded decision releases both",
+      "handler": "services/zz-core/src/audit-rounds.ts::auditMove and auditPolicyOf, called by services/zz-core/src/tools/initiative-status.ts::initiativeState for every stage that produces a source; a round is a source whose envelope names its stage (services/zz-core/src/tools/artifacts.ts source_add)",
+      "behavioural_test": "checks/audit-rounds.ts §1-§5 — material is not a round, a round on the current version settles it, a revision owes the next round, a spent budget and a reopened agreement wait on the stakeholder, and a recorded decision releases both; checks/audit-round-policy.ts — a declared budget and threshold route the plan audit, and the spec audit routes as before",
       "test_drives": "services/zz-core/dist/tools/initiative-status.js",
       "report": "node checks/audit-rounds.ts"
+    },
+    {
+      "rule_id": "audits.plan_audit_round_budget",
+      "skill": "sdlc-plan-audit",
+      "locator": "## Two rounds, the second reads only the fix",
+      "claim": "A second round is owed only when round 1 raised a critical or high finding, or filed no readable ledger; a round that raised only medium or low findings settles the phase's audit, and the platform says so. If round 2 still raises a critical or high finding, the stakeholder decides, not a third round.",
+      "enforcement_class": "flow_controller",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json stages[name=sdlc-plan-audit] `round_budget` and `continue_on`, validated by `SourceStage` in packages/contracts/src/index.ts",
+      "handler": "services/zz-core/src/audit-rounds.ts::auditMove with auditPolicyOf and auditSettledNote, called by services/zz-core/src/tools/initiative-status.ts::initiativeState",
+      "behavioural_test": "checks/audit-round-policy.ts cases 1-8 — a revision after only medium and low settles with its note, a revision after high or an unreadable ledger owes round 2 naming the weights, a readable empty ledger settles, two serious rounds go to the stakeholder, an unrevised round owes nothing; checks/stage-round-policy.ts",
+      "test_drives": "services/zz-core/dist/tools/initiative-status.js",
+      "report": "node checks/audit-round-policy.ts",
+      "note": "Both directions are driven: the second round is owed after a serious or unreadable round and withheld after a medium-only or empty one. The spec audit declares no policy and keeps its three-round routing (case 9).",
+      "also_claimed_in": [
+        "sdlc-flow/SKILL.md"
+      ]
+    },
+    {
+      "rule_id": "audits.ledger_in_source",
+      "skill": "sdlc-audit-criteria",
+      "locator": "## Output",
+      "claim": "Where the stage routes on its ledger (the plan audit does), a source with no such block, more than one, or one that does not parse is read as a round that raised a critical or high finding, so a round that cannot produce a ledger still files its prose.",
+      "enforcement_class": "flow_controller",
+      "schema": null,
+      "handler": "services/zz-core/src/audit-rounds.ts::auditMove, through its private weightsRaised and seriousOf, called by services/zz-core/src/tools/initiative-status.ts::initiativeState",
+      "behavioural_test": "checks/audit-round-policy.ts case 4 (six unreadable shapes each owe round 2) against cases 1 and 5 (a readable ledger settles)",
+      "test_drives": "services/zz-core/dist/tools/initiative-status.js",
+      "report": "node checks/audit-round-policy.ts",
+      "note": "Driven in both directions: an unreadable ledger is routed as serious, a readable one is not.",
+      "also_claimed_in": [
+        "sdlc-plan-audit/SKILL.md",
+        "sdlc-flow/SKILL.md"
+      ]
+    },
+    {
+      "rule_id": "audits.second_plan_round_reads_only_the_fix",
+      "skill": "sdlc-plan-audit",
+      "locator": "## Two rounds, the second reads only the fix",
+      "claim": "Round 2 reads **only what changed to answer round 1**: confirm each fix, and look at what the changes introduced. It does not re-audit the rest of the phase.",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent dispatching round 2, who names what changed, and the round itself, which reads only that",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "The routing names the fix in its `why`, but nothing limits what a round reads. A round 2 that re-audits the whole phase is not refused.",
+      "also_claimed_in": [
+        "sdlc-flow/SKILL.md"
+      ]
     },
     {
       "rule_id": "method.stage_loads_reported_by_hook",
@@ -502,6 +555,74 @@
       "behavioural_test": "scripts/gate/checks/marketplace.ts — the committed hook matches the Skill tool, names every shelf plugin, and prints nothing for a foreign skill or with no token",
       "test_drives": "marketplace/zz-core/scripts/zz-skill-report.mjs",
       "report": "npm run gate"
+    },
+    {
+      "rule_id": "spec.outline_cut_by_tier",
+      "skill": "sdlc-spec",
+      "locator": "## Cut the phases by tier",
+      "claim": "Order the phases Skeleton, See, Feel, Unseen, with one or more phases per tier. An empty tier is stated, never invented. A phase out of tier order carries its reason.",
+      "enforcement_class": "convention",
+      "verified_by": "sdlc-plan-audit's point 15, and the person agreeing the spec",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "The spec gate does not read the tier: document_approve still checks only that each AC is named by a phase, and the skill says so. An outline without tiers is not refused.",
+      "also_claimed_in": [
+        "sdlc-flow/SKILL.md",
+        "sdlc-method/SKILL.md",
+        "sdlc-plan/SKILL.md",
+        "sdlc-plan-audit/SKILL.md"
+      ]
+    },
+    {
+      "rule_id": "plan.phases_and_gate_lines_by_tier",
+      "skill": "sdlc-plan",
+      "locator": "### Phases — the build story, by tier",
+      "claim": "Write each phase as `## Phase N — <Tier>: <what works at the end>`. Feel and Unseen work are planned phases, never follow-ups. Label every full-suite gate line with its tier, as `- [<Tier>] `<command>` — <what it proves>`. Every `Queued for Phase N` line of an earlier `### As built` is a task of Phase N.",
+      "enforcement_class": "convention",
+      "verified_by": "sdlc-plan-audit's point 15",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "validatePlan reads the phase number only: the heading's tier, the gate lines' labels and the queued-finding tasks are not read by the platform.",
+      "also_claimed_in": [
+        "sdlc-plan-audit/SKILL.md",
+        "sdlc-execute/SKILL.md",
+        "sdlc-flow/SKILL.md"
+      ]
+    },
+    {
+      "rule_id": "execute.findings_routed_by_tier",
+      "skill": "sdlc-execute",
+      "locator": "## Routing a finding raised during the build",
+      "claim": "S1 or S2 is fixed now, whatever its tier. Otherwise, a finding of the current tier or an earlier one is fixed now. An S3 or S4 of a later tier is queued, not fixed now: list it in this phase's `### As built` as `Queued for Phase N: <finding>`.",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent running sdlc-execute, and the sdlc-plan-audit round of the phase the Queued line names",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Nothing rates a finding or reads a Queued line. The main agent rates and routes it, and the audit of the later phase checks that each queued line became a task.",
+      "also_claimed_in": [
+        "sdlc-method/SKILL.md",
+        "sdlc-plan/SKILL.md",
+        "sdlc-plan-audit/SKILL.md"
+      ]
+    },
+    {
+      "rule_id": "execute.owner_told_at_preview_and_validation",
+      "skill": "sdlc-execute",
+      "locator": "## Two moments the owner is told",
+      "claim": "After the first See phase is built, show the owner the result as a preview; it does not stop the build. When the last See phase is built, tell the owner that everything works and that validation can start.",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent running sdlc-execute",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Nothing sends or checks either message; the main agent says it in the report that closes the phase.",
+      "also_claimed_in": [
+        "sdlc-method/SKILL.md",
+        "sdlc-spec/SKILL.md"
+      ]
     }
   ]
 }

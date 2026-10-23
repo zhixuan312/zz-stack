@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.28
+version: 1.29
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -338,7 +338,7 @@ not, because nobody knows what the silent ones may write.
 ### Close the plan with a full-suite gate
 
 End the plan with a section headed exactly `## Full-suite gate`, listing the commands or checks that
-must pass at EVERY task boundary — the project's own build, typecheck, test and lint entry points as
+must pass after every wave from their tier on (below) — the project's own build, typecheck, test and lint entry points as
 they actually exist in the target (do not invent commands; read the manifest or the existing docs and
 name the real ones).
 
@@ -351,7 +351,7 @@ plan carries is required by something weaker, and the two are worth keeping apar
   under each are point 5 of that audit's contract, and a break comes back as a finding.
 - **`Goal`, `Architecture`, `Tech Stack`, `Ground truth at HEAD` and `File Structure` are this
   skill's convention and nothing checks them.** Not the platform, which does not declare them,
-  and not the audit, whose fourteen points do not mention them. Write them because a reader needs
+  and not the audit, whose fifteen points do not mention them. Write them because a reader needs
   them, and never tell anyone they are enforced — a plan asserting an enforcement nobody wrote is
   the same defect the audit exists to find, one document earlier.
 
@@ -376,13 +376,16 @@ exactly this shape:
 - A later tier's lines (`[Feel]`, `[Unseen]`) hold waves from that tier's first phase on; before
   then `sdlc-execute` runs them where cheap and records the result without holding the wave.
 
+"From that tier's first phase on" follows the outline, not the tier list: when a phase is out of
+tier order, a tier's lines hold from its first phase in the outline.
+
 A project-wide command that belongs to no later tier (the repository's own build or test
 entry point) is labelled by the earliest tier from which it must hold.
 
 Per-task checks prove the task did its own job. They cannot prove the task left the rest of the
 project working, and that is the failure a plan executed task-by-task actually produces: each check
 green, the suite red. State the gate once, at the end, so an executor knows what must hold after
-every task rather than only after the last one.
+every wave rather than only after the last one.
 
 **Say where a slower check runs, when the deliverable has one.** The full-suite gate is what runs
 after every wave. A check the deliverable needs that is too slow to run after every wave is named

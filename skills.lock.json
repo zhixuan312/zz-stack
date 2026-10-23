@@ -4,16 +4,16 @@
     "sha": "d73e3bb335bf"
   },
   "sdlc-execute": {
-    "version": "1.19",
-    "sha": "7fe6f674e84b"
+    "version": "1.20",
+    "sha": "cab2689d981d"
   },
   "sdlc-explore": {
     "version": "1.13",
     "sha": "3ba3c323ae8a"
   },
   "sdlc-flow": {
-    "version": "2.19",
-    "sha": "038863119e1e"
+    "version": "2.20",
+    "sha": "cd93bfe3f800"
   },
   "sdlc-investigate": {
     "version": "1.5",
@@ -28,8 +28,8 @@
     "sha": "92b2af15f6f0"
   },
   "sdlc-plan": {
-    "version": "1.28",
-    "sha": "839219257f9e"
+    "version": "1.29",
+    "sha": "bd2479b2d08b"
   },
   "sdlc-recall": {
     "version": "1.12",

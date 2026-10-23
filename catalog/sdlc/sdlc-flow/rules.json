@@ -34,7 +34,7 @@
     {
       "rule_id": "documents.caller_may_not_write_envelope_fields",
       "skill": "sdlc-spec",
-      "locator": "## What this skill is for",
+      "locator": "the platform stamps `status`, `approved_by` and `approved_at` itself",
       "claim": "the platform stamps `status`, `approved_by` and `approved_at` itself, refuses those three written by hand",
       "enforcement_class": "platform",
       "schema": "services/zz-core/src/document-rules.ts::RESERVED_ENVELOPE, derived from packages/contracts/src/index.ts::Envelope.shape",
@@ -91,7 +91,7 @@
     {
       "rule_id": "spec.eight_headings_required_at_approval",
       "skill": "sdlc-spec",
-      "locator": "### Phase B — the skeleton",
+      "locator": "**All eight headings, always — the platform requires them.**",
       "claim": "All eight headings, always — the platform requires them. `flow.json` declares the eight for `spec.md`, and the platform refuses the APPROVAL of a spec missing any of them.",
       "enforcement_class": "platform",
       "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=spec.md].sections — the eight headings this flow declares",
@@ -179,7 +179,7 @@
     {
       "rule_id": "method.freeform_initiative_has_no_next_move",
       "skill": "sdlc-method",
-      "locator": "## Where things live — THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED",
+      "locator": "`initiative_status` says so by answering `next_move: null` instead of inventing a stage.",
       "claim": "Opening WITHOUT one is a legitimate choice rather than a mistake: nothing is enforced on that initiative, and `initiative_status` says so by answering `next_move: null` instead of inventing a stage.",
       "enforcement_class": "flow_controller",
       "schema": "catalog/sdlc/sdlc-flow/flow.json stages[] and documents[] — the chain `initiativeState` reads",
@@ -194,7 +194,7 @@
     {
       "rule_id": "spec.gate_holds_plan_until_spec_is_approved",
       "skill": "sdlc-spec",
-      "locator": "## Phase D — present, and hold",
+      "locator": "`spec.md` carries `gate: true`; the platform refuses `plan.md`",
       "claim": "`spec.md` carries `gate: true`; the platform refuses `plan.md` until this document's approval is recorded, so an agreement that stays in the conversation stops the flow at its next step.",
       "enforcement_class": "platform",
       "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=plan.md].requires = \"spec.md\"",
@@ -253,7 +253,7 @@
     {
       "rule_id": "method.unknown_flow_refused_at_open",
       "skill": "sdlc-method",
-      "locator": "## Where things live — `flow` is not decoration",
+      "locator": "is refused by name at the open",
       "claim": "a flow THE CATALOG does not have is refused by name at the open.",
       "enforcement_class": "analytical_review",
       "verified_by": "the reviewer reading the `governingFlows` lookup in initiative_open — there is no executing test of this branch",
@@ -266,7 +266,7 @@
     {
       "rule_id": "flow.knowledge_add_requires_evidence",
       "skill": "sdlc-flow",
-      "locator": "## What this flow does NOT own",
+      "locator": "**A node with no evidence is refused, and that is correct.**",
       "claim": "A node with no evidence is refused, and that is correct. `knowledge_add` will not mint an entry that cannot point at the initiative it came from",
       "enforcement_class": "analytical_review",
       "verified_by": "the reviewer reading the evidence loop in knowledge_add — there is no executing test",
@@ -279,7 +279,7 @@
     {
       "rule_id": "recall.knowledge_search_requires_a_team",
       "skill": "sdlc-recall",
-      "locator": "## Degraded behaviour",
+      "locator": "`knowledge_search` is team-scoped and returns an error if the",
       "claim": "`knowledge_search` is team-scoped and returns an error if the caller has no team",
       "enforcement_class": "analytical_review",
       "verified_by": "the reviewer reading the `teamFor` guard in knowledge_search — there is no executing test",
@@ -291,7 +291,7 @@
     {
       "rule_id": "audit_criteria.undeclared_document_name_refused",
       "skill": "sdlc-audit-criteria",
-      "locator": "## Step 3 — consolidate and emit",
+      "locator": "writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared",
       "claim": "writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared.",
       "enforcement_class": "analytical_review",
       "verified_by": "the reviewer reading the membership test in document_approve against flow.json's four declared documents",
@@ -320,7 +320,7 @@
     {
       "rule_id": "handover.proposed_team_nodes",
       "skill": "zz-handover",
-      "locator": "skills/zz-handover/SKILL.md — 'Declare how many team nodes you proposed, in the write's own `fields`'",
+      "locator": "Declare how many team nodes you proposed, in the write's own `fields`",
       "claim": "That number is not decoration and it is not a duplicate of the section above it. `## Proposed for the team` is prose, and the platform cannot count prose — so this field is the one machine-readable form of the promise, which is what makes it checkable by anybody later.",
       "enforcement_class": "convention",
       "verified_by": "a later reader comparing the declared count against `knowledge_search(scope: \"team\")` for that initiative — the skill says so itself at SKILL.md",
@@ -332,7 +332,7 @@
     {
       "rule_id": "audits.read_only_by_discipline",
       "skill": "sdlc-audit-criteria",
-      "locator": "## Step 2 — the eleven passes",
+      "locator": "**Audit is read-only by discipline, not by enforcement.**",
       "claim": "Audit is read-only by discipline, not by enforcement. Nothing here denies you a write tool",
       "enforcement_class": "convention",
       "verified_by": "the dispatched auditing or reviewing subagent itself; the main agent reading what the round returned",
@@ -353,7 +353,7 @@
     {
       "rule_id": "plan.acceptance_method_is_unenforced",
       "skill": "sdlc-plan",
-      "locator": "## Acceptance criteria and their methods",
+      "locator": "This is a planning obligation, and nothing enforces it",
       "claim": "This is a planning obligation, and nothing enforces it: the platform records what you declare and never refuses a criterion for its choice of method",
       "enforcement_class": "convention",
       "verified_by": "the plan's auditor in sdlc-plan-audit, and the person at the plan gate",
@@ -365,26 +365,42 @@
     {
       "rule_id": "flow.auditing_an_unagreed_spec_is_unenforced",
       "skill": "sdlc-flow",
-      "locator": "### 3 · Audit the spec",
-      "claim": "Nothing in the platform refuses it — `source_add` is ungated and immutable and may be called at any time, from any harness, including while the work is in flight",
+      "locator": "**The person agrees before anything proceeds.**",
+      "claim": "The person agrees before anything proceeds. Auditing a document nobody agreed to audits your own guess.",
       "enforcement_class": "convention",
       "verified_by": "the main agent running sdlc-flow, before dispatching an audit round",
       "schema": null,
       "handler": null,
       "behavioural_test": null,
-      "note": "Correctly labelled."
+      "note": "Nothing in the platform refuses a spec-audit round on an unapproved spec: `source_add` is ungated and may be called at any time."
     },
     {
       "rule_id": "execute.checks_are_frozen_before_dispatch",
       "skill": "sdlc-execute",
-      "locator": "**3. Freeze every check, then activate them one at a time.**",
-      "claim": "freeze its exact bytes now … compare the active file's bytes to its frozen copy … a hash mismatch is the task failing regardless of what else it reports.",
+      "locator": "**3. Freeze every check, then activate them one wave at a time.**",
+      "claim": "freeze its exact bytes now … compare each active file's bytes to its frozen copy … treat any byte difference from your frozen copy as the task failing, whatever else it reports.",
       "enforcement_class": "convention",
       "verified_by": "the main agent running sdlc-execute — it holds the frozen copy and re-hashes each check when a worker returns",
       "schema": null,
       "handler": null,
       "behavioural_test": null,
       "note": "Nothing in this repository freezes, stores or re-hashes a plan-authored check. The whole procedure is carried out by the orchestrating agent, and the hash comparison is a shell command it chooses to run."
+    },
+    {
+      "rule_id": "execute.gate_runs_after_every_wave",
+      "skill": "sdlc-execute",
+      "locator": "**Then run the full-suite gate, once, on the integrated tree**",
+      "claim": "Then run the full-suite gate, once, on the integrated tree … Run the gate after every wave, not only after the last one.",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent running sdlc-execute",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "scripts/gate/run.ts exists and runs the suite, but nothing sequences it against a wave. A main agent that starts the next wave without running the gate is not refused by anything.",
+      "also_claimed_in": [
+        "sdlc-method/SKILL.md",
+        "sdlc-plan/SKILL.md"
+      ]
     },
     {
       "rule_id": "execute.wave_held_by_skeleton_and_current_tier",
@@ -406,8 +422,8 @@
     {
       "rule_id": "checkpoints.question_ids_are_registered",
       "skill": "sdlc-flow",
-      "locator": "## Skill contract — **Work roles:** and **Checkpoints:** (present in sdlc-flow, sdlc-spec-audit, sdlc-plan-audit and sdlc-review — the stages whose answers the platform routes on)",
-      "claim": "The platform asks bounded questions itself and routes on the answers; you ask none",
+      "locator": "The platform asks one bounded question",
+      "claim": "The platform asks one bounded question itself and routes on the answer; you ask none, and it never picks the stage.",
       "enforcement_class": "platform",
       "schema": "packages/contracts/src/assessment.ts::QUESTION_FAMILIES",
       "handler": "services/zz-core/src/semantic.ts::assessFamily — refuses a family QUESTION_FAMILIES does not register, and records every answer in zz.assessment; reached by the assess tool (services/zz-core/src/tools/assess.ts) and, for changes_commitment, by source_add when an audit round lands (services/zz-core/src/audit-rounds.ts::assessRound)",
@@ -430,7 +446,7 @@
     {
       "rule_id": "explore.recall_leg_is_additive",
       "skill": "sdlc-explore",
-      "locator": "## Degraded behaviour",
+      "locator": "This leg is additive, never blocking",
       "claim": "`sdlc-recall` failed or found nothing | `(no prior learning)` and continue. This leg is additive, never blocking",
       "enforcement_class": "convention",
       "verified_by": "the main agent running sdlc-explore, when it collects the fan-out's returns",
@@ -463,8 +479,8 @@
     {
       "rule_id": "method.document_write_takes_no_flow",
       "skill": "sdlc-method",
-      "locator": "## Where things live — THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED",
-      "claim": "THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED, and `document_write` does not take one.",
+      "locator": "**The flow is declared when the initiative is opened, and `document_write` does not take one.**",
+      "claim": "The flow is declared when the initiative is opened, and `document_write` does not take one.",
       "enforcement_class": "platform",
       "schema": "services/zz-core/src/tools/artifacts.ts document_write inputSchema — it declares `content`, `path`, `fields`, and no `flow`",
       "handler": "services/zz-core/src/tools/artifacts.ts::registerArtifactTools, document_write",
@@ -475,7 +491,7 @@
     {
       "rule_id": "recall.lexical_broad_fallback",
       "skill": "sdlc-recall",
-      "locator": "## Reading a result",
+      "locator": "When that returns nothing, the platform re-asks the same",
       "claim": "An ordinary lexical match joins your words with AND. When that returns nothing, the platform re-asks the same question with OR and hands back what matched SOME of them",
       "enforcement_class": "platform",
       "schema": "services/zz-core/src/tools/knowledge-search.ts — `fuse(lexical, broadened ? \"lexical-broad\" : \"lexical\")`",
@@ -562,11 +578,11 @@
       "locator": "## Cut the phases by tier",
       "claim": "Order the phases Skeleton, See, Feel, Unseen, with one or more phases per tier. An empty tier is stated, never invented. A phase out of tier order carries its reason.",
       "enforcement_class": "convention",
-      "verified_by": "sdlc-plan-audit's point 15, and the person agreeing the spec",
+      "verified_by": "the person agreeing the spec",
       "schema": null,
       "handler": null,
       "behavioural_test": null,
-      "note": "The spec gate does not read the tier: document_approve still checks only that each AC is named by a phase, and the skill says so. An outline without tiers is not refused.",
+      "note": "The spec gate does not read the tier: document_approve still checks only that each AC is named by a phase, and the skill says so. No audit reads the outline's tiers either: sdlc-spec-audit has no tier point, and sdlc-plan-audit's point 15 reads the plan's phases, which copy the outline, only once a plan exists. An outline without tiers is not refused.",
       "also_claimed_in": [
         "sdlc-flow/SKILL.md",
         "sdlc-method/SKILL.md",

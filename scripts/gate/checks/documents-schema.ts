@@ -424,6 +424,7 @@ check("the published schema is exactly as strict as the validator", () => {
         }
         return walk(d.type, path + "[]", emitted && emitted.items);
       }
+      if (d.typeName === "ZodRecord") return walk(d.valueType, path + "{}", emitted && emitted.additionalProperties);
       if (d.typeName === "ZodObject") {
         for (const [k, v] of Object.entries(d.shape())) {
           walk(v, path + "." + k, emitted && emitted.properties && emitted.properties[k]);
@@ -432,8 +433,9 @@ check("the published schema is exactly as strict as the validator", () => {
       }
       if (d.typeName === "ZodNumber") {
         for (const c of d.checks || []) {
-          const want = c.kind === "int" ? ["type", "integer"] : c.kind === "min" && c.inclusive ? ["minimum", c.value]
-            : c.kind === "max" && c.inclusive ? ["maximum", c.value] : null;
+          const want = c.kind === "int" ? ["type", "integer"]
+            : c.kind === "min" ? [c.inclusive ? "minimum" : "exclusiveMinimum", c.value]
+            : c.kind === "max" ? [c.inclusive ? "maximum" : "exclusiveMaximum", c.value] : null;
           if (!want) bad.push(path + " carries a number check '" + c.kind + "' the emitter has no rule for");
           else if (!emitted || emitted[want[0]] !== want[1]) {
             bad.push(path + " is validated with " + c.kind + "(" + (c.value ?? "") + ") and publishes as " +

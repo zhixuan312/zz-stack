@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.19
+version: 1.20
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no approved plan, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -198,7 +198,10 @@ Then commit the wave, if the person has agreed to commits along the way.
 A phase's heading names its tier (`## Phase N — <Tier>: <what works at the end>`), and each
 `## Full-suite gate` line is labelled `- [<Tier>] \`<command>\` — <what it proves>`. The tier of
 the phase you are building is the current tier. Tiers run in this order: Skeleton, See, Feel,
-Unseen.
+Unseen. **An earlier tier is one the outline reached earlier.** When the outline puts a phase out of
+tier order (an Unseen phase before the first See phase, say), a tier counts from its first phase in
+the outline, not from its place in that list: a `[See]` line does not hold an Unseen phase built
+before any See phase, and a finding about See work is not of an earlier tier there.
 
 - **The walking skeleton holds every wave and every phase end, whatever the tier.** If it goes red,
   stop.

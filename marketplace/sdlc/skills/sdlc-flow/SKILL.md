@@ -117,7 +117,7 @@ settled:
 | Round 1 | owed when there is no round yet | owed for the phase being planned |
 | A later round is owed when | the document reached a new version after the last round read it | the last round raised a critical or high finding, or filed no readable ledger |
 | A later round reads | the new version | only the fix that answered the last round |
-| Settled when | the last round read the current version | the last round read the current version, or the plan was revised after a round that raised only medium or low findings, or none |
+| Settled when | the last round read the current version | the last round read the current version, or the plan was revised after a round that raised no critical or high finding |
 | The stakeholder decides when | the budget is spent and the latest version was never audited, or a round reopens something the person agreed (`changes_commitment`) | the plan is revised again after a second round that raised a critical or high finding, or a round reopens something the person agreed |
 
 The plan audit's ledger is the round's JSON block in its source; `sdlc-plan-audit` has the rules.

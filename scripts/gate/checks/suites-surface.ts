@@ -224,7 +224,7 @@ check("document_approve refuses a document whose current content was never prese
 check("a document too long for one result reads and presents in parts that round-trip, and counts as presented only when the parts cover it", runsCheck("document-parts.ts"));
 check("a document body is stored whole, or refused past the input limit — never stored shortened", runsCheck("document-body-whole.ts"));
 check("an exact edit batch applies to one original body, all or nothing, and names the edit it could not apply", runsCheck("document-edits.ts"));
-check("zz-core binds the port --port names in plain decimal, 8000 with none, and stops on anything else", runsCheck("core-port.ts"));
+check("zz-core binds the port and address --port and --host name, 8000 on every interface with neither, stops on anything else, and binds loopback when a script starts it locally", runsCheck("core-port.ts"));
 check("a document's body is what its author wrote, through any number of reads and writes", runsCheck("document-body-roundtrip.ts"));
 check("the walking skeleton creates, edits, presents and approves a document, and every edit mode and refusal keeps the body byte for byte, through a real zz-core on a throwaway database", runsCheck("document-edit.ts"));
 check("concurrent changes never overwrite each other, keyed requests replay once and only for a member, and a failure at any statement of a change commits nothing, through a real zz-core", runsCheck("document-edit-races.ts"));

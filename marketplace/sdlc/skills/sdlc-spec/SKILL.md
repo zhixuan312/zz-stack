@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.22
+version: 1.23
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -595,7 +595,8 @@ either way. What the person decides about a finding, or a phase's as-built repor
 `source_content` — their words, verbatim, with a `source_title` — filed and linked in the same
 call. Those words are the change's cause and never count as a decision the audit's routing reads:
 when the person decides at a `decide` — a spent budget, a reopened agreement — file their words
-first with `source_add(supports: ["spec.md"])` and no stage, then name that source in `sources`.
+first with `source_add(initiative: "<initiative>", title: "<what they decided>", content: "<their
+words>", supports: ["spec.md"])` and no stage, then name that source in `sources`.
 Every edit for that one input after the first names the source the first one filed, so
 the revision stays one version. When that input is already a file — their notes, minutes, an
 as-built report on disk — it is not retyped: stage it with `upload_start(filename)` as

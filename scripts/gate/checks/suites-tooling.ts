@@ -78,5 +78,5 @@ check("the mutation suite runs on its own, and no release can pull it in",
 check("a file that resolves renamed tools never matches a pre-rename name",
       runsCheck("pre-rename-literals.ts"));
 
-check("a failed check's reported detail ends with its FAILED or FAIL: line, whichever stream printed it, so zz-core's boot log and a column of passing cases cannot cut the reason",
+check("a failed check's reported detail ends with its reason — a FAILED or FAIL: line, a thrown error's message, a failure summary — whichever stream printed it, and a reason longer than the window keeps its head",
       runsCheck("check-failure-detail.ts"));

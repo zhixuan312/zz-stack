@@ -43,17 +43,31 @@ export const runsCheck = (file: string) => (): string | null => {
   }
 };
 
-/** What a failed check printed, as the gate reports it: one line, its end kept, and the line that
- *  says why it failed at that end.
+/** What a failed check printed, as the gate reports it: one line, with the reason at its end.
  *
- *  DELIBERATE: the reason line is moved last, because no order of the two streams keeps it. A check
- *  that starts a real zz-core prints its cases on stdout, and its `FAILED at` line on stderr with
- *  zz-core's boot log after it (scripts/schema/throwaway-core.ts). Stdout last, gate 4838 reported
- *  only passing cases; stderr last, gate 4590 reported only zz-core's plugin_version warnings. */
+ *  DELIBERATE: lines are ordered by what they are, because no order of the two streams keeps the
+ *  reason. A check that starts a real zz-core prints its cases on stdout, and its `FAILED at` line
+ *  on stderr with zz-core's own tail after it (scripts/schema/throwaway-core.ts): stdout last, gate
+ *  4838 reported only passing cases; stderr last, gate 4590 reported only zz-core's warnings. So:
+ *  the cases, then zz-core's tail and stack frames, then whatever else stderr said (a thrown
+ *  error's message, an `N failure(s)` summary), then every FAILED or FAIL: line.
+ *
+ *  The 400-character window is a tail, except when the reason alone is longer than it: then it is
+ *  the reason's head, which names the check and the case. */
 export function failureDetail(stderr: string, stdout: string): string {
-  const lines = `${stderr}\n${stdout}`.split("\n").filter((l) => l.trim());
-  const why = lines.filter((l) => /\bFAILED\b|^\s*FAIL:/.test(l));
-  return tailOf([...lines.filter((l) => !why.includes(l)), ...why].join("; "));
+  const err = stderr.split("\n");
+  const tailAt = err.findIndex((l) => l.startsWith("--- zz-core output"));
+  const rank = (l: string, i: number | null): number =>
+    /\bFAILED\b|^\s*FAIL:/.test(l) ? 3
+      : i === null ? 0
+      : (tailAt >= 0 && i >= tailAt) || /^\s+at /.test(l) ? 1
+      : 2;
+  const lines = [...stdout.split("\n").map((l) => ({ l, r: rank(l, null) })),
+                 ...err.map((l, i) => ({ l, r: rank(l, i) }))]
+    .filter((x) => x.l.trim())
+    .sort((x, y) => x.r - y.r);
+  const reason = lines.filter((x) => x.r >= 2).map((x) => x.l).join("; ");
+  return reason.length > 400 ? `${reason.slice(0, 400)}…` : tailOf(lines.map((x) => x.l).join("; "));
 }
 
 /** The end of a failure's output, not the beginning, and why this is not a style choice.

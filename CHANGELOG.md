@@ -56,6 +56,11 @@ release waits for zz-core before it verifies.
   answers a door whose upstream is down with HTTP 200 and a JSON-RPC error, so these probes printed
   a refusing `/core/mcp` green. They now fail on an error frame and name it, and a status other
   than 2xx — a 401 from a bad token, a 502 page — is named with its code.
+- **A failed gate check's reason is in the gate's report.** The gate shows 400 characters of a
+  failing check's output, and a check that starts a real zz-core prints its cases on stdout and
+  its reason on stderr, so one of the two was always cut: a release gate in this cycle reported
+  only passing cases. The reason now ends the report, and a reason longer than the window keeps
+  its head, which names the check and the case.
 
 ### Upgrade notes
 

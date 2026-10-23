@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.27
+version: 1.28
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -105,7 +105,10 @@ owner sees a preview after the first See phase and is told when the last one is 
 
 So each phase is planned from what the last one actually produced, and the finished plan is
 what happened. Per-phase approvals are quick: the audit round and the structural report are the
-evidence, recorded under the person's delegation. **A phase that disproves a core statement
+evidence, recorded under the person's delegation. A phase's plan audit is at most two rounds: a
+second is owed only when the first raised a critical or high finding or filed no readable ledger,
+and reads only what changed to answer it; after a second such round on a revised plan, the person
+decides. `sdlc-plan-audit` has the rule in full. **A phase that disproves a core statement
 returns to the spec** — the destination changed, so the person agrees it again before another
 phase is planned; an audit round that reopens an agreement already routes to them.
 

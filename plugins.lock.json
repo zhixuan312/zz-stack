@@ -1,14 +1,14 @@
 {
   "sdlc": {
     "version": "0.97.1",
-    "digest": "ef63871f",
+    "digest": "7a66d30a",
     "skills": {
       "sdlc-audit-criteria": "d73e3bb335bf",
       "sdlc-execute": "cab2689d981d",
       "sdlc-explore": "3ba3c323ae8a",
       "sdlc-flow": "cd93bfe3f800",
       "sdlc-investigate": "15e674f6b8a1",
-      "sdlc-method": "85bc9ebc880e",
+      "sdlc-method": "52d6e66cc2a5",
       "sdlc-plan": "bd2479b2d08b",
       "sdlc-plan-audit": "92b2af15f6f0",
       "sdlc-recall": "29a2e6cd164d",

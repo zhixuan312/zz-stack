@@ -525,7 +525,8 @@
       "report": "node checks/audit-round-policy.ts",
       "note": "Both directions are driven: the second round is owed after a serious or unreadable round and withheld after a medium-only or empty one. The spec audit declares no policy and keeps its three-round routing (case 9).",
       "also_claimed_in": [
-        "sdlc-flow/SKILL.md"
+        "sdlc-flow/SKILL.md",
+        "sdlc-method/SKILL.md"
       ]
     },
     {
@@ -557,7 +558,8 @@
       "behavioural_test": null,
       "note": "The routing names the fix in its `why`, but nothing limits what a round reads. A round 2 that re-audits the whole phase is not refused.",
       "also_claimed_in": [
-        "sdlc-flow/SKILL.md"
+        "sdlc-flow/SKILL.md",
+        "sdlc-method/SKILL.md"
       ]
     },
     {

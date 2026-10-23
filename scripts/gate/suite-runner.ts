@@ -39,14 +39,22 @@ export const runsCheck = (file: string) => (): string | null => {
                  { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     return null;
   } catch (err) {
-    // DELIBERATE: stderr first, stdout last. A check that starts a real zz-core collects that
-    // service's boot log on stderr, and appended after stdout it filled the whole tail: gate 4590
-    // reported only zz-core's plugin_version warnings, and the check's own FAILED line was cut.
-    const out = `${execFields(err).stderr}${execFields(err).stdout}`.trim();
-    return tailOf(out.split("\n").filter((l) => l.trim()).join("; "))
-      || `checks/${file} exited non-zero`;
+    return failureDetail(execFields(err).stderr, execFields(err).stdout) || `checks/${file} exited non-zero`;
   }
 };
+
+/** What a failed check printed, as the gate reports it: one line, its end kept, and the line that
+ *  says why it failed at that end.
+ *
+ *  DELIBERATE: the reason line is moved last, because no order of the two streams keeps it. A check
+ *  that starts a real zz-core prints its cases on stdout, and its `FAILED at` line on stderr with
+ *  zz-core's boot log after it (scripts/schema/throwaway-core.ts). Stdout last, gate 4838 reported
+ *  only passing cases; stderr last, gate 4590 reported only zz-core's plugin_version warnings. */
+export function failureDetail(stderr: string, stdout: string): string {
+  const lines = `${stderr}\n${stdout}`.split("\n").filter((l) => l.trim());
+  const why = lines.filter((l) => /\bFAILED\b|^\s*FAIL:/.test(l));
+  return tailOf([...lines.filter((l) => !why.includes(l)), ...why].join("; "));
+}
 
 /** The end of a failure's output, not the beginning, and why this is not a style choice.
  *

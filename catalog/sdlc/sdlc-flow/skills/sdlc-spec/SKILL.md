@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.20
+version: 1.21
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -297,7 +297,7 @@ A readable draft whose claims are false is not a See result, so the evidence beh
 - `<Tier>` is one of `Skeleton`, `See`, `Feel`, `Unseen`.
 - **An empty tier is stated, never invented.** Use the third line, with the reason, for example `No Feel phase: the deliverable is a routing rule, and nothing in it has a speed or a loading state.`
 - **A phase out of tier order carries its reason** in the second shape. The reason is one of: a dependency the earlier tier cannot be built without, an external gate (a stakeholder review, an event date), or a basic.
-- **The spec gate does not read the tier.** The labels are the method's: `sdlc-plan-audit` checks them, and `document_approve` still checks only that each AC is named by a phase. An outline without tiers is not refused, and is not what this skill teaches.
+- **The spec gate does not read the tier.** The labels are the method's: the person agreeing the spec reads them, `sdlc-plan-audit` checks the plan's phases once they are cut from them, and `document_approve` still checks only that each AC is named by a phase. An outline without tiers is not refused, and is not what this skill teaches.
 
 ## Constraints
 
@@ -325,8 +325,9 @@ A readable draft whose claims are false is not a See result, so the evidence beh
 
 ### Phase B — Scaffold the spec file (ONE write)
 
-**All eight headings, always — the platform requires them.** `flow.json` declares the eight for
-`spec.md`, and the platform refuses the APPROVAL of a spec missing any of them. So "emit only
+**All eight headings, and the two sections after them, always — the platform requires them.**
+`flow.json` declares all ten for `spec.md`, and the platform refuses the APPROVAL of a spec missing
+any of them. So "emit only
 the ones we agreed" is not available: the write would succeed while the spec was a draft and
 the gate would refuse it, which is the worst place to discover a rule.
 

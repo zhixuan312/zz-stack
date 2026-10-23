@@ -89,12 +89,12 @@
       ]
     },
     {
-      "rule_id": "spec.eight_headings_required_at_approval",
+      "rule_id": "spec.ten_sections_required_at_approval",
       "skill": "sdlc-spec",
-      "locator": "**All eight headings, always — the platform requires them.**",
-      "claim": "All eight headings, always — the platform requires them. `flow.json` declares the eight for `spec.md`, and the platform refuses the APPROVAL of a spec missing any of them.",
+      "locator": "**All eight headings, and the two sections after them, always — the platform requires them.**",
+      "claim": "All eight headings, and the two sections after them, always — the platform requires them. `flow.json` declares all ten for `spec.md`, and the platform refuses the APPROVAL of a spec missing any of them.",
       "enforcement_class": "platform",
-      "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=spec.md].sections — the eight headings this flow declares",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=spec.md].sections — the eight components and the two sections after them that this flow declares",
       "handler": "services/zz-core/src/write-guards.ts::sectionCheck, reached through services/zz-core/src/guards.ts::documentGuards, which dispatches to it at services/zz-core/src/guards.ts::sectionCheck, from services/zz-core/src/tools/initiative-acts.ts (document_approve)",
       "behavioural_test": "checks/write-guards.ts — a DRAFT missing a declared section is allowed, an APPROVED document missing one is refused, and a complete approved document is allowed",
       "test_drives": "services/zz-core/dist/write-guards.js",

@@ -18,7 +18,8 @@ export const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
  *  content, each is ignored and reported; none is ever taken. */
 const PLATFORM_KEYS = ["flow", "type", "status", "version", "updated_at", "approved_by", "approved_at", "outcome",
   "closed_by", "accepted_by", "no_signoff_reason", "content_revision", "revision_note", "sources", "date", "added_at",
-  "contributed_by", "supports", "stage", "audits_version", "evidence", "supersededBy", "verified_against", "eval_run_id"];
+  "contributed_by", "supports", "stage", "audits_version", "cause_of", "evidence", "supersededBy", "verified_against",
+  "eval_run_id"];
 
 /** The body a read returns, every byte of it. */
 async function bodyOf(c: Core, step: string, path: string): Promise<string> {

@@ -11,7 +11,8 @@
  * (`zz.cause_link_epoch`). What it establishes, one line per case:
  *
  *   - a source filed before its target existed is linked to v1 by the create, and the sources a
- *     create names and the words it captures are linked to v1 as the agent's;
+ *     create names and the words it captures are linked to v1 as the agent's; the captured words,
+ *     on a create and on an edit, carry `cause_of` and a named source does not (bug 0527280f);
  *   - a malformed `sources` entry is `INVALID_MODE` on a create as on an edit;
  *   - an empty source is refused by name, by `source_add` and as `source_content`, and files nothing;
  *   - a source filed after the epoch is linked by the next body change, as the platform's, and
@@ -77,7 +78,7 @@ async function run(c: Core): Promise<void> {
 
   // ---- named and captured causes on a create
   {
-    const step = "a create links the sources it names and the words it captures to v1, as the agent's";
+    const step = "a create links the sources it names and the words it captures to v1, as the agent's, and captured words carry cause_of";
     const named = await c.source(step, { initiative: I, title: "Named on create", content: "the brief" });
     const g = `${I}/g.md`;
     const created = await c.ok(step, "document_write",
@@ -91,6 +92,18 @@ async function run(c: Core): Promise<void> {
     const cited = await c.cites(g);
     if (!cited.includes(`${named} agent v1`) || !cited.includes(captured.replace(" (agent)", " agent v1"))) {
       c.fail(step, `v1 cites ${JSON.stringify(cited)}`);
+    }
+    // The routers read `cause_of` off the stored revision, so it is read back from there.
+    const causeOf = async (rel: string): Promise<string | null> => (await c.sql.query<{ v: string | null }>(
+      "select r.fields->>'cause_of' as v from zz.doc d join zz.initiative i on i.id = d.initiative_id " +
+      "join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision where i.slug = $1 and d.path = $2",
+      [I, rel.slice(I.length + 1)])).rows[0]?.v ?? null;
+    const edited = await c.ok(step, "document_edit",
+      { path: g, edits: [{ find: "gee", replace: "gee whiz" }], source_content: "what the edit said" });
+    const onEdit = (/^causes \(\d+\): (.*)$/m.exec(edited)?.[1] ?? "").replace(/ \(agent\)$/, "");
+    const marks = [await causeOf(captured.replace(" (agent)", "")), await causeOf(onEdit), await causeOf(named)];
+    if (marks[0] !== "g.md" || marks[1] !== "g.md" || marks[2] !== null) {
+      c.fail(step, `cause_of on the create's words, the edit's words and the named source: ${JSON.stringify(marks)}`);
     }
     c.pass(step);
   }

@@ -316,6 +316,12 @@ const move = async (i: Fixture) =>
   stakeholder(w, "2026-09-26T00:10:00.000Z", "AC-2.1 is waived for now.");
   got = await approval(w, table([ok1, ok2, okT]));
   is(/no round of sdlc-review is recorded/.test(got.refusal ?? ""), `waiving a criterion is not waiving the sweep: ${got.refusal}`);
+  world.get(w.name)!.docs.push(env(w.name, "sources/2026-09-26-input-behind-v1.md", { title: "Input behind v1" },
+    "The review sweep is waived: a docs-only change.", { added_at: "2026-09-26T00:15:00.000Z", cause_of: "review.md" },
+    ["review.md"]));
+  got = await approval(w, table([ok1, ok2, okT]));
+  is(/no round of sdlc-review is recorded/.test(got.refusal ?? ""),
+     `an edit's own cause saying the sweep is waived was read as the stakeholder's waiver: ${got.refusal}`);
   stakeholder(w, "2026-09-26T00:20:00.000Z", "The review sweep is waived: a docs-only change.");
   got = await approval(w, table([ok1, ok2, okT]));
   is(got.refusal === null && /review sweep ran no round: sources\/2026-09-26-decision-\S+ waives it/.test(got.note),

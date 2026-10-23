@@ -86,7 +86,7 @@ literal("a key with a space in it is not a key line", "---\nDue Date: x\n---\n# 
 /* Every key the platform writes or renders: ignored, each reported, none taken. */
 const SERVER = ["flow", "type", "status", "version", "updated_at", "approved_by", "approved_at", "outcome",
   "closed_by", "accepted_by", "no_signoff_reason", "content_revision", "revision_note", "sources", "date",
-  "added_at", "contributed_by", "supports", "stage", "audits_version", "evidence", "supersededBy",
+  "added_at", "contributed_by", "supports", "stage", "audits_version", "cause_of", "evidence", "supersededBy",
   "verified_against", "eval_run_id"];
 const all = taken("every server-owned key is ignored and reported, one line each",
   `---\n${SERVER.map((k) => `${k}: planted-${k}`).join("\n")}\n---\n# T\n`, {}, "# T\n", {}, SERVER.length);

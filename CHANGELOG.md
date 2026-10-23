@@ -33,6 +33,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.2] — 2026-10-23
+
+`initiative_status` reads as sentences again when an approved plan fails structural validation.
+
+### zz-stack 0.98.2
+
+- **The plan-structure note no longer runs on from the move before it.** When an approved
+  `plan.md` failed structural validation, `next_move.why` appended its note to a move whose
+  sentence ended without a stop — "…once every phase is built NOTE: the approved plan.md fails
+  structural validation…". The note now follows a finished sentence, joined the same way as the
+  settled-review note beside it.
+
+### Upgrade notes
+
+- Every plugin's version moves to 0.98.2 with an unchanged digest: no skill text changed, so
+  re-pulling the shelf is optional.
+
 ## [0.98.1] — 2026-10-23 · console 0.28.3
 
 The console's Approve sends one approval however Confirm is pressed. The platform carries the

@@ -227,7 +227,7 @@ for (const [label, body] of [
   is(m?.why?.endsWith(`in parallel. ${NOTE}`), `case 10: the settled note does not follow the plan-structure note: ${said(m)}`);
 }
 
-is(ROUND_BUDGET === 3,`ROUND_BUDGET is ${ROUND_BUDGET}; it stays 3 for every stage that declares no budget`);
+is(ROUND_BUDGET === 3, `ROUND_BUDGET is ${ROUND_BUDGET}; it stays 3 for every stage that declares no budget`);
 
 if (fail.length) {
   for (const f of fail) console.log(`FAIL: ${f}`);

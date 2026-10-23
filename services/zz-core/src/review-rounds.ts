@@ -33,7 +33,7 @@ import type pg from "pg";
 
 import { ROUND_BUDGET } from "./audit-rounds.js";
 import { refusalText } from "./document-details.js";
-import { docRows, type DocRow } from "./indexing.js";
+import { docRows, isCapturedCause, type DocRow } from "./indexing.js";
 import { assessFamily, type Assessment } from "./semantic.js";
 
 /** The answers already recorded for an initiative's sources, keyed by the `about` they were asked
@@ -224,11 +224,11 @@ export function reviewRounds(sources: readonly DocRow[], stage: string, document
 
 interface StakeholderSource { file: string; added_at: string; body: string }
 
-/** Material supporting the document that no stage produced: a stakeholder's decision, their
- *  acceptance of a residual finding, their deferral of a criterion. */
+/** Material supporting the document that no stage produced and no change filed as its own cause: a
+ *  stakeholder's decision, their acceptance of a residual finding, their deferral of a criterion. */
 export function stakeholderSources(sources: readonly DocRow[], document: string): StakeholderSource[] {
   return sources
-    .filter((d) => !stageOf(d) && supportsOf(d).includes(document))
+    .filter((d) => !stageOf(d) && !isCapturedCause(d) && supportsOf(d).includes(document))
     .map((d) => ({ file: sourceName(d), added_at: addedAtOf(d), body: d.body }))
     .sort((a, b) => a.added_at.localeCompare(b.added_at));
 }

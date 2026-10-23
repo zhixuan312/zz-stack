@@ -272,6 +272,10 @@ export const Envelope = z.object({
   /** For an audit round: the version of the supported document the round read, written by
    *  source_add. A document revised past it owes the next round. */
   audits_version: z.string().optional(),
+  /** For the words a change passes as `source_content`: the document it changed, written by
+   *  document_edit and document_write. Read by audit-rounds.ts and review-rounds.ts, which never
+   *  count such a source as the stakeholder's decision (bug 0527280f). */
+  cause_of: z.string().optional(),
   /** Why a document changed, in one line, written by document_edit.
    *  DELIBERATE: no code reads it. It is for a person reading the document's own history in
    *  the team's store. */

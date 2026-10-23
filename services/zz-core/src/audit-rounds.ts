@@ -24,7 +24,7 @@ import { ENVELOPE_BLOCK } from "@zz/contracts";
 import type pg from "pg";
 
 import { assessFamily } from "./semantic.js";
-import { docRows, type DocRow } from "./indexing.js";
+import { docRows, isCapturedCause, type DocRow } from "./indexing.js";
 import type { RoundAssessments } from "./review-rounds.js";
 import type { Chain } from "./write-guards.js";
 
@@ -114,22 +114,24 @@ function roundsOf(sources: readonly DocRow[], stage: string, document: string, s
   return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
 }
 
-/** Material supporting the document that landed after a given moment and is not itself a round:
- *  where a stakeholder's decision on a round is recorded. */
+/** Material supporting the document that landed after a given moment and is neither a round nor a
+ *  change's own cause: where a stakeholder's decision on a round is recorded. */
 function decidedSince(sources: readonly DocRow[], document: string, since: string): boolean {
   return sources.some((d) =>
-    !stageOf(d) && supportsOf(d).includes(document) && addedAtOf(d) > since);
+    !stageOf(d) && !isCapturedCause(d) && supportsOf(d).includes(document) && addedAtOf(d) > since);
 }
 
 /** An instant as milliseconds, from an ISO string or from a `timestamptz` column's own text
  *  (`2026-10-19 08:00:00.5+00`), which a string comparison with an ISO one would misorder. */
 const msOf = (s: string): number => Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
 
-/** Material supporting the document, not itself a round, filed after the document's current version
- *  was approved: where a stakeholder accepts an approved version no round has read. */
+/** Material supporting the document, neither a round nor a change's own cause, filed after the
+ *  document's current version was approved: where a stakeholder accepts an approved version no round
+ *  has read. */
 function waivedAfter(sources: readonly DocRow[], document: string, approvedAt: string): boolean {
   const sealed = msOf(approvedAt);
-  return sources.some((d) => !stageOf(d) && supportsOf(d).includes(document) && msOf(addedAtOf(d)) > sealed);
+  return sources.some((d) => !stageOf(d) && !isCapturedCause(d) && supportsOf(d).includes(document) &&
+    msOf(addedAtOf(d)) > sealed);
 }
 
 /**

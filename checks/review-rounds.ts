@@ -273,6 +273,18 @@ const move = async (i: Fixture) =>
   is(m?.action === "write_document" && m?.document === "review.md",
      `a stakeholder source naming R3-X accepts it and the rounds settle: ${JSON.stringify(m)}`);
 
+  // bug 0527280f: the words an edit of review.md files as its own cause are the agent's, not the
+  // stakeholder's: naming R3-Y there neither renews the budget nor accepts the finding
+  const cc = await fresh();
+  round(cc, ledger(1, [finding("R1-Y", "S2")]), "2026-09-26T01:00:00.000Z");
+  round(cc, ledger(2, [finding("R2-Y", "S1")], ["R1-Y"]), "2026-09-26T02:00:00.000Z");
+  round(cc, ledger(3, [finding("R3-Y", "S2")], ["R2-Y"]), "2026-09-26T03:00:00.000Z");
+  world.get(cc.name)!.docs.push(env(cc.name, "sources/2026-09-26-input-behind-v2.md", { title: "Input behind v2" },
+    "R3-Y is accepted as residual.", { added_at: "2026-09-26T03:30:00.000Z", cause_of: "review.md" }, ["review.md"]));
+  m = await move(cc);
+  is(m?.action === "decide" && m?.waiting_on === "stakeholder",
+     `an edit's own cause naming R3-Y was read as the stakeholder accepting it: ${JSON.stringify(m)}`);
+
   const b = await fresh();
   round(b, ledger(1, [finding("R1-O", "S2", "cited", false), finding("R1-P", "S1", "cited", false)]), "2026-09-26T01:00:00.000Z");
   m = await move(b);

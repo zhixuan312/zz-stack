@@ -431,6 +431,38 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
      `the stakeholder's material after the amendment's approval did not settle its audit: ${JSON.stringify(pm)}`);
 }
 
+// 15. Bug 0527280f: the words an edit files as its own cause (`source_content`, which the write
+//     marks `cause_of`) were written with the version they caused, so they cannot be the
+//     stakeholder's decision on it. A spent budget still goes to the stakeholder, and an
+//     approved version still owes its round; a decision filed with source_add releases both.
+{
+  const captured = (name: string, doc: string, at: string) => world.get(name)!.docs.push(docRow(name,
+    `sources/2026-09-24-input-behind-${at.replace(/\W/g, "")}.md`, { title: "Input behind the revision",
+      body: "Answered the round: tightened the verification plan.", supports: [doc],
+      fields: { added_at: at, cause_of: doc } }));
+  const b = await fresh(4);
+  for (let i = 1; i <= ROUND_BUDGET; i++) round(b.name, i, i);
+  captured(b.name, "spec.md", "2026-09-24T09:00:00.000Z");
+  let cm = await move(b);
+  is(cm?.action === "decide" && cm?.waiting_on === "stakeholder",
+     `an edit's own cause was read as the stakeholder's decision on a spent budget: ${JSON.stringify(cm)}`);
+  material(b.name, "2026-09-24T09:30:00.000Z");
+  cm = await move(b);
+  is(cm?.action === "write_document" && cm?.document === "plan.md",
+     `the stakeholder's decision after an edit's own cause did not release the budget: ${JSON.stringify(cm)}`);
+
+  const p = await fresh(1);
+  round(p.name, 1, 1);
+  world.get(p.name)!.docs.push(docRow(p.name, "plan.md", { title: "Plan", flow: "sdlc-flow", status: "approved",
+    current_revision: 10, current_version: 5, approved_before: 4, approved_by: "ada@zz.test",
+    approved_at: "2026-09-27 08:00:00.5+00", body: "# Plan\n\n## Phase 1 — skeleton\n" }));
+  captured(p.name, "plan.md", "2026-09-27T08:30:00.000Z");
+  cm = await move(p);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(cm?.action === "add_source" && cm?.document === "plan.md",
+     `an edit's own cause filed after the approval was read as the stakeholder waiving the round: ${JSON.stringify(cm)}`);
+}
+
 if (fail.length) {
   console.error(`audit-rounds: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);

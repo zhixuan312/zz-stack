@@ -255,8 +255,15 @@ export function sealOf(
   return parseEnvelope(stamped).status === "approved" && rev?.approved_by && rev.approved_at
     ? { by: rev.approved_by, at: rev.approved_at } : null;
 }
+
+/** Whether a source is the words a change filed as its own cause (`source_content`), which the
+ *  routers never read as a stakeholder's decision: they were written with the version they caused,
+ *  so they cannot decide anything about it, and a decision is filed with `source_add` (bug 0527280f). */
+export const isCapturedCause = (d: { fields: Record<string, string> | null }): boolean => Boolean(d.fields?.cause_of);
+
 /** A source document, written by source_add and by a captured `source_content` — same `type: source`,
- * same fields, same readers, so one builder rather than two hand-built envelopes.
+ * same fields, same readers, so one builder rather than two hand-built envelopes. The one field a
+ * captured cause adds is `cause_of`, which `isCapturedCause` reads.
  *
  * Through renderEnvelope, so every value is folded to one line whatever a caller sends. A
  * title carrying a newline otherwise adds fields to the envelope: `type` is what
@@ -272,7 +279,9 @@ export function sourceDocument(
           /** For an audit round: the version of the supported document the round read. */
           audits_version?: string;
           /** The documents the caller said this bears on, by name. */
-          supports?: string[] },
+          supports?: string[];
+          /** For the words an edit or a write files as its own cause: the document it changed. */
+          cause_of?: string },
 ): string {
   // DELIBERATE: the stage is written TWICE, because two readers ask a different question of it and
   // each reads the place the other does not. `audit-rounds.ts` and `review-rounds.ts` read the
@@ -293,7 +302,8 @@ export function sourceDocument(
   if (opts.stage) env.stage = opts.stage;
   if (opts.audits_version) env.audits_version = opts.audits_version;
   if (opts.supports?.length) env.supports = opts.supports.join(", ");
+  if (opts.cause_of) env.cause_of = opts.cause_of;
   return renderEnvelope(
-    env, ["type", "title", "contributed_by", "date", "added_at", "stage", "audits_version", "supports"],
+    env, ["type", "title", "contributed_by", "date", "added_at", "stage", "audits_version", "supports", "cause_of"],
   ) + `\n${opts.content}`;
 }

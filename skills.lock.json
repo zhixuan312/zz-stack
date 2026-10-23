@@ -12,8 +12,8 @@
     "sha": "3ba3c323ae8a"
   },
   "sdlc-flow": {
-    "version": "2.20",
-    "sha": "cd93bfe3f800"
+    "version": "2.21",
+    "sha": "5837d2a82fd4"
   },
   "sdlc-investigate": {
     "version": "1.5",
@@ -40,8 +40,8 @@
     "sha": "3acbabf13cb4"
   },
   "sdlc-review": {
-    "version": "1.18",
-    "sha": "64569995cbc1"
+    "version": "1.19",
+    "sha": "9c3cd6b90dc9"
   },
   "sdlc-spec-audit": {
     "version": "2.8",

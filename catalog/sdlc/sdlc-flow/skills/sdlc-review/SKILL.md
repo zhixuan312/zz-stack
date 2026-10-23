@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.18
+version: 1.19
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -188,8 +188,10 @@ return.
 | three rounds since the stakeholder last decided, and the latest raised no fewer new shown blockers than the one before | `decide` | the stakeholder |
 | nothing blocks | settled — `review.md` is next | the main agent |
 
-The stakeholder's decision is a source supporting `review.md` with no stage. Any such source
-renews the three-round budget; one naming a finding's id also accepts that finding as residual.
+The stakeholder's decision is a source supporting `review.md` with no stage, filed with
+`source_add`. Any such source renews the three-round budget; one naming a finding's id also
+accepts that finding as residual. The words an edit passes as `source_content` are that edit's
+cause, never a decision, whatever they say.
 
 `document_approve` refuses `review.md` while no round is recorded: the sweep runs at least once.
 Only the stakeholder can waive it — a source supporting `review.md` with no stage that says so on

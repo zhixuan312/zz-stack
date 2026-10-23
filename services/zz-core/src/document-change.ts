@@ -281,7 +281,8 @@ function capturedOf(
   // Named exactly as source_add names one; a name already taken is suffixed by the write, under
   // its lock, rather than refused: the change it explains must not fail over its label.
   const relPath = `${initiative}/sources/${day}-${titleSlug(title, "source")}.md`;
-  return { relPath, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(), supports: [name] }) };
+  return { relPath, text: sourceDocument({
+    title, by: who, day, content: a.source_content.trim(), supports: [name], cause_of: name }) };
 }
 
 /** The receipt lines a change's causes, normalisations and diagnostics make: each list counted,

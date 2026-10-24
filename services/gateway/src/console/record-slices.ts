@@ -52,7 +52,7 @@
  */
 import { platformDb } from "../db.js";
 import type { Figure, PeriodFigure } from "./figures.js";
-import { lessonImports } from "./imports.js";
+import { lessonImports, shared } from "./imports.js";
 import { observedRuns } from "./runs-observed.js";
 import { ZZ_TZ } from "./shared.js";
 import { grainFor, mostOpenAtOnce, periodsOf, searchesWithResults } from "./work-figures.js";
@@ -87,8 +87,13 @@ const boundsOf = (window: Span, asOf: string): [number, number] =>
   [Date.parse(window.from), Math.min(Date.parse(window.to), Date.parse(asOf))];
 
 /** The lessons on the team's shelf made before the cutoff: their kind, whether they stand, when each was
- *  made, and whether an import cohort holds it. */
-async function lessonsOf(team: string, asOf: string): Promise<{ kind: string; standing: boolean; createdMs: number; imported: boolean }[]> {
+ *  made, and whether an import cohort holds it. Read once for every slice of one read asking at one
+ *  cutoff: Knowledge counts the adopted by period and the firsts read the earliest of them. */
+function lessonsOf(team: string, asOf: string): Promise<{ kind: string; standing: boolean; createdMs: number; imported: boolean }[]> {
+  return shared(`lessons by kind ${team} ${asOf}`, () => readLessonsOf(team, asOf));
+}
+
+async function readLessonsOf(team: string, asOf: string): Promise<{ kind: string; standing: boolean; createdMs: number; imported: boolean }[]> {
   const [{ rows }, imports] = await Promise.all([
     platformDb().query<{ id: string; kind: string; lifecycle: string; created_ms: number }>(
       `select n.id::text as id, n.kind, n.lifecycle, (extract(epoch from n.created_at) * 1000)::float8 as created_ms

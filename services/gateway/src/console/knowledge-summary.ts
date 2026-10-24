@@ -37,7 +37,7 @@ import type { Express } from "express";
 
 import { platformDb } from "../db.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
-import { lessonImports } from "./imports.js";
+import { lessonImports, shared } from "./imports.js";
 import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { lastWholeWeek, periodsOf, searchesWithResults } from "./work-figures.js";
 
@@ -90,8 +90,14 @@ async function firstSearch(team: string, asOf: string): Promise<number | null> {
   return rows[0]?.first_ms ?? null;
 }
 
-/** Every lesson on the team's shelf made before the cutoff, the most recently made first. */
-async function lessonsOf(team: string, asOf: string): Promise<Lesson[]> {
+/** Every lesson on the team's shelf made before the cutoff, the most recently made first, read once for
+ *  every part of one read asking at one cutoff: the tiles count them, the newest name them and the
+ *  superseded count comes off the same rows. */
+function lessonsOf(team: string, asOf: string): Promise<Lesson[]> {
+  return shared(`lessons on the shelf ${team} ${asOf}`, () => readLessonsOf(team, asOf));
+}
+
+async function readLessonsOf(team: string, asOf: string): Promise<Lesson[]> {
   const { rows } = await platformDb().query<{ id: string; address: string; title: string; kind: string; lifecycle: string; created_ms: number }>(
     `select k.id::text as id, 'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address, k.title, k.kind, k.lifecycle,
             (extract(epoch from k.created_at) * 1000)::float8 as created_ms

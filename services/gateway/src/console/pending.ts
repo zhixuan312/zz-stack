@@ -10,6 +10,7 @@
  * the rows the statement returns.
  */
 import { platformDb } from "../db.js";
+import { shared } from "./imports.js";
 import { flowShape } from "./shared.js";
 
 /** One revision waiting for approval. `teamId` and `team` are for a reader allowed to see which team
@@ -57,9 +58,16 @@ export async function pendingRevisions(asOf: string): Promise<PendingRevision[]>
  * for the whole platform's queue to answer it is a scan nobody asked for. Two statements, not one with
  * a null standing in for "every initiative": a console query never falls back to a wider scope.
  *
+ * Read once for every part of one read asking about one team at one cutoff: Home counts what waits and
+ * draws its open work from the list of initiatives, which counts the same queue again.
+ *
  * COUPLED: the same rule and order as `pendingRevisions`, with the team and initiative added.
  */
-export async function teamPendingRevisions(team: string, asOf: string, initiative?: string): Promise<PendingRevision[]> {
+export function teamPendingRevisions(team: string, asOf: string, initiative?: string): Promise<PendingRevision[]> {
+  return shared(`pending revisions ${team} ${asOf} ${initiative ?? ""}`, () => readTeamPendingRevisions(team, asOf, initiative));
+}
+
+async function readTeamPendingRevisions(team: string, asOf: string, initiative?: string): Promise<PendingRevision[]> {
   const { rows } = initiative === undefined
     ? await platformDb().query<Row>(
       `select t.id::text as team_id, t.slug as team, i.slug as initiative, i.flow, d.path, r.revision,

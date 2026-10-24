@@ -46,7 +46,7 @@ import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { teamPendingRevisions } from "./pending.js";
 import { BAD_PAGE, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
-import { closuresByWeek, grainFor, lastWholeWeek, periodsOf, type ClosureWeek } from "./work-figures.js";
+import { closuresByWeek, grainFor, lastWholeWeek, periodsOf, type ClosureWeek, type Grain } from "./work-figures.js";
 
 /** Where an initiative goes next, as initiative_status answers it, its keys spelled as the console's. */
 type NextMove = { action: string; stage: string | null; document: string | null; waitingOn: string | null; why: string };
@@ -71,10 +71,23 @@ type InitiativeList = {
   summary: Part<ListSummary>;
   nextMoveState: "ok" | "partial" | "unavailable";
 };
-/** What a list read is filtered and paged by: a state, a flow by its exact name, text in the slug. */
-type ListParams = { state: State | null; flow: string | null; q: string; limit: number; offset: number };
+/** What a list read is filtered and paged by: a state, a flow by its exact name, text in the slug. A
+ *  caller drawing several states from one read names them in states instead of in state, which is what
+ *  the route's own query parameter fills: the filter runs after every statement, so asking for each
+ *  state separately is the same statements and the same rows twice. */
+type ListParams = {
+  state: State | null; states?: readonly State[]; flow: string | null; q: string; limit: number; offset: number;
+};
 /** Who answers initiative_status: zz-core, called as the person. */
 type Relay = Pick<Mcp, "call">;
+/** What a caller has already drawn of the window it is about to ask about: the last whole week, and the
+ *  closures of a window at a grain, still being read or read already. Home draws both before it asks for
+ *  open work, and the list states both itself; a value is used for the window it names and no other, so
+ *  a record the caller clamped to its own weeks still draws the list's whole one. */
+export type Drawn = {
+  week?: Window;
+  closures?: { from: string; to: string; grain: Grain; weeks: Promise<ClosureWeek[]> };
+};
 
 const STATES: readonly State[] = ["open", "waiting", "quiet", ...OUTCOMES];
 const DAY = 24 * 3_600_000;
@@ -162,10 +175,15 @@ async function partOf<T>(what: string, read: () => Promise<T>): Promise<Part<T>>
 /**
  * The active team's initiatives at the cutoff, as the list answers them: the team's tiles and
  * closures, the page the params name, and the total and summary of every initiative they hold. The
- * relay is how zz-core is asked for the page's next moves. Throws when the initiatives themselves
- * cannot be read; a failed figure makes its own part unavailable and the rest stands.
+ * relay is how zz-core is asked for the page's next moves. Drawn is what the caller has already drawn
+ * of the window this read is about, and is used for that window alone: asking the calendar for a week a
+ * caller already asked for, or reading the closures of one window twice in one request, is the same
+ * statement and the same rows again. Throws when the initiatives themselves cannot be read; a failed
+ * figure makes its own part unavailable and the rest stands.
  */
-export async function initiativeList(team: string, params: ListParams, asOf: string, relay: Relay): Promise<InitiativeList> {
+export async function initiativeList(
+  team: string, params: ListParams, asOf: string, relay: Relay, drawn?: Drawn,
+): Promise<InitiativeList> {
   const db = platformDb();
   const asOfMs = Date.parse(asOf);
   const [anchors, docs, facts, pending] = await Promise.all([
@@ -219,8 +237,9 @@ export async function initiativeList(team: string, params: ListParams, asOf: str
       lastTouched: iso(touched), opened: iso(a.opened_ms), closed: closed ? iso(a.closed_ms!) : null,
     };
   });
+  const wanted = params.states ?? (params.state === null ? null : [params.state]);
   const rows = all
-    .filter((r) => (params.state === null || r.state === params.state) && (params.flow === null || r.flow === params.flow)
+    .filter((r) => (wanted === null || wanted.includes(r.state)) && (params.flow === null || r.flow === params.flow)
       && (!params.q || r.slug.includes(params.q)))
     .sort((a, b) => Number(b.state === "waiting") - Number(a.state === "waiting")
       || b.lastTouched.localeCompare(a.lastTouched) || a.slug.localeCompare(b.slug));
@@ -234,9 +253,15 @@ export async function initiativeList(team: string, params: ListParams, asOf: str
   const within = (at: string, w: Window): boolean => at >= w.from && at < w.to;
   const [relayed, closures, summary] = await Promise.all([
     nextMoves(page.map((r) => r.slug), relay),
-    partOf("the closures", () => closuresByWeek(team, window, asOf, grain)),
+    partOf("the closures", () => {
+      const was = drawn?.closures;
+      return was !== undefined && was.from === window.from && was.to === window.to && was.grain === grain
+        ? was.weeks : closuresByWeek(team, window, asOf, grain);
+    }),
     partOf("the summary", async (): Promise<ListSummary> => {
-      const [periods, previous] = await Promise.all([periodsOf(window, asOf, grain), lastWholeWeek(asOf)]);
+      const [periods, previous] = await Promise.all([
+        periodsOf(window, asOf, grain), drawn?.week ?? lastWholeWeek(asOf),
+      ]);
       const flows = [...new Set(rows.map((r) => r.flow))];
       return {
         total: rows.length,

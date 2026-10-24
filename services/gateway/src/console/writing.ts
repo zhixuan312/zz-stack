@@ -66,6 +66,13 @@ type Row = {
   atMs: number | null; dating: Dating; fallback: boolean;
 };
 
+/** The document facts a window is reduced to: the versions written in it, the documents rewritten most,
+ *  the week of it with the most words added, and the documents created by period. */
+type DocumentFacts = {
+  versions: number; mostRewritten: { initiative: string; path: string; versions: number }[];
+  mostWordsInAWeek: { words: number; week: string } | null; documentsCreated: PeriodFigure[];
+};
+
 /** The content acts, under today's names and the retired ones, and the approval's seal act. */
 const CONTENT_ACTS = ["write", "edit", "patch", "revise"].flatMap((a) => [`document.${a}`, `document.document_${a}`]);
 const SEAL_ACT = "document.document_approve";
@@ -314,11 +321,14 @@ export async function retainedStock(team: string, asOf: string): Promise<{ words
 }
 
 /** The versions written inside the window, the documents rewritten most in it, the week of it with the
- *  most words added, and the documents created by period at the window's grain. */
-export async function documentFacts(team: string, window: Span, asOf: string): Promise<{
-  versions: number; mostRewritten: { initiative: string; path: string; versions: number }[];
-  mostWordsInAWeek: { words: number; week: string } | null; documentsCreated: PeriodFigure[];
-}> {
+ *  most words added, and the documents created by period at the window's grain. Read once for every part
+ *  of one read asking for it at one window: Record draws it in its documents and again among its firsts,
+ *  so the second ask is the same rows and the same ledger reduced twice. */
+export function documentFacts(team: string, window: Span, asOf: string): Promise<DocumentFacts> {
+  return shared(`document facts ${team} ${window.from} ${window.to} ${asOf}`, () => readDocumentFacts(team, window, asOf));
+}
+
+async function readDocumentFacts(team: string, window: Span, asOf: string): Promise<DocumentFacts> {
   const [periods, weeks, l] = await Promise.all([
     periodsOf(window, asOf, grainFor(window)), periodsOf(window, asOf, "week"), ledger(team, asOf, true)]);
   const bounds = boundsOf(window, asOf);

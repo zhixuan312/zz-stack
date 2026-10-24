@@ -14,6 +14,12 @@
  *
  * Each function throws when its statement fails; the read decides what a failure makes of its part.
  *
+ * A page draws several figures over one window, and they ask this module for the same two lists: the
+ * periods the window is cut into, and the closures inside it, by the arguments that name them, while an
+ * earlier ask is under way (shared, imports.ts) or after it has answered, which the calendar's own memo
+ * carries (periodsOf). So one read pays for the calendar once and for the closures once, whatever it
+ * draws from them.
+ *
  * DELIBERATE: no backticks in the comments of this file. check:sql reads it as text, and a backtick
  * in a comment opens a template literal it then parses as code.
  *
@@ -23,6 +29,7 @@
 import { OUTCOMES } from "@zz/contracts";
 import { platformDb } from "../db.js";
 import type { Figure, PeriodFigure, Window } from "./figures.js";
+import { shared } from "./imports.js";
 import { searchDays } from "./platform-measures.js";
 import { ZZ_TZ } from "./shared.js";
 import { localDay } from "./work-query-buckets.js";
@@ -32,6 +39,8 @@ export type Grain = "week" | "month" | "quarter";
 type Span = { from: string; to: string };
 export type ClosureWeek = { window: Window; accepted: Figure; delivered: Figure; abandoned: Figure };
 type Outcome = (typeof OUTCOMES)[number];
+/** One of the team's closures, by the instant it opened and the instant it closed. */
+type Closure = { outcome: Outcome; openedMs: number; closedMs: number };
 /** One period of a window, as instants in milliseconds, and as the window a figure states. */
 export type Period = { fromMs: number; toMs: number; window: Window };
 
@@ -49,9 +58,31 @@ export function grainFor(window: Span): Grain {
   return to <= three.getTime() ? "month" : "quarter";
 }
 
+/** The calendar a window is cut on, by the arguments that name it, kept past the read that made it: its
+ *  statement reads no table, only the window, the cutoff, the grain and the reporting timezone, so an
+ *  answer cannot go stale and asking twice is the same rows twice. Kept past the ask rather than only
+ *  while it runs because the repeats are not all concurrent — Home draws the week it starts from, and
+ *  then asks the list of initiatives, which draws it again. Bounded: a cutoff is reached by several
+ *  pages and a window is a handful of bytes. */
+const calendar = new Map<string, Promise<Period[]>>();
+const CALENDAR_BOUND = 512;
+
 /** The window's periods at the grain, oldest first: the first holds the window's start, the last its
- *  end or the cutoff, whichever is earlier. None when the window holds nothing before the cutoff. */
-export async function periodsOf(window: Span, asOf: string, grain: Grain): Promise<Period[]> {
+ *  end or the cutoff, whichever is earlier. None when the window holds nothing before the cutoff.
+ *
+ *  COUPLED: every caller shares one answer per window, so none of them may change the list it is given. */
+export function periodsOf(window: Span, asOf: string, grain: Grain): Promise<Period[]> {
+  const key = `periods ${ZZ_TZ} ${window.from} ${window.to} ${asOf} ${grain}`;
+  const was = calendar.get(key);
+  if (was !== undefined) return was;
+  if (calendar.size > CALENDAR_BOUND) calendar.clear();
+  // A failure drops its entry, so one caller's failure is never served to the caller that asks next.
+  const made = readPeriodsOf(window, asOf, grain).catch((err: unknown) => { calendar.delete(key); throw err; });
+  calendar.set(key, made);
+  return made;
+}
+
+async function readPeriodsOf(window: Span, asOf: string, grain: Grain): Promise<Period[]> {
   const fromMs = Date.parse(window.from);
   const endMs = Math.min(Date.parse(window.to), Date.parse(asOf));
   if (endMs <= fromMs) return [];
@@ -66,8 +97,14 @@ export async function periodsOf(window: Span, asOf: string, grain: Grain): Promi
   return rows.map((r) => ({ fromMs: r.from_ms, toMs: r.to_ms, window: windowOf(r.from_ms, r.to_ms, window, asOf) }));
 }
 
-/** The last whole week before the cutoff, Monday to Monday in the reporting timezone. */
-export async function lastWholeWeek(asOf: string): Promise<Window> {
+/** The last whole week before the cutoff, Monday to Monday in the reporting timezone. Read once for
+ *  every part of one read asking at one cutoff: Home draws it, and so does the list of initiatives it
+ *  draws open work from, unless Home hands its own week down. */
+export function lastWholeWeek(asOf: string): Promise<Window> {
+  return shared(`last whole week ${asOf}`, () => readLastWholeWeek(asOf));
+}
+
+async function readLastWholeWeek(asOf: string): Promise<Window> {
   const asOfMs = Date.parse(asOf);
   const weeks = await periodsOf({ from: iso(asOfMs - 14 * 24 * HOUR), to: asOf }, asOf, "week");
   return weeks.filter((w) => w.toMs <= asOfMs).at(-1)!.window;
@@ -93,8 +130,14 @@ const overallOf = (window: Span, asOf: string): Window =>
 const boundsOf = (window: Span, asOf: string): [string, string] =>
   [window.from, new Date(Math.min(Date.parse(window.to), Date.parse(asOf))).toISOString()];
 
-/** The team's initiatives closed inside the window before the cutoff, with when each opened. */
-async function closuresIn(team: string, window: Span, asOf: string): Promise<{ outcome: Outcome; openedMs: number; closedMs: number }[]> {
+/** The team's initiatives closed inside the window before the cutoff, with when each opened. Read once
+ *  for every figure of one window asking at once: closures by outcome, the median hours to close and the
+ *  median hours to abandon all reduce this list. */
+function closuresIn(team: string, window: Span, asOf: string): Promise<Closure[]> {
+  return shared(`closures ${team} ${window.from} ${window.to} ${asOf}`, () => readClosuresIn(team, window, asOf));
+}
+
+async function readClosuresIn(team: string, window: Span, asOf: string): Promise<Closure[]> {
   const [from, end] = boundsOf(window, asOf);
   const { rows } = await platformDb().query<{ outcome: Outcome; opened_ms: number; closed_ms: number }>(
     `select i.outcome, (extract(epoch from i.opened_at) * 1000)::float8 as opened_ms,
@@ -106,12 +149,22 @@ async function closuresIn(team: string, window: Span, asOf: string): Promise<{ o
   return rows.map((r) => ({ outcome: r.outcome, openedMs: r.opened_ms, closedMs: r.closed_ms }));
 }
 
+/** What every closure figure of one window is drawn from: the periods it is cut into and the closures
+ *  inside it, the pair computed once and handed to each figure, so the window's calendar and its
+ *  closures are read once however many figures a page draws over them. */
+function periodsAndClosures(team: string, window: Span, asOf: string, grain: Grain): Promise<{ periods: Period[]; closures: Closure[] }> {
+  return shared(`periods and closures ${team} ${window.from} ${window.to} ${asOf} ${grain}`, async () => {
+    const [periods, closures] = await Promise.all([periodsOf(window, asOf, grain), closuresIn(team, window, asOf)]);
+    return { periods, closures };
+  });
+}
+
 const counted = (n: number): Figure => ({ value: n, why: null });
 const inside = (ms: number, p: Period): boolean => ms >= p.fromMs && ms < p.toMs;
 
 /** Closures by period and outcome, all three outcomes, each period's counts its own. */
 export async function closuresByWeek(team: string, window: Span, asOf: string, grain: Grain): Promise<ClosureWeek[]> {
-  const [periods, closures] = await Promise.all([periodsOf(window, asOf, grain), closuresIn(team, window, asOf)]);
+  const { periods, closures } = await periodsAndClosures(team, window, asOf, grain);
   return periods.map((p) => {
     const here = closures.filter((c) => inside(c.closedMs, p));
     const of = (o: Outcome): Figure => counted(here.filter((c) => c.outcome === o).length);
@@ -136,7 +189,7 @@ const medianFigure = (window: Window, hours: number[]): PeriodFigure => ({
 /** Each period's median hours from opened to closed over the closures of the outcomes named in it, and
  *  the same over the whole window. */
 async function medianHours(team: string, window: Span, asOf: string, grain: Grain, outcomes: readonly Outcome[]) {
-  const [periods, closures] = await Promise.all([periodsOf(window, asOf, grain), closuresIn(team, window, asOf)]);
+  const { periods, closures } = await periodsAndClosures(team, window, asOf, grain);
   const mine = closures.filter((c) => outcomes.includes(c.outcome));
   const hours = (cs: typeof mine): number[] => cs.map((c) => (c.closedMs - c.openedMs) / HOUR);
   return {
@@ -156,8 +209,13 @@ export function medianHoursToAbandon(team: string, window: Span, asOf: string, g
 }
 
 /** The largest number of the team's initiatives open at one moment inside the window, and the first
- *  moment it was reached; a close and an open at the same instant are not open together. */
-export async function mostOpenAtOnce(team: string, window: Span, asOf: string): Promise<{ value: Figure; at: string | null }> {
+ *  moment it was reached; a close and an open at the same instant are not open together. Read once for
+ *  every part of one read asking for it: Record draws it in its Work slice and again among its firsts. */
+export function mostOpenAtOnce(team: string, window: Span, asOf: string): Promise<{ value: Figure; at: string | null }> {
+  return shared(`most open at once ${team} ${window.from} ${window.to} ${asOf}`, () => readMostOpenAtOnce(team, window, asOf));
+}
+
+async function readMostOpenAtOnce(team: string, window: Span, asOf: string): Promise<{ value: Figure; at: string | null }> {
   const [from, end] = boundsOf(window, asOf);
   const { rows } = await platformDb().query<{ opened_ms: number; closed_ms: number | null }>(
     `select (extract(epoch from i.opened_at) * 1000)::float8 as opened_ms,

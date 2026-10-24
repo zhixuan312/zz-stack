@@ -32,6 +32,7 @@
 import type pg from "pg";
 
 import { summarise, type Measure, type MeasureKey, type PeriodFigure, type Window } from "./figures.js";
+import { shared } from "./imports.js";
 import type { realReports } from "./platform-bugs.js";
 import { ZZ_TZ } from "./shared.js";
 import type { FollowupRow } from "./usage-figures.js";
@@ -184,12 +185,36 @@ export const share = (n: number, of: number, scale: number): Counted =>
   ({ numerator: n, denominator: of, value: of === 0 ? null : (scale * n) / of, samples: of });
 export const tally = (n: number): Counted => ({ numerator: n, denominator: null, value: n, samples: n });
 
+/** One week's real-work calls, the malformed among them and every refusal, as the statement rows them. */
+type CallRow = { from_ms: number; calls: number; malformed: number; refusals: number };
+/** A week's column, by the instant the week starts, 0 for a week with no row. */
+type CallCounts = (fromMs: number, column: keyof CallRow) => number;
+/** A read's call weeks, by the team they are narrowed to. A grid is made per read (readGrid), so these
+ *  are that read's alone and are dropped with it: two figures of one read pay for the statement once,
+ *  even when the second asks after the first has settled — Status divides the bug reports by the same
+ *  weeks it computes the malformed rate over, and the reports are read between them. */
+const callsOf = new WeakMap<Grid, Map<string, Promise<CallCounts>>>();
+
 /** Real-work calls, the malformed and every refusal among them, by week; `team` narrows to one team's.
  *  DELIBERATE: a weekly statement of its own rather than a reduction of `callDays`, so each read takes one row a
  *  week: Status reads it three times on a 1.0 s budget. checks/console-platform-query.ts holds the prepared
  *  query's calls, malformed calls and refusals by week, read from `callDays`, equal to it. */
-export async function callWeeks(db: pg.Pool, grid: Grid, team: string | null) {
-  return byWeek((await db.query<{ from_ms: number; calls: number; malformed: number; refusals: number }>(
+export function callWeeks(db: pg.Pool, grid: Grid, team: string | null): Promise<CallCounts> {
+  const key = team ?? "";
+  let made = callsOf.get(grid);
+  if (made === undefined) {
+    made = new Map();
+    callsOf.set(grid, made);
+  }
+  const was = made.get(key);
+  if (was !== undefined) return was;
+  const read = shared(`call weeks ${grid.asOfMs} ${key}`, () => readCallWeeks(db, grid, team));
+  made.set(key, read);
+  return read;
+}
+
+async function readCallWeeks(db: pg.Pool, grid: Grid, team: string | null): Promise<CallCounts> {
+  return byWeek((await db.query<CallRow>(
     `select (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
             count(*)::int as calls,
             (count(*) filter (where e.refusal_owner = 'ours'))::int as malformed,

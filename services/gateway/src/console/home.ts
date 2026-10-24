@@ -37,6 +37,11 @@
  * of zeros stands in for one; a missing run record leaves the coverage and peak unavailable; neither
  * is ever a zero.
  *
+ * Every part is read from functions the other parts draw too, over one window each, and each of those
+ * functions reads its statement once for the parts asking at once (shared, imports.ts). The week the
+ * parts state is drawn once here and handed to the list of initiatives, which states it too: an ask
+ * that had already settled when the list made its own could not be shared.
+ *
  * DELIBERATE: no backticks in the comments of this file. check:sql reads it as text, and a backtick in
  * a comment opens a template literal it then parses as code.
  *
@@ -55,7 +60,7 @@ import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js"
 import { localDate, periodFinding, type AgentDay, type Finding } from "./findings.js";
 import { homeTitle, nextMilestones, type HomeFacts, type Milestone } from "./home-findings.js";
 import { lessonImports } from "./imports.js";
-import { initiativeList } from "./initiative-list.js";
+import { initiativeList, type Drawn } from "./initiative-list.js";
 import { teamPendingRevisions } from "./pending.js";
 import { observedRuns } from "./runs-observed.js";
 import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
@@ -192,16 +197,18 @@ async function closedIn(team: string, week: Window): Promise<{ slug: string; out
 }
 
 /** Open work: the waiting rows, then the open ones, each with its next move; the quiet folded into one
- *  row of their count, which takes the last of the five places. */
-async function openWorkOf(team: string, asOf: string, relay: Relay): Promise<{ rows: InitiativeRow[]; quiet: number; total: number }> {
-  const page = { flow: null, q: "", limit: OPEN_ROWS, offset: 0 };
-  const [waiting, open] = await Promise.all([
-    initiativeList(team, { state: "waiting", ...page }, asOf, relay),
-    initiativeList(team, { state: "open", ...page }, asOf, relay),
-  ]);
-  // Open, waiting and quiet are every initiative not closed, so the quiet are the rest of the open.
-  const quiet = waiting.tiles.open - waiting.tiles.waiting - open.total;
-  return { rows: [...waiting.rows, ...open.rows].slice(0, quiet > 0 ? OPEN_ROWS - 1 : OPEN_ROWS), quiet, total: waiting.tiles.open };
+ *  row of their count, which takes the last of the five places.
+ *
+ *  DELIBERATE: one read of the list, asked for the two states this draws, not one read each: its state
+ *  filter runs after every statement, so a second read of the other state buys nothing but the same
+ *  rows again. Open, waiting and quiet are every initiative not closed, so the quiet are the rest. The
+ *  week and the closures it states are the ones Home already drew, handed down rather than asked for
+ *  again: Home's ask had settled by the time the list made its own, so nothing was left to share. */
+async function openWorkOf(team: string, asOf: string, relay: Relay, drawn: Drawn): Promise<{ rows: InitiativeRow[]; quiet: number; total: number }> {
+  const page = { state: null, states: ["waiting", "open"] as const, flow: null, q: "", limit: OPEN_ROWS, offset: 0 };
+  const list = await initiativeList(team, page, asOf, relay, drawn);
+  const quiet = list.tiles.open - list.total;
+  return { rows: list.rows.slice(0, quiet > 0 ? OPEN_ROWS - 1 : OPEN_ROWS), quiet, total: list.tiles.open };
 }
 
 /** Closures in a week: the three outcomes together. */
@@ -221,20 +228,26 @@ async function homeOf(team: string, caller: string, asOf: string, relay: Relay):
   // The whole record, for the totals, when the weeks do not reach its start.
   const record: Span | null = firstMs !== null && firstMs < startMs ? { from: iso(firstMs), to: asOf } : null;
 
+  // The span's closures, drawn once and handed to the list of initiatives too: they are the same rows
+  // over the same window when the team's record is younger than the weeks drawn, and the list would
+  // otherwise read them again after this ask had already settled.
+  const closuresOfSpan = closuresByWeek(team, span, asOf, "week");
+  const drawn: Drawn = { week, closures: { ...span, grain: "week", weeks: closuresOfSpan } };
+
   const [periods, words, docs, mine, closures, medians, searches, runs, lessons, days, waiting, open, closedLast, wholeWords, wholeDocs, wholeClosures] =
     await Promise.all([
       periodsOf(span, asOf, "week"),
       attempt("the words added", () => additionsByPeriod(team, span, asOf)),
       attempt("the documents created", () => documentFacts(team, span, asOf)),
       attempt("the caller's approvals", () => callerApprovals(team, caller, span, asOf, "week")),
-      attempt("the closures", () => closuresByWeek(team, span, asOf, "week")),
+      attempt("the closures", () => closuresOfSpan),
       attempt("the median hours to close", () => medianHoursToClose(team, span, asOf, "week")),
       attempt("the searches with results", () => searchesWithResults(team, lastWeek, asOf, "week")),
       attempt("the observed runs", () => observedRuns(team, lastWeek, asOf)),
       attempt("the lessons made", () => lessonsMade(team, asOf)),
       attempt("the agents' days", () => agentDaysOf(team, week)),
       attempt("what waits", () => waitingOf(team, asOf)),
-      attempt("the open work", () => openWorkOf(team, asOf, relay)),
+      attempt("the open work", () => openWorkOf(team, asOf, relay, drawn)),
       attempt("last week's closures", () => closedIn(team, week)),
       record && attempt("the words added over the record", () => additionsByPeriod(team, record, asOf)),
       record && attempt("the documents created over the record", () => documentFacts(team, record, asOf)),

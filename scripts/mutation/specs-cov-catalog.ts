@@ -209,8 +209,8 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/console.ts",
     target: "the initiatives list answers the active team and nothing a request names",
     subject: INITIATIVE_LIST,
-    find: `res.json(await initiativeList(activeTeam, params,`,
-    replace: `res.json(await initiativeList(String(req.query.team ?? activeTeam), params,`,
+    find: `initiativeList(activeTeam, params,`,
+    replace: `initiativeList(String(req.query.team ?? activeTeam), params,`,
     planted: "the list takes its team from the request when the request names one. A member who " +
       "types another team's slug into the address reads that team's work, its tiles and its " +
       "closures counted from the same rows, so the page agrees with itself and nothing on it " +

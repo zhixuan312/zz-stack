@@ -33,6 +33,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.99.0] — 2026-10-24
+
+The platform has its own domain. The console moved to `https://zz-stack.com` in 0.98.6; the
+gateway now answers at `https://api.zz-stack.com`, and the nip.io addresses are no longer served.
+
+### zz-stack 0.99.0
+
+- **The gateway is `https://api.zz-stack.com`.** Every client package names it: the `.mcp.json` of
+  zz-core, zz-access and zz-plugin-eval, the skill-report hook, and the doctor's fallback. The OAuth
+  issuer, token and registration endpoints are on it; the authorize step stays on the console's host,
+  where the sign-in cookie lives.
+- **The Caddy template names two hostnames, both read from `deploy/.env`.** `install-caddy.sh`
+  substitutes the console's from `CONSOLE_PUBLIC_URL` and the gateway's from `GATEWAY_PUBLIC_URL`,
+  and refuses an install where they name one host. It no longer derives anything from a nip.io
+  address, and the 0.98.6 redirect from the old console address is gone with it.
+- **zz-doctor 1.5** falls back to the new gateway when no installed plugin declares one.
+
+### zz-stack-dashboard 0.28.5
+
+- README only: the console's origin is `CONSOLE_PUBLIC_URL`, and no tunnel host is named by brand.
+
+### Upgrade notes
+
+- **Every client re-pulls its plugins.** Claude Code: `claude plugin marketplace update zz-stack`,
+  then update each installed zz-stack plugin. Codex reads the same marketplace. Until then a client
+  calls the old address, which no longer answers.
+- **Every OAuth connector is removed and added again** at `https://api.zz-stack.com/core/mcp` (and
+  `/manage/mcp`, `/eval/mcp` where used). ChatGPT and claude.ai cached the old issuer, and an issuer
+  is the gateway's own URL, so an old connection cannot refresh against the new one.
+- PATs are unchanged and keep working against the new address.
+- Already applied on the one deployment: `GATEWAY_PUBLIC_URL=https://api.zz-stack.com` in
+  `deploy/.env`, `ZZ_GATEWAY` in the console's `.env`, and Caddy installed with both domains. Six
+  unused keys that still named nip.io (`DOMAIN_CLIENT`, `DOMAIN_SERVER` and the `BOOKINGSG_*` and
+  `OPUS_*` OAuth pairs) were deleted from the host's `deploy/.env`; no code reads them.
+
 ## [0.98.7] — 2026-10-24
 
 Two more passes at what a console page costs: the statements that reduce the whole event history

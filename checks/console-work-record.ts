@@ -394,11 +394,16 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   step = "weeks up to 26 of them and months beyond, so a year answers months";
   for (const p of ["quarter", "year", "all"] as const) {
     const windows = (R[p].cumulative as PF[]).map((x) => x.window);
-    const months = Date.parse(asOf) - Date.parse(starts[p]) > 26 * WEEK;
+    // Each answer against its OWN cutoff. The three are three requests, and the cutoff is the instant
+    // each read began rounded up to the second, so two reads a moment apart legitimately carry cutoffs
+    // a second apart — comparing one answer's last window against another's cutoff is a race, not a
+    // property, and it failed a release gate on a loaded machine and nowhere else.
+    const cutoff = String((R[p].meta as Obj).asOf);
+    const months = Date.parse(cutoff) - Date.parse(starts[p]) > 26 * WEEK;
     // Every period begins on a local Monday, or on the 1st, at midnight, where the one before it ends.
     const bad = windows.filter((w, i) => !(months ? stamp(Date.parse(w.from)).includes("-01,") : stamp(Date.parse(w.from)).startsWith("Mon"))
       || !stamp(Date.parse(w.from)).endsWith("00:00") || (i > 0 && w.from !== windows[i - 1].to));
-    if (!windows.length || bad.length || windows[0].observedFrom !== starts[p] || windows.at(-1)!.observedThrough !== asOf) {
+    if (!windows.length || bad.length || windows[0].observedFrom !== starts[p] || windows.at(-1)!.observedThrough !== cutoff) {
       c.fail(`${step} (${p})`, `${months ? "months" : "weeks"} expected, read ${show(windows.map((w) => w.from))}`);
     }
   }

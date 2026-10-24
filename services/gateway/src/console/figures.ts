@@ -28,6 +28,21 @@ export type ReadMeta = {
   period: { from: string; to: string };
   scope: "active-team" | "caller-in-active-team" | "platform-public" | "platform-admin";
   population: string; coverageFrom: string | null;
+
+  /* The four times and the hit. `asOf` says when the figures were COMPUTED and a cache hit keeps it;
+   * `observedAt` says when THIS request obtained its answer and is new on every request; `builtAt` and
+   * `sourceRevision` describe persisted derived data and are null for an answer computed from rows;
+   * `cacheHit` is the cache's own decision, which no caller may infer by comparing the first two.
+   *
+   * TRANSITIONAL: optional here so the eighteen routes that build a `meta` keep compiling while they
+   * are migrated one at a time. A route that answers without them is not yet compliant; the moment the
+   * last one fills them they become required and the `?` goes. Nothing may read them as absent-and-fine:
+   * a caller that needs one handles `undefined` as "this route has not been migrated", never as a value. */
+  observedAt?: string;
+  revision?: string | null;
+  builtAt?: string | null;
+  sourceRevision?: string | null;
+  cacheHit?: boolean;
 };
 export type Part<T> = { state: "ok"; data: T } | { state: "unavailable"; reason: string };
 export type MeasureKey = "malformed_per_1000" | "same_tool_followup_pct" | "call_p50_ms" | "call_p95_ms"

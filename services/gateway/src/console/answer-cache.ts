@@ -44,18 +44,29 @@ type Entry = { expires: number; value: Promise<unknown> };
 
 const answers = new Map<string, Entry>();
 
+/** An answer, and whether this caller was served one that was already computed.
+ *
+ *  DELIBERATE: the hit is stated by the party that knows. `asOf` is rounded up to a whole second
+ *  (`record.ts:403`) and the two instants are sampled at different points on every miss, so comparing
+ *  them tells a caller nothing: it is true on almost every miss and false on some hits. */
+type Served<T> = { value: T; hit: boolean };
+
 /**
- * `read`'s answer under `key`, computed once for every caller that asks within the same data version.
+ * `read`'s answer under `key`, computed once for every caller that asks within the same data version,
+ * with the cache's own statement of whether this caller was served the kept computation.
  *
  * The promise is shared, so a page opened in several tabs costs one computation; a read that rejects is
  * dropped rather than shared, so a failure is never served to the next caller as though it were an answer.
+ * With nothing listening there is no version and nothing is kept, so every answer is a miss.
  */
-export function cached<T>(key: string, read: () => Promise<T>): Promise<T> {
+export function cachedWithHit<T>(key: string, read: () => Promise<T>): Promise<Served<T>> {
   const version = dataVersion();
-  if (version === null) return read();
+  if (version === null) return read().then((value) => ({ value, hit: false }));
   const full = `${version}\u0000${key}`;
-  const hit = answers.get(full);
-  if (hit && hit.expires > Date.now()) return hit.value as Promise<T>;
+  const kept = answers.get(full);
+  if (kept && kept.expires > Date.now()) {
+    return (kept.value as Promise<T>).then((value) => ({ value, hit: true }));
+  }
   const value = read();
   if (answers.size >= KEPT) {
     for (const old of answers.keys()) {
@@ -68,5 +79,16 @@ export function cached<T>(key: string, read: () => Promise<T>): Promise<T> {
   void value.catch(() => {
     if (answers.get(full)?.value === value) answers.delete(full);
   });
-  return value;
+  return value.then((settled) => ({ value: settled, hit: false }));
+}
+
+/**
+ * The same answer, without the hit — the shape every route already awaits.
+ *
+ * DELIBERATE: kept exactly as it was rather than replaced. Changing what this resolves to would change
+ * every call site at once; the routes move to `cachedWithHit` as each one is taught to fill `meta`, and
+ * this stays for the ones that have not been yet.
+ */
+export function cached<T>(key: string, read: () => Promise<T>): Promise<T> {
+  return cachedWithHit(key, read).then((served) => served.value);
 }

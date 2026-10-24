@@ -6,8 +6,9 @@
 # address answers nothing, and `caddy validate` still says "Valid configuration" — it is a
 # valid config for a different machine.
 #
-# Two substitutions, named in the Caddyfile's own header:
-#   · the nip.io address
+# Three substitutions, named in the Caddyfile's own header:
+#   · the console's hostname, from CONSOLE_PUBLIC_URL
+#   · the nip.io address, from GATEWAY_PUBLIC_URL
 #   · how Caddy reaches the gateway — whatever address the running gateway is published on
 #
 # Usage:  ./deploy/install-caddy.sh <host>          # host is an ssh target
@@ -28,12 +29,17 @@ PUBLIC=$(ssh "$HOST" "grep -oE '^GATEWAY_PUBLIC_URL=.*' '$REMOTE/deploy/.env' | 
 # api.<addr> -> <addr>
 ADDR=$(printf '%s' "$PUBLIC" | sed -E 's#^https?://api\.##; s#/+$##')
 [ -n "$ADDR" ] || { echo "could not read the nip.io address out of $PUBLIC" >&2; exit 1; }
+CONSOLE_URL=$(ssh "$HOST" "grep -oE '^CONSOLE_PUBLIC_URL=.*' '$REMOTE/deploy/.env' | cut -d= -f2-")
+[ -n "$CONSOLE_URL" ] || { echo "$HOST has no CONSOLE_PUBLIC_URL in deploy/.env — refusing to guess" >&2; exit 1; }
+# https://host[:port][/...] -> host
+CONSOLE=$(printf '%s' "$CONSOLE_URL" | sed -E 's#^https?://##; s#[:/].*$##')
+[ -n "$CONSOLE" ] || { echo "could not read a hostname out of $CONSOLE_URL" >&2; exit 1; }
 
 # How Caddy reaches the gateway there: whatever the running gateway is published on.
 UPSTREAM=$(ssh "$HOST" "docker ps --format '{{.Ports}}' --filter name=cred-proxy | grep -oE '[0-9.]+:[0-9]+->8000' | head -1 | cut -d'>' -f1 | sed 's/-\$//'")
 [ -n "$UPSTREAM" ] || { echo "could not see where cred-proxy is published on $HOST" >&2; exit 1; }
 
-echo "$HOST: address $ADDR, gateway at $UPSTREAM"
+echo "$HOST: console $CONSOLE, address $ADDR, gateway at $UPSTREAM"
 
 # The committed file's own values, replaced. The explanatory header is deliberately not
 # rewritten.
@@ -42,14 +48,24 @@ echo "$HOST: address $ADDR, gateway at $UPSTREAM"
 # an $ADDR that already ends in .nip.io produces `<addr>.nip.io.nip.io`, a site block for a
 # hostname nothing resolves.
 #
-# COUPLED: both literals below must match what the Caddyfile contains. A sed that matches
+# COUPLED: the three literals below must match what the Caddyfile contains. A sed that matches
 # nothing does not fail — it emits the file unchanged — so the guards below refuse an install
-# in which either literal survived.
-sed -e "s/203-0-113-11\.nip\.io/$ADDR/g" -e "s#127\\.0\\.0\\.1:8764#$UPSTREAM#g" \
+# in which any literal survived.
+#
+# COUPLED: the Caddyfile's `# BEGIN old-console` block. A console still on its nip.io address
+# has nowhere else to redirect to, and a second block for the same hostname is refused by Caddy.
+DROP='/^# BEGIN old-console$/,/^# END old-console$/d'
+[ "$CONSOLE" = "$ADDR" ] || DROP='/^# [A-Z]* old-console$/d'
+sed -e "$DROP" -e "s/console\.example\.com/$CONSOLE/g" \
+    -e "s/203-0-113-11\.nip\.io/$ADDR/g" -e "s#127\\.0\\.0\\.1:8764#$UPSTREAM#g" \
     "$HERE/Caddyfile" > /tmp/caddy-$HOST.new
 grep -q "nip\.io\.nip\.io" /tmp/caddy-$HOST.new && { echo "substitution doubled the domain suffix" >&2; exit 1; }
 
 grep -q "$ADDR" /tmp/caddy-$HOST.new || { echo "substitution produced no site block for $ADDR" >&2; exit 1; }
+grep -q "^$CONSOLE {" /tmp/caddy-$HOST.new || { echo "substitution produced no site block for $CONSOLE" >&2; exit 1; }
+if grep -q "console\.example\.com" /tmp/caddy-$HOST.new && [ "$CONSOLE" != "console.example.com" ]; then
+  echo "the template's own console hostname survived the substitution — refusing to install" >&2; exit 1
+fi
 if grep -q "203-0-113-11" /tmp/caddy-$HOST.new && [ "$ADDR" != "203-0-113-11.nip.io" ]; then
   echo "the template's own address survived the substitution — refusing to install" >&2; exit 1
 fi
@@ -78,10 +94,14 @@ ssh "$HOST" "caddy validate --adapter caddyfile --config /tmp/Caddyfile.new >/de
 # that the host's own addresses answer.
 sleep 2
 # The hosts this file serves, read out of it rather than listed here, so the verifier does not
-# need editing every time the file changes.
-for h in $(grep -oE '^[a-z0-9.-]+\.nip\.io \{' /tmp/caddy-$HOST.new | sed 's/ .*//'); do
+# need editing every time the file changes. A host whose block is a redirect answers 301, every
+# other one 200.
+for h in $(grep -oE '^[a-z0-9.-]+ \{' /tmp/caddy-$HOST.new | sed 's/ .*//'); do
+  want=200
+  awk -v h="$h" '$1 == h && $2 == "{" {in_block = 1; next} in_block && /^}/ {exit} in_block && $1 == "redir" {found = 1} END {exit !found}' \
+    /tmp/caddy-$HOST.new && want=301
   code=$(ssh "$HOST" "curl -sk -o /dev/null -w '%{http_code}' --resolve '$h:443:127.0.0.1' 'https://$h/' --max-time 10")
   printf '  %-38s %s\n' "$h" "$code"
-  [ "$code" = "200" ] || { echo "  ^ not serving — previous config is at /etc/caddy/Caddyfile.prev on $HOST" >&2; exit 1; }
+  [ "$code" = "$want" ] || { echo "  ^ answered $code, not $want — previous config is at /etc/caddy/Caddyfile.prev on $HOST" >&2; exit 1; }
 done
 echo "$HOST: caddy installed and serving"

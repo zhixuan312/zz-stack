@@ -250,13 +250,28 @@ reasoning streams share the one `LLM_API_KEY`; raise the plan or rotate several 
 
 ## HTTPS
 
-Caddy + nip.io — no domain purchase needed. `deploy/Caddyfile` is a template and
+Caddy, with Let's Encrypt fetched and renewed automatically. `deploy/Caddyfile` is a template and
 `install-caddy.sh` is the only thing that should apply it; see **Standing up a host** above. It
-serves two hostnames on one machine: the bare host for the console, and `api.<host>` for the
-gateway, which is how Claude Code reaches this platform from a laptop.
+serves three hostnames on one machine:
 
-Caddy fetches and renews Let's Encrypt automatically and proxies WebSockets. Swap the nip.io
-host for a real domain in the Caddyfile whenever one exists.
+| Hostname | From | Serves |
+|---|---|---|
+| the console's own, `zz-stack.com` here | `CONSOLE_PUBLIC_URL` | the console |
+| `api.<ip>.nip.io` | `GATEWAY_PUBLIC_URL` | the gateway, which is how Claude Code reaches this platform from a laptop |
+| `<ip>.nip.io` | `GATEWAY_PUBLIC_URL` | a permanent redirect to the console, where it used to be |
+
+nip.io needs no DNS record. The console's domain needs an `A` record to the host, **DNS only**:
+a proxying CDN cuts an idle response at about 100 seconds, and an agent turn runs for minutes.
+A host with no domain sets `CONSOLE_PUBLIC_URL` to `https://<ip>.nip.io`, and the installer
+drops the redirect.
+
+Moving the console to a new hostname is three steps, in this order, once its DNS answers:
+
+1. set `CONSOLE_PUBLIC_URL` in `deploy/.env` and `docker compose up -d cred-proxy`
+2. `./deploy/install-caddy.sh <host>` from a checkout
+3. `./deploy/issue-enrolment.sh <email>` on the host for each person: a passkey is bound to the
+   old hostname, so everybody re-enrols, and nobody can sign in to mint the links until the first
+   one is used
 
 ## Connecting to the DB from your laptop
 

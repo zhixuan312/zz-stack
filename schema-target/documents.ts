@@ -398,7 +398,15 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       "CREATE INDEX doc_revision_pending ON zz.doc_revision USING btree (presented_at) WHERE ((presented_at IS NOT NULL) AND (approved_at IS NULL))",
       "CREATE INDEX doc_revision_version ON zz.doc_revision USING btree (doc_id, version)",
     ],
-    comment: "class=state_machine; authority=this; question=which revision of this document is this, and does it still retain the exact bytes that were written?; transitions=written->approved",
+    // Rule 9's other half, declared rather than left to a sweep. The retention decision is that
+    // nothing is purged yet, and the reason is not a citation rule: `zz.doc`'s two pointers to a
+    // revision are real foreign keys added by `ALTER TABLE` two thousand lines below the `CREATE
+    // TABLE` in `001_init.sql`, so an age-and-citations sweep is refused at commit for a revision
+    // a document points at — and the revisions no constraint refuses are exactly the ones whose
+    // deletion succeeds while taking a `doc_link` provenance with it. `013_doc_revision_retention.sql`
+    // applies this comment; a `retention=` naming a sweep that no production path runs is the
+    // defect worth more than the missing field, so the declaration says plainly that none runs.
+    comment: "class=state_machine; authority=this; question=which revision of this document is this, and does it still retain the exact bytes that were written?; transitions=written->approved; retention=declared unswept: no sweep purges a revision and no production path deletes one on its own, because this table is unbounded and a revision-retention rule has to be written before anything may delete a revision at all; a revision leaves the database only with the document it belongs to, by the ON DELETE CASCADE of doc_revision_doc_id_fkey; a sweep deciding a revision by its age and by the evaluations that cite it alone would be refused at commit for a revision a document points at, because zz.doc.current_revision and zz.doc.approved_revision each hold one through a real foreign key, doc_id_current_revision_fkey and doc_id_approved_revision_fkey, both NO ACTION and the current-revision one DEFERRABLE INITIALLY DEFERRED, while the half no constraint refuses is the half whose deletion succeeds and takes the provenance of a citation with it, because both of zz.doc_link revision references, doc_link_from_doc_id_from_revision_fkey and doc_link_to_doc_id_to_revision_fkey, are ON DELETE CASCADE; it reopens when a complete revision-retention rule exempts by name every revision a document points at and every revision a link cites, and a sweep implementing that rule is written",
     columnComments: {
       doc_id: "class=relation; authority=this; question=which document does this revision belong to?",
       revision: "class=state_machine; authority=this; question=which revision number of that document is this?",

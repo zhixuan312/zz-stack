@@ -38,6 +38,18 @@ check("the seam between a page and the tables is decided, and a view and a mater
 // `zz.model_call` is held to the decision that retired both of its legacy indexes.
 check("four recurring filters are served by an index both sides declare and a plan chooses, and zz.model_call keeps only the ts index a plan reaches",
       runsCheck("answer-indexes.ts"));
+// Phase 3's retention declaration. Rule 9's general enforcement is `comment-completeness.ts`; this is
+// the four things that are `zz.doc_revision`'s alone — the two constraints that refuse a referenced
+// revision's deletion, the `doc_link` cascade that does not, the document cascade that does, that no
+// sweep runs, and what reopens it — held against the target, the migrated catalog and the tree.
+check("an unbounded table says what happens to it, in terms its schema and its code both keep",
+      runsCheck("table-retention.ts"));
+// Phase 3's answer classes. `event-work-week-columns.ts` holds the register's six rows to their
+// fields; this holds every class — the register's six, the settings reads, and the four stranded by
+// an event write — to a range, a grain and a two-number budget, each evidenced at today's data and
+// at ten times it, with buffers named as the second half of the evidence.
+check("every console answer class states its range, its grain and a budget it can be held to at ten times the traffic",
+      runsCheck("answer-budgets.ts"));
 check("no initiative reader derives closed, outcome or flow from zz.doc", runsCheck("initiative-lifecycle-readers.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 check("no statement in the write trees names a table or column the migration retires",

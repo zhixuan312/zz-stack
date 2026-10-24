@@ -1,0 +1,49 @@
+-- 013_doc_revision_retention.sql — `zz.doc_revision` declares its retention decision, and the reason it is
+-- not a sweep.
+--
+-- The table is unbounded: every change to every document files a revision, and no sweep removes one, so
+-- SCHEMA.md rule 9 wants the rule written down even when the rule is that nothing goes. It goes unstated
+-- today, and the decision this file records is the one FR-13 allows — no revision is purged yet — with every
+-- mechanism that refuses or performs a deletion named rather than assumed.
+--
+-- The first mechanism is a foreign key, and it is not where a reader looks for it. `zz.doc`'s
+-- `current_revision` and `approved_revision` each hold a revision through a real constraint —
+-- `doc_id_current_revision_fkey` and `doc_id_approved_revision_fkey`, both `NO ACTION`, the first
+-- `DEFERRABLE INITIALLY DEFERRED` — and both are added by `ALTER TABLE` at `001_init.sql:5973-5985`, after
+-- the column list that would have shown them inline. So a sweep judging a revision by "past its retention
+-- and not cited by an evaluation" is refused at commit for the revision the document currently stands at,
+-- and for the one it was last approved at.
+--
+-- DELIBERATE: the second mechanism is named because it is the half no constraint refuses, and it is the
+-- dangerous half. Both of `zz.doc_link`'s revision references —
+-- `doc_link_from_doc_id_from_revision_fkey` and `doc_link_to_doc_id_to_revision_fkey` — are `ON DELETE
+-- CASCADE`, so deleting a revision that no `zz.doc` pointer holds succeeds and takes every citation that
+-- named those exact bytes with it, silently, in the same commit. A rule written from the citations alone
+-- therefore refuses exactly the deletions the database already refuses and permits exactly the ones that
+-- destroy provenance.
+--
+-- DELIBERATE: the third mechanism points the other way, and the declaration that says no sweep runs has to
+-- say this too or it claims nothing ever deletes a revision, which is false. `doc_revision_doc_id_fkey`
+-- (001_init.sql:6024-6025) is `ON DELETE CASCADE` from `zz.doc`, so deleting a document removes its
+-- revisions in the same transaction — in production as well as by hand, since `scripts/ops/purge-probes.ts`
+-- deletes documents for real. That path is the document's own lifetime deciding the revision's, not a
+-- retention rule, and the two are kept apart in the comment so a reader does not mistake the one for the
+-- other.
+--
+-- DELIBERATE: the comment says no sweep runs, and that is the whole point of writing it down. A
+-- `retention=` that describes a purge no production path performs tells the next reader the table is
+-- handled when it is not, which is worse than the missing field this replaces. The decision reopens when a
+-- complete revision-retention rule exists — one that exempts by name every revision a document points at
+-- and every revision a `doc_link` cites — and a sweep implementing that rule is written; until then the
+-- declaration is the record.
+--
+-- `schema-target/documents.ts` declares this comment, and `scripts/rehearse/expect.ts` needs no entry: no
+-- row moves and no column changes, so the default assertion — row count unchanged, content hash unchanged —
+-- is the one this file must pass.
+--
+-- The release before this file can run on what it builds: `pg_catalog`'s table comment is read by the gate
+-- and by nobody at runtime, so the previous image neither reads nor writes it, and a rollback restores the
+-- older text by the release that carries it. No line below declares a refusal. `COMMENT ON` sets a value
+-- and replaces whatever was there, so running it twice leaves the same catalog the first run did.
+
+COMMENT ON TABLE zz.doc_revision IS 'class=state_machine; authority=this; question=which revision of this document is this, and does it still retain the exact bytes that were written?; transitions=written->approved; retention=declared unswept: no sweep purges a revision and no production path deletes one on its own, because this table is unbounded and a revision-retention rule has to be written before anything may delete a revision at all; a revision leaves the database only with the document it belongs to, by the ON DELETE CASCADE of doc_revision_doc_id_fkey; a sweep deciding a revision by its age and by the evaluations that cite it alone would be refused at commit for a revision a document points at, because zz.doc.current_revision and zz.doc.approved_revision each hold one through a real foreign key, doc_id_current_revision_fkey and doc_id_approved_revision_fkey, both NO ACTION and the current-revision one DEFERRABLE INITIALLY DEFERRED, while the half no constraint refuses is the half whose deletion succeeds and takes the provenance of a citation with it, because both of zz.doc_link revision references, doc_link_from_doc_id_from_revision_fkey and doc_link_to_doc_id_to_revision_fkey, are ON DELETE CASCADE; it reopens when a complete revision-retention rule exempts by name every revision a document points at and every revision a link cites, and a sweep implementing that rule is written';

@@ -544,46 +544,45 @@ by a name that exists"` holds this file to that.
 
 ## 5. What the console reads, and what each read costs
 
-A console figure is only honest if the document that decided where it comes from is written down before
-the figure moves. This section is that decision, taken once: every metric the console shows has a line
-saying what it is counted from, at what grain, what makes its answer change, and whether a read model or
-the tables answers it.
+A console figure is only honest if the document that decided where it came from was written before the
+figure moved. This section is that decision, taken once: every metric has a line saying what it is
+counted from, over what range and grain, what moves it, and whether a read model or the tables answer it.
 
 `zz.event_work_week` is the read model — `migrations/011_event_work_week.sql`, declared
 `class=projection; rebuilt_from=zz.event`, so every row is reproducible by re-running one statement over
 `zz.event` and nothing in it is a fact of its own. It carries no `matched`, no `continued_sessions` and
-no `last_call_at`: the first two are business state decided elsewhere and recorded nowhere in
-`zz.event`, so a rebuild would lose them without an error, and the third is derivable and unbounded.
-`check "the read model holds no business state it cannot rebuild, and its register is written"` refuses
-a column of any of those three names, and holds the four sections below to their headings, their six
-register rows and their two-number budget.
+no `last_call_at`: the first two are business state decided elsewhere and recorded nowhere in `zz.event`,
+so a rebuild would lose them without an error, and the third is derivable and unbounded. `check "the read
+model holds no business state it cannot rebuild, and its register is written"` refuses a column of any of
+those three names and holds the four sections below to their headings, their six rows and their budgets.
 
 The measurements below are `EXPLAIN (ANALYZE, BUFFERS)` on this deployment, read-only, on 2026-10-24 at
-**41,772 real-work calls** (`zz.event` where `kind = 'tool_call'` and `origin = 'work'`), the row count
-the ten-times test seeds to; a projection at ten times is that figure at ten times the row count,
-labelled as one rather than guessed at.
+**41,772 real-work calls** (`zz.event` where `kind = 'tool_call'` and `origin = 'work'`), the ten-times seed;
+a projection at ten times is that figure at ten times the row count, labelled as one. The rows and shared
+buffers were read again at **41,891 real-work calls**; the milliseconds are recorded, and the two evidence each budget.
 
 ### The metric register
 
-| Metric | Source | Grain | What makes its answer change | Served by |
-|---|---|---|---|---|
-| Calls by week and team | `zz.event`, real-work tool calls, joined to `zz.team` for the slug | team · local week | any real-work call | the read model, `teamWeeks` |
-| Calls by tool and week, with the median | `zz.event`, real-work tool calls, the tool named through `zz.plugin_tool` | tool · local week | any real-work call, or a tool the doors stop registering | the read model, `toolWeeks`, its median the merge of the buckets' `ms` arrays |
-| Calls by refusal owner | `zz.event`, real-work tool calls carrying a `refusal_owner` | refusal owner · team · local week | any refused call | the read model, `refusal_owner` being part of its grain |
-| Refusals put right — `matched`, `median_ms` | `zz.event`, a refusal and the first real-work call of the same team, session and tool inside the 120 seconds after it | refusal · local week | a refusal, or the call that puts it right | a raw query, `followupWeeks` |
-| Refusals put right — `continued_sessions` | `zz.event`, a refused session's own later calls | refused session · local week | a call of that session after a refusal | a raw query, `followupWeeks`, the same statement |
-| Calls by local weekday and hour | `zz.event`, real-work tool calls | local day and hour | any real-work call | a raw query, `readDays` |
+| Metric | Source | Range | Grain | What makes its answer change | Served by | Budget |
+|---|---|---|---|---|---|---|
+| Calls by week and team | `zz.event`, real-work tool calls, joined to `zz.team` for the slug | the seven weeks the page draws, the running one last | team · local week | any real-work call | the read model, `teamWeeks` | `rows ≤ 1000, ms ≤ 50` — 720 rows, 1.0 ms at today's traffic and at ten times it |
+| Calls by tool and week, with the median | `zz.event`, real-work tool calls, the tool named through `zz.plugin_tool` | the seven weeks the page draws, the running one last | tool · local week | any real-work call, or a tool the doors stop registering | the read model, `toolWeeks`, its median the merge of the buckets' `ms` arrays | `rows ≤ 1000, ms ≤ 50` — 720 rows, 1.0 ms at today's traffic and at ten times it |
+| Calls by refusal owner | `zz.event`, real-work tool calls carrying a `refusal_owner` | the seven weeks the page draws, the running one last | refusal owner · team · local week | any refused call | the read model, `refusal_owner` being part of its grain | `rows ≤ 1000, ms ≤ 50` — 720 rows, 1.0 ms at today's traffic and at ten times it |
+| Refusals put right — `matched`, `median_ms` | `zz.event`, a refusal and the first real-work call of the same team, session and tool inside the 120 seconds after it | every refusal in the record, and the 120 seconds after each | refusal · local week | a refusal, or the call that puts it right | a raw query, `followupWeeks` | `rows ≤ 850000, ms ≤ 1800` — 80,966 rows read in 148 ms, about 810,000 in about 1.5 s at ten times |
+| Refusals put right — `continued_sessions` | `zz.event`, a refused session's own later calls | every refused session, through the record's newest call | refused session · local week | a call of that session after a refusal | a raw query, `followupWeeks`, the same statement | the same statement, so the same two numbers: `rows ≤ 850000, ms ≤ 1800` — 80,966 rows in 148 ms, about 810,000 in about 1.5 s at ten times |
+| Calls by local weekday and hour | `zz.event`, real-work tool calls | the whole record, by local day | local day and hour | any real-work call | a raw query, `readDays` | `rows ≤ 450000, ms ≤ 1300` — 41,891 rows in 122 ms, about 419,000 in about 1.2 s at ten times |
 
-The two `followupWeeks` rows are the ones the model may not answer. A refusal is put right by what
-happens in the two minutes after it, and a session continued is a fact about every later call of that
-session: neither is a count of anything, so neither is a column of a projection. Both stay a raw query
-with the cost recorded below; the median of a cross-bucket population is always the merge of the `ms`
-arrays — never a median of medians.
+The two `followupWeeks` rows are the ones the model may not answer. A refusal is put right by the two minutes
+after it, and a session continued is a fact about every later call of that session: a rebuild of `zz.event`
+could not reproduce either, so neither is a column of a projection. Both stay a raw query with the cost
+recorded below; a cross-bucket median is the merge of the `ms` arrays, never a median of medians.
 
 ### The budget of each answer class
 
-A budget is two numbers: what the class may cost at ten times today's traffic. Task I-19's third arm
-parses the line below, seeds to ten times the 41,772 real-work calls, and fails on either number.
+A budget is two numbers — the rows a class may read and the milliseconds it may take — set for ten times
+today's traffic and each evidenced twice: `EXPLAIN (ANALYZE, BUFFERS)` at today's data and the same plan at
+ten times, because rows alone are not the cost: three of Status's statements read 41,891 to return seven.
+Task I-19's third arm parses the line below, seeds to ten times the 41,772 real-work calls, and fails there.
 
 - **Usage's calls by week and team** — `rows ≤ 1000, ms ≤ 50`. Today it reads 645 rows and takes 1.2 ms
   from the read model, against 41,772 rows and 133 ms for the same figure from `zz.event`. At ten times
@@ -592,52 +591,55 @@ parses the line below, seeds to ten times the 41,772 real-work calls, and fails 
   on a throwaway migrated by the real runner — the model plus the raw tail FR-16b(i) requires — reads
   **720 rows in 1.0 ms at 41,772 calls and 720 rows in 1.0 ms at ten times them**: the whole figure.
 
-The `ms` array is the one field whose size is not obviously bounded, so it is recorded: its widest
-bucket holds 2,414 integers in 9,680 bytes against an average bucket of 276 bytes, and at ten times it
-is about 24,140 integers and about 95 KB — one row's value still, and stored in line.
+The `ms` array is the one field whose size is not obviously bounded: its widest bucket holds 2,414 integers
+in 9,680 bytes against an average bucket's 276, and at ten times about 24,140 and 95 KB, one row's value still.
 
-The classes that stay on the tables carry their own budgets, which no check parses because no read moves
-onto the model to hold them to one; no single page pays the 426 ms `callDays` and `followupWeeks` add up to.
+The settings reads count people, teams and tokens rather than work, so the register does not reach them.
+Three of the five issue a statement, read with `EXPLAIN (ANALYZE, BUFFERS)` at 8 principals, 9 memberships
+and 34 tokens.
+
+| Settings read | What it runs | Range · grain | Budget | Today | At ten times |
+|---|---|---|---|---|---|
+| `/settings/me/tokens` | `myAccessTokensFor`, `pat` joined to `principal` | the caller's own token history · one row per token | `rows ≤ 400, ms ≤ 5` | 34 rows read, 6 buffers, 0.3 ms | about 340 rows, 60 buffers, under 3 ms |
+| `/settings/team/members` | the membership, principal and team join, for one team | that team's roster · team · member | `rows ≤ 400, ms ≤ 5` | 22 rows read, 14 buffers, 0.2 ms | about 220 rows, 140 buffers, about 2 ms |
+| `/settings/platform/people` | `listPeople`, a principal per row with its teams aggregated | the platform's principals · principal · its teams | `rows ≤ 800, ms ≤ 5` | 22 rows read, 13 buffers, 0.7 ms | about 220 rows, 130 buffers, about 7 ms |
+| `/settings/me/teams`, `/settings/me/client-setup` | `myTeamsSummary`, over the `Identity` the request resolved, and `renderClientSetup` around the caller's email: no statement between them | what the request already carries · the identity's teams, and one row for the setup | `rows 0, ms ≤ 1` | no statement, no buffers | no statement, no buffers |
+
+Their cost grows with the population, not with `zz.event` — a hundred people is eight hundred rows here — so
+none of the five needs a read model and none is on the strand list below.
 
 ### Answer classes that miss on every event write
 
-Four answer classes are stranded by every `zz.event` write, correctly: each figure they show includes
-events, so an event is exactly what moves it (FR-11b), and none may be kept across a write.
+Four answer classes are stranded by every `zz.event` write, correctly: each figure they show includes events,
+so an event is exactly what moves it (FR-11b), and none may be kept across a write.
 
-| Answer class | What its read runs | Measured cost, platform-wide | Staleness it may be served at |
-|---|---|---|---|
-| Home | the whole record reduced to a week: two core MCP reads and the events behind them | 0.6–1.2 s computed, 0.19 s served (recorded in `answer-cache.ts`; not re-measured here, because its read goes through the core MCP door and timing it against production would need a session that writes) | zero: an event write moves the answer, so `answer-cache.ts` strands the entry on that write |
-| Record | five statements over the document and event tables, one read per period and page | 0.6–1.2 s computed, 0.19 s served (the same recorded measurement, on the same page class) | zero, for the same write |
-| Usage | `teamWeeks`, `toolWeeks`, `followupWeeks` | 559 ms before Task I-19 (133 + 278 + 148), the 278 being `callDays`, which only `toolWeeks` read on this page and which the page no longer reads at all; the two week-grain reductions now read the model, and their composed statement measures 1.0 ms at 41,772 real-work calls and 1.0 ms at ten times them, inside the budget declared above, so the class is `followupWeeks`' 148 ms and the model read beside it | zero: the model absorbs the call in the transaction that writes it and the raw tail is read at request time, so a served answer is never behind `zz.event` |
-| Status | `readDays`, `latencyMeasures`, `sessionsMeasure` | 500 ms (122 + 109 + 269) | zero, for the same write |
+| Answer class | What its read runs | Range · grain | Budget | Measured today | At ten times | Staleness it may be served at |
+|---|---|---|---|---|---|---|
+| Home | the whole record reduced to a week: two core MCP reads and the events behind them | the last 24 whole weeks, and the whole record where the weeks do not reach its start · local week, and local day for the agents' days | `rows ≤ 600, ms ≤ 1200` computed, `ms ≤ 190` served | 0.6–1.2 s computed, 0.19 s served (recorded in `answer-cache.ts`; not re-measured here, because its read goes through the core MCP door and timing it against production would need a session that writes) | about 6–12 s computed, about 1.9 s served: the whole-record legs grow tenfold where the 24 drawn weeks do not, which is what the cache holds | zero: an event write moves the answer, so `answer-cache.ts` strands the entry on that write |
+| Record | five statements over the document and event tables, one read per period and page | the period asked for — a quarter, a year or the whole record — and one page of the table · local week or month, initiative · page | `rows ≤ 2400, ms ≤ 1200` computed, `ms ≤ 190` served | 0.6–1.2 s computed, 0.19 s served (the same recorded measurement, on the same page class) | about 6–12 s computed, about 1.9 s served, for the same reason | zero, for the same write |
+| Usage | `teamWeeks`, `toolWeeks`, `followupWeeks` | the seven weeks the page draws, and every refusal in the record · team, tool and refusal owner · local week | `rows ≤ 1000, ms ≤ 50` on the model, `rows ≤ 850000, ms ≤ 1800` on the raw tail | 559 ms before Task I-19 (133 + 278 + 148), the 278 being `callDays`, which only `toolWeeks` read on this page and which the page no longer reads at all; the two week-grain reductions now read the model, and their composed statement measures 1.0 ms at 41,772 real-work calls and 1.0 ms at ten times them, inside the budget declared above, so the class is `followupWeeks`' 148 ms and the model read beside it | about 1.5 s, the raw tail's projection, with the model still at 1.0 ms | zero: the model absorbs the call in the transaction that writes it and the raw tail is read at request time, so a served answer is never behind `zz.event` |
+| Status | `readDays`, `latencyMeasures`, `sessionsMeasure` | the whole record by local day and by local week, and the doors' last 365 days · local day, local week | `rows ≤ 450000, ms ≤ 5000` | 500 ms (122 + 109 + 269); all three scan the same 41,891 rows and about 6,480 shared buffers, `readDays` to return 65 day rows and the other two seven week rows | about 5.0 s (1.2 + 1.1 + 2.7), the projections in `### What stays a raw query` | zero, for the same write |
 
-Task I-19 moved both reductions onto the model, and the union it first shipped was unusable on real
-traffic — measured, fixed, and recorded here because the numbers are the reason the shape is what it is.
-The first `weekBuckets` read the raw half as a range per bucket, inside that bucket's own week, on the
-assumption that the range is empty because the row has already absorbed its week. On this deployment it
-is not: **470 of the 645 buckets end an average of 41.6 hours before their week does**, so every range
-spanned other keys' events and discarded them — 1,057,133 rows read and filtered to nothing across 645
-probes, **482 ms** for an answer the model alone gives in 1.2 ms; on a throwaway the planner flattened the
-`left join lateral` into a materialised nested loop and it read **1.85 s at 41,772 calls and 25 s at
-417,720**, 3,488,198 temp blocks at the larger.
+The `rows` half of Home's and Record's budget is the answer's own rows — the weeks the period draws times the
+reductions drawn — because both are the record reduced to a week, so their row bound is the grain's, not the
+table's; Status's buffers figure is the whole-table evidence beside it.
 
-The shipped shape bounds the raw half **once**, by the newest `through_ts` in the table, and joins it to
-the model by key. That is exact rather than approximate, and the write path is what makes it so:
-`WEEK_RECORD` sets a bucket's `through_ts` to that bucket's own newest `ts` in the transaction that
-inserts the call, so after every committed write no bucket is behind its rows and the newest watermark
-is the newest real-work call there is. Verified against the per-bucket answer **on all 645 buckets,
-field for field, and against the raw statement at team and week**, then measured on the same throwaway
-seeded so that 496 of its 720 buckets end early in their week as this deployment's do: **720 rows and
-1.0 ms at 41,772 calls, 720 rows and 1.0 ms at 417,720** — inside both numbers, with no new index. A table
-with no rows takes `-infinity`, so an unbuilt model answers from the whole history rather than nothing.
-
-`checks/event-work-week-reads.ts` holds all of it: the model against the raw statement at its own grain,
-the two reductions against the same raw rows, and this budget at one times and ten times the traffic.
+Task I-19's first shipped union was unusable on real traffic. Its `weekBuckets` read the raw half as a range
+inside each bucket's own week, assuming the row had absorbed that week: **470 of the 645 buckets end an
+average of 41.6 hours before their week does**, so every range spanned other keys' events and discarded
+them — 1,057,133 rows filtered to nothing across 645 probes, **482 ms** for what the model alone gives in
+1.2 ms; flattened by the planner into a materialised nested loop, **1.85 s at 41,772 calls and 25 s at
+417,720**, 3,488,198 temp blocks. The shipped shape bounds the raw half **once**, by the newest `through_ts`
+in the table, and joins it to the model by key — exact, because `WEEK_RECORD` sets a bucket's `through_ts`
+to that bucket's own newest `ts` in the transaction that inserts the call. Verified **on all 645 buckets,
+field for field, and against the raw statement at team and week**, then on a throwaway seeded so that 496
+of its 720 buckets end early: **720 rows and 1.0 ms at 41,772 calls, 720 rows and 1.0 ms at 417,720** —
+inside both numbers, with no new index. A table with no rows takes `-infinity`, so an unbuilt model answers
+from the whole history; `checks/event-work-week-reads.ts` holds all of it, buffers included.
 
 ### What stays a raw query
 
-These seven read `zz.event` from its first row on every request, and each stays that way for a reason
-the model cannot fix, with the cost measured today and its projection at ten times the calls.
+These seven read `zz.event` from its first row on every request, each for a reason the model cannot fix, with the cost measured today and its projection at ten times the calls.
 
 | Reduction | Why its grain cannot be held | Today | At ten times |
 |---|---|---|---|
@@ -657,41 +659,35 @@ One model exists, because its cost grows with `zz.event` and its answer does not
 |---|---|---|
 | `zz.event_work_week` | what one team's real-work calls added up to in one week of the deployment calendar under one refusal owner — calls, refusals, failures, and the durations a median is taken over | the answer is a few hundred keyed rows and each count is an integer the writing transaction increments, so it costs 1.2 ms where `zz.event` reads 41,772 rows in 133 ms; a view would re-run that read under a shorter name |
 
-`zz.event` above is the source a model is rebuilt from and not a model: the arm holding this list reads the
-table's first column for that reason, since one judging every `zz.` name here would redden on this paragraph.
+`zz.event` above is the source a model is rebuilt from and not a model, which is why the arm holding this list reads the table's first column and never every `zz.` name in the section.
 
-A second model is worth declaring when a page's statement reads rows in proportion to a table's size rather
-than to what the page shows, the answer is derivable from something already stored, and the write path can
-absorb the change in the transaction that caused it. None of the seven in `### What stays a raw query` meets
-that for the fact it lacks — a session's later history, the two minutes after a refusal, a local hour — and a
-model holding them would store state a rebuild loses.
+A second model is worth declaring when a statement reads rows in proportion to a table's size rather than to
+what the page shows, the answer is derivable from something already stored, and the write path can absorb the
+change in the transaction that caused it. None of the seven meets that — a session's later history, the two
+minutes after a refusal, a local hour — and a model holding it would store state a rebuild loses.
 
 ### What a page may cost
 
 The rule, stated once: **a page's statement cost is bounded by what the page shows, not by what its table
 holds — a statement whose rows read grow with `zz.event` is either served by a read model or named in
-`### What stays a raw query` with its measured cost today and its projection at ten times.**
-
-Every register row above is held to it — served by the model or named on that list — and every row there
-carries both figures. A figure in neither place is the defect this section exists to prevent. Staleness is
-stated per answer class beside its cost above, and all four are zero: neither a write to what an answer
-reads nor a clock boundary may be served past.
+`### What stays a raw query` with its measured cost today and its projection at ten times.** Every register
+row above is held to it; a figure in neither place is the defect this section prevents. Staleness is per
+class in the strand table and all four are zero: no write, no clock boundary may be served past.
 
 ### The two shapes this refuses
 
-**A plain SQL view is refused by name.** It is a saved query and saves no work: the planner expands it into
-every statement that reads it, so the reduction still runs over `zz.event` on every request.
+**A plain SQL view is refused by name.** It is a saved query and saves no work: the planner expands it into every statement that reads it, so the reduction still runs over `zz.event` on every request.
 
 **A materialized view is refused beside it, by four mechanisms rather than by an adjective:**
 
-- `REFRESH MATERIALIZED VIEW` takes an ACCESS EXCLUSIVE lock on the view, so every reader waits; `CONCURRENTLY`
-  drops the lock and cannot run inside the writing transaction, where a model must be absorbed to be current.
+- `REFRESH MATERIALIZED VIEW` takes an ACCESS EXCLUSIVE lock on the view, so every reader waits;
+  `CONCURRENTLY` drops the lock and cannot run inside the writing transaction, where a model must be absorbed.
 - It recomputes the whole history on every refresh: the answer at 41,772 calls costs what the answer at
   417,720 costs, each time.
-- `REFRESH` refreshes no optimizer statistics, so `pg_statistic` keeps describing the rows the view held
-  before until `ANALYZE` is run by hand.
-- `schema-target.ts:35` declares only `tables`, so a materialized view would be the one object in the database
-  the schema gate cannot see — in no target, diffed against nothing, driftable with the gate green.
+- `REFRESH` refreshes no optimizer statistics, so `pg_statistic` describes the rows the view held before
+  until `ANALYZE` is run by hand.
+- `schema-target.ts:35` declares only `tables`, so a materialized view is the one object in the database the
+  schema gate cannot see: in no target, diffed against nothing, driftable with the gate green.
 
 DELIBERATE: the refusal does not rest on autovacuum. PostgreSQL's autovacuum does consider `RELKIND_MATVIEW`
 and analyzes one on its own schedule; the claim that it ignores them is false and is not repeated here, and

@@ -41,6 +41,7 @@ import type { Mcp } from "@zz/mcp-client";
 
 import { coreFor } from "../core-as-caller.js";
 import { platformDb } from "../db.js";
+import { cached } from "./answer-cache.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { teamPendingRevisions } from "./pending.js";
 import { BAD_PAGE, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
@@ -290,6 +291,12 @@ export function mountInitiativeList(app: Express): void {
     const params = listParams(req.query as Record<string, unknown>);
     if (typeof params === "string") { res.status(400).json({ error: params }); return; }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
-    res.json(await initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)));
+    // DELIBERATE: kept as one answer per caller, team and page until a write moves `dataVersion()`
+    // (answer-cache.ts). This is the console's heaviest read — every initiative's documents, its
+    // closures and one relayed `initiative_status` per ten rows — and the list is what a person
+    // returns to between destinations without anything having happened since.
+    const email = req.zzIdentity!.email;
+    res.json(await cached(`initiatives|${activeTeam}|${email}|${JSON.stringify(params)}`, () =>
+      initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req))));
   }));
 }

@@ -135,17 +135,22 @@ function catalogWithASkill(dir: string): { plugin: string; skill: string } | nul
   return null;
 }
 
-/** Every field the envelope promises, on one answer. Answers what is wrong, or null when nothing is. */
-function envelopeFault(a: Answer, live: boolean, route: ReadRoute, followed: readonly string[]): string | null {
-  if (a.status >= 400) return `answered ${a.status}: ${a.text.slice(0, 240)}`;
-  if (a.body === null) return `answered ${a.status} with ${a.text.slice(0, 120)}, which is not a JSON object`;
+/** Every field the envelope promises, on one answer. Answers what is wrong, or null when nothing is.
+ *  DELIBERATE: the three fields are judged by `envelopeProblem` in the gateway, not here. The route loop
+ *  and the self-test below call the same predicate, so an edit that loosens it reddens the self-test
+ *  instead of being the code the assertion is written in. What stays here is what a body-only predicate
+ *  cannot see: the status, and the response text of an answer that is not JSON. */
+function envelopeFault(
+  a: Answer, live: boolean, route: ReadRoute, followed: readonly string[],
+  envelopeProblem: (answer: unknown, path: string) => string | null,
+): string | null {
+  const at = (detail: string): string => `${route.path}: ${detail}`;
+  if (a.status >= 400) return at(`answered ${a.status}: ${a.text.slice(0, 240)}`);
+  if (a.body === null) return at(`answered ${a.status} with ${a.text.slice(0, 120)}, which is not a JSON object`);
+  const problem = envelopeProblem(a.body, route.path);
+  if (problem !== null) return problem;
   const meta = metaOf(a);
-  if (typeof meta.observedAt !== "string" || Number.isNaN(Date.parse(meta.observedAt))) {
-    return `meta.observedAt is ${JSON.stringify(meta.observedAt)}, not an instant`;
-  }
-  if (!("revision" in meta)) return `the answer carries no revision key at all: ${JSON.stringify(Object.keys(meta))}`;
-  if (typeof meta.cacheHit !== "boolean") return `meta.cacheHit is ${JSON.stringify(meta.cacheHit)}, not a boolean`;
-  if (!live) return meta.revision === null ? null : `meta.revision is ${JSON.stringify(meta.revision)} with nothing listening, not null`;
+  if (!live) return meta.revision === null ? null : at(`meta.revision is ${JSON.stringify(meta.revision)} with nothing listening, not null`);
   if (route.collections.length === 0) {
     return meta.revision === null ? null : `meta.revision is ${JSON.stringify(meta.revision)} for a route that reads no collection`;
   }
@@ -238,7 +243,9 @@ async function run(c: Core): Promise<void> {
   };
   const envelope = (await load("console/read-envelope.js")) as {
     mountReadEnvelope: (app: Express) => void; READ_ROUTES: readonly ReadRoute[];
+    envelopeProblem: (answer: unknown, path: string) => string | null;
   };
+  const envelopeProblem = envelope.envelopeProblem;
   const { mountConsole } = (await load("console.js")) as { mountConsole: (app: Express) => void };
   const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express, deps: unknown) => void };
   const credentials = (await load("credentials.js")) as Record<string, unknown>;
@@ -273,14 +280,54 @@ async function run(c: Core): Promise<void> {
     if (unaddressable.length) c.fail(step, `this check has no seed for ${unaddressable.join(", ")} — add one rather than skipping the route`);
     c.pass(`${step}: ${routes.length} console GETs declared, each addressable, none twice`);
 
+    // The predicate the sweep below judges every route with has to REJECT what it exists to catch. Without
+    // this the check would be an assertion written inside the thing it asserts: a predicate loosened to
+    // accept an absent `revision` key would agree with itself, every route in a quiet gateway would pass,
+    // and nothing would be red. The four bodies are written here rather than read off a route, because the
+    // route that omits one IS the defect and cannot be relied on to exist in the table.
+    step = "the envelope predicate rejects each field it exists to catch";
+    const judgedAt = "/api/console/record";
+    const judge = (what: string, body: unknown): string | null => {
+      try {
+        return envelopeProblem(body, judgedAt);
+      } catch (err) {
+        // A throw is not a rejection. An arm matching on "it threw" passes on any mistake at all,
+        // including one in this arm, which is the shape of self-test this arm exists to replace.
+        return c.fail(step, `${what}: envelopeProblem threw ${String(err)} where it answers a message`);
+      }
+    };
+    const planted: { what: string; body: unknown; names: string | null }[] = [
+      { what: "a complete envelope", names: null,
+        body: { meta: { observedAt: "2026-10-24T00:00:00.000Z", revision: "teams:1,runs:2", cacheHit: false } } },
+      { what: "missing observedAt", names: "meta.observedAt",
+        body: { meta: { revision: "teams:1,runs:2", cacheHit: false } } },
+      { what: "revision key absent rather than null", names: "revision",
+        body: { meta: { observedAt: "2026-10-24T00:00:00.000Z", cacheHit: false } } },
+      { what: "cacheHit not a boolean", names: "meta.cacheHit",
+        body: { meta: { observedAt: "2026-10-24T00:00:00.000Z", revision: null, cacheHit: "no" } } },
+    ];
+    for (const { what, body, names } of planted) {
+      const problem = judge(what, body);
+      if (names === null) {
+        if (problem !== null) c.fail(step, `${what}: the predicate rejected a complete envelope: ${problem}`);
+        console.log(`  ${what}: accepted`);
+        continue;
+      }
+      if (problem === null) c.fail(step, `${what}: the predicate accepted it, so nothing fails a route that answers without ${names}`);
+      if (!problem.includes(judgedAt)) c.fail(step, `${what}: the rejection does not name ${judgedAt}: ${problem}`);
+      if (!problem.includes(names)) c.fail(step, `${what}: the rejection does not name ${names}: ${problem}`);
+      console.log(`  ${what}: rejected — ${problem}`);
+    }
+    c.pass(step);
+
     /** One sweep over every declared route, and one line per route. */
     const sweep = async (listening: boolean): Promise<void> => {
       const faults: string[] = [];
       for (const route of routes) {
         const address = addressOf(route.path, seeds)! + (QUERIES[route.path] ?? teamQuery(route.path, seeds.team));
         const a = await get(base, cookie, address);
-        const fault = envelopeFault(a, listening, route, live.COLLECTIONS);
-        if (fault) faults.push(`${route.path}: ${fault}`);
+        const fault = envelopeFault(a, listening, route, live.COLLECTIONS, envelopeProblem);
+        if (fault) faults.push(fault);
         const meta = metaOf(a);
         console.log(`  ${listening ? "listening" : "quiet    "} ${short(route)}: ` +
           (fault ?? `envelope present, revision ${meta.revision === null ? "an explicit null" : `${String(meta.revision).split(",").length} collections`}`));

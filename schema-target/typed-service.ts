@@ -83,9 +83,14 @@ export const TYPED_SERVICE: Record<string, TableTarget> = {
     checks: [
       "CHECK (((error IS NULL) OR (NOT ok)))",
     ],
+    // The `ts` window `usage-figures.ts`'s `modelDays` reads — `m.ts < $2 and m.ts >= $3` — and the only
+    // index on this table. `model_call_purpose_ts (purpose, ts)` was declared here against a reading that
+    // `modelDays` reached it, and it does not: a `(purpose, ts)` btree reaches a `ts` range only by reading
+    // every entry, and on 200,000 rows the planner takes a sequential scan instead (measured in
+    // `migrations/012_event_index_filters.sql`). `model_call_failed_ts (ts DESC) WHERE (NOT ok)` was dropped
+    // for a plainer reason: the tree's one `ok` predicate is a `FILTER` clause, which no partial index serves.
     indexes: [
-      "CREATE INDEX model_call_failed_ts ON zz.model_call USING btree (ts DESC) WHERE (NOT ok)",
-      "CREATE INDEX model_call_purpose_ts ON zz.model_call USING btree (purpose, ts)",
+      "CREATE INDEX model_call_ts ON zz.model_call USING btree (ts)",
     ],
     comment: "class=immutable_history; authority=this; question=what one outbound model request the platform itself made cost and returned — which purpose, which model, how many tokens, how long, and whether it worked?; retention=kept indefinitely; it is the provenance an assessment names, and a row an evaluation cites is never purged",
     columnComments: {

@@ -53,7 +53,8 @@
  * COUPLED: `live-revision.ts`, which exports `revisionFor` and `revisionNamed` and needs this file's table
  * to answer with — the two modules import each other, and both edges are only followed while a request is
  * being served, never while either module is evaluated. And `checks/console-read-envelope.ts` and the
- * walking skeleton `checks/console-read-contract.ts`, which read `READ_ROUTES` rather than retyping it.
+ * walking skeleton `checks/console-read-contract.ts`, which read `READ_ROUTES` rather than retyping it, and
+ * the second of which calls `envelopeProblem` rather than restating what carrying the marker means.
  */
 import type { Express, Response } from "express";
 
@@ -169,6 +170,47 @@ const isAnswer = (body: unknown): body is Record<string, unknown> =>
 const metaOf = (body: Record<string, unknown>): Record<string, unknown> =>
   isAnswer(body.meta) ? body.meta : {};
 
+/** What a body that is not an object is, for the message that has to say so. */
+const describeBody = (body: unknown): string =>
+  body === null ? "null" : Array.isArray(body) ? "an array" : typeof body;
+
+/**
+ * What is wrong with `answer` as an answer of `path`, or null when it carries the envelope: `observedAt` a
+ * parseable instant, a `revision` KEY holding a string or an explicit null, and `cacheHit` a boolean. Those
+ * three are exactly what the mount below writes, so this is the mount's postcondition stated once.
+ *
+ * It lives here rather than in the check that applies it, because a judgement written inside the check it
+ * guards can be loosened into agreement with itself: a predicate taught to accept an absent `revision`
+ * would relax the very arm written to catch that omission. `checks/console-read-contract.ts` holds every
+ * declared route and four planted bodies to this function, and the mount holds its own output to it, so a
+ * change to the stamp that this file did not make is reported when it serves rather than by a sweep.
+ *
+ * DELIBERATE: an explicit `revision` of null is accepted. The mount stamps null for a path the table does
+ * not declare — a route this file declines to mark, not one answering without the envelope. Whether the
+ * marker composed the collections a route reads is the check's question, asked of the live collection list
+ * this file has no opinion about.
+ *
+ * The message names the route first and then the field, so a sweep over every route reports both without
+ * restating either. An absent key and a key holding nothing usable are different faults and read as such.
+ */
+export function envelopeProblem(answer: unknown, path: string): string | null {
+  if (!isAnswer(answer)) return `${path}: the answer is ${describeBody(answer)}, not a JSON object`;
+  const meta = metaOf(answer);
+  if (typeof meta.observedAt !== "string" || Number.isNaN(Date.parse(meta.observedAt))) {
+    return `${path}: meta.observedAt is ${JSON.stringify(meta.observedAt)}, not an instant`;
+  }
+  if (!("revision" in meta)) {
+    return `${path}: the answer carries no revision key at all: ${JSON.stringify(Object.keys(meta))}`;
+  }
+  if (meta.revision !== null && typeof meta.revision !== "string") {
+    return `${path}: meta.revision is ${JSON.stringify(meta.revision)}, not a marker or an explicit null`;
+  }
+  if (typeof meta.cacheHit !== "boolean") {
+    return `${path}: meta.cacheHit is ${JSON.stringify(meta.cacheHit)}, not a boolean`;
+  }
+  return null;
+}
+
 /**
  * Every console GET answered with the envelope: mounted in `mountConsole` beside `mountConsoleRevision`,
  * before any read, so `observedAt` and the marker are both sampled when the request arrived rather than
@@ -185,7 +227,9 @@ export function mountReadEnvelope(app: Express): void {
     // marker it began at. A change committed while the read runs moves the count past what it was handed.
     const observedAt = new Date().toISOString();
     const id: Identity | undefined = req.zzIdentity;
-    const revision = id === undefined ? null : revisionFor(req.originalUrl.split("?")[0], id, req);
+    // The address without its query: what the table is keyed by, and what a fault names.
+    const path = req.originalUrl.split("?")[0];
+    const revision = id === undefined ? null : revisionFor(path, id, req);
     const send = res.json.bind(res);
     res.json = ((body?: unknown) => {
       if (res.statusCode >= 400 || !isAnswer(body)) return send(body);
@@ -207,7 +251,14 @@ export function mountReadEnvelope(app: Express): void {
         sourceRevision: typeof old.sourceRevision === "string" ? old.sourceRevision : null,
       };
       const meta = { ...old, ...stamp, ...derived };
-      return send({ ...body, meta });
+      const answer = { ...body, meta };
+      // The mount holds what it is about to send to the predicate every check holds a route to. It cannot
+      // answer a problem while the stamp it just composed is well formed, which is the point: an edit that
+      // drops one of the three from `stamp` is reported the moment an answer serves, rather than only by a
+      // sweep over a built tree and a database somebody may not run.
+      const problem = envelopeProblem(answer, path);
+      if (problem !== null) console.warn(`console read envelope: ${problem}`);
+      return send(answer);
     }) as Response["json"];
     next();
   });

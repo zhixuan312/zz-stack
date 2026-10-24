@@ -23,6 +23,21 @@ check("the read model answers what the statement it replaces answers, and compos
 // before the reductions move — and Task I-19's ten-times arm parses that budget line.
 check("the read model holds no business state it cannot rebuild, and its register is written",
       runsCheck("event-work-week-columns.ts"));
+// Phase 3's rebuild proof. It damages a seeded throwaway's model three ways and holds the rebuild to
+// putting every business key and value back with `built_at` excluded, then holds `--check` to seeing
+// each damage, exiting non-zero on it, and writing nothing.
+check("the read model's rebuild reproduces it on its business keys and not its build time",
+      runsCheck("event-work-week-rebuild.ts"));
+// Phase 3's seam decision. AC-8.1 is the decision a person owns: which read model exists and why,
+// what a page may cost, and the plain view and the materialized view refused by four mechanisms each —
+// with the false claim that autovacuum ignores a materialized view denied rather than merely left out.
+check("the seam between a page and the tables is decided, and a view and a materialized view are refused by their mechanisms",
+      runsCheck("architecture-seams.ts"));
+// Phase 3's four filters. The index each one needs is written once in this check, held against both
+// `schema-target/` and the migrated catalog, then planned on a throwaway seeded for it; and
+// `zz.model_call` is held to the decision that retired both of its legacy indexes.
+check("four recurring filters are served by an index both sides declare and a plan chooses, and zz.model_call keeps only the ts index a plan reaches",
+      runsCheck("answer-indexes.ts"));
 check("no initiative reader derives closed, outcome or flow from zz.doc", runsCheck("initiative-lifecycle-readers.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 check("no statement in the write trees names a table or column the migration retires",

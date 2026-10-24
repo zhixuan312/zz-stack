@@ -213,7 +213,10 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             backfill — the same `insert … select` `011_event_work_week.sql` ran — inside one
             transaction and rolls it back, then reads the model and the raw calls as one
             answer; `--write` is the only path that commits, and a rebuild repairs a drifted
-            bucket because its update replaces rather than adds),
+            bucket because its update replaces rather than adds; `--check` reports every
+            bucket that disagrees with the source and the field it disagrees on, exits
+            non-zero on any, and writes nothing — `built_at` is not compared, because a
+            rebuild's instant is meant to move),
             control-loop-e2e.ts (drives a real initiative through the real doors against a
             scratch deployment and checks the loop refuses and grants as the flow declares —
             it refuses to run against production by name, because it writes an initiative,

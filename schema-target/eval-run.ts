@@ -175,6 +175,11 @@ export const EVAL_RUN: Record<string, TableTarget> = {
     ],
     indexes: [
       "CREATE INDEX eval_run_protocol_version_id_created_at_idx ON zz.eval_run USING btree (protocol_version_id, created_at DESC)",
+      // The scored runs, which is the population every history and every release verdict reads:
+      // `scored_at is not null and scored_at <= $1` in `platform-evaluation.ts`, `er.scored_at is not null`
+      // in `release-verify.ts` and `plugin-eval.ts`. Partial on that predicate so it holds a run once, when
+      // it is scored, and not the 15 rows of today or the ten times that follow.
+      "CREATE INDEX eval_run_scored_at ON zz.eval_run USING btree (scored_at) WHERE (scored_at IS NOT NULL)",
     ],
     comment: "class=state_machine; authority=this; question=which evaluation bound one protocol version to one observation snapshot, and what score, status, guardrail verdict and uncertainty did it publish?; transitions=created->scored",
     columnComments: {

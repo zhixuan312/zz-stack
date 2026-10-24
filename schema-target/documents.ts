@@ -203,6 +203,12 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       "CREATE INDEX doc_body_trgm ON zz.doc USING gin (body zz.gin_trgm_ops)",
       "CREATE UNIQUE INDEX doc_id_unique ON zz.doc USING btree (id)",
       "CREATE INDEX doc_initiative_id ON zz.doc USING btree (initiative_id)",
+      // `source_list` asks for one initiative's sources — `d.path like 'sources/%' and d.path like '%.md'`
+      // under a team and an initiative — and `source-list.ts` runs it on the read a caller makes just
+      // before judging a document. `text_pattern_ops` because this cluster collates `en_US.utf8`: under the
+      // default operator class a btree cannot answer a `LIKE` prefix at all, and a bare `(path)` was
+      // measured and passed over. `initiative_id` leads because the statement is always one initiative's.
+      "CREATE INDEX doc_initiative_path ON zz.doc USING btree (initiative_id, path text_pattern_ops)",
       "CREATE INDEX doc_tags ON zz.doc USING gin (tags)",
       "CREATE INDEX doc_tsv ON zz.doc USING gin (body_tsv)",
     ],
@@ -384,8 +390,12 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       "CHECK (((content_state <> 'missing_legacy'::text) OR ((approved_by IS NULL) AND (approved_at IS NULL))))",
       "CHECK ((version >= 1))",
     ],
-    // A version read asks for the rows of one public version of one document.
+    // A version read asks for the rows of one public version of one document, and `pending.ts` asks which
+    // revision is waiting for approval — `presented_at is not null and presented_at <= $1 and approved_at
+    // is null`, ordered by `presented_at`. The second index is partial on that predicate, which is what
+    // makes it a queue and not a second copy of a column set on a third of the rows.
     indexes: [
+      "CREATE INDEX doc_revision_pending ON zz.doc_revision USING btree (presented_at) WHERE ((presented_at IS NOT NULL) AND (approved_at IS NULL))",
       "CREATE INDEX doc_revision_version ON zz.doc_revision USING btree (doc_id, version)",
     ],
     comment: "class=state_machine; authority=this; question=which revision of this document is this, and does it still retain the exact bytes that were written?; transitions=written->approved",

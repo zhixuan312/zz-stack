@@ -1,38 +1,33 @@
 # Public entry points for ZZ Stack.
 #
-# Three hostnames, one machine, one deployment:
+# Two hostnames, one machine, one deployment:
 #
-#   console.example.com           the console — the only dashboard this deployment has
-#   api.203-0-113-11.nip.io       the platform gateway — every non-browser client
-#   203-0-113-11.nip.io           where the console used to be: a permanent redirect to it
+#   console.example.com       the console — the only dashboard this deployment has
+#   api.example.com           the platform gateway — every non-browser client
 #
 # DELIBERATE: this file is a template, and `install-caddy.sh` is the only thing that should
-# apply it. It substitutes the console's hostname from CONSOLE_PUBLIC_URL, the nip.io address
-# from GATEWAY_PUBLIC_URL and the upstream below for wherever the gateway is actually published,
-# then refuses the install if any literal survived. Copying this file onto a host by hand skips
-# every guard.
-#
-# The nip.io address is zz-stack's own. If it ever stops matching what
-# `ssh zz-stack 'curl -s ifconfig.me'` answers, the literal is the thing that is wrong.
+# apply it. It substitutes the console's hostname from CONSOLE_PUBLIC_URL, the gateway's from
+# GATEWAY_PUBLIC_URL and the upstream below for wherever the gateway is actually published, then
+# refuses the install if any literal survived. Copying this file onto a host by hand skips every
+# guard.
 #
 # One thing differs per host: how Caddy reaches the gateway on port 8764. Here it is loopback,
 # because the gateway is published on 127.0.0.1. A host that binds it to a tailnet address
 # needs that address, and install-caddy.sh reads the real one off the running container.
 #
-# nip.io resolves <anything>.<ip-with-dashes>.nip.io to that IP, so the api subdomain needs no
-# DNS record and Caddy issues its certificate automatically. The api. host exists because
-# an MCP client runs on somebody's laptop and needs a public route in. The console's own domain
-# needs an A record to this machine, DNS only: a proxying CDN cuts an idle response at about
-# 100 seconds, and the timeouts below are 30 minutes because a turn runs that long.
+# Both hostnames need an A record to this machine, DNS only: a proxying CDN cuts an idle response
+# at about 100 seconds, and the timeouts below are 30 minutes because a turn runs that long. Caddy
+# issues both certificates itself. The api. host exists because an MCP client runs on somebody's
+# laptop and needs a public route in.
 #
 # After changing this file:
-#   1. run deploy/install-caddy.sh — do not copy it by hand
-#   2. set GATEWAY_PUBLIC_URL=https://api.203-0-113-11.nip.io in deploy/.env
+#   1. set GATEWAY_PUBLIC_URL=https://api.example.com in deploy/.env
 #      — every generated client package embeds this value, so a stale one ships
 #      unreachable URLs to every person who installs
-#   3. set CONSOLE_PUBLIC_URL=https://console.example.com in deploy/.env — its hostname is the
+#   2. set CONSOLE_PUBLIC_URL=https://console.example.com in deploy/.env — its hostname is the
 #      passkey relying party, so changing it makes everybody re-enrol
-#   4. systemctl reload caddy && docker compose up -d cred-proxy
+#   3. docker compose up -d cred-proxy zz-core
+#   4. run deploy/install-caddy.sh — do not copy it by hand
 
 # An agent turn runs for minutes: tens of sequential tool calls, each a round trip to a door,
 # and Caddy's defaults would sever the response mid-turn.
@@ -51,7 +46,7 @@
 }
 
 # The gateway, for every non-browser client.
-api.203-0-113-11.nip.io {
+api.example.com {
     # /internal/* is the gateway's agent door, which zz-core calls on the compose network and
     # nobody calls from outside (services/gateway/src/agent-door.ts). The gateway refuses any peer
     # but zz-core already; this answers 404 before the proxy, so a request from outside fails twice.
@@ -111,13 +106,3 @@ console.example.com {
     }
 }
 
-# Where the console was before it had a domain. It cannot sign anybody in — a passkey is bound to
-# the console's hostname — so it sends every request to the console instead of answering.
-#
-# COUPLED: install-caddy.sh deletes this block, markers included, on a host whose console is
-# still on its nip.io address: two blocks for one hostname is a config Caddy refuses.
-# BEGIN old-console
-203-0-113-11.nip.io {
-    redir https://console.example.com{uri} permanent
-}
-# END old-console

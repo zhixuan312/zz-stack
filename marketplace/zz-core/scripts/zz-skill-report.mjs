@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CORE = "https://api.165-232-169-165.nip.io/core/mcp";
+const CORE = "https://api.zz-stack.com/core/mcp";
 const SHELF = new Set(["zz-core","zz-access","sdlc","zz-plugin-eval"]);
 const COMMANDS = {"sdlc":{"flow":"sdlc-flow"},"zz-plugin-eval":{"eval":"zz-plugin-eval"},"zz-access":{"connect":"zz-access","admin":"zz-admin","doctor":"zz-doctor","migrate":"zz-migrate","update":"zz-update"},"zz-core":{"breakout":"zz-breakout","deck":"zz-deck","tldr":"zz-tldr"}};
 

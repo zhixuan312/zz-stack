@@ -1,6 +1,6 @@
 ---
 name: zz-doctor
-version: 1.4
+version: 1.5
 description: "Check that this machine can reach the ZZ platform: the token it will send, the doors that token opens, and whether the installed plugins are whole and on one version. Needs no repository and no setup — it reads the machine it runs on."
 when_to_use: "The person typed /zz-access:doctor, or something on the platform is not working and nobody knows which half is broken — a 401, an MCP server that will not connect, a tool that is not there, a skill that disagrees with the tool it calls."
 ---

@@ -53,7 +53,7 @@ const { buildClientPackage } =
  * unset or local, which would commit a shelf nobody else can reach.
  * COUPLED: when the deployment moves, this line and `deploy/.env` move together.
  */
-const GATEWAY = "https://api.165-232-169-165.nip.io";
+const GATEWAY = "https://api.zz-stack.com";
 
 // `target` reaches exactly one string: the baseline plugin's description. On the gateway it
 // is the person's email, which a shelf anyone can read must not publish.

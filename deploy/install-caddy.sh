@@ -8,7 +8,7 @@
 #
 # Three substitutions, named in the Caddyfile's own header:
 #   · the console's hostname, from CONSOLE_PUBLIC_URL
-#   · the nip.io address, from GATEWAY_PUBLIC_URL
+#   · the gateway's hostname, from GATEWAY_PUBLIC_URL
 #   · how Caddy reaches the gateway — whatever address the running gateway is published on
 #
 # Usage:  ./deploy/install-caddy.sh <host>          # host is an ssh target
@@ -24,50 +24,44 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # honours. This one hard-coded /root/zz-parent/zz-stack, so a host provisioned anywhere else read
 # no .env at all and was told it "has no GATEWAY_PUBLIC_URL in deploy/.env".
 REMOTE="${ZZ_DEPLOY_PATH:-/root/zz-parent/zz-stack}"
-PUBLIC=$(ssh "$HOST" "grep -oE '^GATEWAY_PUBLIC_URL=.*' '$REMOTE/deploy/.env' | cut -d= -f2-")
-[ -n "$PUBLIC" ] || { echo "$HOST has no GATEWAY_PUBLIC_URL in deploy/.env — refusing to guess" >&2; exit 1; }
-# api.<addr> -> <addr>
-ADDR=$(printf '%s' "$PUBLIC" | sed -E 's#^https?://api\.##; s#/+$##')
-[ -n "$ADDR" ] || { echo "could not read the nip.io address out of $PUBLIC" >&2; exit 1; }
-CONSOLE_URL=$(ssh "$HOST" "grep -oE '^CONSOLE_PUBLIC_URL=.*' '$REMOTE/deploy/.env' | cut -d= -f2-")
-[ -n "$CONSOLE_URL" ] || { echo "$HOST has no CONSOLE_PUBLIC_URL in deploy/.env — refusing to guess" >&2; exit 1; }
 # https://host[:port][/...] -> host
-CONSOLE=$(printf '%s' "$CONSOLE_URL" | sed -E 's#^https?://##; s#[:/].*$##')
-[ -n "$CONSOLE" ] || { echo "could not read a hostname out of $CONSOLE_URL" >&2; exit 1; }
+hostname_of() { printf '%s' "$1" | sed -E 's#^https?://##; s#[:/].*$##'; }
+env_of() { ssh "$HOST" "grep -oE '^$1=.*' '$REMOTE/deploy/.env' | cut -d= -f2-"; }
+API_URL=$(env_of GATEWAY_PUBLIC_URL)
+[ -n "$API_URL" ] || { echo "$HOST has no GATEWAY_PUBLIC_URL in deploy/.env — refusing to guess" >&2; exit 1; }
+CONSOLE_URL=$(env_of CONSOLE_PUBLIC_URL)
+[ -n "$CONSOLE_URL" ] || { echo "$HOST has no CONSOLE_PUBLIC_URL in deploy/.env — refusing to guess" >&2; exit 1; }
+API=$(hostname_of "$API_URL")
+CONSOLE=$(hostname_of "$CONSOLE_URL")
+[ -n "$API" ] && [ -n "$CONSOLE" ] || { echo "could not read a hostname out of $API_URL or $CONSOLE_URL" >&2; exit 1; }
+# Two blocks for one hostname is a config Caddy refuses, and a passkey cookie shared with the API
+# host is exactly what the same-origin split exists to prevent.
+[ "$API" != "$CONSOLE" ] || { echo "GATEWAY_PUBLIC_URL and CONSOLE_PUBLIC_URL name one host, $API — they must differ" >&2; exit 1; }
 
 # How Caddy reaches the gateway there: whatever the running gateway is published on.
 UPSTREAM=$(ssh "$HOST" "docker ps --format '{{.Ports}}' --filter name=cred-proxy | grep -oE '[0-9.]+:[0-9]+->8000' | head -1 | cut -d'>' -f1 | sed 's/-\$//'")
 [ -n "$UPSTREAM" ] || { echo "could not see where cred-proxy is published on $HOST" >&2; exit 1; }
 
-echo "$HOST: console $CONSOLE, address $ADDR, gateway at $UPSTREAM"
+echo "$HOST: console $CONSOLE, gateway $API, upstream $UPSTREAM"
 
 # The committed file's own values, replaced. The explanatory header is deliberately not
 # rewritten.
 #
-# DELIBERATE: the whole hostname, not the address fragment. Substituting the bare fragment into
-# an $ADDR that already ends in .nip.io produces `<addr>.nip.io.nip.io`, a site block for a
-# hostname nothing resolves.
+# DELIBERATE: the api literal first. `api.example.com` contains no `console.`, and the console
+# literal is not a suffix of it, so neither substitution can rewrite the other's result.
 #
 # COUPLED: the three literals below must match what the Caddyfile contains. A sed that matches
 # nothing does not fail — it emits the file unchanged — so the guards below refuse an install
 # in which any literal survived.
-#
-# COUPLED: the Caddyfile's `# BEGIN old-console` block. A console still on its nip.io address
-# has nowhere else to redirect to, and a second block for the same hostname is refused by Caddy.
-DROP='/^# BEGIN old-console$/,/^# END old-console$/d'
-[ "$CONSOLE" = "$ADDR" ] || DROP='/^# [A-Z]* old-console$/d'
-sed -e "$DROP" -e "s/console\.example\.com/$CONSOLE/g" \
-    -e "s/203-0-113-11\.nip\.io/$ADDR/g" -e "s#127\\.0\\.0\\.1:8764#$UPSTREAM#g" \
+sed -e "s/api\.example\.com/$API/g" -e "s/console\.example\.com/$CONSOLE/g" \
+    -e "s#127\\.0\\.0\\.1:8764#$UPSTREAM#g" \
     "$HERE/Caddyfile" > /tmp/caddy-$HOST.new
-grep -q "nip\.io\.nip\.io" /tmp/caddy-$HOST.new && { echo "substitution doubled the domain suffix" >&2; exit 1; }
 
-grep -q "$ADDR" /tmp/caddy-$HOST.new || { echo "substitution produced no site block for $ADDR" >&2; exit 1; }
-grep -q "^$CONSOLE {" /tmp/caddy-$HOST.new || { echo "substitution produced no site block for $CONSOLE" >&2; exit 1; }
-if grep -q "console\.example\.com" /tmp/caddy-$HOST.new && [ "$CONSOLE" != "console.example.com" ]; then
-  echo "the template's own console hostname survived the substitution — refusing to install" >&2; exit 1
-fi
-if grep -q "203-0-113-11" /tmp/caddy-$HOST.new && [ "$ADDR" != "203-0-113-11.nip.io" ]; then
-  echo "the template's own address survived the substitution — refusing to install" >&2; exit 1
+for h in "$API" "$CONSOLE"; do
+  grep -q "^$h {" /tmp/caddy-$HOST.new || { echo "substitution produced no site block for $h" >&2; exit 1; }
+done
+if grep -q "example\.com" /tmp/caddy-$HOST.new && ! printf '%s %s' "$API" "$CONSOLE" | grep -q "example\.com"; then
+  echo "a template hostname survived the substitution — refusing to install" >&2; exit 1
 fi
 # The upstream half of the same check: without it a stale pattern proxies the gateway to
 # whatever address the template carried instead of the one this host publishes.
@@ -77,7 +71,10 @@ fi
 
 # Keep what is there, but only if it is serving. A rollback needs a file that worked, and a
 # second run must not overwrite the good backup with the first run's broken install.
-if ssh "$HOST" "curl -sk -o /dev/null -w '%{http_code}' --resolve 'api.$ADDR:443:127.0.0.1' 'https://api.$ADDR/health' --max-time 8" | grep -q 200; then
+#
+# The api host the CURRENT file serves, which is not the one being installed when the gateway moves.
+OLD_API=$(ssh "$HOST" "grep -oE '^api\.[a-z0-9.-]+ \{' /etc/caddy/Caddyfile | head -1 | cut -d' ' -f1" || true)
+if [ -n "$OLD_API" ] && ssh "$HOST" "curl -sk -o /dev/null -w '%{http_code}' --resolve '$OLD_API:443:127.0.0.1' 'https://$OLD_API/health' --max-time 8" | grep -q 200; then
   ssh "$HOST" "cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.prev"
   echo "  kept the current, serving config as /etc/caddy/Caddyfile.prev"
 else
@@ -94,12 +91,9 @@ ssh "$HOST" "caddy validate --adapter caddyfile --config /tmp/Caddyfile.new >/de
 # that the host's own addresses answer.
 sleep 2
 # The hosts this file serves, read out of it rather than listed here, so the verifier does not
-# need editing every time the file changes. A host whose block is a redirect answers 301, every
-# other one 200.
+# need editing every time the file changes.
 for h in $(grep -oE '^[a-z0-9.-]+ \{' /tmp/caddy-$HOST.new | sed 's/ .*//'); do
   want=200
-  awk -v h="$h" '$1 == h && $2 == "{" {in_block = 1; next} in_block && /^}/ {exit} in_block && $1 == "redir" {found = 1} END {exit !found}' \
-    /tmp/caddy-$HOST.new && want=301
   # A hostname new to this machine has no certificate until Caddy's first ACME order completes,
   # and until then curl fails the handshake. `|| true`, because under `set -e` that failure ended
   # the script mid-loop with nothing printed; up to 30 seconds, because the order takes a few.

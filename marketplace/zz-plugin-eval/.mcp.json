@@ -2,7 +2,7 @@
   "mcpServers": {
     "zz-plugin-eval": {
       "type": "http",
-      "url": "https://api.165-232-169-165.nip.io/eval/mcp",
+      "url": "https://api.zz-stack.com/eval/mcp",
       "headersHelper": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/zz-mcp-headers.mjs\""
     }
   }

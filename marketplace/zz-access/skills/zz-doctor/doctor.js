@@ -139,7 +139,7 @@ for (const s of declared) {
 if (base)
     say("PASS", "gateway", `${base} (read from the installed plugins)`);
 else {
-    base = "https://api.165-232-169-165.nip.io";
+    base = "https://api.zz-stack.com";
     say("WARN", "gateway", `no installed plugin declares one, so checking the published ` +
         `gateway ${base} instead`);
 }

@@ -325,6 +325,8 @@ export function mountPlatformStatus(app: Express): void {
     // DELIBERATE: kept as one answer per audience until a write moves `dataVersion()` (answer-cache.ts).
     // Every measure here reduces the whole event history, and none of it moves between two looks at the
     // console that nothing happened in between.
-    res.json(await cached(`status|${caller.superadmin}`, () => statusOf(caller, null)));
+    // The caller is part of the key: a member reads their own team's figures, so two people in
+    // different teams are two answers rather than one that depends on who asked first.
+    res.json(await cached(`status|${caller.superadmin}|${caller.activeTeam}`, () => statusOf(caller, null)));
   }));
 }

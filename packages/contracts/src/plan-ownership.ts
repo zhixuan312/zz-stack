@@ -61,6 +61,15 @@ function ownedOf(p: string): Owned {
   return descriptor;
 }
 
+/** How many pair answers are kept. One big plan of this deployment asks about ~150,000 pairs; the
+ *  bound is what a long-lived process may hold, and overflowing it costs a re-test of the pair. */
+const MET_CACHE = 200_000;
+
+/** Pair answers by both descriptors' own numbers, `low * 10^7 + high`, oldest first once the bound is
+ *  reached. Ten to the seventh keeps the sum inside a double's exact integers for any descriptor
+ *  number a process this size reaches; past that the pair is tested and not remembered. */
+const met = new Map<number, boolean>();
+
 /**
  * Whether two owned paths can name the same file. Each side's wildcards are filled with one
  * concrete segment and tested against the other's pattern, which is exact for a literal path
@@ -79,15 +88,6 @@ function ownedOf(p: string): Owned {
  * paths cannot change while both are the same strings, which is what the descriptor cache already
  * guarantees, so a remembered answer is the answer.
  */
-/** How many pair answers are kept. One big plan of this deployment asks about ~150,000 pairs; the
- *  bound is what a long-lived process may hold, and overflowing it costs a re-test of the pair. */
-const MET_CACHE = 200_000;
-
-/** Pair answers by both descriptors' own numbers, `low * 10^7 + high`, oldest first once the bound is
- *  reached. Ten to the seventh keeps the sum inside a double's exact integers for any descriptor
- *  number a process this size reaches; past that the pair is tested and not remembered. */
-const met = new Map<number, boolean>();
-
 function overlapsOwned(x: Owned, y: Owned): boolean {
   if (!x.glob && !y.glob) return y.path === x.path || y.path.startsWith(x.under) || x.path.startsWith(y.under);
   const key = x.id < y.id ? x.id * 10_000_000 + y.id : y.id * 10_000_000 + x.id;

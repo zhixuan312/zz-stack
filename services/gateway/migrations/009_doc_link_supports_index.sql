@@ -1,0 +1,22 @@
+-- 009_doc_link_supports_index.sql — one index over what supports a document, so a list of documents stops
+-- scanning every link the platform ever recorded, once per document in the list.
+--
+-- `doc_link` carried a unique index led by `from_doc_id` alone. That answers "what does this revision cite",
+-- which is how a citation is written; it answers nothing for the question the console asks on every list of
+-- documents — "how many sources support this one", read from `to_doc_id` — so each of those read the whole
+-- table. The Initiatives list asks it once per row: 196 rows, 196 sequential scans of 19,631 links, 680 ms of
+-- one page load, measured on this deployment. With this index the same statement measures 12 ms.
+--
+-- DELIBERATE: `(to_doc_id, kind)` and not `to_doc_id` alone. Every reader of it filters `kind = 'supports'`
+-- beside the target — a citation points at a revision and a support at a document identity, so the two never
+-- answer the same question — and the pair is small enough to stay in one index.
+--
+-- `schema-target/documents.ts` declares the index, and `scripts/rehearse/expect.ts` needs no entry: no row
+-- moves and no column changes, so the default assertion — row count unchanged, content hash unchanged — is
+-- the one this file must pass.
+--
+-- The release before this file can run on what it builds: an index nothing names is invisible to it, and a
+-- rollback leaves it in place, costing the old release nothing. No line below declares one. `IF NOT EXISTS`
+-- because a deployment measured before this shipped may already hold it under this name.
+
+CREATE INDEX IF NOT EXISTS doc_link_to_doc ON zz.doc_link USING btree (to_doc_id, kind);

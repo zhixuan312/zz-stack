@@ -34,17 +34,23 @@ export type ReadMeta = {
    * `sourceRevision` describe persisted derived data and are null for an answer computed from rows;
    * `cacheHit` is the cache's own decision, which no caller may infer by comparing the first two.
    *
-   * TRANSITIONAL: optional here, and Phase 2 is what makes them required. It cannot be this phase.
-   * `read-envelope.ts` stamps them onto an answer AFTER the route has built it, and a middleware cannot
-   * make an object literal satisfy a required field: the routes that build a `meta` without the five
-   * would stop compiling before anything filled them, and every fixture in the console's own repository
-   * would stop typechecking with them. Until Phase 2 tightens both declarations together, a caller that
-   * needs one handles `undefined` as "this route has not been migrated", never as a value. */
+   * OPTIONAL HERE, because this is the route's half: a route composes the six it knows, and `read-envelope.ts`
+   * writes the five onto its answer AFTER the route has built it. A middleware cannot make an object literal
+   * satisfy a required field, so requiring them here would stop every route compiling before anything filled
+   * them. What a caller receives is `AnswerMeta` below, where they are required: cross that boundary and the
+   * fields are there. */
   observedAt?: string;
   revision?: string | null;
   builtAt?: string | null;
   sourceRevision?: string | null;
   cacheHit?: boolean;
+};
+
+/** The `meta` an answer carries once `read-envelope.ts` has written the five onto it: a route's `ReadMeta` with
+ *  nothing left optional. This is what a caller receives — a reader that needs one never handles `undefined` — and
+ *  what the console's own `ReadMeta` mirrors, field for field, on the other side of the wire. */
+export type AnswerMeta = Omit<ReadMeta, "observedAt" | "revision" | "builtAt" | "sourceRevision" | "cacheHit"> & {
+  observedAt: string; revision: string | null; cacheHit: boolean; builtAt: string | null; sourceRevision: string | null;
 };
 export type Part<T> = { state: "ok"; data: T } | { state: "unavailable"; reason: string };
 export type MeasureKey = "malformed_per_1000" | "same_tool_followup_pct" | "call_p50_ms" | "call_p95_ms"

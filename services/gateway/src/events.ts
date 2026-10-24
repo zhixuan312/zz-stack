@@ -18,7 +18,9 @@
  * `insert into zz.event` beside it, so the event could not carry the run's id. Written in order, the
  * second statement sees the first. The run is composed by runs.ts (`RUN_CONFLICT`, `versionAtEvent`);
  * what is here is the transaction that makes the two inseparable, and the fallback for when it
- * cannot run.
+ * cannot run. A third statement follows the event: the read model's bucket, written from the row
+ * that was just inserted, so a call a reader could count is a call no bucket is missing
+ * (`console/event-work-week.ts`).
  *
  * Nothing refuses an event for want of an identity: the columns are nullable for exactly that
  * reason, and a call nobody can attribute is still evidence that a call happened. An event whose
@@ -32,8 +34,10 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { type EventOrigin, refusalOwner } from "@zz/contracts";
 import type { PoolClient } from "pg";
 
+import { WEEK_RECORD } from "./console/event-work-week.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { RUN_CONFLICT, versionAtEvent } from "./runs.js";
+import { zone } from "./zone.js";
 
 const STRANDED_PATH = "/data/events-unwritten.jsonl";
 
@@ -161,7 +165,12 @@ const RUN_PARAMS = 7;
  *
  *  The run is found by the identity tuple rather than by the id the statement above wrote: the
  *  upsert returns no row when its guard suppresses the update, and the run it declined to rewrite
- *  is the run this event belongs to. */
+ *  is the run this event belongs to.
+ *
+ *  It returns the row's own id, which is what the read model's statement below is handed: the
+ *  bucket an event falls in is read off the row that was written rather than rebuilt from the
+ *  writer's parameters, so a team slug that stopped resolving, or a `ts` the column defaulted,
+ *  cannot file the call under a key the row does not carry. */
 const APPEND_EVENT = `${IDENTITY}
     insert into zz.event (actor_id, team_id, initiative_id, session, skill_version_id, run_id,
                           kind, subject, detail, ok, refusal, refusal_owner,
@@ -172,21 +181,36 @@ const APPEND_EVENT = `${IDENTITY}
              where r.team_id = id.team_id and r.initiative_id = id.initiative_id
                and r.skill_version_id = id.skill_version_id and r.session = $5),
            $8, $9, $10::jsonb, $6, $11, $12, $13, $14, $15, $16, $17, $7, $18, $19
-      from id`;
+      from id
+    returning id`;
 
-/** The two statements, in one transaction, or nothing at all.
+/** The three statements, in one transaction, or nothing at all.
  *
- *  A failure rolls both back and strands the event: a run counting a call the record does not hold
- *  is worse than no run, because the trace is what a round is judged from. Every failure lands in
- *  `stranded` — an unhandled rejection here would take the process down, and this runs on the path
- *  of every tool call. */
+ *  A failure rolls all three back and strands the event: a run counting a call the record does not
+ *  hold is worse than no run, because the trace is what a round is judged from. Every failure lands
+ *  in `stranded` — an unhandled rejection here would take the process down, and this runs on the
+ *  path of every tool call.
+ *
+ *  The read model's row is the third statement and not a write of its own afterwards: a call in
+ *  `zz.event` that no bucket had counted is an answer the model and the raw table disagree about
+ *  until the next rebuild, and committing them together is what makes `zz.event_work_week` true at
+ *  every instant rather than eventually. The statement selects nothing for a row that is not a
+ *  real-work tool call, so a page view and a maintenance call write no model row.
+ *
+ *  COUPLED: the zone is `zone()`'s, the one definition every reader cuts a week with, so the week
+ *  this write files a call under and the week a page shows it in are one calendar. It is read at
+ *  call time and from a module that imports nothing: importing `console/shared.js` here instead
+ *  pulled the catalog and a load-time `ZZ_TZ` into the graph of `db.ts`, which is the first module
+ *  every process loads, and a check that sets the zone afterwards then disagreed with itself. */
 async function write(record: Record<string, unknown>, params: unknown[]): Promise<void> {
   let client: PoolClient | undefined;
   try {
     client = await platformDb().connect();
     await client.query("begin");
     await client.query(STAMP_RUN, params.slice(0, RUN_PARAMS));
-    await client.query(APPEND_EVENT, params);
+    const appended = await client.query<{ id: string }>(APPEND_EVENT, params);
+    const eventId = appended.rows[0]?.id;
+    if (eventId) await client.query(WEEK_RECORD, [eventId, zone()]);
     await client.query("commit");
   } catch (err) {
     if (client) await client.query("rollback").catch(() => { /* nothing left to try */ });

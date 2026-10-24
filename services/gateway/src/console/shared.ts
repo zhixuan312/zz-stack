@@ -15,6 +15,7 @@ import type { Request, Response } from "express";
 import { platformDbReady } from "../db.js";
 import { isSuper } from "../identity.js";
 import { resolveScope, type Scope } from "../scope.js";
+import { zone } from "../zone.js";
 
 /** A `Scope` that has already cleared `handler()`'s refusal check — never "refused",
  * because every handler below runs only after that case has answered the request.
@@ -149,11 +150,13 @@ export function periodCutoff(req: Request): Date | null {
  * The deployment's own timezone: every date this platform states is local to it, and
  * buckets are cut on its calendar rather than UTC's.
  *
- * DELIBERATE: the fallback is Asia/Singapore, not UTC.
+ * DELIBERATE: the fallback is Asia/Singapore, not UTC. It is `zone()`'s, defined once in
+ * `../zone.js` — a module that imports nothing, which the event writer can reach without loading
+ * this one and the catalog underneath it.
  *
  * COUPLED: zz-core's write guards stamp dates through this same variable.
  */
-export const ZZ_TZ = (process.env.ZZ_TZ ?? "").trim() || "Asia/Singapore";
+export const ZZ_TZ = zone();
 
 /** Every Work read's 400 to a caller who acts for no team: Work is the active team's, for everyone. */
 export const NO_TEAM = "no team: Work is the active team's, and you act for none";

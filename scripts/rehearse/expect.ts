@@ -282,4 +282,17 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       },
     ],
   },
+  // The read model's release. It CREATES `zz.event_work_week` and fills it with one `insert … select`
+  // over every real-work call the deployment holds, so the table is declared created while its count
+  // and content hash are the data's to decide rather than a constant this file could name: a
+  // backfill's size is production's, and a digest of it would differ on every deployment for a
+  // reason that is not a defect. `zz.event` is deliberately not named — the file reads it and moves
+  // none of its rows, so the default assertion, row count unchanged and every column hashed
+  // unchanged, is exactly what this file claims. This entry leaves with the file when it folds into
+  // `001_init.sql`.
+  "011_event_work_week.sql": {
+    tables: {
+      event_work_week: { added: true, count: "any", contentHash: "skip" },
+    },
+  },
 };

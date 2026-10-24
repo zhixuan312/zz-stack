@@ -7,7 +7,8 @@
  * `ReadMeta` has carried) and this file states what is true of the request that asked for them. The
  * split is the whole point: `asOf` belongs to the computation and survives a cache hit, while
  * `observedAt` is this request's and must not. Two routes that each took their own instant drifted the
- * moment one of them kept an answer, which is the defect this replaces.
+ * moment one of them kept an answer, which is the defect this replaces. What leaves is an `AnswerMeta`
+ * — the route's `ReadMeta` with the five now present — which is what a caller receives.
  *
  * The body is a FRESH object per request. `answer-cache.ts` keeps one computation and serves it to every
  * caller inside one data version, so writing an envelope into it would show the first caller's
@@ -46,11 +47,12 @@
 import type { Express, Response } from "express";
 
 import type { Identity } from "../identity.js";
+import type { AnswerMeta } from "./figures.js";
 import { revisionFor } from "./live-revision.js";
 
-/** The three fields that describe the request rather than the figures. Everything else in a `meta` is the
- *  route's own and passes through untouched. */
-type ReadEnvelope = { observedAt: string; revision: string | null; cacheHit: boolean };
+/** The three fields that describe the request rather than the figures, as `AnswerMeta` declares them. Everything else
+ *  in a `meta` is the route's own and passes through untouched. */
+type ReadEnvelope = Pick<AnswerMeta, "observedAt" | "revision" | "cacheHit">;
 
 /** One route whose answer is stamped: the path it is mounted at, and the collections its statements read. */
 export type ReadRoute = { path: string; collections: readonly string[] };
@@ -174,8 +176,14 @@ export function mountReadEnvelope(app: Express): void {
         cacheHit: typeof old.cacheHit === "boolean" ? old.cacheHit : false,
       };
       // `builtAt` and `sourceRevision` describe persisted derived data this file knows nothing about, so a route
-      // that named them keeps them and every other answer says, truly, that it was computed from rows.
-      const meta = { ...old, ...stamp, builtAt: old.builtAt ?? null, sourceRevision: old.sourceRevision ?? null };
+      // that named them keeps them and every other answer says, truly, that it was computed from rows. Both are
+      // narrowed rather than copied: the body is `unknown` here, and an `AnswerMeta` holds an instant and a
+      // revision, never whatever a route happened to send.
+      const derived: Pick<AnswerMeta, "builtAt" | "sourceRevision"> = {
+        builtAt: typeof old.builtAt === "string" ? old.builtAt : null,
+        sourceRevision: typeof old.sourceRevision === "string" ? old.sourceRevision : null,
+      };
+      const meta = { ...old, ...stamp, ...derived };
       return send({ ...body, meta });
     }) as Response["json"];
     next();

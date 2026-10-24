@@ -49,6 +49,8 @@ node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
 **Docker is needed by every gate check that migrates a real PostgreSQL** (each starts one through `scripts/schema/throwaway.ts`) — the schema inventory,
+the real-work read model (`checks/event-work-week.ts`), which compares `zz.event_work_week` with the
+statement it replaces at the model's own grain, and re-reads both write paths through it,
 the evaluation readers, which EXPLAINs every evaluation statement against a database
 migrated from `services/gateway/migrations/`, `plugin_profile`'s document record (`checks/eval-profile-record.ts`),
 which runs its built readers over a seeded one, the document write path (`checks/document-store.ts`), which drives

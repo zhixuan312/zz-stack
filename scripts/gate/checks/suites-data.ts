@@ -14,6 +14,10 @@ check("an aggregate nothing measured renders as null, never a confident zero",
 
 check("SCHEMA.md states the standard the spec fixed", runsCheck("schema-standard.ts"));
 check("the real migrations produce SCHEMA_TARGET's catalog, exactly", runsCheck("schema-inventory.ts"));
+// Phase 2's read model. It is compared at its own grain against the statement it replaces, so a wrong
+// key cannot hide behind a right total, and both write paths are re-read through it rather than trusted.
+check("the read model answers what the statement it replaces answers, and composes with it",
+      runsCheck("event-work-week.ts"));
 check("no initiative reader derives closed, outcome or flow from zz.doc", runsCheck("initiative-lifecycle-readers.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 check("no statement in the write trees names a table or column the migration retires",

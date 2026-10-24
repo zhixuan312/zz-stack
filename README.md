@@ -209,6 +209,11 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             row's `body_tsv`/`analyzer_version` under the current analyzer generation
             through `@zz/indexing`'s `rederiveAll`, resumable by watermark — `--write`
             is the only path that changes anything),
+            rebuild-event-work-week.ts (dry-run by default: runs the read model's own
+            backfill — the same `insert … select` `011_event_work_week.sql` ran — inside one
+            transaction and rolls it back, then reads the model and the raw calls as one
+            answer; `--write` is the only path that commits, and a rebuild repairs a drifted
+            bucket because its update replaces rather than adds),
             control-loop-e2e.ts (drives a real initiative through the real doors against a
             scratch deployment and checks the loop refuses and grants as the flow declares —
             it refuses to run against production by name, because it writes an initiative,

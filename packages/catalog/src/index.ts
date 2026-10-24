@@ -11,11 +11,20 @@ import { basename, dirname, join } from "node:path";
 /** Where the shelf lives. `/catalog` in the image, which is where it ships.
  *
  * Overridable so a checkout can point at its own catalog/ directory: everything under
- * buildClientPackage reads the catalog through this constant, and without the override nothing
+ * buildClientPackage reads the catalog through `catalogDir()`, and without the override nothing
  * outside a container could build a package to look at.
  *
- * DELIBERATE: not a toggle and not a fallback — the default is the real path. */
-export const CATALOG_DIR = process.env.ZZ_CATALOG_DIR || "/catalog";
+ * DELIBERATE: not a toggle and not a fallback — the default is the real path.
+ *
+ * DELIBERATE: a function, not a constant captured when this module first loads. A captured value
+ * made the answer depend on IMPORT ORDER: whichever module happened to reach this package first
+ * fixed the directory for the whole process, so a new transitive import anywhere in a service could
+ * silently point every catalog read at the container's path. That is exactly what happened when the
+ * gateway's event writer began importing a module that reads the catalog. Reading the variable per
+ * call costs a property lookup, and `catalogPackages` scans the filesystem on every call anyway. */
+export function catalogDir(): string {
+  return process.env.ZZ_CATALOG_DIR || "/catalog";
+}
 
 /* The manifest's shape lives in @zz/contracts, as a schema rather than an interface: a schema
  * can say no to a manifest, and is published so somebody writing one can read the rules before
@@ -158,14 +167,14 @@ export function catalogPackages(): readonly CatalogPackage[] {
   const out: CatalogPackage[] = [];
   let owners: string[];
   try {
-    owners = readdirSync(CATALOG_DIR).sort();
+    owners = readdirSync(catalogDir()).sort();
   } catch { return out; }          // no catalog mounted (local dev)
   for (const owner of owners) {
     let names: string[];
     try {
-      names = readdirSync(join(CATALOG_DIR, owner)).sort();
+      names = readdirSync(join(catalogDir(), owner)).sort();
     } catch { continue; }          // a file where an owner directory was expected
-    for (const name of names) out.push({ owner, name, dir: join(CATALOG_DIR, owner, name) });
+    for (const name of names) out.push({ owner, name, dir: join(catalogDir(), owner, name) });
   }
   return out;
 }

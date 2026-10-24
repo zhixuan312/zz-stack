@@ -14,7 +14,7 @@ import { join, sep } from "node:path";
 import { promisify } from "node:util";
 
 import {
-  CATALOG_DIR, gitInstruction, IMAGE_UNSHIPPED, type PluginComponent, pluginDirComponents, pluginTreeDigest,
+  catalogDir, gitInstruction, IMAGE_UNSHIPPED, type PluginComponent, pluginDirComponents, pluginTreeDigest,
   publicHttpsUrl, symlinkRefusal,
 } from "@zz/catalog";
 
@@ -56,13 +56,13 @@ function confinedLocalDir(locator: string): string | { error: string } {
   let root: string;
   let real: string;
   try {
-    root = realpathSync(CATALOG_DIR);
+    root = realpathSync(catalogDir());
     real = realpathSync(locator);
   } catch {
     return { error: "the path does not exist" };
   }
   if (real !== root && !real.startsWith(root + sep)) {
-    return { error: `local_dir is read only under the catalog root (${CATALOG_DIR}); this path is outside it` };
+    return { error: `local_dir is read only under the catalog root (${catalogDir()}); this path is outside it` };
   }
   return real;
 }

@@ -34,10 +34,10 @@ rmSync(STAGING, { recursive: true, force: true });
 execFileSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.catalog.json"],
              { cwd: root, stdio: "inherit" });
 
-// DELIBERATE: set before the dynamic imports below. `@zz/catalog` reads ZZ_CATALOG_DIR into a
-// module-level `const` at load time, and client-package.js does the same with ZZ_SKILLS_DIR,
-// so an assignment after the import keeps the container's paths. That failure is silent —
-// `platformOwnSkills()` returns [] for a missing directory — hence the assertion at the
+// DELIBERATE: set before the dynamic imports below. `@zz/catalog` reads ZZ_CATALOG_DIR per call, so
+// it no longer cares — but client-package.js still captures ZZ_SKILLS_DIR into a module-level
+// `const` at load time, so an assignment after the import keeps the container's path. That failure
+// is silent — `platformOwnSkills()` returns [] for a missing directory — hence the assertion at the
 // bottom.
 process.env.ZZ_CATALOG_DIR ??= join(root, "catalog");
 process.env.ZZ_SKILLS_DIR ??= join(root, "skills");

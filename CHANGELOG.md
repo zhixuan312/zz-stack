@@ -33,6 +33,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.7] — 2026-10-24
+
+Two more passes at what a console page costs: the statements that reduce the whole event history
+now answer from an index alone, and an answer a page has already been given lasts long enough for a
+reader to leave and come back to it.
+
+### zz-stack 0.98.7
+
+- **The whole-history reads answer from an index and never touch the heap.** Usage, Record, Home and
+  Status each reduce every real-work tool call the platform has recorded — 40,287 of one deployment's
+  69,555 rows — in seven statements on one Usage load. The index `007_event_work_scan.sql` shipped is
+  led by `session`, because the statements that release knew seek one session; these seek nothing and
+  read every matching row, so that index bought them a bitmap over 40k entries and a heap visit per
+  row. A covering index over the same rows lets the planner read the index alone: calls by week and
+  team 187 ms to 158 ms, calls by tool and week with a median 283 ms to 222 ms, measured on the
+  deployment. Part of what those plans paid was heap fetches for rows a vacuum had not yet marked
+  all-visible, so the gain is larger once the table is vacuumed than the two figures say.
+- **A console answer is kept for a minute, not twenty seconds.** The cache is keyed on the platform's
+  data version, so a write makes an answer unreachable the moment it lands; the clock is only a
+  backstop for a table no trigger watches. Twenty seconds was shorter than a person spends on a page,
+  so a reader who went to another destination and came back paid the whole read again for an answer
+  nothing had moved: 0.6-1.2 s, where a kept answer is 0.19 s. The one visible cost is a release list
+  up to a minute old, because `zz.release` is the one table those reads touch that no trigger hints.
+
+### Upgrade notes
+
+- One additive migration, applied on the gateway's next start: a partial index over the real-work tool
+  calls. No row, column or contract changes, and the release before it runs on what it builds — a
+  rollback leaves the index in place and costs the old release nothing.
+- No environment key changed and no client needs re-pulling. The console did not move in this release.
+
 ## [0.98.6] — 2026-10-24
 
 The console's pages stop re-reading the platform's whole record to draw one screen: Home,

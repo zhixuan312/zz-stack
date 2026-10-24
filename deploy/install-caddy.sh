@@ -100,7 +100,14 @@ for h in $(grep -oE '^[a-z0-9.-]+ \{' /tmp/caddy-$HOST.new | sed 's/ .*//'); do
   want=200
   awk -v h="$h" '$1 == h && $2 == "{" {in_block = 1; next} in_block && /^}/ {exit} in_block && $1 == "redir" {found = 1} END {exit !found}' \
     /tmp/caddy-$HOST.new && want=301
-  code=$(ssh "$HOST" "curl -sk -o /dev/null -w '%{http_code}' --resolve '$h:443:127.0.0.1' 'https://$h/' --max-time 10")
+  # A hostname new to this machine has no certificate until Caddy's first ACME order completes,
+  # and until then curl fails the handshake. `|| true`, because under `set -e` that failure ended
+  # the script mid-loop with nothing printed; up to 30 seconds, because the order takes a few.
+  for _ in 1 2 3 4 5 6; do
+    code=$(ssh "$HOST" "curl -sk -o /dev/null -w '%{http_code}' --resolve '$h:443:127.0.0.1' 'https://$h/' --max-time 10" || true)
+    [ "$code" = "$want" ] && break
+    sleep 5
+  done
   printf '  %-38s %s\n' "$h" "$code"
   [ "$code" = "$want" ] || { echo "  ^ answered $code, not $want — previous config is at /etc/caddy/Caddyfile.prev on $HOST" >&2; exit 1; }
 done

@@ -49,7 +49,7 @@ import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js"
 import {
   byWeek, callWeeks, followupOf, latencyMeasures, LOOKAHEAD_MS, periodWeeks, readGrid, sessionsMeasure, share, tally, windowOf, type Grid,
 } from "./platform-measures.js";
-import { cachedWithHit, served } from "./answer-cache.js";
+import { audienceKey, cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 import {
   approvalWeeks, followupWeeks, modelWeeks, rhythmCells, teamWeeks, toolWeeks, weekTraffic, type ToolWeek,
@@ -178,11 +178,17 @@ async function modelCallsOf(db: pg.Pool, grid: Grid, ended: Ended) {
 }
 
 export function mountPlatformUsage(app: Express): void {
-  app.get("/api/console/platform/usage", platformPublic("the platform's usage", async (_req, res, { superadmin }) => {
-    // DELIBERATE: kept as one answer per audience until a write moves `dataVersion()` (answer-cache.ts). This
-    // read reduces the whole event history — nine statements over every real-work call ever recorded — and
-    // nothing in it changes between two looks at the console that no call happened in between.
-    res.json(served(await cachedWithHit(`usage|${superadmin}`, () => usageOf(superadmin))));
+  app.get("/api/console/platform/usage", platformPublic("the platform's usage", async (req, res, caller) => {
+    // DELIBERATE: kept as one answer per audience until a write moves the marker of what it reads
+    // (answer-cache.ts). This read reduces the whole event history — nine statements over every real-work call
+    // ever recorded — and nothing in it changes between two looks at the console that no call happened in
+    // between.
+    // The audience is `audienceKey`'s, the same string Status is keyed on: Usage's figures do not depend on the
+    // caller, but both answers are the platform's and the two routes keep one shape. The flag is `isSuper`, so a
+    // team-bound superadmin PAT is keyed as the member-shaped answer it receives.
+    res.json(served(await cachedWithHit(`usage|${audienceKey(caller)}`,
+      () => usageOf(caller.superadmin),
+      prefixFor("/api/console/platform/usage", req.zzIdentity!, req))));
   }));
 
   /** The usage answer itself, as the route above serves it. */

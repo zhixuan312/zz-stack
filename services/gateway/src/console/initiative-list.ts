@@ -41,7 +41,8 @@ import type { Mcp } from "@zz/mcp-client";
 
 import { coreFor } from "../core-as-caller.js";
 import { platformDb } from "../db.js";
-import { cachedWithHit, served } from "./answer-cache.js";
+import { isSuper } from "../identity.js";
+import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { teamPendingRevisions } from "./pending.js";
 import { BAD_PAGE, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
@@ -291,12 +292,19 @@ export function mountInitiativeList(app: Express): void {
     const params = listParams(req.query as Record<string, unknown>);
     if (typeof params === "string") { res.status(400).json({ error: params }); return; }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
-    // DELIBERATE: kept as one answer per caller, team and page until a write moves `dataVersion()`
-    // (answer-cache.ts). This is the console's heaviest read — every initiative's documents, its
-    // closures and one relayed `initiative_status` per ten rows — and the list is what a person
-    // returns to between destinations without anything having happened since.
-    const email = req.zzIdentity!.email;
-    res.json(served(await cachedWithHit(`initiatives|${activeTeam}|${email}|${JSON.stringify(params)}`, () =>
-      initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)))));
+    // DELIBERATE: kept as one answer per team, role and page until a write moves the marker of what it reads
+    // (answer-cache.ts). This is the console's heaviest read — every initiative's documents, its closures and one
+    // relayed `initiative_status` per ten rows — and the list is what a person returns to between destinations
+    // without anything having happened since.
+    //
+    // The caller's EMAIL is not in the key, because the computation never reads it: `initiativeList` takes the
+    // team, the page and the cutoff, so two members of one team are one answer and now share it. The superadmin
+    // flag stays, because the relayed `initiative_status` acts as whoever asked: a member and a superadmin read
+    // the same team's list through different authority, and dropping the person without keeping this one
+    // distinction would leave nothing to separate them at all.
+    res.json(served(await cachedWithHit(
+      `initiatives|${activeTeam}|${isSuper(req.zzIdentity!)}|${JSON.stringify(params)}`,
+      () => initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)),
+      prefixFor("/api/console/initiatives", req.zzIdentity!, req))));
   }));
 }

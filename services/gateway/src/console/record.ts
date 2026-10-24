@@ -65,7 +65,7 @@ import { OUTCOMES, writingEstimate, type WritingCoverage } from "@zz/contracts";
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { cachedWithHit, served } from "./answer-cache.js";
+import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import { callerApprovals } from "./approvals.js";
 import type { Figure, Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { localDate } from "./findings.js";
@@ -395,10 +395,12 @@ export function mountRecord(app: Express): void {
     const params = recordParams(req.query as Record<string, unknown>);
     if (typeof params === "string") { res.status(400).json({ error: params }); return; }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
-    // DELIBERATE: kept as one answer per caller, team, period and page until a write moves `dataVersion()`
-    // (answer-cache.ts). The record is the whole history reduced by week; re-reading it between two clicks
-    // that changed nothing was most of the page's time.
+    // DELIBERATE: kept as one answer per caller, team, period and page until a write moves the marker of what it
+    // reads (answer-cache.ts). The email stays in the key because the answer itself uses it: the approvals are the
+    // ones signed in the caller's own name. The record is the whole history reduced by week; re-reading it between
+    // two clicks that changed nothing was most of the page's time.
     res.json(served(await cachedWithHit(`record|${activeTeam}|${req.zzIdentity!.email}|${JSON.stringify(params)}`, () =>
-      recordOf(activeTeam, req.zzIdentity!.email, params.period, params, iso(Math.ceil(Date.now() / 1000) * 1000)))));
+      recordOf(activeTeam, req.zzIdentity!.email, params.period, params, iso(Math.ceil(Date.now() / 1000) * 1000)),
+      prefixFor("/api/console/record", req.zzIdentity!, req))));
   }));
 }

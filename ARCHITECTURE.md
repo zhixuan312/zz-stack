@@ -541,3 +541,98 @@ smaller set: what the gate holds about where things live.
 
 Every check this file cites by name must exist — `check "a gate check cited elsewhere is cited
 by a name that exists"` holds this file to that.
+
+## 5. What the console reads, and what each read costs
+
+A console figure is only honest if the document that decided where it comes from is written down
+before the figure moves. This section is that decision, taken once: every metric the console shows
+has a line saying what it is counted from, at what grain, what makes its answer change, and whether
+it is answered from a read model or from the tables.
+
+`zz.event_work_week` is the read model — `migrations/011_event_work_week.sql`, declared
+`class=projection; rebuilt_from=zz.event`, so every row of it is reproducible by re-running one
+statement over `zz.event` and nothing in it is a fact of its own. It carries no `matched`, no
+`continued_sessions` and no `last_call_at`: the first two are business state decided elsewhere and
+recorded nowhere in `zz.event`, so a rebuild would lose them without an error, and the third is
+derivable and unbounded. `check "the read model holds no business state it cannot rebuild, and its
+register is written"` refuses a column of any of those three names, and holds the four sections
+below to their headings, their six register rows and their two-number budget.
+
+The measurements below are `EXPLAIN (ANALYZE, BUFFERS)` on this deployment, read-only, on
+2026-10-24 at **41,772 real-work calls** (`zz.event` where `kind = 'tool_call'` and
+`origin = 'work'`), which is the row count the budget's ten-times test seeds to. A projection at
+ten times the traffic is that measurement's figure at ten times the row count, and is labelled as
+one rather than guessed at.
+
+### The metric register
+
+| Metric | Source | Grain | What makes its answer change | Served by |
+|---|---|---|---|---|
+| Calls by week and team | `zz.event`, real-work tool calls, joined to `zz.team` for the slug | team · local week | any real-work call | the read model, `teamWeeks` |
+| Calls by tool and week, with the median | `zz.event`, real-work tool calls, the tool named through `zz.plugin_tool` | tool · local week | any real-work call, or a tool the doors stop registering | the read model, `toolWeeks`, its median the merge of the buckets' `ms` arrays |
+| Calls by refusal owner | `zz.event`, real-work tool calls carrying a `refusal_owner` | refusal owner · team · local week | any refused call | the read model, `refusal_owner` being part of its grain |
+| Refusals put right — `matched`, `median_ms` | `zz.event`, a refusal and the first real-work call of the same team, session and tool inside the 120 seconds after it | refusal · local week | a refusal, or the call that puts it right | a raw query, `followupWeeks` |
+| Refusals put right — `continued_sessions` | `zz.event`, a refused session's own later calls | refused session · local week | a call of that session after a refusal | a raw query, `followupWeeks`, the same statement |
+| Calls by local weekday and hour | `zz.event`, real-work tool calls | local day and hour | any real-work call | a raw query, `readDays` |
+
+The two `followupWeeks` rows are the ones the model may not answer. A refusal is put right by what
+happens in the two minutes after it, and a session continued is a fact about every later call of
+that session: neither is a count of anything, so neither is a column of a projection, and the model
+carries neither. They stay a raw query with the cost recorded below, and the median of a
+cross-bucket population is always the merge of the `ms` arrays — never a median of medians.
+
+### The budget of each answer class
+
+A budget is two numbers, and it is what the class may cost at ten times today's traffic. Prose is
+not a budget: Task I-19's third arm parses the line below out of this
+section, seeds to ten times the 41,772 real-work calls, and fails on either number being passed.
+
+- **Usage's calls by week and team** — `rows ≤ 1000, ms ≤ 50`. Today it reads 645 rows and takes
+  1.2 ms from the read model, against 41,772 rows and 133 ms for the same figure from `zz.event`.
+  At ten times the traffic the bucket count is bounded by the grain — seven weeks, five team slugs,
+  the tools the doors register — so the rows barely move while the arrays inside them grow.
+
+The `ms` array is the one field whose size is not obviously bounded, so it is recorded here. Its
+widest bucket holds 2,414 integers in 9,680 bytes, against an average bucket of 276 bytes; at ten
+times the traffic that bucket is about 24,140 integers and about 95 KB, still one row's own value
+and still under the size at which the column would be stored out of line.
+
+The classes that stay on the tables carry their own budgets, which no check parses because no read
+moves onto the model to hold them to one: Usage's `callDays` and `followupWeeks` together at 426 ms
+platform-wide, Status's three statements at 500 ms, and Home's and Record's whole reads at the
+0.6–1.2 s `answer-cache.ts` records.
+
+### Answer classes that miss on every event write
+
+Four answer classes are stranded by every `zz.event` write, and the miss is correct for all four:
+each figure they show includes events, so an event is exactly what moves it (FR-11b). None of them
+may be kept across a write, whatever it costs to recompute.
+
+| Answer class | What its read runs | Measured cost, platform-wide |
+|---|---|---|
+| Home | the whole record reduced to a week: two core MCP reads and the events behind them | 0.6–1.2 s computed, 0.19 s served (recorded in `answer-cache.ts`; not re-measured here, because its read goes through the core MCP door and timing it against production would need a session that writes) |
+| Record | five statements over the document and event tables, one read per period and page | 0.6–1.2 s computed, 0.19 s served (the same recorded measurement, on the same page class) |
+| Usage | `teamWeeks`, `toolWeeks`, `callDays`, `followupWeeks` | 559 ms today (133 + 278 + 148); 426 ms once Task I-19 moves the two week-grain reductions onto the model |
+| Status | `readDays`, `latencyMeasures`, `sessionsMeasure` | 500 ms (122 + 109 + 269) |
+
+Home and Record are the two whose figure is recorded rather than re-measured in this pass, and the
+reason is stated rather than left implicit: their reads reach the platform through the core MCP
+door, so a measurement against this deployment would be a request, and a request is a write on the
+platform's own record. Their cost is the one `answer-cache.ts` records from Phase 1's measurement of
+the same two classes on this deployment.
+
+### What stays a raw query
+
+These seven read `zz.event` from its first row on every request, and each stays that way for a
+reason the model cannot fix, with the cost measured today and its projection at ten times the
+41,772 real-work calls.
+
+| Reduction | Why its grain cannot be held | Today | At ten times |
+|---|---|---|---|
+| `followupWeeks` | a refusal and the 120 seconds after it; a session's whole later history | 148 ms platform-wide, 3.0 ms for one team (1,388 refusals) | about 1.5 s |
+| `latencyMeasures` | a per-week malformed split by side | 109 ms | about 1.1 s |
+| `searchDays(from = null)` | a null `from` asks for the first search ever made, so the window is the whole history | 50 ms | about 0.5 s |
+| `sessionsMeasure` | a session's whole later history, not a bucket's | 269 ms platform-wide, 1.9 ms for one team | about 2.7 s |
+| `readDays` | the local day and hour, finer than the model's week | 122 ms | about 1.2 s |
+| `callWeeks` | it would answer from the model; it is left raw because the metric table this phase agreed to ship moves exactly `teamWeeks` and `toolWeeks`, and moving more is a change to what the spec agreed | 133 ms platform-wide, 1.9 ms for one team | about 1.3 s |
+| `callDays` | the local day, and a `batched` dimension the model's `ms` array deliberately excludes | 278 ms | about 2.8 s |

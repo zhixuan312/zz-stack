@@ -58,7 +58,7 @@ import {
   sessionsMeasure, unavailableMeasure, type Grid, type StatusMeasure,
 } from "./platform-measures.js";
 import { evaluationWaiting, needsOf, type DoorToday, type Needs } from "./platform-needs.js";
-import { cachedWithHit, served } from "./answer-cache.js";
+import { audienceKey, cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 /** What the measures count, as `meta.population` says it. */
@@ -332,13 +332,18 @@ export async function statusOf(
 }
 
 export function mountPlatformStatus(app: Express): void {
-  app.get("/api/console/platform/status", platformPublic("the platform's status", async (_req, res, caller) => {
-    // DELIBERATE: kept as one answer per audience until a write moves `dataVersion()` (answer-cache.ts).
-    // Every measure here reduces the whole event history, and none of it moves between two looks at the
-    // console that nothing happened in between.
-    // The caller is part of the key: a member reads their own team's figures, so two people in
-    // different teams are two answers rather than one that depends on who asked first.
+  app.get("/api/console/platform/status", platformPublic("the platform's status", async (req, res, caller) => {
+    // DELIBERATE: kept as one answer per audience until a write moves the marker of what it reads
+    // (answer-cache.ts). Every measure here reduces the whole event history, and none of it moves between two
+    // looks at the console that nothing happened in between.
+    // The audience is part of the key through `audienceKey`, and it carries BOTH halves `statusOf` reads: the
+    // superadmin flag widens the answer and `activeTeam` fills the reader's own block, so a superadmin switching
+    // teams must miss — and a superadmin must never share with that team's admin. `isSuper`, not `platformRole`:
+    // a team-bound PAT held by a superadmin resolves to a narrower identity, and `statusOf` answers it
+    // differently.
     // `served` states the hit in the `meta` this route sends, where `read-envelope.ts` leaves it alone.
-    res.json(served(await cachedWithHit(`status|${caller.superadmin}|${caller.activeTeam}`, () => statusOf(caller, null))));
+    res.json(served(await cachedWithHit(`status|${audienceKey(caller)}`,
+      () => statusOf(caller, null),
+      prefixFor("/api/console/platform/status", req.zzIdentity!, req))));
   }));
 }

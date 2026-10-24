@@ -18,6 +18,11 @@ check("the real migrations produce SCHEMA_TARGET's catalog, exactly", runsCheck(
 // key cannot hide behind a right total, and both write paths are re-read through it rather than trusted.
 check("the read model answers what the statement it replaces answers, and composes with it",
       runsCheck("event-work-week.ts"));
+// Phase 2's register. The model is a projection of zz.event and holds nothing a rebuild cannot
+// reproduce; the decision about what reads it is written, six metrics and a two-number budget,
+// before the reductions move — and Task I-19's ten-times arm parses that budget line.
+check("the read model holds no business state it cannot rebuild, and its register is written",
+      runsCheck("event-work-week-columns.ts"));
 check("no initiative reader derives closed, outcome or flow from zz.doc", runsCheck("initiative-lifecycle-readers.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 check("no statement in the write trees names a table or column the migration retires",

@@ -140,7 +140,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     collectionsFor: (path: string) => readonly string[] | null;
   };
   const cache = (await load("console/answer-cache.js")) as {
-    cachedWithHit: <T>(key: string, read: () => Promise<T>) => Promise<{ value: T; hit: boolean }>;
+    cachedWithHit: <T>(key: string, read: () => Promise<T>, prefix: string | null) => Promise<{ value: T; hit: boolean }>;
+    prefixFor: (path: string, id: unknown, req: unknown) => string | null;
     served: <T extends { meta: { asOf?: string; cacheHit?: boolean } }>(served: { value: T; hit: boolean }) => T;
   };
   const changes = (await load("console/live.js")) as { mountConsoleLive: (app: Express) => void };
@@ -155,11 +156,14 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   // The one answer with no `meta` of its own: it gains the three request fields and two nulls.
   app.get(BARE, (_req, res) => { res.json({ bare: "an answer carrying no meta of its own" }); });
   // The one answer the cache keeps: `served` states the hit, and `asOf` is the computation's instant.
-  app.get(KEPT, async (_req, res) => {
+  app.get(KEPT, async (req, res) => {
+    // The marker a declared path's answer is kept under. This route borrows Record's, because a marker is
+    // what makes a second read a hit and nothing is kept without one.
+    const id = (req as unknown as { zzIdentity: unknown }).zzIdentity;
     res.json(cache.served(await cache.cachedWithHit(`${NAME}|kept`, async () => ({
       meta: { asOf: new Date().toISOString() },
       kept: "an answer computed once",
-    }))));
+    }), cache.prefixFor(KEPT, id, req))));
   });
   const servers: Server[] = [];
   const server = app.listen(0, "127.0.0.1");

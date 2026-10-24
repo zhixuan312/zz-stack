@@ -36,7 +36,7 @@ import type { Express } from "express";
 import type pg from "pg";
 
 import { platformDb } from "../db.js";
-import { cachedWithHit, served } from "./answer-cache.js";
+import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { malformedMeasure, readGrid } from "./platform-measures.js";
 import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
@@ -293,8 +293,12 @@ export function mountPlatformReleases(app: Express): void {
       res.status(400).json({ error: BAD_PAGE });
       return;
     }
+    // No caller term: this answer is the platform's releases, the same figures for everybody the console lets
+    // in, so two readers share it. Kept until a write moves the marker of what it reads — and `zz.release`
+    // raises no hint, so in practice until the minute in `answer-cache.ts` expires.
     const { rows, ...answer } = served(await cachedWithHit(`releases|${limit}|${offset}`,
-      async () => (await releasesOf({ limit, offset, since: null }))!));
+      async () => (await releasesOf({ limit, offset, since: null }))!,
+      prefixFor("/api/console/platform/releases", req.zzIdentity!, req)));
     const list: Releases = {
       ...answer,
       rows: rows.state === "ok"

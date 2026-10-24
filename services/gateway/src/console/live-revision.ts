@@ -85,10 +85,10 @@ export function count(change: Change | null): void {
 /**
  * Every change counted since the boot, as one version, or null while nothing listens.
  *
- * The same notifications a revision is made of, summed: what `answer-cache.ts` keys a console answer on, so a
- * write the listener heard makes the answer that write invalidated unreachable rather than serving it for its
- * whole lifetime. Nothing counted while nothing listens, so nothing is cached then either — an unversioned
- * answer cannot be told from a stale one.
+ * The same notifications a revision is made of, summed: one value a caller can wait on to know the listener is
+ * up, which is what `checks/console-read-envelope.ts` and the walking skeleton do. It is NOT what a console
+ * answer is keyed on — one global count over every team would strand a team's answer for another team's write —
+ * so `answer-cache.ts` keys on the composite marker of the collections the answer reads instead.
  */
 export function dataVersion(): string | null {
   if (boot === null) return null;
@@ -145,8 +145,12 @@ export function heardBy(id: Identity, req: Request): { teams: string[] | null } 
  * at once — Record reads documents, initiatives, knowledge, activity and the caller's own settings — needs the
  * composite, and it must name the collections it really reads rather than the route's own name, which is not a
  * collection any tab follows.
+ *
+ * `teams` is what decides the SCOPE the marker is about: a list narrows it to those teams' changes, and null
+ * folds every team's in. `answer-cache.ts` asks for both — null for an answer whose figures are the whole
+ * platform's, so any team's write strands it, and the caller's own teams for an answer that is theirs.
  */
-function revisionAcross(names: readonly string[], teams: string[] | null): string | null {
+export function revisionNamed(names: readonly string[], teams: string[] | null): string | null {
   if (boot === null) return null;
   return names.map((name) => `${name}:${heardRevision(name, teams)}`).join(",");
 }
@@ -155,7 +159,7 @@ function revisionAcross(names: readonly string[], teams: string[] | null): strin
  * The composite marker the answer of the route `path` names carries in its `meta`, or null when the route reads no
  * collection a tab follows.
  *
- * COUPLED: `read-envelope.ts` holds the route table and imports `revisionAcross` and `heardBy` from here, so the two
+ * COUPLED: `read-envelope.ts` holds the route table and imports `revisionNamed` and `heardBy` from here, so the two
  * modules import each other. Both edges are only followed while a request is being served — this function reads the
  * table and that middleware reads the two below — never while either module is evaluated, which is what keeps the
  * cycle from being an initialisation order problem.
@@ -164,7 +168,7 @@ export function revisionFor(path: string, id: Identity, req: Request): string | 
   const names = collectionsFor(path);
   if (names === null) return null;
   const heard = heardBy(id, req);
-  return "teams" in heard ? revisionAcross(names, heard.teams) : null;
+  return "teams" in heard ? revisionNamed(names, heard.teams) : null;
 }
 
 /**

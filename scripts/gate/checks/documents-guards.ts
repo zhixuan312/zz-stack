@@ -137,6 +137,15 @@ check("a guard's answer is never discarded", () => {
       const m = /^([a-zA-Z_]\w*)\s*\(/.exec(line);
       if (!m || !guards.has(m[1])) return;
       if (!/;\s*$/.test(line)) return;             // still an expression, e.g. a ?? chain
+      // DELIBERATE: a line whose parentheses do not balance is not a statement of its own — it is
+      // one argument of a call that continues past it, and whatever it is passed to takes its
+      // result. The console's routes pass a `string | null` marker builder as
+      // `cachedWithHit(key, read, prefixFor(...))`, which wraps and read as a discarded guard. The
+      // type-shaped scan is what keeps tomorrow's guard covered, so it stays; this is the narrowest
+      // correction that stops it accusing a value that IS used.
+      const opens = (line.match(/\(/g) ?? []).length;
+      const closes = (line.match(/\)/g) ?? []).length;
+      if (opens !== closes) return;
       bad.push(`${f}:${i + 1} calls ${m[1]}() and throws away what it says — a guard that ` +
                "cannot refuse is not a guard");
     });

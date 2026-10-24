@@ -54,12 +54,13 @@ import { runFinding, runOf, type Finding } from "./findings.js";
 import { pendingRevisions } from "./pending.js";
 import { bugsCoverage, publicRow, queueOf, realReports, type PublicBugRow } from "./platform-bugs.js";
 import {
-  bugsMeasure, finishedMeasure, followupMeasure, latencyMeasures, malformedMeasure, ownBugs, readGrid, searchesMeasure,
-  sessionsMeasure, unavailableMeasure, type Grid, type StatusMeasure,
+  bugsMeasure, earliestBoundary, finishedMeasure, followupOf, latencyMeasures, malformedMeasure, nextWeekBoundary, ownBugs,
+  readGrid, searchesMeasure, sessionsMeasure, unavailableMeasure, type Grid, type StatusMeasure,
 } from "./platform-measures.js";
 import { evaluationWaiting, needsOf, type DoorToday, type Needs } from "./platform-needs.js";
-import { audienceKey, cachedWithHit, prefixFor, served } from "./answer-cache.js";
+import { audienceKey, cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
+import { followupWeeks, nextBoundaryOf, type FollowupRow } from "./usage-figures.js";
 
 /** What the measures count, as `meta.population` says it. */
 const POPULATION = "real-work tool calls and searches, real bug reports, and closed initiatives";
@@ -72,6 +73,27 @@ const DOOR_DAYS = 365;
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 /** The local date an instant falls on in the reporting timezone. en-CA formats as YYYY-MM-DD. */
 const localDate = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: ZZ_TZ }).format(new Date(ms));
+/** The next instant the local calendar day changes after `asOfMs`. Status draws "today" (`doors`) and
+ *  "through the latest complete day" (`records`) by `localDate`, so the clock alone moves those figures at
+ *  midnight, exactly as a refusal turns at its 120 seconds and a running week completes at its end.
+ *
+ *  DELIBERATE: found by bisection on `localDate` rather than by adding 24 hours. A daylight-saving shift
+ *  moves a zone's midnight, and the question this answers is when the local DATE changes, not when a fixed
+ *  span has passed; 26 hours is longer than any local day, so the search interval always contains the
+ *  change. It costs a few dozen `Intl` calls once per computed answer, which is nothing beside the nine
+ *  statements that answer builds. */
+function nextDayBoundary(asOfMs: number): number {
+  let lo = asOfMs;
+  let hi = asOfMs + 26 * 3_600_000;
+  const start = localDate(lo);
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (localDate(mid) === start) lo = mid;
+    else hi = mid;
+  }
+  return hi;
+}
+
 /** The local date `n` days after `date`: calendar arithmetic on the date alone, in UTC. */
 const plusDays = (date: string, n: number): string =>
   new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)) + n)).toISOString().slice(0, 10);
@@ -247,19 +269,34 @@ async function runningOf(db: pg.Pool): Promise<Part<Running>> {
 
 /** The platform's status for the caller, and with a canonical tool that tool's open reports; null for none. */
 export async function statusOf(
-  { superadmin, activeTeam }: { superadmin: boolean; activeTeam: string | null }, tool: string | null,
+  caller: { superadmin: boolean; activeTeam: string | null }, tool: string | null,
 ): Promise<PlatformStatus> {
+  return (await statusAnswer(caller, tool)).answer;
+}
+
+/**
+ * The status answer and the earliest instant the clock alone changes it: the first refusal still inside
+ * its 120 seconds turning `eligible`, or the running week completing. `asOfMs` is the read's cutoff —
+ * supplied by a check that drives the clock rather than slept through, and the wall clock elsewhere.
+ */
+async function statusAnswer(
+  { superadmin, activeTeam }: { superadmin: boolean; activeTeam: string | null }, tool: string | null, asOfMs?: number,
+): Promise<{ answer: PlatformStatus; boundary: number | null }> {
   const db = platformDb();
-  const grid = await readGrid(db);
+  const grid = await readGrid(db, asOfMs);
   const asOf = iso(grid.asOfMs);
   // One read of the real reports, for the rate, the reader's own counts and what needs attention.
   const reports = orNull("the real bug reports", realReports(asOf));
   const latency = latencyMeasures(db, grid);
   const days = orNull("the doors' days", readDays(db, grid));
+  // Read once: the measure draws the refusals and the boundary they put on the answer is read from the
+  // same rows. The reader's own team reads its own rows below.
+  const followups = followupWeeks(db, grid, null);
+  followups.catch(() => undefined);
   const [measures, pending, evaluation, running] = await Promise.all([
     Promise.all([
       orUnavailable(grid, "malformed_per_1000", null, malformedMeasure(db, grid)),
-      orUnavailable(grid, "same_tool_followup_pct", null, followupMeasure(db, grid)),
+      orUnavailable(grid, "same_tool_followup_pct", null, followups.then((rows) => followupOf(grid, rows, null))),
       orUnavailable(grid, "call_p50_ms", null, latency.then(([p50]) => p50)),
       orUnavailable(grid, "call_p95_ms", null, latency.then(([, p95]) => p95)),
       orUnavailable(grid, "searches_with_results_pct", null, searchesMeasure(db, grid)),
@@ -293,7 +330,7 @@ export async function statusOf(
   if (team !== null) {
     const [malformed, followup, sessions, mine] = await Promise.all([
       orUnavailable(grid, "malformed_per_1000", team, malformedMeasure(db, grid, team)),
-      orUnavailable(grid, "same_tool_followup_pct", team, followupMeasure(db, grid, team)),
+      orUnavailable(grid, "same_tool_followup_pct", team, followupWeeks(db, grid, team).then((rows) => followupOf(grid, rows, team))),
       orUnavailable(grid, "sessions", team, sessionsMeasure(db, grid, team)),
       reports,
     ]);
@@ -328,22 +365,44 @@ export async function statusOf(
       answer.bugs = { state: "ok", data: { tool, count: rows.length, coverage: { from: from === null ? null : iso(from), to: asOf }, rows } };
     }
   }
-  return answer;
+  // Three answers here move with the clock alone: the refusals still inside their 120 seconds, the running
+  // week turning complete, and the local day turning over — `doors` draws today and `records` through the
+  // latest complete day, and both are `localDate`'s. The platform-wide read is the earlier of the two refusal
+  // boundaries, so it is the one the answer is held to; a read that failed contributes no boundary rather
+  // than a wrong one.
+  const boundary = earliestBoundary(nextWeekBoundary(grid), nextDayBoundary(grid.asOfMs),
+                                    nextBoundaryOf(await followups.catch(() => [] as FollowupRow[])));
+  return { answer, boundary };
 }
 
 export function mountPlatformStatus(app: Express): void {
   app.get("/api/console/platform/status", platformPublic("the platform's status", async (req, res, caller) => {
     // DELIBERATE: kept as one answer per audience until a write moves the marker of what it reads
     // (answer-cache.ts). Every measure here reduces the whole event history, and none of it moves between two
-    // looks at the console that nothing happened in between.
+    // looks at the console that nothing happened in between. The clock is the exception, and the answer says
+    // when it moves: `boundary` keeps it no longer than the first refusal turning `eligible` or the running
+    // week completing.
     // The audience is part of the key through `audienceKey`, and it carries BOTH halves `statusOf` reads: the
     // superadmin flag widens the answer and `activeTeam` fills the reader's own block, so a superadmin switching
     // teams must miss — and a superadmin must never share with that team's admin. `isSuper`, not `platformRole`:
     // a team-bound PAT held by a superadmin resolves to a narrower identity, and `statusOf` answers it
     // differently.
     // `served` states the hit in the `meta` this route sends, where `read-envelope.ts` leaves it alone.
-    res.json(served(await cachedWithHit(`status|${audienceKey(caller)}`,
-      () => statusOf(caller, null),
+    res.json(served(await statusServed(caller, null, `status|${audienceKey(caller)}`,
       prefixFor("/api/console/platform/status", req.zzIdentity!, req))));
   }));
+}
+
+/**
+ * The status answer as the route serves it: one computation per audience under `key`, kept no longer than
+ * the first instant the clock alone changes it, returned with the cache's own statement of the hit.
+ * `asOfMs` is the read's cutoff — supplied by a check that drives the clock rather than slept through,
+ * and the wall clock by the route.
+ */
+export async function statusServed(
+  caller: { superadmin: boolean; activeTeam: string | null }, tool: string | null, key: string, prefix: string | null,
+  asOfMs?: number,
+): Promise<Served<PlatformStatus>> {
+  const kept = await cachedWithHit(key, () => statusAnswer(caller, tool, asOfMs), prefix, (read) => read.boundary);
+  return { value: kept.value.answer, hit: kept.hit };
 }

@@ -47,12 +47,14 @@ import type pg from "pg";
 import { platformDb } from "../db.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import {
-  byWeek, callWeeks, followupOf, latencyMeasures, LOOKAHEAD_MS, periodWeeks, readGrid, sessionsMeasure, share, tally, windowOf, type Grid,
+  byWeek, callWeeks, earliestBoundary, followupOf, latencyMeasures, LOOKAHEAD_MS, nextWeekBoundary, periodWeeks, readGrid,
+  sessionsMeasure, share, tally, windowOf, type Grid,
 } from "./platform-measures.js";
-import { audienceKey, cachedWithHit, prefixFor, served } from "./answer-cache.js";
+import { audienceKey, cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 import {
-  approvalWeeks, followupWeeks, modelWeeks, rhythmCells, teamWeeks, toolWeeks, weekTraffic, type ToolWeek,
+  approvalWeeks, followupWeeks, modelWeeks, nextBoundaryOf, rhythmCells, teamWeeks, toolWeeks, weekTraffic,
+  type FollowupRow, type ToolWeek,
 } from "./usage-figures.js";
 
 /** What the figures count, as `meta.population` says it. */
@@ -86,6 +88,8 @@ type Usage = {
 type GridWeek = Grid["weeks"][number];
 /** The last week and the week before it. */
 type Ended = { last: GridWeek; previous: GridWeek };
+/** The usage answer, and the earliest instant the clock alone changes it. */
+type UsageRead = { answer: Usage; boundary: number | null };
 
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const NO_WEEK = { state: "unavailable", reason: "no_data" } as const;
@@ -182,94 +186,112 @@ export function mountPlatformUsage(app: Express): void {
     // DELIBERATE: kept as one answer per audience until a write moves the marker of what it reads
     // (answer-cache.ts). This read reduces the whole event history — nine statements over every real-work call
     // ever recorded — and nothing in it changes between two looks at the console that no call happened in
-    // between.
+    // between. The clock is the exception, and the answer says when it moves: `boundary` keeps it no longer
+    // than the first refusal turning `eligible` or the running week completing.
     // The audience is `audienceKey`'s, the same string Status is keyed on: Usage's figures do not depend on the
     // caller, but both answers are the platform's and the two routes keep one shape. The flag is `isSuper`, so a
     // team-bound superadmin PAT is keyed as the member-shaped answer it receives.
-    res.json(served(await cachedWithHit(`usage|${audienceKey(caller)}`,
-      () => usageOf(caller.superadmin),
+    res.json(served(await usageServed(caller.superadmin, `usage|${audienceKey(caller)}`,
       prefixFor("/api/console/platform/usage", req.zzIdentity!, req))));
   }));
+}
 
-  /** The usage answer itself, as the route above serves it. */
-  async function usageOf(superadmin: boolean): Promise<Usage> {
-    const db = platformDb();
-    const record = await readGrid(db);
-    const grid: Grid = { ...record, weeks: record.weeks.slice(-SHOWN) };
-    const asOf = iso(grid.asOfMs);
-    const ended: Ended | null = grid.weeks.length >= 3 ? { last: grid.weeks.at(-2)!, previous: grid.weeks.at(-3)! } : null;
-    // Read once for the parts that share them; each part that awaits one fails on its own.
-    const calls = callWeeks(db, grid, null);
-    const tools = toolWeeks(db, record);
-    for (const p of [calls, tools]) p.catch(() => undefined);
-    const tile = (weeks: PeriodFigure[]): Tile => ({ weeks, last: weeks.at(-2)!, previous: weeks.at(-3)! });
+/**
+ * The usage answer as the route serves it: one computation per audience under `key`, kept no longer than
+ * the first instant the clock alone changes it, returned with the cache's own statement of the hit.
+ * `asOfMs` is the read's cutoff — supplied by a check that drives the clock rather than slept through,
+ * and the wall clock by the route.
+ */
+export async function usageServed(
+  superadmin: boolean, key: string, prefix: string | null, asOfMs?: number,
+): Promise<Served<Usage>> {
+  const kept = await cachedWithHit(key, () => usageAnswer(superadmin, asOfMs), prefix, (read) => read.boundary);
+  return { value: kept.value.answer, hit: kept.hit };
+}
 
-    const [tiles, callsByWeek, traffic, followup, tooled, rhythm, perApproval, modelCalls] = await Promise.all([
-      ended === null ? NO_WEEK : part("the tiles", async () => {
-        const at = await calls;
-        const [[, p95], sessions] = await Promise.all([latencyMeasures(db, grid), sessionsMeasure(db, grid)]);
-        return {
-          calls: tile(periodWeeks(grid, false, (w) => tally(at(w, "calls")))),
-          refusedShare: tile(periodWeeks(grid, true, (w) => share(at(w, "refusals"), at(w, "calls"), 100))),
-          p95Ms: tile(p95.weeks), sessions: tile(sessions.weeks),
-        };
-      }),
-      part("the calls by week", async () => {
-        const at = await calls;
-        const parts = superadmin ? partsOf(await teamWeeks(db, grid), grid) : null;
-        return {
-          weeks: periodWeeks(grid, false, (w) => tally(at(w, "calls")))
-            .map((p, i) => ({ window: p.window, calls: p.figure, parts: parts === null ? null : parts[i] })),
-        };
-      }),
-      ended === null ? null : part("the last week's traffic", () => weekTraffic(db, ended.last.fromMs, ended.last.toMs)),
-      part("the refusals put right", async () => {
-        const rows = await followupWeeks(db, grid, null);
-        const at = byWeek(rows);
-        const putRight = followupOf(grid, rows, null).weeks;
-        const median = periodWeeks(grid, true, (w) => {
-          const matched = at(w, "matched");
-          return { numerator: null, denominator: matched, value: matched === 0 ? null : at(w, "median_ms") / 1000, samples: matched };
-        }, LOOKAHEAD_MS);
-        const continued = periodWeeks(grid, true, (w) => share(at(w, "continued_sessions"), at(w, "refused_sessions"), 100), LOOKAHEAD_MS);
-        return {
-          weeks: grid.weeks.map((w, i) => ({
-            window: putRight[i].window, putRight: putRight[i], medianSeconds: median[i].figure, sessionsContinued: continued[i],
-            unassessable: at(w.fromMs, "missing_session") + at(w.fromMs, "within_lookahead"),
-          })),
-        };
-      }),
-      ended === null ? null : Promise.all([
-        part("the tools' median calls", async () => toolsOf(await tools, record, ended.last)),
-        part("the tools called most", async () => mostUsedOf(await tools, ended.last)),
-      ]),
-      rhythmOf(db, grid),
-      ended === null ? NO_WEEK : part("the calls per approval", async () => {
-        const [at, approvals] = await Promise.all([calls, approvalWeeks(db, grid).then(byWeek)]);
-        const weeks = periodWeeks(grid, false, (w) => share(at(w, "calls"), approvals(w, "approvals"), 1));
-        return { last: weeks.at(-2)!, previous: weeks.at(-3)! };
-      }),
-      ended === null ? NO_WEEK : part("the model calls", () => modelCallsOf(db, grid, ended)),
-    ]);
+/** The usage answer itself, and the earliest instant the clock alone changes it. */
+export async function usageAnswer(superadmin: boolean, asOfMs?: number): Promise<UsageRead> {
+  const db = platformDb();
+  const record = await readGrid(db, asOfMs);
+  const grid: Grid = { ...record, weeks: record.weeks.slice(-SHOWN) };
+  const asOf = iso(grid.asOfMs);
+  const ended: Ended | null = grid.weeks.length >= 3 ? { last: grid.weeks.at(-2)!, previous: grid.weeks.at(-3)! } : null;
+  // Read once for the parts that share them; each part that awaits one fails on its own. `followups` is
+  // read for the part that draws the refusals and again, after it, for the boundary they put on the answer.
+  const calls = callWeeks(db, grid, null);
+  const tools = toolWeeks(db, record);
+  const followups = followupWeeks(db, grid, null);
+  for (const p of [calls, tools, followups]) p.catch(() => undefined);
+  const tile = (weeks: PeriodFigure[]): Tile => ({ weeks, last: weeks.at(-2)!, previous: weeks.at(-3)! });
 
-    const lastWindow = ended === null ? null : windowOf(grid, ended.last);
-    const answer: Usage = {
-      meta: {
-        asOf, timezone: ZZ_TZ,
-        period: { from: grid.weeks[0] ? iso(grid.weeks[0].fromMs) : asOf, to: asOf },
-        scope: superadmin ? "platform-admin" : "platform-public", population: POPULATION,
-        coverageFrom: grid.coverageMs === null ? null : iso(grid.coverageMs),
-      },
-      tiles, callsByWeek,
-      traffic: traffic === null || lastWindow === null ? NO_WEEK : traffic.state === "ok"
-        ? { state: "ok", data: { window: lastWindow, work: traffic.data.work, maintenance: traffic.data.maintenance } } : traffic,
-      refusals: traffic === null || lastWindow === null ? NO_WEEK : traffic.state === "ok"
-        ? { state: "ok", data: { window: lastWindow, guardrail: traffic.data.guardrail, ours: traffic.data.ours, theirs: traffic.data.theirs,
-                                 other: traffic.data.other, maintenance: traffic.data.maintenance_refused } } : traffic,
-      followup,
-      tools: tooled?.[0] ?? NO_WEEK, mostUsed: tooled?.[1] ?? NO_WEEK,
-      rhythm, perApproval, modelCalls,
-    };
-    return answer;
-  }
+  const [tiles, callsByWeek, traffic, followup, tooled, rhythm, perApproval, modelCalls] = await Promise.all([
+    ended === null ? NO_WEEK : part("the tiles", async () => {
+      const at = await calls;
+      const [[, p95], sessions] = await Promise.all([latencyMeasures(db, grid), sessionsMeasure(db, grid)]);
+      return {
+        calls: tile(periodWeeks(grid, false, (w) => tally(at(w, "calls")))),
+        refusedShare: tile(periodWeeks(grid, true, (w) => share(at(w, "refusals"), at(w, "calls"), 100))),
+        p95Ms: tile(p95.weeks), sessions: tile(sessions.weeks),
+      };
+    }),
+    part("the calls by week", async () => {
+      const at = await calls;
+      const parts = superadmin ? partsOf(await teamWeeks(db, grid), grid) : null;
+      return {
+        weeks: periodWeeks(grid, false, (w) => tally(at(w, "calls")))
+          .map((p, i) => ({ window: p.window, calls: p.figure, parts: parts === null ? null : parts[i] })),
+      };
+    }),
+    ended === null ? null : part("the last week's traffic", () => weekTraffic(db, ended.last.fromMs, ended.last.toMs)),
+    part("the refusals put right", async () => {
+      const rows = await followups;
+      const at = byWeek(rows);
+      const putRight = followupOf(grid, rows, null).weeks;
+      const median = periodWeeks(grid, true, (w) => {
+        const matched = at(w, "matched");
+        return { numerator: null, denominator: matched, value: matched === 0 ? null : at(w, "median_ms") / 1000, samples: matched };
+      }, LOOKAHEAD_MS);
+      const continued = periodWeeks(grid, true, (w) => share(at(w, "continued_sessions"), at(w, "refused_sessions"), 100), LOOKAHEAD_MS);
+      return {
+        weeks: grid.weeks.map((w, i) => ({
+          window: putRight[i].window, putRight: putRight[i], medianSeconds: median[i].figure, sessionsContinued: continued[i],
+          unassessable: at(w.fromMs, "missing_session") + at(w.fromMs, "within_lookahead"),
+        })),
+      };
+    }),
+    ended === null ? null : Promise.all([
+      part("the tools' median calls", async () => toolsOf(await tools, record, ended.last)),
+      part("the tools called most", async () => mostUsedOf(await tools, ended.last)),
+    ]),
+    rhythmOf(db, grid),
+    ended === null ? NO_WEEK : part("the calls per approval", async () => {
+      const [at, approvals] = await Promise.all([calls, approvalWeeks(db, grid).then(byWeek)]);
+      const weeks = periodWeeks(grid, false, (w) => share(at(w, "calls"), approvals(w, "approvals"), 1));
+      return { last: weeks.at(-2)!, previous: weeks.at(-3)! };
+    }),
+    ended === null ? NO_WEEK : part("the model calls", () => modelCallsOf(db, grid, ended)),
+  ]);
+
+  const lastWindow = ended === null ? null : windowOf(grid, ended.last);
+  const answer: Usage = {
+    meta: {
+      asOf, timezone: ZZ_TZ,
+      period: { from: grid.weeks[0] ? iso(grid.weeks[0].fromMs) : asOf, to: asOf },
+      scope: superadmin ? "platform-admin" : "platform-public", population: POPULATION,
+      coverageFrom: grid.coverageMs === null ? null : iso(grid.coverageMs),
+    },
+    tiles, callsByWeek,
+    traffic: traffic === null || lastWindow === null ? NO_WEEK : traffic.state === "ok"
+      ? { state: "ok", data: { window: lastWindow, work: traffic.data.work, maintenance: traffic.data.maintenance } } : traffic,
+    refusals: traffic === null || lastWindow === null ? NO_WEEK : traffic.state === "ok"
+      ? { state: "ok", data: { window: lastWindow, guardrail: traffic.data.guardrail, ours: traffic.data.ours, theirs: traffic.data.theirs,
+                               other: traffic.data.other, maintenance: traffic.data.maintenance_refused } } : traffic,
+    followup,
+    tools: tooled?.[0] ?? NO_WEEK, mostUsed: tooled?.[1] ?? NO_WEEK,
+    rhythm, perApproval, modelCalls,
+  };
+  // Two answers here move with the clock alone: the refusals still inside their 120 seconds, and the
+  // running week turning complete. The read that failed contributes no boundary rather than a wrong one.
+  const rows = await followups.catch(() => [] as FollowupRow[]);
+  return { answer, boundary: earliestBoundary(nextWeekBoundary(grid), nextBoundaryOf(rows)) };
 }

@@ -20,7 +20,7 @@ const fromOf = (grid: Grid): string => new Date(grid.weeks[0]?.fromMs ?? grid.as
 
 export type FollowupRow = {
   from_ms: number; refusals: number; missing_session: number; within_lookahead: number; eligible: number; matched: number;
-  median_ms: number | null; refused_sessions: number; continued_sessions: number;
+  median_ms: number | null; refused_sessions: number; continued_sessions: number; next_boundary_ms: number | null;
 };
 
 /**
@@ -30,6 +30,13 @@ export type FollowupRow = {
  * initiative when both name one, and `median_ms` is the median time to that call over the refusals
  * put right. A refused session is a team and session with an eligible refusal; it continued when a
  * real-work call of its own came after one of them, before the cutoff. `team` narrows to one team's.
+ *
+ * DELIBERATE: `matched` and `median_ms` are the two-minute window after each refusal (`put_right_at`,
+ * bounded by `s.ts < e.ts + 120s`); `continued_sessions` is NOT that window — it reads `last_call_at`, a
+ * session's own latest call before the cutoff, with no window at all, so a call at any distance continues
+ * it. They are two different questions and are never read as one window. `next_boundary_ms` is when the
+ * first refusal still `within_lookahead` turns `eligible` — the earliest instant this answer changes with
+ * nothing written at all.
  */
 export async function followupWeeks(db: pg.Pool, grid: Grid, team: string | null): Promise<FollowupRow[]> {
   return (await db.query<FollowupRow>(
@@ -63,9 +70,24 @@ export async function followupWeeks(db: pg.Pool, grid: Grid, team: string | null
             (count(distinct coalesce(r.team_id::text, '') || '/' || r.session)
                filter (where r.session <> '' and r.ts + interval '120 seconds' <= $2::timestamptz))::int as refused_sessions,
             (count(distinct coalesce(r.team_id::text, '') || '/' || r.session)
-               filter (where r.session <> '' and r.ts + interval '120 seconds' <= $2::timestamptz and r.last_call_at > r.ts))::int as continued_sessions
+               filter (where r.session <> '' and r.ts + interval '120 seconds' <= $2::timestamptz and r.last_call_at > r.ts))::int as continued_sessions,
+            (extract(epoch from min(r.ts + interval '120 seconds')
+               filter (where r.session <> '' and r.ts + interval '120 seconds' > $2::timestamptz)) * 1000)::float8 as next_boundary_ms
        from r
       group by 1`, [ZZ_TZ, asOfOf(grid), team])).rows;
+}
+
+/**
+ * The earliest instant at which the refusals `followupWeeks` answered stop being `within_lookahead` —
+ * the next 120 seconds to run out with nothing written — or null when every refusal the read holds has
+ * already turned and the clock alone changes nothing.
+ */
+export function nextBoundaryOf(rows: FollowupRow[]): number | null {
+  let at: number | null = null;
+  for (const r of rows) {
+    if (r.next_boundary_ms !== null && (at === null || r.next_boundary_ms < at)) at = r.next_boundary_ms;
+  }
+  return at;
 }
 
 /** Real-work calls of one local day, one registered tool, one team and one refusal owner. */

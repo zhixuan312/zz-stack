@@ -34,7 +34,7 @@ import type pg from "pg";
 import { summarise, type Measure, type MeasureKey, type PeriodFigure, type Window } from "./figures.js";
 import type { realReports } from "./platform-bugs.js";
 import { ZZ_TZ } from "./shared.js";
-import { followupWeeks, type FollowupRow } from "./usage-figures.js";
+import type { FollowupRow } from "./usage-figures.js";
 
 /** A weekly platform rate or latency stands only on this many observations; fewer are `insufficient`. */
 const MIN_SAMPLES = 30;
@@ -120,6 +120,28 @@ export function windowOf(grid: Grid, w: { fromMs: number; toMs: number }, settle
   };
 }
 
+/**
+ * The earliest instant at which the grid's weeks change with nothing written at all: the running week's
+ * end plus `settleMs`, from when every window drawn over it says `complete` — or null once that instant
+ * has been read. A week that is running and a week that is complete are two different answers, and the
+ * clock alone moves one to the other.
+ */
+export function nextWeekBoundary(grid: Grid, settleMs = 0): number | null {
+  const running = grid.weeks.at(-1);
+  if (running === undefined) return null;
+  const at = running.toMs + settleMs;
+  return at > grid.asOfMs ? at : null;
+}
+
+/** The earliest of the instants an answer can change at with nothing written, or null when the clock
+ *  alone changes none of its parts. DELIBERATE: the earliest, never the last — an answer may not be
+ *  served past its next change. */
+export function earliestBoundary(...at: (number | null)[]): number | null {
+  let first: number | null = null;
+  for (const t of at) if (t !== null && (first === null || t < first)) first = t;
+  return first;
+}
+
 /** A measure over the grid: `count` gives a week's counts by the instant it starts, or is null when
  *  they could not be read, which makes every week unavailable. */
 function weekly(grid: Grid, key: MeasureKey, spec: Spec, team: string | null, definedFrom: string | null,
@@ -192,11 +214,6 @@ export async function malformedMeasure(db: pg.Pool, grid: Grid, team: string | n
  *  (`followupWeeks` counts them). Several refusals before one success each count, so this counts
  *  refusals with a follow-up, not tasks that recovered. A week groups its refusals by their own time
  *  and is complete once the 120 seconds after its end have been read. */
-export async function followupMeasure(db: pg.Pool, grid: Grid, team: string | null = null): Promise<StatusMeasure> {
-  return followupOf(grid, await followupWeeks(db, grid, team), team);
-}
-
-/** The refusals-put-right measure from `followupWeeks`'s rows. */
 export function followupOf(grid: Grid, rows: FollowupRow[], team: string | null): StatusMeasure {
   const at = byWeek(rows);
   const m: StatusMeasure = weekly(grid, "same_tool_followup_pct", SPECS.same_tool_followup_pct, team, grid.coverageDay,

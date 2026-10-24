@@ -290,7 +290,9 @@ async function failureCases(db: pg.Client, pool: pg.Pool, s: Seeded, as: (email:
       typeof text === "string" && when(text, params ?? []) ? Promise.reject(new Error("injected by the check")) : real(text, params);
   };
   const at = new Date(s.at.get("0.9.3")!).toISOString();
-  failing((sql, params) => sql.includes("as s(side, lo, hi)") && params[1] === at);
+  // The window count is one statement per side joined by `union all`, so `$2` is the before-window's
+  // own end: the release's instant, which no other statement names as its second parameter.
+  failing((sql, params) => sql.includes("'before' as side") && params[1] === at);
   let a: Answer;
   try { a = await as(MEMBER); } finally { (pool as unknown as { query: unknown }).query = real; }
   const rows = rowsOf(step, a);

@@ -112,19 +112,28 @@ export async function releaseTimes(db: pg.Pool): Promise<{ version: string; ms: 
 }
 
 /** Both sides of one release, counted between the bounds each was observed in; an unobserved side is
- *  given an empty interval and its counts are not read. */
+ *  given an empty interval and its counts are not read.
+ *
+ *  DELIBERATE: two range statements joined by `union all`, not one statement over a `values` list of
+ *  both windows. A join of that list to `zz.event` gives the planner no window to seek into, so it
+ *  reads every real-work call the platform ever recorded — twice, once per row of the list — and
+ *  keeps 12,797 of 80,284. Measured on this deployment: 104 ms a release, nine times on one page.
+ *  Written as two statements, each seeks its own week through `event_kind_ts` and `event_ts`: 52 ms
+ *  for both. */
 async function countSides(db: pg.Pool, before: [number, number], after: [number, number]): Promise<{ before: Counts; after: Counts }> {
-  const rows = (await db.query<{ side: "before" | "after"; calls: number; malformed: number; tool_failures: number; timed: number; p95_ms: number | null }>(
-    `select s.side,
-            count(e.ts)::int as calls,
-            (count(e.ts) filter (where e.refusal_owner = 'ours'))::int as malformed,
-            (count(e.ts) filter (where e.refusal_owner = 'theirs'))::int as tool_failures,
+  /** One window's counts, its bounds named by the two parameter numbers it is given. */
+  const counted = (side: "before" | "after", lo: number, hi: number): string =>
+    `select '${side}' as side,
+            count(*)::int as calls,
+            (count(*) filter (where e.refusal_owner = 'ours'))::int as malformed,
+            (count(*) filter (where e.refusal_owner = 'theirs'))::int as tool_failures,
             (count(e.duration_ms) filter (where e.batched = false))::int as timed,
             round(percentile_cont(0.95) within group (order by e.duration_ms) filter (where e.batched = false))::float8 as p95_ms
-       from (values ('before', $1::timestamptz, $2::timestamptz), ('after', $3::timestamptz, $4::timestamptz)) as s(side, lo, hi)
-       left join zz.event e
-         on e.kind = 'tool_call' and e.origin = 'work' and e.ts >= s.lo and e.ts < s.hi
-      group by s.side`,
+       from zz.event e
+      where e.kind = 'tool_call' and e.origin = 'work'
+        and e.ts >= $${lo}::timestamptz and e.ts < $${hi}::timestamptz`;
+  const rows = (await db.query<{ side: "before" | "after"; calls: number; malformed: number; tool_failures: number; timed: number; p95_ms: number | null }>(
+    `${counted("before", 1, 2)} union all ${counted("after", 3, 4)}`,
     [before[0], before[1], after[0], after[1]].map((ms) => new Date(ms).toISOString()))).rows;
   const of = (side: "before" | "after"): Counts => {
     const r = rows.find((x) => x.side === side)!;

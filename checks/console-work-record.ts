@@ -383,10 +383,21 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const starts = { quarter: iso(Date.UTC(y, Math.floor((m - 1) / 3) * 3, 1) - 8 * HOUR), year: iso(Date.UTC(y, 0, 1) - 8 * HOUR), all: iso(await opened("old")) };
   for (const p of ["quarter", "year", "all"] as const) {
     const meta = R[p].meta as Obj;
+    // DELIBERATE: `observedAt`, `revision` and `cacheHit` describe the request, not the figures, so they are not
+    // pinned to a value here — they are asserted present and of the right shape, and the read contract itself is
+    // proven by checks/console-read-contract.ts, which is where a route that answers without them fails.
+    if (typeof meta.observedAt !== "string" || Number.isNaN(Date.parse(meta.observedAt))) {
+      c.fail(`${step} (${p})`, `meta.observedAt is ${JSON.stringify(meta.observedAt)}, not an instant`);
+    }
+    if (typeof meta.revision !== "string" && meta.revision !== null) {
+      c.fail(`${step} (${p})`, `meta.revision is ${JSON.stringify(meta.revision)}, neither a marker nor an explicit null`);
+    }
+    if (typeof meta.cacheHit !== "boolean") c.fail(`${step} (${p})`, `meta.cacheHit is ${JSON.stringify(meta.cacheHit)}, not a boolean`);
     same(`${step} (${p})`, meta, {
       asOf: meta.asOf, timezone: TIMEZONE, period: { from: starts[p], to: meta.asOf }, scope: "caller-in-active-team",
       population: `${c.team}'s team history, from before the caller joined on ${dateOf(Date.now())}, and the approvals signed in the caller's name there`,
       coverageFrom: starts.all,
+      observedAt: meta.observedAt, revision: meta.revision, cacheHit: meta.cacheHit,
     });
   }
   c.pass(`${step}: ${starts.quarter}, ${starts.year} and ${starts.all}, each labelled team history`);
@@ -528,8 +539,13 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     g.pool.query = query;
   }
   const times = (fragment: string): number => sent.filter((t) => t.includes(fragment)).length;
-  // Each read's own cutoff, wherever the answer holds it, is the one thing two reads of the same record may differ in.
-  const cutoffless = (r: Obj): string => JSON.stringify(canonical(r)).replaceAll(String((r.meta as Obj).asOf), "<cutoff>");
+  // Each read's own cutoff, wherever the answer holds it, and the fields that describe the REQUEST — when it
+  // obtained its answer, what the cache decided for it, and the marker it heard — are the things two reads of the
+  // same record may differ in. Everything else is what the answer says and must be identical.
+  const cutoffless = (r: Obj): string => JSON.stringify(canonical(r))
+    .replaceAll(String((r.meta as Obj).asOf), "<cutoff>")
+    .replace(/"(observedAt|cacheHit)":("(?:[^"\\]|\\.)*"|true|false|null)/g, "")
+    .replace(/"revision":"(?:[^"\\]|\\.)*"/g, "");
   same(step, [times("content_state = 'retained' as retained"), times("'core:document_patch'"), times("tool_key = 'core:knowledge_add'"),
               cutoffless(again) === cutoffless(R.all)], [1, 1, 1, true]);
   c.pass(`${step}: the revisions read once, the document and the lesson imports once each, of ${sent.length} statements, and the answer as before`);

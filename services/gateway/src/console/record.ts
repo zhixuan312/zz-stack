@@ -65,7 +65,8 @@ import { OUTCOMES, writingEstimate, type WritingCoverage } from "@zz/contracts";
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { cached } from "./answer-cache.js";
+import { cachedWithHit } from "./answer-cache.js";
+import { heardBy, revisionAcross } from "./live-revision.js";
 import { callerApprovals } from "./approvals.js";
 import type { Figure, Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { localDate } from "./findings.js";
@@ -385,6 +386,18 @@ function recordParams(query: Record<string, unknown>): { period: PeriodName; lim
   return { period: period as PeriodName, limit, offset };
 }
 
+/** The collections Record reduces at once, and so the ones its change marker must compose. It reads the
+ *  team's documents and their versions, its initiatives and the knowledge they cite, the activity around
+ *  them, the people those acts name, the teams the caller may see, the caller's own approvals and settings,
+ *  and the observed runs. A route name is not a collection any tab follows, which is why this is stated
+ *  here rather than derived from the path.
+ *
+ *  COUPLED: `live-revision.ts`'s COLLECTIONS — every name here is one of them, and `checks/read-meta-keys.ts`
+ *  is where a name that is not fails. */
+const RECORD_COLLECTIONS = [
+  "document", "initiatives", "knowledge", "activity", "people", "teams", "me", "settings", "runs",
+] as const;
+
 export function mountRecord(app: Express): void {
   /** Record, for the team the caller's identity acts for and no other, the approvals the caller's own. */
   app.get("/api/console/record", platformPublic("the record", async (req, res, { activeTeam }) => {
@@ -398,8 +411,16 @@ export function mountRecord(app: Express): void {
     // DELIBERATE: kept as one answer per caller, team, period and page until a write moves `dataVersion()`
     // (answer-cache.ts). The record is the whole history reduced by week; re-reading it between two clicks
     // that changed nothing was most of the page's time.
-    const email = req.zzIdentity!.email;
-    res.json(await cached(`record|${activeTeam}|${email}|${JSON.stringify(params)}`, () =>
-      recordOf(activeTeam, email, params.period, params, iso(Math.ceil(Date.now() / 1000) * 1000))));
+    //
+    // DELIBERATE: `observedAt` and the marker are taken HERE, before the cache is consulted, and written into a
+    // fresh envelope — never into the answer the cache keeps, which several callers share. A kept answer is
+    // served with the instant it was computed in `asOf` and this request's instant in `observedAt`, and the
+    // cache says whether it was kept in `cacheHit`; nobody compares the two instants to find that out.
+    const observedAt = new Date().toISOString();
+    const heard = heardBy(req.zzIdentity!, req);
+    const revision = "teams" in heard ? revisionAcross(RECORD_COLLECTIONS, heard.teams) : null;
+    const served = await cachedWithHit(`record|${activeTeam}|${req.zzIdentity!.email}|${JSON.stringify(params)}`, () =>
+      recordOf(activeTeam, req.zzIdentity!.email, params.period, params, iso(Math.ceil(Date.now() / 1000) * 1000)));
+    res.json({ ...served.value, meta: { ...served.value.meta, observedAt, revision, cacheHit: served.hit } });
   }));
 }

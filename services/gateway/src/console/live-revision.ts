@@ -137,6 +137,20 @@ export function heardBy(id: Identity, req: Request): { teams: string[] | null } 
 }
 
 /**
+ * The marker a read of `names` could be stale against: each named collection's own revision for a caller who
+ * hears `teams`, folded into one value, or null while nothing listens.
+ *
+ * For a route whose subject is one collection the header already carries this. A route that reduces several
+ * at once — Record reads documents, initiatives, knowledge, activity and the caller's own settings — needs the
+ * composite, and it must name the collections it really reads rather than the route's own name, which is not a
+ * collection any tab follows.
+ */
+export function revisionAcross(names: readonly string[], teams: string[] | null): string | null {
+  if (boot === null) return null;
+  return names.map((name) => `${name}:${heardRevision(name, teams)}`).join(",");
+}
+
+/**
  * Every console read answered with its collection's revision: mounted first in `mountConsole`, before any read, so
  * the revision is the one the read began at. A path whose first segment names no collection a tab may follow (the
  * stream itself, the search, the platform's reads) carries none, and neither does a caller the console does not admit.

@@ -221,9 +221,17 @@ function phantoms(s: Isolation, x: Record<Field, string>, p: Planted): [string, 
     [x.skill, `skill-${hex()}`], [s.one.slug, `slug-${hex()}`]];
 }
 
-/** An answer with every instant masked, and the given names: what is left is what it says. */
+/** An answer with every instant masked, the given names masked, and the fields that describe the REQUEST removed:
+ *  what is left is what it says.
+ *
+ *  `observedAt` is when this request obtained its answer, `cacheHit` is what the cache decided for it and `revision`
+ *  is the marker it could hear. Two reads of the same rows legitimately differ in all three, and none of them says
+ *  anything about whose rows an answer holds — which is what this check is about, so leaving them in would report an
+ *  isolation break that is only the clock. */
 function masked(a: Answer, names: string[] = []): string {
-  const text = names.reduce((t, n) => t.replaceAll(n, "[name]"), a.text);
+  const text = names.reduce((t, n) => t.replaceAll(n, "[name]"), a.text)
+    .replace(/"(observedAt|cacheHit)":(?:"[^"]*"|true|false|null)/g, "")
+    .replace(/"revision":"(?:[^"\\]|\\.)*"/g, "");
   return `${a.status} ${text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>")}`;
 }
 

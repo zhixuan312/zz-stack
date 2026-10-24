@@ -93,8 +93,27 @@ type Read = (caller: Caller, args: Obj) => Promise<Obj>;
 let fail: Core["fail"] = (step, detail) => { throw new Error(`${step}: ${detail}`); };
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 600);
-/** An answer with every instant masked: what is left is what it says. */
-const masked = (v: unknown): string => JSON.stringify(v).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>");
+/** The fields that describe the REQUEST rather than the figures. A console route fills them; the agent read
+ *  that answers from the same function has no request of its own to describe, so the two legitimately differ
+ *  in exactly these three and in nothing else. */
+const REQUEST_SCOPED = ["observedAt", "cacheHit", "revision"];
+
+/** An answer with every instant masked and the request-scoped fields removed: what is left is what it says. */
+const masked = (v: unknown): string => {
+  const strip = (o: unknown): unknown => {
+    if (Array.isArray(o)) return o.map(strip);
+    if (o && typeof o === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, x] of Object.entries(o as Record<string, unknown>)) {
+        if (REQUEST_SCOPED.includes(k)) continue;
+        out[k] = strip(x);
+      }
+      return out;
+    }
+    return o;
+  };
+  return JSON.stringify(strip(v)).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>");
+};
 const without = (o: Obj, ...keys: string[]): Obj => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));
 /** Status as the tool answers it: each door without its days. */
 function daysOff(status: Obj): Obj {

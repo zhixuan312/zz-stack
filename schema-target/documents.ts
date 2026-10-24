@@ -501,11 +501,13 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       "CHECK (((linked_by IS NULL) OR (kind = 'cites'::text)))",
       "CHECK ((((kind = 'cites'::text) AND (to_revision IS NOT NULL)) OR ((kind = 'supports'::text) AND (to_revision IS NULL))))",
     ],
+    // In name order, which is how `scripts/schema/catalog.ts` reads them back, and the comparison
+    // is positional: `readIndexes` orders by index name, so this list must be that order.
     indexes: [
-      "CREATE UNIQUE INDEX doc_link_unique ON zz.doc_link USING btree (from_doc_id, from_revision, to_doc_id, to_revision, kind) NULLS NOT DISTINCT",
-      // What supports a document, asked once per row of a list: 009_doc_link_supports_index.sql is the
-      // migration, and `doc_link_unique`'s leading column answers the other direction only.
+      // What supports a document, asked once per row of a list: 009_doc_link_supports_index.sql is
+      // the migration, and `doc_link_unique`'s leading column answers the other direction only.
       "CREATE INDEX doc_link_to_doc ON zz.doc_link USING btree (to_doc_id, kind)",
+      "CREATE UNIQUE INDEX doc_link_unique ON zz.doc_link USING btree (from_doc_id, from_revision, to_doc_id, to_revision, kind) NULLS NOT DISTINCT",
     ],
     comment: "class=relation; authority=this; question=which exact revision cites which other exact revision, or which source revision supports which document identity across its later revisions?",
     columnComments: {

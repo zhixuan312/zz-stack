@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 
 import type pg from "pg";
 
-import { bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "./tenant-analysis.js";
+import { ANALYZER_NAME, bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "./tenant-analysis.js";
 import { rebuildRowVector } from "./rederivation.js";
 
 // The package's door: a consumer imports `@zz/indexing`, not a path inside it. That is why
@@ -242,7 +242,14 @@ const CORPORA = [
  * `force` re-derives every row even where `analyzer_version` already names the current
  * analyzer. That is what a generation bump needs: what a row's vector SHOULD be changed while
  * its content stayed byte-identical, so a skip keyed to the content hash would leave exactly
- * the rows the rebuild exists for. */
+ * the rows the rebuild exists for.
+ *
+ * DELIBERATE: the skip is the STATEMENT's, not a test after the row arrives. A row whose
+ * `analyzer_version` names the current analyzer cannot produce a different vector - the
+ * analyzer's name is a constant of this package, never a property of the row - so reading its
+ * body to then discard it was the boot pass's whole cost: 1,847 documents and their megabytes
+ * of text per team on this deployment, read and hashed on every start, so that every one of
+ * them could be skipped. `scanned` is therefore the rows this pass had to look at. */
 export async function reindexTeam(
   teamSlug: string, force = false,
 ): Promise<TeamReindex> {
@@ -256,11 +263,11 @@ export async function reindexTeam(
                                  body: string | null; analyzer_version: string | null }>(
       `select id::text as id, title, tags, body, analyzer_version
          from ${corpus.table}
-        where ${corpus.scope}`, [teamId]);
+        where ${corpus.scope} and ($2::boolean or analyzer_version is distinct from $3)`,
+      [teamId, force, ANALYZER_NAME]);
     for (const row of rows.rows) {
       scanned++;
       const vector = rebuildRowVector({ title: row.title, tags: row.tags, body: row.body });
-      if (!force && row.analyzer_version === vector.analyzer) continue;
       await p.query(corpus.update, [row.id, vector.analyzer, ...bodyTsvParams(vector)]);
       indexed++;
     }

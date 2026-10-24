@@ -207,14 +207,26 @@ export interface DocRow {
 }
 /** Every document of one initiative — the folder listing the store used to answer with
  *  `readdirSync`, read from the rows that replaced it. Keyed by the same `path` a caller looks
- *  a document up by, so the two agree about which document a flow's declaration names. */
-export async function docRows(p: pg.Pool, team: string | null, initiative: string): Promise<DocRow[]> {
+ *  a document up by, so the two agree about which document a flow's declaration names.
+ *
+ *  `text` is whether the rows carry their BODIES. A reader that decides from the metadata alone —
+ *  a status, a path, an envelope field, a support link — wants `"none"`: a document's body is its
+ *  bytes, an initiative holds up to several megabytes of them, and reading a page of ten
+ *  initiatives cost more in transferred bodies than in every other statement of the page put
+ *  together (measured: 6.5 MB and 71 ms per initiative against 13 ms without). `docBodies` then
+ *  fetches the text of the few paths the reader actually reads.
+ *
+ *  The default is `"all"`: a caller that does not say still gets what it always got. */
+export async function docRows(
+  p: pg.Pool, team: string | null, initiative: string, text: "all" | "none" = "all",
+): Promise<DocRow[]> {
   return (await p.query<DocRow>(`
     select d.id::text as id, d.path, i.slug as initiative, coalesce(i.flow, '') as flow,
            d.type, d.status, r.fields->>'outcome' as outcome,
            a.email as approved_by, r.approved_at::text as approved_at,
            r.fields->>'closed_by' as closed_by,
-           d.updated_at::text as updated_at, d.title, coalesce(r.body, d.body) as body,
+           d.updated_at::text as updated_at, d.title,
+           ${text === "none" ? "''::text" : "coalesce(r.body, d.body)"} as body,
            coalesce(d.tags, '{}'::text[]) as tags,
            d.current_revision, d.approved_revision, d.current_version, r.fields,
            (select x.fields->>'outcome' from zz.doc_revision x
@@ -237,6 +249,23 @@ export async function docRows(p: pg.Pool, team: string | null, initiative: strin
       left join zz.principal a on a.id = r.approved_by
      where i.slug = $1 and ($2::text is null or t.slug = $2)
      order by d.path`, [initiative, team])).rows;
+}
+/** The BODIES of the named documents of one initiative, by path, in one statement: what a reader
+ *  fills in after deciding from `docRows(..., "none")` which of them it will read. A path the
+ *  initiative does not hold is simply absent from the answer. */
+export async function docBodies(
+  p: pg.Pool, team: string | null, initiative: string, paths: readonly string[],
+): Promise<Map<string, string>> {
+  if (paths.length === 0) return new Map();
+  const { rows } = await p.query<{ path: string; body: string }>(`
+    select d.path, coalesce(r.body, d.body) as body
+      from zz.doc d
+      join zz.initiative i on i.id = d.initiative_id
+      join zz.team t on t.id = i.team_id
+      left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+     where i.slug = $1 and ($2::text is null or t.slug = $2) and d.path = any($3::text[])`,
+  [initiative, team, [...paths]]);
+  return new Map(rows.map((r) => [r.path, r.body]));
 }
 /** The approval a write carries forward, as `saveDocument` takes it.
  *

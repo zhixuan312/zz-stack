@@ -15,6 +15,10 @@
  * binds; each revision records the generation it carries. `doc_request` records keyed changes so a retry replays its reply, and `cause_link_epoch`
  * is the instant automatic causes start.
  *
+ * `doc_words` is a derived count, not a document: how many words a body holds, by the hash of its
+ * bytes, so the console's words-written figure is read rather than recomputed from 123 MB of text
+ * by every process that starts. It is filled on read and owned by nobody's write path.
+ *
  * `doc_revision.fields` is the envelope's OPEN payload: the fields a document carries that have no
  * column of their own — `stakeholder`, and every field a flow declares (sdlc's `blocks`,
  * zz-plugin-eval's `eval_run_id`), which is unbounded by construction. It is not a second home for
@@ -650,6 +654,52 @@ export const DOCUMENTS: Record<string, TableTarget> = {
     comment: "class=current_state; authority=this; question=from which instant are sources filed in an initiative linked automatically as causes of the documents they support, so a source filed before automatic causes existed is never owed?",
     columnComments: {
       epoch: "class=current_state; authority=this; question=at what instant did automatic cause linking begin on this deployment?",
+    },
+  },
+  // How many words a body holds, by the hash of its own bytes: the console's words-written figure is
+  // `countWords` over every retained body, a pure function of bytes that never change, and it was
+  // re-read from scratch by every process that started. Filled by the read that needs it
+  // (`services/gateway/src/console/word-counts.ts`), never by a writer.
+  doc_words: {
+    columns: [
+      [
+        "content_hash",
+        "text",
+        false,
+        null,
+      ],
+      [
+        "words",
+        "integer",
+        false,
+        null,
+      ],
+      [
+        "counted_by",
+        "integer",
+        false,
+        null,
+      ],
+      [
+        "counted_at",
+        "timestamp with time zone",
+        false,
+        "now()",
+      ],
+    ],
+    primaryKey: [
+      "content_hash",
+    ],
+    uniques: [],
+    foreignKeys: [],
+    checks: [],
+    indexes: [],
+    comment: "class=current_state; authority=this; question=how many words does a body hold, keyed by the hash of its own bytes, a count derived by countWords and reusable by every revision and every read whose bytes hash to the same value?",
+    columnComments: {
+      content_hash: "class=immutable_history; authority=this; question=which body's bytes this count is of, the same hash zz.doc.content_hash and zz.doc_revision.content_hash carry?",
+      words: "class=current_state; authority=this; question=how many words the platform counts in that body, recomputed rather than adjusted whenever the count is of a different generation?",
+      counted_by: "class=current_state; authority=this; question=which generation of countWords produced the number beside it, so a release that changes what a word is re-counts rather than answering old numbers?",
+      counted_at: "class=current_state; authority=this; question=when was this body last counted, the moment the row was written or overwritten?",
     },
   },
 };

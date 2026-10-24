@@ -49,6 +49,7 @@ import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js"
 import {
   byWeek, callWeeks, followupOf, latencyMeasures, LOOKAHEAD_MS, periodWeeks, readGrid, sessionsMeasure, share, tally, windowOf, type Grid,
 } from "./platform-measures.js";
+import { cached } from "./answer-cache.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 import {
   approvalWeeks, followupWeeks, modelWeeks, rhythmCells, teamWeeks, toolWeeks, weekTraffic, type ToolWeek,
@@ -178,6 +179,14 @@ async function modelCallsOf(db: pg.Pool, grid: Grid, ended: Ended) {
 
 export function mountPlatformUsage(app: Express): void {
   app.get("/api/console/platform/usage", platformPublic("the platform's usage", async (_req, res, { superadmin }) => {
+    // DELIBERATE: kept as one answer per audience until a write moves `dataVersion()` (answer-cache.ts). This
+    // read reduces the whole event history — nine statements over every real-work call ever recorded — and
+    // nothing in it changes between two looks at the console that no call happened in between.
+    res.json(await cached(`usage|${superadmin}`, () => usageOf(superadmin)));
+  }));
+
+  /** The usage answer itself, as the route above serves it. */
+  async function usageOf(superadmin: boolean): Promise<Usage> {
     const db = platformDb();
     const record = await readGrid(db);
     const grid: Grid = { ...record, weeks: record.weeks.slice(-SHOWN) };
@@ -255,6 +264,6 @@ export function mountPlatformUsage(app: Express): void {
       tools: tooled?.[0] ?? NO_WEEK, mostUsed: tooled?.[1] ?? NO_WEEK,
       rhythm, perApproval, modelCalls,
     };
-    res.json(answer);
-  }));
+    return answer;
+  }
 }

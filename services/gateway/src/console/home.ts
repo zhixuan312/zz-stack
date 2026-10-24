@@ -58,6 +58,7 @@ import { lessonImports } from "./imports.js";
 import { initiativeList } from "./initiative-list.js";
 import { teamPendingRevisions } from "./pending.js";
 import { observedRuns } from "./runs-observed.js";
+import { cached } from "./answer-cache.js";
 import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
   closuresByWeek, grainFor, lastWholeWeek, medianHoursToClose, periodsOf, searchesWithResults, type ClosureWeek, type Period,
@@ -303,6 +304,11 @@ export function mountHome(app: Express): void {
       return;
     }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
-    res.json(await homeOf(activeTeam, req.zzIdentity!.email, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)));
+    // DELIBERATE: kept as one answer per caller and team until a write moves `dataVersion()` (answer-cache.ts).
+    // Home is the whole record reduced to a week — two full list reads plus the events behind them — and a
+    // person moving between destinations asks for it again without anything having happened since.
+    const email = req.zzIdentity!.email;
+    res.json(await cached(`home|${activeTeam}|${email}`, () =>
+      homeOf(activeTeam, email, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req))));
   }));
 }

@@ -56,6 +56,7 @@ import {
   sessionsMeasure, unavailableMeasure, type Grid, type StatusMeasure,
 } from "./platform-measures.js";
 import { evaluationWaiting, needsOf, type DoorToday, type Needs } from "./platform-needs.js";
+import { cached } from "./answer-cache.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 /** What the measures count, as `meta.population` says it. */
@@ -321,6 +322,9 @@ export async function statusOf(
 
 export function mountPlatformStatus(app: Express): void {
   app.get("/api/console/platform/status", platformPublic("the platform's status", async (_req, res, caller) => {
-    res.json(await statusOf(caller, null));
+    // DELIBERATE: kept as one answer per audience until a write moves `dataVersion()` (answer-cache.ts).
+    // Every measure here reduces the whole event history, and none of it moves between two looks at the
+    // console that nothing happened in between.
+    res.json(await cached(`status|${caller.superadmin}`, () => statusOf(caller, null)));
   }));
 }

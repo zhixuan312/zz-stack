@@ -23,7 +23,7 @@ import { auditMove, auditPolicyOf, auditSettledNote } from "../audit-rounds.js";
 import { assessmentsFor, reviewMove } from "../review-rounds.js";
 import { factsFor, recordsFor } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
-import { type DocRow, docRows } from "../indexing.js";
+import { type DocRow, docBodies, docRows } from "../indexing.js";
 import { planStructure, planStructureNote, type PlanStructure } from "../plan-structure.js";
 import { isHandover, owedActs } from "../stage-records.js";
 import { safeName } from "../paths.js";
@@ -157,7 +157,7 @@ export async function initiativeState(
   p: pg.Pool, team: string | null, name: string, chain: Chain, docs: FlowDoc[],
   anchor?: InitiativeAnchor | null,
 ) {
-  const rowList = team ? await docRows(p, team, name) : [];
+  const rowList = team ? await docRows(p, team, name, "none") : [];
   const rows = new Map(rowList.map((d) => [d.path, d]));
   // The initiative's own row: its flow, and whether and how it closed.
   const own = anchor !== undefined ? anchor : (await anchorsFor(p, team, [name])).get(name) ?? null;
@@ -228,6 +228,30 @@ export async function initiativeState(
   // `docs` does.
   const facts = await factsFor(p, team, name);
   const records = await recordsFor(p, team, name);
+  // The bodies this answer reads, and no others. Everything above decided from metadata — a status,
+  // a path, an envelope field, a support link — and only three kinds of text are read below: the
+  // plan the flow declares (a phase is planned, built or not, read off the text), a document whose
+  // stage owes an act (`owedActs` looks for the record's affirmed digest IN the document), and the
+  // sources a move consults — a round, which is a source carrying a stage, and a stakeholder's
+  // material bearing on the document under review. An initiative holds megabytes of source prose no
+  // move here looks at, and reading all of it per status call was most of a console page's latency.
+  if (team) {
+    const plan = docs.find((d) => d.role === "plan")?.name;
+    const owing = new Set((chain.stages ?? []).filter((st) => records[st.name]?.owes).map((st) => st.produces));
+    const verified = new Set(docs.filter((d) => d.verifies?.length).map((d) => d.name));
+    const wanted: string[] = [];
+    for (const d of rowList) {
+      if (!d.path.startsWith("sources/")) {
+        if (d.path === plan || owing.has(d.path)) wanted.push(d.path);
+        // A source no link names is still a round when its envelope carries a stage: review round 1
+        // is filed before the document it reviews exists (bug c92d1bb1).
+      } else if (d.fields?.stage || d.supports.some((s) => verified.has(s))) wanted.push(d.path);
+    }
+    for (const [path, body] of await docBodies(p, team, name, wanted)) {
+      const row = rows.get(path);
+      if (row) row.body = body;
+    }
+  }
   const appliesOf = (docName: string): Applicability => {
     const spec = docs.find((d) => d.name === docName);
     return spec?.when ? documentApplies(spec, facts) : "applies";

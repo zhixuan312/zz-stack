@@ -14,6 +14,8 @@
  * A plan grows one `## Phase N` at a time, so a plan with phases answers the waves of its current
  * phase — the first with tasks and no `### As built` — and never re-offers a built phase's tasks.
  */
+import { createHash } from "node:crypto";
+
 import { validatePlan, type FlowDoc } from "@zz/contracts";
 
 export interface PlanStructure {
@@ -30,6 +32,28 @@ export interface PlanStructure {
   hotspots: string[];
 }
 
+/** How many plans' reports are kept. A team runs a handful of plans at a time and every console
+ *  page re-asks for the same ones; the bound only stops a long-lived process from holding every
+ *  plan it has ever read. Overflowing it costs one validation and nothing else. */
+const REPORT_CACHE = 32;
+
+/** Reports by a digest of the plan's own text, oldest first once the bound is reached.
+ *
+ *  DELIBERATE: memoized, because `validatePlan` is pure over its text and runs an O(tasks²)
+ *  ownership sweep: a hundred-task plan took 1.7 s of one `initiative_status`, on every call, for
+ *  an answer that cannot have changed while the text has not. The key is a digest and not the body,
+ *  so the cache holds a few hundred bytes per plan rather than its bytes. Every caller reads the
+ *  report and none writes to it, which is what makes one shared object safe. */
+const reports = new Map<string, PlanStructure>();
+
+/** A digest of the text: enough to tell two plans apart, and never read as one. Native, because the
+ *  plans it keys are hundreds of kilobytes and a per-character loop over one cost more than the
+ *  validation it was there to save. The length is in the key so two plans that differ only in a
+ *  collision are still two keys. */
+function digest(text: string): string {
+  return `${text.length.toString(36)}:${createHash("sha1").update(text).digest("base64url")}`;
+}
+
 /** The report for the document the flow declares with `role: "plan"`, or undefined when the
  *  flow declares none or it has not been written yet.
  *
@@ -39,8 +63,11 @@ export interface PlanStructure {
 export function planStructure(docs: readonly FlowDoc[], body: string | null): PlanStructure | undefined {
   const plan = docs.find((d) => d.role === "plan");
   if (!plan || body === null) return undefined;
+  const key = digest(body);
+  const known = reports.get(key);
+  if (known && known.document === plan.name) return known;
   const report = validatePlan(body);
-  return {
+  const structure: PlanStructure = {
     document: plan.name,
     ok: report.ok,
     violations: report.violations.map((v) => ({ kind: v.kind, task: v.taskId, line: v.line, message: v.detail })),
@@ -51,6 +78,9 @@ export function planStructure(docs: readonly FlowDoc[], body: string | null): Pl
       : report.waves).map((w) => [...w]),
     hotspots: [...report.hotspots],
   };
+  if (reports.size >= REPORT_CACHE) reports.delete(reports.keys().next().value!);
+  reports.set(key, structure);
+  return structure;
 }
 
 /** One sentence for `next_move.why` when an approved plan does not validate. Reported, never

@@ -43,6 +43,7 @@ import { countWords, type WritingCoverage } from "@zz/contracts";
 import { platformDb } from "../db.js";
 import type { PeriodFigure } from "./figures.js";
 import { importedDocuments, lessonImports, shared } from "./imports.js";
+import { wordCounts } from "./word-counts.js";
 import { grainFor, periodsOf, type Period } from "./work-figures.js";
 
 /** A window as a caller names it: two instants, the first in it and the first after it. */
@@ -83,7 +84,7 @@ const COUNTED_BOUND = 200_000;
 /** The words of every body the keys name: those counted already, taken before anything is fetched, and the
  *  rest fetched by read and counted now, each kept under the key keyOf gives. The answer is the read's own,
  *  so a clear past the bound, by this read or by one beside it, costs the cache and never a count. */
-async function wordsOf<R extends { body: string }>(keys: string[], read: (missing: string[]) => Promise<R[]>, keyOf: (r: R) => string): Promise<Map<string, number>> {
+async function wordsOf(keys: string[], read: (missing: string[]) => Promise<{ key: string; words: number }[]>): Promise<Map<string, number>> {
   const words = new Map<string, number>();
   const missing: string[] = [];
   for (const k of keys) {
@@ -93,10 +94,9 @@ async function wordsOf<R extends { body: string }>(keys: string[], read: (missin
   }
   if (!missing.length) return words;
   if (counted.size > COUNTED_BOUND) counted.clear();
-  for (const r of await read(missing)) {
-    const n = countWords(r.body);
-    words.set(keyOf(r), n);
-    counted.set(keyOf(r), n);
+  for (const { key, words: n } of await read(missing)) {
+    words.set(key, n);
+    counted.set(key, n);
   }
   return words;
 }
@@ -150,10 +150,8 @@ async function documentLedger(team: string, asOf: string): Promise<{ rows: Row[]
   // between the two reads is kept under its new name and counted on the next read.
   const hashes = [...new Set(revisions.rows.filter((r) => r.retained && r.hash !== null).map((r) => r.hash!))];
   const docIds = [...new Set(revisions.rows.map((r) => r.doc_id))];
-  const counts = await wordsOf(hashes, async (missing) => (await db.query<{ hash: string; body: string }>(
-    `select distinct on (r.content_hash) r.content_hash as hash, r.body
-       from zz.doc_revision r
-      where r.doc_id = any($1::uuid[]) and r.content_hash = any($2::text[])`, [docIds, missing])).rows, (r) => r.hash);
+  const counts = await wordsOf(hashes, async (missing) =>
+    [...(await wordCounts(db, docIds, missing))].map(([key, n]) => ({ key, words: n })));
 
   // Each document's seals and content acts, by its initiative and its path within the team.
   const actsOf = new Map<string, { seals: Set<bigint>; content: bigint[] }>();
@@ -210,7 +208,8 @@ async function lessonLedger(team: string, asOf: string): Promise<{ words: number
   const counts = await wordsOf([...idOf.keys()], async (missing) => (await db.query<{ id: string; updated_us: string; body: string }>(
     `select n.id::text as id, (extract(epoch from n.updated_at) * 1000000)::bigint::text as updated_us, n.body
        from zz.knowledge_node n
-      where n.id = any($1::uuid[])`, [missing.map((k) => idOf.get(k)!)])).rows, (l) => lessonKey(l.id, l.updated_us));
+      where n.id = any($1::uuid[])`, [missing.map((k) => idOf.get(k)!)])).rows
+    .map((l) => ({ key: lessonKey(l.id, l.updated_us), words: countWords(l.body) })));
   const imported = new Set(cohorts.lessons.map((l) => l.id));
   // A lesson rewritten between the two reads is left out of this one rather than counted as empty.
   return lessons.rows.filter((l) => !imported.has(l.id) && counts.has(lessonKey(l.id, l.updated_us)))

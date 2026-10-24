@@ -81,6 +81,21 @@ export function count(change: Change | null): void {
   else tally.byTeam.set(change.t, (tally.byTeam.get(change.t) ?? 0) + 1);
 }
 
+/**
+ * Every change counted since the boot, as one version, or null while nothing listens.
+ *
+ * The same notifications a revision is made of, summed: what `answer-cache.ts` keys a console answer on, so a
+ * write the listener heard makes the answer that write invalidated unreachable rather than serving it for its
+ * whole lifetime. Nothing counted while nothing listens, so nothing is cached then either — an unversioned
+ * answer cannot be told from a stale one.
+ */
+export function dataVersion(): string | null {
+  if (boot === null) return null;
+  let n = unread;
+  for (const tally of tallies.values()) n += tally.all;
+  return `${boot}:${n}`;
+}
+
 /** `collection`'s revision for a caller who hears `teams` (null for every team), or null while nothing listens. */
 function heardRevision(collection: string, teams: string[] | null): string | null {
   if (boot === null) return null;

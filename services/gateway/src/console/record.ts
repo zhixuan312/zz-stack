@@ -65,6 +65,7 @@ import { OUTCOMES, writingEstimate, type WritingCoverage } from "@zz/contracts";
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
+import { cached } from "./answer-cache.js";
 import { callerApprovals } from "./approvals.js";
 import type { Figure, Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { localDate } from "./findings.js";
@@ -394,6 +395,11 @@ export function mountRecord(app: Express): void {
     const params = recordParams(req.query as Record<string, unknown>);
     if (typeof params === "string") { res.status(400).json({ error: params }); return; }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
-    res.json(await recordOf(activeTeam, req.zzIdentity!.email, params.period, params, iso(Math.ceil(Date.now() / 1000) * 1000)));
+    // DELIBERATE: kept as one answer per caller, team, period and page until a write moves `dataVersion()`
+    // (answer-cache.ts). The record is the whole history reduced by week; re-reading it between two clicks
+    // that changed nothing was most of the page's time.
+    const email = req.zzIdentity!.email;
+    res.json(await cached(`record|${activeTeam}|${email}|${JSON.stringify(params)}`, () =>
+      recordOf(activeTeam, email, params.period, params, iso(Math.ceil(Date.now() / 1000) * 1000))));
   }));
 }

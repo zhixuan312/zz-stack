@@ -342,16 +342,23 @@ async function run(db: pg.Client, url: string): Promise<void> {
       try { return await as(SUPERADMIN); } finally { (pool as unknown as { query: unknown }).query = real; }
     };
     const fresh = await as(SUPERADMIN);
-    for (const [part, marker] of [["modelCalls", "zz.model_call"], ["followup", "interval '120 seconds'"], ["rhythm", "isodow"],
-                                  ["callsByWeek", "t.slug, count(*)"]] as const) {
+    // A statement can serve more than one part, and the read model's serves three: `teamWeeks` draws the
+    // superadmin's split and `toolWeeks` the two tool figures, and the page reads the model once for both
+    // rather than issuing the same statement twice. So each group names every part the failing statement
+    // answers, and every part outside the group must still stand.
+    for (const [parts, marker] of [[["modelCalls"], "zz.model_call"], [["followup"], "interval '120 seconds'"],
+                                   [["rhythm"], "isodow"],
+                                   [["callsByWeek", "tools", "mostUsed"], "zz.event_work_week"]] as const) {
       const a = await failing((sql) => sql.includes(marker));
-      if (!same(a.body[part], { state: "unavailable", reason: "query_failed" })) fail(step, `${part} reads ${JSON.stringify(a.body[part])}`);
-      for (const other of PARTS.filter((p) => p !== part)) {
-        if (settled(a.body[other]) !== settled(fresh.body[other])) fail(step, `with ${part} failing, ${other} moved: ${settled(a.body[other]).slice(0, 300)}`);
+      for (const part of parts) {
+        if (!same(a.body[part], { state: "unavailable", reason: "query_failed" })) fail(step, `${part} reads ${JSON.stringify(a.body[part])}`);
+      }
+      for (const other of PARTS.filter((p) => !(parts as readonly string[]).includes(p))) {
+        if (settled(a.body[other]) !== settled(fresh.body[other])) fail(step, `with ${parts.join(", ")} failing, ${other} moved: ${settled(a.body[other]).slice(0, 300)}`);
       }
     }
-    pass("a part whose statement fails (model calls, refusals put right, weekday by hour, the superadmin's split) is unavailable " +
-         "and every other part stands");
+    pass("a part whose statement fails (model calls, refusals put right, weekday by hour, and the read model " +
+         "the superadmin's split and the two tool figures share) is unavailable and every other part stands");
 
     step = "the shape the console's fake answers";
     let usage: ((admin: boolean) => unknown) | undefined;

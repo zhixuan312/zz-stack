@@ -51,6 +51,7 @@ import {
   sessionsMeasure, share, tally, windowOf, type Grid,
 } from "./platform-measures.js";
 import { audienceKey, cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
+import { weekBuckets } from "./event-work-week.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 import {
   approvalWeeks, followupWeeks, modelWeeks, nextBoundaryOf, rhythmCells, teamWeeks, toolWeeks, weekTraffic,
@@ -184,8 +185,9 @@ async function modelCallsOf(db: pg.Pool, grid: Grid, ended: Ended) {
 export function mountPlatformUsage(app: Express): void {
   app.get("/api/console/platform/usage", platformPublic("the platform's usage", async (req, res, caller) => {
     // DELIBERATE: kept as one answer per audience until a write moves the marker of what it reads
-    // (answer-cache.ts). This read reduces the whole event history — nine statements over every real-work call
-    // ever recorded — and nothing in it changes between two looks at the console that no call happened in
+    // (answer-cache.ts). This read reduces the whole event history — the calls by week and team and the calls
+    // by tool are answered from `zz.event_work_week`, and the rest still scan every real-work call ever
+    // recorded — and nothing in it changes between two looks at the console that no call happened in
     // between. The clock is the exception, and the answer says when it moves: `boundary` keeps it no longer
     // than the first refusal turning `eligible` or the running week completing.
     // The audience is `audienceKey`'s, the same string Status is keyed on: Usage's figures do not depend on the
@@ -219,9 +221,13 @@ export async function usageAnswer(superadmin: boolean, asOfMs?: number): Promise
   // Read once for the parts that share them; each part that awaits one fails on its own. `followups` is
   // read for the part that draws the refusals and again, after it, for the boundary they put on the answer.
   const calls = callWeeks(db, grid, null);
-  const tools = toolWeeks(db, record);
+  // The model is read ONCE for both week-grain reductions: `teamWeeks` and `toolWeeks` both reduce it,
+  // and two identical statements in one request is exactly what a page may not issue (FR-10). They fail
+  // together too, which the answer states rather than hides.
+  const buckets = weekBuckets(db, ZZ_TZ);
+  const tools = toolWeeks(db, record, buckets);
   const followups = followupWeeks(db, grid, null);
-  for (const p of [calls, tools, followups]) p.catch(() => undefined);
+  for (const p of [calls, buckets, tools, followups]) p.catch(() => undefined);
   const tile = (weeks: PeriodFigure[]): Tile => ({ weeks, last: weeks.at(-2)!, previous: weeks.at(-3)! });
 
   const [tiles, callsByWeek, traffic, followup, tooled, rhythm, perApproval, modelCalls] = await Promise.all([
@@ -236,7 +242,7 @@ export async function usageAnswer(superadmin: boolean, asOfMs?: number): Promise
     }),
     part("the calls by week", async () => {
       const at = await calls;
-      const parts = superadmin ? partsOf(await teamWeeks(db, grid), grid) : null;
+      const parts = superadmin ? partsOf(await teamWeeks(db, grid, buckets), grid) : null;
       return {
         weeks: periodWeeks(grid, false, (w) => tally(at(w, "calls")))
           .map((p, i) => ({ window: p.window, calls: p.figure, parts: parts === null ? null : parts[i] })),

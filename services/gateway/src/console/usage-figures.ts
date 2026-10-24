@@ -7,10 +7,17 @@
  * as `readGrid` cuts them. A real-work call is a `tool_call` with `origin = 'work'`; a statement that
  * also counts maintenance (`origin = 'platform'`) says so.
  *
+ * The two week-grain reductions — `teamWeeks` and `toolWeeks` — are answered from `zz.event_work_week`
+ * (`weekBuckets`, event-work-week.ts), which is the model plus the calls of each key it has not absorbed
+ * yet. The rest read `zz.event` from its first row and stay that way, each for a reason the model cannot
+ * answer: a local day, a per-week malformed split, a `batched` dimension, or a session's whole later
+ * history. `ARCHITECTURE.md` §5 registers every one of them with its measured cost.
+ *
  * Each function throws when its statement fails; the read decides what a failure makes of its answer.
  */
 import type pg from "pg";
 
+import { weekBuckets, type WorkWeekBucket } from "./event-work-week.js";
 import type { Grid } from "./platform-measures.js";
 import { ZZ_TZ } from "./shared.js";
 
@@ -99,7 +106,8 @@ export type CallDay = {
 /** Real-work calls in `[from, to)`, `from` null for the whole record, by local day (`day`, and the instant its week
  *  starts), registered tool, team and refusal owner, with the latest call of each. `tool` is null for every tool no
  *  door registers in `zz.plugin_tool`, so no other name leaves; `team_id` and `slug` are null for calls in no team.
- *  The one count of calls every call figure here reduces: by week, by team, by tool and the prepared query's. */
+ *  DELIBERATE: this is the Platform prepared query's count alone now that `teamWeeks` and `toolWeeks` read the model.
+ *  It stays the one statement that can break the calls down by local day, which the model's week grain cannot. */
 export async function callDays(db: pg.Pool, to: string, from: string | null): Promise<CallDay[]> {
   return (await db.query<CallDay>(
     `with vocabulary as (select distinct pt.door || ':' || pt.name as tool from zz.plugin_tool pt)
@@ -137,18 +145,49 @@ function summed<R extends { calls: number }>(rows: R[], key: (r: R) => string): 
   return [...out.values()];
 }
 
+/** The local date an instant falls on, as the read model dates a bucket: a bucket is keyed by the
+ *  Monday of its week in the reporting zone, and the grid's weeks are those same Mondays as instants. */
+function localDay(ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: ZZ_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(ms);
+}
+
+/** The grid's weeks by the local date each starts on, giving the instant a model bucket's week starts
+ *  at. A bucket whose week is not in this map lies outside the grid and is one the figure does not
+ *  answer — which is how the weeks a page shows cut the model's whole record. */
+function weekStarts(grid: Grid): Map<string, number> {
+  return new Map(grid.weeks.map((w) => [localDay(w.fromMs), w.fromMs]));
+}
+
+/** `percentile_cont(0.5)` over an ascending array, interpolated and rounded exactly as the statement
+ *  these reductions replaced computed it. The population is the merge of every bucket's `ms` array —
+ *  a cross-team or cross-tool median is never the median of the buckets' medians. */
+function median(ascending: readonly number[]): number | null {
+  if (ascending.length === 0) return null;
+  const rank = 0.5 * (ascending.length - 1);
+  const lo = Math.floor(rank), hi = Math.ceil(rank);
+  return Math.round(ascending[lo]! + (rank - lo) * (ascending[hi]! - ascending[lo]!));
+}
+
 /** Real-work calls by week and team slug, from the grid's first week; `slug` is null for calls in no team.
  *  DELIBERATE: a statement of its own rather than a reduction of `callDays`, so the superadmin's split fails alone
  *  and every other part of Usage stands; checks/console-platform-query.ts holds the prepared query's calls by team,
- *  read from `callDays`, to it. */
-export async function teamWeeks(db: pg.Pool, grid: Grid): Promise<{ from_ms: number; slug: string | null; calls: number }[]> {
-  return (await db.query<{ from_ms: number; slug: string | null; calls: number }>(
-    `select (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
-            t.slug, count(*)::int as calls
-       from zz.event e
-       left join zz.team t on t.id = e.team_id
-      where e.kind = 'tool_call' and e.origin = 'work' and e.ts >= $3::timestamptz and e.ts < $2::timestamptz
-      group by 1, 2`, [ZZ_TZ, asOfOf(grid), fromOf(grid)])).rows;
+ *  read from `callDays`, to it.
+ *  DELIBERATE: the model is passed in when a caller reduces both this and `toolWeeks` in one request, so the page
+ *  issues one statement rather than two identical ones (FR-10). A caller that reads one of them alone omits it.
+ *  DELIBERATE: the model's buckets are cut to the grid at the WEEK grain, not at the instant. A bucket is a whole
+ *  local week, so the running week is answered whole; that is the read's own cutoff, and no event can be written
+ *  after the instant it was read. A bucket before the grid's first week or after its running one is not answered. */
+export async function teamWeeks(
+  db: pg.Pool, grid: Grid, buckets?: Promise<WorkWeekBucket[]>,
+): Promise<{ from_ms: number; slug: string | null; calls: number }[]> {
+  const at = weekStarts(grid);
+  const rows: { from_ms: number; slug: string | null; calls: number }[] = [];
+  for (const b of await (buckets ?? weekBuckets(db, ZZ_TZ))) {
+    const from = at.get(b.week_start);
+    if (from === undefined) continue;
+    rows.push({ from_ms: from, slug: b.team_slug === "" ? null : b.team_slug, calls: b.calls });
+  }
+  return summed(rows, (r) => `${r.from_ms}/${r.slug ?? ""}`);
 }
 
 type WeekTraffic = {
@@ -175,27 +214,30 @@ export type ToolWeek = { tool: string | null; from_ms: number; calls: number; ti
 
 /** Real-work calls by tool and week over the whole record: the calls, as `callDays` counts them, those with a
  *  duration that is not a batch's, and their median. `tool` is null for every tool no door registers in
- *  `zz.plugin_tool`, so no other name leaves. */
-export async function toolWeeks(db: pg.Pool, grid: Grid): Promise<ToolWeek[]> {
-  const [days, timed] = await Promise.all([
-    callDays(db, asOfOf(grid), null),
-    db.query<{ tool: string | null; from_ms: number; timed: number; median_ms: number | null }>(
-      `with vocabulary as (select distinct pt.door || ':' || pt.name as tool from zz.plugin_tool pt)
-       select v.tool,
-              (extract(epoch from (date_trunc('week', e.ts at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
-              (count(e.duration_ms) filter (where e.batched = false))::int as timed,
-              round(percentile_cont(0.5) within group (order by e.duration_ms) filter (where e.batched = false))::float8 as median_ms
-         from zz.event e
-         left join vocabulary v on v.tool = e.tool_key
-        where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $2::timestamptz
-        group by 1, 2`, [ZZ_TZ, asOfOf(grid)]),
-  ]);
-  const key = (tool: string | null, fromMs: number): string => `${fromMs}/${tool ?? ""}`;
-  const at = new Map(timed.rows.map((r) => [key(r.tool, r.from_ms), r]));
-  return summed(days, (r) => key(r.tool, r.week_ms)).map((r) => {
-    const t = at.get(key(r.tool, r.week_ms));
-    return { tool: r.tool, from_ms: r.week_ms, calls: r.calls, timed: t?.timed ?? 0, median_ms: t?.median_ms ?? null };
-  });
+ *  `zz.plugin_tool`, so no other name leaves.
+ *  Answered from the read model through `weekBuckets`, with the vocabulary applied at read time: the model's
+ *  grain carries the `tool_key` a call recorded, while a tool NAME is what a door registers today, so a tool
+ *  whose door stopped serving it comes out null here and a name no caller sent still leaves. `ms` is the
+ *  unbatched population, so `timed` is its cardinality and the median is the exact merge of the buckets'
+ *  ascending arrays — never a median of medians. */
+export async function toolWeeks(db: pg.Pool, grid: Grid, shared?: Promise<WorkWeekBucket[]>): Promise<ToolWeek[]> {
+  const [buckets, registered] = await Promise.all([shared ?? weekBuckets(db, ZZ_TZ), registeredTools(db)]);
+  const at = weekStarts(grid);
+  const out = new Map<string, { tool: string | null; from_ms: number; calls: number; ms: number[] }>();
+  for (const b of buckets) {
+    const from = at.get(b.week_start);
+    if (from === undefined) continue;
+    const tool = registered.has(b.tool_key) ? b.tool_key : null;
+    const key = `${from}/${tool ?? ""}`;
+    const row = out.get(key) ?? { tool, from_ms: from, calls: 0, ms: [] };
+    row.calls += b.calls;
+    row.ms = row.ms.concat(b.ms);
+    out.set(key, row);
+  }
+  return [...out.values()].map((r) => ({
+    tool: r.tool, from_ms: r.from_ms, calls: r.calls,
+    timed: r.ms.length, median_ms: median(r.ms.sort((a, b) => a - b)),
+  }));
 }
 
 /** Real-work calls in `[fromMs, toMs)` by local weekday, Monday 0, and local hour. */

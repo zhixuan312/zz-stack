@@ -590,7 +590,10 @@ section, seeds to ten times the 41,772 real-work calls, and fails on either numb
 - **Usage's calls by week and team** — `rows ≤ 1000, ms ≤ 50`. Today it reads 645 rows and takes
   1.2 ms from the read model, against 41,772 rows and 133 ms for the same figure from `zz.event`.
   At ten times the traffic the bucket count is bounded by the grain — seven weeks, five team slugs,
-  the tools the doors register — so the rows barely move while the arrays inside them grow.
+  the tools the doors register — so the rows barely move while the arrays inside them grow. Measured
+  on a throwaway migrated by the real runner, the composed statement — the model plus the raw tail
+  FR-16b(i) requires — reads **720 rows in 1.0 ms at 41,772 calls and 720 rows in 1.0 ms at ten times
+  them**, so this budget is held against the whole figure and not only the model's own rows.
 
 The `ms` array is the one field whose size is not obviously bounded, so it is recorded here. Its
 widest bucket holds 2,414 integers in 9,680 bytes, against an average bucket of 276 bytes; at ten
@@ -612,7 +615,7 @@ may be kept across a write, whatever it costs to recompute.
 |---|---|---|
 | Home | the whole record reduced to a week: two core MCP reads and the events behind them | 0.6–1.2 s computed, 0.19 s served (recorded in `answer-cache.ts`; not re-measured here, because its read goes through the core MCP door and timing it against production would need a session that writes) |
 | Record | five statements over the document and event tables, one read per period and page | 0.6–1.2 s computed, 0.19 s served (the same recorded measurement, on the same page class) |
-| Usage | `teamWeeks`, `toolWeeks`, `callDays`, `followupWeeks` | 559 ms today (133 + 278 + 148); 426 ms once Task I-19 moves the two week-grain reductions onto the model |
+| Usage | `teamWeeks`, `toolWeeks`, `followupWeeks` | 559 ms before Task I-19 (133 + 278 + 148), the 278 being `callDays`, which only `toolWeeks` read on this page and which the page no longer reads at all. The two week-grain reductions now read the model: their composed statement measures 1.1 ms at 41,772 real-work calls and 1.1 ms at ten times them, inside the budget declared above, so the class is `followupWeeks`' 148 ms and the model read beside it |
 | Status | `readDays`, `latencyMeasures`, `sessionsMeasure` | 500 ms (122 + 109 + 269) |
 
 Home and Record are the two whose figure is recorded rather than re-measured in this pass, and the
@@ -620,6 +623,32 @@ reason is stated rather than left implicit: their reads reach the platform throu
 door, so a measurement against this deployment would be a request, and a request is a write on the
 platform's own record. Their cost is the one `answer-cache.ts` records from Phase 1's measurement of
 the same two classes on this deployment.
+
+Task I-19 moved both reductions onto the model, and the union it first shipped was unusable on real
+traffic — measured, fixed, and recorded here because the numbers are the reason the shape is what it is.
+The first `weekBuckets` read the raw half as a range per bucket, inside that bucket's own week, on the
+assumption that the range is empty because the row has already absorbed its week. On this deployment it
+is not: **470 of the 645 buckets end an average of 41.6 hours before their week does**, so every range
+spanned other keys' events and discarded them — 1,057,133 rows read and filtered to nothing across 645
+probes, **482 ms** for an answer the model alone gives in 1.2 ms. On a throwaway it was worse, because
+the planner flattened the `left join lateral` into a materialised nested loop: **1.85 s at 41,772 calls
+and 25 s at 417,720**, 419,164 relation tuples and 3,488,198 temp blocks at ten times the traffic.
+
+The shipped shape bounds the raw half **once**, by the newest `through_ts` in the table, and joins it to
+the model by key. That is exact rather than approximate, and the write path is what makes it so:
+`WEEK_RECORD` sets a bucket's `through_ts` to that bucket's own newest `ts` in the transaction that
+inserts the call, so after every committed write no bucket is behind its rows and the newest watermark
+is the newest real-work call there is. Verified against the per-bucket answer **on all 645 buckets,
+field for field, and against the raw statement at team and week** — nothing only on one side, nothing
+disagreeing. Measured on the same throwaway the first shape was measured on, seeded so that 496 of its
+720 buckets end early in their week as this deployment's do: **720 rows and 1.0 ms at 41,772 calls, 720
+rows and 1.0 ms at 417,720** — inside both numbers this section declares, with no new index. A table
+with no rows takes `-infinity`, so an unbuilt model answers from the whole history instead of answering
+nothing, which is what a seeded throwaway needs.
+
+`checks/event-work-week-reads.ts` holds all of it: the model against the raw statement at the model's
+own grain, the two reductions against the same raw rows, the statement each reduction actually issues,
+and this budget at one times and ten times the traffic.
 
 ### What stays a raw query
 

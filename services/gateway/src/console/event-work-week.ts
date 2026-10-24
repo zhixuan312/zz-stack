@@ -152,67 +152,91 @@ export const WEEK_RECORD = `
 
 /**
  * The model and the raw table as one answer: every bucket of `zz.event_work_week`, plus the calls
- * of the same key with `ts > through_ts`. The two halves meet at exactly that instant, so neither
- * can omit an event the other dropped and no event is counted twice — which a boundary drawn by
- * bucket age cannot promise, because a bucket with steady traffic never turns old.
+ * the model has not absorbed. The two halves meet at exactly one instant, so neither can omit an
+ * event the other dropped and no event is counted twice — which a boundary drawn by bucket age
+ * cannot promise, because a bucket with steady traffic never turns old.
  *
- * DELIBERATE: the raw half is read per bucket and inside that bucket's own week, not as one scan
- * of the history. A bucket is keyed by the week its calls fall in, so every event of that key is
- * inside that week by construction, and `ts > through_ts` inside a week the row has already
- * absorbed is an empty range — which is what makes this a read of the tail rather than a re-read
- * of every call the model exists to stop reading. Measured on a local copy of 50,000 real-work
- * calls: this read answered its 126 buckets in 30 ms, where bounding the same union only by the
- * oldest watermark in the table read all 48,432 of those calls and took 65 ms.
+ * DELIBERATE: the raw half is ONE grouped pass over `zz.event`, bounded by the NEWEST `through_ts`
+ * in the table and joined to the model by key — not a range per bucket. The per-bucket shape reads
+ * the same answer and is what this module shipped first; it is also unusable on real traffic, for a
+ * reason a synthetic input hides. A bucket is keyed by the week its calls fall in, so the first
+ * version read `ts > through_ts` inside that bucket's own week, on the assumption that the range is
+ * empty because the row has absorbed its week. On this deployment it is not: **470 of the 645
+ * buckets end an average of 41.6 hours before their week does**, so every per-bucket range spans
+ * other keys' events and filters them out — 1,057,133 rows read and discarded across 645 probes,
+ * 0.72 ms each, **482 ms** for an answer the model alone gives in 1.2 ms. A local copy of 50,000
+ * calls had shown 30 ms because uniform traffic puts every bucket's last call at its week's end,
+ * which empties exactly the range that costs. On a seeded throwaway the planner additionally
+ * flattened the `left join lateral` into a materialised nested loop over the whole table: 1.85 s at
+ * 41,772 calls and 25 s at ten times them.
  *
- * DELIBERATE: a key with no model row at all is not reconstructed here. Nothing this platform does
- * can produce one — `WEEK_RECORD` writes the row in the transaction that writes the call, and
+ * What makes the newest watermark exact is the write path, not an assumption about traffic:
+ * `WEEK_RECORD` sets a bucket's `through_ts` to that bucket's own newest `ts` in the transaction
+ * that inserts the call. So after every committed write no bucket is behind its rows, the newest
+ * `through_ts` in the table is the newest real-work call there is, and the calls the model has not
+ * absorbed are exactly those after it. Measured on this deployment: 1.171 ms, 645 rows, agreeing
+ * with the per-bucket answer on all 645 buckets and with the raw statement at team and week.
+ *
+ * DELIBERATE: the watermark is read off the `model` CTE, not off `zz.event_work_week` a second time.
+ * The table is small enough that either reads the same answer, but the budget this class is declared
+ * with is counted in relation tuples, and scanning the model twice spent 722 of an allowance of 1000
+ * twice over on the same rows.
+ *
+ * DELIBERATE: an empty model takes `-infinity` as its watermark, so the raw half covers the whole
+ * history and the answer is still right. That is the state a throwaway is in when a check seeds
+ * `zz.event` directly without running `WEEK_BACKFILL`, and answering nothing there would turn every
+ * seeded route into a wrong answer rather than a slow one. It costs the read this table exists to
+ * make short, so it is a fallback and not a mode: a populated table bounds the pass to the calls
+ * after its newest bucket.
+ *
+ * DELIBERATE: a key with no model row at all is not reconstructed. Nothing this platform does can
+ * produce one — `WEEK_RECORD` writes the row in the transaction that writes the call, and
  * `011_event_work_week.sql` backfilled every call that existed before it — so a key without a row
- * is a damaged table, and `scripts/rebuild-event-work-week.ts` is what repairs it. Answering it
- * from a scan of the whole history would cost every page load the read this table exists to make
- * short.
+ * is a damaged table, and `scripts/rebuild-event-work-week.ts` is what repairs it. The one exception
+ * is the empty table above, which is not damaged, only unbuilt.
+ *
+ * DELIBERATE: `ms` is sorted only when a tail was merged into it. Both halves arrive ascending —
+ * the model sorts on write, and the tail sorts its own aggregate — so the common case is a
+ * concatenation of nothing, and re-sorting every bucket's array on every page load was most of what
+ * remained of the cost once the tail stopped scanning.
  */
 export async function weekBuckets(db: pg.Pool | pg.Client, zone: string): Promise<WorkWeekBucket[]> {
   const { rows } = await db.query(`
     with model as (
       select m.team_slug, m.week_start, m.tool_key, m.refusal_owner,
-             m.calls, m.refusals, m.failed, m.ms, m.through_ts,
-             (select t.id from zz.team t where t.slug = m.team_slug) as team_id
+             m.calls, m.refusals, m.failed, m.ms, m.through_ts
         from zz.event_work_week m
     ),
     tail as (
-      select m.team_slug, m.week_start, m.tool_key, m.refusal_owner,
-             count(e.*)::int as calls,
+      select coalesce(t.slug, '') as team_slug,
+             (date_trunc('week', e.ts at time zone $1::text))::date as week_start,
+             coalesce(e.tool_key, '') as tool_key,
+             coalesce(e.refusal_owner, '') as refusal_owner,
+             count(*)::int as calls,
              (count(*) filter (where e.refusal_owner is not null))::int as refusals,
              (count(*) filter (where e.ok is false))::int as failed,
              coalesce(array_agg(e.duration_ms order by e.duration_ms)
                       filter (where e.batched = false and e.duration_ms is not null),
                       '{}'::integer[]) as ms
-        from model m
-        left join lateral (
-          select e.ts, e.ok, e.refusal_owner, e.duration_ms, e.batched
-            from zz.event e
-           where e.kind = 'tool_call' and e.origin = 'work'
-             and e.team_id is not distinct from m.team_id
-             and e.tool_key is not distinct from nullif(m.tool_key, '')
-             and e.refusal_owner is not distinct from nullif(m.refusal_owner, '')
-             and e.ts > m.through_ts
-             and e.ts >= ((m.week_start)::timestamp at time zone $1::text)
-             and e.ts <  ((m.week_start + 7)::timestamp at time zone $1::text)
-        ) e on true
+        from zz.event e
+        left join zz.team t on t.id = e.team_id
+       where e.kind = 'tool_call' and e.origin = 'work'
+         and e.ts > (select coalesce(max(m0.through_ts), '-infinity'::timestamptz) from model m0)
        group by 1, 2, 3, 4
     )
-    select m.team_slug,
-           to_char(m.week_start, 'YYYY-MM-DD') as week_start,
-           m.tool_key, m.refusal_owner,
-           (m.calls + t.calls)::int as calls,
-           (m.refusals + t.refusals)::int as refusals,
-           (m.failed + t.failed)::int as failed,
-           coalesce((select array_agg(x order by x)
-                       from unnest(m.ms || t.ms) x), '{}'::integer[]) as ms
+    select team_slug,
+           to_char(week_start, 'YYYY-MM-DD') as week_start,
+           tool_key, refusal_owner,
+           (coalesce(m.calls, 0) + coalesce(t.calls, 0))::int as calls,
+           (coalesce(m.refusals, 0) + coalesce(t.refusals, 0))::int as refusals,
+           (coalesce(m.failed, 0) + coalesce(t.failed, 0))::int as failed,
+           case when coalesce(cardinality(t.ms), 0) = 0
+                then coalesce(m.ms, '{}'::integer[])
+                else (select coalesce(array_agg(x order by x), '{}'::integer[])
+                        from unnest(coalesce(m.ms, '{}'::integer[]) || t.ms) as u(x))
+           end as ms
       from model m
-      join tail t
-        on t.team_slug = m.team_slug and t.week_start = m.week_start
-       and t.tool_key = m.tool_key and t.refusal_owner = m.refusal_owner
-     order by m.week_start, m.team_slug, m.tool_key, m.refusal_owner`, [zone]);
+      full join tail t using (team_slug, week_start, tool_key, refusal_owner)
+     order by week_start, team_slug, tool_key, refusal_owner`, [zone]);
   return rows as WorkWeekBucket[];
 }

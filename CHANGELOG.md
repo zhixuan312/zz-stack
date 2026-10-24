@@ -33,6 +33,84 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.98.6] — 2026-10-24
+
+The console's pages stop re-reading the platform's whole record to draw one screen: Home,
+Initiatives, Record, Usage and Status answer in a fraction of the time they did, and the words
+figure no longer re-reads every document body whenever the platform restarts.
+
+### zz-stack 0.98.6
+
+- **A plan is validated once, not once per read.** `initiative_status` runs the plan validator on
+  the plan it finds, and the validator compares every pair of paths a plan's tasks declare. Every
+  comparison compiled two regular expressions from scratch, so a 183-task plan cost 1.7 s of one
+  status call, on every call, for an answer that cannot change while the text has not. Patterns and
+  path pairs are now compiled and compared once, two literal paths are compared as strings, and a
+  plan's report is kept by a digest of its own text. The answer is unchanged: the same tool output
+  was compared across all 104 initiatives on the deployment before and after.
+- **A status read no longer ships every document body.** Deciding where an initiative stands reads
+  statuses, paths, envelope fields and support links; it was also fetching the full text of every
+  document it holds — 6.5 MB for one initiative on the busiest team, 71 ms against 13 ms. The few
+  bodies a move actually reads (the plan, a document a stage owes an act on, and the rounds and
+  stakeholder material bearing on a reviewed document) are now fetched in one follow-up statement.
+  A page of ten initiatives went from 2.6-2.9 s to 0.45 s.
+- **The console's history reads use an index.** Usage, Record and Home reduce every real-work call
+  the platform has recorded, and the planner had nothing narrow enough to prefer over the heap.
+  One partial index over those calls takes Usage from 3.1-3.7 s to 0.9-1.0 s.
+- **A list of documents no longer scans every citation, once per row.** The Initiatives list asks
+  what supports each document it lists; `zz.doc_link` was indexed by the document a link starts
+  from and by nothing else, so that question read all 19,631 links 196 times — 680 ms of one page
+  load. An index on what a link points at answers it in 12 ms.
+- **A release's two windows are two counts, not one join.** The Releases page counted the week
+  before and the week after each release by joining both windows to the event table at once, which
+  leaves the planner no window to seek into: it read every real-work call twice, per release, nine
+  times on one page. Each window is now its own statement, and the figures are the same ones the
+  join returned.
+- **Words written are counted once per body.** The figure ran the platform's word counter over the
+  body of every revision — 922 revisions and 123 MB on this deployment — in every process that
+  started, which is what made the first Home or Record after a restart take 4.6 s and 5.4 s, past
+  the console's own 4.5 s read bound. Counts are kept in `zz.doc_words` by content hash and filled
+  by the read that needs them.
+- **The boot reindex asks the database which rows need it.** It read every document body so it
+  could skip the ones already indexed by the current analyzer; the analyzer's name is a constant of
+  the package, not a property of a row, so the skip is now the statement's and the pass reads
+  nothing on a deployment that is already indexed.
+- **Usage, Record, Home, Status and Releases are kept as answers.** Each is held per caller until a
+  write moves the gateway's own count of what it has heard — every notification the platform raises
+  on the console's behalf — so moving between destinations costs one read of the record rather than
+  one per page, and a change still moves the answer immediately.
+
+### zz-stack-dashboard 0.28.4
+
+- **The console's README names its origin.** The diagram said the console answers on the host's
+  `nip.io` name; it is served at `CONSOLE_PUBLIC_URL`. No page changed.
+
+### The console has its own domain
+
+- **The console is served at `CONSOLE_PUBLIC_URL`**, which is `https://zz-stack.com` on this
+  deployment, rather than under the host's `nip.io` name. Caddy serves it as the site's own
+  hostname, and the old console host answers `301` to it.
+- **`install-caddy.sh` waits for a new hostname's certificate**, up to 30 seconds, instead of
+  exiting silently when it is not there yet: under `set -e` a failed first fetch ended the script
+  with no message and no site.
+
+### Upgrade notes
+
+- **Everyone must re-enrol their passkey.** A passkey is bound to the hostname it was created on,
+  and the console's hostname changed, so every passkey enrolled against the old console host no
+  longer signs in. On this deployment that is three people; the first enrolment link is minted by
+  the host's superadmin.
+- **The gateway's own address does not change in this release.** It stays on its `nip.io` host, so
+  plugin and connector URLs are what they were; moving the gateway to its own domain is a later
+  release.
+- Three migrations apply on the gateway's next start and need nothing of you:
+  `007_event_work_scan` creates one partial index over `zz.event`, `008_doc_words` creates
+  `zz.doc_words`, filled by the console as it reads, and `009_doc_link_supports_index` creates one
+  index over what a document link points at. All three are additive; a rollback leaves them in
+  place and the previous release ignores them.
+- The first Home or Record read after the upgrade fills `zz.doc_words` once. It takes a few seconds
+  on a record the size of this deployment's; every read after it is a lookup.
+
 ## [0.98.5] — 2026-10-24
 
 A decision the person delegated is recorded by the agent at `decide`, not asked again.

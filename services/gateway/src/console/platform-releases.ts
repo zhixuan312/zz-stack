@@ -121,9 +121,8 @@ export async function releaseTimes(db: pg.Pool): Promise<{ version: string; ms: 
  *  Written as two statements, each seeks its own week through `event_kind_ts` and `event_ts`: 52 ms
  *  for both. */
 async function countSides(db: pg.Pool, before: [number, number], after: [number, number]): Promise<{ before: Counts; after: Counts }> {
-  /** One window's counts, its bounds named by the two parameter numbers it is given. */
-  const counted = (side: "before" | "after", lo: number, hi: number): string =>
-    `select '${side}' as side,
+  const rows = (await db.query<{ side: "before" | "after"; calls: number; malformed: number; tool_failures: number; timed: number; p95_ms: number | null }>(
+    `select 'before' as side,
             count(*)::int as calls,
             (count(*) filter (where e.refusal_owner = 'ours'))::int as malformed,
             (count(*) filter (where e.refusal_owner = 'theirs'))::int as tool_failures,
@@ -131,9 +130,17 @@ async function countSides(db: pg.Pool, before: [number, number], after: [number,
             round(percentile_cont(0.95) within group (order by e.duration_ms) filter (where e.batched = false))::float8 as p95_ms
        from zz.event e
       where e.kind = 'tool_call' and e.origin = 'work'
-        and e.ts >= $${lo}::timestamptz and e.ts < $${hi}::timestamptz`;
-  const rows = (await db.query<{ side: "before" | "after"; calls: number; malformed: number; tool_failures: number; timed: number; p95_ms: number | null }>(
-    `${counted("before", 1, 2)} union all ${counted("after", 3, 4)}`,
+        and e.ts >= $1::timestamptz and e.ts < $2::timestamptz
+     union all
+     select 'after',
+            count(*)::int,
+            (count(*) filter (where e.refusal_owner = 'ours'))::int,
+            (count(*) filter (where e.refusal_owner = 'theirs'))::int,
+            (count(e.duration_ms) filter (where e.batched = false))::int,
+            round(percentile_cont(0.95) within group (order by e.duration_ms) filter (where e.batched = false))::float8
+       from zz.event e
+      where e.kind = 'tool_call' and e.origin = 'work'
+        and e.ts >= $3::timestamptz and e.ts < $4::timestamptz`,
     [before[0], before[1], after[0], after[1]].map((ms) => new Date(ms).toISOString()))).rows;
   const of = (side: "before" | "after"): Counts => {
     const r = rows.find((x) => x.side === side)!;

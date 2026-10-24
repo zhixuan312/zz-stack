@@ -36,7 +36,7 @@ import type { Express } from "express";
 import type pg from "pg";
 
 import { platformDb } from "../db.js";
-import { cached } from "./answer-cache.js";
+import { cachedWithHit, served } from "./answer-cache.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { malformedMeasure, readGrid } from "./platform-measures.js";
 import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
@@ -293,7 +293,7 @@ export function mountPlatformReleases(app: Express): void {
       res.status(400).json({ error: BAD_PAGE });
       return;
     }
-    const { rows, ...answer } = (await cached(`releases|${limit}|${offset}`,
+    const { rows, ...answer } = served(await cachedWithHit(`releases|${limit}|${offset}`,
       async () => (await releasesOf({ limit, offset, since: null }))!));
     const list: Releases = {
       ...answer,

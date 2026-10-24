@@ -383,21 +383,16 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const starts = { quarter: iso(Date.UTC(y, Math.floor((m - 1) / 3) * 3, 1) - 8 * HOUR), year: iso(Date.UTC(y, 0, 1) - 8 * HOUR), all: iso(await opened("old")) };
   for (const p of ["quarter", "year", "all"] as const) {
     const meta = R[p].meta as Obj;
-    // DELIBERATE: `observedAt`, `revision` and `cacheHit` describe the request, not the figures, so they are not
-    // pinned to a value here — they are asserted present and of the right shape, and the read contract itself is
-    // proven by checks/console-read-contract.ts, which is where a route that answers without them fails.
-    if (typeof meta.observedAt !== "string" || Number.isNaN(Date.parse(meta.observedAt))) {
-      c.fail(`${step} (${p})`, `meta.observedAt is ${JSON.stringify(meta.observedAt)}, not an instant`);
-    }
-    if (typeof meta.revision !== "string" && meta.revision !== null) {
-      c.fail(`${step} (${p})`, `meta.revision is ${JSON.stringify(meta.revision)}, neither a marker nor an explicit null`);
-    }
-    if (typeof meta.cacheHit !== "boolean") c.fail(`${step} (${p})`, `meta.cacheHit is ${JSON.stringify(meta.cacheHit)}, not a boolean`);
+    // DELIBERATE: this check calls the route's handler through a fake app, so no middleware runs and the answer
+    // carries none of the envelope's observedAt, revision, builtAt or sourceRevision. `cacheHit` it does carry: the
+    // route states it itself through `served()`, and nothing listened in this process, so the answer was computed.
+    // The envelope itself is proven where it is mounted: checks/console-read-envelope.ts for every route, and
+    // checks/console-read-contract.ts for Record over HTTP.
     same(`${step} (${p})`, meta, {
       asOf: meta.asOf, timezone: TIMEZONE, period: { from: starts[p], to: meta.asOf }, scope: "caller-in-active-team",
       population: `${c.team}'s team history, from before the caller joined on ${dateOf(Date.now())}, and the approvals signed in the caller's name there`,
       coverageFrom: starts.all,
-      observedAt: meta.observedAt, revision: meta.revision, cacheHit: meta.cacheHit,
+      cacheHit: false,
     });
   }
   c.pass(`${step}: ${starts.quarter}, ${starts.year} and ${starts.all}, each labelled team history`);

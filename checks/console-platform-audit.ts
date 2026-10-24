@@ -143,7 +143,7 @@ async function administrationCases(seeded: SeededAudit, as: (q: string) => Promi
   }
   const meta = a.body.meta as Obj;
   const from = iso(seeded.first);
-  if (keys(meta) !== "asOf,coverageFrom,period,population,scope,timezone" || meta.scope !== "platform-admin"
+  if (keys(meta) !== "asOf,builtAt,cacheHit,coverageFrom,observedAt,period,population,revision,scope,sourceRevision,timezone" || meta.scope !== "platform-admin"
       || meta.timezone !== TIMEZONE || meta.population !== ADMINISTRATION_POPULATION || meta.coverageFrom !== from
       || !isObj(meta.period) || meta.period.from !== from || meta.period.to !== meta.asOf) {
     fail(step, `meta reads ${JSON.stringify(meta)}`);
@@ -356,9 +356,15 @@ async function run(db: pg.Client, url: string): Promise<void> {
   const { identityMiddleware } = (await load("services/gateway/dist/identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountPlatformAudit } = (await load("services/gateway/dist/console/platform-audit.js")) as
     { mountPlatformAudit: (app: Express) => void };
+  // The envelope, as mountConsole mounts it in front of every read: this answer is stamped like every other, so
+  // its meta carries the three request-scoped fields beside builtAt and sourceRevision that describe no derived
+  // data (checks/console-read-envelope.ts proves the stamping itself).
+  const { mountReadEnvelope } = (await load("services/gateway/dist/console/read-envelope.js")) as
+    { mountReadEnvelope: (app: Express) => void };
   const app = express();
   // COUPLED: services/gateway/src/server.ts — the identity gate before every console route.
   app.use(identityMiddleware());
+  mountReadEnvelope(app);
   mountPlatformAudit(app);
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));

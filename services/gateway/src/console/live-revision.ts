@@ -23,6 +23,7 @@ import type { Express, Request } from "express";
 
 import { isSuper, type Identity } from "../identity.js";
 import { resolveScope } from "../scope.js";
+import { collectionsFor } from "./read-envelope.js";
 import { mayReadConsole } from "./shared.js";
 
 /** The collections a tab may follow: the console's reads, by their first path segment. */
@@ -145,15 +146,35 @@ export function heardBy(id: Identity, req: Request): { teams: string[] | null } 
  * composite, and it must name the collections it really reads rather than the route's own name, which is not a
  * collection any tab follows.
  */
-export function revisionAcross(names: readonly string[], teams: string[] | null): string | null {
+function revisionAcross(names: readonly string[], teams: string[] | null): string | null {
   if (boot === null) return null;
   return names.map((name) => `${name}:${heardRevision(name, teams)}`).join(",");
+}
+
+/**
+ * The composite marker the answer of the route `path` names carries in its `meta`, or null when the route reads no
+ * collection a tab follows.
+ *
+ * COUPLED: `read-envelope.ts` holds the route table and imports `revisionAcross` and `heardBy` from here, so the two
+ * modules import each other. Both edges are only followed while a request is being served — this function reads the
+ * table and that middleware reads the two below — never while either module is evaluated, which is what keeps the
+ * cycle from being an initialisation order problem.
+ */
+export function revisionFor(path: string, id: Identity, req: Request): string | null {
+  const names = collectionsFor(path);
+  if (names === null) return null;
+  const heard = heardBy(id, req);
+  return "teams" in heard ? revisionAcross(names, heard.teams) : null;
 }
 
 /**
  * Every console read answered with its collection's revision: mounted first in `mountConsole`, before any read, so
  * the revision is the one the read began at. A path whose first segment names no collection a tab may follow (the
  * stream itself, the search, the platform's reads) carries none, and neither does a caller the console does not admit.
+ *
+ * DELIBERATE: the header carries ONE collection's marker and keeps doing so. The envelope beside it carries the
+ * composite of what an answer reads, and the two are two views of one caller's counts, not one value: the stream's
+ * `since` takes back exactly the pair this header spells, so no reader may parse the envelope with its format.
  */
 export function mountConsoleRevision(app: Express): void {
   app.use("/api/console", (req, res, next) => {

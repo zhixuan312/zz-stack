@@ -93,9 +93,10 @@ let fail: Core["fail"] = (step, detail) => { throw new Error(`${step}: ${detail}
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
 /** The fields that describe the REQUEST rather than the figures: `observedAt` is when this request obtained its
- *  answer, `cacheHit` is what the cache decided for it, and `revision` is the marker it could hear. A route and the
- *  function it reuses legitimately differ in all three and still say the same thing. */
-const REQUEST_SCOPED = ["observedAt", "cacheHit", "revision"] as const;
+ *  answer, `cacheHit` is what the cache decided for it, `revision` is the marker it could hear, and `builtAt` and
+ *  `sourceRevision` describe persisted derived data this route computes from rows. A route and the function it
+ *  reuses legitimately differ in all five and still say the same thing. */
+const REQUEST_SCOPED = ["observedAt", "cacheHit", "revision", "builtAt", "sourceRevision"] as const;
 
 /** An answer with every instant masked and the request-scoped fields removed: what is left is what it says. */
 const masked = (v: unknown): string => {

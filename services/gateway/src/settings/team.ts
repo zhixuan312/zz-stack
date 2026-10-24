@@ -24,7 +24,8 @@ export function mountTeamSettings(app: Express): void {
 
   /** Members of a team the caller administers. Read-only and still gated by `teamAuthority`:
    *  a route that answered a GET for anyone while refusing every write would hand the roster
-   *  to someone the UI never shows it to. */
+   *  to someone the UI never shows it to. Answered as `{ rows }`, not a bare array, so the envelope
+   *  middleware states the marker on it (console/read-envelope.ts). */
   app.get("/api/console/settings/team/members", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
@@ -36,12 +37,12 @@ export function mountTeamSettings(app: Express): void {
         res.status(403).json({ error: `team admin or superadmin required for ${team}` });
         return;
       }
-      const rows = await platformDb().query<{ email: string; role: string }>(
+      const r = await platformDb().query<{ email: string; role: string }>(
         `select p.email, m.role from zz.membership m
            join zz.principal p on p.id = m.principal_id
            join zz.team t on t.id = m.team_id
           where t.slug = $1 order by m.role, p.email`, [team]);
-      res.json(redact(rows.rows));
+      res.json(redact({ rows: r.rows }));
     })().catch((err: unknown) => {
       console.error("settings/team/members (list) failed:", err);
       if (!res.headersSent) res.status(500).json({ error: "could not list team members" });

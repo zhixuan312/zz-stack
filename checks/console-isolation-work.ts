@@ -292,7 +292,8 @@ async function own(c: Context, who: string, cookie: string, mine: string[], dims
     same(`work/query's approvals by ${by}, drilled`, rows);
   }
   const listed = await send(c.base, cookie, { method: "get", url: "/api/console/settings/me/tokens", body: null });
-  const held = listed.status === 200 ? (JSON.parse(listed.text) as { id: string; label: string }[]) : [];
+  // The route answers `{ rows }`, not a bare array, so that the read envelope can stamp it (Task I-10).
+  const held = listed.status === 200 ? (JSON.parse(listed.text) as { rows: { id: string; label: string }[] }).rows : [];
   if (listed.status !== 200) bad.push(`settings/me/tokens answered ${listed.status}`);
   for (const t of tokens.mine) if (!held.some((h) => h.id === t.id && h.label === t.label)) bad.push(`settings/me/tokens left out their own ${t.label}`);
   for (const t of tokens.theirs) if (listed.text.includes(t.id) || listed.text.includes(t.label)) bad.push(`settings/me/tokens held ${t.label}`);
@@ -428,10 +429,24 @@ async function detailRounds(c: Context): Promise<void> {
       const req: Sent = { method: "get", url: `${url}${q}`, body: null };
       const a = await send(c.base, cited.cookie, req);
       const g = await send(c.base, cited.cookie, { ...req, url: req.url.replace(s.one.initiative, nobody) });
-      const mask = (x: Answer) => `${x.status} ${x.text.replaceAll(s.one.initiative, "[initiative]").replaceAll(nobody, "[initiative]")}`;
+      // The five fields `read-envelope.ts` stamps describe the request that asked, so two requests legitimately differ
+      // in them however identical the rest is: an existence oracle is compared on what the answers SAY, not on when
+      // each was served. Their values are proven by checks/console-read-envelope.ts and console-read-contract.ts.
+      const mask = (x: Answer) => `${x.status} ${x.text.replaceAll(s.one.initiative, "[initiative]").replaceAll(nobody, "[initiative]")
+        .replace(/"(?:observedAt|revision|cacheHit|builtAt|sourceRevision)":(?:"(?:[^"\\]|\\.)*"|true|false|null)/g, "")
+        .replace(/"\d{4}-\d{2}-\d{2}T[\d:.]+Z"/g, "[instant]")}`;
       if (a.status !== 404) bad.push(`the second team's superadmin's ${req.url} answered ${a.status}, not 404: ${a.text.slice(0, 200)}`);
       for (const word of firstWords) if (a.text.includes(word)) bad.push(`the second team's superadmin's ${req.url} holds "${word}"`);
-      if (mask(a) !== mask(g)) bad.push(`an existence oracle: ${req.url} answered ${mask(a).slice(0, 200)}; one nobody has, ${mask(g).slice(0, 200)}`);
+      const shown = mask(a), nobodyShown = mask(g);
+      if (shown !== nobodyShown) {
+        // Where the two answers part, rather than the head of each: two long JSON bodies that differ in one field read
+        // identically in their first two hundred characters, which is how this reported nothing for three gate runs.
+        let at = 0;
+        while (at < shown.length && shown[at] === nobodyShown[at]) at++;
+        // Deliberately short: the gate reports the first 400 characters of a failed check's reason, and a head of two
+        // long JSON bodies spends them before reaching the one place they part.
+        bad.push(`existence oracle at ${at} (${a.status}/${g.status}): …${shown.slice(at, at + 60)}… says one nobody has …${nobodyShown.slice(at, at + 60)}…`);
+      }
     }
   }
   // The first team's superadmin about the second team's: its words are sentinels.

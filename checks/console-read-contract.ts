@@ -80,6 +80,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     COLLECTIONS: readonly string[];
   };
   const { mountRecord } = (await load("console/record.js")) as { mountRecord: (app: Express) => void };
+  const envelope = (await load("console/read-envelope.js")) as { mountReadEnvelope: (app: Express) => void };
   const changes = (await load("console/live.js")) as { mountConsoleLive: (app: Express) => void };
   const version = (await load("console/live-revision.js")) as { dataVersion: () => string | null };
   await dbModule.initPlatformDb();
@@ -89,6 +90,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   const app = express();
   app.use(identityMiddleware());
   live.mountConsoleRevision(app);
+  // The envelope is what stamps observedAt, revision and cacheHit now: the route composes none of them.
+  envelope.mountReadEnvelope(app);
   mountRecord(app);
   const servers: Server[] = [];
   const server = app.listen(0, "127.0.0.1");

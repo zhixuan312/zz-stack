@@ -313,7 +313,11 @@ function ghostOf(r: Sent, pairs: [string, string, string][]): Sent | null {
 /** An answer with the request's own identifiers, real or phantom, and every instant masked: what is left is
  *  what the answer says about whether the thing named exists. */
 function masked(a: Answer, pairs: [string, string, string][]): string {
-  const text = pairs.reduce((t, [real, ghost, label]) => t.replaceAll(real, label).replaceAll(ghost, label), a.text);
+  // The five fields `read-envelope.ts` stamps describe the request that asked: two requests legitimately differ in
+  // them — `revision` moves when a hint arrives between the two — so an existence oracle is compared on what the
+  // answers SAY. Their values are proven by checks/console-read-envelope.ts and console-read-contract.ts.
+  const text = pairs.reduce((t, [real, ghost, label]) => t.replaceAll(real, label).replaceAll(ghost, label), a.text)
+    .replace(/"(?:observedAt|revision|cacheHit|builtAt|sourceRevision)":(?:"(?:[^"\\]|\\.)*"|true|false|null)/g, "");
   return `${a.status} ${text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>")}`;
 }
 

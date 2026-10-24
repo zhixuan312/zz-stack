@@ -26,7 +26,8 @@
  * of its answer. Narrowed to a team, a rate keeps no sample minimum: its counts stand beside it.
  *
  * The searches by day, which Status and Knowledge health both reduce, are counted here too, so the
- * Platform prepared query (platform-query-measures.ts) reads the statement the pages it equals read.
+ * Platform prepared query (platform-query-measures.ts) reads the statement the pages it equals read,
+ * and a team's searches with results (work-figures.ts) is the same statement narrowed to its rows.
  */
 import type pg from "pg";
 
@@ -241,7 +242,12 @@ type SearchDay = {
   searches: number; results: number; last_ms: number;
 };
 
-/** Searches in `[from, to)`, `from` null for the whole record, as `SearchDay` rows. */
+/** Searches in `[from, to)`, `from` null for the whole record, as `SearchDay` rows.
+ *
+ *  DELIBERATE: no team predicate. A team's figure is this statement's rows filtered to its own (work-figures.ts),
+ *  and a `(t.slug is null or t.slug = $n)` predicate would make a missing team mean every team — the shape
+ *  check:sql refuses in this directory. The rows it leaves in are bounded by the caller's own window, never by
+ *  the whole record: a team's figure reads one window's searches across every team and keeps its own. */
 export async function searchDays(db: pg.Pool, to: string, from: string | null): Promise<SearchDay[]> {
   return (await db.query<SearchDay>(
     `select to_char(e.ts at time zone $1::text, 'YYYY-MM-DD') as day,

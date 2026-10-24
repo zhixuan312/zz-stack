@@ -23,6 +23,7 @@
  * COUPLED: `live-revision.ts`, which counts the changes, and every route that wraps a read in `cached` —
  * each says in its own comment what it means to be a few seconds behind.
  */
+import type { ReadMeta } from "./figures.js";
 import { dataVersion } from "./live-revision.js";
 
 /** How long an answer may be served, whatever the listener heard. A backstop, not the policy: the version
@@ -83,6 +84,18 @@ export function cachedWithHit<T>(key: string, read: () => Promise<T>): Promise<S
 }
 
 /**
+ * The answer a route sends, with the cache's own statement of whether this caller was served a kept one
+ * written into its `meta` — where `read-envelope.ts` finds it and leaves it alone.
+ *
+ * A FRESH object every time, never the one the cache keeps: the kept answer is shared by every caller inside
+ * one data version, so writing into it would show one caller's request on another's answer. Nothing else in
+ * the `meta` moves, and `asOf` stays the instant the computation ran.
+ */
+export function served<T extends { meta: ReadMeta }>({ value, hit }: Served<T>): T {
+  return { ...value, meta: { ...value.meta, cacheHit: hit } };
+}
+
+/**
  * The same answer, without the hit — the shape every route already awaits.
  *
  * DELIBERATE: kept exactly as it was rather than replaced. Changing what this resolves to would change
@@ -90,5 +103,5 @@ export function cachedWithHit<T>(key: string, read: () => Promise<T>): Promise<S
  * this stays for the ones that have not been yet.
  */
 export function cached<T>(key: string, read: () => Promise<T>): Promise<T> {
-  return cachedWithHit(key, read).then((served) => served.value);
+  return cachedWithHit(key, read).then((kept) => kept.value);
 }

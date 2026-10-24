@@ -50,13 +50,14 @@ export async function myClientSetup(email: string): Promise<{ client: string; co
 
 export function mountMySettings(app: Express, deps: SettingsDeps): void {
   /** The caller's own access tokens — masked at the query level (only a hash is ever
-   *  stored), redacted here on top of that the same as every other row in this file. */
+   *  stored), redacted here on top of that the same as every other row in this file. Answered as `{ rows }`,
+   *  not a bare array, so the envelope middleware states the marker on it (console/read-envelope.ts). */
   app.get("/api/console/settings/me/tokens", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      res.json(redact(await deps.myAccessTokensFor(id.email)));
+      res.json(redact({ rows: await deps.myAccessTokensFor(id.email) }));
     })().catch((err: unknown) => {
       console.error("settings/me/tokens (list) failed:", err);
       if (!res.headersSent) res.status(500).json({ error: "could not list tokens" });

@@ -41,7 +41,7 @@ import type { Mcp } from "@zz/mcp-client";
 
 import { coreFor } from "../core-as-caller.js";
 import { platformDb } from "../db.js";
-import { cached } from "./answer-cache.js";
+import { cachedWithHit, served } from "./answer-cache.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { teamPendingRevisions } from "./pending.js";
 import { BAD_PAGE, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
@@ -296,7 +296,7 @@ export function mountInitiativeList(app: Express): void {
     // closures and one relayed `initiative_status` per ten rows — and the list is what a person
     // returns to between destinations without anything having happened since.
     const email = req.zzIdentity!.email;
-    res.json(await cached(`initiatives|${activeTeam}|${email}|${JSON.stringify(params)}`, () =>
-      initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req))));
+    res.json(served(await cachedWithHit(`initiatives|${activeTeam}|${email}|${JSON.stringify(params)}`, () =>
+      initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)))));
   }));
 }

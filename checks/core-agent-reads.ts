@@ -95,8 +95,8 @@ const pass = (line: string): void => console.log(`  ok  ${line}`);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 600);
 /** The fields that describe the REQUEST rather than the figures. A console route fills them; the agent read
  *  that answers from the same function has no request of its own to describe, so the two legitimately differ
- *  in exactly these three and in nothing else. */
-const REQUEST_SCOPED = ["observedAt", "cacheHit", "revision"];
+ *  in exactly these five and in nothing else. */
+const REQUEST_SCOPED = ["observedAt", "cacheHit", "revision", "builtAt", "sourceRevision"];
 
 /** An answer with every instant masked and the request-scoped fields removed: what is left is what it says. */
 const masked = (v: unknown): string => {

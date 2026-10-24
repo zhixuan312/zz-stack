@@ -9,6 +9,9 @@
  * that period's own observations, never from finer periods. The team's knowledge shelf, the
  * _knowledge initiative, is never one of its initiatives.
  *
+ * The searches are not counted here: they come from searchDays, the one statement Status, Knowledge
+ * health and the Platform prepared query reduce (platform-measures.ts), narrowed to the team.
+ *
  * Each function throws when its statement fails; the read decides what a failure makes of its part.
  *
  * DELIBERATE: no backticks in the comments of this file. check:sql reads it as text, and a backtick
@@ -20,7 +23,9 @@
 import { OUTCOMES } from "@zz/contracts";
 import { platformDb } from "../db.js";
 import type { Figure, PeriodFigure, Window } from "./figures.js";
+import { searchDays } from "./platform-measures.js";
 import { ZZ_TZ } from "./shared.js";
+import { localDay } from "./work-query-buckets.js";
 
 export type Grain = "week" | "month" | "quarter";
 /** A window as a caller names it: two instants, the first in it and the first after it. */
@@ -191,26 +196,29 @@ export async function openedRows(team: string, window: Span, asOf: string): Prom
 
 /** Searches with results by period: of the team's completed searches, zz-core's work knowledge.search
  *  rows carrying detail.returned, those whose result set was not empty, as a share of 100. A period
- *  with no completed search has no data. */
+ *  with no completed search has no data.
+ *
+ *  The rows are searchDays', the one statement every caller of this count reduces, narrowed to the
+ *  team: a row whose team did not resolve is null and belongs to no team's figure, as the inner join
+ *  left it out before, and stays in Status's platform-wide one. */
 export async function searchesWithResults(team: string, window: Span, asOf: string, grain: Grain): Promise<PeriodFigure[]> {
   const [from, end] = boundsOf(window, asOf);
-  const [periods, { rows }] = await Promise.all([
+  const [periods, days] = await Promise.all([
     periodsOf(window, asOf, grain),
-    platformDb().query<{ at_ms: number; found: boolean }>(
-      `select (extract(epoch from e.ts) * 1000)::float8 as at_ms,
-              (jsonb_typeof(e.detail -> 'returned') = 'array' and e.detail -> 'returned' <> '[]'::jsonb) as found
-         from zz.event e
-         join zz.team t on t.id = e.team_id
-        where t.slug = $1 and e.kind = 'knowledge.search' and e.origin = 'work' and e.detail ? 'returned'
-          and e.ts >= $2::timestamptz and e.ts < $3::timestamptz`, [team, from, end]),
+    searchDays(platformDb(), end, from),
   ]);
+  const mine = days.filter((d) => d.team === team);
   return periods.map((p) => {
-    const here = rows.filter((r) => inside(r.at_ms, p));
-    const found = here.filter((r) => r.found).length;
+    // A local day compared with a period as Home compares one with a week, so a search counts in the
+    // period its own local date falls in.
+    const first = localDay(p.fromMs), after = localDay(p.toMs);
+    const here = mine.filter((d) => d.day >= first && d.day < after);
+    const denominator = here.reduce((n, d) => n + d.searches, 0);
+    const found = here.reduce((n, d) => n + (d.found ? d.searches : 0), 0);
     return {
       window: p.window,
-      figure: here.length ? { value: (100 * found) / here.length, why: null } : { value: null, why: "no_data" },
-      numerator: found, denominator: here.length,
+      figure: denominator ? { value: (100 * found) / denominator, why: null } : { value: null, why: "no_data" },
+      numerator: found, denominator,
     };
   });
 }

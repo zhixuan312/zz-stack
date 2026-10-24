@@ -34,10 +34,12 @@ export type ReadMeta = {
    * `sourceRevision` describe persisted derived data and are null for an answer computed from rows;
    * `cacheHit` is the cache's own decision, which no caller may infer by comparing the first two.
    *
-   * TRANSITIONAL: optional here so the eighteen routes that build a `meta` keep compiling while they
-   * are migrated one at a time. A route that answers without them is not yet compliant; the moment the
-   * last one fills them they become required and the `?` goes. Nothing may read them as absent-and-fine:
-   * a caller that needs one handles `undefined` as "this route has not been migrated", never as a value. */
+   * TRANSITIONAL: optional here, and Phase 2 is what makes them required. It cannot be this phase.
+   * `read-envelope.ts` stamps them onto an answer AFTER the route has built it, and a middleware cannot
+   * make an object literal satisfy a required field: the routes that build a `meta` without the five
+   * would stop compiling before anything filled them, and every fixture in the console's own repository
+   * would stop typechecking with them. Until Phase 2 tightens both declarations together, a caller that
+   * needs one handles `undefined` as "this route has not been migrated", never as a value. */
   observedAt?: string;
   revision?: string | null;
   builtAt?: string | null;

@@ -9,10 +9,12 @@
  *   measures  the eight measures, in the spec's order, each counted week by week in
  *             console/platform-measures.ts and named by `summarise`
  *   doors     each door's real-work tool calls by local day, from where the record begins (at most
- *             365 days) through today, which is not complete; its totals, its run of days under 1%
+ *             365 days) through today, which is not complete; each day's tool-failure rate, the one
+ *             division a day is ever put through, and the state read from that same number so a
+ *             day's colour and its printed rate cannot disagree; its totals, its run of days under 1%
  *             tool failures and the finding said of them (`runOf`, `runFinding`). A fault day is a
- *             day's recorded tool failures at 1% of its calls or more, red from 5%, and is never a
- *             statement about whether the door could be reached; a malformed call never marks one
+ *             day's rate at 1% or more, red from 5%, and is never a statement about whether the door
+ *             could be reached; a malformed call never marks one
  *   records   over every real-work call by local day, through the latest complete day: the days in a
  *             row with a call, the days under 1% tool failures, and the longest run of those
  *   running   the gateway's own version and what `zz.release` recorded of it and of the release
@@ -56,7 +58,7 @@ import {
   sessionsMeasure, unavailableMeasure, type Grid, type StatusMeasure,
 } from "./platform-measures.js";
 import { evaluationWaiting, needsOf, type DoorToday, type Needs } from "./platform-needs.js";
-import { cached } from "./answer-cache.js";
+import { cachedWithHit, served } from "./answer-cache.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
 /** What the measures count, as `meta.population` says it. */
@@ -81,7 +83,7 @@ type Own = {
 type DayState = "clear" | "marked" | "red" | "none" | "unavailable";
 type DoorObservation = {
   door: (typeof DOORS)[number];
-  days: { date: string; calls: number | null; toolFailures: number | null; state: DayState; complete: boolean }[];
+  days: { date: string; calls: number | null; toolFailures: number | null; rate: number | null; state: DayState; complete: boolean }[];
   totals: { calls: number; toolFailures: number; others: number; faultDays: number; lastFaultDay: string | null };
   run: { days: number; atLeast: boolean; through: string } | null;
   finding: Finding;
@@ -137,11 +139,19 @@ async function readDays(db: pg.Pool, grid: Grid): Promise<DayRow[]> {
       group by 1, 2`, [ZZ_TZ, new Date(grid.asOfMs).toISOString()])).rows;
 }
 
-/** A day's state from its calls and tool failures: no calls is `none`, never a clear day. */
-function stateOf(calls: number, failures: number): DayState {
+/** A day's tool-failure rate: its tool failures as a percentage of its calls, null for a day with no calls and for
+ *  one whose counts could not be read. The one division a door's day is ever put through, so the number a reader is
+ *  drawn and the colour the day is drawn in are the same figure. */
+const rateOf = (calls: number | null, toolFailures: number | null): number | null =>
+  (calls === null || calls === 0 || toolFailures === null ? null : (100 * toolFailures) / calls);
+
+/** A day's state from its calls and that rate: no calls is `none`, never a clear day; a day whose counts could not
+ *  be read is `unavailable`, never a rate of zero; a fault day is 1% or more, red from 5%. */
+function stateOf(calls: number | null, rate: number | null): DayState {
   if (calls === 0) return "none";
-  if (failures * 100 >= calls * 5) return "red";
-  return failures * 100 >= calls ? "marked" : "clear";
+  if (calls === null || rate === null) return "unavailable";
+  if (rate >= 5) return "red";
+  return rate >= 1 ? "marked" : "clear";
 }
 
 /** Every local day from `first` through `last`. */
@@ -161,7 +171,8 @@ function doorsOf(rows: DayRow[], grid: Grid): { doors: DoorObservation[]; today:
     const days = dates.map((date) => {
       const r = at.get(date);
       const calls = r?.calls ?? 0, toolFailures = r?.failures ?? 0;
-      return { date, calls, toolFailures, state: stateOf(calls, toolFailures), complete: date < today };
+      const rate = rateOf(calls, toolFailures);
+      return { date, calls, toolFailures, rate, state: stateOf(calls, rate), complete: date < today };
     });
     const faults = days.filter((d) => d.complete && (d.state === "marked" || d.state === "red"));
     const counts = days.map((d) => ({ ...d, available: true }));
@@ -327,6 +338,7 @@ export function mountPlatformStatus(app: Express): void {
     // console that nothing happened in between.
     // The caller is part of the key: a member reads their own team's figures, so two people in
     // different teams are two answers rather than one that depends on who asked first.
-    res.json(await cached(`status|${caller.superadmin}|${caller.activeTeam}`, () => statusOf(caller, null)));
+    // `served` states the hit in the `meta` this route sends, where `read-envelope.ts` leaves it alone.
+    res.json(served(await cachedWithHit(`status|${caller.superadmin}|${caller.activeTeam}`, () => statusOf(caller, null))));
   }));
 }

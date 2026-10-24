@@ -58,7 +58,7 @@ import { lessonImports } from "./imports.js";
 import { initiativeList } from "./initiative-list.js";
 import { teamPendingRevisions } from "./pending.js";
 import { observedRuns } from "./runs-observed.js";
-import { cached } from "./answer-cache.js";
+import { cachedWithHit, served } from "./answer-cache.js";
 import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
   closuresByWeek, grainFor, lastWholeWeek, medianHoursToClose, periodsOf, searchesWithResults, type ClosureWeek, type Period,
@@ -308,7 +308,7 @@ export function mountHome(app: Express): void {
     // Home is the whole record reduced to a week — two full list reads plus the events behind them — and a
     // person moving between destinations asks for it again without anything having happened since.
     const email = req.zzIdentity!.email;
-    res.json(await cached(`home|${activeTeam}|${email}`, () =>
-      homeOf(activeTeam, email, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req))));
+    res.json(served(await cachedWithHit(`home|${activeTeam}|${email}`, () =>
+      homeOf(activeTeam, email, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)))));
   }));
 }

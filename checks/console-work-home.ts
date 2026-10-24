@@ -357,7 +357,11 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   step = "the meta and the title";
   const opened = (await c.sql.query<{ ms: number }>("select (extract(epoch from opened_at) * 1000)::float8 as ms from zz.initiative where slug = $1", [slug("quiet-one")])).rows[0].ms;
   same(step, home.meta, { asOf, timezone: TIMEZONE, period: { from: iso(w0 - 5 * WEEK), to: asOf }, scope: "caller-in-active-team",
-                          population: `${c.team}'s work last week, and the approvals signed in the caller's name there`, coverageFrom: iso(opened) });
+                          population: `${c.team}'s work last week, and the approvals signed in the caller's name there`, coverageFrom: iso(opened),
+                          // DELIBERATE: this check calls the handler through a fake app, so the envelope's observedAt,
+                          // revision, builtAt and sourceRevision are absent here; `cacheHit` is the cache's own statement
+                          // through `served()`, and nothing listens in this process, so the answer was computed.
+                          cacheHit: false });
   same(step, home.title, { sentence: "2 pieces of work closed last week, the most in a week yet", rule: 3 });
   c.pass(`${step}: the last whole week's two closures are the most in a week yet`);
 

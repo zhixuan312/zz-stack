@@ -272,7 +272,7 @@ Moving either hostname, in this order, once its DNS answers:
 3. moving the console: `./deploy/issue-enrolment.sh <email>` on the host for each person. A
    passkey is bound to the old hostname, so everybody re-enrols, and nobody can sign in to mint
    the links until the first one is used
-4. moving the gateway: change `GATEWAY` in `scripts/build-marketplace.ts` and release. Every
+4. moving the gateway: change the gateway address in `scripts/build-marketplace.ts` and release. Every
    client re-pulls its plugins, and every OAuth connector (ChatGPT, claude.ai) is removed and
    added again at the new address, because the OAuth issuer is the gateway's own URL
 

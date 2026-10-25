@@ -33,6 +33,83 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.100.0] — 2026-10-25
+
+Every console answer now says when it was served, what had moved when it was, and whether the
+cache kept it — and the data behind the console moved to match: a week-grain read model for the
+figures that had been scanning every event ever recorded, one answer cache keyed on what an
+answer actually reads, and the document body kept in one place instead of two.
+
+### zz-stack 0.100.0
+
+- **Every console read answer describes itself.** `meta` carries `revision` — the scope-filtered
+  change marker the caller could hear, an explicit `null` while the live listener is down —
+  `observedAt`, the instant this request obtained its answer, and `cacheHit`, stated by the cache
+  rather than inferred by comparing the two instants. A derived answer adds `builtAt` and
+  `sourceRevision`. The five fields a request decides (`observedAt`, `cacheHit` and the three the
+  scope stamps) are now **required** in the console's own type, so an answer missing one fails
+  typecheck instead of rendering blank.
+- **The answer cache is kept by what an answer reads.** One entry per scope, shared by two members
+  of one team and never between a superadmin and a member; a write to a collection the answer does
+  not read leaves it kept, another team's write strands a public platform aggregate, and an answer
+  whose value turns with the clock alone is not served past the instant it turns.
+- **`zz.event_work_week`, a week-grain read model (migration 011).** Keyed
+  `(team_slug, week_start, tool_key, refusal_owner)`, it carries the calls, refusals, failures and
+  the durations the medians are taken from, so a median is exact rather than estimated. Usage's
+  calls-by-week-and-team, its tools list, Record's and Home's week figures read it; the refusals
+  put-right reduction stays a raw query, because the model deliberately carries no column that
+  would let it answer. `scripts/rebuild-event-work-week.ts` rebuilds it from `zz.event` and
+  `--check` reports drift without writing.
+- **Four filters indexed, two dead indexes retired (migration 012).** `zz.doc_revision.presented_at`,
+  `zz.doc.path`, `zz.eval_run.scored_at` and `zz.model_call.ts` each get an index both
+  `schema-target/` and the migration declare, chosen by the plan of the statement that needs it.
+  `model_call_failed_ts` and `model_call_purpose_ts` are dropped.
+- **`zz.doc_revision` declares its retention (migration 013).** No revision is purged this round,
+  and the schema says why: two foreign keys and a citation table make a sweep more than a delete.
+  The trigger that reopens the decision is written down.
+- **`zz.event` vacuums sooner (migration 014).** `autovacuum_vacuum_scale_factor = 0.002` and
+  `autovacuum_analyze_scale_factor = 0.02` on the table, where the default 0.2 waits for 11,350
+  dead tuples and these wait for 163. On a 40,000-row load the index-only scan's heap fetches go
+  from 8.4% to 0.0% once the vacuum they schedule has run.
+- **`zz.doc` stops storing a second copy of the body (migration 015).** The column and its trigram
+  index are gone; the index is recreated on `zz.doc_revision.body` as `doc_revision_body_trgm`, and
+  the substring and Han search lane now matches against the revision table, which is the only order
+  in which the planner can choose that index. `zz.doc.body_tsv` stays, as the full-text half.
+- **Migration 015 drops a column**, so nothing in a release before it can read a 0.100.0 database.
+- `ARCHITECTURE.md` gains the seam decision — which read models exist and why, the rule that a
+  page's statement cost is bounded by what the page shows, and every class that stays a raw query
+  with its cost at one and ten times today's rows — plus the metric register with a range, a grain
+  and a budget per metric.
+
+### zz-stack-dashboard 0.29.0
+
+- **Every page says which instant it is looking at.** A page whose answer came from the cache says
+  so, and states both instants when they differ, instead of presenting the computation instant as
+  the observation.
+- **The console's answer types declare the new fields**, and its typecheck is what holds them:
+  `tests/meta-required.test-d.ts` fails if a `meta` missing one of the five ever compiles.
+- **Settings lists read the new shape.** The caller's teams, their tokens and the client setup
+  answer under `rows`, and every settings read carries the envelope.
+- **A block of setup commands that scrolls now says so**, with the edge fading where there is more
+  — the block scrolls on a phone at all only because each command is one line, as a terminal takes it.
+
+### Upgrade notes
+
+- **Migrations 011–015 apply on the gateway's next start, to the live database.** 015 drops
+  `zz.doc.body` and its index: a restore is the only way back, so take the backup the deploy takes
+  seriously. Nothing else reads either.
+- **Update the console with the platform.** The two are one release: the console's types require
+  the five request-scoped fields, and a console older than 0.29.0 will typecheck against a payload
+  the gateway no longer sends.
+- **Search latency is worth re-measuring after the restart, not before.** The trigram index this
+  release creates does not exist until migration 015 runs, and until it does the substring lane
+  seq-scans a TOAST-heavy heap: measured read-only on the deployment at 10.4 s, against 3.0 s on
+  the old arm. On a seeded database where the index exists the moved arm is 0.23 ms against
+  59.5 ms. Take the median of five, interleaved with the old shape, once the index is there.
+- **No MCP tool changed its arguments**, and no skill's text changed. `claude plugin marketplace
+  update zz-stack` picks up the new plugin versions; nothing must be reconfigured.
+- The autovacuum settings take effect at autovacuum's next pass; no manual `VACUUM` is needed.
+
 ## [0.99.0] — 2026-10-24
 
 The platform has its own domain. The console moved to `https://zz-stack.com` in 0.98.6; the

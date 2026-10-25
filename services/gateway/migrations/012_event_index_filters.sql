@@ -61,7 +61,8 @@
 --   `(purpose, ts)` btree can only reach a `ts` range by reading every entry in the index. On 200,000 rows
 --   and a two-day window the planner takes `model_call_ts` at 55 buffers; forced to this index
 --   (`enable_seqscan = off`) it costs 1,637 buffers at a plan cost of 8,609 against the sequential scan's
---   5,564. `modelDays` is the only reader of `zz.model_call` in either repository.
+--   5,564. Two statements read the table: `modelDays`, which filters it by time, and `modelsCalled`,
+--   which reads every row of it for a distinct model. Neither index dropped here serves either of them.
 --
 -- DELIBERATE: the two `DROP INDEX` lines are not `CONCURRENTLY`, because the runner applies each migration in
 -- one transaction and `CONCURRENTLY` cannot run inside one. They take ACCESS EXCLUSIVE on `zz.model_call` for

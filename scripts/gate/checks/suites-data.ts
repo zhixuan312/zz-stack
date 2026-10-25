@@ -39,7 +39,7 @@ check("the seam between a page and the tables is decided, and a view and a mater
 check("four recurring filters are served by an index both sides declare and a plan chooses, and zz.model_call keeps only the ts index a plan reaches",
       runsCheck("answer-indexes.ts"));
 // Phase 3's retention declaration. Rule 9's general enforcement is `comment-completeness.ts`; this is
-// the four things that are `zz.doc_revision`'s alone — the two constraints that refuse a referenced
+// the five things that are `zz.doc_revision`'s alone — the two constraints that refuse a referenced
 // revision's deletion, the `doc_link` cascade that does not, the document cascade that does, that no
 // sweep runs, and what reopens it — held against the target, the migrated catalog and the tree.
 check("an unbounded table says what happens to it, in terms its schema and its code both keep",

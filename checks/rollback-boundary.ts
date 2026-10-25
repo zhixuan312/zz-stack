@@ -25,8 +25,11 @@
  *     absorbs line in any case and indented; and one no tag carries, or a released one a fold did
  *     not record, is the guard's error;
  *   - this checkout as the release it would become, back to the derived previous release: the
- *     refusing set is exactly {002_document_versions.sql}, with its declared reason; and between
- *     that release and the one before it, from their tags, it is no part of the answer;
+ *     refusing set is exactly what this checkout adds — `002_document_versions.sql` with its
+ *     declared reason, and `015_doc_body_drop.sql` twice, once for its own `-- rollback: refused`
+ *     line and once because the drop it performs is destructive DDL, which the guard reports on its
+ *     own account — and between that release and the one before it, from their tags, it is no part
+ *     of the answer;
  *   - the lines a refused rollback prints: every verification failure, every reason or the guard's
  *     error, and that the release is STILL LIVE; fix forward;
  *   - `scripts/release.ts` read as text: step 6 asks the guard before its `try`, only when the

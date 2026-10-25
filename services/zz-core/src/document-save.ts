@@ -476,12 +476,12 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       await insertRevision(client, id, revision, version, generation, w, prep, writer, seal);
       await client.query(
         `update zz.doc set current_revision = $2, status = $3, approved_revision = $4,
-                            type = $5, updated_at = now(), body = $6, title = $7,
-                            tags = $8::text[], content_hash = $9, analyzer_version = $10,
-                            body_tsv = ${bodyTsvSql(11)}, current_version = $19,
-                            content_generation = $20
+                            type = $5, updated_at = now(), title = $6,
+                            tags = $7::text[], content_hash = $8, analyzer_version = $9,
+                            body_tsv = ${bodyTsvSql(10)}, current_version = $18,
+                            content_generation = $19
           where id = $1::uuid`,
-        [id, revision, prep.status, sealed, prep.type, prep.body, prep.title, prep.tags, prep.hash,
+        [id, revision, prep.status, sealed, prep.type, prep.title, prep.tags, prep.hash,
          prep.analyzer, ...prep.tsv, version, generation]);
       // The same version's causes go with it to the new snapshot: a cause is attributed to a
       // public version, not to the row that happened to carry it.
@@ -527,11 +527,11 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
         // COUPLED: `coalesce` here too. The last approved revision stays recorded when this
         // write is not the one sealing it.
         `update zz.doc set status = $2, approved_revision = coalesce($3, approved_revision),
-                            type = $4, updated_at = now(), body = $5, title = $6,
-                            tags = $7::text[], content_hash = $8, analyzer_version = $9,
-                            body_tsv = ${bodyTsvSql(10)}, content_generation = $18
+                            type = $4, updated_at = now(), title = $5,
+                            tags = $6::text[], content_hash = $7, analyzer_version = $8,
+                            body_tsv = ${bodyTsvSql(9)}, content_generation = $17
           where id = $1::uuid`,
-        [id, prep.status, approved, prep.type, prep.body, prep.title, prep.tags, prep.hash,
+        [id, prep.status, approved, prep.type, prep.title, prep.tags, prep.hash,
          prep.analyzer, ...prep.tsv, generation]);
     }
     await insertLinks(client, w.team, id, revision, w);
@@ -620,14 +620,17 @@ async function createRows(
   // true exactly when `approved_revision` is the current revision.
   const approved = prep.status === "approved" ? 1 : null;
   // DELIBERATE: no `on conflict`. `doc`'s key is its id, and the path is not unique on its own.
+  // DELIBERATE: no `body` here. The bytes are the revision's, written by `insertRevision` below;
+  // `zz.doc` carries only their search projection (`body_tsv`, built from the same text) and the
+  // metadata a reader filters on. `015_doc_body_drop.sql` is the migration that removed the copy.
   const ins = await client.query<{ id: string }>(
-    `insert into zz.doc (initiative_id, path, type, status, updated_at, body, title, tags,
+    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, tags,
                          content_hash, analyzer_version, body_tsv, current_revision,
                          approved_revision, current_version, id)
-     values ($1::uuid, $2, $3, $4, now(), $5, $6, $7::text[], $8, $9,
-             ${bodyTsvSql(10)}, 1, $18, 1, coalesce($19::uuid, gen_random_uuid()))
+     values ($1::uuid, $2, $3, $4, now(), $5, $6::text[], $7, $8,
+             ${bodyTsvSql(9)}, 1, $17, 1, coalesce($18::uuid, gen_random_uuid()))
      returning id::text as id`,
-    [initiativeId, splitStorePath(w.relPath).name, prep.type, prep.status, prep.body, prep.title,
+    [initiativeId, splitStorePath(w.relPath).name, prep.type, prep.status, prep.title,
      prep.tags, prep.hash, prep.analyzer, ...prep.tsv, approved, w.id ?? null]);
   const id = ins.rows[0]?.id ?? "";
   if (!id) return "";

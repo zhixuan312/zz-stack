@@ -56,6 +56,12 @@ check("every console answer class states its range, its grain and a budget it ca
 // the settings schedule, on a load this check states rather than describes.
 check("an index-only scan's heap fetches are bounded by a vacuum schedule the table carries itself",
       runsCheck("event-autovacuum.ts"));
+// Phase 3's last and only irreversible change. `zz.doc` stops keeping a second copy of a document's
+// bytes: the column is gone, the trigram index answers from the revision table, the three statements
+// the change touched still answer, search reads the CURRENT revision and no other in an English, a
+// Chinese and a mixed query, and the plan explained is the shipped statement's, naming the index.
+check("a document's bytes have one home, the index that finds them lives there too, and search reads only the current revision",
+      runsCheck("doc-body-drop.ts"));
 check("no initiative reader derives closed, outcome or flow from zz.doc", runsCheck("initiative-lifecycle-readers.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 check("no statement in the write trees names a table or column the migration retires",

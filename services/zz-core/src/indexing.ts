@@ -172,10 +172,15 @@ export interface KbRow {
 /** One document, as the guards and the evaluation family read it: the `zz.doc` row's own
  *  columns, plus the body of the revision the row currently points at.
  *
- *  DELIBERATE: `body` comes from `doc_revision`, not from `zz.doc.body`. `zz.doc.body` is the
- *  denormalised copy the file indexer used to keep in step; the revision table is the one that
- *  holds a document's bytes, and a reader that answered from the copy while the revision moved
- *  would be reading a stale document.
+ *  DELIBERATE: `body` comes from `doc_revision`, the only table that holds a document's bytes.
+ *  `zz.doc` carried a denormalised copy of them until `015_doc_body_drop.sql` dropped it, and the
+ *  readers of that copy reached it through `coalesce(r.body, d.body)` — which answered from the
+ *  copy whenever the revision was missing, so a reader could serve a stale document without
+ *  anything reporting it.
+ *
+ *  A document whose `current_revision` is null resolves to no revision row and so holds no bytes.
+ *  It answers `''` rather than failing, and `current_revision` beside it is what tells that apart
+ *  from a document whose text is legitimately empty.
  *
  *  DELIBERATE: `path` is the document's path INSIDE its initiative — `notes.md`, or
  *  `sources/x.md` — never `<initiative>/notes.md`. `initiative` is its own column, and every
@@ -226,7 +231,7 @@ export async function docRows(
            a.email as approved_by, r.approved_at::text as approved_at,
            r.fields->>'closed_by' as closed_by,
            d.updated_at::text as updated_at, d.title,
-           ${text === "none" ? "''::text" : "coalesce(r.body, d.body)"} as body,
+           ${text === "none" ? "''::text" : "coalesce(r.body, '')"} as body,
            coalesce(d.tags, '{}'::text[]) as tags,
            d.current_revision, d.approved_revision, d.current_version, r.fields,
            (select x.fields->>'outcome' from zz.doc_revision x
@@ -252,13 +257,14 @@ export async function docRows(
 }
 /** The BODIES of the named documents of one initiative, by path, in one statement: what a reader
  *  fills in after deciding from `docRows(..., "none")` which of them it will read. A path the
- *  initiative does not hold is simply absent from the answer. */
+ *  initiative does not hold is simply absent from the answer; a document it holds whose
+ *  `current_revision` is null is present with no bytes (`''`), so the two cannot be confused. */
 export async function docBodies(
   p: pg.Pool, team: string | null, initiative: string, paths: readonly string[],
 ): Promise<Map<string, string>> {
   if (paths.length === 0) return new Map();
   const { rows } = await p.query<{ path: string; body: string }>(`
-    select d.path, coalesce(r.body, d.body) as body
+    select d.path, coalesce(r.body, '') as body
       from zz.doc d
       join zz.initiative i on i.id = d.initiative_id
       join zz.team t on t.id = i.team_id

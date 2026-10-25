@@ -624,8 +624,8 @@ export async function seedNeeds(db: pg.ClientBase | pg.Pool, timezone: string, n
     await db.query("begin");
     await db.query("set constraints all deferred");
     const doc = await one(
-      `insert into zz.doc (initiative_id, path, type, status, updated_at, title, body, current_revision, current_version)
-       values ($1, $2, 'seeded', 'draft', now(), $2, 'seeded', $3, $3) returning id`, [init, path, revisions.length]);
+      `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
+       values ($1, $2, 'seeded', 'draft', now(), $2, $3, $3) returning id`, [init, path, revisions.length]);
     for (const [i, [presented, approved]] of revisions.entries()) {
       await db.query(
         `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,

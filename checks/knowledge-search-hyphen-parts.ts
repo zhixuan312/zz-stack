@@ -155,7 +155,7 @@ async function run(c: Core): Promise<void> {
             'lesson-' || i, $2
        from generate_series(1, $3::int) as i`, [c.team, PREVIOUS, BULK]);
   for (const table of TABLES) {
-    const { rows } = await c.sql.query<Row>(`select id::text as id, title, tags, body from ${table}`);
+    const { rows } = await c.sql.query<Row>(bodySelect(table));
     for (const row of rows) {
       await c.sql.query(`update ${table} set analyzer_version = $10, body_tsv = ${bodyTsvSql(2)} where id = $1::uuid`,
                         [row.id, ...previousParams(row), PREVIOUS]);
@@ -178,8 +178,19 @@ async function run(c: Core): Promise<void> {
          `${ANALYZER_NAME} in ${took} ms, restart included, and they are found by their parts`);
 }
 
+/** A corpus's rows with the text its vector is built from. `zz.doc` stopped keeping a copy of the
+ *  bytes its current revision holds, so that half reads the revision; the update below still
+ *  targets `zz.doc`, which is where the vector and the generation live and still belong. */
+function bodySelect(table: string): string {
+  return table === "zz.doc"
+    ? `select d.id::text as id, d.title, d.tags, r.body from zz.doc d
+         left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision`
+    : `select id::text as id, title, tags, body from ${table}`;
+}
+
 async function rowOf(c: Core, table: string, path: string): Promise<Row> {
-  const { rows } = await c.sql.query<Row>(`select id::text as id, title, tags, body from ${table} where path = $1`, [path]);
+  const where = table === "zz.doc" ? "d.path = $1" : "path = $1";
+  const { rows } = await c.sql.query<Row>(`${bodySelect(table)} where ${where}`, [path]);
   return rows[0] ?? c.fail("read a row", `${table} holds no ${path}`);
 }
 

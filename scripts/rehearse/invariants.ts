@@ -17,17 +17,17 @@ import type { JoinExpectation } from "./expect.ts";
 
 export const ALWAYS_JOINS: readonly JoinExpectation[] = [
   {
-    // The projection `doc` keeps its current revision's content in. A live write sets all four from
-    // the same bytes; the carry set `content_hash` from the file store's own value, which described
-    // a row-derivation this platform no longer has (002_store_carry_repair.sql backfilled it).
-    // `rebuilt_from=doc_revision[current_revision]` is a claim, and this is the only thing that
-    // checks it.
-    name: "every doc's body, title, tags and content_hash are its current revision's",
+    // The projection `doc` keeps its current revision's content in. A live write sets all three
+    // from the same bytes; the carry set `content_hash` from the file store's own value, which
+    // described a row-derivation this platform no longer has (002_store_carry_repair.sql backfilled
+    // it). `rebuilt_from=doc_revision[current_revision]` is a claim, and this is the only thing that
+    // checks it. The body itself is not one of them any more: `015_doc_body_drop.sql` dropped
+    // `zz.doc.body`, and `zz.doc_revision` is now its only home.
+    name: "every doc's title, tags and content_hash are its current revision's",
     violatingCount: `select count(*)::int as n
       from zz.doc d join zz.doc_revision r
         on r.doc_id = d.id and r.revision = d.current_revision
-     where d.body is distinct from r.body
-        or d.title is distinct from r.title
+     where d.title is distinct from r.title
         or d.tags is distinct from r.tags
         or d.content_hash is distinct from r.content_hash`,
   },

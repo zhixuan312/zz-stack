@@ -635,8 +635,9 @@ async function exactTarget(c: Core): Promise<void> {
   await c.ok(step, "document_write", { path: hs, content: SPEC_BODY });
   // A body stored before the flow's declared section was named so: a near miss approval would rename.
   const hid = (await rowOf(c, hs)).id;
+  // The revision alone: `zz.doc` keeps no copy of a document's bytes, so rewriting both was a
+  // second write to a column that no longer exists.
   await c.sql.query("update zz.doc_revision set body = replace(body, '## Problem\n', '## The Problem\n') where doc_id = $1::uuid", [hid]);
-  await c.sql.query("update zz.doc set body = replace(body, '## Problem\n', '## The Problem\n') where id = $1::uuid", [hid]);
   const hctx = ctxOf(await c.ok(step, "document_present", { path: hs }));
   const held = await rowOf(c, hs);
   await c.refused(step, "document_approve", { path: hs, expected_revision: await tokenOf(c, hs), review_context: hctx },

@@ -155,8 +155,8 @@ async function plant(sql: pg.Client, s: Isolation, x: Record<Field, string>, shi
   await sql.query("begin");
   await sql.query("set constraints all deferred");
   const doc = await one(
-    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, body, current_revision, current_version)
-     values ($1, $2, 'spec', 'draft', now() - interval '1 day', $3, $4, 1, 1) returning id`, [initiative, DOC, x.docTitle, x.docBody]);
+    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
+     values ($1, $2, 'spec', 'draft', now() - interval '1 day', $3, 1, 1) returning id`, [initiative, DOC, x.docTitle]);
   await sql.query(
     `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
                                   written_at, presented_at)

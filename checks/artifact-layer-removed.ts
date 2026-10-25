@@ -46,6 +46,9 @@ const indexed = (t: string): boolean =>
   ((SCHEMA_TARGET.tables[t]?.indexes ?? []) as string[])
     .some((i) => /USING\s+gin\b/i.test(i) && /\bbody\b/i.test(i));
 assert.ok(indexed("knowledge_node"), "knowledge_node.body carries a gin index");
-assert.ok(indexed("doc"), "doc.body carries the same one");
+// The document's side of the same index, on the table that holds the bytes: `zz.doc` stopped
+// storing a copy of them, so the trigram index moved to the revision in the migration that dropped
+// the column, and asserting it on `doc` would now assert an index on a table with no body at all.
+assert.ok(indexed("doc_revision"), "doc_revision.body carries the same one");
 
 console.log("ok artifact-layer-removed");

@@ -295,4 +295,20 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       event_work_week: { added: true, count: "any", contentHash: "skip" },
     },
   },
+  // The document-body release. It drops `zz.doc.body` and moves the trigram index from `doc` to
+  // `doc_revision`; no row moves, so both tables keep their count, and `doc_revision` needs no
+  // entry of its own — whatever digest it is already read by is unchanged. `doc` is the one table
+  // whose digest needs naming: the default covers the whole row, and `body` exists on the before
+  // side only, so leaving it in the digest would report a difference this file causes rather than
+  // one it failed to prevent. The columns below are the ones that survive on both sides. This entry
+  // leaves with the file when it folds into `001_init.sql`.
+  "015_doc_body_drop.sql": {
+    tables: {
+      doc: {
+        hashColumns: ["path", "type", "status", "updated_at", "body_tsv", "title", "tags",
+                      "content_hash", "created_at", "id", "initiative_id", "analyzer_version",
+                      "current_revision", "approved_revision"],
+      },
+    },
+  },
 };

@@ -51,7 +51,7 @@ export function registerKnowledgeReconcileTool(server: McpServer): void {
       // is a `doc_revision` row, so there is no snapshot path to exclude and one document is one
       // row.
       const { rows: docs } = await p.query<{ path: string; type: string | null; body: string | null }>(
-        `select d.path, d.type, coalesce(r.body, d.body) as body
+        `select d.path, d.type, r.body as body
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id

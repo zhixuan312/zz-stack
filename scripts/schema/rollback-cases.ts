@@ -278,12 +278,29 @@ export function foldCases(): void {
  *  release; and between that release and the one before it, read from their tags whatever this
  *  checkout carries. */
 export function headCases(previous: string): void {
-  let step = `this checkout as the release it would become, back to v${previous} (the newest tag without ${MIGRATION}): the refusing set is exactly {${MIGRATION}}, with its declared reason`;
+  let step = `this checkout as the release it would become, back to v${previous} (the newest tag without ${MIGRATION}): the refusing set is exactly what this checkout adds, each with its own reason`;
   const declared = readFileSync(join(root, MIGRATIONS, MIGRATION), "utf8").split("\n")
     .find((l) => l.startsWith(`${DECLARATION} — `))?.slice(`${DECLARATION} — `.length).trim();
   if (!declared) fail(step, `${MIGRATION} carries no \`${DECLARATION} — <reason>\` line`);
   const got = refusalsSince(previous, null);
-  if (json(got) !== json({ refusals: [{ file: MIGRATION, reason: declared }] })) fail(step, json(got));
+  // A maintained expectation, not a derived fact: refresh this list whenever a release adds a
+  // migration that refuses a rollback, and keep it exact. `015_doc_body_drop.sql` is named twice on
+  // purpose — once for its own `-- rollback: refused` line and once because a `DROP COLUMN` is
+  // destructive DDL, which `refusalsSince` reports on its own account. Collapsing the two would
+  // accept a guard that had stopped reporting either. The second entry's reason is the guard's own
+  // wording and moves with it.
+  const expected = {
+    refusals: [
+      { file: MIGRATION, reason: declared },
+      { file: "015_doc_body_drop.sql", reason: "the previous image reads and writes zz.doc.body, which this drops" },
+      { file: "015_doc_body_drop.sql", reason:
+        `it drops, renames or retypes something ${previous}'s code still reads. Putting ${previous} back would leave ` +
+        "its code querying what no longer exists as it expects — the deployment would answer 500 to every caller while " +
+        "/health stayed green. To go back you must first write a migration that restores what it dropped, " +
+        "and decide what its values should be — which is a decision, not a rollback" },
+    ],
+  };
+  if (json(got) !== json(expected)) fail(step, json(got));
   pass(step);
 
   const tags = git(["tag", "--list", "v*", "--sort=-v:refname"]).split("\n").filter(Boolean);

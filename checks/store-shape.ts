@@ -18,12 +18,14 @@ const t = (n: string): T => (SCHEMA_TARGET.tables[n] ?? {}) as T;
 const names = (n: string) => (t(n).columns ?? []).map((c) => c[0]);
 const col = (n: string, c: string): Col | undefined => (t(n).columns ?? []).find((x) => x[0] === c);
 
-// doc: the columns item 13 fixes.
+// doc: the columns item 13 fixes. `body` is not among them: `015_doc_body_drop.sql` removed the
+// second copy of a document's bytes, and `doc_revision.body` is its only home.
 for (const c of ["id", "initiative_id", "path", "type", "status", "current_revision",
-                 "approved_revision", "title", "body", "tags", "content_hash", "body_tsv",
+                 "approved_revision", "title", "tags", "content_hash", "body_tsv",
                  "analyzer_version", "created_at", "updated_at"]) {
   assert.ok(names("doc").includes(c), `doc.${c} stands`);
 }
+assert.ok(!names("doc").includes("body"), "doc.body does not stand — the revision holds the bytes");
 assert.equal(col("doc", "initiative_id")?.[2], false, "doc.initiative_id is NOT NULL");
 assert.deepEqual(t("doc").primaryKey, ["id"], "doc's key is its id, not the three columns it retires");
 const initKey = (t("doc").foreignKeys ?? []).find((f) => f.columns.includes("initiative_id"));

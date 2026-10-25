@@ -263,7 +263,9 @@ async function secondTeamRows(sql: pg.Client, s: Seeded): Promise<string> {
 /** Every sentinel the second team's rows hold, read back from the database as one text. */
 async function storedText(sql: pg.Client, s: Seeded): Promise<string> {
   const { rows } = await sql.query<{ all: string }>(
-    `select concat_ws(' ', t.slug, t.name, i.slug, d.title, d.body, r.title, r.body, b.title, b.detail, b.surface, b.resolution,
+    // `zz.doc` keeps no copy of a document's bytes: the body is the revision's, and `r` below is
+    // every revision of the document, so `r.body` covers what `d.body` used to add.
+    `select concat_ws(' ', t.slug, t.name, i.slug, d.title, r.title, r.body, b.title, b.detail, b.surface, b.resolution,
                       f.pattern, f.decision_note, f.owner_ref, pv.protocol_key, m.key, e.detail::text, k.title, k.body) as all
        from zz.team t
        join zz.initiative i on i.team_id = t.id and i.closed_at is null

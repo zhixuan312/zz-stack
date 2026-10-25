@@ -191,8 +191,10 @@ export async function outcomeAndApprovalFacts(
     -- A document reaches its initiative through initiative_id and its approval through the
     -- revision it currently points at; zz.doc carries neither. A revision filed at an
     -- approval is a doc_revision row, never a second zz.doc row, so there is no snapshot
-    -- path to exclude and one document is one row.
-    live as (select distinct et.slug as team_slug, i.slug as initiative, d.status, d.body,
+    -- path to exclude and one document is one row. DELIBERATE: the text is the revision's own,
+    -- and a document with no current revision has none — a null cannot match the deferral
+    -- expression below, so it is not counted as a document that sends its reader elsewhere.
+    live as (select distinct et.slug as team_slug, i.slug as initiative, d.status, r.body,
                     r.approved_by
                from zz.doc d
                join zz.initiative i on i.id = d.initiative_id

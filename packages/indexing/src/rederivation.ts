@@ -169,18 +169,25 @@ interface DocRow {
 }
 
 async function fetchDocPage(client: RederivationClient, after: string | null, limit: number): Promise<DocRow[]> {
+  // DELIBERATE: the body is the current revision's, read through the row the document points at.
+  // `zz.doc` carried a second copy of it until `015_doc_body_drop.sql` dropped the column; the
+  // revision table is now its only home. The join is LEFT so the page still holds every document —
+  // a keyset walk that skipped the ones with no current revision would return a watermark past
+  // rows it never visited — and `rebuildRowVector` reads a null body as no text.
+  const select = `select d.id::text as id, d.title, d.tags, r.body, d.analyzer_version
+                    from zz.doc d
+                    left join zz.doc_revision r
+                      on r.doc_id = d.id and r.revision = d.current_revision`;
   const result = after
     ? await client.query<DocRow>(
-        `select id::text as id, title, tags, body, analyzer_version
-           from zz.doc
-          where id > $1::uuid
-          order by id
+        `${select}
+          where d.id > $1::uuid
+          order by d.id
           limit $2`,
         [after, limit])
     : await client.query<DocRow>(
-        `select id::text as id, title, tags, body, analyzer_version
-           from zz.doc
-          order by id
+        `${select}
+          order by d.id
           limit $1`,
         [limit]);
   return result.rows;

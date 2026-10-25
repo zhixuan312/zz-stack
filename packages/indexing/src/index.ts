@@ -217,18 +217,28 @@ export interface TeamReindex {
   error?: string;
 }
 
-/** The two tables a rebuild re-derives, and the key each one is walked in. The `where` is what
- *  scopes a corpus to one team: `zz.doc` reaches its team through the initiative it is filed
- *  under, `zz.knowledge_node` carries `team_id` itself. */
+/** The two corpora a rebuild re-derives: the row each one reads, what scopes it to one team, and
+ *  the column the skip tests. The `select` is per corpus rather than a table name, because the two
+ *  no longer read the same shape — a document's body is its CURRENT REVISION's, and no column of
+ *  `zz.doc` carries it any more. `reindexTeam` walks them alike. */
 const CORPORA = [
   {
-    table: "zz.doc",
-    scope: "initiative_id in (select id from zz.initiative where team_id = $1::uuid)",
+    // DELIBERATE: `zz.doc` carried a second copy of the body until `015_doc_body_drop.sql` dropped
+    // it, and the revision table is now its only home. The join is LEFT so the walk still sees a
+    // document with no current revision — `rebuildRowVector` reads a null body as no text — and the
+    // scope and the skip name `d` because the select now does.
+    select: `select d.id::text as id, d.title, d.tags, r.body, d.analyzer_version
+               from zz.doc d
+               left join zz.doc_revision r
+                 on r.doc_id = d.id and r.revision = d.current_revision`,
+    scope: "d.initiative_id in (select id from zz.initiative where team_id = $1::uuid)",
+    analyzer: "d.analyzer_version",
     update: "update zz.doc set analyzer_version = $2, body_tsv = " + bodyTsvSql(3) + " where id = $1::uuid",
   },
   {
-    table: "zz.knowledge_node",
+    select: "select id::text as id, title, tags, body, analyzer_version from zz.knowledge_node",
     scope: "team_id = $1::uuid",
+    analyzer: "analyzer_version",
     update: "update zz.knowledge_node set analyzer_version = $2, body_tsv = " + bodyTsvSql(3) + " where id = $1::uuid",
   },
 ] as const;
@@ -261,9 +271,8 @@ export async function reindexTeam(
   for (const corpus of CORPORA) {
     const rows = await p.query<{ id: string; title: string | null; tags: string[] | null;
                                  body: string | null; analyzer_version: string | null }>(
-      `select id::text as id, title, tags, body, analyzer_version
-         from ${corpus.table}
-        where ${corpus.scope} and ($2::boolean or analyzer_version is distinct from $3)`,
+      `${corpus.select}
+        where ${corpus.scope} and ($2::boolean or ${corpus.analyzer} is distinct from $3)`,
       [teamId, force, ANALYZER_NAME]);
     for (const row of rows.rows) {
       scanned++;

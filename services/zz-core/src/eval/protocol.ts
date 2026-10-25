@@ -415,10 +415,10 @@ export function registerProtocolTools(server: McpServer): void {
       // is refused here rather than affirmed as a claim with nothing behind it.
       const docRow = (await p.query<{
         id: string; current_revision: number | null; status: string;
-        approved_by: string | null; body: string;
+        approved_by: string | null; body: string | null;
       }>(`
         select d.id::text as id, d.current_revision, d.status, a.email as approved_by,
-               coalesce(r.body, d.body) as body
+               r.body as body
           from zz.doc d
           join zz.initiative i on i.id = d.initiative_id
           join zz.team t on t.id = i.team_id
@@ -433,7 +433,11 @@ export function registerProtocolTools(server: McpServer): void {
           "and then this again.");
       }
       if (docRow.status !== "approved") return text(NOT_APPROVED);
-      if (!docRow.body.includes(row.content_digest)) return text(NOT_APPROVED);
+      // A document whose `current_revision` is null resolves to no revision row and holds no bytes,
+      // so it cannot be quoting this version's digest. Read as no text rather than failing: the
+      // refusal below is the same answer, and a null dereference here would be a 500 on a document
+      // the store legitimately holds.
+      if (!(docRow.body ?? "").includes(row.content_digest)) return text(NOT_APPROVED);
       // AC-6.7: the affirmation pins the revision it read, so a row whose exact revision cannot
       // be resolved is refused BY NAME. Writing a null would read back as "no revision known",
       // while the truth is "this call did not record one" — and the version's own key would hold

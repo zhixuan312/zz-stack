@@ -106,10 +106,10 @@ async function document(db: pg.Client, principal: string, initiativeId: string, 
   await db.query("BEGIN");
   await db.query("SET CONSTRAINTS ALL DEFERRED");
   const d = await db.query<{ id: string }>(
-    `INSERT INTO zz.doc (initiative_id, path, type, status, updated_at, title, body, current_revision,
+    `INSERT INTO zz.doc (initiative_id, path, type, status, updated_at, title, current_revision,
                          current_version)
-     VALUES ($1, $2, $3, 'draft', now(), $2, $4, $5, $6) RETURNING id`,
-    [initiativeId, path, type, `body of r${current}`, current, last.version]);
+     VALUES ($1, $2, $3, 'draft', now(), $2, $4, $5) RETURNING id`,
+    [initiativeId, path, type, current, last.version]);
   for (const [i, s] of snaps.entries()) {
     const fields = { ...s.fields, ...(s.outcome ? { outcome: s.outcome, closed_by: EMAIL } : {}) };
     await db.query(

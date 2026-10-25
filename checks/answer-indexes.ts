@@ -224,13 +224,13 @@ async function main(): Promise<void> {
       // `zz.doc`: 20,000 documents across the 100 initiatives, of which the probe's holds 60 —
       // five sources, which is what one initiative's sources list returns.
       await client.query(
-        `insert into zz.doc (id, initiative_id, path, type, status, updated_at, body, title, tags,
+        `insert into zz.doc (id, initiative_id, path, type, status, updated_at, title, tags,
                              created_at, current_revision, approved_revision, current_version, content_generation)
          select gen_random_uuid(), ($1::uuid[])[1 + (g % 100)],
                 case when (1 + (g % 100)) = 1 and g < 200 then 'sources/note-' || g || '.md'
                      when g % 17 = 0 then 'sources/other-' || g || '.md'
                      else 'docs/chapter-' || g || '.md' end,
-                'source', 'draft', '2026-10-01T00:00:00Z', '', 't', '{}', '2026-10-01T00:00:00Z',
+                'source', 'draft', '2026-10-01T00:00:00Z', 't', '{}', '2026-10-01T00:00:00Z',
                 null, null, null, 0
            from generate_series(1, 20000) g`, [initiatives]);
       // `zz.doc_revision`: one retained revision per document, forty of them presented and not

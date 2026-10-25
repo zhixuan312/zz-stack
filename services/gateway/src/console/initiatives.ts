@@ -145,7 +145,7 @@ export function mountInitiatives(app: Express): void {
       // The bodies the claims are recomputed from, in their own statement: the select above
       // reads `length(body)` and must not detoast every document to answer it.
       db.query<{ path: string; type: string | null; body: string | null }>(
-        `select d.path, d.type, coalesce(r.body, d.body) as body
+        `select d.path, d.type, r.body as body
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id
@@ -232,8 +232,10 @@ export function mountInitiatives(app: Express): void {
    * The decisions come back with the document rather than beside it, because they are keyed by
    * its path: an acceptance-criterion ledger is what one particular document claims.
    *
-   * Reads zz.doc.body, the same text the index was built from, so what is shown and what is
-   * searchable cannot disagree. */
+   * Reads the current revision's body — the same text the search index was built from, so what is
+   * shown and what is searchable cannot disagree. `zz.doc` keeps no copy of it; `document-save.ts`
+   * writes the bytes to the revision alone, and a document with no `current_revision` answers no
+   * body rather than a stale one. */
   app.get("/api/console/document/:team/:initiative/*", platformPublic("the document", async (req, res, { activeTeam }) => {
     if (activeTeam === null) { res.status(400).json({ error: NO_TEAM }); return; }
     const db = platformDb();
@@ -296,7 +298,7 @@ export function mountInitiatives(app: Express): void {
                 d.title, d.tags, r.fields->>'evidence' as evidence, r.fields->>'stakeholder' as stakeholder,
                 coalesce(r.fields, '{}'::jsonb) as envelope_fields,
                 d.status = 'superseded' as superseded,
-                coalesce(r.body, d.body) as body,
+                r.body as body,
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
                 length(coalesce(r.body,'')) as bytes
            from zz.doc d
@@ -377,7 +379,7 @@ export function mountInitiatives(app: Express): void {
       // key would empty this panel for every source added after that change, and the two would
       // be two answers to one question for every source added before it.
       db.query(
-        `select s.path, s.title, coalesce(sr.body, s.body) as body,
+        `select s.path, s.title, sr.body as body,
                 (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
                               from zz.doc_link l
                               join zz.doc td on td.id = l.to_doc_id

@@ -148,6 +148,13 @@ const RETIRED: Record<string, string[]> = {
                     "released_subject_version_id", "required_owners", "rolled_back"],
   control_run: ["initiative", "module_id", "profile", "subject", "team_slug"],
   control_evidence: ["note"],
+  // This phase's body drop: `zz.doc` stops storing a second copy of the bytes its current revision
+  // already holds. Every reader of it went through a `coalesce(r.body, d.body)` fallback, which is
+  // the shape that makes this net worth having: a statement that misses one keeps working while the
+  // column exists and raises `column d.body does not exist` the day it is gone, on a path no test
+  // happened to exercise. `checks/doc-body-drop.ts` runs the statements; this asks whether any
+  // statement still names the name, which is the half that needs no seed.
+  doc: ["body"],
 };
 
 /** The name a table goes by before the migration. A statement binding it is naming a table this

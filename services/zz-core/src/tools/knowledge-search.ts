@@ -111,8 +111,10 @@ function headlineOf(column: string, queryExpr: string): string {
  *  A Han clause has none, and cannot have one: PostgreSQL's parser decides an unspaced Han run's
  *  token boundary before any dictionary runs, so a Han clause handed to the ASCII lane's
  *  `websearch_to_tsquery` call is one token that matches nothing the analyzer stored. Such a
- *  clause is MATCHED as a literal `body` substring — which is what the `gin (body gin_trgm_ops)`
- *  index serves — and scored here through the half of `body_tsv` the analyzer wrote it into: every
+ *  clause is MATCHED as a literal `body` substring — which is what `zz.doc_revision`'s
+ *  `doc_revision_body_trgm` index serves, the trigram index `015_doc_body_drop.sql` moved there
+ *  from the `zz.doc` column that used to hold a second copy of the same bytes — and scored here
+ *  through the half of `body_tsv` the analyzer wrote it into: every
  *  Han unigram this attempt analysed, ANDed, through `SIMPLE_QUERY_CONFIG`, whose identity
  *  dictionary leaves a stored unigram equal to the term the query sends. Without it a Han-only
  *  query ties at zero, which is what every Han-only match did before this lane existed.
@@ -283,7 +285,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
                -- row, and a document replaced by another one is status: superseded. The node
                -- arm is the one that still names one.
                null::text as superseded_by,
-               t.slug as team_slug, coalesce(r.body, d.body) as body, d.body_tsv,
+               t.slug as team_slug, r.body as body, d.body_tsv,
                'document' as subject,
                -- The union's column names come from this arm, so the two the node arm derives are
                -- named here: a bare i.id would arrive as id and a bare empty-array literal as
@@ -291,10 +293,24 @@ export function registerKnowledgeSearch(server: McpServer): void {
                i.id as initiative_id, '{}'::uuid[] as cited_ids, d.id,
                -- A document's citations are its own team's: see citedFor.
                null::text[] as cited_in
-          from zz.doc d
+          -- DELIBERATE: the revision leads the join, not zz.doc. The Han and substring lane
+          -- matches body with ilike, and the only index that serves it is doc_revision_body_trgm
+          -- on this table. A from zz.doc d left join zz.doc_revision r puts the document first, and
+          -- the planner then has no reason to reach the revision table through that index: it
+          -- walks doc_initiative_id and filters each revision it finds (measured at 831 ms on
+          -- 4,010 revisions in 168 MB, against 0.5 ms when the revision table drives). The
+          -- predicate reaches the revision table either way — r.body is what makes that possible —
+          -- but only this order lets the trigram index be CHOSEN.
+          --
+          -- COUPLED: a document whose current_revision is null has no bytes, so this inner join
+          -- leaves it out of the arm. That is the same document the fallback used to answer with a
+          -- stale copy of, and it can match no text query; zz.doc.tags is the current revision's
+          -- projection, so it carries no tag to match either. Zero documents on the deployment of
+          -- 2026-10-25 had one.
+          from zz.doc_revision r
+          join zz.doc d on d.id = r.doc_id and d.current_revision = r.revision
           left join zz.initiative i on i.id = d.initiative_id
           left join zz.team t on t.id = i.team_id
-          left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
           left join zz.principal a on a.id = r.approved_by
         union all
         ${NODE_ARM}

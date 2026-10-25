@@ -133,8 +133,8 @@ async function seedTeam(db: pg.ClientBase | pg.Pool, n: "one" | "two", slug: str
   await db.query("begin");
   await db.query("set constraints all deferred");
   const doc = await one(
-    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, body, current_revision, current_version)
-     values ($1, $2, 'spec', 'draft', $3, $4, $5, 1, 1) returning id`, [open, docPath, ago(20), w.docTitle, w.docBody]);
+    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
+     values ($1, $2, 'spec', 'draft', $3, $4, 1, 1) returning id`, [open, docPath, ago(20), w.docTitle]);
   await db.query(
     `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
                                   written_at, presented_at)

@@ -6,9 +6,12 @@
  * for which revisions exist and for the content each one retained; `doc_link` records one citation
  * between two exact revisions, or one source revision's support for a document identity.
  *
- * `doc`'s `title`, `body`, `tags` and `content_hash` are a declared projection of
+ * `doc`'s `title`, `tags` and `content_hash` are a declared projection of
  * `doc_revision[current_revision]`, kept on the row because search and the console read them on
- * every call. `body_tsv` and `analyzer_version` are the search projection of `body`.
+ * every call. `body_tsv` and `analyzer_version` are the search projection of that revision's
+ * `body`, and the body itself lives in `doc_revision` alone: `doc` carried a second copy until
+ * `015_doc_body_drop.sql` dropped it, and every reader of it answered through a
+ * `coalesce(r.body, d.body)` fallback rather than choosing a table.
  *
  * A revision is a snapshot and `revision` is its id; the public `version` a reader is shown is its
  * own column, and `doc.content_generation` counts the content changes a `content_revision` token
@@ -66,12 +69,6 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         "tsvector",
         true,
         null,
-      ],
-      [
-        "body",
-        "text",
-        false,
-        "''::text",
       ],
       [
         "title",
@@ -200,7 +197,6 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       "CHECK ((status = ANY (ARRAY[''::text, 'draft'::text, 'approved'::text, 'adopted'::text, 'superseded'::text])))",
     ],
     indexes: [
-      "CREATE INDEX doc_body_trgm ON zz.doc USING gin (body zz.gin_trgm_ops)",
       "CREATE UNIQUE INDEX doc_id_unique ON zz.doc USING btree (id)",
       "CREATE INDEX doc_initiative_id ON zz.doc USING btree (initiative_id)",
       // `source_list` asks for one initiative's sources — `d.path like 'sources/%' and d.path like '%.md'`
@@ -221,15 +217,14 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       type: "class=state_machine; authority=this; question=which role does this document play, an agreement, a plan, a source, or another type its flow declares?",
       status: "class=state_machine; authority=this; question=is this document a draft, or approved at its current revision?",
       updated_at: "class=state_machine; authority=this; question=when was this document last written?",
-      body_tsv: "class=projection; authority=zz.doc.body; question=what is this document's body as the search vector a full-text query matches?; rebuilt_from=body",
-      body: "class=projection; authority=zz.doc_revision.body; question=what does this document's current revision say?; rebuilt_from=doc_revision[current_revision]",
+      body_tsv: "class=projection; authority=zz.doc_revision.body; question=what is this document's body as the search vector a full-text query matches?; rebuilt_from=doc_revision[current_revision].body",
       title: "class=projection; authority=zz.doc_revision.title; question=what is this document's current revision titled?; rebuilt_from=doc_revision[current_revision]",
       tags: "class=projection; authority=zz.doc_revision.tags; question=which tags does this document's current revision carry?; rebuilt_from=doc_revision[current_revision]",
       content_hash: "class=projection; authority=zz.doc_revision.content_hash; question=what is the hash of this document's current revision bytes?; rebuilt_from=doc_revision[current_revision]",
       created_at: "class=state_machine; authority=this; question=when did this document first exist, never moved by a later write as updated_at is, and the instant that scopes a measurement to one initiative's lifetime?",
       id: "class=state_machine; authority=this; question=what is this document's own identity?",
       initiative_id: "class=relation; authority=this; question=which initiative does this document belong to?",
-      analyzer_version: "class=projection; authority=zz.doc.body; question=which analyzer generation produced this document's search vector, so a vector from another generation can be rederived?; rebuilt_from=body",
+      analyzer_version: "class=projection; authority=zz.doc_revision.body; question=which analyzer generation produced this document's search vector, so a vector from another generation can be rederived?; rebuilt_from=doc_revision[current_revision].body",
       current_revision: "class=state_machine; authority=this; question=which revision of this document is the current one?",
       approved_revision: "class=state_machine; authority=this; question=which revision of this document was approved last, if any has been?",
       current_version: "class=projection; authority=zz.doc_revision.version; question=which public version is this document's current revision, the number a reader is shown?; rebuilt_from=doc_revision[current_revision].version",
@@ -395,6 +390,11 @@ export const DOCUMENTS: Record<string, TableTarget> = {
     // is null`, ordered by `presented_at`. The second index is partial on that predicate, which is what
     // makes it a queue and not a second copy of a column set on a third of the rows.
     indexes: [
+      // The search's Han and substring lane matches `body` with `ilike`, and a trigram index is the
+      // only one that serves it. It lived on `zz.doc` until `015_doc_body_drop.sql` moved it here,
+      // to the table that is now the body's only home. In name order, which is how
+      // `scripts/schema/catalog.ts` reads indexes back.
+      "CREATE INDEX doc_revision_body_trgm ON zz.doc_revision USING gin (body zz.gin_trgm_ops)",
       "CREATE INDEX doc_revision_pending ON zz.doc_revision USING btree (presented_at) WHERE ((presented_at IS NOT NULL) AND (approved_at IS NULL))",
       "CREATE INDEX doc_revision_version ON zz.doc_revision USING btree (doc_id, version)",
     ],

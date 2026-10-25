@@ -38,7 +38,7 @@ check("a team's rebuild touches that team's rows and no others", () => {
   // COUPLED: the two corpora are declared in ONE list, and that list is the whole of "which rows
   // a rebuild touches" — the table, the scope that reaches it, and the statement that moves the
   // derived columns. Read from the list rather than from `reindexTeam`'s own body, because a
-  // check that sliced the body would see a loop over `corpus.table` and never the table's name:
+  // check that sliced the body would see a loop over `corpus.select` and never the table's name:
   // the scopes are what it is about, and they live where they are declared.
   const src = indexerSource();
   const corpora = /const CORPORA = \[[\s\S]*?\] as const;/.exec(src)?.[0] ?? "";
@@ -50,12 +50,19 @@ check("a team's rebuild touches that team's rows and no others", () => {
   } else {
     // `zz.doc` reaches its team through the initiative a document is filed under — `zz.doc` has
     // no team column at all, so a scope that named one would not prepare.
-    if (!/table: "zz\.doc"/.test(corpora)
+    if (!/from zz\.doc d\b/.test(corpora)
         || !/initiative_id in \(select id from zz\.initiative where team_id = \$1::uuid\)/.test(corpora)) {
       bad.push("the zz.doc corpus does not reach the team through the initiative a document is " +
                "filed under, so either it rebuilds another team's documents or it rebuilds none");
     }
-    if (!/table: "zz\.knowledge_node"/.test(corpora) || !/team_id = \$1::uuid/.test(corpora)) {
+    // The bytes a document's vector is built from are its CURRENT REVISION's. `zz.doc` kept a copy
+    // of them until `015_doc_body_drop.sql` dropped it, and a corpus that still expected one there
+    // would either read nothing or read a revision the document no longer points at.
+    if (!/left join zz\.doc_revision r[\s\S]*?r\.revision = d\.current_revision/.test(corpora)) {
+      bad.push("the zz.doc corpus does not read the body from the revision the document currently " +
+               "points at, so it re-derives a vector from text nobody stored");
+    }
+    if (!/from zz\.knowledge_node\b/.test(corpora) || !/team_id = \$1::uuid/.test(corpora)) {
       bad.push("the zz.knowledge_node corpus is not scoped by team_id, so a team's rebuild " +
                "rewrites another shelf's node vectors");
     }
@@ -70,7 +77,7 @@ check("a team's rebuild touches that team's rows and no others", () => {
     }
   }
   if (!fn) bad.push("reindexTeam is gone — this check reads nothing");
-  else if (!/\$\{corpus\.table\}/.test(fn) || !/\$\{corpus\.scope\}/.test(fn)) {
+  else if (!/\$\{corpus\.select\}/.test(fn) || !/\$\{corpus\.scope\}/.test(fn)) {
     bad.push("reindexTeam does not run the declared corpora — a list nothing iterates is a list " +
              "that scopes nothing");
   }

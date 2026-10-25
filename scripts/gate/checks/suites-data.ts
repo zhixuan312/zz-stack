@@ -50,6 +50,12 @@ check("an unbounded table says what happens to it, in terms its schema and its c
 // at ten times it, with buffers named as the second half of the evidence.
 check("every console answer class states its range, its grain and a budget it can be held to at ten times the traffic",
       runsCheck("answer-budgets.ts"));
+// Phase 3's vacuum settings. `TableTarget` has no `reloptions` field, so the migration is the only
+// place a per-table setting exists and `pg_class.reloptions` is the only place it is true; the second
+// arm reads the heap fetches the covering index's index-only scan pays, before and after the vacuum
+// the settings schedule, on a load this check states rather than describes.
+check("an index-only scan's heap fetches are bounded by a vacuum schedule the table carries itself",
+      runsCheck("event-autovacuum.ts"));
 check("no initiative reader derives closed, outcome or flow from zz.doc", runsCheck("initiative-lifecycle-readers.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 check("no statement in the write trees names a table or column the migration retires",

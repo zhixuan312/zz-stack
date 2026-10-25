@@ -1,0 +1,101 @@
+-- 014_event_autovacuum.sql — the per-table autovacuum settings `zz.event` carries, and the heap fetches
+-- its index-only scans pay that they lower.
+--
+-- `zz.event` carries no `reloptions` at all. On 2026-10-25 it held 72,301 live tuples and 366 dead, its
+-- last autovacuum was 2026-10-19 19:53 and its last manual vacuum 2026-10-24 02:12 — and the day after
+-- that vacuum the weekly calls reduction, a whole-history read `event_work_agg` answers, paid 8,564 heap
+-- fetches over 41,772 real-work calls: a ratio of 20.5%. The probe and its statements are filed at
+-- `sources/2026-10-25-read-only-probes-on-the-production-database-2026-10-25-for-p.md`.
+--
+-- That ratio belongs to the visibility map, and it is paid per page. An index-only scan reads the index and
+-- goes to the heap for the tuples on a page the map does not call all-visible, and writing ONE tuple clears
+-- that bit for the whole page — after which the scan visits the heap for every tuple the page holds, around
+-- sixteen of them on this table. So what the ratio measures is the churn between two vacuums, not the size
+-- of the table, and the per-table scale factors are the only lever that decides it: the global ones belong
+-- to the whole database.
+--
+-- Measured by `EXPLAIN (ANALYZE, BUFFERS)` on a throwaway migrated from this tree and seeded to this
+-- deployment's shape — 69,497 rows over 4,302 heap pages, 41,772 of them the real-work tool calls the
+-- register counts, against `event_work_agg`'s 487 index pages — and then written to in rounds of the
+-- deployment's own day: 2,746 inserts (72,301 live on 2026-10-25 against 69,555 recorded on 2026-10-24) and
+-- 366 scattered rewrites (its n_dead_tup). Autovacuum was switched off in the measuring session and only
+-- there, so the ratio is read on a load rather than on a race with the daemon. The statement is the weekly
+-- calls reduction, and the ratio is `Heap Fetches` over the rows the Index Only Scan returned, both read
+-- off that one plan node:
+--
+--   select (extract(epoch from (date_trunc('week', e.ts at time zone 'Asia/Singapore')
+--                               at time zone 'Asia/Singapore')) * 1000)::float8 as from_ms,
+--          t.slug, count(*)::int as calls
+--     from zz.event e left join zz.team t on t.id = e.team_id
+--    where e.kind = 'tool_call' and e.origin = 'work'
+--    group by 1, 2
+--
+--   after the seed, one vacuum         0 heap fetches over 41,772 rows      0.0%
+--   one round                      6,335 over 44,518                      14.2%
+--   two rounds                     9,084 over 47,264                      19.2%
+--   three rounds                  11,834 over 50,010                      23.7%
+--   four rounds                   14,589 over 52,756                      27.7%
+--   five rounds                   17,336 over 55,502                      31.2%
+--   the vacuum, that same load         0 over 55,502                       0.0%
+--
+-- Five rounds — 13,730 inserts, just under what the defaults wait for — is the interval they allow here,
+-- and it is what makes them the wrong settings for this table. The insert-driven trigger is
+-- `autovacuum_vacuum_insert_threshold` (1,000) plus autovacuum_vacuum_insert_scale_factor (0.2) times
+-- reltuples, which is 14,899 inserts at this population — five and a half days at this table's rate —
+-- and the dead-tuple trigger at the default 0.2 is 13,949 dead rows, which this table would reach in 38
+-- rounds because it rewrites roughly one row in 190. The deployment's own 20.5% sits at this load's second
+-- round, which is what a day of churn since its last vacuum costs. Both values below are chosen to reach
+-- `zz.event` inside one round instead. Run twice on the same load, both runs report every figure above
+-- unchanged.
+--
+-- `autovacuum_vacuum_scale_factor = 0.002` is 0.2%, which is 189 dead tuples at the seeded 69,497 rows —
+-- the fixed autovacuum_vacuum_threshold of 50 is left alone, so the trigger never falls below 50. One
+-- round's 366 rewrites clear it before the round ends: the day this table rewrites a row is the day a
+-- vacuum is scheduled, where the default asks for 38 rounds of them. It is not smaller than that because a
+-- vacuum of 4,302 pages is cheap but not free, and 189 dead tuples is exactly one round of the rewrites this
+-- table actually performs.
+--
+-- `autovacuum_analyze_scale_factor = 0.02` is 2%, 1,440 modified rows at the same population, which one
+-- round's 2,746 inserts clear. ANALYZE is not what sets a visibility-map bit — the vacuum it runs beside
+-- does that — so this value does not move the ratio, and it is not claimed to. It is here because
+-- reltuples is the number both triggers above are computed from, and a statistics row five days old
+-- computes them from a table 13,730 rows smaller than the one being written.
+--
+-- DELIBERATE: `autovacuum_vacuum_insert_threshold` is not set, and the measurement is why. A per-table
+-- insert threshold moves only the 1,000 of that 14,899: a lower one shortens the interval by less than a
+-- day and a higher one lengthens it, so neither is the change this table needs. The setting that would move
+-- it is autovacuum_vacuum_insert_scale_factor, which this file does not name. The dead-tuple trigger above
+-- now fires first, inside one round, so the insert path is not the mechanism this table relies on and its
+-- threshold stays as PostgreSQL ships it.
+--
+-- DELIBERATE: the vacuum the settings schedule was run by hand in the measurement, not waited for.
+-- Autovacuum is asynchronous, so a measurement that slept for it would report the machine's load, not the
+-- settings. The settings change WHEN a vacuum reaches `zz.event`, not what it does — which is why the same
+-- load is read before and after one `VACUUM (ANALYZE)`.
+--
+-- DELIBERATE: the 0.0% above is what a vacuum leaves, and it is a test state rather than a production
+-- invariant. Any insert or update clears a visibility-map bit as it writes, so a table taking 2,746 rows a
+-- day is never wholly all-visible for long; what the settings buy is a ratio that stops climbing for days,
+-- not a ratio of zero, and nothing here claims one.
+--
+-- DELIBERATE: these settings live in this file and nowhere else. `TableTarget` (`scripts/schema/types.ts:26`)
+-- declares a table's columns, keys, checks, indexes and comments and carries no `reloptions` field, and a
+-- comparator that diffed one would be tooling for a value the database already holds. What holds them
+-- instead is a check that reads `pg_class.reloptions` on a database migrated by the real runner: what the
+-- catalog has, not what a file says it should have.
+--
+-- `schema-target/telemetry.ts` needs no change and `scripts/rehearse/expect.ts` needs no entry: no row moves
+-- and no column changes, so the default assertion — row count unchanged, content hash unchanged — is the one
+-- this file must pass.
+--
+-- The release before this file can run on what it builds: `reloptions` is read by the planner and by the
+-- autovacuum launcher, both of which read whatever the catalog holds, and by no statement in either image,
+-- so a rollback leaves these settings in place and costs the old release nothing. No line below declares a
+-- refusal. `ALTER TABLE … SET (…)` replaces the keys it names and leaves any other, so running it twice
+-- leaves the same catalog the first run did; it takes ACCESS EXCLUSIVE on `zz.event` for a catalog update
+-- and rewrites no row.
+
+ALTER TABLE zz.event SET (
+  autovacuum_vacuum_scale_factor = 0.002,
+  autovacuum_analyze_scale_factor = 0.02
+);

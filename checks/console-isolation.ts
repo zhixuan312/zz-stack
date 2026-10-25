@@ -93,6 +93,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { PLANTED, seedIsolation, seedSharedCitations, seedWork, seedWorkRecord } from "../scripts/schema/isolation-seed.ts";
+import { REQUEST_SCOPED } from "../scripts/schema/shape-diffs.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 import { ownFailures, tableFor } from "./console-isolation-failures.ts";
@@ -313,14 +314,43 @@ function ghostOf(r: Sent, pairs: [string, string, string][]): Sent | null {
 }
 
 /** An answer with the request's own identifiers, real or phantom, and every instant masked: what is left is
- *  what the answer says about whether the thing named exists. */
+ *  what the answer says about whether the thing named exists.
+ *
+ *  DELIBERATE: the five fields `read-envelope.ts` stamps are removed from `meta` ALONE, by walking the parsed body,
+ *  never by a pattern over the text. Two requests legitimately differ in them — `revision` moves when a hint arrives
+ *  between the two — so an existence oracle is compared on what the answers SAY, and their values are proven by
+ *  `checks/console-read-envelope.ts` and `console-read-contract.ts`. A pattern keyed on the name would also blank a
+ *  data field that shares one — a document's `versions[]` each hold a `revision` — and a leak of that field into
+ *  another team's answer would be erased before this oracle could see it. */
 function masked(a: Answer, pairs: [string, string, string][]): string {
-  // The five fields `read-envelope.ts` stamps describe the request that asked: two requests legitimately differ in
-  // them — `revision` moves when a hint arrives between the two — so an existence oracle is compared on what the
-  // answers SAY. Their values are proven by checks/console-read-envelope.ts and console-read-contract.ts.
-  const text = pairs.reduce((t, [real, ghost, label]) => t.replaceAll(real, label).replaceAll(ghost, label), a.text)
-    .replace(/"(?:observedAt|revision|cacheHit|builtAt|sourceRevision)":(?:"(?:[^"\\]|\\.)*"|true|false|null)/g, "");
-  return `${a.status} ${text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>")}`;
+  const text = pairs.reduce((t, [real, ghost, label]) => t.replaceAll(real, label).replaceAll(ghost, label), a.text);
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // A body that is not JSON carries no `meta` object to walk, so the instants are the only thing to mask.
+    body = undefined;
+  }
+  if (body !== undefined) return `${a.status} ${JSON.stringify(withoutRequestFields(body)).replace(INSTANT, "<instant>")}`;
+  return `${a.status} ${text.replace(INSTANT, "<instant>")}`;
+}
+
+/** Every instant a console answer states, as the oracle's placeholder. */
+const INSTANT = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g;
+
+/** The five request-scoped fields removed from every `meta` object an answer holds, and from nowhere else. */
+function withoutRequestFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutRequestFields);
+  if (value === null || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === "meta" && v !== null && typeof v === "object" && !Array.isArray(v)) {
+      const meta = { ...(v as Record<string, unknown>) };
+      for (const f of REQUEST_SCOPED) delete meta[f];
+      out[k] = meta;
+    } else out[k] = withoutRequestFields(v);
+  }
+  return out;
 }
 
 async function run(c: Core): Promise<void> {

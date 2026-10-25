@@ -47,7 +47,8 @@ import type pg from "pg";
 import { platformDb } from "../db.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import {
-  byWeek, callWeeks, earliestBoundary, followupOf, latencyMeasures, LOOKAHEAD_MS, nextWeekBoundary, periodWeeks, readGrid,
+  byWeek, callWeeks, earliestBoundary, followupOf, latencyMeasures, LOOKAHEAD_MS, nextSettledWeekBoundary,
+  nextWeekBoundary, periodWeeks, readGrid,
   sessionsMeasure, share, tally, windowOf, type Grid,
 } from "./platform-measures.js";
 import { audienceKey, cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
@@ -296,8 +297,16 @@ export async function usageAnswer(superadmin: boolean, asOfMs?: number): Promise
     tools: tooled?.[0] ?? NO_WEEK, mostUsed: tooled?.[1] ?? NO_WEEK,
     rhythm, perApproval, modelCalls,
   };
-  // Two answers here move with the clock alone: the refusals still inside their 120 seconds, and the
-  // running week turning complete. The read that failed contributes no boundary rather than a wrong one.
+  // Two answers here move with the clock alone: the refusals still inside their 120 seconds, and the running
+  // week turning complete. The read that failed contributes no boundary rather than a wrong one.
+  //
+  // DELIBERATE: TWO week boundaries, because this answer draws two families of window. The tiles settle at the
+  // week's end (`nextWeekBoundary`); the refusals-put-right figures only once the 120 seconds after it have been
+  // read (`followupOf` at LOOKAHEAD_MS), and the running week has already moved past a week whose settle is still
+  // ahead — so `nextSettledWeekBoundary` is what stops a read 90 seconds past a week's end from being kept its 60
+  // seconds and served at 121 with a week it calls running. Neither boundary may replace the other: the earlier of
+  // the two is the instant this answer changes, and a later one alone would serve a completed week as running.
   const rows = await followups.catch(() => [] as FollowupRow[]);
-  return { answer, boundary: earliestBoundary(nextWeekBoundary(grid), nextBoundaryOf(rows)) };
+  return { answer, boundary: earliestBoundary(nextWeekBoundary(grid), nextSettledWeekBoundary(grid, LOOKAHEAD_MS),
+                                               nextBoundaryOf(rows)) };
 }

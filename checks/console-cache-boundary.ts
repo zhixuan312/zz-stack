@@ -114,6 +114,14 @@ function completeAt(answer: Answer, from: number): unknown {
   return week === undefined ? "the week is not drawn" : week.window.complete;
 }
 
+/** Whether the REFUSAL week starting at `from` is drawn complete — the family `followupOf` settles at
+ *  LOOKAHEAD_MS, which a boundary taken at the week's own end would let the cache serve past. */
+function refusalWeekComplete(answer: Answer, from: number): unknown {
+  if (answer.followup?.state !== "ok" || !answer.followup.data) return `followup ${answer.followup?.state}`;
+  const week = answer.followup.data.weeks.find((w) => w.window.from === iso(from));
+  return week === undefined ? "the refusal week is not drawn" : week.window.complete;
+}
+
 async function run(sql: pg.Client, url: string, load: (p: string) => Promise<unknown>): Promise<void> {
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_TZ = TIMEZONE;
@@ -226,6 +234,29 @@ async function run(sql: pg.Client, url: string, load: (p: string) => Promise<unk
     }
     same("the week is complete once its end has passed", completeAt(after.value, W - 7 * DAY), true);
     pass(`nothing written and the clock at ${iso(W + 1_000)}: a miss, and the week ending ${iso(W)} is complete`);
+
+    // ---- The clock arm, the REFUSAL week's completeness, which settles 120 seconds later than the tiles' do.
+    // The same week, read by the family `followupOf` draws at LOOKAHEAD_MS: its window turns complete only once
+    // the 120 seconds after its end have been read, so an answer bounded by the tiles' end alone would be served
+    // for up to its 60 seconds with a refusal week it says is still running. This arm primes INSIDE that minute
+    // and reads again past it with nothing written — the case the tiles' arm cannot see, and the reason both
+    // routes hand `nextWeekBoundary` the settle rather than the week's own end.
+    clock = W + 90_000;
+    const keyF = "console-cache-boundary|refusal-week";
+    const fPrime = await m.usageServed(false, keyF, prefixC, W + 90_000);
+    same("90 seconds past the week's end its refusal week is still running",
+      refusalWeekComplete(fPrime.value, W - 7 * DAY), false);
+
+    clock = W + 121_000;
+    const fAfter = await m.usageServed(false, keyF, prefixC, W + 121_000);
+    if (fAfter.hit) {
+      fail("nothing written, the clock past the refusal week's settle: the answer is computed again",
+        `the cache served the answer it computed at ${iso(W + 90_000)}, whose refusal week reads still running; at ` +
+        `${iso(W + 121_000)} the 120 seconds after the week's end have been read, so it is complete`);
+    }
+    same("121 seconds past the week's end its refusal week is complete",
+      refusalWeekComplete(fAfter.value, W - 7 * DAY), true);
+    pass(`nothing written and the clock at ${iso(W + 121_000)}: a miss, and the refusal week ending ${iso(W)} is complete`);
 
     // ---- The clock arm, the local day turning over. Status draws "today" and "through the latest complete
     // day" by the reporting timezone's calendar date, so an answer computed a second before midnight is

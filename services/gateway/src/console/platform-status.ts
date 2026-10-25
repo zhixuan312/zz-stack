@@ -54,8 +54,9 @@ import { runFinding, runOf, type Finding } from "./findings.js";
 import { pendingRevisions } from "./pending.js";
 import { bugsCoverage, publicRow, queueOf, realReports, type PublicBugRow } from "./platform-bugs.js";
 import {
-  bugsMeasure, earliestBoundary, finishedMeasure, followupOf, latencyMeasures, malformedMeasure, nextWeekBoundary, ownBugs,
-  readGrid, searchesMeasure, sessionsMeasure, unavailableMeasure, type Grid, type StatusMeasure,
+  bugsMeasure, earliestBoundary, finishedMeasure, followupOf, latencyMeasures, LOOKAHEAD_MS, malformedMeasure,
+  nextSettledWeekBoundary, nextWeekBoundary, ownBugs, readGrid, searchesMeasure, sessionsMeasure, unavailableMeasure,
+  type Grid, type StatusMeasure,
 } from "./platform-measures.js";
 import { evaluationWaiting, needsOf, type DoorToday, type Needs } from "./platform-needs.js";
 import { audienceKey, cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
@@ -370,7 +371,13 @@ async function statusAnswer(
   // latest complete day, and both are `localDate`'s. The platform-wide read is the earlier of the two refusal
   // boundaries, so it is the one the answer is held to; a read that failed contributes no boundary rather
   // than a wrong one.
-  const boundary = earliestBoundary(nextWeekBoundary(grid), nextDayBoundary(grid.asOfMs),
+  //
+  // DELIBERATE: two week boundaries for the two families — `nextWeekBoundary` for the running week's own end, and
+  // `nextSettledWeekBoundary` at `LOOKAHEAD_MS` because `same_tool_followup_pct` draws its weeks settled 120 seconds
+  // past their end, after the grid has already moved on to the next running week. The earlier of every boundary the
+  // answer carries is the one it is held to.
+  const boundary = earliestBoundary(nextWeekBoundary(grid), nextSettledWeekBoundary(grid, LOOKAHEAD_MS),
+                                    nextDayBoundary(grid.asOfMs),
                                     nextBoundaryOf(await followups.catch(() => [] as FollowupRow[])));
   return { answer, boundary };
 }

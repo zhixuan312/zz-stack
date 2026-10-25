@@ -28,7 +28,7 @@ const reaches = (path: string, names: readonly string[] | undefined): boolean =>
 
 /** The fields `console/read-envelope.ts` stamps on every console GET answer, which describe the request that asked and
  *  never the figures: no fixture can state them, because a fixture has no request. */
-const REQUEST_SCOPED = new Set(["observedAt", "revision", "cacheHit", "builtAt", "sourceRevision"]);
+export const REQUEST_SCOPED: ReadonlySet<string> = new Set(["observedAt", "revision", "cacheHit", "builtAt", "sourceRevision"]);
 
 /** Every difference, appended to `out` (which is also answered), each naming its path. */
 export function shapeDiffs(a: unknown, b: unknown, path: string, out: string[], rules: ShapeRules = {}): string[] {
@@ -40,12 +40,20 @@ export function shapeDiffs(a: unknown, b: unknown, path: string, out: string[], 
     else if (rules.bothFilled && a.length !== b.length) out.push(`${path} is empty on one side, so its elements were not compared`);
   } else if (isObj(a) && isObj(b)) {
     // The fields that describe the REQUEST rather than the figures. A console route is answered by the read-envelope
-    // middleware, which stamps `observedAt`, `revision`, `cacheHit`, `builtAt` and `sourceRevision` on it; a fixture
-    // answers what the figures are and has no request to describe, so it can never state them. They are compared where
-    // they belong — `checks/console-read-envelope.ts` proves every console GET carries them and
+    // middleware, which stamps `observedAt`, `revision`, `cacheHit`, `builtAt` and `sourceRevision` on its `meta`; a
+    // fixture answers what the figures are and has no request to describe, so it can never state them. They are compared
+    // where they belong — `checks/console-read-envelope.ts` proves every console GET carries them and
     // `checks/console-read-contract.ts` proves their values — and not against a fixture that is not asked for them.
-    const ka = Object.keys(a).filter((k) => !REQUEST_SCOPED.has(k)).sort();
-    const kb = Object.keys(b).filter((k) => !REQUEST_SCOPED.has(k)).sort();
+    //
+    // DELIBERATE: the mask is keyed on the PATH, never on the name alone. Filtering these five names at every object
+    // would stop comparing a data field that happens to share one: a document's `versions[]` each hold a `revision`,
+    // and the snapshot route answers `{ version, revision, body }`. A check that compared one of those would have gone
+    // silently blind to it, and a field dropped or renamed there would ship green.
+    const atMeta = path === "meta" || path.endsWith(".meta");
+    const kept = (o: Obj): string[] =>
+      Object.keys(o).filter((k) => !(atMeta && REQUEST_SCOPED.has(k))).sort();
+    const ka = kept(a);
+    const kb = kept(b);
     if (ka.join() !== kb.join()) out.push(`${path || "the answer"} has keys {${ka.join(", ")}} where the fake has {${kb.join(", ")}}`);
     for (const k of ka.filter((x) => kb.includes(x))) shapeDiffs(a[k], b[k], path ? `${path}.${k}` : k, out, rules);
   }

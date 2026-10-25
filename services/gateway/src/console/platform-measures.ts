@@ -134,6 +134,25 @@ export function nextWeekBoundary(grid: Grid, settleMs = 0): number | null {
   return at > grid.asOfMs ? at : null;
 }
 
+/**
+ * The earliest instant at which a week the answer draws turns complete under a settle LATER than its own end —
+ * the first week whose `toMs + settleMs` is still ahead — or null when every week the grid draws is settled
+ * already.
+ *
+ * `nextWeekBoundary` answers the RUNNING week's end and says nothing once that end has passed, but a family read
+ * at a settle keeps moving for that settle after it: `followupOf` draws its weeks at `LOOKAHEAD_MS`, so a refusal
+ * week ending at `W` is still `complete: false` until `W + 120 s`, while the grid's running week has already moved
+ * on to `[W, W + 7 d)`. Without this boundary, an answer computed 90 seconds past `W` is kept its 60 seconds and
+ * served at 121 seconds with a week it still calls running — the case FR-11c forbids, once a week.
+ */
+export function nextSettledWeekBoundary(grid: Grid, settleMs: number): number | null {
+  for (const w of grid.weeks) {
+    const at = w.toMs + settleMs;
+    if (at > grid.asOfMs) return at;
+  }
+  return null;
+}
+
 /** The earliest of the instants an answer can change at with nothing written, or null when the clock
  *  alone changes none of its parts. DELIBERATE: the earliest, never the last — an answer may not be
  *  served past its next change. */

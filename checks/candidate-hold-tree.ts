@@ -52,10 +52,16 @@ try {
   git.exposeGitDir(repo);
 
   // The survivor: its pid, a heartbeat, and the swap — all relative to its cwd.
+  // DELIBERATE: it ends itself once this check is gone or a minute has passed. The `finally` below
+  // kills it, but a signal to this check skips the `finally`; one loop orphaned that way on
+  // 2026-10-22 spun at ~60% of a core for four days and pinned its temp trees.
   writeFileSync(join(scratch, "loop.cjs"), `
     const fs = require("fs");
     fs.writeFileSync("loop.pid", String(process.pid));
+    const deadline = Date.now() + 60_000;
+    const checkGone = () => { try { process.kill(${process.pid}, 0); return false; } catch (e) { return e.code === "ESRCH"; } };
     const swap = () => {
+      if (Date.now() > deadline || checkGone()) process.exit(0);
       for (let i = 0; i < 50; i++) {
         try { fs.appendFileSync("beat", "."); } catch {}
         try {

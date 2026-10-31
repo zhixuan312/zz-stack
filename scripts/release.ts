@@ -299,7 +299,7 @@ const ci = imagesFromCi
   : null;
 if (ci) log(`  images: not built here — CI built, smoked and published them (${ci.url})`);
 if (imagesFromCi) setConsoleVersion({ dash, dashVersion });
-const bundle = imagesFromCi ? buildBundle() : buildAndSmoke({ dash, dashVersion });
+const bundle = imagesFromCi ? buildBundle() : await buildAndSmoke({ dash, dashVersion });
 
 if (dryRun) {
   // The VERSION file is put back by the exit handler registered where it was written, so a

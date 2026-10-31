@@ -72,7 +72,7 @@ export function setConsoleVersion({ dash, dashVersion }: { dash: DashboardResolu
   }
 }
 
-export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution; dashVersion: string | null }): string {
+export async function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution; dashVersion: string | null }): Promise<string> {
   step(2, "build and smoke the images");
   // The root Dockerfile, the same one docker-compose.build.yml builds from. It installs git,
   // without which every `plugin_register` from a git URL or a package tarball refuses as an
@@ -227,7 +227,7 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
   /* And the acts, on the same image, before anything is published. sql-check above proves every
    * statement resolves; this proves the tools built on them still behave the way this release
    * says they do. */
-  walkToolChain(version);
+  await walkToolChain(version);
 
   // The bundle the deploy step hands the host, whether or not this machine built the images.
   return buildBundle();

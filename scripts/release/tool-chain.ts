@@ -16,8 +16,6 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
-import { mintPat } from "@zz/contracts";
-
 import { IMAGE, asExecError, die, log, redact, root, run } from "../deployment.ts";
 import { initializeRefusal } from "../door-frame.ts";
 import { owned, sweepOrphans } from "../owned-containers.ts";
@@ -42,8 +40,11 @@ function waitFor(what: string | (() => string), attempt: () => boolean, limit = 
   }
 }
 
-export function walkToolChain(version: string | undefined): void {
+export async function walkToolChain(version: string | undefined): Promise<void> {
   if (!version) die("no version to walk the tool chain against");
+  // Loaded here, not at the top: @zz/contracts resolves to a built dist/, and `release.ts --rollback`
+  // imports this module without walking anything, on a tree that may never have been built.
+  const { mintPat } = await import("@zz/contracts");
   const net = tag("net"), pg = tag("pg"), core = tag("core"), gw = tag("gw");
   const drop = (): void => {
     // `-v`: the postgres image declares its data directory as a VOLUME, and `rm -f` alone leaves

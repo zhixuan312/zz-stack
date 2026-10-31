@@ -68,8 +68,9 @@ export const state = {
   active: 0,
   /** Whether the result has arrived. Before it does, the page is a skeleton, not "nothing". */
   received: false,
-  /** Whether this result is a part the assistant read for itself — nothing to draw for a person. */
-  reading: false,
+  /** The documents the assistant read only a part of while the panel held none, offered to open whole; and whether
+   *  an open is under way or failed. Null when there is nothing to offer. */
+  offer: null as { paths: string[]; opening: "idle" | "busy" | { failed: string } } | null,
   fullscreen: false,
   canFullscreen: false,
   /** The inline reading pane's height: what the host says it can give, less the head and the foot. */

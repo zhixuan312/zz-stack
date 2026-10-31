@@ -15,6 +15,7 @@
  * the one primary action, green/amber/red for approved/waiting/refused and nothing else, the kit
  * blue for what changed. The `state-approved` mascot appears for its one job.
  */
+import { arrival } from "./arrival.ts";
 import { marksOf, minutesLeft, minutesOf, renderMarkdown } from "./render.ts";
 import { schedule, tellModel } from "./context.ts";
 import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection, tell } from "./review.ts";
@@ -170,9 +171,7 @@ function draw(): void {
     return;
   }
   if (!s) {
-    // A part the assistant read for itself draws no panel: one line says where the document is.
-    root.innerHTML = state.reading
-      ? `<p class="reading-note">The assistant read part of this document. The whole of it is in the panel above.</p>`
+    root.innerHTML = state.offer ? offered(state.offer)
       : `<div class="panel"><p class="empty">document_present returned no document to show.</p></div>`;
     return;
   }
@@ -287,7 +286,7 @@ const show = (i: number): void => {
   state.pick = null;
   jumpOpen = false;
   draw();
-  requestAnimationFrame(() => void recordShown(state.slots[state.active]!));
+  requestAnimationFrame(() => { const s = state.slots[state.active]; if (s) void recordShown(s); });
 };
 
 /** Approve exactly what this panel showed: the snapshot it displayed and the review context it was
@@ -343,6 +342,7 @@ root.addEventListener("click", (e) => {
     else if (/^(https?:|mailto:)/i.test(href)) void app.openLink({ url: href });
     return;
   }
+  if (el.dataset.act === "open-whole" && state.offer) { void openWhole(state.offer.paths[Number(el.dataset.i)]!); return; }
   if (!s) return;
   switch (el.dataset.act) {
     case "sign": void sign(s); break;
@@ -390,19 +390,62 @@ function hostSays(ctx: ReturnType<typeof app.getHostContext>): "redraw" | "resiz
   return before.pane !== state.paneHeight ? "resize" : "none";
 }
 
+function slotOf(doc: PanelDocument): Slot {
+  const view = renderMarkdown(doc.body);
+  const cmp = marksOf(view, doc.previous?.changes ?? []);
+  const slot: Slot = { doc, view, shown: "pending" as Shown, approval: "idle" as Approval, scroll: 0, historyOpen: false,
+    marks: cmp.marks, removed: cmp.removed, other: cmp.other, onlyChanges: false,
+    notes: [], sent: null, noting: null };
+  loadNotes(slot);
+  return slot;
+}
+
+/** A part the assistant read while the panel holds nothing: what it read, and the way to the whole of it. Where the
+ *  host cannot call the server, the way is to ask, in words. */
+function offered(o: NonNullable<typeof state.offer>): string {
+  const names = o.paths.map((p) => `<code>${esc(p)}</code>`).join(", ") || "this document";
+  const can = !!app.getHostCapabilities()?.serverTools && o.paths.length > 0;
+  const failed = typeof o.opening === "object" ? `<p class="reading-note" role="alert">${esc(o.opening.failed)}</p>` : "";
+  const ask = `Ask the assistant to present ${names} without an offset or a section to see all of it here.`;
+  return `<div class="panel"><p class="empty">The assistant read part of ${names} for itself, so nothing is drawn here yet.
+    ${can ? "" : ask}</p>${failed}${can ? `<p class="empty">${o.paths.map((p, i) =>
+      `<button class="btn btn-primary" data-act="open-whole" data-i="${i}" ${o.opening === "busy" ? "disabled" : ""}>` +
+      `${o.opening === "busy" ? "Opening…" : `Show the whole of ${esc(p.split("/").pop() ?? p)}`}</button>`).join(" ")}</p>` : ""}</div>`;
+}
+
+/** Open a document the assistant read only a part of: a present of the whole, drawn here and recorded as any other. */
+async function openWhole(path: string): Promise<void> {
+  const o = state.offer;
+  if (!o) return;
+  o.opening = "busy";
+  draw();
+  try {
+    const r = await app.callServerTool({ name: "document_present", arguments: { path } });
+    const docs = (r._meta?.[DOCS_KEY] ?? []) as PanelDocument[];
+    if (!docs.length) {
+      o.opening = { failed: `It could not be opened: ${answer(r).said || "document_present returned no document"}.` };
+      draw();
+      return;
+    }
+    state.offer = null;
+    state.slots = docs.map(slotOf);
+    show(0);
+  } catch (err) {
+    o.opening = { failed: `This client would not open it (${err instanceof Error ? err.message : String(err)}). ` +
+      `Ask the assistant to present ${path} without an offset or a section.` };
+    draw();
+  }
+}
+
 app.ontoolresult = (result) => {
   const docs = (result._meta?.[DOCS_KEY] ?? []) as PanelDocument[];
-  state.reading = result._meta?.["zz-core/reading"] === true;
+  const reading = result._meta?.["zz-core/reading"] === true;
   state.received = true;
-  state.slots = docs.map((doc) => {
-    const view = renderMarkdown(doc.body);
-    const cmp = marksOf(view, doc.previous?.changes ?? []);
-    const slot: Slot = { doc, view, shown: "pending" as Shown, approval: "idle" as Approval, scroll: 0, historyOpen: false,
-      marks: cmp.marks, removed: cmp.removed, other: cmp.other, onlyChanges: false,
-      notes: [], sent: null, noting: null };
-    loadNotes(slot);
-    return slot;
-  });
+  const next = arrival(state.slots.length, docs.length, reading);
+  // The assistant paging on through a document the person already has: nothing about the panel changes.
+  if (next === "keep") return;
+  state.offer = next === "offer" ? { paths: (result._meta?.["zz-core/paths"] ?? []) as string[], opening: "idle" } : null;
+  state.slots = docs.map(slotOf);
   show(0);
   schedule(1200);
 };

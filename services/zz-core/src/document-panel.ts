@@ -68,16 +68,18 @@ export const PANEL_MIME = "text/html;profile=mcp-app";
  *  else — script, style, both brand images — is inside the page. */
 const PANEL_CSP = { resourceDomains: ["https://fonts.googleapis.com", "https://fonts.gstatic.com"] };
 
+/** A tool the panel itself calls. `visibility` is the MCP Apps rule; `openai/widgetAccessible`
+ *  is ChatGPT's older switch for the same permission, still read by it. */
+export const PANEL_CALLABLE = { "openai/widgetAccessible": true };
 /** The `_meta` on `document_present`'s registration: which page renders its result.
- *  `openai/toolInvocation/*` is what ChatGPT says while the call runs. */
+ *  `openai/toolInvocation/*` is what ChatGPT says while the call runs. The panel calls it too, to open a document
+ *  the assistant read only a part of. */
 export const PRESENT_META = {
   ui: { resourceUri: PANEL_URI },
   "openai/toolInvocation/invoking": "Opening the document",
   "openai/toolInvocation/invoked": "Document ready",
+  ...PANEL_CALLABLE,
 };
-/** A tool the panel itself calls. `visibility` is the MCP Apps rule; `openai/widgetAccessible`
- *  is ChatGPT's older switch for the same permission, still read by it. */
-export const PANEL_CALLABLE = { "openai/widgetAccessible": true };
 
 /** One document as the panel draws it. `ticket` is present only for the current revision: showing
  *  history is a read, and nothing it renders may vouch for the present. `review_context` is the

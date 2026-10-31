@@ -376,7 +376,11 @@ export function registerArtifactTools(server: McpServer): void {
       const out: string[] = [];
       // What the document panel draws — every document whole, whatever part the text carries.
       const panel: PanelDocument[] = [];
-      const reading = asksPart({ section, offset, limit });
+      // The model reading on: a section, or a part past the first. The first part of a present — no offset, offset 0,
+      // or only a limit — still draws the whole document for the person, whatever length the model is handed: the
+      // panel's length and the model's are separate. A part past the first draws nothing, or every paging call would
+      // draw the whole document again, in a new panel, under the last one (0.92.0).
+      const reading = section !== undefined || (offset ?? 0) > 0;
       // COUPLED: the record of what was shown is written by `present` (document-present.ts), once
       // per document and in that document's own review context, and nothing in this registration
       // touches it. checks/document-reads.ts asserts both halves.
@@ -402,15 +406,15 @@ export function registerArtifactTools(server: McpServer): void {
               "document_list to see what the store does hold, then ask again by full path.");
           continue;
         }
-        // A part asked for is the model reading, not a person being shown: in ChatGPT every paging
-        // call drew the whole document again, in a new panel, under the last one (0.92.0).
         const shown = await present(p, viewerOf(team), rel.replace(/^\/+/, ""), ask, !reading);
         out.push(shown.text);
         if (shown.panel) panel.push(shown.panel);
       }
       // `_meta`, never `structuredContent`: see document-panel.ts for what each client shows a model.
+      // A read draws no document, so the panel is told what was read: one it holds nothing of offers to open it whole.
+      const paths = (single ? [path as string] : path as string[]).map((r) => r.replace(/^\/+/, ""));
       return { ...text(out.join("\n\n────────\n\n")),
-               _meta: { "zz-core/documents": panel, ...(reading ? { "zz-core/reading": true } : {}) } };
+               _meta: { "zz-core/documents": panel, ...(reading ? { "zz-core/reading": true, "zz-core/paths": paths } : {}) } };
     },
   );
 

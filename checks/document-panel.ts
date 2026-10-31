@@ -29,8 +29,10 @@
  *        snapshot a later row of its version superseded, and the current version read by number
  *        is its last snapshot; every approval's day, the header's and the history's, is the
  *        platform's day;
- *      - an earlier version carries no ticket and no context, and a part the model asks for draws
- *        no panel;
+ *      - an earlier version carries no ticket and no context; a part past the first draws no panel
+ *        and names the path it read, while a first part (offset 0, or only a limit) draws the whole
+ *        document; and `arrival` keeps the panel's document through a read, offering it when the
+ *        panel holds none;
  *      - `document_shown` is app-only, records full coverage under the panel's context with a
  *        valid ticket, answers a second call from the context's coverage, and records nothing with a
  *        forged ticket, another person's, once the row it drew is rewritten in place or the
@@ -137,6 +139,16 @@ if (!existsSync(join(CONSOLE, "src/styles/tokens.css"))) {
 
 // 5. Rendering
 const { renderMarkdown, marksOf, minutesOf, minutesLeft } = await load("services/zz-core/app/render.ts");
+const { arrival } = await load("services/zz-core/app/arrival.ts");
+{
+  // What one result does to the documents the panel holds: a read never empties a panel, and a read into an empty one
+  // offers the document rather than pointing at a panel that may not exist.
+  const cases: [number, number, boolean, string][] = [[0, 1, false, "replace"], [1, 1, true, "replace"], [1, 0, true, "keep"],
+    [0, 0, true, "offer"], [0, 0, false, "none"]];
+  for (const [held, incoming, reading, want] of cases) {
+    is(arrival(held, incoming, reading) === want, `a result of ${incoming} document(s), reading ${reading}, into a panel holding ${held}, is not "${want}"`);
+  }
+}
 const { deltaOf } = await load("services/zz-core/dist/document-delta.js");
 {
   // A script written without spaces is read a character at a time: about 2,000 Han characters in eleven
@@ -411,8 +423,15 @@ try {
   is(events[0]?.detail.meta_bytes === Buffer.byteLength(JSON.stringify(drawn[0])) && events[0]?.detail.text_chars === said(res).length,
      `the present's row does not record the panel payload's and the text's sizes: ${JSON.stringify(events[0]?.detail)}`);
   const paged = await me.callTool({ name: "document_present", arguments: { path: REL, offset: 60000 } }) as Result;
-  is(drawnOf(paged).length === 0 && paged._meta?.["zz-core/reading"] === true,
-     "a part the model asked for draws the whole document again, in another panel under the last");
+  is(drawnOf(paged).length === 0 && paged._meta?.["zz-core/reading"] === true
+     && JSON.stringify(paged._meta?.["zz-core/paths"]) === JSON.stringify([REL]),
+     "a part past the first draws the whole document again, in another panel under the last, or does not name what it read");
+  // The first part is still a present the person is shown: whatever length the model asks for, the panel gets it whole.
+  for (const args of [{ offset: 0, full: true }, { limit: 2000 }]) {
+    const first = await me.callTool({ name: "document_present", arguments: { path: REL, ...args } }) as Result;
+    is(drawnOf(first).length === 1 && first._meta?.["zz-core/reading"] === undefined,
+       `a first part asked as ${JSON.stringify(args)} draws no panel, so the person sees only a note`);
+  }
   is(said(paged).includes(metadata), "a later part of a full presentation does not show the review metadata");
   const old = drawnOf(await me.callTool({ name: "document_present", arguments: { path: REL, version: 1 } }) as Result);
   is(old[0]?.ticket === null && old[0]?.review_context === null,

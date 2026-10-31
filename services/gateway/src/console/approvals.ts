@@ -108,17 +108,7 @@ async function approvalsOf(team: string, caller: string, asOf: string): Promise<
               substr(e.subject, length(i.slug) + 2) as path, d.id::text as doc_id,
               e.detail->>'review_context' as context, e.detail->>'content_revision' as target,
               e.detail->>'decision_basis' as basis,
-              exists (select 1 from zz.event s
-                       where s.initiative_id = e.initiative_id and s.subject = e.subject
-                         and s.kind in ('document.shown', 'document.shown_part')
-                         and s.detail->>'review_context' = e.detail->>'review_context'
-                         and s.detail->>'target' = e.detail->>'content_revision'
-                         and s.detail->>'via' = 'console') as in_console,
-              exists (select 1 from zz.event s
-                       where s.initiative_id = e.initiative_id and s.subject = e.subject
-                         and s.kind in ('document.shown', 'document.shown_part')
-                         and s.detail->>'review_context' = e.detail->>'review_context'
-                         and s.detail->>'target' = e.detail->>'content_revision') as covered,
+              coalesce(shown.in_console, false) as in_console, shown.covered,
               cur.version as current_version,
               coalesce(cur.content_generation, d.content_generation)::text as current_generation
          from zz.event e
@@ -126,6 +116,14 @@ async function approvalsOf(team: string, caller: string, asOf: string): Promise<
          join zz.initiative i on i.id = e.initiative_id
          left join zz.doc d on d.initiative_id = i.id and d.path = substr(e.subject, length(i.slug) + 2)
          left join zz.doc_revision cur on cur.doc_id = d.id and cur.revision = d.current_revision
+         -- The showings of the approved snapshot, read once for both answers: any at all, and any in the console.
+         cross join lateral (
+           select count(*) > 0 as covered, bool_or(s.detail->>'via' = 'console') as in_console
+             from zz.event s
+            where s.initiative_id = e.initiative_id and s.subject = e.subject
+              and s.kind in ('document.shown', 'document.shown_part')
+              and s.detail->>'review_context' = e.detail->>'review_context'
+              and s.detail->>'target' = e.detail->>'content_revision') shown
         where t.slug = $1 and e.kind = 'document.document_approve' and e.origin = 'work'
           and lower(e.detail->>'signer') = lower($2) and e.ts <= $3::timestamptz
         order by e.ts, e.id`, [team, caller, asOf]),

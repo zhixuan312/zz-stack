@@ -80,6 +80,22 @@ type EvidenceWindowInput = { from: string; to: string } | { last_runs: number };
  *  No run matches: an explicit empty range (`from` after `to`), so `between` downstream matches
  *  nothing and `pluginTraces` reports `runs: 0` with its own named reason, rather than this
  *  function inventing a window that happens to be wide enough to catch something else. */
+/** An ISO date or timestamp, which is all a window bound may be: PostgreSQL also reads words such
+ *  as `yesterday` and `now`, which name a different time on every replay and were stored as no
+ *  window at all. */
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)?)?$/;
+
+/** Why an explicit window cannot be observed, or null when it can. */
+function windowRefusal(input: EvidenceWindowInput): string | null {
+  if (!("from" in input)) return null;
+  const bad = [input.from, input.to].find((t) => !ISO_TIME.test(t) || Number.isNaN(Date.parse(t)));
+  if (bad !== undefined) return `ERROR: evidence_window bound "${bad}" is not an ISO date or timestamp (2026-10-01 or 2026-10-01T00:00:00Z)`;
+  if (Date.parse(input.from) >= Date.parse(input.to)) {
+    return `ERROR: evidence_window from ${input.from} is not before to ${input.to}`;
+  }
+  return null;
+}
+
 async function resolveWindow(
   pool: pg.Pool, plugin: string, version: string, serves: boolean, input: EvidenceWindowInput,
 ): Promise<EvidenceWindow> {
@@ -368,7 +384,8 @@ export function registerObserveTools(server: McpServer): void {
         "idempotency ledger, so a retried call with the same idempotency_key replays rather " +
         "than minting a second row (the same subject observed under a different window DOES " +
         "mint a second snapshot — that is a different observation, not a retry). REFUSES a " +
-        "subject_version_id nothing minted.",
+        "subject_version_id nothing minted, a window bound that is not an ISO date or timestamp, " +
+        "and a window whose from is not before its to.",
       inputSchema: {
         subject_version_id: z.string(),
         evidence_window: z.union([
@@ -388,6 +405,8 @@ export function registerObserveTools(server: McpServer): void {
       const subject = await resolveSubject(pool, subject_version_id);
       if (!subject) throw new Refusal("ERROR: unknown subject_version_id");
       const { plugin, declaredVersion } = subject;
+      const badWindow = windowRefusal(evidence_window);
+      if (badWindow) throw new Refusal(badWindow);
 
       // A retry is answered from the snapshot its first call recorded, before anything is
       // computed: what the window holds now is not what that call observed.
@@ -411,7 +430,9 @@ export function registerObserveTools(server: McpServer): void {
         const used = await versionsWithUse(pool, plugin, serves);
         const unit = serves ? "call" : "run";
         throw new Refusal(
-          `ERROR: ${plugin} ${declaredVersion} has no ${unit} in this window (${window.from} to ${window.to}), ` +
+          `ERROR: ${plugin} ${declaredVersion} has no ${unit}` +
+          // `last_runs` over a version nobody used resolves to no window at all.
+          (window.from === "infinity" ? "" : ` in this window (${window.from} to ${window.to})`) + ", " +
           "not counting evaluations' own — there is nothing to observe. " +
           (used.length
             ? `Versions of ${plugin} that were used: ${used.map((v) =>

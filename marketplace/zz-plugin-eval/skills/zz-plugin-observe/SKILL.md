@@ -20,7 +20,8 @@ records `observation_snapshot_id` as this stage's record, which is how DISCOVER 
 this exact snapshot rather than minting another.
 
 `plugin_profile` is a mutator: it writes exactly one immutable `zz.eval_observation_snapshot`
-row and returns `observation_snapshot_id`. `evidence_window` is `{ from, to }` or
+row and returns `observation_snapshot_id`. `evidence_window` is `{ from, to }` — two ISO dates
+or timestamps, `from` before `to`; a word such as `yesterday` is refused — or
 `{ last_runs: n }`; `{ last_runs: n }` resolves to the caller's most recent `n` runs at call
 time and that RESOLVED range is what gets recorded, so a retry (same `idempotency_key`) replays
 against the same window rather than sliding forward as new runs land. No protocol is required

@@ -26,6 +26,8 @@
  *     decided, not one somebody else had already decided;
  *   - `plugin_profile` retried with the same key answers the snapshot it recorded after the
  *     window's calls are gone;
+ *   - `plugin_profile` refuses a window bound that is not an ISO date or timestamp, and a window
+ *     whose start is not before its end, recording no snapshot;
  *   - a replayed `release_record` lists as decided only the findings its own call decided, and a
  *     replayed `release_apply` hands the patch and plan only to the call that moved the attempt
  *     to `applying` — read through the built replay functions on zz-core's own pool;
@@ -190,6 +192,23 @@ async function profileReplays(c: Core, s: Seed): Promise<void> {
   if (!again.includes(`"observation_snapshot_id": "${id}"`)) {
     c.fail(step, `the retry answered ${again.slice(0, 300)}, not snapshot ${id}`);
   }
+  c.pass(step);
+}
+
+async function profileWindowIsTimes(c: Core, s: Seed): Promise<void> {
+  const step = "plugin_profile with a window that is not two times in order";
+  const door = evalDoor(c, c.email);
+  const snapshots = async () => Number((await one<{ n: string }>(c, "select count(*)::text as n from zz.eval_observation_snapshot")).n);
+  const before = await snapshots();
+  for (const [window, said] of [
+    [{ from: "yesterday", to: "now" }, `"yesterday" is not an ISO date or timestamp`],
+    [{ from: "2026-12-01", to: "2026-01-01" }, "is not before"],
+  ] as const) {
+    const reply = await ask(door, "plugin_profile",
+      { subject_version_id: s.versionId, evidence_window: window, idempotency_key: `window-${window.from}` });
+    if (!reply.startsWith("ERROR:") || !reply.includes(said)) c.fail(step, `${JSON.stringify(window)} answered ${reply.slice(0, 300)}`);
+  }
+  if (await snapshots() !== before) c.fail(step, "a snapshot was recorded");
   c.pass(step);
 }
 
@@ -680,7 +699,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

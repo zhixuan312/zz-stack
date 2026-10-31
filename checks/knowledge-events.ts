@@ -16,6 +16,8 @@
  *     the caller's team for a team node, the shared shelf's for a platform node;
  *   - a retried `knowledge_add` answers the node the first call made, and a blank title or body is
  *     refused;
+ *   - a `zz-platform` member's team shelf is the platform shelf, so its bare id is superseded rather
+ *     than refused as present on both shelves;
  *   - a node is superseded only by a current one, so the reverse of a supersede already made is
  *     refused and no two nodes name each other;
  *   - a `plugin:` tag naming no registered plugin is written, and the reply says so after the
@@ -176,6 +178,29 @@ async function pluginTagCases(c: Core, initiative: string): Promise<void> {
   c.pass("knowledge_add writes a node whose plugin tag names nothing registered and says so");
 }
 
+/** A `zz-platform` member's team shelf is the platform shelf, so a bare id names one node there and
+ *  is superseded, not refused as present on BOTH shelves with the same node named twice. */
+async function platformMemberCase(c: Core, initiative: string): Promise<void> {
+  const step = "a zz-platform member supersedes a platform node by its bare id";
+  const [older, newer] = [await add(c, step, PLATFORM_SHELF, {
+    title: "Platform lesson by a member", type: "decision", scope: "platform", evidence: [initiative],
+    tags: ["platform:guardrail"], body: "The lesson a zz-platform member replaces." }),
+  await add(c, step, PLATFORM_SHELF, {
+    title: "Platform lesson by a member, revised", type: "decision", scope: "platform", evidence: [initiative],
+    tags: ["platform:guardrail"], body: "What replaces it." })];
+  const member = "platform-member@example.test";
+  await c.sql.query(
+    `with p as (insert into zz.principal (email, display_name, role) values ($1, 'Platform member', 'member') returning id),
+          t as (select id from zz.team where slug = $2)
+     insert into zz.membership (team_id, principal_id, role, added_by) select t.id, p.id, 'member', p.id from p, t`,
+    [member, PLATFORM_SHELF]);
+  await c.sql.query(
+    "update zz.principal set active_team_id = (select id from zz.team where slug = $2) where email = $1", [member, PLATFORM_SHELF]);
+  const reply = await c.client({ email: member }).call("knowledge_supersede", { old_id: older, new_id: newer });
+  if (reply !== `node ${older} superseded by ${newer}`) c.fail(step, `answered "${reply}"`);
+  c.pass(step);
+}
+
 /** A node is superseded only by a current one: the reverse of a supersede already made would leave
  *  the topic with no current node, each pointing at the other. */
 async function cycleCase(c: Core, older: string, newer: string): Promise<void> {
@@ -199,6 +224,7 @@ async function run(c: Core): Promise<void> {
   const initiative = await c.open("knowledge-events");
   const made = await addCases(c, initiative);
   const teamNewer = await supersedeCases(c, initiative, made);
+  await platformMemberCase(c, initiative);
   await cycleCase(c, made[c.team][0], teamNewer);
   await retryCases(c, initiative);
   await pluginTagCases(c, initiative);

@@ -356,7 +356,8 @@ export function registerKnowledgeTools(server: McpServer): void {
         // An explicit shelf is a choice between the two, never a third answer: asking for a
         // shelf the id is not on is refused as "no node", not fallen back to the other.
         if (shelf) return (shelf === "team" ? onTeam : onPlatform);
-        if (onTeam && onPlatform) return { ambiguous: true as const, id, onTeam, onPlatform };
+        // A `zz-platform` member's team shelf IS the platform shelf: one row found twice is one node.
+        if (onTeam && onPlatform && onTeam.id !== onPlatform.id) return { ambiguous: true as const, id, onTeam, onPlatform };
         return onTeam ?? onPlatform;
       }
       const bothShelves = (id: string, a: string, b: string) =>

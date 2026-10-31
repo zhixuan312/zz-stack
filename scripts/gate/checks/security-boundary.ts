@@ -219,6 +219,9 @@ check("a caller's document path cannot begin a segment with a dot or escape home
     // An underscore-prefixed segment is a reserved NAME, not a path that leaves anything: the
     // shape rule must allow it, which is what keeps `writeGuard` the thing that refuses it.
     ["_knowledge/nodes/0001-x.md", false],
+    // A path names a document inside an initiative: the initiative alone, or a folder, names none,
+    // and was stored as a document with an empty name.
+    ["2026-08-30-sample-intake", true], ["2026-08-30-sample-intake/", true], ["/2026-08-30-sample-intake", true],
   ];
   for (const [p, shouldRefuse] of want) {
     const got = !!refuse(p);
@@ -226,6 +229,10 @@ check("a caller's document path cannot begin a segment with a dot or escape home
       bad.push(`pathShapeRefusal ${got ? "refuses" : "allows"} ${JSON.stringify(p)} and should ` +
                `${shouldRefuse ? "refuse" : "allow"} it`);
     }
+  }
+  // `..` is refused for what it does — leave the initiative — not as a dot-prefixed name.
+  if (!/\.\./.test(String(refuse("i/../other/spec.md")))) {
+    bad.push("pathShapeRefusal refuses `..` without saying that it steps out of the initiative");
   }
   // Refusing is only half of it: safePath is what every caller path goes through, and a rule
   // it does not consult is a rule about nothing.

@@ -131,10 +131,18 @@ export function pathShapeRefusal(path: string): string | null {
   //
   // A path with a dot segment is not the shape of a document on this platform, and a name that
   // is refused in one shape is refused in every shape.
+  if (/(^|\/)\.\.(\/|$)/.test(path)) {
+    return "`..` would step out of the initiative, and a path stays inside it. Write `<initiative>/<document>.md`.";
+  }
   if (/(^|\/)\.[^/]/.test(path.replace(/^\/+/, ""))) {
     return "no part of a path may begin with a dot. Dot-prefixed names are the platform's own " +
       "bookkeeping, never a document's, and a document written there is invisible to " +
       "document_list and to search. Write `<initiative>/<document>.md`.";
+  }
+  // A path names a document inside an initiative. The initiative alone names none, and was stored
+  // as a document with an empty name that no listing could show.
+  if (!/^[^/]+\/.*[^/]$/.test(path.replace(/^\/+/, ""))) {
+    return `"${path}" names no document — write \`<initiative>/<document>.md\``;
   }
   return null;
 }

@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 
-import { platformDb } from "../db.js";
+import { inTransaction, platformDb } from "../db.js";
 import { auditAdmin, type Identity } from "../identity.js";
 import { issueEnrolment } from "../passkey.js";
 import { superOnly } from "./authority.js";
@@ -79,19 +79,11 @@ export async function deactivatePerson(
   // somebody who had left would otherwise bring back every token, console session and unused
   // enrolment link they held. Tokens and sessions are revoked, unused links are spent, and all
   // of it commits with the status change or none of it does.
-  const client = await platformDb().connect();
-  let revoked: { pats: number; sessions: number; links: number };
-  let already: boolean;
-  try {
-    await client.query("begin");
+  const ended = await inTransaction(async (client) => {
     const who = await client.query<{ id: string; status: string }>(
       "select id, status from principal where email=$1 for update", [email.toLowerCase()]);
     const principal = who.rows[0]?.id ?? null;
-    if (principal === null) {
-      await client.query("rollback");
-      return { ok: false, status: 400, error: `no principal for ${email} — nothing was deactivated` };
-    }
-    already = who.rows[0].status === "deactivated";
+    if (principal === null) return null;
     await client.query("update principal set status='deactivated' where id=$1", [principal]);
     const pats = await client.query(
       "update pat set revoked_at = now() where revoked_at is null and principal_id = $1", [principal]);
@@ -99,14 +91,11 @@ export async function deactivatePerson(
       "update console_session set revoked_at = now() where revoked_at is null and principal_id = $1", [principal]);
     const links = await client.query(
       "update passkey_enrolment set used_at = now() where used_at is null and principal_id = $1", [principal]);
-    await client.query("commit");
-    revoked = { pats: pats.rowCount ?? 0, sessions: sessions.rowCount ?? 0, links: links.rowCount ?? 0 };
-  } catch (err) {
-    await client.query("rollback");
-    throw err;
-  } finally {
-    client.release();
-  }
+    return { already: who.rows[0].status === "deactivated",
+             revoked: { pats: pats.rowCount ?? 0, sessions: sessions.rowCount ?? 0, links: links.rowCount ?? 0 } };
+  });
+  if (!ended) return { ok: false, status: 400, error: `no principal for ${email} — nothing was deactivated` };
+  const { already, revoked } = ended;
   // Deactivating somebody again still ends anything they were given meanwhile; only when there was
   // nothing to end is it not an act.
   if (already && revoked.pats + revoked.sessions + revoked.links === 0) {

@@ -8,7 +8,7 @@
  * Same outcome shape as the team and people writes beside them, for the same reason: the MCP
  * tool and any console route that calls one answer the same way.
  */
-import { platformDb } from "../db.js";
+import { inTransaction, platformDb } from "../db.js";
 import { auditAdmin, type Identity } from "../identity.js";
 import { superOnly } from "./authority.js";
 import { type PlatformWriteOutcome } from "./people.js";
@@ -39,38 +39,27 @@ export async function revokeOauthClient(
   id: Identity | null, clientId: string, extraDetail: Record<string, unknown> = {},
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
-  const db = platformDb();
-  const client = await db.connect();
-  let pats = 0;
-  let revokedAt: Date | null = null;
-  try {
-    await client.query("begin");
+  const done = await inTransaction(async (client): Promise<{ said: PlatformWriteOutcome } | { revokedAt: Date; pats: number }> => {
     const revoked = await client.query<{ revoked_at: Date }>(
       `update zz.mcp_oauth_client set revoked_at = now()
         where client_id = $1 and revoked_at is null returning revoked_at`, [clientId]);
     if (revoked.rowCount !== 1) {
-      // Distinguish the two reasons there is nothing to revoke, and commit nothing either way.
+      // Distinguish the two reasons there is nothing to revoke; nothing was written either way.
       const known = await client.query<{ revoked_at: Date | null }>(
         "select revoked_at from zz.mcp_oauth_client where client_id = $1", [clientId]);
-      await client.query("rollback");
       if (!known.rows.length) {
-        return { ok: false, status: 400, error:
-          `no client '${clientId}' — client_list names every one this platform has registered` };
+        return { said: { ok: false, status: 400, error:
+          `no client '${clientId}' — client_list names every one this platform has registered` } };
       }
-      return { ok: true, message:
-        `client ${clientId} was already revoked at ${known.rows[0].revoked_at?.toISOString()} — nothing changed` };
+      return { said: { ok: true, message:
+        `client ${clientId} was already revoked at ${known.rows[0].revoked_at?.toISOString()} — nothing changed` } };
     }
-    revokedAt = revoked.rows[0].revoked_at;
     const tokens = await client.query(
       "update zz.pat set revoked_at = now() where oauth_client_id = $1 and revoked_at is null", [clientId]);
-    await client.query("commit");
-    pats = tokens.rowCount ?? 0;
-  } catch (err) {
-    await client.query("rollback");
-    throw err;
-  } finally {
-    client.release();
-  }
+    return { revokedAt: revoked.rows[0].revoked_at, pats: tokens.rowCount ?? 0 };
+  });
+  if ("said" in done) return done.said;
+  const { revokedAt, pats } = done;
   auditAdmin(id, "revoke_oauth_client", clientId, { ...extraDetail, patsRevoked: pats });
   return { ok: true, message:
     `client ${clientId} revoked at ${revokedAt?.toISOString()}: ${pats} live token(s) it obtained ` +

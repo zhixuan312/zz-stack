@@ -32,10 +32,9 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 
 import { type EventOrigin, refusalOwner } from "@zz/contracts";
-import type { PoolClient } from "pg";
 
 import { WEEK_RECORD } from "./console/event-work-week.js";
-import { platformDb, platformDbReady } from "./db.js";
+import { inTransaction, platformDbReady } from "./db.js";
 import { RUN_CONFLICT, versionAtEvent } from "./runs.js";
 import { zone } from "./zone.js";
 
@@ -203,20 +202,15 @@ const APPEND_EVENT = `${IDENTITY}
  *  pulled the catalog and a load-time `ZZ_TZ` into the graph of `db.ts`, which is the first module
  *  every process loads, and a check that sets the zone afterwards then disagreed with itself. */
 async function write(record: Record<string, unknown>, params: unknown[]): Promise<void> {
-  let client: PoolClient | undefined;
   try {
-    client = await platformDb().connect();
-    await client.query("begin");
-    await client.query(STAMP_RUN, params.slice(0, RUN_PARAMS));
-    const appended = await client.query<{ id: string }>(APPEND_EVENT, params);
-    const eventId = appended.rows[0]?.id;
-    if (eventId) await client.query(WEEK_RECORD, [eventId, zone()]);
-    await client.query("commit");
+    await inTransaction(async (client) => {
+      await client.query(STAMP_RUN, params.slice(0, RUN_PARAMS));
+      const appended = await client.query<{ id: string }>(APPEND_EVENT, params);
+      const eventId = appended.rows[0]?.id;
+      if (eventId) await client.query(WEEK_RECORD, [eventId, zone()]);
+    });
   } catch (err) {
-    if (client) await client.query("rollback").catch(() => { /* nothing left to try */ });
     stranded(record, err);
-  } finally {
-    client?.release();
   }
 }
 

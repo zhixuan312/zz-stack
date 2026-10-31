@@ -7,7 +7,7 @@
  */
 import type { PoolClient } from "pg";
 
-import { platformDb } from "../db.js";
+import { inTransaction, platformDb } from "../db.js";
 import { PLATFORM_TEAM, TEAM_SLUG, TEAM_SLUG_RULE, auditAdmin, type Identity } from "../identity.js";
 import { isDeactivated, principalId, superOnly, teamAuthority, teamId } from "./authority.js";
 import { type PlatformWriteOutcome } from "./people.js";
@@ -94,9 +94,7 @@ export async function addMember(
  */
 async function keepingLastAdmin<T>(id: Identity | null, team: string, email: string,
                                    write: (q: PoolClient) => Promise<T>): Promise<{ refused: TeamWriteOutcome } | { done: T }> {
-  const client = await platformDb().connect();
-  try {
-    await client.query("begin");
+  return inTransaction(async (client) => {
     await client.query("select 1 from team where slug = $1 for no key update", [team]);
     if (!superOnly(id)) {
       const { rows: [last] } = await client.query<{ last: boolean }>(
@@ -105,21 +103,12 @@ async function keepingLastAdmin<T>(id: Identity | null, team: string, email: str
            from membership m join team t on t.id = m.team_id join principal p on p.id = m.principal_id
           where t.slug = $1`, [team, email.toLowerCase()]);
       if (last?.last) {
-        await client.query("rollback");
         return { refused: { ok: false, status: 400, error: `${email} is the only admin of ${team}, and a team keeps ` +
           "someone who can add the next member. Make another member admin first (member_add with role admin)." } };
       }
     }
-    const done = await write(client);
-    await client.query("commit");
-    return { done };
-  } catch (err) {
-    // A rollback that fails too (the connection gone) must not replace the write's own error.
-    await client.query("rollback").catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
-  }
+    return { done: await write(client) };
+  });
 }
 
 /** Remove a principal from a team. `confirm` must repeat the team slug exactly. */

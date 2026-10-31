@@ -31,6 +31,24 @@ export function platformDbReady(): boolean {
   return pool !== undefined;
 }
 
+/** `work` on one connection in one transaction: committed when it returns, rolled back when it throws. A refusal that
+ *  wrote nothing just returns, since committing nothing undoes nothing and ends its locks alike. A rollback that fails
+ *  too (the connection gone) does not replace `work`'s own error. */
+export async function inTransaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await platformDb().connect();
+  try {
+    await client.query("begin");
+    const out = await work(client);
+    await client.query("commit");
+    return out;
+  } catch (err) {
+    await client.query("rollback").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /**
  * Every extension a migration declares it cannot run without.
  *

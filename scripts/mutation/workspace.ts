@@ -15,7 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, mkdirSync, writeFileSync } from "node:fs";
-import { userInfo } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { alive } from "../owned-containers.ts";
@@ -137,7 +137,8 @@ export function overlaps(a: string, b: string): boolean {
 export function refusesAsWork(at: string): string | null {
   const here = throughLinks(resolve(at));
   if (dirname(here) === here) return "a filesystem root";
-  if (here === throughLinks(userInfo().homedir)) return "your home directory";
+  // Both homes: `~` expands from $HOME, which a sandbox may point away from the account's own.
+  if (here === throughLinks(homedir()) || here === throughLinks(userInfo().homedir)) return "your home directory";
   return null;
 }
 

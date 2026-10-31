@@ -13,7 +13,8 @@
  *
  *   - `protocol_affirm` by a person in no team binds nothing, even when another team's approved
  *     `protocol.md` under that initiative quotes the version's digest;
- *   - `protocol_affirm` retried with the same key after it bound answers the binding again, not a
+ *   - `protocol_affirm` retried with the same key after it bound — and after protocol.md moved on to a
+ *     draft — answers the binding again, not a
  *     refusal that the version is already affirmed, while another key is told it is already
  *     affirmed;
  *   - `evaluator_qualify` retried with the same key answers what its first call answered, and one
@@ -110,6 +111,17 @@ async function affirmReplays(c: Core, s: Seed): Promise<void> {
   const args = { protocol_version_id: s.protocols.replayed, initiative: SLUG, idempotency_key: "affirm-1" };
   const first = await ask(door, "protocol_affirm", args);
   if (first.startsWith("ERROR") || first.startsWith("THROWN")) c.fail(step, `the first call did not bind: ${first}`);
+  // protocol.md moves on to a draft revision that quotes neither digest: the binding is recorded,
+  // so the retry is the first call's answer, not a refusal of what the document says now.
+  await c.sql.query(
+    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                  written_at, fields)
+     select d.id, 2, 2, 'retained', 'Protocol', '# Protocol\n\nrevised\n', '{}', 'h2', r.written_by, now(), '{}'
+       from zz.doc d join zz.doc_revision r on r.doc_id = d.id and r.revision = 1
+       join zz.initiative i on i.id = d.initiative_id where i.slug = $1 and d.path = 'protocol.md'`, [SLUG]);
+  await c.sql.query(
+    `update zz.doc d set current_revision = 2, current_version = 2, status = 'draft'
+       from zz.initiative i where i.id = d.initiative_id and i.slug = $1 and d.path = 'protocol.md'`, [SLUG]);
   const again = await ask(door, "protocol_affirm", args);
   if (again !== first) c.fail(step, `the retry answered ${again.slice(0, 300)}, not the first call's answer`);
   const other = await ask(door, "protocol_affirm", { ...args, idempotency_key: "affirm-2" });

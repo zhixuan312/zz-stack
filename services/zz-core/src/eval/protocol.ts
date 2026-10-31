@@ -415,11 +415,31 @@ export function registerProtocolTools(server: McpServer): void {
         return text(`ERROR: ${principal || "this caller"} acts for no team, so ${path} names no team's ` +
           "document and nothing can be affirmed. Join or switch to the team that wrote it, then call this again.");
       }
-      // A retry of the call that bound it replays; only another call is refused — before the
-      // document is read, which may since have moved on to a later version.
       const args = { protocol_version_id, initiative };
+      // What the call answers once the binding is recorded, whether this call recorded it or a
+      // retry is replaying it.
+      const answer = async (approvedBy: string | null, replayed: boolean) => {
+        platformEvent({ actor: principal, kind: "protocol_affirm", initiative, protocol_version_id, path, replayed });
+        // What evaluator_qualify now owes: every model-backed measure this version names.
+        const owed = (await p.query<{ key: string }>(`
+          select distinct m.key from zz.eval_measure m
+           where m.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
+           order by m.key`, [protocol_version_id])).rows.map((r) => r.key);
+        const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed, row.content_digest);
+        return json({ approved_document_path: path, approved_by: approvedBy, qualify_owed: owed, ...recorded });
+      };
+      // A retry of the call that bound it replays from the binding it recorded — never from the
+      // document, which may since have moved on to a later version. Only another call is refused.
       const prior = await decideBeforeWork(principal, "protocol_affirm", idempotency_key, args);
-      if (row.affirmed && !prior.replayed) {
+      if (prior.replayed) {
+        const pinned = (await p.query<{ approved_by: string | null }>(`
+          select a.email as approved_by from zz.eval_protocol_version v
+            left join zz.doc_revision r on r.doc_id = v.approved_doc_id and r.revision = v.approved_doc_revision
+            left join zz.principal a on a.id = r.approved_by
+           where v.id = $1::uuid`, [protocol_version_id])).rows[0];
+        return answer(pinned?.approved_by ?? null, true);
+      }
+      if (row.affirmed) {
         return text(`ERROR: protocol version ${protocol_version_id} is already affirmed — a ` +
           "protocol version's payload and its affirmation are written once, and there is no path " +
           "that moves either again. Record the next version instead.");
@@ -488,17 +508,7 @@ export function registerProtocolTools(server: McpServer): void {
           return { result: null, result_table: "zz.eval_protocol_version", result_id: protocol_version_id };
         },
       );
-      platformEvent({
-        actor: principal, kind: "protocol_affirm", initiative, protocol_version_id, path, replayed: outcome.replayed,
-      });
-      // What evaluator_qualify now owes: every model-backed measure this version names.
-      const owed = (await p.query<{ key: string }>(`
-        select distinct m.key from zz.eval_measure m
-         where m.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
-         order by m.key`, [protocol_version_id])).rows.map((r) => r.key);
-      const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed, row.content_digest);
-      return json({ approved_document_path: path, approved_by: docRow.approved_by ?? null,
-                    qualify_owed: owed, ...recorded });
+      return answer(docRow.approved_by ?? null, outcome.replayed);
     },
   );
 }

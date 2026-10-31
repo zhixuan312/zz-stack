@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec-audit
-version: 2.8
+version: 2.9
 description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
@@ -36,7 +36,7 @@ requires the next version of the spec to cite. It is not a document of the flow:
 report is the material that makes a revision necessary. `sdlc-audit-criteria` carries how to
 write it and the exact call.
 
-## Twelve: the spec's own contract
+## Eight: the spec's own contract
 
 The eleven failure modes in `sdlc-audit-criteria` are about prose that any document can fail. This one is about what
 makes a spec a spec, and it is where a spec most often fails without reading badly.
@@ -109,7 +109,7 @@ reference, wrong-claim, internal-coherence — each opening with its source in s
 nearest heading for the document, the file path for code. A finding in none of those shapes is
 speculation, and it goes in the summary as "investigation needed" rather than into `findings`.
 Plus the spec version you were shown, on the round and on its source: a missing component is a
-claim about one revision, and the eight are only required of this document at its approval.
+claim about one revision, and the ten sections are only required of this document at its approval.
 
 **Allowed unknowns:** whether the team should build this at all, and which alternative they should
 have picked — that was settled with a person in `sdlc-spec` and is not yours to reopen. Which of

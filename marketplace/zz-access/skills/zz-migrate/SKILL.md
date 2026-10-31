@@ -40,11 +40,10 @@ initiative.
 
 ## Tell them these two things afterwards
 
-1. **The archive initiative stays open.** There is no archived state here: closing runs
-   through a flow's closing document, every flow gates that document, and signing a gate to
-   tidy a listing is the one thing gates exist to prevent. So the archive appears in
-   `initiative_status()` beside real work. It is named `<date>-mma-archive-<repo>`, which is
-   what tells a reader it is not something to resume.
+1. **The archive initiative stays open, with no flow.** It is a reference, not delivery work,
+   so it is opened under no flow: it appears in `initiative_status()` and nothing asks it for a
+   next document. It is named `<date>-mma-archive-<repo>`, which is what tells a reader it is
+   not something to resume.
 2. **Everything it brought over carries the tag `mma-import`**, and each node also carries
    `mma-<repo>-<id>` — its original journal id. That is how a migrated lesson is told apart
    from one somebody wrote here, and how the mma id in a node's "Related" line is found.

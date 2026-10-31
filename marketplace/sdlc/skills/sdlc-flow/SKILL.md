@@ -178,11 +178,13 @@ stopped — the outcome goes on the furthest document it reached. The platform d
 appends the team's ledger row. An initiative you do not close this way stays open forever
 and never reaches the ledger.
 
-**`review.md` must exist and be approved first.** It is the closing document AND it carries a
-gate, so the platform refuses the close until its approval is recorded — `document_approve` on the
-snapshot of `review.md` you presented, passing what that present named — so an initiative cannot
-close on an agreement written before any code existed. Ask for the approval the way stage 4 asks
-for the plan's, and write it down in the same turn.
+**A `finished` close needs `review.md` to exist and be approved first.** It is the closing
+document AND it carries a gate, so the platform refuses the close until its approval is recorded —
+`document_approve` on the snapshot of `review.md` you presented, passing what that present named —
+so an initiative cannot close on an agreement written before any code existed. Ask for the approval
+the way stage 4 asks for the plan's, and write it down in the same turn. An `abandoned` close asks
+for no other approval, with one exception: once `review.md` has been written, the abandon lands on
+it, and its gate still holds.
 
 **The close is terminal**, whatever the outcome — closing part-way through is a normal way for
 work to end, not a lesser one.
@@ -293,8 +295,9 @@ itself and routes on the answer; you ask none, and it never picks the stage.
 
 **Action and exit paths:** the action is entering the next stage, or re-entering an earlier one
 when an audit sends a document back — the sequence is not a ratchet, and a return is the method
-working. Two exits: `initiative_close` with `finished` or `abandoned` once `review.md` exists and
-is approved, and a report naming where the work stopped and why when it cannot close. A
+working. Two exits: `initiative_close` with `finished` once `review.md` exists and is approved, or
+with `abandoned` at any stage, on the furthest document the work reached; and a report naming where
+the work stopped and why when it cannot close. A
 `finished` close is followed by `zz-handover`; it belongs to the platform, not to this flow.
 
 **Degraded behaviour:** a stage that is not installed is named plainly and its work is done in the

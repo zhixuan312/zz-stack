@@ -81,7 +81,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   },
   {
     check: SUITES_TOOLING,
-    target: "the five shipped skill scripts carry zero strict errors, every construct in them " +
+    target: "the six shipped skill scripts carry zero strict errors, every construct in them " +
       "is erasable, and none was reached by widening to any",
     assertion: "a shipped skill script may not reach zero errors by widening to any",
     subject: "catalog/zz/zz-access/skills/zz-doctor/doctor.ts",

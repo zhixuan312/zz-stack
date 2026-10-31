@@ -18,7 +18,7 @@ for (const f of shipped) {
   if (f.endsWith(".map")) fail.push(`${f} — a source map reached the shipped tree`);
 }
 const js = shipped.filter((f) => /marketplace\/zz-access\/skills\/.*\.js$/.test(f));
-if (js.length !== 5) fail.push(`${js.length} shipped skill scripts, expected 5`);
+if (js.length !== 6) fail.push(`${js.length} shipped skill scripts, expected 6`);
 for (const f of js) {
   if (/\/\/# sourceMappingURL/.test(readFileSync(f, "utf8"))) {
     fail.push(`${f} carries an inline sourceMappingURL — the build is not deterministic`);

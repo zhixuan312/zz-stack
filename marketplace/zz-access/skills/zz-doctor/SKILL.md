@@ -32,10 +32,12 @@ whole reason this exists. **Do not merge the two.**
 Every line is `PASS`, `WARN` or `FAIL`, then the subject, then the detail. Each FAIL names
 the command that fixes it; pass that on rather than inventing your own.
 
-- **FAIL on the token** — there is no credential, or the one there is refused. Nothing else
-  can work until this does. The platform's tokens begin `zzp_`.
+- **FAIL on the token** — there is no credential, `$ZZ_TOKEN_FILE` names a file that cannot be
+  read, or the one there is refused. Nothing else can work until this does. The platform's
+  tokens begin `zzp_`.
 - **FAIL on a door** — a 401 is the token, a 404 is the plugin declaring a path this gateway
-  does not serve, and no answer at all is the network or the platform being down.
+  does not serve, "the service behind it did not answer" is the gateway up and the platform
+  behind it down, and no answer at all is the network or the platform being down.
 - **WARN on plugin versions** — they should be one number, because one build stamps them all.
   Two numbers means one plugin did not update: `/zz-access:update` is the fix.
 

@@ -140,8 +140,9 @@ IDENTIFY through EXPLAIN are runnable by any client with no shell — every dura
 in those five stages goes through this door's own MCP tools alone. IMPROVE is where that
 changes: a candidate is built and gated in a sandbox on the agent's own host (`npm run
 candidate-build`), and released or rolled back through the repository's own procedures
-(`zz-tool release-apply`, `zz-tool release-rollback`), so IMPROVE and PROMOTE/VERIFY need Claude
-Code (or an equivalent shell-capable runtime) and refuse to start anywhere else. Load the stage skill for the one you are on; each says exactly which
+(`zz-tool release-apply`, `zz-tool release-rollback`), so IMPROVE past its skip and PROMOTE/VERIFY
+need Claude Code (or an equivalent shell-capable runtime). IMPROVE's skip — `improvement_start`
+with `skip: true`, when no plugin-owned finding is actionable — is one MCP call any client makes. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
 
 ## Facts come from tools; meaning comes from you
@@ -163,7 +164,7 @@ is the honest answer — report it and move on.
 document quoting the exact version's `content_digest`, and until it binds, `evaluator_qualify`
 and `evaluation_start` refuse that protocol version by name — the refusal is the gate working.
 
-❌ **Starting IMPROVE with no shell.** Nothing before it needs one; everything from it on does.
+❌ **Going past IMPROVE's skip with no shell.** Nothing before it needs one; everything after it does.
 
 ❌ **Comparing two plugins.** Every protocol is that plugin's own, so two scores are two things
 measured with two protocols. There is no leaderboard here and there is not meant to be.

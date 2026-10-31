@@ -11,12 +11,12 @@ const walk = (dir: string, out: string[] = []): string[] => {
   return out;
 };
 const files = walk(ROOT).filter((f) => f.endsWith(".ts"));
-if (files.length !== 5) fail.push(`${files.length} .ts skill scripts under ${ROOT}, expected 5`);
+if (files.length !== 6) fail.push(`${files.length} .ts skill scripts under ${ROOT}, expected 6`);
 
 // They must be inside the project, or "zero errors" means "never looked".
 const tooling = JSON.parse(readFileSync("tsconfig.tooling.json", "utf8").replace(/\/\*[\s\S]*?\*\//g, ""));
 if (!(tooling.include ?? []).some((g: string) => g.startsWith("catalog/"))) {
-  fail.push("tsconfig.tooling.json does not include catalog/ — these five files are not type-checked at all");
+  fail.push("tsconfig.tooling.json does not include catalog/ — these six files are not type-checked at all");
 }
 const r = spawnSync("npx", ["tsc", "--noEmit", "-p", "tsconfig.tooling.json"], { encoding: "utf8" });
 const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;

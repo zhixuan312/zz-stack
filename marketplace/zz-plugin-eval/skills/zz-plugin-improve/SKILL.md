@@ -1,17 +1,18 @@
 ---
 name: zz-plugin-improve
-version: 0.11
+version: 0.12
 description: Stage 7 of zz-plugin-eval (IMPROVE). Turn plugin-owned findings into one candidate patch, build and gate it locally, and hand it to promotion for an owned subject — or write an owner-facing proposal for one this team cannot release. A released improvement is judged on real use afterwards, never by replaying past initiatives first.
-when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands — refuses to start anywhere else. Every stage before this one runs with no shell at all."
+when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. The skip is one MCP call any client can make; everything past it REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands. Every stage before this one runs with no shell at all."
 ---
 
 # zz-plugin-improve
 
-**Stop here if your runtime cannot run a shell command.** Everything up through EXPLAIN is
-MCP-only calls a bare client can make. From here on, a candidate is built by the agent
+**Past the skip, this stage needs a shell.** Everything up through EXPLAIN, and the skip call
+below, are MCP-only calls a bare client can make. Past the skip, a candidate is built by the agent
 running this stage — `npm run candidate-build`, and later `zz-tool release-apply` and
 `zz-tool release-rollback` — and none of that exists without a shell. If you have no shell
-access, stop and say so; do not simulate what these commands would do.
+access and the skip does not apply, stop before `improvement_start` and say so; do not simulate
+what these commands would do.
 
 **No replay, no proof, no search.** A candidate that applies, builds and passes the repository's
 own gate is releasable. Whether it is actually better is decided after release, on real use
@@ -159,7 +160,7 @@ initiative closes on `proposal.md` — `initiative_close(initiative, "finished",
 
 ## Pitfalls
 
-❌ **Trying to run this stage with no shell.** Stop and say so.
+❌ **Going past the skip with no shell.** Stop before `improvement_start` and say so.
 
 ❌ **Waiting for `candidate_validate` to build the candidate.** It never does; run the
 `npm run candidate-build` command its `build_required` prints, then call it again.

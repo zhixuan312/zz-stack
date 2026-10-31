@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.29
+version: 1.30
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -551,8 +551,8 @@ or a report you are writing now:
 ```
 document_edit(
   path: "<initiative>/plan.md",
-  section: "Phase 2 — <what works at the end>",
-  content: "## Phase 2 — <what works at the end>\n\n<the phase as it now reads>",
+  section: "Phase 2 — <Tier>: <what works at the end>",
+  content: "## Phase 2 — <Tier>: <what works at the end>\n\n<the phase as it now reads>",
   source_content: "<the execution report or the person's own words, verbatim>",
   source_title: "<what sent it back>")
 ```

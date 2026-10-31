@@ -1,8 +1,8 @@
 ---
 name: zz-plugin-discover
-version: 0.7
+version: 0.8
 description: Stage 3 of zz-plugin-eval (DISCOVER). Mine one OBSERVE snapshot's own real refusals and stage returns for candidate failure modes, before any protocol exists — so DEFINE/QUALIFY freezes questions worth asking, not questions invented from nothing.
-when_to_use: "The third stage of zz-plugin-eval, after OBSERVE has written an observation_snapshot_id. Always run before DEFINE/QUALIFY on a subject whose protocol is being created or revised — reuse skips it. No shell required."
+when_to_use: "The third stage of zz-plugin-eval, after OBSERVE has written an observation_snapshot_id. Always run before DEFINE/QUALIFY, whose `protocol_read` decides afterwards whether the protocol is created, revised or reused. No shell required."
 ---
 
 # zz-plugin-discover

@@ -42,7 +42,7 @@ check("scripts/gate/ carries zero strict errors, the registry it runs is unchang
 check("the rest of scripts/ and testing/ carry zero strict errors, and none of them was reached by widening to any",
       runsCheck("strict-scripts-dir.ts"));
 
-check("the five shipped skill scripts carry zero strict errors, every construct in them is erasable, and none was reached by widening to any",
+check("the six shipped skill scripts carry zero strict errors, every construct in them is erasable, and none was reached by widening to any",
       runsCheck("strict-catalog-skills.ts"));
 
 check("what consumers receive is JavaScript, never the source, and rebuilding it changes nothing",

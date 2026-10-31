@@ -12,8 +12,8 @@
     "sha": "3ba3c323ae8a"
   },
   "sdlc-flow": {
-    "version": "2.22",
-    "sha": "23efbaa50103"
+    "version": "2.23",
+    "sha": "531c011ea9a1"
   },
   "sdlc-investigate": {
     "version": "1.5",
@@ -28,8 +28,8 @@
     "sha": "92b2af15f6f0"
   },
   "sdlc-plan": {
-    "version": "1.29",
-    "sha": "bd2479b2d08b"
+    "version": "1.30",
+    "sha": "c7091282bf7f"
   },
   "sdlc-recall": {
     "version": "1.12",
@@ -44,44 +44,44 @@
     "sha": "9c3cd6b90dc9"
   },
   "sdlc-spec-audit": {
-    "version": "2.8",
-    "sha": "b3125191c223"
+    "version": "2.9",
+    "sha": "fdc5ce49ae67"
   },
   "sdlc-spec": {
-    "version": "1.23",
-    "sha": "2e0766b790a0"
+    "version": "1.24",
+    "sha": "3cf24069dd94"
   },
   "zz-access": {
     "version": "2.7",
     "sha": "ec96b567b786"
   },
   "zz-admin": {
-    "version": "2.11",
-    "sha": "b9a0a039e803"
+    "version": "2.12",
+    "sha": "544928bc060e"
   },
   "zz-doctor": {
-    "version": "1.5",
-    "sha": "f0305a53de3e"
+    "version": "1.6",
+    "sha": "385985704693"
   },
   "zz-migrate": {
-    "version": "1.5",
-    "sha": "fd0aa752aae0"
+    "version": "1.6",
+    "sha": "9a57fe905d3b"
   },
   "zz-update": {
-    "version": "1.3",
-    "sha": "a5d73e2d40eb"
+    "version": "1.4",
+    "sha": "b8e3c03eabf2"
   },
   "zz-plugin-define-qualify": {
     "version": "0.15",
     "sha": "54502e8e3900"
   },
   "zz-plugin-discover": {
-    "version": "0.7",
-    "sha": "c37151a84a42"
+    "version": "0.8",
+    "sha": "776855fb88ca"
   },
   "zz-plugin-eval": {
-    "version": "2.8",
-    "sha": "bcd63e18d6fb"
+    "version": "2.9",
+    "sha": "d6db2a3d55fb"
   },
   "zz-plugin-evaluate": {
     "version": "1.5",
@@ -92,16 +92,16 @@
     "sha": "14acd54c4c14"
   },
   "zz-plugin-identify": {
-    "version": "0.6",
-    "sha": "ce809f4918a9"
+    "version": "0.7",
+    "sha": "fb88e6b72869"
   },
   "zz-plugin-improve": {
-    "version": "0.11",
-    "sha": "681710337d79"
+    "version": "0.12",
+    "sha": "1462f846cd5e"
   },
   "zz-plugin-observe": {
-    "version": "0.7",
-    "sha": "ec07462fb5f8"
+    "version": "0.8",
+    "sha": "90f295f14015"
   },
   "zz-plugin-promote-verify": {
     "version": "1.2",

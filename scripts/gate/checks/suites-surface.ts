@@ -306,7 +306,10 @@ check("a console read carries its collection's revision as the caller's own stre
 check("every row of the version table holds through a real zz-core: causes move versions once, signed snapshots stay as signed, a closed record's correction is a draft and the acts meet a concurrent edit safely", runsCheck("document-version.ts"));
 check("owed sources link by themselves from the cause-link epoch on, once per target, never lost to a racing create and never settling an audit", runsCheck("document-version-causes.ts"));
 check("a support named before its document exists is linked when that document is written", runsCheck("supports-wait-for-target.ts"));
-check("zz-router loads a routed flow and names how a person opens one they open", runsCheck("router-routes.ts"));
+check("zz-router loads a routed flow, names how a person opens one they open, and gives each flow its entry skill's whole when_to_use", runsCheck("router-routes.ts"));
+check("a lesson's evidence names the initiative knowledge_add validated on the caller's own shelves, not another team's of the same slug, through a real zz-core on a throwaway database", runsCheck("knowledge-evidence-team.ts"));
+check("zz-migrate opens its archive with a slug zz-core accepts, under the name it answers, and a run stopped between the open and explore.md resumes instead of refusing itself", runsCheck("zz-migrate-archive.ts"));
+check("the release's probe purge takes chain-check's initiative, document and lesson by the shape chain-check mints, and leaves a person's work named after chain-check, on a throwaway database", runsCheck("purge-probes.ts"));
 check("the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",
       runsCheck("document-panel.ts"));
 check("the pages a connecting person sees escape every value they are given, load nothing, and carry the console's mark",

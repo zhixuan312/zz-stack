@@ -38,9 +38,9 @@ async function confirm(url) {
     catch {
         return null;
     } };
+    // The header helper's order (zz-mcp-headers.mjs): a set $ZZ_TOKEN_FILE is the one file read.
     const token = (process.env.ZZ_TOKEN
-        || (process.env.ZZ_TOKEN_FILE ? read(process.env.ZZ_TOKEN_FILE) : null)
-        || read(join(homedir(), ".zz", "token")) || "").trim();
+        || read(process.env.ZZ_TOKEN_FILE || join(homedir(), ".zz", "token")) || "").trim();
     if (!token)
         return { ok: false, why: "there is no token on this machine yet" };
     try {

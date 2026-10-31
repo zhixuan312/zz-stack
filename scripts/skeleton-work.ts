@@ -6,7 +6,7 @@
  * exit path, so neither file passes the 700-line ceiling.
  *
  * zz-core is the built `services/zz-core/dist/server.js`, started on a free port against the skeleton's
- * throwaway database; the gateway's `/core/mcp` door relays to it, the console's acts and next moves
+ * throwaway database by throwaway-core's `startOnFreePort`; the gateway's `/core/mcp` door relays to it, the console's acts and next moves
  * reach it through `CORE_MCP_URL`, and its agent reads reach the gateway's agent door through
  * `GATEWAY_INTERNAL_URL`. Every document and approval is made through that door, as a person's plugin makes
  * them (`x-zz-client: zz-plugin`), so the gateway's telemetry records each write and the import rule reads the

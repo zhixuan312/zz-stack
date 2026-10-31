@@ -45,11 +45,11 @@ for (const bad of ["localhost", "", " 127.0.0.1", "127.0.0.256", "--port"]) {
   is(hostRefusedWith(["--host", bad], new RegExp(`--host ${JSON.stringify(JSON.stringify(bad)).slice(1, -1)} is not an IP address`)),
      `--host ${JSON.stringify(bad)} was accepted, or refused without naming it`);
 }
-for (const launcher of ["scripts/schema/throwaway-core.ts", "scripts/skeleton-work.ts"]) {
-  const src = readFileSync(join(process.cwd(), launcher), "utf8");
-  is(/"services\/zz-core\/dist\/server\.js", "--port", String\(port\), "--host", "127\.0\.0\.1"\]/.test(src),
-     `${launcher} starts zz-core without --host 127.0.0.1, so it listens on every interface`);
-}
+// The one launcher: the walking skeleton and every throwaway check start zz-core through it.
+const launcher = "scripts/schema/throwaway-core.ts";
+is(/"services\/zz-core\/dist\/server\.js", "--port", String\(port\), "--host", "127\.0\.0\.1"\]/
+     .test(readFileSync(join(process.cwd(), launcher), "utf8")),
+   `${launcher} starts zz-core without --host 127.0.0.1, so it listens on every interface`);
 if (fail.length) {
   console.error(`core-port: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);

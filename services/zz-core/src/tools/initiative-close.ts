@@ -14,7 +14,7 @@ import { z } from "zod";
 
 import { closingDocRuledOut, factsFor } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
-import { documentAt, documentPaths, loadDocument } from "../versions.js";
+import { dayOf, documentAt, documentPaths, loadDocument } from "../versions.js";
 import { oneLine, putEnvelopeField } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { moduleForFlow } from "../host/index.js";
@@ -221,21 +221,24 @@ export function registerInitiativeCloseTool(server: McpServer): void {
               `ERROR: ${initiative} has neither a document nor an anchor row, so there is ` +
               "nothing here to mark and nothing that says it was ever opened.");
           }
-          if (dirOf.some((f: string) => f.endsWith(".md"))) {
-            return text(
-              `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
-              "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
-          }
+          const holdsDocs = dirOf.some((f: string) => f.endsWith(".md"));
           // The kernel is what refuses, from the fact this reads back; no gate posture is
-          // passed, because an initiative holding no document declares no gate to anybody.
+          // passed, because an initiative holding no declared document declares no gate to anybody.
+          // Asked before a document is asked for: a closed initiative is answered as closed, not
+          // sent to name a document only for the next call to learn it.
           const undo = closeInitiative({ disposition, already: Boolean(anchor.closed_at) });
           if (!undo.ok) {
             return text(
-              `ERROR: ${undo.refusals.join("; ")}.\n\n${initiative} holds no document and was ` +
-              `already closed as \`${anchor.outcome}\` on ${anchor.closed_at}, on its own ` +
-              "anchor row. Nothing here is left to mark. If that was wrong, record WHY as a " +
+              `ERROR: ${undo.refusals.join("; ")}.\n\n${initiative} was already closed as ` +
+              `\`${anchor.outcome}\` on ${dayOf(anchor.closed_at)}${holdsDocs ? "" : ", on its own anchor row"}. ` +
+              "Nothing here is left to mark. If that was wrong, record WHY as a " +
               "journal node against this initiative — a correction somebody can find beats a " +
               "second write nobody can.");
+          }
+          if (holdsDocs) {
+            return text(
+              `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
+              "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
           }
           // One conditional update, guarded on the same fact the read above already found true —
           // the row, not this call, is what a second concurrent close is refused by.

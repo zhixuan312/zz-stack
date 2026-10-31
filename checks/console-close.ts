@@ -21,7 +21,7 @@
  *   - both sign-off fields, unapproved gates and a freeform finished close with no document are
  *     refused with the same sentence, the route's 400 carrying the tool's text, and nothing closes;
  *   - an initiative already closed is the route's 409 carrying the tool's sentence, and the first
- *     decision stays; two closes through the route at once answer one 200 and one 409, the first
+ *     decision stays, an abandon naming no document included; two closes through the route at once answer one 200 and one 409, the first
  *     decision standing;
  *   - a body naming `outcome` or `closed_by`, a disposition outside the two, a blank sign-off field and
  *     a document the initiative does not hold are the route's 400, and nothing closes;
@@ -113,6 +113,11 @@ const CASES: Case[] = [
   { step: "an initiative already closed", key: "again", shape: "closed",
     body: { disposition: "finished", no_signoff_reason: REASON, document: "notes.md" },
     want: "conflict", says: /^ERROR: a closing record already exists for this work/,
+    record: { outcome: "accepted", acceptor: "closer", reason: null, document: "notes.md" } },
+  // An abandon names no document, and a freeform initiative declares none: it is answered as closed,
+  // not sent to name a document only for the next call to learn that.
+  { step: "abandoning an initiative already closed", key: "again-abandon", shape: "closed", body: { disposition: "abandoned" },
+    want: "conflict", says: /^ERROR: a closing record already exists for this work.*already closed as `accepted`/s,
     record: { outcome: "accepted", acceptor: "closer", reason: null, document: "notes.md" } },
 ];
 

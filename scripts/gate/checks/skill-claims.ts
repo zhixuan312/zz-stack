@@ -121,9 +121,8 @@ check("a skill that counts its own contents counts them right", () => {
     const lines = readFileSync(join(root, rel), "utf8").split("\n");
     for (const [i, line] of lines.entries()) {
       // A count of what follows ("The seven verified traps"), not an ordinal naming this
-      // section ("## 2. Find the argument", "## Twelve: the spec's own contract"). The number
-      // leading the heading and followed by punctuation is the tell; a count is always
-      // followed by the thing being counted.
+      // section ("## 2. Find the argument"). The number leading the heading and followed by
+      // punctuation is the tell; a count is always followed by the thing being counted.
       if (/^##+\s*(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|\d+)\s*[.:)]/i.test(line)) continue;
       const m = /^##+ .*?\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|\d+)\s+[a-z]/i.exec(line);
       if (!m) continue;

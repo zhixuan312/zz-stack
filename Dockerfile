@@ -50,9 +50,10 @@ RUN find /repo/packages /repo/services \
 FROM node:22.23.2-alpine
 WORKDIR /repo
 
-# git, because `plugin_register` reads a third-party plugin from a git URL or a package tarball and
-# both readers shell out to it (services/zz-core/src/eval/subject-source.ts). node:alpine does not
-# ship it, and a missing binary is reported the same way as an unreachable address.
+# git, because `plugin_register`'s `git` reader shells out to it
+# (services/zz-core/src/eval/subject-source.ts); its `package` reader runs `npm pack` and `tar`,
+# which node:alpine already ships. node:alpine does not ship git, and a missing binary is reported
+# the same way as an unreachable address.
 RUN apk add --no-cache git
 
 # Runtime dependencies only. Copied from the build stage, not the context, so no source comes

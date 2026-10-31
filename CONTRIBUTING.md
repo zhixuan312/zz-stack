@@ -3,8 +3,9 @@
 ## Node 24
 
 `scripts/`, `checks/` and `testing/` are TypeScript with no build step — Node runs them
-directly by stripping the types, and that only reached Stable in 24.12. `engines` and
-`.nvmrc` say so, and on Node 22 the gate does not fail a check, it fails to parse.
+directly by stripping the types, which every Node 24 does unflagged and which is Stable from
+24.12. `engines` and `.nvmrc` name the major, 24, and on Node 22 the gate does not fail a check,
+it fails to parse.
 
 ```bash
 nvm use               # reads .nvmrc

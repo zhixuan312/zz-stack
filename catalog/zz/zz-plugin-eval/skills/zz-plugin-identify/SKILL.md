@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-identify
-version: 0.6
+version: 0.7
 description: Stage 1 of zz-plugin-eval (IDENTIFY). Settle which plugin is being evaluated, at which exact content — catalog release or third-party capture — before any other tool on the door will resolve anything against it. Writes an immutable subject_version.
 when_to_use: "The first stage of zz-plugin-eval, once an initiative exists. Never on its own — every later stage takes the subject_version_id this settles. No shell required."
 ---
@@ -53,8 +53,9 @@ plugin is registered by release, never by this tool.
 ## What to do with what comes back
 
 **Say it out loud before continuing.** The plugin, the version, the digest, how many skills, how
-many servers, and — from `plugin_locate`'s own response — whether a compatible protocol already
-exists. Somebody reading the initiative later needs to know what was on the table without
+many servers, and — from `plugin_locate`'s own response — whether a protocol version exists
+(`latest_protocol_version_id`); whether it still applies is `protocol_read`'s answer at
+DEFINE/QUALIFY, not this one's. Somebody reading the initiative later needs to know what was on the table without
 re-running anything.
 
 **Carry `subject_version_id`, never a bare plugin name.** Every later tool on this door takes
@@ -89,15 +90,15 @@ stage measures — said out loud, with its plugin, version and digest, before mo
 `subject_version_id`, declared version and content digest it returns. Nothing here is inferred
 from a catalog listing or a directory read by hand.
 
-**Allowed unknowns:** whether a compatible protocol already exists — `plugin_locate` answers
-that, and DEFINE/QUALIFY is what acts on it. Whether this subject has ever been run — OBSERVE
+**Allowed unknowns:** whether the protocol version `plugin_locate` names still applies —
+DEFINE/QUALIFY's `protocol_read` answers that and acts on it. Whether this subject has ever been run — OBSERVE
 answers that next.
 
 **Action and exit paths:** the action is call `plugin_locate` for a catalog plugin, or
 `plugin_register` with a readable source for anything else, and carry the `subject_version_id`
 forward. The exit is OBSERVE (`zz-plugin-observe`), always — every evaluation profiles real
-runs before it discovers or defines anything. REFUSES an unreleased plugin with no readable
-source stops the flow here, plainly, rather than inventing an evaluation of whatever happens to
+runs before it discovers or defines anything. A refusal — an unreleased plugin with no readable
+source — stops the flow here, plainly, rather than inventing an evaluation of whatever happens to
 be on disk.
 
 **Degraded behaviour:** a plugin this platform has never released and whose source cannot be

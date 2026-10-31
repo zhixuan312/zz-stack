@@ -71,9 +71,8 @@ jobs:
         with:
           path: pair/zz-stack
           # The tags too: "the version that shipped has a changelog section of its own" asks git
-          # whether this version is tagged, and a checkout without tags answered "not yet released"
-          # every time, so the check never ran here. Full depth, because `fetch-tags` on the default
-          # one-commit clone fetches none — the first run with it alone reported no release tags.
+          # whether this version is tagged, and a checkout without tags answers "not yet released".
+          # Full depth, because `fetch-tags` on the default one-commit clone fetches none.
           fetch-depth: 0
           fetch-tags: true
 
@@ -82,8 +81,8 @@ jobs:
           repository: zhixuan312/zz-stack-dashboard
           path: pair/zz-stack-dashboard
           # Tags here as well: the release decides whether the console ships by its last tag, and a
-          # tagless clone read "never released" on every run, so each one ran the console's whole
-          # suite for a console the host release would skip — and failed 0.91.0 on it.
+          # tagless clone reads "never released", which runs the console's whole suite for a
+          # console the host release would skip.
           fetch-depth: 0
           fetch-tags: true
 
@@ -92,16 +91,18 @@ jobs:
           node-version: 24
 
       # The dry run migrates a throwaway PostgreSQL built from this image, so it has to exist
-      # before the run starts — the same reason gate.yml builds it.
+      # before the run starts — the same reason gate.yml builds it, with the tag read from
+      # `deploy/docker-compose.yml` the same way.
       - name: Build the pinned PostgreSQL the dry run migrates
-        run: docker build -f deploy/postgres/Dockerfile -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 .
+        run: |
+          image=$(node --input-type=module -e "import('./scripts/release/postgres-service.ts').then((m) => process.stdout.write(m.postgresService('.').image))")
+          docker build -f deploy/postgres/Dockerfile -t "$image" .
 
       - run: npm ci
 
       # The release's first act is the gate, and the gate's checks import the workspace packages'
       # built output — `@zz/indexing/dist/index.js` and its siblings — which a fresh checkout does
-      # not have. The same `tsc -b` gate.yml runs before its own gate, and it was the one step this
-      # workflow was missing: the first verify run died at "1 · gate" with ERR_MODULE_NOT_FOUND.
+      # not have. The same `tsc -b` gate.yml runs before its own gate.
       - name: Build the workspace the gate reads
         run: npm run build
 
@@ -140,13 +141,17 @@ jobs:
       # The whole release, minus the host: the gate, both images, the platform started from them,
       # sql-check, the tool-chain walk, the deploy bundle. A failure here is a failure the release
       # would have hit, found before anything is pushed.
+      # The dispatch inputs reach the shell as environment variables, never interpolated into the
+      # script, so a quote in one cannot end the quoting around it.
       - name: Everything the release runs, without touching the host
         env:
           ZZ_PUBLIC_URL: ${{ vars.ZZ_PUBLIC_URL }}
           ZZ_CATALOG_OWNER_TEAM: ${{ vars.ZZ_CATALOG_OWNER_TEAM }}
+          VERSION: ${{ inputs.version }}
+          DASHBOARD: ${{ inputs.dashboard }}
         run: |
-          node scripts/release.ts '${{ inputs.version }}' \
-            ${{ inputs.dashboard != '' && format('--dashboard={0}', inputs.dashboard) || '' }} \
+          node scripts/release.ts "$VERSION" \
+            ${DASHBOARD:+"--dashboard=$DASHBOARD"} \
             --dry-run --fit-for-purpose-reviewed
 
       # NOT A RELEASE STEP: `npm run eval-flow-e2e`, the walk of the whole zz-plugin-eval flow —
@@ -165,14 +170,20 @@ jobs:
 
       - name: Log in to GHCR
         if: ${{ inputs.push }}
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
 
       # Only the tags this run built, named one by one: a `--all-tags` push would publish whatever
       # else happens to be in the runner's daemon.
       - name: Publish this release's images
         if: ${{ inputs.push }}
+        env:
+          VERSION: ${{ inputs.version }}
+          DASHBOARD: ${{ inputs.dashboard }}
         run: |
-          docker push ghcr.io/zhixuan312/zz-stack:${{ inputs.version }}
-          if [ -n '${{ inputs.dashboard }}' ]; then
-            docker push ghcr.io/zhixuan312/zz-stack-dashboard:${{ inputs.dashboard }}
+          docker push "ghcr.io/zhixuan312/zz-stack:$VERSION"
+          if [ -n "$DASHBOARD" ]; then
+            docker push "ghcr.io/zhixuan312/zz-stack-dashboard:$DASHBOARD"
           fi

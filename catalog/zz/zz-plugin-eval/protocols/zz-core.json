@@ -3,6 +3,7 @@
   "version": 1,
   "pluginPurpose": "To own the record every flow writes into — identity, documents, gates, knowledge, telemetry, and what anybody reports broken — and the method for using it. A capability belongs here when every flow needs it and no flow owns it; anything one flow owns belongs in that flow. Filing a defect and answering one are the same subject and live together here; which half you are offered is your role's answer, not the door's.",
   "observableSurfaces": [
+    "activity_refusals",
     "assess",
     "bug_delete",
     "bug_list",
@@ -22,6 +23,10 @@
     "knowledge_reindex",
     "knowledge_search",
     "knowledge_supersede",
+    "platform_status",
+    "record_read",
+    "release_list",
+    "run_summary",
     "session_whoami",
     "skill_list",
     "skill_read",

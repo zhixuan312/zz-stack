@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.23
+version: 1.24
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -338,15 +338,15 @@ or whatever is true. That is a sentence a reader can disagree with, which an abs
 not, and it keeps the labels the next two stages lift from. Never add a component outside the
 eight; `## Phase outline` and `## Core statements` follow them, and are not components.
 
-Write the spec in two passes, because a long single-pass document comes out uneven and can truncate before the last section. First create the spec file as a **complete skeleton**: the title and ALL EIGHT `##` component headings, each `###` section within them, each `####` sub-part, with a single one-line **brief** immediately under each `###` section stating what that section will contain (drawn from the confirmed decisions). Write this skeleton in ONE `document_write` call into the initiative — `document_write(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
+Write the spec in two passes, because a long single-pass document comes out uneven and can truncate before the last section. First create the spec file as a **complete skeleton**: the title, all eight `##` component headings, each `###` section within them, each `####` sub-part, then `## Phase outline` and `## Core statements`, with a single one-line **brief** immediately under each `###` section and under each of those two headings, stating what it will contain (drawn from the confirmed decisions). Write this skeleton in ONE `document_write` call into the initiative — `document_write(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
 
 **`document_write` to create it and `document_edit` to change it, not your runtime's local-file tools.** A spec written to a local path is a file on your disk: no envelope, no version snapshot at approval, no telemetry, and nothing the person can approve or the auditor can read. It also looks exactly like success.
 
-Each brief is one HTML-comment line placed directly under its `###` heading:
+Each brief is one HTML-comment line placed directly under its `###` heading — or, for the two sections that have no `###` inside them, directly under `## Phase outline` and `## Core statements`:
 
 `<!-- brief: one line — what this section will cover, from the decisions -->`
 
-The skeleton **must** follow this exact heading hierarchy — the eight component headings at `##` level, in the canonical order below, sections within each at `###`, sub-parts at `####`. This is the unified specification standard for this flow (the bracketed guidance under each heading below is what that section must eventually contain — in the skeleton it becomes the one-line brief; you write the full content in Phase C):
+The skeleton **must** follow this exact heading hierarchy — the eight component headings at `##` level, in the canonical order below, sections within each at `###`, sub-parts at `####`, then the two sections at `##`. This is the unified specification standard for this flow (the bracketed guidance under each heading below is what that section must eventually contain — in the skeleton it becomes the one-line brief; you write the full content in Phase C):
 
 ````markdown
 # <Feature Title>
@@ -407,7 +407,7 @@ Example:
 2. **EXEC — workstream 2:** the runtime implementation (the buildable unit)
 3. **GATE — workstream 3:** release-governance sign-offs (runs at release time)
 
-Executors must plan and implement each workstream as a separate feature slice with its own completion gate. Only workstream-2 tasks appear in the Implementation section of the downstream plan.]
+Executors must plan and implement each workstream as a separate feature slice with its own completion gate. Only workstream-2 tasks appear in the downstream plan's phases.]
 
 #### In scope
 [Explicitly enumerated — every item the release delivers]
@@ -519,7 +519,7 @@ These labels are the specification standard for this flow, and they are read by 
 
 ### Phase C — Enrich each section (one `document_edit` per section)
 
-Now fill the skeleton in, **one `###` section at a time, in document order**, using `document_edit(path: "<initiative>/spec.md", edits: [{find: "<!-- brief: … -->", replace: "<the section's complete final content>"}])` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document whose unreached sections you can name. Continue until **zero `<!-- brief:` markers remain.**
+Now fill the skeleton in, **one `###` section at a time, in document order**, and `## Phase outline` and `## Core statements` the same way, each as one section, using `document_edit(path: "<initiative>/spec.md", edits: [{find: "<!-- brief: … -->", replace: "<the section's complete final content>"}])` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document whose unreached sections you can name. Continue until **zero `<!-- brief:` markers remain.**
 
 Each section you enrich must satisfy the Constraints above.
 

@@ -1,8 +1,8 @@
 ---
 name: zz-plugin-eval
-version: 2.8
+version: 2.9
 description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Opened by a person with `/zz-plugin-eval:eval` whenever they want a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth fixing, or a plugin needs release, verification on real use and rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
-when_to_use: "A person typed /zz-plugin-eval:eval. When someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?' — answering from your own read is the failure this flow exists to prevent, so point them at /zz-plugin-eval:eval instead of agreeing or disagreeing. It is also the command for whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs releasing through its own owners and judging on real use. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
+when_to_use: "A person typed /zz-plugin-eval:eval. When someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?' — answering from your own read is the failure this flow exists to prevent, so point them at /zz-plugin-eval:eval instead of agreeing or disagreeing. It is also the command for whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs releasing through its own owners and judging on real use. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN, and IMPROVE's skip, run on any client with no shell; the rest of IMPROVE and PROMOTE/VERIFY need Claude Code."
 ---
 
 # zz-plugin-eval
@@ -139,8 +139,9 @@ IDENTIFY through EXPLAIN are runnable by any client with no shell — every dura
 in those five stages goes through this door's own MCP tools alone. IMPROVE is where that
 changes: a candidate is built and gated in a sandbox on the agent's own host (`npm run
 candidate-build`), and released or rolled back through the repository's own procedures
-(`zz-tool release-apply`, `zz-tool release-rollback`), so IMPROVE and PROMOTE/VERIFY need Claude
-Code (or an equivalent shell-capable runtime) and refuse to start anywhere else. Load the stage skill for the one you are on; each says exactly which
+(`zz-tool release-apply`, `zz-tool release-rollback`), so IMPROVE past its skip and PROMOTE/VERIFY
+need Claude Code (or an equivalent shell-capable runtime). IMPROVE's skip — `improvement_start`
+with `skip: true`, when no plugin-owned finding is actionable — is one MCP call any client makes. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
 
 ## Facts come from tools; meaning comes from you
@@ -162,7 +163,7 @@ is the honest answer — report it and move on.
 document quoting the exact version's `content_digest`, and until it binds, `evaluator_qualify`
 and `evaluation_start` refuse that protocol version by name — the refusal is the gate working.
 
-❌ **Starting IMPROVE with no shell.** Nothing before it needs one; everything from it on does.
+❌ **Going past IMPROVE's skip with no shell.** Nothing before it needs one; everything after it does.
 
 ❌ **Comparing two plugins.** Every protocol is that plugin's own, so two scores are two things
 measured with two protocols. There is no leaderboard here and there is not meant to be.

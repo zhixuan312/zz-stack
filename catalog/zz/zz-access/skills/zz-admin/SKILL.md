@@ -1,6 +1,6 @@
 ---
 name: zz-admin
-version: 2.11
+version: 2.12
 description: "Running the platform itself: who exists, which teams they are in, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
 when_to_use: "Someone needs a principal created or deactivated, a team made or retired, a person added to or removed from a team, a PAT issued or revoked, or a passkey enrolment link minted. Also for an access review — who has what, and who gave it to them."
 ---
@@ -18,11 +18,13 @@ The two platform plugins are required; every other plugin is a person's own choi
 their own machine. Asked to "grant a team a flow", say that: there is nothing to grant,
 and `catalog_list` shows everyone the same shelf.
 
-Same tools list, same door — the platform does not sort administration into its own URL,
-because a URL that admits everybody sorts nothing. **What separates the two is your role**:
-these tools are registered for you only if your role can execute them. So if a tool named
-below is not in your list, that is the answer — you do not have the authority, and `whoami`
-says which authority you do have. Do not go looking for another door; there isn't one.
+The access tools share one door with `zz-access` — the platform does not sort administration
+into its own URL, because a URL that admits everybody sorts nothing. **What separates the two is
+your role**: these tools are registered for you only if your role can execute them. So if an
+access tool named below is not in your list, that is the answer — you do not have the authority,
+and `whoami` says which authority you do have. The exceptions are the last two rows of the table
+below: `knowledge_reindex` and the bug tools sit on `/core` (zz-core), with the records they are
+about, and are looked for there.
 
 So the rule that matters is not a technique. It is that you are operating a register other
 people depend on, and the register is the truth — not your memory of it.
@@ -50,8 +52,8 @@ which is almost always the answer to "why was that a 403".
 | a team | `team_create` `team_archive` `team_list` |
 | who is in a team | `member_add` `member_remove` |
 | a person's or a team's generated setup | `client_setup` (pass `email`) |
-| a team's knowledge index, when it disagrees with the rows | `knowledge_reindex` |
-| what people have reported as broken | `bug_list` `bug_resolve` `bug_delete` |
+| a team's knowledge index, when it disagrees with the rows | `knowledge_reindex` (on `/core`) |
+| what people have reported as broken | `bug_list` `bug_resolve` `bug_delete` (on `/core`) |
 
 ## Answering a bug report
 
@@ -170,8 +172,9 @@ that does it.
   named — administering one team is not administering the next. When one refuses, report what
   it said; never look for another route to the same effect.
 
-- **A tool that is missing was never yours.** Your list is built from your role. "Tool not
-  found" here means the authority, not the platform — check `whoami` and say so plainly
+- **A tool that is missing was never yours.** Your list is built from your role, on the door
+  the tool lives on — `/core` for the bug tools and `knowledge_reindex`. "Tool not
+  found" there means the authority, not the platform — check `whoami` and say so plainly
   rather than reporting the platform as broken.
 
 - **A destructive tool asks you to repeat the target.** `confirm` is not ceremony — it is

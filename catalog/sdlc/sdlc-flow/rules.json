@@ -3,8 +3,7 @@
   "flow": "sdlc-flow",
   "generated_for": "Task I-16 — AC-8.1, AC-8.5",
   "supported_backend": "@zz/zz-core",
-  "supported_backend_version": "0.62.4",
-  "evidence_standard": "An entry is `platform` (or `flow_controller`, the same bar for code that sequences a flow's stages at runtime) only when a real handler is named at file and symbol AND an EXECUTABLE test drives it in both directions — the refusal fires, and a legitimate control is allowed. Three forms of test are accepted, and nothing else is: (1) a live chain-check probe under `packages/tools/src/testing/` that CALLS the tool over its real door and asserts both the refusal and a successful control — the strongest form, run by `scripts/release.ts` against a live deployment; (2) a check under `checks/` that imports the compiled module and drives the enforcing predicate the handler calls, where the handler's call site is cited at file:line so the predicate is demonstrably not an orphan; (3) a check under `checks/` that lifts the handler's own refusal conditions out of its comment-stripped source and EVALUATES them over every combination of the inputs. A check that regexes source text, an export that exists, and a unit test over a subsystem nothing else imports satisfy none of these. `analytical_review` is used where a real handler enforces the claim but NO executable test of any of the three forms drives it — the handler is still named, so the gap is visible rather than hidden, and the entry is promoted to `platform` the day a test drives it. `convention` is used where nothing executable enforces the claim at all.",
+  "evidence_standard": "An entry is `platform` (or `flow_controller`, the same bar for code that sequences a flow's stages at runtime) only when a real handler is named at file and symbol AND an EXECUTABLE test drives it in both directions — the refusal fires, and a legitimate control is allowed. Three forms of test are accepted, and nothing else is: (1) a live chain-check probe under `packages/tools/src/testing/` that CALLS the tool over its real door and asserts both the refusal and a successful control — the strongest form, run by `scripts/release.ts` against a live deployment; (2) a check under `checks/` that imports the compiled module and drives the enforcing predicate the handler calls, where the handler's call site is cited at file and symbol so the predicate is demonstrably not an orphan; (3) a check under `checks/` that lifts the handler's own refusal conditions out of its comment-stripped source and EVALUATES them over every combination of the inputs. A check that regexes source text, an export that exists, and a unit test over a subsystem nothing else imports satisfy none of these. `analytical_review` is used where a real handler enforces the claim but NO executable test of any of the three forms drives it — the handler is still named, so the gap is visible rather than hidden, and the entry is promoted to `platform` the day a test drives it. `convention` is used where nothing executable enforces the claim at all.",
   "enforcement_classes": {
     "platform": "Refused by the platform's own code, and a check drives that refusal in both directions.",
     "flow_controller": "Computed by the platform's flow machinery at runtime, and a check drives it in both directions.",
@@ -61,7 +60,7 @@
       "locator": "## Who approves",
       "claim": "An approval exists only once `document_approve` has recorded it, on exactly the snapshot your own `document_present` put in front of them — pass back the `review_context` and `expected_revision` that present named; another person's presentation, or the console's, is not yours.",
       "enforcement_class": "platform",
-      "handler": "services/zz-core/src/attest.ts::approvalBasis, called by services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools (document_approve) at initiative-acts.ts:125 before the seal, which commits only with `expect` pinning the generation it read (a loss answers services/zz-core/src/attest.ts::approvalConflict); coverage is read through services/zz-core/src/review-context.ts::contextState, pagesOf and coverageOf, scoped to the caller's principal, team, document and `x-zz-via`",
+      "handler": "services/zz-core/src/attest.ts::approvalBasis, called by services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools (document_approve) before the seal, which commits only with `expect` pinning the generation it read (a loss answers services/zz-core/src/attest.ts::approvalConflict); coverage is read through services/zz-core/src/review-context.ts::contextState, pagesOf and coverageOf, scoped to the caller's principal, team, document and `x-zz-via`",
       "behavioural_test": "checks/attest-shown.ts — approvalBasis over fixture rows: whole coverage of the current snapshot in a context of the caller's is accepted; a gap, mixed targets, another principal's or credential's context, a passed context still mid-presentation or covering an earlier snapshot, and nothing presented are refused (PRESENTATION_REQUIRED or APPROVAL_CONFLICT); a failed read refuses. checks/approve-needs-present.ts drives the same function over the real presenter, and the handler order (basis before the seal). Confirmed against the live door by packages/tools/src/testing/chain-check.ts ('document_approve() refuses a document not presented since its last change', 'document_approve() refuses a revision the panel did not display', 'document_approve() records a verdict on the revision the panel displayed, in its review context')",
       "test_drives": "services/zz-core/dist/attest.js",
       "report": "node checks/attest-shown.ts",
@@ -273,7 +272,7 @@
       "schema": "services/zz-core/src/tools/knowledge.ts knowledge_add inputSchema — `evidence: z.array(z.string()).min(1)` (knowledge.ts)",
       "handler": "services/zz-core/src/tools/knowledge.ts::registerKnowledgeTools, knowledge_add, knowledge.ts",
       "behavioural_test": null,
-      "report": "scripts/gate/checks/knowledge.ts holds twenty-two source-level checks over the knowledge surface; none of them executes this refusal.",
+      "report": "scripts/gate/checks/knowledge.ts holds source-level checks over the knowledge surface; none of them executes this refusal.",
       "note": "Two halves, both enforced in code: the zod `.min(1)` refuses an empty array, and the handler refuses an entry that is not an initiative folder in a store the caller is a member of. Neither half is driven by a test."
     },
     {
@@ -473,7 +472,7 @@
           "finished",
           "abandoned"
         ],
-        "emitted_from": "services/zz-core/src/tools/initiative-close.ts:47"
+        "emitted_from": "services/zz-core/src/tools/initiative-close.ts::registerInitiativeCloseTool, initiative_close inputSchema `disposition`"
       }
     },
     {
@@ -495,7 +494,7 @@
       "claim": "An ordinary lexical match joins your words with AND. When that returns nothing, the platform re-asks the same question with OR and hands back what matched SOME of them",
       "enforcement_class": "platform",
       "schema": "services/zz-core/src/tools/knowledge-search.ts — `fuse(lexical, broadened ? \"lexical-broad\" : \"lexical\")`",
-      "handler": "services/zz-core/src/tools/knowledge-search.ts::registerKnowledgeSearch, knowledge-search.ts and :502",
+      "handler": "services/zz-core/src/tools/knowledge-search.ts::registerKnowledgeSearch",
       "behavioural_test": "packages/tools/src/testing/chain-shelf.ts — calls the real `knowledge_search` over the live door with a query that is empty under AND by construction, and asserts BOTH halves: the note saying no document contains all the terms, and `via: [\"lexical-broad\"]` on the rows. Its control is the sibling call at chain-shelf.ts, the same probe node found by an ordinary AND match",
       "report": "npm run chain-check (chain-shelf is walked by the same run), scripts/release.ts",
       "note": "Requires a live deployment with a platform database and a team; the probe tolerates `no platform database` / `not in a team` as a legitimate refusal, so a run without either asserts nothing."

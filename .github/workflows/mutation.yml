@@ -9,20 +9,18 @@
 # that on this runner image — so the plants are judged against a real baseline.
 #
 # Twenty jobs at once, one shard each, then one job that merges them. The whole suite on one runner
-# is ~370 rows at about two minutes per row per worker, and GitHub cancels any job at six hours —
-# the first scheduled-size run was cancelled there with 345 rows done. Split by `planShards`, the
-# same planner a local `--workers N` uses, the largest shard is 25 rows (one check file cannot be
-# split) and every job ends in well under an hour. Twenty because that is how many jobs a free
-# account runs at once; more would only queue.
+# takes about two minutes per row per worker, and GitHub cancels any job at six hours. Split by
+# `planShards`, the same planner a local `--workers N` uses, the largest shard is 25 rows (one check
+# file cannot be split) and every job ends in well under an hour. Twenty because that is how many
+# jobs a free account runs at once; more would only queue.
 #
 # The merge job writes `testing/mutation-report.json` and uploads it as an artifact. A dispatched run
 # stops there; the scheduled run also commits the report, and that is the one file it writes.
 #
 # Weekly, and on demand. The gate does not read the report and this is not on every push: even
-# twenty-wide it is most of an hour. But a suite nobody runs is a suite that claims
-# coverage nobody has — the committed report sat at 2026-09-23 with all 423 rows failed and its own
-# baseline red — so the scheduled run commits the refreshed report straight to master. Not a PR: a
-# PR nobody merges leaves the report as stale as a suite nobody runs.
+# twenty-wide it is most of an hour. But a suite nobody runs is a suite that claims coverage nobody
+# has, so the scheduled run commits the refreshed report straight to master. Not a PR: a PR nobody
+# merges leaves the report as stale as a suite nobody runs.
 name: mutation
 
 on:
@@ -58,9 +56,8 @@ jobs:
         with:
           path: pair/zz-stack
           # The tags too: "the version that shipped has a changelog section of its own" asks git
-          # whether this version is tagged, and a checkout without tags answered "not yet released"
-          # every time, so the check never ran here. Full depth, because `fetch-tags` on the default
-          # one-commit clone fetches none — the first run with it alone reported no release tags.
+          # whether this version is tagged, and a checkout without tags answers "not yet released".
+          # Full depth, because `fetch-tags` on the default one-commit clone fetches none.
           fetch-depth: 0
           fetch-tags: true
 
@@ -73,15 +70,17 @@ jobs:
           repository: zhixuan312/zz-stack-dashboard
           path: pair/zz-stack-dashboard
 
-      # The gate's inventory and evaluation-reader checks migrate a throwaway PostgreSQL built from
-      # this image, so it has to exist before the baseline runs — the same reason gate.yml and
-      # images.yml build it.
-      - name: Build the pinned PostgreSQL the gate's Docker checks migrate
-        run: docker build -f deploy/postgres/Dockerfile -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 .
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      # The gate's inventory and evaluation-reader checks migrate a throwaway PostgreSQL built from
+      # this image, so it has to exist before the baseline runs — the same reason gate.yml and
+      # images.yml build it, with the tag read from `deploy/docker-compose.yml` the same way.
+      - name: Build the pinned PostgreSQL the gate's Docker checks migrate
+        run: |
+          image=$(node --input-type=module -e "import('./scripts/release/postgres-service.ts').then((m) => process.stdout.write(m.postgresService('.').image))")
+          docker build -f deploy/postgres/Dockerfile -t "$image" .
 
       - run: npm ci
 
@@ -125,6 +124,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: pair/zz-stack
+          # Full history, so the refresh below can rebase its commit onto a master that moved.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -153,7 +154,8 @@ jobs:
       # Only on the schedule. It commits rather than opening a PR: a PR nobody merges does not keep
       # the artifact current, which is the same trap as a suite nobody runs, one level up. The file is
       # generated evidence rather than code, master accepts a push from this token, and the suite's
-      # own report is the only thing this touches.
+      # own report is the only thing this touches. Master may have moved during the shards, so the
+      # commit is rebased onto it before the push.
       - name: Refresh the committed report
         if: ${{ github.event_name == 'schedule' }}
         env:
@@ -167,4 +169,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add testing/mutation-report.json
           git commit -m "Refresh the mutation report ($(date -u +%Y-%m-%d))"
+          git pull --rebase origin master
           git push origin HEAD:master

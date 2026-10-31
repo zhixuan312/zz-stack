@@ -84,13 +84,16 @@ async function waitReachable(url: string): Promise<void> {
  * would otherwise have carried. The container is removed when `fn` returns, throws, or is
  * killed by anything else that runs first — always, including on failure.
  *
+ * `fn` is handed the database's URL beside the client, for a check that starts a gateway or opens a
+ * second connection on it.
+ *
  * `beforeMigrate`, when given, runs once the container is reachable and before `initPlatformDb`
  * migrates it — `scripts/rehearse.ts`'s one caller for this: it restores a production dump into
  * the empty container there, so the real runner then migrates a production copy instead of an
  * empty database. Every other caller leaves it out and gets exactly the behaviour above.
  */
 export async function withThrowawayDb<T>(
-  fn: (client: pg.Client) => Promise<T>,
+  fn: (client: pg.Client, url: string) => Promise<T>,
   beforeMigrate?: (url: string) => Promise<void>,
 ): Promise<T> {
   const preset = process.env.PLATFORM_DB_URL ? "PLATFORM_DB_URL" : process.env.TEAM_DB_URL ? "TEAM_DB_URL" : null;
@@ -132,12 +135,19 @@ export async function withThrowawayDb<T>(
     if (beforeMigrate) await beforeMigrate(url);
 
     process.env.TEAM_DB_URL = url;
+    // The migration seeds a superadmin and teams from these two when they are set, which a shell that loaded
+    // deploy/.env carries: a throwaway starts empty whatever the shell holds, and the shell gets them back.
+    const { SUPERADMIN_EMAIL, BOOTSTRAP_TEAM } = process.env;
+    delete process.env.SUPERADMIN_EMAIL;
+    delete process.env.BOOTSTRAP_TEAM;
     const dbModule = (await import(pathToFileURL(`${root}/services/gateway/dist/db.js`).href)) as
       typeof import("../../services/gateway/dist/db.js");
     try {
       await dbModule.initPlatformDb();
     } finally {
       delete process.env.TEAM_DB_URL;
+      if (SUPERADMIN_EMAIL !== undefined) process.env.SUPERADMIN_EMAIL = SUPERADMIN_EMAIL;
+      if (BOOTSTRAP_TEAM !== undefined) process.env.BOOTSTRAP_TEAM = BOOTSTRAP_TEAM;
     }
     if (dbModule.platformDbReady()) await dbModule.platformDb().end();
 
@@ -145,7 +155,7 @@ export async function withThrowawayDb<T>(
     await client.connect();
     try {
       await client.query("set search_path = ''");
-      return await fn(client);
+      return await fn(client, url);
     } finally {
       await client.end();
     }

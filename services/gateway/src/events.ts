@@ -224,6 +224,13 @@ async function write(record: Record<string, unknown>, params: unknown[]): Promis
  *  event's columns and detail as the caller sent them, and one NUL there would strand the whole
  *  event; it is recorded with U+FFFD in its place instead. */
 const storable = (s: string): string => s.replaceAll("\0", "\uFFFD");
+/** `storable` for a detail object, as a JSON.stringify replacer: on each string value, and on an
+ *  object's keys — a refused call's telemetry keys its detail by the argument names as sent. */
+const storableJson = (_k: string, v: unknown): unknown =>
+  typeof v === "string" ? storable(v)
+    : v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).some((k) => k.includes("\0"))
+      ? Object.fromEntries(Object.entries(v).map(([k, x]) => [storable(k), x]))
+      : v;
 
 export function logEvent(e: {
   actor: string;
@@ -310,7 +317,7 @@ export function logEvent(e: {
     e.responseBytes ?? null,                 // $7
     e.kind,                                  // $8
     e.subject ?? "",                         // $9
-    JSON.stringify(e.detail ?? {}, (_k, v: unknown) => typeof v === "string" ? storable(v) : v),  // $10
+    JSON.stringify(e.detail ?? {}, storableJson),  // $10
     e.refusal ?? null,                       // $11
     e.ok === false ? (e.refusalOwner ?? refusalOwner(e.refusal ?? "")) : null,   // $12
     e.plugin ?? null,                        // $13

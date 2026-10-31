@@ -211,11 +211,15 @@ async function nulActs(c: Core, g: Gateway): Promise<void> {
   await c.refused(step, "initiative_status", { initiative: "a\u0000b" }, named);
   const { logEvent } = (await import(new URL("../services/gateway/dist/events.js", import.meta.url).href)) as
     { logEvent: (e: { actor: string; kind: string; subject?: string; detail?: Record<string, unknown> }) => void };
-  logEvent({ actor: c.email, kind: "nul.probe", subject: "a\u0000b", detail: { ids: { name: "a\u0000b" } } });
+  // A refused call's telemetry keys its detail by the argument names as sent, so a key can hold one too.
+  logEvent({ actor: c.email, kind: "nul.probe", subject: "a\u0000b",
+             detail: { ids: { name: "a\u0000b" }, given: { "a\u0000b": "string(1)" } } });
   for (const until = Date.now() + 5000; ;) {
-    const { rows } = await c.sql.query<{ subject: string }>("select subject from zz.event where kind = 'nul.probe'");
+    const { rows } = await c.sql.query<{ subject: string; keys: string[] }>(
+      "select subject, array(select jsonb_object_keys(detail->'given')) as keys from zz.event where kind = 'nul.probe'");
     if (rows.length) {
       if (rows[0].subject !== "a\ufffdb") c.fail(step, `the event's subject reads ${JSON.stringify(rows[0].subject)}`);
+      if (JSON.stringify(rows[0].keys) !== JSON.stringify(["a\ufffdb"])) c.fail(step, `the detail's keys read ${JSON.stringify(rows[0].keys)}`);
       break;
     }
     if (Date.now() > until) c.fail(step, "an event carrying a NUL was not recorded");

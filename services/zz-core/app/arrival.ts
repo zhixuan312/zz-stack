@@ -8,7 +8,7 @@
  *     never claiming one is shown somewhere else;
  *   - "none": nothing to draw, and no part was read.
  */
-export type Arrival = "replace" | "keep" | "offer" | "none";
+type Arrival = "replace" | "keep" | "offer" | "none";
 
 export function arrival(held: number, incoming: number, reading: boolean): Arrival {
   if (incoming > 0) return "replace";

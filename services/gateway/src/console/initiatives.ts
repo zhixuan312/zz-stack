@@ -117,10 +117,9 @@ export function mountInitiatives(app: Express): void {
     // revisions read to it, so the state below is the list's rule at the list's cutoff.
     const asOf = iso(Math.ceil(Date.now() / 1000) * 1000);
     const [docs, claimDocs, facts, anchor, pending] = await Promise.all([
-      // `flow`/`outcome` stay in this select as this document's own metadata — what the
-      // dashboard renders per row. Neither drives `stageOf` below any more; the anchor query
-      // does, and both are read from where they live now: the initiative's `flow`, and the
-      // revision's own `outcome` key.
+      // `flow`/`outcome` are this document's own metadata — what the dashboard renders per row,
+      // read from the initiative's `flow` and the revision's own `outcome` key. Neither drives
+      // `stageOf` below; the anchor query does.
       db.query<DocRow & { flow: string | null }>(
         `select d.path, d.type, d.status, r.fields->>'outcome' as outcome,
                 a.email as approved_by, d.title, coalesce(i.flow,'') as flow,
@@ -154,7 +153,7 @@ export function mountInitiatives(app: Express): void {
            left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
           where t.slug = $1 and i.slug = $2 and trim(d.type) in ('selection', 'agreement', 'plan')
           order by d.path`, [team, slug]),
-      // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (001), read for `stageOf`
+      // FR-58: this initiative's own mirror of `_facts.json` (001), read for `stageOf`
       // below the same way the list (initiative-list.ts) reads it for every initiative.
       db.query<{ fact: string; value: string }>(
         `select f.fact, f.value
@@ -202,8 +201,6 @@ export function mountInitiatives(app: Express): void {
     res.json({
       team, slug, flow, state, lastTouched,
       documents: docs.rows.map((d) => {
-        // Every row here is a live document: a version is a revision row now, so no row is a
-        // frozen copy of another and none of them answers to a neighbour's rules.
         const rule = shape.get(d.path);
         return {
           ...d, bytes: +d.bytes,
@@ -250,19 +247,14 @@ export function mountInitiatives(app: Express): void {
       return;
     }
     const team = activeTeam;
-    // The document's address, with no snapshot name to strip: a version is a `doc_revision`
-    // row, not a second `zz.doc` row filed under a snapshot name, so the path asked for IS the
-    // document's own.
-    const base = path;
     /* One snapshot's text, on request: `?revision=<n>`, the snapshot id a `versions` entry names.
      * It answers with the public version that snapshot belongs to beside it.
      *
      * DELIBERATE: the history is listed by its metadata and its bodies are read one at a time.
-     * `zz.doc_revision` holds the whole text of every write — 184 MB of it on this deployment,
-     * and one plan.md alone carries 109 revisions totalling 94 MB. Returning those bodies with
-     * the document made opening it a 94 MB download which the browser then diffed pairwise,
-     * and reading them at all detoasts every revision. A reader looking at one change needs the
-     * two texts the diff is drawn between, not every text the document has ever had.
+     * `zz.doc_revision` holds the whole text of every write, so returning those bodies with the
+     * document would make opening a long-lived one a download the size of its whole history, and
+     * reading them at all detoasts every revision. A reader looking at one change needs the two
+     * texts the diff is drawn between, not every text the document has ever had.
      *
      * The version is validated as digits before it reaches the statement, so an empty or
      * malformed parameter is not silently read as revision 0; a number past what the integer column
@@ -327,16 +319,13 @@ export function mountInitiatives(app: Express): void {
       // DELIBERATE: no body and no `length(body)`. Both detoast every revision the document has
       // ever had, and the browser needs neither to draw the history — it asks for the two texts
       // of the change it is showing, through `?revision=`. See the note where that is served.
-      // `bytes` went with them: nothing rendered it, and measuring it was the whole
-      // decompression bill.
       //
       // `hash` stays, because the history merges a revision that carries the same content as
       // the one above it — an approval that edited nothing files one — and telling that apart
       // needs a fingerprint of the body. md5 is the one that costs: it detoasts, so it is
-      // proportional to a document's whole revision history (620 ms on the largest here, 94 MB
-      // of it, and under a millisecond on the other 2,050 documents). Paid, because the
-      // alternative is sending that 94 MB to the browser to compare it there. The snapshot is
-      // picked before the hash is taken, so only one body per version is read.
+      // proportional to a document's whole revision history. Paid, because the alternative is
+      // sending that history to the browser to compare it there. The snapshot is picked before
+      // the hash is taken, so only one body per version is read.
       //
       // `sealed_*`: a version read as an unsigned row can hold an approved row before it — a
       // metadata-only change after the approval, a closed document's correction among them, files
@@ -380,11 +369,8 @@ export function mountInitiatives(app: Express): void {
       // `supports`, pinned to the revision that wrote it at one end and to the target document's
       // identity at the other.
       //
-      // DELIBERATE: read from `doc_link` and not from the envelope. `supports` used to be a
-      // comma-joined key of the source's own revision, and that is no longer written —
-      // `sourceDocument` leaves it to the relation, which is its only home. A reader left on the
-      // key would empty this panel for every source added after that change, and the two would
-      // be two answers to one question for every source added before it.
+      // DELIBERATE: read from `doc_link` and not from the envelope: the relation is the only
+      // home of `supports`, and `sourceDocument` writes nothing else for it.
       db.query(
         `select s.path, s.title,
                 (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
@@ -398,17 +384,13 @@ export function mountInitiatives(app: Express): void {
            join zz.team t on t.id = i.team_id
            left join zz.doc_revision sr on sr.doc_id = s.id and sr.revision = s.current_revision
           -- DELIBERATE: the match is against the LINK, one row per document supported, so a round
-          -- attached to two documents is found from either. The envelope key this replaced held
-          -- them comma-joined and was compared as a whole string, which found a source only when
-          -- it supported exactly the document being read: a round attached to both intent.md and
-          -- spec.md matched neither, and the panel was empty for exactly the material that bears
-          -- on the document in front of the reader.
+          -- attached to two documents is found from either.
           where t.slug = $1 and i.slug = $2
             and exists (select 1 from zz.doc_link l
                           join zz.doc td on td.id = l.to_doc_id
                          where l.from_doc_id = s.id and l.from_revision = sr.revision
                            and l.kind = 'supports' and td.path = $3)
-          order by s.updated_at, s.path`, [team, initiative, base, ZZ_TZ]),
+          order by s.updated_at, s.path`, [team, initiative, path, ZZ_TZ]),
     ]);
     if (!doc.rows.length) {
       res.status(404).json({ error: NO_DOCUMENT });
@@ -417,7 +399,7 @@ export function mountInitiatives(app: Express): void {
     // What the flow says about this one, same as the initiative list computes for the table.
     // Without it the status bar guesses from `status` alone and prints "draft" on a document
     // nothing will ever approve.
-    const rule = flowShape(doc.rows[0].flow).get(base);
+    const rule = flowShape(doc.rows[0].flow).get(path);
     // The claims this one document makes, computed from the body the response already carries.
     // A snapshot keeps none: its claims are the live document's.
     const decisions = claimsOf([doc.rows[0]]);

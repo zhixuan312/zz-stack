@@ -59,7 +59,7 @@ export function mountPluginEval(app: Express): void {
         from zz.plugin p
         left join zz.team t on t.id = p.owner_team_id
         -- Release authority is the relation 'plugin_release_owner' (FR-23): one row per owner
-        -- team, joined to the team that names it. 'plugin.evolvable' is gone with the flag.
+        -- team, joined to the team that names it.
         left join lateral (
           select array_agg(t2.slug order by t2.slug) as slugs
             from zz.plugin_release_owner r
@@ -118,10 +118,8 @@ export function mountPluginEval(app: Express): void {
     // behind it. The run names the observation snapshot it was bound to rather than a second
     // evidence table, so the subject release it evaluated is that snapshot's own
     // `plugin_version_id`; `scored_at is not null` is what makes a run one with a published
-    // result. The per-dimension results are rows in `zz.eval_run_dimension` now, joined below.
-    //
-    // The protocol's key is a column of the version: `zz.eval_protocol` carried a plugin and
-    // a key and no other fact, so the phase-3 migration folded both onto `eval_protocol_version`.
+    // result. The per-dimension results are rows in `zz.eval_run_dimension`, joined below, and
+    // the protocol's key is a column of `eval_protocol_version`.
     const run = (await db.query<{
       id: string; score_status: string | null; overall_score: string | null;
       score_lower: string | null; score_upper: string | null; measure_coverage: string | null;
@@ -153,9 +151,7 @@ export function mountPluginEval(app: Express): void {
     const [observation, dimensions, trust, findingRows, improvementRuns] = await Promise.all([
       // Usage: real production evidence this run's observation snapshot was built from (FR-9,
       // FR-10) — every rate the page shows carries this denominator. The surface is three columns
-      // of the observation snapshot now (`surface_observed`/`surface_total`/`surface_source`):
-      // the `coverage` jsonb it used to be stored in is gone, and so is the evidence table that
-      // used to sit between a run and its snapshot.
+      // of the observation snapshot (`surface_observed`/`surface_total`/`surface_source`).
       db.query<{
         usable_run_count: number; total_run_count: number;
         surface_observed: number | null; surface_total: number | null;
@@ -172,9 +168,8 @@ export function mountPluginEval(app: Express): void {
       // version names, with its newest qualification state — mirrors findings-doc.ts's own
       // loadEvaluatorTrust exactly, so the dashboard and findings.md never disagree.
       //
-      // The evaluator's stable key is on its own version now (`zz.eval_evaluator` was a header
-      // carrying the key and a kind nothing read), and a qualification is about a MEASURE: the
-      // row it reads is the one qualified for this measure.
+      // The evaluator's stable key is on its version, and a qualification is about a MEASURE:
+      // the row it reads is the one qualified for this measure.
       db.query<{ stable_key: string; state: string | null; qualified_at: string | null }>(`
         select distinct on (ev.stable_key) ev.stable_key as stable_key,
                q.state as state, to_char(q.qualified_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as qualified_at
@@ -325,8 +320,7 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
       select c.id::text as id, c.hypothesis, c.status, c.complexity_delta, c.touched_components,
              c.base_plugin_version_id::text as base_plugin_version_id, c.build_result,
              -- Who may release this candidate's plugin: the plugin_release_owner relation,
-             -- which is where candidate_record derived the owner list it used to record on the
-             -- candidate itself (that copy is gone — see release_attempt_owner).
+             -- the one place the owner list is kept.
              coalesce(owners.slugs, '{}'::text[]) as release_owners,
              to_char(c.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
         from zz.candidate c
@@ -365,9 +359,8 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
       release: release ? {
         status: release.status, reason: release.reason,
         releasedDeclaredVersion: release.released_declared_version, releaseRef: release.release_ref,
-        // The verdict is its own column now and `verification` keeps only the evidence it rests
-        // on, so the verdict's own prose reason is no longer a fact this row carries; the page
-        // shows the attempt's recorded reason (a refusal's reason, the operator's rollback reason,
+        // The verdict is its own column and `verification` keeps only the evidence it rests on,
+        // with no prose reason of its own; the page shows the attempt's recorded reason (a refusal's reason, the operator's rollback reason,
         // an accepted override) beside the verdict instead of inventing one.
         verdict: release.verdict, verificationReason: release.reason,
         rolledBack: release.status === ROLLBACK_STATE,

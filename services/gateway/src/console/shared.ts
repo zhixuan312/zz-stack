@@ -230,8 +230,7 @@ export function flowShape(flow: string | null): Map<string, { gate: boolean; clo
  *  001) — the console's own mirror of `<initiative>/_facts.json`, since it reads `zz.doc`
  *  alone and never the filesystem `writeBranchFacts` (services/zz-core/src/eval/protocol.ts)
  *  writes to. `{}` — no facts recorded, or the flow declares no `when` at all — is `stageOf`'s
- *  own default and behaves exactly as it did before Task I-27: `documentApplies` answers
- *  `applies` for every document that carries no `when`.
+ *  own default: `documentApplies` answers `applies` for every document that carries no `when`.
  *  DELIBERATE: not exported — `stageOf` below is the one signature that names it; a caller
  *  passes a plain `Record<string, string>` it structurally matches. */
 type InitiativeFacts = Record<string, string>;
@@ -287,11 +286,8 @@ export function stageOf(
    *  held for `complete`, and the gate itself still reads as waiting on a person. */
   correction: { path: string; version: number } | null;
 } {
-  // Every row is a live document. A version is a `doc_revision` row now, so no row is a frozen
-  // copy of another carrying the same type, and nothing has to be dropped before counting.
-  const live = docs;
   // The first correction found is the one named, as initiative_status names one at a time.
-  const pending = lifecycle.closed ? live.find((d) => d.correction != null) : undefined;
+  const pending = lifecycle.closed ? docs.find((d) => d.correction != null) : undefined;
   const correction = pending ? { path: pending.path, version: Number(pending.correction) } : null;
 
   // The flow's own stages and gates, read from its manifest, so a flow that adds a stage is
@@ -306,8 +302,8 @@ export function stageOf(
     // withHandover here too, so the gate count, the stepper and `complete` are computed over
     // the documents zz-core actually gates, handover.md included.
     const declared = withHandover(manifest.documents);
-    const byName = new Map(live.map((d) => [d.path, d]));
-    // FR-58 (Task I-27): whether this initiative's own branch facts rule a document in, out or
+    const byName = new Map(docs.map((d) => [d.path, d]));
+    // FR-58: whether this initiative's own branch facts rule a document in, out or
     // undecided — computed once, read everywhere below. A document with no `when` at all
     // answers `applies` from `documentApplies` itself, so this map needs no separate "does it
     // declare when" branch anywhere it is read.
@@ -378,7 +374,7 @@ export function stageOf(
     const meta = new Map((manifest.stages ?? []).map((x) => [x.name, x]));
     // A source by its path, under `sources/`. Which stage's round it is, by its `type`: source_add
     // types a round by its stage (`sdlc-spec-audit`) and other material `source`.
-    const sources = live.filter((d) => d.path.startsWith("sources/"));
+    const sources = docs.filter((d) => d.path.startsWith("sources/"));
     const stageState = (n: string): "done" | "partial" | "empty" | "skipped" | "waiting" => {
       const produces = meta.get(n)?.produces;
       if (produces === "source") {
@@ -395,7 +391,7 @@ export function stageOf(
       }
       const mine = declared.filter((d) => d.stage === n);
       if (!mine.length) return "empty";
-      // FR-58 (Task I-27): a document this stage owes that the branch ruled `not_applicable`
+      // FR-58: a document this stage owes that the branch ruled `not_applicable`
       // is not counted against it — if every one of them was ruled out, the stage is `skipped`
       // rather than `empty`, which would draw it pending forever. One still `undetermined`
       // reads as `waiting`: the platform has not yet decided whether this is required, which is
@@ -464,7 +460,7 @@ export function stageOf(
   // No manifest: the initiative declares a flow the catalog cannot resolve, or none at all.
   // ops-flow's shape is the fallback, because it is what the untyped documents below were
   // written for.
-  const first = (t: string) => live.find((d) => d.type === t);
+  const first = (t: string) => docs.find((d) => d.type === t);
   const intent = first("intent");
   const spec = first("agreement") ?? first("spec");
   const sel = first("selection");

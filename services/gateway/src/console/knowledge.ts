@@ -199,7 +199,7 @@ export function mountKnowledge(app: Express): void {
    *
    * The nodes are joined back in by (team, ordinal): a node's shelf is the team the event names,
    * and the event's `subject` was always the node's ordinal, so the join runs on `team_id` and
-   * `node_ordinal` rather than on a path the table no longer holds. A left join, because a node
+   * `node_ordinal`. A left join, because a node
    * deleted from the shelf still has a log entry that happened.
    *
    * The active team's log, for the superadmin too, as the rest of Work is: a team or a scope the request

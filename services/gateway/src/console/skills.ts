@@ -48,8 +48,7 @@ export function mountSkills(app: Express): void {
         //
         // `kind` is derived, not read: `zz.skill.flow` is the whole of a skill's catalog shape
         // (a skill that names a flow is a step of that flow's method, one that names none is
-        // standalone capability) and the column it duplicates was dropped. The field name the
-        // response carries is unchanged, so the view reads as it did.
+        // standalone capability), so no column duplicates it.
         /* A duration is the span between a run's first and last call, so a run that made one
          * call has none: `zz.skill_run.started_at, ended_at` are `min(e.ts), max(e.ts)` over the
          * run's events, and a one-event run is stamped `ended_at = started_at` by construction.

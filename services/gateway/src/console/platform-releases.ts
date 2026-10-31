@@ -104,10 +104,8 @@ export async function releaseTimes(db: pg.Pool): Promise<{ version: string; ms: 
  *
  *  DELIBERATE: two range statements joined by `union all`, not one statement over a `values` list of
  *  both windows. A join of that list to `zz.event` gives the planner no window to seek into, so it
- *  reads every real-work call the platform ever recorded — twice, once per row of the list — and
- *  keeps 12,797 of 80,284. Measured on this deployment: 104 ms a release, nine times on one page.
- *  Written as two statements, each seeks its own week through `event_kind_ts` and `event_ts`: 52 ms
- *  for both. */
+ *  reads every real-work call the platform ever recorded, once per row of the list. Written as two
+ *  statements, each seeks its own week through `event_kind_ts` and `event_ts`. */
 async function countSides(db: pg.Pool, before: [number, number], after: [number, number]): Promise<{ before: Counts; after: Counts }> {
   const rows = (await db.query<{ side: "before" | "after"; calls: number; malformed: number; tool_failures: number; timed: number; p95_ms: number | null }>(
     `select 'before' as side,

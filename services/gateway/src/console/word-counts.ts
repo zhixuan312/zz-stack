@@ -4,10 +4,9 @@
  *
  * Record and Home both report words written, and both count them from `countWords` over the body of
  * every revision the team's flow documents have had. That is a pure function of bytes the platform
- * never changes, and it was recomputed from scratch by every process that ever started: on this
- * deployment 922 revisions, 123 MB of text, 1.4 s inside PostgreSQL and about as long again matching
- * word boundaries in Node — paid by the first Home or Record a restarted gateway answered, on every
- * start, for a number that had not moved since the revision was written.
+ * never changes, so it is stored once per body rather than recomputed by every process that starts:
+ * recomputing means reading and matching every revision's text on the first Home or Record a
+ * restarted gateway answers.
  *
  * DELIBERATE: content-addressed, not revision-addressed. The same bytes reach several revisions (a
  * revision filed again after an approval, a close rewriting a document to the same text), and one

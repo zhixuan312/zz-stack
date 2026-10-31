@@ -83,13 +83,22 @@ async function documents(p: pg.Pool, team: string | null, initiative: string): P
 
 /** One guard run's reads of its initiative, each made at most once and only when a check asks:
  *  the document map and the branch facts answer every check of one write alike. */
-interface Reads { documents(): Promise<Map<string, HeldDoc>>; facts(): Promise<Record<string, string>> }
+interface Reads {
+  documents(): Promise<Map<string, HeldDoc>>; facts(): Promise<Record<string, string>>; closed(): Promise<boolean>;
+}
 function readsOf(p: pg.Pool, team: string | null, initiative: string): Reads {
   let docs: Promise<Map<string, HeldDoc>> | undefined;
   let facts: Promise<Record<string, string>> | undefined;
+  let closed: Promise<boolean> | undefined;
   return {
     documents: () => (docs ??= documents(p, team, initiative)),
     facts: () => (facts ??= factsFor(p, team, initiative)),
+    // The initiative's own row, which `initiative_close` stamps: an abandoned close can land on no
+    // document at all, so the documents' outcomes are not the whole answer.
+    closed: () => (closed ??= p.query(
+      `select 1 from zz.initiative i join zz.team t on t.id = i.team_id
+        where i.slug = $1 and ($2::text is null or t.slug = $2) and i.closed_at is not null`,
+      [initiative, team]).then((r) => (r.rowCount ?? 0) > 0)),
   };
 }
 
@@ -361,6 +370,23 @@ async function closedDocumentGuard(r: Reads, relPath: string,
     "and the close and its ledger row stand"
   );
 }
+/** A closed initiative takes no new document.
+ *
+ * The record is finished: what it holds may be corrected (`document_edit`, which passes `via`, and
+ * the two guards above), and the handover a finished close owes is still written after it. Any
+ * other new path would add to the record after it was closed, under nobody's review. */
+async function closedInitiativeGuard(r: Reads, chain: Chain, relPath: string,
+                                     via: string | null): Promise<string | null> {
+  if (via) return null;                       // the acts that pass `via` own their writes
+  const { doc, initiative, name } = await held(r, relPath);
+  if (doc || isHandover(chain.documents.find((d) => d.name === name) ?? { name })) return null;
+  if (!(await r.closed())) return null;
+  return (
+    `ERROR: ${initiative} is closed, and a closed initiative is a finished record that takes no new document. ` +
+    "A correction to a document it holds goes through document_edit; something it taught goes to " +
+    "knowledge_add, naming the initiative in `evidence`."
+  );
+}
 /** Whether a closed initiative has settled its prerequisite, whichever document it landed on.
  *
  * handover.md requires review.md, and an initiative abandoned at the plan stage has no
@@ -561,6 +587,7 @@ export async function documentGuards(chain: Chain, relPath: string, content: str
   const checks: (() => Promise<string | null>)[] = [
     () => ownershipCheck(r, relPath, content, via),
     () => closedDocumentGuard(r, relPath, via),
+    () => closedInitiativeGuard(r, chain, relPath, via),
     () => approvedDocumentGuard(r, chain, relPath, via),
     async () => applicabilityCheck(r, chain, relPath),
     () => gateCheck(r, chain, relPath),

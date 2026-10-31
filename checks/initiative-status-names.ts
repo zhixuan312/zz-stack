@@ -18,6 +18,7 @@
  *     each refused in the tool's `ERROR:` form;
  *   - the single-name form and the listing answer as before: a named initiative whatever its state,
  *     an unknown name `no such initiative`, and the open ones with a count of the closed.
+ *   - a document the closed initiative does not hold is refused, as a closed record takes none.
  *
  * The only database it touches is the one it started.
  *
@@ -71,6 +72,10 @@ async function run(c: Core): Promise<void> {
   await c.ok(step, "document_write", { path: `${closed}/notes.md`, content: "# Notes\n\ndone\n" });
   const closing = await c.ok(step, "initiative_close", { initiative: closed, disposition: "finished", document: "notes.md" });
   if (!closing.startsWith(`${closed} closed as `)) c.fail(step, closing);
+  // A closed initiative is a finished record: a new document is refused; its own documents still
+  // take a correction through document_edit.
+  await c.refused(step, "document_write", { path: `${closed}/later.md`, content: "# Later\n\nafter the close\n" },
+    /^ERROR: .* is closed, .*takes no new document/);
 
   // Asked out of the slugs' own order, so the answer's order can only be the order asked.
   const asked = [open, UNKNOWN, closed];

@@ -339,6 +339,6 @@ check("a stored body is bounded by the upload limit alone: exactly the limit und
 check("a release records the version it replaced as the rollback target, and a same-version re-run keeps the target already recorded", runsCheck("release-rollback-target.ts"));
 check("a doctor run that asked no layer exits non-zero and never reports every layer agreeing", runsCheck("doctor-empty-ask.ts"));
 check("the doctor reads could-not-run as unknown, a missing image and a stopped or absent service as wrong, and the skill registry by name", runsCheck("doctor-verdicts.ts"));
-check("set-version writes every manifest, the lockfile and the compose file, or none of them", runsCheck("set-version-all-or-nothing.ts"));
+check("set-version writes every manifest, the lockfile and the compose file, or none of them, and says when a repeat changed nothing", runsCheck("set-version-all-or-nothing.ts"));
 check("the console's shape comparison names a value whose kind differs between the real answer and the fake — an array against an object, an object against a primitive, two primitives of different types — and passes the same shape and a null", runsCheck("shape-diffs-kinds.ts"));
 check("the restore rehearsal accepts a table a pending migration creates only when expect.ts declares it added, and names an undeclared one as undeclared", runsCheck("rehearse-created-table.ts"));

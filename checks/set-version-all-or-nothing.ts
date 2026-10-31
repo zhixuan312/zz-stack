@@ -7,7 +7,8 @@
  * A temporary tree holds a copy of the script and of `scripts/manifests.ts`, a root manifest with one workspace
  * member, a lockfile, and a compose file whose image line no longer carries the `ZZ_VERSION` literal. Bumping it must
  * fail and leave every manifest and the lockfile as they were; a half-bumped tree is the state the script exists to
- * prevent. The same tree with the literal restored must then bump all four.
+ * prevent. The same tree with the literal restored must then bump all four, and a second bump to the same version
+ * must say nothing changed.
  *
  * Exit 0: both cases held. Exit 1: one did not, naming the file.
  */
@@ -45,6 +46,13 @@ try {
   const done = bump();
   if (done.status !== 0) fail.push(`a well-formed tree did not bump: ${done.stderr.trim()}`);
   read().forEach((now, i) => { if (!now.includes("2.0.0") || now.includes("1.0.0")) fail.push(`${FILES[i]} is not at 2.0.0 after a bump that succeeded`); });
+
+  // The same version again moves nothing, and says so rather than asking for a commit of nothing.
+  const again = bump();
+  if (again.status !== 0) fail.push(`a repeated bump failed: ${again.stderr.trim()}`);
+  if (!/already at 2\.0\.0 — nothing changed/.test(again.stdout) || /Commit them together/.test(again.stdout)) {
+    fail.push(`a repeated bump does not say nothing changed: ${again.stdout.trim().split("\n").pop()}`);
+  }
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
@@ -54,4 +62,4 @@ if (fail.length) {
   for (const f of fail) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("set-version-all-or-nothing: a bump the compose file refuses writes nothing, and a good one writes every location");
+console.log("set-version-all-or-nothing: a bump the compose file refuses writes nothing, a good one writes every location, and a repeat says nothing changed");

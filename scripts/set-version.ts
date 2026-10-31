@@ -102,8 +102,8 @@ for (const w of writes) {
   console.log(w.said);
 }
 
-console.log(
-  `\nAll ${MANIFESTS.length} manifests, the lockfile and the compose file at ${version} ` +
-  `(${changed} manifest(s) changed).\n` +
-  `Commit them together — the compose file and the lockfile ARE part of the release.`,
-);
+console.log(changed + lockMoved === 0 && bumped === compose
+  ? `\nEvery manifest, the lockfile and the compose file are already at ${version} — nothing changed, nothing to commit.`
+  : `\nAll ${MANIFESTS.length} manifests, the lockfile and the compose file at ${version} ` +
+    `(${changed} manifest(s) changed).\n` +
+    `Commit them together — the compose file and the lockfile ARE part of the release.`);

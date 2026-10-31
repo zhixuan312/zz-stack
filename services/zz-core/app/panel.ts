@@ -146,7 +146,8 @@ function footer(s: Slot): string {
   const canApprove = !d.gate && d.status !== "approved";
   const acts = s.noting ? "" : `<div class="row">
       <button class="btn btn-quiet" data-act="note-doc" ${busy ? "disabled" : ""}>Add a note</button>
-      ${n ? `<button class="btn btn-primary" data-act="send-notes">Send ${n} note${n === 1 ? "" : "s"}</button>` : ""}
+      ${n ? `<button class="btn btn-primary" data-act="send-notes" ${s.sending ? "disabled" : ""}>
+        ${s.sending ? "Sending…" : `Send ${n} note${n === 1 ? "" : "s"}`}</button>` : ""}
       ${canApprove ? `<button class="btn ${n ? "btn-quiet" : "btn-primary"}" data-act="sign" ${busy || s.shown !== "recorded" ? "disabled" : ""}>
         ${busy ? "Approving…" : `Approve v${d.version}`}</button>` : ""}</div>`;
   return `<footer class="foot">
@@ -355,7 +356,7 @@ root.addEventListener("click", (e) => {
     case "note-doc": startNote(s, false); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
     case "cancel-note": s.noting = null; draw(); break;
     case "drop-note": dropNote(s, Number(el.dataset.i)); draw(); break;
-    case "send-notes": void sendNotes(s).then(draw); break;
+    case "send-notes": { const sending = sendNotes(s); draw(); void sending.then(draw); break; }
     case "mode":
       void app.requestDisplayMode({ mode: state.fullscreen ? "inline" : "fullscreen" })
         .then((r) => { state.fullscreen = r.mode === "fullscreen"; draw(); });
@@ -395,7 +396,7 @@ function slotOf(doc: PanelDocument): Slot {
   const cmp = marksOf(view, doc.previous?.changes ?? []);
   const slot: Slot = { doc, view, shown: "pending" as Shown, approval: "idle" as Approval, scroll: 0, historyOpen: false,
     marks: cmp.marks, removed: cmp.removed, other: cmp.other, onlyChanges: false,
-    notes: [], sent: null, noting: null };
+    notes: [], sending: false, sent: null, noting: null };
   loadNotes(slot);
   return slot;
 }

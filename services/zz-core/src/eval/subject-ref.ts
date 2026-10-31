@@ -21,11 +21,10 @@ import type pg from "pg";
 
 import { ZZ_TZ } from "../write-guards.js";
 
-import { KNOWLEDGE_TEAM } from "../paths.js";
+import { KNOWLEDGE_TEAM, UUID_RE } from "../paths.js";
 import { loadDocument } from "../versions.js";
 
 import type { SubjectKind } from "./evaluate-measures.js";
-import { UUID_RE } from "./idempotency.js";
 import { traceOf } from "./judge-trace.js";
 
 interface ResolvedSubject {

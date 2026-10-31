@@ -35,7 +35,8 @@ import {
   complexityDelta, componentCounts, hypothesisDigest, parseUnifiedDiff, patchDigest, touchedComponents,
   type ComplexityInput, type PatchFile, type PatchStats, type TouchedComponent,
 } from "./complexity.js";
-import { UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { UUID_RE } from "../paths.js";
 import { improvementRunOf } from "./initiative-run.js";
 import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { loadProposerBundle, REJECTED_CANDIDATE_STATUSES, type ProposerBundle } from "./proposer-bundle.js";

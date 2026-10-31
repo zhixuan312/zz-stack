@@ -6,7 +6,7 @@
  *
  * Two grouping passes, because there are two evidence shapes and "prevalence" means
  * a different population for each:
- *   - REFUSAL groups: one (tool, refusal rule, owner) triple per group, over the
+ *   - REFUSAL groups: one (tool, refusal rule) pair per group, over the
  *     exact event population `toolCallEvents` already bounds `pluginTraces`' own `use` rows to.
  *     Denominator is the total tool-call events in the window — the same population
  *     `tool_refusal_rate` (observe-facts.ts) reports against, so a reader can cross-check one
@@ -31,7 +31,9 @@ import { toolCallEvents, type EvidenceWindow, type pluginTraces } from "./plugin
 /** One deterministic failure-mode group drawn from refusal evidence — always has a `tool` and an
  *  `owner`, and a `normalized_text` that is empty exactly when every grouped event recorded no
  *  refusal text at all (`coalesce(e.refusal, '')`), which is the signal discover.ts reads to
- *  decide a group is one the deterministic pass cannot describe on its own. */
+ *  decide a group is one the deterministic pass cannot describe on its own. `owner` is the
+ *  platform's attribution of its most frequent row; a rule attributed to more than one owner is
+ *  still one group (`foldByRule`). */
 export interface RefusalGroup {
   readonly kind: "refusal";
   readonly tool: string;
@@ -121,21 +123,32 @@ function foldFiles(normalized: string): string {
   return folded.replace(/<file>(?:,\s*<file>)*(?:,?\s+and\s+<file>)?/g, "<file>");
 }
 
-/** One group per (tool, rule, owner): the rows `refusalRule` says state the same rule are one
- *  failure mode, their counts summed and their samples pooled. Most frequent first, as before. */
+/** One group per (tool, rule): the rows `refusalRule` says state the same rule are one failure
+ *  mode, their counts summed and their samples pooled. Most frequent first, as before.
+ *
+ *  DELIBERATE: the owner is not part of the key. `refusalKey` — the failure mode's identity across
+ *  snapshots — is (tool, rule), and a group per owner wrote two sightings of one identity in one
+ *  discovery. The owner is the platform's attribution, which can change for the same rule from
+ *  one window to the next; keyed on it, a re-attribution would mint a second identity for a
+ *  failure mode a protocol already folded in. The group keeps the owner of its largest row,
+ *  whatever order the rows arrive in. */
 export function foldByRule(groups: readonly RefusalGroup[]): RefusalGroup[] {
   const byKey = new Map<string, RefusalGroup & { sample_event_ids: string[]; sample_raw_texts: string[] }>();
+  const largest = new Map<string, number>();
   for (const g of groups) {
     const rule = refusalRule(g.normalized_text);
-    const key = `${g.tool}\u0000${rule}\u0000${g.owner}`;
+    const key = `${g.tool}\u0000${rule}`;
     const had = byKey.get(key);
     if (!had) {
       byKey.set(key, { ...g, normalized_text: foldFiles(g.normalized_text), sample_event_ids: [...g.sample_event_ids],
                        sample_raw_texts: [...g.sample_raw_texts] });
+      largest.set(key, g.count);
       continue;
     }
+    const larger = g.count > largest.get(key)!;
+    if (larger) largest.set(key, g.count);
     byKey.set(key, {
-      ...had, count: had.count + g.count,
+      ...had, count: had.count + g.count, owner: larger ? g.owner : had.owner,
       sample_event_ids: [...new Set([...had.sample_event_ids, ...g.sample_event_ids])].slice(0, 5),
       sample_raw_texts: [...new Set([...had.sample_raw_texts, ...g.sample_raw_texts])].slice(0, 3),
     });

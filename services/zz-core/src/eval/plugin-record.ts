@@ -38,7 +38,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { refreshFindingsDocs, writeFindingsDoc } from "./findings-doc.js";
-import { ledgerStamp, UUID_RE, withIdempotency, type IdempotencyOutcome, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
+import { ledgerStamp, withIdempotency, type IdempotencyOutcome, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
+import { UUID_RE } from "../paths.js";
 import { measureByKey } from "./qualify.js";
 import { inCallerTeam, ownedByCallerTeam } from "./team-scope.js";
 import { platformEvent } from "../indexing.js";

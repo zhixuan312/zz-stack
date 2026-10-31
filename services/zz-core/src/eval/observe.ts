@@ -41,12 +41,12 @@ import { platformEvent } from "../indexing.js";
 import { PLATFORM_VERSION } from "../platform-version.js";
 import { Refusal } from "../refusal.js";
 import { db } from "../platform-db.js";
+import { UUID_RE } from "../paths.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no observation can be recorded");
 const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The subject a `subject_version_id` names, or null for one nothing minted — checked BEFORE
  *  `withIdempotency` so a refused call writes no ledger row (the same order `plugin_locate`
@@ -67,6 +67,12 @@ async function resolveSubject(
 }
 
 type EvidenceWindowInput = { from: string; to: string } | { last_runs: number };
+
+/** The window `resolveWindow` answers when no run matches: an explicit empty range, so `between`
+ *  downstream matches nothing. It is the only inverted window there is — an explicit one is
+ *  refused unless `from` is before `to` (`windowRefusal`), and a resolved one runs from the oldest
+ *  run's start to the youngest's end. */
+const NO_WINDOW: EvidenceWindow = { from: "infinity", to: "-infinity" };
 
 /** An ISO date or timestamp, which is all a window bound may be: PostgreSQL also reads words such
  *  as `yesterday` and `now`, which name a different time on every replay and were stored as no
@@ -105,7 +111,7 @@ async function resolveWindow(
       from (select r.started_at, r.ended_at ${unboundedRunsClause(serves)}
              order by r.started_at desc limit $3) r`,
     [plugin, version, input.last_runs])).rows[0];
-  if (!row?.from || !row?.to) return { from: "infinity", to: "-infinity" };
+  if (!row?.from || !row?.to) return NO_WINDOW;
   return { from: row.from, to: row.to };
 }
 
@@ -243,12 +249,17 @@ async function computeObservation(
 }
 
 /** The window a snapshot row stores: `window_from`/`window_to` when the window really resolved,
- *  and NULL on both when it did not. An inverted sentinel (`{from: "infinity", to: "-infinity"}`,
- *  what `resolveWindow` answers when no run matches) is not a window — `window_from <= window_to`
- *  is a real check on the row, and a snapshot that observed nothing says so rather than pinning a
- *  window the platform invented. */
-function storedWindow(window: EvidenceWindow): { from: string | null; to: string | null } {
-  return window.from <= window.to ? { from: window.from, to: window.to } : { from: null, to: null };
+ *  and NULL on both when it did not. The sentinel (`NO_WINDOW`, what `resolveWindow` answers when
+ *  no run matches) is not a window — `window_from <= window_to` is a real check on the row, and a
+ *  snapshot that observed nothing says so rather than pinning a window the platform invented.
+ *
+ *  DELIBERATE: the sentinel is tested by name, never by comparing the bounds. They are text in
+ *  whatever form the caller or PostgreSQL wrote them — `2026-10-01T09:00:00+08:00` against
+ *  `2026-10-01 02:00:00Z`, a space or a `T` — and a string comparison of two instants in different
+ *  forms stored a real window as none. Exported for the check that drives those forms. */
+export function storedWindow(window: EvidenceWindow): { from: string | null; to: string | null } {
+  return window.from === NO_WINDOW.from && window.to === NO_WINDOW.to
+    ? { from: null, to: null } : { from: window.from, to: window.to };
 }
 
 /** The inverse, for a replay: the window a row's own two columns describe, in the shape
@@ -257,7 +268,7 @@ function storedWindow(window: EvidenceWindow): { from: string | null; to: string
 function windowOf(row: { window_from: string | null; window_to: string | null }): EvidenceWindow {
   return row.window_from !== null && row.window_to !== null
     ? { from: row.window_from, to: row.window_to }
-    : { from: "infinity", to: "-infinity" };
+    : NO_WINDOW;
 }
 
 /** The runs and refused calls an observation snapshot's own window holds, recomputed from the
@@ -432,7 +443,7 @@ export function registerObserveTools(server: McpServer): void {
         throw new Refusal(
           `ERROR: ${plugin} ${declaredVersion} has no ${unit}` +
           // `last_runs` over a version nobody used resolves to no window at all.
-          (window.from === "infinity" ? "" : ` in this window (${window.from} to ${window.to})`) + ", " +
+          (window.from === NO_WINDOW.from ? "" : ` in this window (${window.from} to ${window.to})`) + ", " +
           "not counting evaluations' own — there is nothing to observe. " +
           (used.length
             ? `Versions of ${plugin} that were used: ${used.map((v) =>

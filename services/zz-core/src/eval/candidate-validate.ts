@@ -17,7 +17,8 @@
 import type pg from "pg";
 
 import { BUILD_LEASE_MS, buildRequired, judgeBuild } from "./candidate-build-rules.js";
-import { UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { UUID_RE } from "../paths.js";
 import { Refusal } from "../refusal.js";
 
 interface CandidateRow {

@@ -28,6 +28,7 @@
  *     to `applying` — read through the built replay functions on zz-core's own pool;
  *   - the readings `evaluation_score` returns carry the reading each value's assessment recorded,
  *     and a guardrail on a measure of a dimension the protocol marks not applicable is not read;
+ *     its retry under the same key answers what the first call did, `replayed` aside;
  *   - a qualification's label evidence pairs a decided finding only with answers of its own run,
  *     and counts its labels as findings;
  *   - `protocol_record` refused for a stale version leaves no evaluator version registered;
@@ -290,6 +291,12 @@ async function notApplicableGuardrailIsNotRead(c: Core, s: Seed): Promise<void> 
   const scored = JSON.parse(reply) as { guardrail_status?: string; guardrails?: { key: string }[] };
   if (scored.guardrail_status === "not_established" || scored.guardrails?.some((g) => g.key === "g")) {
     c.fail(step, `the run reads it: guardrail_status ${scored.guardrail_status}, guardrails ${JSON.stringify(scored.guardrails)}`);
+  }
+  // The retry is answered from the published score, so it is the first answer with `replayed` set.
+  const again = await ask(evalDoor(c, c.email), "evaluation_score", { eval_run_id: s.run, idempotency_key: "score-1" });
+  const without = (r: string): string => { const { replayed: _, ...rest } = JSON.parse(r) as Record<string, unknown>; return JSON.stringify(rest); };
+  if (!again.startsWith("{") || (JSON.parse(again) as { replayed?: unknown }).replayed !== true || without(again) !== without(reply)) {
+    c.fail(step, `the retry under score-1 answered\n${again.slice(0, 600)}\nnot the first answer\n${reply.slice(0, 600)}`);
   }
   c.pass(step);
 }

@@ -33,6 +33,7 @@ import { recordQualified } from "./stage-record.js";
 import {
   decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
 } from "./idempotency.js";
+import { UUID_RE } from "../paths.js";
 import { askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
@@ -41,7 +42,6 @@ import { Refusal } from "../refusal.js";
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no evaluator can be qualified");
 const MODEL_BACKED = new Set(["bounded_semantic", "generative_critic"]);
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** What `resolveProtocol` answers — `evaluate.ts` resolves the same protocol context before it
  *  scores, one resolver, so the two callers can never read a protocol's policy differently. */

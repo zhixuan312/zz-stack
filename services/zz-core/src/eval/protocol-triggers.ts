@@ -61,20 +61,41 @@ export async function latestProtocolVersion(p: pg.Pool, pluginId: string): Promi
   return row ?? null;
 }
 
-/** Any failure-mode sighting of this plugin's that no protocol version has folded in yet —
- *  unfolded lineage, by construction: `protocol_record` writes the `eval_protocol_failure_mode`
- *  row that folds one in, and nothing else does. */
-async function newRecurringFailure(p: pg.Pool, pluginId: string): Promise<boolean> {
-  const row = (await p.query<{ n: string }>(`
-    select count(*)::text as n
+/** One DISCOVER sighting no protocol version has folded in yet, as `protocol_read` answers it in
+ *  `open_candidates`. `owner_ref` is the plugin's name when `owner_kind` is `plugin`. */
+interface OpenCandidate {
+  id: string; failure_mode_id: string; stable_key: string; description: string;
+  prevalence: { numerator: number; denominator: number };
+  owner_kind: string; owner_ref: string | null;
+}
+
+/** Every failure-mode sighting of this plugin's that no protocol version has folded in yet,
+ *  oldest first — unfolded lineage, by construction: `protocol_record` writes the
+ *  `eval_protocol_failure_mode` row that folds one in, and nothing else does. A failure mode is an
+ *  identity and a discovery of it is a sighting, so what is unfolded is a sighting whose identity
+ *  no version of this plugin has folded in; `failure_mode_id` is the id a `failureTaxonomy` entry
+ *  folds in. The one statement both `new_recurring_failure` and `protocol_read`'s
+ *  `open_candidates` read, so the trigger fires exactly when there is a candidate to fold. */
+export async function openCandidates(p: pg.Pool, pluginId: string): Promise<OpenCandidate[]> {
+  return (await p.query<{
+    id: string; description: string; failure_mode_id: string; stable_key: string;
+    prevalence_numerator: number; prevalence_denominator: number;
+    owner_kind: string; owner_ref: string | null;
+  }>(`
+    select s.id::text as id, s.description, fm.id::text as failure_mode_id, fm.stable_key,
+           s.prevalence_numerator, s.prevalence_denominator, s.owner_kind, s.owner_ref
       from zz.eval_failure_mode_sighting s
       join zz.eval_failure_mode fm on fm.id = s.failure_mode_id
      where fm.plugin_id = $1::uuid
        and not exists (select 1 from zz.eval_protocol_failure_mode pfm
                          join zz.eval_protocol_version pv on pv.id = pfm.protocol_version_id
-                        where pfm.failure_mode_id = fm.id and pv.plugin_id = $1::uuid)`,
-    [pluginId])).rows[0];
-  return Number(row?.n ?? 0) > 0;
+                        where pfm.failure_mode_id = fm.id and pv.plugin_id = $1::uuid)
+     order by s.created_at`, [pluginId])).rows.map((c) => ({
+      id: c.id, failure_mode_id: c.failure_mode_id, stable_key: c.stable_key,
+      description: c.description,
+      prevalence: { numerator: c.prevalence_numerator, denominator: c.prevalence_denominator },
+      owner_kind: c.owner_kind, owner_ref: c.owner_ref,
+    }));
 }
 
 /** A measure under this protocol version whose evaluator has since been superseded — a later
@@ -104,7 +125,7 @@ export async function triggersFor(
   const entry = entryOf(plugin);
   const entryPurpose = entry?.manifest.purpose;
   if (entryPurpose && entryPurpose !== latest.purpose) fired.push("purpose_changed");
-  if (await newRecurringFailure(p, pluginId)) fired.push("new_recurring_failure");
+  if ((await openCandidates(p, pluginId)).length) fired.push("new_recurring_failure");
   if (await evaluatorDrift(p, latest.id)) fired.push("evaluator_drift");
   const surfaces = new Set(latest.observable_surfaces ?? []);
   const surface = await doorSurface(p, plugin, version, servesOwnDoor(plugin, entry));

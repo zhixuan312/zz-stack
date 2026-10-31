@@ -38,6 +38,7 @@ import type pg from "pg";
 import {
   askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer, type EvaluatorAssessmentResult,
 } from "../semantic.js";
+import { UUID_RE } from "../paths.js";
 
 export interface SnapshotFacts {
   readonly usable_run_count: number;
@@ -439,7 +440,6 @@ const SUBJECT_KINDS: readonly SubjectKind[] = ["run", "document", "knowledge", "
 export const runLevelRef = (observationSnapshotId: string): string => `observation_snapshot:${observationSnapshotId}`;
 export const isRunLevelRef = (ref: string): boolean => ref.startsWith("observation_snapshot:");
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A subject_ref's kind from its shape alone — the shapes `resolveSubjectRef` resolves. */
 export function refKindOf(ref: string): SubjectKind | null {

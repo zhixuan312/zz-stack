@@ -14,10 +14,11 @@
  * two side effects are a database READ and a document WRITE into this platform's own governed
  * store; whatever a candidate's own patch contains is rendered as inert fenced markdown, never
  * applied, never `git apply`-ed, never passed to anything that executes it.
- * `release.ts`'s own `proposal_prepare` tool refuses outright before this module is ever reached
- * when the subject actually carries `release_owners` — see that file's own module note — so this
- * module never even has to decide "should I apply this"; there is no path into it for an owned
- * subject at all.
+ * `proposal.ts`'s `proposal_prepare` refuses outright before this module is ever reached when the
+ * evaluation's own team is among the subject's `release_owners` (`promotable`) — see that file's
+ * module note — so this module never even has to decide "should I apply this"; there is no path
+ * into it for a subject this team owns. A subject ANOTHER team owns does reach it: its owners are
+ * named, and the document says this team cannot promote it.
  *
  * "A subject with no source" (the task's own words) is read off `subject.source_locator.kind`,
  * never re-resolved by cloning/reading the locator again at proposal time — a third-party
@@ -210,11 +211,19 @@ function renderBody(
     renderCandidatesSection(sourceAvailable, reportable),
     "",
     "## Ownership and promotion",
-    "- Release owners: none recorded — this subject cannot be promoted through this platform. " +
-    "`release_prepare` and `release_apply` both refuse it with `no_release_owners`.",
-    "- Promotion, if it ever happens, is an act by whoever actually owns this plugin, outside " +
-    "this platform's own release path. This document applies no patch and writes to no real " +
-    "repository — it only records what was found and what a fix could look like.",
+    subject.release_owners.length
+      ? `- Release owners: ${subject.release_owners.join(", ")} — ${subject.run_team} is not one of them, so ` +
+        "it cannot promote this subject: `release_prepare` refuses it with `proposal_only`, so " +
+        "there is no prepared release for `release_apply` to apply."
+      : "- Release owners: none recorded — this subject cannot be promoted through this platform. " +
+        "`release_prepare` and `release_apply` both refuse it with `no_release_owners`.",
+    subject.release_owners.length
+      ? "- Promotion, if it happens, is an act by one of those owners, from an evaluation of their own. " +
+        "This document applies no patch and writes to no real repository — it only records what was " +
+        "found and what a fix could look like."
+      : "- Promotion, if it ever happens, is an act by whoever actually owns this plugin, outside " +
+        "this platform's own release path. This document applies no patch and writes to no real " +
+        "repository — it only records what was found and what a fix could look like.",
     "",
     `improvement_run_id: \`${improvementRunId}\` — initiative \`${initiative}\`.`,
     "",
@@ -228,8 +237,9 @@ interface WriteProposalDocResult {
 /** Writes `<initiative>/proposal.md`, ungated (FR-53: "A `proposal_only` branch writes ungated
  *  `proposal.md`"). Returns the written path, byte count and the candidate ids actually
  *  included, or a refusal string — never throws, the same contract `documentGuards` itself
- *  answers in. Called only after `release.ts`'s own `registerProposalPrepare` has already
- *  confirmed this subject carries no `release_owners` — see that file's module note. */
+ *  answers in. Called only after `proposal.ts`'s `registerProposalTool` has already confirmed
+ *  the evaluation's own team is not among this subject's `release_owners` — see that file's
+ *  module note. */
 export async function writeProposalDoc(
   p: pg.Pool, initiative: string, improvementRunId: string,
 ): Promise<WriteProposalDocResult | string> {

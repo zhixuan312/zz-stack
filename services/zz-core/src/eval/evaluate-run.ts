@@ -30,7 +30,8 @@ import {
   type AnsweredMeasure, type DimensionRow, type MeasureAnswer, type MeasureRow, type SnapshotFacts,
   type SubjectKind,
 } from "./evaluate-measures.js";
-import { decideBeforeWork, UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { UUID_RE } from "../paths.js";
 import { resolveProtocol, unaffirmedRefusal } from "./qualify.js";
 import { knowledgeNodeAt, resolveSubjectRef } from "./subject-ref.js";
 import { inCallerTeam } from "./team-scope.js";

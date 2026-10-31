@@ -15,7 +15,8 @@
  *   - `edits_without_cause` and `edits_with_cause` count the same population as the rest of the
  *     record: this plugin's own door, evaluation traffic excluded — a `document_edit` recorded on
  *     another door, or made by an evaluation flow's skill, is not counted;
- *   - the approval facts count every gated document, however many share one text;
+ *   - the approval facts count every gated document, however many share one text, and a document
+ *     is approved by its own status, an approval whose revision carries no seal included;
  *   - a write to a stage's document after a later stage's document exists in the same initiative
  *     is a return from the later stage to the earlier one.
  *
@@ -101,11 +102,20 @@ async function run(db: pg.Client): Promise<string[]> {
     fail.push(`the record is ${JSON.stringify(rec)}, not ${JSON.stringify(want)}`);
   }
 
-  // Three gated documents, every one a draft with the same text: three documents, not one.
+  // A fourth gated document, approved by its envelope and approved_revision alone: its revision carries
+  // no approved_by or approved_at, as one recorded without a resolved signer does.
+  const approved = await document(db, by, initiative, "notes.md", [1]);
+  await db.query("UPDATE zz.doc SET status = 'approved', approved_revision = current_revision WHERE id = $1", [approved]);
+
+  // Four gated documents with one text, one of them approved: four documents, not one.
   const facts = await outcomeAndApprovalFacts(db, PLUGIN, VERSION, true, true, { from: "-infinity", to: "infinity" }) as
-    Record<string, { denominator?: number }>;
-  if (facts.doc_approval_rate?.denominator !== 3) {
-    fail.push(`three gated documents with one text count as ${facts.doc_approval_rate?.denominator} in doc_approval_rate`);
+    Record<string, { numerator?: number; denominator?: number }>;
+  if (facts.doc_approval_rate?.denominator !== 4) {
+    fail.push(`four gated documents with one text count as ${facts.doc_approval_rate?.denominator} in doc_approval_rate`);
+  }
+  if (facts.doc_approval_rate?.numerator !== 1) {
+    fail.push(`a document approved by its status with an unsealed revision counts ${facts.doc_approval_rate?.numerator} ` +
+              "approved in doc_approval_rate, not 1");
   }
 
   // A return: a run of this door writes spec.md after plan.md, a later stage's document, exists.

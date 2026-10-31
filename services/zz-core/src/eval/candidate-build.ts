@@ -15,10 +15,10 @@ import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from ".
 import { platformEvent } from "../indexing.js";
 import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
+import { UUID_RE } from "../paths.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no candidate build can be read or recorded");
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The failing command's own output tail — enough to act on, never a whole log. COUPLED: the
  *  CLI trims to the same bound before it sends. */
 const LOG_TAIL_MAX = 4000;

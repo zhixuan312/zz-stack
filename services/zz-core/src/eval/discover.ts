@@ -18,7 +18,7 @@
  * proposals a `failureTaxonomy` entry may accept, merge or leave uncited.
  *
  * Two passes over the evidence, both in `discover-groups.ts`:
- *   - deterministic grouping first, over refusal text/owner/failing tool and over stage-return
+ *   - deterministic grouping first, over refusal rule/failing tool and over stage-return
  *     patterns — pure arithmetic, no model touches it;
  *   - each group's representative evidence then goes to ONE registered evaluator,
  *     `discover.owner_kind` (a `choice` over `EVAL_STATE_ENUMS.ownerKind`), through
@@ -82,10 +82,10 @@ import { NOT_CONFIGURED } from "../typed-service.js";
 import { platformEvent } from "../indexing.js";
 import { Refusal } from "../refusal.js";
 import { db } from "../platform-db.js";
+import { UUID_RE } from "../paths.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no failure discovery can be recorded");
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** What each `owner_kind` option means, read to the evaluator as its `choice` criteria —
  *  `EVAL_STATE_ENUMS.ownerKind` is the vocabulary, this is the prose, and the loop below is the

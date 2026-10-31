@@ -186,15 +186,20 @@ export async function outcomeAndApprovalFacts(
         join zz.initiative ii on ii.id = t.initiative_id
         join zz.team et on et.id = ii.team_id
     ),
-    -- A document reaches its initiative through initiative_id and its approval through the
-    -- revision it currently points at; zz.doc carries neither. A revision filed at an
-    -- approval is a doc_revision row, never a second zz.doc row, so there is no snapshot
-    -- path to exclude and one document is one row, never collapsed with another of the same
-    -- text. DELIBERATE: the text is the revision's own, read for a gated document alone, and a
-    -- document with no current revision has none — it is not counted as a document that sends
-    -- its reader elsewhere.
+    -- A document reaches its initiative through initiative_id and its text through the
+    -- revision it currently points at. A revision filed at an approval is a doc_revision row,
+    -- never a second zz.doc row, so there is no snapshot path to exclude and one document is one
+    -- row, never collapsed with another of the same text. DELIBERATE: the text is the revision's
+    -- own, read for a gated document alone, and a document with no current revision has none —
+    -- it is not counted as a document that sends its reader elsewhere.
+    --
+    -- DELIBERATE: approved is the document's own status, never the revision's approved_by. The
+    -- status is the authority (doc_current_revision_required ties it to approved_revision), while
+    -- the revision's seal is stamped only when its signer and its instant both resolved
+    -- (document-save.ts). An approval recorded by the envelope and approved_revision alone
+    -- carries no approved_by, and read off the revision it counted as unapproved.
     live as (select d.id, et.slug as team_slug, i.slug as initiative, d.status,
-                    r.approved_by is not null as approved,
+                    d.status = 'approved' as approved,
                     case when d.status <> '' then coalesce(r.body ~* '${DEFERRAL}', false) else false end as deferring
                from zz.doc d
                join zz.initiative i on i.id = d.initiative_id

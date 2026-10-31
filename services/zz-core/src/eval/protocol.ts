@@ -45,14 +45,14 @@ import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
+import { latestProtocolVersion, openCandidates, triggersFor } from "./protocol-triggers.js";
 import { affirmProtocolVersion, recordProtocolVersion } from "./protocol-record.js";
 import { recordAffirmed, recordDefineOwes } from "./stage-record.js";
-import { decideBeforeWork, UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { NO_TEAM } from "../document-change.js";
 import { factsFor, initiativeIdFor, lockInitiativeFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { platformEvent } from "../indexing.js";
-import { safeName } from "../paths.js";
+import { safeName, UUID_RE } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -257,30 +257,8 @@ export function registerProtocolTools(server: McpServer): void {
       }
       // What DISCOVER left for this stage to fold in or leave uncited, read here rather than
       // carried from DISCOVER's own reply: a DEFINE opened in a new conversation has no other
-      // door to them, and re-running failure_discover would mint a duplicate set. A failure mode
-      // is an identity and a discovery of it is a sighting, so what is unfolded
-      // is a sighting whose identity no protocol version of this plugin has folded in yet — the
-      // relation `eval_protocol_failure_mode` is what folding writes, and `failure_mode_id` is
-      // the id a `failureTaxonomy` entry actually folds in.
-      response.open_candidates = (await p.query<{
-        id: string; description: string; failure_mode_id: string; stable_key: string;
-        prevalence_numerator: number; prevalence_denominator: number;
-        owner_kind: string; owner_ref: string | null;
-      }>(`
-        select s.id::text as id, s.description, fm.id::text as failure_mode_id, fm.stable_key,
-               s.prevalence_numerator, s.prevalence_denominator, s.owner_kind, s.owner_ref
-          from zz.eval_failure_mode_sighting s
-          join zz.eval_failure_mode fm on fm.id = s.failure_mode_id
-         where fm.plugin_id = $1::uuid
-           and not exists (select 1 from zz.eval_protocol_failure_mode pfm
-                             join zz.eval_protocol_version pv on pv.id = pfm.protocol_version_id
-                            where pfm.failure_mode_id = fm.id and pv.plugin_id = $1::uuid)
-         order by s.created_at`, [subject.pluginId])).rows.map((c) => ({
-          id: c.id, failure_mode_id: c.failure_mode_id, stable_key: c.stable_key,
-          description: c.description,
-          prevalence: { numerator: c.prevalence_numerator, denominator: c.prevalence_denominator },
-          owner_kind: c.owner_kind, owner_ref: c.owner_ref,
-        }));
+      // door to them, and re-running failure_discover would mint a duplicate set.
+      response.open_candidates = await openCandidates(p, subject.pluginId);
       if (!initiative) return json({ ...response, facts_recorded: false });
       const written = await writeBranchFacts(initiative, { protocol_action: response.protocol_action as string });
       // create/revise: once protocol.md is approved this initiative owes the bind and the

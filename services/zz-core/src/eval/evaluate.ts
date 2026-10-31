@@ -110,6 +110,29 @@ function coverageMet(minCoverage: Record<string, unknown> | undefined, usableRun
   return true;
 }
 
+/** What a scored run published: the score columns on `zz.eval_run` and its `zz.eval_run_dimension`
+ *  rows by dimension id. Null when the run carries no published score. */
+interface PublishedScore {
+  overall_score: number | null; score_status: string; establishment_blocked_by: string[];
+  score_coverage: number | null; score_lower: number | null; score_upper: number | null;
+  guardrail_status: string;
+  dimensions: Map<string, { score: number | null; coverage: number | null }>;
+}
+
+async function publishedScore(p: pg.Pool, evalRunId: string): Promise<PublishedScore | null> {
+  const run = (await p.query<Omit<PublishedScore, "dimensions">>(`
+    select overall_score::float8 as overall_score, score_status,
+           coalesce(establishment_blocked_by, '{}'::text[]) as establishment_blocked_by,
+           measure_coverage::float8 as score_coverage, score_lower::float8 as score_lower,
+           score_upper::float8 as score_upper, guardrail_status
+      from zz.eval_run where id = $1::uuid and scored_at is not null`, [evalRunId])).rows[0];
+  if (!run) return null;
+  const dimensions = (await p.query<{ dimension_id: string; score: number | null; coverage: number | null }>(`
+    select dimension_id::text as dimension_id, score::float8 as score, coverage::float8 as coverage
+      from zz.eval_run_dimension where eval_run_id = $1::uuid`, [evalRunId])).rows;
+  return { ...run, dimensions: new Map(dimensions.map((d) => [d.dimension_id, { score: d.score, coverage: d.coverage }])) };
+}
+
 /** `evaluation_score`, as a function of the pool and the caller rather than of an HTTP request:
  *  the handler below is its only production caller, and it is exported so a check can drive the
  *  same code against a throwaway database, where the request headers a handler reads do not
@@ -293,12 +316,33 @@ export async function scoreEvaluation(
     },
   );
 
+  // A replay answers as the call it repeats: what that call published, read back — never this
+  // call's recomputation. The answers, the protocol and the snapshot are frozen once a run is
+  // scored, but `latestQualification` is not: recomputed, a replay could say `established` where
+  // the stored row says `provisional`. A retry recognised above and a twin call under the same key
+  // that published first (withIdempotency's replay after a lost race) both arrive here replayed.
+  const published = outcome.replayed ? await publishedScore(p, eval_run_id) : null;
+  if (outcome.replayed && !published) {
+    return { error: `ERROR: the idempotency ledger points at eval_run ${eval_run_id}, which carries no published score` };
+  }
+  const shown: Omit<PublishedScore, "dimensions"> = published ?? {
+    overall_score: scored.overall, score_status: scored.status, establishment_blocked_by,
+    score_coverage: scored.coverage, score_lower: score_interval.lower, score_upper: score_interval.upper,
+    guardrail_status: scored.guardrail_status,
+  };
+  const dimensionsShown = published
+    ? dimension_scores.map((d) => ({ ...d, ...published.dimensions.get(dimensionIdByKey.get(d.key)!) }))
+    : dimension_scores;
+
   const recorded = await recordStage(initiative, "zz-plugin-evaluate", { eval_run_id });
   return {
-    eval_run_id, overall_score: scored.overall, score_status: scored.status, establishment_blocked_by,
-    score_coverage: scored.coverage, coverage_floor: scored.coverage_floor,
-    score_interval, dimension_scores, guardrail_status: scored.guardrail_status, guardrails: guardrailResults,
-    coverage: { measures: scored.coverage, measures_floor: scored.coverage_floor, establishment_blocked_by },
+    eval_run_id, overall_score: shown.overall_score, score_status: shown.score_status,
+    establishment_blocked_by: shown.establishment_blocked_by,
+    score_coverage: shown.score_coverage, coverage_floor: scored.coverage_floor,
+    score_interval: { ...score_interval, lower: shown.score_lower, upper: shown.score_upper },
+    dimension_scores: dimensionsShown, guardrail_status: shown.guardrail_status, guardrails: guardrailResults,
+    coverage: { measures: shown.score_coverage, measures_floor: scored.coverage_floor,
+                establishment_blocked_by: shown.establishment_blocked_by },
     readings, replayed: outcome.replayed, ...recorded,
   };
 }

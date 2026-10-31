@@ -35,10 +35,6 @@ import type pg from "pg";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
-/** A uuid's shape. An id that fails it is refused as the id nothing minted, before a `::uuid`
- *  cast answers with PostgreSQL's own `22P02` sentence. */
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** Hand-built, not `JSON.stringify` over a key-sorted object: a caller-controlled args object can
  *  carry an integer-looking string key, and V8's own object key iteration would silently reorder
  *  it ahead of this function's sort. This is the tree's only `canonicalJson`: a caller's arbitrary

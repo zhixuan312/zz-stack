@@ -128,9 +128,21 @@ export function dropNote(s: Slot, i: number): void {
   schedule(200);
 }
 
-/** Every note, as one request the agent can act on: where, what the text says, what should change. */
+/** Every note, as one request the agent can act on: where, what the text says, what should change.
+ *  One batch at a time: the basket empties only once the host took it, so a tap while one is on its
+ *  way does nothing rather than send the same notes twice. `sending` is set before the first
+ *  await, so a caller that draws right after calling shows the button as sending. */
 export async function sendNotes(s: Slot): Promise<void> {
-  if (!s.notes.length) return;
+  if (!s.notes.length || s.sending) return;
+  s.sending = true;
+  try {
+    await sendBatch(s);
+  } finally {
+    s.sending = false;
+  }
+}
+
+async function sendBatch(s: Slot): Promise<void> {
   const items = s.notes.map((n, i) => [
     `${i + 1}. ${n.section ? `In “${n.section}”` : "On the document as a whole"}:`,
     ...(n.quote ? [`   > ${n.quote.replace(/\n/g, "\n   > ")}`] : []),

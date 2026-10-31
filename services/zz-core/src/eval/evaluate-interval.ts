@@ -5,10 +5,10 @@
  * same determinism `score.ts` itself is built around.
  *
  * `UncertaintyPolicy` is `FreeformRecord` (spec v8 fixes no shape for it): `seed` (string,
- * defaults to the eval_run's own id — see `evaluate.ts`'s caller), `iterations` (defaults 1000)
- * and `level` (defaults 0.95) are the three keys this file reads, defaulted rather than required,
- * the same posture `qualify-ladder.ts`'s `resolveThresholds` takes toward a freeform policy
- * object.
+ * defaults to the eval_run's own id — see `evaluate.ts`'s caller), `iterations` (defaults 1000,
+ * at most `MAX_BOOTSTRAP_ITERATIONS`) and `level` (defaults 0.95) are the three keys this file
+ * reads, defaulted rather than required, the same posture `qualify-ladder.ts`'s
+ * `resolveThresholds` takes toward a freeform policy object.
  */
 
 /** mulberry32 — a small, seeded, deterministic PRNG. Not cryptographic; a bootstrap resample
@@ -40,13 +40,22 @@ interface UncertaintySettings {
   readonly level: number;
 }
 
+/** The most resamples one score takes. Each is a whole `scoreRun` over the resampled subjects, on
+ *  the request that asked for the score and on the process every other zz-core call shares: a
+ *  protocol naming 1e8 held that process for as long as it ran, and `Infinity` never returned.
+ *  Ten times the default is more than a percentile interval at any `level` this reads needs. */
+export const MAX_BOOTSTRAP_ITERATIONS = 10_000;
+
 /** `UncertaintyPolicy`'s three keys, defaulted key by key — never a silent 0 or a thrown error
- *  over a malformed or absent policy object. */
+ *  over a malformed or absent policy object. `iterations` above `MAX_BOOTSTRAP_ITERATIONS` is
+ *  clamped to it rather than refused, as an unusable key is defaulted rather than refused; the
+ *  interval reports the iterations it actually ran. */
 export function resolveUncertainty(
   raw: Readonly<Record<string, unknown>> | undefined, runId: string,
 ): UncertaintySettings {
   const seed = typeof raw?.seed === "string" && raw.seed.trim() ? raw.seed : runId;
-  const iterations = typeof raw?.iterations === "number" && raw.iterations > 0 ? Math.floor(raw.iterations) : 1000;
+  const asked = typeof raw?.iterations === "number" && raw.iterations >= 1 ? raw.iterations : 1000;
+  const iterations = Math.min(MAX_BOOTSTRAP_ITERATIONS, Math.floor(asked));
   const level = typeof raw?.level === "number" && raw.level > 0 && raw.level < 1 ? raw.level : 0.95;
   return { seed, iterations, level };
 }

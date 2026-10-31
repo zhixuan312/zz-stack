@@ -1,12 +1,14 @@
 /**
  * `proposal_prepare` (FR-51, FR-53, AC-51.1) is the path `release_prepare`'s own
- * `no_release_owners` refusal points callers toward — "It may still receive an owner-facing
- * proposal — see proposal_prepare." Registered after the release tools. Its OWN
- * refusal is the mirror image of `release_prepare`'s `no_release_owners` branch: `release_prepare`
- * refuses a subject with NO owners; `proposal_prepare` refuses a subject WITH owners — "ERROR:
- * promotable — use release_prepare, not proposal_prepare" — because an ungated `proposal.md`
- * written for an owned subject would sit in the store looking like an approval document with no
- * gate behind it, which FR-53's own "gated only when release_mode = promotable" exists to prevent.
+ * `no_release_owners` and `proposal_only` refusals point callers toward — "It may still receive an
+ * owner-facing proposal — see proposal_prepare." Registered after the release tools. Its OWN
+ * refusal is the mirror image of `release_prepare`'s: `release_prepare` refuses a subject whose
+ * owners do not include the evaluation's own team; `proposal_prepare` refuses one whose owners do
+ * (`promotable`) — "ERROR: promotable — use release_prepare, not proposal_prepare" — because an
+ * ungated `proposal.md` written for a subject this team owns would sit in the store looking like an
+ * approval document with no gate behind it, which FR-53's own "gated only when release_mode =
+ * promotable" exists to prevent. A subject another team owns is proposal-only for this team, and
+ * its proposal names those owners.
  * The document write itself — findings, built patch where a source existed, and the explicit "no
  * repository write, ever" guarantee — is `proposal-doc.ts`'s own job; this function only resolves
  * the subject, enforces the ownership mirror-guard, and threads the FR-59 idempotency ledger
@@ -93,11 +95,11 @@ export function registerProposalTool(server: McpServer): void {
           `ERROR: improvement_run ${improvement_run_id}'s own eval_run ${run.eval_run_id} names ` +
           "a subject this call cannot read back");
       }
-      // The mirror image of release_prepare's own no_release_owners refusal (release.ts): THAT tool
-      // refuses a subject with NO owners; this one refuses a subject WITH owners. An ungated
-      // proposal.md written for an owned subject would sit in the store looking like an
-      // approval-free stand-in for improvement.md, which FR-53's own "gated only when
-      // release_mode = promotable" exists to prevent.
+      // The mirror image of release_prepare's own refusals (release.ts): THAT tool refuses a
+      // subject whose owners do not include this evaluation's team; this one refuses a subject
+      // whose owners do. An ungated proposal.md written for a subject this team owns would sit in
+      // the store looking like an approval-free stand-in for improvement.md, which FR-53's own
+      // "gated only when release_mode = promotable" exists to prevent.
       if (subject.promotable) {
         return text(
           `ERROR: promotable — ${subject.plugin} ${subject.declared_version} records ` +

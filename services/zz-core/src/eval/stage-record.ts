@@ -22,7 +22,9 @@ import type pg from "pg";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
 
-import { initiativeIdFor, recordsFor, withInitiativeFactsLock, writeStageRecord } from "../initiative-record.js";
+import {
+  initiativeIdFor, lockInitiativeFacts, recordsFor, withInitiativeFactsLock, writeStageRecord,
+} from "../initiative-record.js";
 import { safeName } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 
@@ -48,6 +50,31 @@ async function located(initiative: string):
   return { p, team, initiativeId };
 }
 
+/** `work` on one connection in one transaction holding the initiative's facts lock across
+ *  processes, under its in-process half (`withInitiativeFactsLock`): a stage's record is written
+ *  whole or not at all. A replaced record is a delete and then an insert per key — written
+ *  outside a transaction, a reader between them saw half a record, and a failure between them
+ *  lost the record, so `owedActs` routed past the acts it owed. zz-core has no shared transaction
+ *  helper; this is the shape `writeBranchFacts` (protocol.ts) writes. */
+async function inRecordTransaction(
+  p: pg.Pool, initiative: string, work: (client: pg.PoolClient) => Promise<void>,
+): Promise<void> {
+  await withInitiativeFactsLock(initiative, async () => {
+    const client = await p.connect();
+    try {
+      await client.query("BEGIN");
+      await lockInitiativeFacts(client, initiative);
+      await work(client);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+}
+
 export async function recordStage(
   initiative: string | undefined, stage: string, ids: Record<string, string>, replace = false,
 ): Promise<{ record_refused?: string }> {
@@ -55,7 +82,7 @@ export async function recordStage(
   const at = await located(initiative);
   if ("record_refused" in at) return at;
   // Read-merge-write: two stages recording into one initiative at once must not lose either.
-  await withInitiativeFactsLock(initiative, async () => writeStageRecord(at.p, at.initiativeId, stage, ids, replace));
+  await inRecordTransaction(at.p, initiative, (client) => writeStageRecord(client, at.initiativeId, stage, ids, replace));
   return {};
 }
 
@@ -93,10 +120,10 @@ export async function recordQualified(
   if (!initiative) return {};
   const at = await located(initiative);
   if ("record_refused" in at) return at;
-  await withInitiativeFactsLock(initiative, async () => {
-    const records = await recordsFor(at.p, at.team, initiative);
+  await inRecordTransaction(at.p, initiative, async (client) => {
+    const records = await recordsFor(client, at.team, initiative);
     const update = qualifiedUpdate(records[DEFINE_STAGE] ?? {}, protocolVersionId, measureKey, state);
-    if (update) await writeStageRecord(at.p, at.initiativeId, DEFINE_STAGE, update);
+    if (update) await writeStageRecord(client, at.initiativeId, DEFINE_STAGE, update);
   });
   return {};
 }

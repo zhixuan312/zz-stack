@@ -65,10 +65,11 @@ export async function listenGateway(c: Core): Promise<Gateway> {
   const { mountConsoleWrite } = (await load("services/gateway/dist/console-write.js")) as { mountConsoleWrite: (app: Express) => void };
   const { buildAccessServer } = (await load("services/gateway/dist/access-door.js")) as { buildAccessServer: () => unknown };
   const { mountUpload } = (await load("services/gateway/dist/upload.js")) as { mountUpload: (app: Express) => void };
+  const { mountBodyParsers } = (await load("services/gateway/dist/body.js")) as { mountBodyParsers: (app: Express) => void };
 
   const app = express();
   // COUPLED: services/gateway/src/server.ts — the identity gate with its public prefixes let past
-  // it, the upload routes, the JSON and form parsers, the OAuth surface, the passkey ceremony, the console's routes
+  // it, the upload routes, the body parsers, the OAuth surface, the passkey ceremony, the console's routes
   // (mountConsole's page view, bug resolve and close, then mountConsoleWrite and mountSettings),
   // then the /manage door, in the order server.ts mounts them.
   const requireIdentity = identityMiddleware();
@@ -77,8 +78,7 @@ export async function listenGateway(c: Core): Promise<Gateway> {
     requireIdentity(req, res, next);
   });
   mountUpload(app);
-  app.use(express.json({ limit: "20mb" }));
-  app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+  mountBodyParsers(app);
   mountMcpOauth(app, ["/manage/mcp"]);
   passkey.mountPasskey(app);
   mountPageView(app);

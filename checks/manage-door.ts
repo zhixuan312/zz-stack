@@ -19,7 +19,8 @@
  *   - a deactivated person is issued no token, deactivating them again says nothing changed and
  *     records nothing, and a superadmin cannot deactivate themselves;
  *   - a NUL character in a tool's argument is refused by name on /manage and on /core, and an event
- *     carrying one is still recorded.
+ *     carrying one is still recorded;
+ *   - a body that does not parse, on a public route, is refused in JSON with no stack.
  *
  * The only database this touches is the one it started.
  *
@@ -34,7 +35,7 @@ import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from ".
 
 const NAME = "manage-door";
 const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
-  "membership changes say what changed, a deactivated person stays out, and a NUL is refused in words: ok";
+  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, and an unreadable body in JSON: ok";
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
@@ -204,6 +205,21 @@ async function nulActs(c: Core, g: Gateway): Promise<void> {
   c.pass(step);
 }
 
+/** A body the parser cannot read is answered as a refusal, not with the server's stack. */
+async function bodyActs(c: Core, g: Gateway): Promise<void> {
+  const step = "a body that does not parse is refused in JSON, with no stack";
+  for (const [path, body] of [["/oauth/register", "not json"], ["/auth/passkey/login/options", "{"]]) {
+    const r = await fetch(`${g.url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
+    const said = await r.text();
+    let error: unknown;
+    try { error = (JSON.parse(said) as { error?: unknown }).error; } catch { /* not JSON: failed below */ }
+    if (r.status !== 400 || error !== "invalid_request" || /\n\s+at |node_modules|<pre>/.test(said)) {
+      c.fail(step, `${path} answered ${r.status}: ${said.slice(0, 200)}`);
+    }
+  }
+  c.pass(step);
+}
+
 async function run(c: Core): Promise<void> {
   // A superadmin, so every tier of /manage is registered.
   await c.sql.query("update zz.principal set role = 'superadmin' where email = $1", [c.email]);
@@ -213,6 +229,7 @@ async function run(c: Core): Promise<void> {
     await leadActs(c, g);
     await retireActs(c, g);
     await nulActs(c, g);
+    await bodyActs(c, g);
   } finally {
     await g.stop();
   }

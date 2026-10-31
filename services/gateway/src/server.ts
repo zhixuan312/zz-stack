@@ -14,6 +14,7 @@ import { z } from "zod";
 import { buildAccessServer } from "./access-door.js";
 import { recordAccessSurface } from "./access-surface.js";
 import { mountAgentDoor } from "./agent-door.js";
+import { mountBodyParsers } from "./body.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
 import { issueMyAccessTokenFor, revokeMyAccessTokenFor } from "./credentials.js";
@@ -87,16 +88,7 @@ app.use((req, res, next) => {
 // exempts /u/, and before the body parsers below, which would consume a file sent as JSON or as a
 // form before the route could read it. The gate reads headers only, so it needs no parsed body.
 mountUpload(app);
-app.use(express.json({ limit: "20mb" }));
-// The OAuth token endpoint is form-encoded, and only this line makes ours one: RFC 6749
-// §4.1.3 requires `application/x-www-form-urlencoded` there, and the MCP SDK sends it. With
-// json() alone `req.body` is empty for every exchange and the endpoint answers
-// `unsupported_grant_type`.
-//
-// Body parsers are content-type gated, so this only runs on a form-encoded request and
-// changes nothing about the JSON routes. `extended: false` because these bodies are flat
-// key-value pairs.
-app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+mountBodyParsers(app);
 
 // What each door means, filed under the path it is mounted at. Unauthenticated by design: it
 // reveals the shape of the platform, never anything inside it.

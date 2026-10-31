@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-observe
-version: 0.9
+version: 0.10
 description: Stage 2 of zz-plugin-eval (OBSERVE). Compute the pre-protocol observation snapshot — production facts from this subject's real runs, in one resolved window — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after IDENTIFY has settled subject_version_id. Also the stage that decides whether there is enough evidence for DISCOVER and EVALUATE to work from. No shell required."
 ---

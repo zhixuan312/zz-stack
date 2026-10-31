@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.12
+version: 0.13
 description: Stage 7 of zz-plugin-eval (IMPROVE). Turn plugin-owned findings into one candidate patch, build and gate it locally, and hand it to promotion for an owned subject — or write an owner-facing proposal for one this team cannot release. A released improvement is judged on real use afterwards, never by replaying past initiatives first.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. The skip is one MCP call any client can make; everything past it REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands. Every stage before this one runs with no shell at all."
 ---

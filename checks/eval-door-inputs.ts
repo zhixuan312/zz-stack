@@ -166,7 +166,7 @@ async function candidateBaseIsTheEvaluatedVersion(c: Core, s: Seed): Promise<voi
   c.pass(step);
 }
 
-async function registerNamesAreReal(c: Core, s: Seed): Promise<void> {
+async function registerNamesAreReal(c: Core, _s: Seed): Promise<void> {
   const step = "plugin_register with a blank or look-alike name";
   const door = evalDoor(c, c.email);
   const plugins = async () => Number((await one<{ n: string }>(c, "select count(*)::text as n from zz.plugin")).n);

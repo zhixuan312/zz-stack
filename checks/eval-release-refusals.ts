@@ -253,7 +253,7 @@ const rolledBack = (await rec(attemptRow({ status: "released", verdict: "rolled_
   { status: "rolled_back", reason: "r" })).result;
 assert.equal(rolledBack.status, "rolled_back");
 // The rollback retracts the version that fixed the release's findings, so they are open again.
-assert.deepEqual(rolledBack.findings_reopened.map((f) => f.id), [F1]);
+assert.deepEqual(rolledBack.findings_reopened.map((f: { id: string }) => f.id), [F1]);
 await assert.rejects(rec(attemptRow({ status: "failed" }), {}), /not_applying/);
 await assert.rejects(rec(attemptRow(), { release_ref: REF }), /requires both release_ref and released_subject_version_id/);
 for (const bad of ["abc", "v1.2.0", "demo@1.2.0", REF.slice(0, 12), REF.toUpperCase(), `${REF}\n`]) {

@@ -155,7 +155,7 @@ async function profileReplays(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
-async function replayIntoAnotherInitiative(c: Core, s: Seed): Promise<void> {
+async function replayIntoAnotherInitiative(c: Core, _s: Seed): Promise<void> {
   const step = "a key replayed with another initiative";
   const door = evalDoor(c, c.email);
   const records = async () => Number((await one<{ n: string }>(c,

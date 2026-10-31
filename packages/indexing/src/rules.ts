@@ -39,16 +39,16 @@ function ledgerRow(line: string): { key: string; said: string; detail: string } 
 export function unreadVerdicts(body: string): { key: string; said: string }[] {
   const unread: { key: string; said: string }[] = [];
   let table: { key: string; said: string; read: boolean }[] = [];
-  const close = () => {
+  const endTable = () => {
     if (table.some((r) => r.read)) unread.push(...table.filter((r) => !r.read).map(({ key, said }) => ({ key, said })));
     table = [];
   };
   for (const line of body.split("\n")) {
-    if (!line.startsWith("|")) { close(); continue; }
+    if (!line.startsWith("|")) { endTable(); continue; }
     const row = ledgerRow(line);
     if (row) table.push({ key: row.key, said: row.said, read: verdictFromProse(row.said) !== null });
   }
-  close();
+  endTable();
   return unread;
 }
 

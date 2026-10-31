@@ -101,7 +101,7 @@ async function outsiderChangesNothing(c: Core, s: Seed): Promise<void> {
 /** A plugin another team owns is a proposal for this one: its improvement can neither be prepared
  *  nor applied as a release by a team outside its release owners, so improvement_start,
  *  proposal_prepare, improvement_stop and findings.md all read the run's own team against the
- *  owners (`promotable`) rather than whether the plugin has any owner (runtime pass 2, F7 — an
+ *  owners (`promotable`) rather than whether the plugin has an owner at all (runtime pass 2, F7 — an
  *  outsider was routed to release, refused there, and refused a proposal). */
 async function anotherTeamsPluginIsAProposal(c: Core, s: Seed): Promise<void> {
   const step = "an evaluation of a plugin another team owns";

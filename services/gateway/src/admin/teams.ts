@@ -57,6 +57,10 @@ export async function addMember(
   if (await isDeactivated(db, pid)) {
     return { ok: false, status: 400, error: `principal ${email} is deactivated — person_add restores them before a team can take them` };
   }
+  if (role === "member") {
+    const kept = await keepsLastAdmin(db, id, team, email);
+    if (kept) return kept;
+  }
   const actorId = await principalId(db, id.email);
   // The role before, read in the same statement as the write, so the answer says what changed.
   const { rows: [done] } = await db.query<{ before: string | null; role: string; email: string }>(
@@ -76,6 +80,26 @@ export async function addMember(
     ? `${done.email} is now ${done.role} of ${team} (was ${done.before})`
     : `${done.email} is now ${done.role} of ${team}` };
 }
+/**
+ * The refusal for taking away `email`'s admin role in `team`, by removal or by demotion, when they are its last active
+ * admin; null when they are not, or the caller is a superadmin. A team keeps someone who can add the next member: without
+ * one it is a team only a superadmin can manage, so only a superadmin may leave it so. A deactivated admin keeps their row
+ * for a restore but can add nobody, so they do not count.
+ */
+async function keepsLastAdmin(db: ReturnType<typeof platformDb>, id: Identity | null, team: string,
+                              email: string): Promise<TeamWriteOutcome | null> {
+  if (superOnly(id)) return null;
+  const { rows: [last] } = await db.query<{ last: boolean }>(
+    `select count(*) filter (where m.role = 'admin' and p.status = 'active') = 1
+            and bool_or(m.role = 'admin' and p.status = 'active' and p.email = $2) as last
+       from membership m join team t on t.id = m.team_id join principal p on p.id = m.principal_id
+      where t.slug = $1`, [team, email.toLowerCase()]);
+  return last?.last
+    ? { ok: false, status: 400, error: `${email} is the only admin of ${team}, and a team keeps ` +
+        "someone who can add the next member. Make another member admin first (member_add with role admin)." }
+    : null;
+}
+
 /** Remove a principal from a team. `confirm` must repeat the team slug exactly. */
 export async function removeMember(
   id: Identity | null, team: string, email: string, confirm: string,
@@ -84,20 +108,8 @@ export async function removeMember(
   if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
   if (confirm !== team) return { ok: false, status: 400, error: `confirm must repeat the team slug exactly ('${team}')` };
   const db = platformDb();
-  // A team keeps someone who can add the next member. Removing its last admin leaves a team only
-  // a superadmin can manage, so only a superadmin may do it. A deactivated admin keeps their row
-  // for a restore but can add nobody, so they do not count.
-  if (!superOnly(id)) {
-    const { rows: [last] } = await db.query<{ last: boolean }>(
-      `select count(*) filter (where m.role = 'admin' and p.status = 'active') = 1
-              and bool_or(m.role = 'admin' and p.status = 'active' and p.email = $2) as last
-         from membership m join team t on t.id = m.team_id join principal p on p.id = m.principal_id
-        where t.slug = $1`, [team, email.toLowerCase()]);
-    if (last?.last) {
-      return { ok: false, status: 400, error: `${email} is the only admin of ${team}, and a team keeps ` +
-        "someone who can add the next member. Make another member admin first (member_add with role admin)." };
-    }
-  }
+  const kept = await keepsLastAdmin(db, id, team, email);
+  if (kept) return kept;
   // What was actually deleted, not what was asked for: reporting "removed" whatever happened
   // makes a mistyped address read as done while the person it was meant for stays a member.
   // COUPLED: the destructive siblings hold the same rule — team_archive refuses an inactive

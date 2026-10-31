@@ -160,6 +160,9 @@ async function leadActs(c: Core, g: Gateway): Promise<void> {
      /^mate@example\.test is now member of lead-team \(was admin\)$/],
     [await ask(lead.token, "member_remove", { team: "lead-team", email: "lead@example.test", confirm: "lead-team" }),
      /^ERROR: lead@example\.test is the only admin of lead-team/],
+    // Demoting the last admin leaves the same team nobody can add to, so member_add refuses it too.
+    [await ask(lead.token, "member_add", { team: "lead-team", email: "lead@example.test", role: "member" }),
+     /^ERROR: lead@example\.test is the only admin of lead-team/],
   ] as const;
   for (const [reply, want] of said) if (!want.test(reply)) c.fail(roles, `answered "${reply.slice(0, 200)}", expected ${want}`);
   // A second admin who has since been deactivated cannot add anybody, so the lead is still the
@@ -172,6 +175,14 @@ async function leadActs(c: Core, g: Gateway): Promise<void> {
   if (!/^ERROR: lead@example\.test is the only admin of lead-team/.test(alone)) {
     c.fail(roles, `with the other admin deactivated, the lead's own removal answered "${alone.slice(0, 200)}"`);
   }
+  const demoted = await ask(lead.token, "member_add", { team: "lead-team", email: "lead@example.test", role: "member" });
+  if (!/^ERROR: lead@example\.test is the only admin of lead-team/.test(demoted)) {
+    c.fail(roles, `with the other admin deactivated, the lead's own demotion answered "${demoted.slice(0, 200)}"`);
+  }
+  const role = (await c.sql.query<{ role: string }>(
+    `select m.role from zz.membership m join zz.team t on t.id = m.team_id join zz.principal p on p.id = m.principal_id
+      where t.slug = 'lead-team' and p.email = 'lead@example.test'`)).rows[0]?.role;
+  if (role !== "admin") c.fail(roles, `after a refused demotion the lead is ${role}`);
   c.pass(roles);
 }
 

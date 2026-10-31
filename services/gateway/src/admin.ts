@@ -189,7 +189,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "first token. RETURNS the membership and the role it carries: member by default, or " +
       "admin, which is who may add the next one. REFUSES anyone who does not administer " +
       "THIS team — being a lead somewhere else is not authority here — and refuses an " +
-      "address with no principal behind it, a person who is deactivated, or a team that is not active.",
+      "address with no principal behind it, a person who is deactivated, or a team that is not active; " +
+      "only a superadmin may make a team's last active admin a member.",
     inputSchema: { team: z.string(), email: z.string().email(), role: z.enum(["member", "admin"]).optional() },
   }, async ({ team, email, role }) => {
     const id = await caller();
@@ -203,7 +204,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "WHEN somebody should no longer reach a team's documents, knowledge store or agents. " +
       "RETURNS confirmation, and says plainly when there was nothing to remove rather than " +
       "reporting a removal that did not happen. REFUSES anyone who does not administer THIS " +
-      "team, and refuses unless confirm repeats the team slug. It does not revoke their " +
+      "team, and refuses unless confirm repeats the team slug; only a superadmin may remove a team's " +
+      "last active admin. It does not revoke their " +
       "tokens: one bound to this team stops working, an unbound one keeps their other teams.",
     inputSchema: { team: z.string(), email: z.string().email(), confirm: z.string() },
   }, async ({ team, email, confirm }) => {

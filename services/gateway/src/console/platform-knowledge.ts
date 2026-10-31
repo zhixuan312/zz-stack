@@ -49,6 +49,9 @@ import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js"
 import { lessonImports } from "./imports.js";
 import { readGrid, searchDays, searchesMeasure, windowOf } from "./platform-measures.js";
 import { iso, platformPublic, ZZ_TZ } from "./shared.js";
+import { periodsOf } from "./work-figures.js";
+
+const WEEK_MS = 7 * 24 * 3_600_000;
 
 const POPULATION = "standing lessons on every shelf, imports included; lessons made outside import cohorts; real-work searches";
 /** How many weeks the charts and the questions reach back, the running one included. */
@@ -91,16 +94,13 @@ export type Lesson = { id: string; shelf: string; kind: string; standing: boolea
 /** Work searches carrying `detail.returned`, by week and the slug of the team that made them (null for none). */
 type SearchCount = { fromMs: number; shelf: string | null; searches: number; empty: number; results: number };
 
-/** The two complete weeks before the running one, the earlier first, cut on local wall time as `readGrid` cuts. */
-async function readLastTwo(db: pg.Pool, asOf: string): Promise<[Week, Week]> {
-  const { rows } = await db.query<{ from_ms: number; to_ms: number }>(
-    `select (extract(epoch from (w at time zone $1::text)) * 1000)::float8 as from_ms,
-            (extract(epoch from ((w + interval '1 week') at time zone $1::text)) * 1000)::float8 as to_ms
-       from generate_series(date_trunc('week', $2::timestamptz at time zone $1::text) - interval '2 weeks',
-                            date_trunc('week', $2::timestamptz at time zone $1::text) - interval '1 week',
-                            interval '1 week') as w
-      order by w`, [ZZ_TZ, asOf]);
-  return [{ fromMs: rows[0].from_ms, toMs: rows[0].to_ms }, { fromMs: rows[1].from_ms, toMs: rows[1].to_ms }];
+/** The two complete weeks before the running one, the earlier first, from the shared calendar. */
+async function readLastTwo(asOf: string): Promise<[Week, Week]> {
+  const asOfMs = Date.parse(asOf);
+  const whole = (await periodsOf({ from: iso(asOfMs - 3 * WEEK_MS), to: asOf }, asOf, "week"))
+    .filter((w) => w.toMs <= asOfMs);
+  const [previous, last] = whole.slice(-2);
+  return [{ fromMs: previous.fromMs, toMs: previous.toMs }, { fromMs: last.fromMs, toMs: last.toMs }];
 }
 
 /** Every lesson made before `asOf`, and the instant of the first `knowledge.add` event that names its lesson. */
@@ -208,7 +208,7 @@ export function mountPlatformKnowledge(app: Express): void {
     const grid = await readGrid(db);
     const asOf = iso(grid.asOfMs);
     const drawn = grid.weeks.slice(-WEEKS);
-    const [previous, last] = await readLastTwo(db, asOf);
+    const [previous, last] = await readLastTwo(asOf);
     const fromMs = drawn[0]?.fromMs ?? grid.asOfMs;
     const [read, imports, measure, counts, slugs, questions] = await Promise.all([
       orNull("the lessons", readLessons(db, asOf)),

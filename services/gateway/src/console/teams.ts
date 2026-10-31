@@ -34,10 +34,12 @@ import type { Figure, PeriodFigure, ReadMeta } from "./figures.js";
 import { pendingRevisions } from "./pending.js";
 import { readGrid, windowOf, type Grid } from "./platform-measures.js";
 import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
+import { periodsOf } from "./work-figures.js";
 
 export const STATUSES = ["active", "archived"] as const;
 /** How many weeks a team's series reaches back, the running one included. */
 const WEEKS = 26;
+const WEEK_MS = 7 * 24 * 3_600_000;
 const POPULATION = "teams, their members, open work, revisions waiting, standing lessons and real-work tool calls";
 
 
@@ -87,15 +89,11 @@ export async function readBases(db: pg.Pool, asOf: string): Promise<Base[]> {
   }));
 }
 
-/** The `WEEKS` Monday weeks ending in the running one, cut on local wall time as `readGrid` cuts them. */
-async function readWeeks(db: pg.Pool, asOf: string): Promise<Week[]> {
-  return (await db.query<{ from_ms: number; to_ms: number }>(
-    `select (extract(epoch from (w at time zone $1::text)) * 1000)::float8 as from_ms,
-            (extract(epoch from ((w + interval '1 week') at time zone $1::text)) * 1000)::float8 as to_ms
-       from generate_series(date_trunc('week', $2::timestamptz at time zone $1::text) - ($3::int - 1) * interval '1 week',
-                            date_trunc('week', $2::timestamptz at time zone $1::text),
-                            interval '1 week') as w
-      order by w`, [ZZ_TZ, asOf, WEEKS])).rows.map((r) => ({ fromMs: r.from_ms, toMs: r.to_ms }));
+/** The `WEEKS` Monday weeks ending in the running one, from the shared calendar. */
+async function readWeeks(asOf: string): Promise<Week[]> {
+  const asOfMs = Date.parse(asOf);
+  return (await periodsOf({ from: iso(asOfMs - WEEKS * WEEK_MS), to: asOf }, asOf, "week"))
+    .slice(-WEEKS).map((w) => ({ fromMs: w.fromMs, toMs: w.toMs }));
 }
 
 /** Each team's real-work calls and distinct non-empty sessions by the instant its week starts, from `fromMs`. */
@@ -126,7 +124,7 @@ export async function readFigures(db: pg.Pool, asOfMs?: number): Promise<Figures
   // The weeks and the revisions waiting answer apart; the calls are read from the first week on.
   const pendingRead = pendingRevisions(asOf);
   pendingRead.catch(() => undefined);
-  const weeks = await readWeeks(db, asOf);
+  const weeks = await readWeeks(asOf);
   const [calls, pending] = await Promise.all([
     readCalls(db, weeks[0].fromMs, asOf).catch((err: unknown) => {
       console.error("console the teams: the calls by week could not be read:", err);

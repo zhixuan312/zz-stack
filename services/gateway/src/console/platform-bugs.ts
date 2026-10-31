@@ -31,7 +31,9 @@ import type { Express, Request } from "express";
 
 import { platformDb } from "../db.js";
 import type { Figure, Part, ReadMeta } from "./figures.js";
+import { callWeeks, readGrid } from "./platform-measures.js";
 import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
+import { periodsOf } from "./work-figures.js";
 
 type Impact = "blocks_work" | "wrong_result" | "confusing" | "cosmetic";
 type Status = "open" | "fixed" | "not_a_bug" | "duplicate";
@@ -206,32 +208,14 @@ export function mountPlatformBugs(app: Express): void {
     const asOf = new Date(asOfMs).toISOString();
     // The record begins with the first real-work call, the cohorts' denominator, or with the first
     // real report if one came before it: the two are read together.
-    const [reports, cov] = await Promise.all([
-      realReports(asOf),
-      db.query<{ first_ms: number | null }>(
-        `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms
-           from zz.event e
-          where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $1::timestamptz`, [asOf]),
-    ]);
-    const coverageMs = bugsCoverage(cov.rows[0]?.first_ms ?? null, reports);
+    const [reports, grid] = await Promise.all([realReports(asOf), readGrid(db, asOfMs)]);
+    const coverageMs = bugsCoverage(grid.coverageMs, reports);
 
-    // Every Monday-to-Monday week of the reporting timezone from the one coverage begins in through
-    // the running one, with its real-work calls, as the status read cuts them.
-    const weeks = coverageMs === null ? [] : (await db.query<{ from_ms: number; to_ms: number; calls: number }>(
-      `with buckets as (
-         select date_trunc('week', e.ts at time zone $1::text) as week, count(*)::int as calls
-           from zz.event e
-          where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $2::timestamptz
-          group by 1
-       )
-       select (extract(epoch from (w at time zone $1::text)) * 1000)::float8 as from_ms,
-              (extract(epoch from ((w + interval '1 week') at time zone $1::text)) * 1000)::float8 as to_ms,
-              coalesce(b.calls, 0) as calls
-         from generate_series(date_trunc('week', $3::timestamptz at time zone $1::text),
-                              date_trunc('week', $2::timestamptz at time zone $1::text),
-                              interval '1 week') as w
-         left join buckets b on b.week = w
-        order by w`, [ZZ_TZ, asOf, new Date(coverageMs).toISOString()])).rows;
+    // Every week of the shared calendar from the one coverage begins in through the running one,
+    // with the real-work calls the status read counts in it.
+    const [periods, calls] = coverageMs === null ? [[], null]
+      : await Promise.all([periodsOf({ from: iso(coverageMs), to: asOf }, asOf, "week"), callWeeks(db, grid, null)]);
+    const weeks = periods.map((p) => ({ from_ms: p.fromMs, to_ms: p.toMs, calls: calls ? calls(p.fromMs, "calls") : 0 }));
 
     // A cohort is the reports filed in one week; its own resolved and still-open counts stand
     // beside its median, which is over the resolved alone.

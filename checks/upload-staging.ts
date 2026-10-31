@@ -15,8 +15,8 @@
  *     answer that binding; different bytes answer UPLOAD_CONTENT_CONFLICT and change nothing; two
  *     different first stagings racing bind exactly one;
  *   - nothing stages after expiry (UPLOAD_EXPIRED), once written (UPLOAD_USED), with someone else's
- *     token, in another team, with no identity, past 8 MiB (SIZE_LIMIT), as invalid UTF-8 or as a
- *     file of another extension;
+ *     token, in another team, with no identity, past 8 MiB (SIZE_LIMIT), as invalid UTF-8, as a
+ *     file of another extension, or empty (EMPTY_FILE), and an empty send leaves the upload open;
  *   - the link page escapes a hostile filename, loads nothing, never prints its secret, sends no
  *     referrer, cannot be framed, and runs one script, the one its CSP hash allows; its PUT stages
  *     that one upload and no other, as `link` with no principal; a malformed or unknown secret is
@@ -254,6 +254,11 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
   if (!String(changed.json.error).includes("staged with your token")) fail("different bytes", `the refusal does not say how: ${changed.text}`);
   if ((await rowOf(first.id)).sha256 !== sha(bytes)) fail("different bytes", "the binding moved");
   ok("different bytes answer UPLOAD_CONTENT_CONFLICT and leave the binding as it was");
+  const empty = await mint();
+  expect("empty file", await call("PUT", `/upload/${empty.id}`, Buffer.alloc(0), as()), 422, "EMPTY_FILE");
+  if ((await rowOf(empty.id)).sha256 !== null) fail("empty file", "an empty send bound the upload");
+  expect("after an empty file", await call("PUT", `/upload/${empty.id}`, bytes, as()), 200);
+  ok("an empty file is refused as EMPTY_FILE and binds nothing, so the real file still stages");
   const race = await mint();
   const [x, y] = await Promise.all([call("PUT", `/upload/${race.id}`, utf8("one\n"), as()), call("PUT", `/upload/${race.id}`, utf8("two\n"), as())]);
   const won = [x, y].filter((a) => a.status === 200);

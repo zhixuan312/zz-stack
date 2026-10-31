@@ -206,6 +206,13 @@ async function stage(req: Request, res: Response, row: Row, via: "token" | "link
     res.status(413).json({ error: `ERROR: SIZE_LIMIT — the file is over the 8 MiB (${UPLOAD_MAX_BYTES}-byte) limit for one upload; send a smaller file, or split it into parts.` });
     return;
   }
+  // An upload holds one file for good, so an empty send — an empty file picked, a broken pipe —
+  // would use it up with nothing in it.
+  if (body.length === 0) {
+    res.status(422).json({ error: "ERROR: EMPTY_FILE — the file arrived empty, so nothing was staged; send the file with its " +
+      "contents to the same upload." });
+    return;
+  }
   const read = uploadText(row.filename, body);
   if ("code" in read) { res.status(STATUS[read.code]).json({ error: read.refusal }); return; }
 

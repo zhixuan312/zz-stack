@@ -304,6 +304,14 @@ check("both services authenticate their own network the same way", () => {
     await held("10.0.0.1");
     await Promise.all([held("10.0.0.9"), held("10.0.0.9")]);
     if (asked !== 1) bad.push("a miss inside missMs of the last lookup looked the host up again (" + asked + " lookups), so every refused request is DNS traffic");
+    // A stray peer's lookup that DNS cannot answer leaves the set it already held: the trusted
+    // caller is still the one configured, and refusing it for missMs is an outage of the door.
+    let calls = 0;
+    const flaky = addressResolver(["peer"], { missMs: 0, lookup: async () => { if (calls++) throw new Error("EAI_AGAIN"); return ["10.0.0.1"]; } });
+    await flaky("10.0.0.1");
+    await flaky("10.0.0.9");
+    const kept = await flaky("10.0.0.1");
+    if (!kept || !kept.has("10.0.0.1")) bad.push("a stray peer's failed lookup dropped the set a trusted peer was matched by: " + JSON.stringify(kept && [...kept]));
     process.stdout.write(bad.join("; "));
   `;
   try {

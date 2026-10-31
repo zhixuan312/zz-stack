@@ -169,7 +169,8 @@ const systemLookup = async (host: string): Promise<string[]> =>
  * Ask with the peer at hand: a set that does not hold it is looked up again before it is refused,
  * because a peer recreated on a new address is still the one configured. At most once per
  * `missMs`, and a null answer is held as long, so refused traffic is not DNS traffic; lookups
- * already in flight are shared.
+ * already in flight are shared. A lookup that finds nothing keeps a set still inside its TTL:
+ * DNS failing on a stray peer's miss is no reason to refuse the peers it already matched.
  */
 export function addressResolver(
   hosts: readonly string[],
@@ -178,18 +179,22 @@ export function addressResolver(
   } = {},
 ): (peer?: string) => Promise<Set<string> | null> {
   let cache: { ips: Set<string> | null; at: number } | null = null;
+  /** When a lookup was last started, so a miss is looked up at most once per `missMs`. */
+  let lookedAt = 0;
   let pending: Promise<Set<string> | null> | null = null;
   const resolve = async (): Promise<Set<string> | null> => {
+    lookedAt = Date.now();
     const found = await Promise.all(hosts.map((h) => lookup(h).catch(() => [] as string[])));
     const ips = new Set(found.flat().map(hostAddress));
-    cache = { ips: ips.size ? ips : null, at: Date.now() };
-    return cache.ips;
+    const kept = !ips.size && cache?.ips && Date.now() - cache.at < ttlMs;
+    if (!kept) cache = { ips: ips.size ? ips : null, at: Date.now() };
+    return cache!.ips;
   };
   return async (peer) => {
     if (!hosts.length) return null;
     if (cache) {
       const hit = cache.ips !== null && (peer === undefined || cache.ips.has(peer));
-      if (Date.now() - cache.at < (hit ? ttlMs : missMs)) return cache.ips;
+      if (hit ? Date.now() - cache.at < ttlMs : Date.now() - lookedAt < missMs) return cache.ips;
     }
     pending ??= resolve().finally(() => { pending = null; });
     return pending;

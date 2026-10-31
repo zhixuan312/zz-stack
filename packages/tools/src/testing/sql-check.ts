@@ -24,7 +24,7 @@ import { join } from "node:path";
 
 import { die, parseArgs } from "../lib/cli.js";
 import { type QuerySite, queriesIn as queriesInSource } from "../lib/sql-scan.js";
-import { DEFAULT_PSQL, psqlTry } from "../lib/psql.js";
+import { DEFAULT_PSQL, psqlScript, psqlTry } from "../lib/psql.js";
 
 /** Where the queries are. Sources, not dist: a template literal survives compilation, but
  * the line number that makes a failure actionable does not. */
@@ -91,6 +91,56 @@ function queriesIn(file: string, root: string): Found[] {
   });
 }
 
+/** What psql said about one refused statement: its ERROR, DETAIL and HINT lines, joined. */
+const refusalOf = (lines: string[]): string =>
+  lines.filter((l) => /^(ERROR|DETAIL|HINT):/.test(l)).join(" ") || lines[0] || "refused";
+
+/** Every statement PREPAREd, and the refusal of each one Postgres refused, by its index.
+ *
+ *  One psql session for all of them, without ON_ERROR_STOP, so a refusal is reported and the rest
+ *  still run. Each error names the input line its statement ended on, and the statement is the last
+ *  one that starts at or before it. A session ends with its prepared statements, so none is
+ *  deallocated.
+ *
+ *  DELIBERATE: one statement per session when the script did not reach its end marker. A statement
+ *  whose quote never closes swallows every line after it, the marker included, and the refusals of
+ *  the statements it swallowed would otherwise be lost rather than reported. */
+function prepareAll(psql: string, statements: readonly string[]): Map<number, string> {
+  const refused = new Map<number, string>();
+  const starts: number[] = [];
+  let line = 1;
+  const script = statements.map((sql, n) => {
+    const text = `prepare zzchk_${n} as ${sql};`;
+    starts.push(line);
+    line += text.split("\n").length;
+    return text;
+  }).join("\n") + "\n\\echo zzchk_done\n";
+  const run = psqlScript(psql, script);
+  if (!run.stdout.split("\n").includes("zzchk_done")) {
+    statements.forEach((sql, n) => {
+      const r = psqlTry(psql, `prepare zzchk_${n} as ${sql};`);
+      if (!r.ok) refused.set(n, refusalOf(r.error.split("\n")));
+    });
+    return refused;
+  }
+  let at = -1;
+  let said: string[] = [];
+  const flush = (): void => {
+    if (at >= 0 && said[0]?.startsWith("ERROR:")) {
+      let n = 0;
+      while (n + 1 < starts.length && starts[n + 1] <= at) n++;
+      refused.set(n, refusalOf(said));
+    }
+  };
+  for (const l of run.stderr.split("\n")) {
+    const m = /^psql:<stdin>:(\d+): (.*)$/.exec(l);
+    if (m) { flush(); at = Number(m[1]); said = [m[2]]; }
+    else said.push(l);
+  }
+  flush();
+  return refused;
+}
+
 function main(): number {
   const { flags } = parseArgs(process.argv.slice(2));
   const psql = flags.get("psql") || DEFAULT_PSQL;
@@ -107,8 +157,6 @@ function main(): number {
     return 2;
   }
 
-  // One connection's worth of work, but each statement on its own call: a batch would stop
-  // at the first refusal and report one failure where there might be several.
   const checkable = found.filter((f) => !f.why);
   const skipped = found.filter((f) => f.why);
   const failures: string[] = [];
@@ -120,16 +168,10 @@ function main(): number {
                "  this needs an EMPTY database the gateway has migrated — schema, not data.");
   }
 
+  const refused = prepareAll(psql, checkable.map((q) => q.sql));
   checkable.forEach((q, n) => {
-    const name = `zzchk_${n}`;
-    // DEALLOCATE in the same input, so a run leaves the session as it found it and the name
-    // cannot collide with itself on a retry.
-    const r = psqlTry(psql, `prepare ${name} as ${q.sql};\ndeallocate ${name};`);
-    if (!r.ok) {
-      const msg = r.error.split("\n").filter((l) => /^(ERROR|DETAIL|HINT):/.test(l)).join(" ")
-                  || r.error.split("\n")[0] || "refused";
-      failures.push(`${q.file}:${q.line} — ${msg}`);
-    }
+    const msg = refused.get(n);
+    if (msg !== undefined) failures.push(`${q.file}:${q.line} — ${msg}`);
   });
 
   console.log(`\n  ${checkable.length} of ${found.length} queries prepared against the live schema.`);

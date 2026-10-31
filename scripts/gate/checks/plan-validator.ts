@@ -1,9 +1,9 @@
-import { validatePlan, admitToExecute } from "@zz/contracts";
+import { validatePlan } from "@zz/contracts";
 import { check } from "../run.ts";
 
 const good = "## Phase 1 — A: works\n### Task I-1: X (← AC-1.1)\n**Output:** a\n**Dependencies:** none\n";
 
-check("the plan validator blocks malformed plans from controlled execution but not from being written", () => {
+check("the plan validator refuses a duplicate task id, a dependency cycle and a task with no Output", () => {
   if (!validatePlan(good).ok) return "a well-formed plan failed structural validation";
 
   const dupe = good + "### Task I-1: Y (← AC-1.2)\n**Output:** b\n**Dependencies:** none\n";
@@ -15,15 +15,6 @@ check("the plan validator blocks malformed plans from controlled execution but n
 
   const noOutput = "## Phase 1 — A: works\n### Task I-1: X (← AC-1.1)\n**Dependencies:** none\n";
   if (validatePlan(noOutput).ok) return "a task with no Output passed";
-
-  const approved = { humanApproved: true, structuralReport: validatePlan(dupe) };
-  if (admitToExecute(approved).admitted) {
-    return "a malformed plan was admitted to controlled execution because a human had approved it — "
-         + "approval is a verdict on content, not a structural report";
-  }
-  if (admitToExecute({ humanApproved: true, structuralReport: undefined }).admitted) {
-    return "a plan with no structural report at all was admitted";
-  }
 });
 
 const task = (n: number, deps: string, owns?: string) =>

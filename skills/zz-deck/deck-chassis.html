@@ -1,79 +1,25 @@
 <!doctype html>
 <!--
-  == THE HOUSE BOOK =====================================================
-  version   1.2.3
-  updated   2026-08-15 · refined
-  canvas    1440 × 810 · 16:9
+  The deck chassis: the style layer, the behaviour scripts, the dock, the Menu and the self-QA that
+  every zz-deck deck copies, with an empty gap in <main> where the deck writes its slides and its
+  #housebook-manifest. It holds no slides. The scripts take the deck's name from that manifest.
+  The composition reference is deck-guidebook.html. Canvas 1440 × 810, 16:9.
 
-  PURPOSE
-  One offline file contains four layers:
-  1. the professional visual system,
-  2. the guidebook that explains when to use each composition,
-  3. copyable slide and component markup,
-  4. machine-readable metadata and automated quality checks.
-
-  AUTHORING CONTRACT
+  Authoring contract
   - Write the conclusion before selecting a layout.
   - Give every content slide one job and one dominant composition.
   - Use one signal colour per slide; reserve semantic colours for status.
   - Never shrink audience-facing type to solve overflow.
   - Use ?qa or the Menu QA tab before shipping.
 
-  CHANGELOG
-  1.2.3  Dead rules removed. Fifty rules whose selectors matched no
-         element in the book and no string in its scripts — the
-         pre-1.2.0 chart system (chart-*, curve-*, wf-*, stacked-bars,
-         mini-bars, waterfall-svg), superseded when every chart was
-         rebuilt on cx-*, plus fifteen orphaned component variants.
-         Nothing renders differently: a rule that matches nothing
-         cannot. Verified by diffing everything after </style>, which
-         is byte-identical. No page, component or token added.
-  1.2.2  Breathing room, and exhibits that obey their own rules. The
-         guide rail begins at one inset on every teaching page instead
-         of sixteen. No label sits closer than 24 units to its plate.
-         Chart cards fill their row. Three exhibits that contradicted
-         the rules printed beside them were corrected. Data marks are
-         filled only from data tokens, never from text or hairline
-         colours. No page or component added.
-  1.2.1  Accent and status separated. The third accent and third chart
-         series moved off status-green to a deep teal so the accent
-         and status families read apart. Tokens only.
-  1.2.0  Chart system unified. Every chart rebuilt as inline SVG on
-         two fixed viewBoxes, one palette, annotation collisions
-         cleared, reference pages corrected. Added twenty-eight
-         component classes and six figures.
-  1.1.1  Diagram and chart refinement pass. Tighter type hierarchy,
-         calmer diagram styling, cleaner labels, improved callouts.
-         Measured against 1.1.0: no page, class or token added.
-  1.1.0  Professional rebuild. One coherent style layer, offline
-         system fonts, searchable library, agent-readable manifest,
-         built-in QA, direct page routing, and eleven new pages
-         (forty-two to fifty-three).
-  1.0.0  The guidebook. Zone contract (head / stage / foot as grid
-         rows), the guide rail on every teaching page, one isolated
-         Menu, forty-two pages, and twenty-seven diagram types. This
-         is the layout contract the book still honours, so majors
-         count from here.
-
-  RENUMBERED 2026-08-15. This file previously ran 2.4.0 to 4.3.0. That
-  history bumped minors for releases which added nothing measurable,
-  and the file carried four conflicting version strings at once. The
-  history above is re-derived from the artifacts, applying the rule
-  this book publishes: a minor means a page or component was added, a
-  patch means only tokens, copy or behaviour changed.
-
-  PRIOR ART. An earlier component library (readability and elegance
-  pass) and a twenty-composition diagram set whose geometry contract
-  is adapted from cathrynlavery/diagram-design (MIT). Both predate the
-  guidebook and are not releases of this file.
-  ======================================================================
+  The diagram geometry contract is adapted from cathrynlavery/diagram-design (MIT).
 -->
 <html lang="en" data-template-version="1.2.3">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="The House Book — a professional, copyable HTML slide design system and guidebook.">
-<title>The House Book</title>
+<meta name="description" content="A slide deck on the house visual system.">
+<title>Untitled deck</title>
 <style>
 :root {
   --paper:#f7f5ef;
@@ -165,7 +111,7 @@ h3{font-size:var(--fs-sub);line-height:var(--lh-head);font-weight:680;letter-spa
 p,li{font-size:var(--fs-body);line-height:var(--lh-read);font-weight:400}
 .lede{font-size:var(--fs-lede);line-height:var(--lh-label);font-weight:500;letter-spacing:var(--tr-snug)}
 .small,td{font-size:var(--fs-small);line-height:var(--lh-read)}
-.kicker,.card__label,.stat__label,.rail-label,th,.source,.badge,.mono-label{font-family:var(--mono);font-weight:650;letter-spacing:var(--tr-label);text-transform:uppercase}
+.kicker,.card__label,.stat__label,.rail-label,th,.source,.badge{font-family:var(--mono);font-weight:650;letter-spacing:var(--tr-label);text-transform:uppercase}
 .kicker,.card__label,.stat__label,.rail-label,th,.badge{font-size:var(--fs-label);line-height:var(--lh-label)}
 .source{font-size:var(--fs-source);line-height:var(--lh-label);color:var(--ink-faint);letter-spacing:var(--tr-mono)}
 .mono{font-family:var(--mono)}
@@ -188,12 +134,12 @@ p,li{font-size:var(--fs-body);line-height:var(--lh-read);font-weight:400}
 .guide__sample{min-height:0;display:flex;flex-direction:column;justify-content:center;gap:var(--s4);padding-right:6px}
 
 /* Surfaces and components */
-.card,.chart,.curve-card,.architecture-node,.flow__node,.guardrail,.failure,.risk-card,.figure-card{background:var(--white);border:var(--edge);padding:20px 22px}
+.card,.architecture-node,.flow__node,.risk-card,.figure-card{background:var(--white);border:var(--edge);padding:20px 22px}
 .card{box-shadow:none}.card--flat{border-color:transparent;background:transparent;padding-left:0}.card--soft{background:var(--accent-soft);border-color:transparent}.card--hard{border:var(--focus-edge);box-shadow:var(--shadow-focus)}.card--compact{padding:14px 16px}
 .card__label{color:var(--accent-text);margin-bottom:6px}.card__body,.card p,.stat__note{color:var(--ink-soft)}
 .stat__value{display:block;font-size:var(--fs-stat);line-height:var(--lh-poster);font-weight:760;letter-spacing:var(--tr-poster);color:var(--accent);font-variant-numeric:tabular-nums}.stat__note{font-size:var(--fs-small)}.stat-sm{font-size:var(--fs-lede);line-height:var(--lh-poster);font-weight:760;letter-spacing:var(--tr-tight);color:var(--accent);margin:10px 0 6px}
-.callout{border-left:var(--rail-w) solid var(--accent);background:var(--accent-soft);padding:15px 18px}.callout p{font-size:var(--fs-small);line-height:var(--lh-read)}.callout--insight{border-left-color:var(--contrast);background:var(--contrast-soft)}.callout--warn{border-left-color:var(--warn);background:var(--warn-soft)}.callout--stop{border-left-color:var(--stop);background:var(--stop-soft)}.callout--note,.callout--quote{background:var(--paper-2);border-top:var(--hairline);border-right:var(--hairline);border-bottom:var(--hairline)}
-.badge,.pill{display:inline-block;padding:4px 8px;border:1px solid var(--line-strong);background:var(--paper-2);color:var(--ink);font-size:10.5px}.badge--good{border-color:var(--good);background:var(--good-soft);color:var(--good)}.badge--warn{border-color:var(--warn);background:var(--warn-soft);color:var(--warn)}.badge--stop{border-color:var(--stop);background:var(--stop-soft);color:var(--stop)}
+.callout{border-left:var(--rail-w) solid var(--accent);background:var(--accent-soft);padding:15px 18px}.callout p{font-size:var(--fs-small);line-height:var(--lh-read)}.callout--insight{border-left-color:var(--contrast);background:var(--contrast-soft)}.callout--warn{border-left-color:var(--warn);background:var(--warn-soft)}.callout--stop{border-left-color:var(--stop);background:var(--stop-soft)}.callout--note{background:var(--paper-2);border-top:var(--hairline);border-right:var(--hairline);border-bottom:var(--hairline)}
+.badge{display:inline-block;padding:4px 8px;border:1px solid var(--line-strong);background:var(--paper-2);color:var(--ink);font-size:10.5px}.badge--good{border-color:var(--good);background:var(--good-soft);color:var(--good)}.badge--warn{border-color:var(--warn);background:var(--warn-soft);color:var(--warn)}.badge--stop{border-color:var(--stop);background:var(--stop-soft);color:var(--stop)}
 .list--check,.sub-list,.steps{margin:0;padding:0;list-style:none;display:grid;gap:var(--s2)}.list--check li,.sub-list li{position:relative;padding-left:20px}.list--check li:before{content:"✓";position:absolute;left:0;color:var(--accent);font-weight:800}.sub-list li:before{content:"";position:absolute;left:2px;top:.68em;width:5px;height:5px;background:var(--accent)}.sub-list li{font-size:var(--fs-small);color:var(--ink-soft)}
 .steps{counter-reset:step}.steps li{display:grid;grid-template-columns:30px 1fr;gap:var(--s2);align-items:center}.steps li:before{counter-increment:step;content:counter(step);display:grid;place-items:center;width:28px;height:28px;background:var(--ink);color:var(--paper);font:650 var(--fs-label)/var(--lh-display) var(--mono)}
 
@@ -215,12 +161,12 @@ tbody tr:first-child td{border-top:0}tbody tr:nth-child(even) td{background:rgba
 .swatch-row{display:grid;gap:var(--s2)}.swatch-row--4{grid-template-columns:repeat(4,1fr)}.swatch-row--6{grid-template-columns:repeat(6,1fr)}.swatch{min-height:82px;display:flex;flex-direction:column;justify-content:flex-end;gap:var(--s1);padding:11px;border:1px solid var(--line-strong)}.swatch b,.swatch span{font-family:var(--mono)}.swatch b{font-size:10.5px}.swatch span{font-size:var(--fs-source);opacity:.75}.swatch--inkbg{color:var(--paper)}.swatch-caption{margin:6px 0 0;font:650 var(--fs-source)/var(--lh-label) var(--mono);letter-spacing:var(--tr-label);text-transform:uppercase;color:var(--ink-faint)}
 .specimen{display:flex;flex-direction:column}.specimen__row{display:grid;grid-template-columns:210px minmax(0,1fr);align-items:baseline;gap:var(--s6);padding:10px 0;border-bottom:var(--hairline)}.specimen__row:last-child{border-bottom:0}.specimen__meta{font:600 var(--fs-source)/var(--lh-label) var(--mono);letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-faint)}.specimen__row>div{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .space-scale{display:flex;flex-direction:column;gap:var(--s2)}.space-scale>div{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:var(--s4)}.space-scale i{display:block;height:14px;background:var(--accent-soft);border:1px solid var(--accent)}.space-scale span{font:600 var(--fs-source)/var(--lh-label) var(--mono);letter-spacing:var(--tr-mono);color:var(--ink-faint);text-transform:uppercase}.structure-demos{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3)}.structure-demos .card{min-height:115px}.structure-demos .card h3{margin-bottom:4px}.structure-demos .card p{font-size:var(--fs-small);color:var(--ink-soft)}
-.router-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}.route-row{appearance:none;display:grid;grid-template-columns:1fr 150px;grid-template-rows:auto auto;text-align:left;gap:var(--s3) var(--s4);padding:var(--s5);border:var(--edge);background:var(--white);color:var(--ink);cursor:pointer}.route-row span{font-size:var(--fs-small);color:var(--ink-soft)}.route-row b{grid-column:2;grid-row:1/3;align-self:center;border-left:3px solid var(--accent);padding-left:12px;font:650 var(--fs-label)/var(--lh-label) var(--mono);letter-spacing:var(--tr-label);text-transform:uppercase}.route-row small{font-size:var(--fs-label);color:var(--ink-faint)}.route-row:hover,.route-card:hover{border-color:var(--accent);background:var(--accent-soft)}.divider{border-left:var(--rail-w) solid var(--accent);padding-left:18px}
+.router-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}.route-row{appearance:none;display:grid;grid-template-columns:1fr 150px;grid-template-rows:auto auto;text-align:left;gap:var(--s3) var(--s4);padding:var(--s5);border:var(--edge);background:var(--white);color:var(--ink);cursor:pointer}.route-row span{font-size:var(--fs-small);color:var(--ink-soft)}.route-row b{grid-column:2;grid-row:1/3;align-self:center;border-left:3px solid var(--accent);padding-left:12px;font:650 var(--fs-label)/var(--lh-label) var(--mono);letter-spacing:var(--tr-label);text-transform:uppercase}.route-row small{font-size:var(--fs-label);color:var(--ink-faint)}.route-row:hover,.route-card:hover{border-color:var(--accent);background:var(--accent-soft)}
 .evidence-stage{display:grid;grid-template-columns:minmax(0,3fr) minmax(200px,1fr);gap:var(--s4)}.evidence-stage__visual{min-height:356px;border:var(--edge);background:linear-gradient(rgba(17,24,32,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(17,24,32,.035) 1px,transparent 1px),var(--white);background-size:28px 28px;padding:24px;display:grid;place-items:center}.evidence-stage__readout{display:flex;flex-direction:column;justify-content:space-between;gap:var(--s3)}
 .architecture-map{display:grid;grid-template-columns:1fr auto 1fr auto 1.2fr auto 1fr;align-items:center;gap:var(--s2)}.architecture-node{min-height:120px;display:flex;flex-direction:column;justify-content:center}.architecture-node--focus{border:2px solid var(--accent);background:var(--accent-soft)}.architecture-arrow{width:11px;height:14px;background:var(--ink);clip-path:polygon(0 0,100% 50%,0 100%)}
 .flow{display:flex;align-items:stretch;gap:var(--s2)}.flow__node{flex:1;font-weight:650}.flow__arrow{align-self:center;width:11px;height:14px;background:var(--ink);clip-path:polygon(0 0,100% 50%,0 100%)}
 .timeline{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3);padding-top:22px}.timeline:before{content:"";position:absolute;top:22px;left:0;right:0;border-top:1px solid var(--line-strong)}.timeline__node{position:relative;padding-top:18px}.timeline__node:before{content:"";position:absolute;width:11px;height:11px;top:-5px;left:0;background:var(--ink)}.timeline__date{font:650 var(--fs-source)/var(--lh-label) var(--mono);letter-spacing:var(--tr-label);color:var(--ink-faint)}
-.chart-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3)}.chart{min-height:220px;padding:14px}.legend{display:flex;gap:var(--s2);margin:8px 0 0;padding:0;list-style:none;color:var(--ink-soft);font:600 var(--fs-source)/var(--lh-label) var(--mono)}.legend li{display:inline-flex;align-items:center;font-size:var(--fs-source)}.legend i{width:7px;height:7px;margin-right:4px;background:var(--series-1)}.legend li:nth-child(2) i{background:var(--series-2)}.legend li:nth-child(3) i{background:var(--series-3)}
+.chart-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3)}.legend{display:flex;gap:var(--s2);margin:8px 0 0;padding:0;list-style:none;color:var(--ink-soft);font:600 var(--fs-source)/var(--lh-label) var(--mono)}.legend li{display:inline-flex;align-items:center;font-size:var(--fs-source)}.legend i{width:7px;height:7px;margin-right:4px;background:var(--series-1)}.legend li:nth-child(2) i{background:var(--series-2)}.legend li:nth-child(3) i{background:var(--series-3)}
 
 /* Diagram system */
 .dgm{width:100%;flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:4px 0}.dgm svg{width:100%;height:100%;display:block;overflow:visible}.dgm-label{font-family:var(--sans);font-size:calc(15px * var(--fscale, 1));font-weight:600;fill:var(--ink);text-anchor:middle}.dgm-label--sm{font-size:calc(13px * var(--fscale, 1));font-weight:600;text-anchor:middle}.dgm-sublabel{font-family:var(--mono);font-size:calc(11px * var(--fscale, 1));font-weight:600;fill:var(--ink-faint);text-anchor:middle;letter-spacing:var(--tr-label);text-transform:uppercase}.dgm-msg{font-family:var(--sans);font-size:calc(13px * var(--fscale, 1));font-weight:600;fill:var(--ink-soft);text-anchor:middle}.dgm-seq{font-family:var(--mono);font-size:calc(10px * var(--fscale, 1));font-weight:600;fill:var(--ink-faint)}.dgm-box{fill:rgba(255,255,255,.72);stroke:#aab5bd;stroke-width:calc(2px * var(--fscale, 1))}.dgm-box--focus{fill:#f3e3db;stroke:var(--accent);stroke-width:calc(3px * var(--fscale, 1))}.dgm-edge{stroke:var(--ink);stroke-width:calc(2px * var(--fscale, 1));fill:none}.dgm-edge--return{stroke:#7c8d99;stroke-width:calc(2px * var(--fscale, 1));stroke-dasharray:6 5;fill:none}.dgm-edge--focus{stroke:var(--accent);stroke-width:calc(3px * var(--fscale, 1))}.dgm-msg--focus{fill:var(--ink);font-weight:700}.dgm-note{fill:rgba(255,255,255,.88);stroke:var(--accent);stroke-width:calc(2px * var(--fscale, 1))}.dgm-note-text{font-family:var(--sans);font-size:calc(13px * var(--fscale, 1));font-weight:600;fill:var(--ink);text-anchor:middle}.dgm-ah-ink{fill:var(--ink)}.dgm-ah-faint{fill:#7c8d99}.dgm-ah-accent{fill:var(--accent)}.dgm-lane-head{fill:rgba(255,255,255,.82);stroke:#aab5bd;stroke-width:calc(2px * var(--fscale, 1))}.dgm-lane-line{stroke:#7c8d99;stroke-width:calc(1px * var(--fscale, 1));stroke-dasharray:4 6}.dgm-lane-band{fill:rgba(255,255,255,.32);stroke:#c9d1d6;stroke-width:calc(1px * var(--fscale, 1))}.dgm-lane-name{font-family:var(--mono);font-size:calc(11px * var(--fscale, 1));font-weight:600;letter-spacing:var(--tr-label);text-transform:uppercase;fill:#5f6f7e;text-anchor:end}.dgm-store{fill:rgba(255,255,255,.55);stroke:#aab5bd;stroke-width:calc(2px * var(--fscale, 1))}.dgm-ext{fill:none;stroke:#7c8d99;stroke-width:calc(2px * var(--fscale, 1));stroke-dasharray:6 4}.dgm-edge-label{font-family:var(--mono);font-size:calc(11px * var(--fscale, 1));font-weight:600;fill:var(--ink-faint);text-anchor:middle}.dgm-entity-head{fill:var(--ink);stroke:var(--ink);stroke-width:calc(2px * var(--fscale, 1))}.dgm-entity-name{font-family:var(--sans);font-size:calc(15px * var(--fscale, 1));font-weight:600;fill:var(--paper);text-anchor:middle}.dgm-field{font-family:var(--mono);font-size:calc(11px * var(--fscale, 1));font-weight:600;fill:#5d6c7a}.dgm-axis{stroke:var(--ink);stroke-width:calc(2px * var(--fscale, 1));fill:none}.dgm-grid{stroke:rgba(17,24,32,.11);stroke-width:calc(1px * var(--fscale, 1));fill:none}.dgm-poly{fill:rgba(200,75,36,.14);stroke:var(--accent);stroke-width:calc(3px * var(--fscale, 1));fill-opacity:1}.dgm-poly--alt{fill:none;stroke:#7c8d99;stroke-width:calc(2px * var(--fscale, 1));stroke-dasharray:6 4}.dgm-point{fill:var(--series-4);stroke:var(--white);stroke-width:calc(1px * var(--fscale, 1))}.dgm-point--focus{fill:var(--accent);stroke:var(--ink);stroke-width:calc(2px * var(--fscale, 1))}.dgm-venn{stroke:var(--ink);stroke-width:calc(2px * var(--fscale, 1));fill-opacity:.27}.dgm-venn--1{fill:#d8896d}.dgm-venn--2{fill:#7f8ec0}.dgm-venn--3{fill:#8ea894}.dgm-tick{font-family:var(--mono);font-size:calc(11px * var(--fscale, 1));font-weight:600;fill:#657586;text-anchor:middle}
@@ -235,7 +181,7 @@ tbody tr:first-child td{border-top:0}tbody tr:nth-child(even) td{background:rgba
 
 /* New practical compositions */
 .story-arc{display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr 28px 1fr 28px 1fr;align-items:center;gap:var(--s2)}.story-arc>i{height:1px;background:var(--line-strong);position:relative}.story-arc>i:after{content:"";position:absolute;right:0;top:-4px;width:7px;height:8px;background:var(--line-strong);clip-path:polygon(0 0,100% 50%,0 100%)}.story-arc__step{padding:18px;border:var(--edge);background:var(--white);display:flex;flex-direction:column;gap:var(--s2)}.story-arc__step span{font:650 var(--fs-label)/var(--lh-display) var(--mono);color:var(--ink-faint)}.story-arc__step strong{font-size:var(--fs-body)}.story-arc__step p{font-size:var(--fs-small);color:var(--ink-soft)}.story-arc__step.is-focus{background:var(--accent-soft);border:2px solid var(--accent)}
-.hierarchy-board{display:grid;grid-template-columns:1.1fr 1.7fr 1fr;gap:var(--s3);align-items:stretch}.hierarchy-board>div{padding:20px;border:var(--edge);background:var(--white)}.hierarchy-board__claim{border-top:3px solid var(--ink)!important}.hierarchy-board__claim h3{font-size:var(--fs-title);line-height:var(--lh-display)}.hierarchy-board__context .small{font-size:var(--fs-body)}.hierarchy-board__proof{display:flex;flex-direction:column;gap:var(--s3)}.mini-bars .is-focus{background:var(--accent)}.hierarchy-board__context{align-self:end;min-height:180px;background:var(--paper-2)!important}
+.hierarchy-board{display:grid;grid-template-columns:1.1fr 1.7fr 1fr;gap:var(--s3);align-items:stretch}.hierarchy-board>div{padding:20px;border:var(--edge);background:var(--white)}.hierarchy-board__claim{border-top:3px solid var(--ink)!important}.hierarchy-board__claim h3{font-size:var(--fs-title);line-height:var(--lh-display)}.hierarchy-board__context .small{font-size:var(--fs-body)}.hierarchy-board__proof{display:flex;flex-direction:column;gap:var(--s3)}.hierarchy-board__context{align-self:end;min-height:180px;background:var(--paper-2)!important}
 .exec-summary{display:grid;grid-template-rows:auto auto auto;gap:var(--s3);align-content:center}.exec-summary__answer{padding:19px 22px;border-left:var(--rail-w) solid var(--accent);background:var(--accent-soft)}.exec-summary__answer h3{font-size:var(--fs-lede)}.exec-summary__proofs{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s3)}.exec-summary__proofs>div{padding:17px 18px;border:var(--edge);background:var(--white)}.exec-summary__proofs span{font:650 var(--fs-label)/var(--lh-display) var(--mono);color:var(--accent)}.exec-summary__proofs strong{display:block;margin:8px 0 5px;font-size:var(--fs-body)}.exec-summary__proofs p{font-size:var(--fs-small);color:var(--ink-soft)}.exec-summary__bottom{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}.exec-summary__bottom>div{padding:14px 18px;border-top:var(--hairline)}.exec-summary__bottom .is-focus{background:var(--ink);color:var(--paper);border-top:0}.exec-summary__bottom .is-focus .kicker{color:#f0a080}
 .annotation-stage{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(260px,.75fr);gap:var(--s4);align-items:stretch;align-content:center}.mock-app{position:relative;border:1px solid var(--line-strong);background:var(--white);box-shadow:var(--shadow)}.mock-app__bar{height:42px;display:flex;align-items:center;gap:var(--s2);padding:0 14px;border-bottom:var(--hairline);background:var(--paper-2)}.mock-app__bar i{width:8px;height:8px;border-radius:50%;background:var(--line-strong)}.mock-app__bar span{margin-left:10px;font:600 var(--fs-label)/var(--lh-display) var(--mono);color:var(--ink-faint)}.mock-app__body{display:grid;grid-template-columns:150px 1fr}.mock-app__body aside{padding:18px;border-right:var(--hairline);display:flex;flex-direction:column;gap:var(--s6);background:#f5f7f7}.mock-app__body aside b{font-size:var(--fs-small)}.mock-app__body aside span{font-size:var(--fs-label);color:var(--ink-soft)}.mock-app__body main{padding:30px;display:flex;flex-direction:column;gap:var(--s3)}.mock-field{display:flex;justify-content:space-between;padding:13px 14px;border:var(--hairline)}.mock-field span{font-size:var(--fs-small);color:var(--ink-soft)}.mock-field b{font-size:var(--fs-small)}.mock-field.is-focus{border:2px solid var(--accent);background:var(--accent-soft)}.mock-app__body button{align-self:flex-start;margin-top:auto;padding:10px 15px;border:0;background:var(--ink);color:var(--paper);font-weight:650}.pin{position:absolute;display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--accent);color:var(--white);font:700 var(--fs-label)/var(--lh-display) var(--mono);box-shadow:0 0 0 4px rgba(200,75,36,.18)}.pin--1{left:116px;top:86px}.pin--2{right:45px;top:185px}.pin--3{right:92px;bottom:45px}.annotation-notes{display:flex;flex-direction:column;gap:var(--s2)}.annotation-notes>div{display:grid;grid-template-columns:28px 1fr;gap:var(--s2);padding:14px;border:var(--edge);background:var(--white)}.annotation-notes b{display:grid;place-items:center;width:24px;height:24px;background:var(--ink);color:var(--paper);font:650 var(--fs-source)/var(--lh-display) var(--mono)}.annotation-notes p{font-size:var(--fs-small);color:var(--ink-soft)}.annotation-notes .is-focus{background:var(--accent-soft);border:2px solid var(--accent)}.annotation-notes .is-focus b{background:var(--accent)}
 .scorecard{display:grid;grid-template-columns:1.6fr .6fr repeat(3,.7fr);border:var(--edge);background:var(--line)}.scorecard>div{display:contents}.scorecard>div>*{min-height:48px;padding:9px 12px;background:var(--white);display:flex;align-items:center;border-right:1px solid var(--line);border-bottom:1px solid var(--line);font-size:var(--fs-small)}.scorecard__head>*{background:var(--ink)!important;color:var(--paper);font:650 var(--fs-source)/var(--lh-label) var(--mono);letter-spacing:var(--tr-label);text-transform:uppercase}.score{justify-content:center;font:700 var(--fs-small)/var(--lh-display) var(--mono)}.score--5{background:var(--good-soft)!important}.score--2{background:var(--stop-soft)!important}.scorecard__total>*{font-weight:700;background:var(--paper-2)!important}.scorecard__total .is-focus{background:var(--accent)!important;color:var(--white);justify-content:center}
@@ -243,7 +189,7 @@ tbody tr:first-child td{border-top:0}tbody tr:nth-child(even) td{background:rgba
 .ownership-matrix{display:grid;grid-template-columns:1.5fr repeat(4,1fr);border:var(--edge);background:var(--line);gap:var(--rule-gap)}.ownership-matrix>div{display:contents}.ownership-matrix>div>*{min-height:56px;padding:10px;background:var(--white);display:grid;place-items:center;font-size:var(--fs-small)}.ownership-matrix>div>strong{place-items:center start;background:var(--paper-2)}.ownership-matrix__head>*{background:var(--ink)!important;color:var(--paper);font:650 var(--fs-source)/var(--lh-label) var(--mono);letter-spacing:var(--tr-label);text-transform:uppercase}.role{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font:700 var(--fs-label)/var(--lh-display) var(--mono);font-style:normal}.role--a{background:var(--accent);color:var(--white)}
 .risk-layout{display:grid;grid-template-columns:1fr 1fr 1.05fr;gap:var(--s3);align-content:center}.risk-card{display:flex;flex-direction:column;gap:var(--s2)}.risk-card>div{display:flex;align-items:flex-start;gap:var(--s2)}.risk-card b{font-size:var(--fs-body)}.risk-card p{font-size:var(--fs-small);color:var(--ink-soft)}.risk-card--high{border:2px solid var(--stop)}.decision-log{padding:18px;background:var(--ink);color:var(--paper);display:flex;flex-direction:column;gap:var(--s3)}.decision-log>.kicker{color:#f0a080}.decision-log>div{padding-top:12px;border-top:1px solid rgba(247,245,239,.2)}.decision-log span{font:600 var(--fs-source)/var(--lh-display) var(--mono);color:rgba(247,245,239,.55)}.decision-log strong{display:block;margin:5px 0;font-size:var(--fs-small)}.decision-log p{font-size:var(--fs-small);color:rgba(247,245,239,.65)}
 .diagram-router,.chart-router{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s4)}.route-card{appearance:none;min-height:calc(var(--s9) + var(--s9));padding:var(--s6) var(--s5);border:var(--edge);background:var(--white);color:var(--ink);text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:var(--s5)}.route-card span{font:650 var(--fs-source)/var(--lh-label) var(--mono);letter-spacing:var(--tr-label);text-transform:uppercase;color:var(--accent)}.route-card strong{font-size:var(--fs-body)}.route-card p{font-size:var(--fs-small);color:var(--ink-soft)}
-.two-chart-stage{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}.stacked-bars .is-focus{background:var(--accent)}
+.two-chart-stage{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
 .decision-close{display:grid;grid-template-rows:auto 1fr auto;gap:var(--s3)}.decision-close__answer{padding:20px 22px;border-left:var(--rail-w) solid var(--accent);background:var(--accent-soft)}.decision-close__answer h3{font-size:var(--fs-lede)}.decision-close__actions{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s3)}.decision-close__actions>div{padding:18px;border:var(--edge);background:var(--white);display:flex;flex-direction:column;gap:var(--s2)}.decision-close__actions span{font:650 var(--fs-source)/var(--lh-display) var(--mono);color:var(--accent)}.decision-close__actions strong{font-size:var(--fs-body)}.decision-close__actions p{font-size:var(--fs-small);color:var(--ink-soft)}.decision-close__actions b{margin-top:auto;font:650 var(--fs-label)/var(--lh-display) var(--mono)}.decision-close__actions .is-focus{background:var(--ink);color:var(--paper);border-color:var(--ink)}.decision-close__actions .is-focus p{color:rgba(247,245,239,.65)}.decision-close__actions .is-focus span{color:#f0a080}.decision-close__checkpoint{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-top:var(--hairline)}
 
 /* Controls, menu, and QA */
@@ -332,7 +278,7 @@ text.cx-seg{font-family:var(--sans);font-weight:600;font-size:calc(13px * var(--
 [data-slide-id="evidence-stage"] .evidence-stage__visual{background:var(--white);padding:18px;align-items:stretch}
 [data-slide-id="evidence-stage"] .evidence-stage__visual>div{height:100%;display:flex;flex-direction:column}
 [data-slide-id="evidence-stage"] .evidence-stage__visual .cx-card{flex:1 1 auto;min-height:0}
-.cx-legend{display:flex;gap:var(--s6);align-items:center;justify-content:center;margin:var(--s3) 0 0;font-family:var(--mono);font-size:var(--fs-source);letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-faint)}.cx-legend span{display:inline-flex;align-items:center;gap:var(--s1)}.cx-key{width:18px;height:0;border-top:2px solid var(--accent);display:inline-block}.cx-key--dashed{border-top:2px dashed var(--line-strong)}.cx-plate{fill:var(--white);stroke:var(--line-strong);stroke-width:calc(1px * var(--fscale, 1))}
+.cx-legend{display:flex;gap:var(--s6);align-items:center;justify-content:center;margin:var(--s3) 0 0;font-family:var(--mono);font-size:var(--fs-source);letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-faint)}.cx-legend span{display:inline-flex;align-items:center;gap:var(--s1)}.cx-key{width:18px;height:0;border-top:2px solid var(--accent);display:inline-block}.cx-key--dashed{border-top:2px dashed var(--line-strong)}
 /* ======================================================================
    LAYOUT CONSISTENCY PASS · A · stage fill
    .zone-stage and .guide__sample are centred flex columns, so a short
@@ -397,7 +343,6 @@ text.cx-seg{font-family:var(--sans);font-weight:600;font-size:calc(13px * var(--
 .zone-stage .grid:has(>.card~.card)>.card{justify-content:flex-start}
 /* inline-level metadata must not stretch to the full card width */
 .zone-stage .card>.badge,
-.zone-stage .card>.pill,
 .zone-stage .callout>.badge{align-self:flex-start}
 
 /* routers: the tile fills its track, its copy stays optically centred */
@@ -405,11 +350,9 @@ text.cx-seg{font-family:var(--sans);font-weight:600;font-size:calc(13px * var(--
 .zone-stage .route-card{height:100%;justify-content:center}
 
 /* visual hierarchy: three peer cards, top-aligned and equal height.
-   Each card keeps its numbered kicker on the top line; the proof card's
-   exhibit sits on the card's baseline instead of floating mid-card. */
+   Each card keeps its numbered kicker on the top line. */
 .zone-stage .hierarchy-board>div{align-self:stretch;height:100%}
 .zone-stage .hierarchy-board__proof{justify-content:flex-start}
-.zone-stage .hierarchy-board__proof .mini-bars{margin-top:auto}
 .zone-stage .hierarchy-board__context{align-self:stretch}
 
 /* callouts and voice: four asides read as one uniform block */
@@ -451,10 +394,6 @@ text.cx-seg{font-family:var(--sans);font-weight:600;font-size:calc(13px * var(--
 /* the nest is a composition, not an exhibit: content height, then centred */
 .zone-stage .nest{flex:0 0 auto}
 
-/* router tiles: min-height:142px was carrying a stretched card. A kicker,
-   a title and one line of question is ~82px of content; the token padding
-   below lands the tile near 1.4x its content instead of 1.7x. */
-.zone-stage .route-card{min-height:calc(var(--s9) + var(--s9));padding:var(--s6) var(--s5)}
 .zone-stage .route-row{min-height:calc(var(--s10) + var(--s6))}
 
 /* coverage matrix: cells do not inherit the stage's spare height, so the
@@ -539,9 +478,9 @@ text.cx-seg{font-family:var(--sans);font-weight:600;font-size:calc(13px * var(--
   <button id="menuBtn" type="button">Menu · M</button>
   <button id="presentBtn" type="button">Present · P</button>
 </div>
-<aside class="manual" id="manual" aria-label="Guidebook menu">
+<aside class="manual" id="manual" aria-label="Deck menu">
   <div class="manual__head">
-    <p class="manual__title">The House Book</p>
+    <p class="manual__title"></p>
     <button id="manualPrev" class="manual__close" type="button" aria-label="Previous slide" onclick="document.getElementById('prevBtn').click()">‹</button>
     <button id="manualNext" class="manual__close" type="button" aria-label="Next slide" onclick="document.getElementById('nextBtn').click()">›</button>
     <button id="manualClose" class="manual__close" type="button" aria-label="Close menu">×</button>
@@ -567,6 +506,10 @@ const counter = document.getElementById('counter');
 const manual = document.getElementById('manual');
 const manualBody = document.getElementById('manualBody');
 const tabs = [...document.querySelectorAll('.manual__tab')];
+// The deck's name is its manifest's `name`; a page with no manifest keeps its <title>.
+const manifestEl = document.getElementById('housebook-manifest');
+const deckName = (()=>{try{return JSON.parse(manifestEl.textContent).name||document.title}catch{return document.title}})();
+document.querySelector('.manual__title').textContent = deckName;
 let current = 0;
 let activeTab = 'library';
 let startX = 0;
@@ -582,7 +525,7 @@ function fillFeet(){
     const foot=slide.querySelector('.zone-foot'); if(!foot) return;
     const left=document.createElement('span');
     const right=document.createElement('span');
-    left.textContent=slide.dataset.chapter||'The House Book';
+    left.textContent=slide.dataset.chapter||deckName;
     right.textContent=`${pad(i+1)} · ${total}`;
     foot.replaceChildren(left,right);
   });
@@ -593,7 +536,7 @@ function show(index,{updateHash=true}={}){
   slides.forEach((slide,i)=>slide.classList.toggle('active',i===current));
   progressBar.style.width=`${((current+1)/slides.length)*100}%`;
   counter.textContent=`${pad(current+1)} / ${pad(slides.length)}`;
-  document.title=`${slides[current].getAttribute('aria-label')} · The House Book`;
+  document.title=`${slides[current].getAttribute('aria-label')} · ${deckName}`;
   if(updateHash) history.replaceState(null,'',`#${slides[current].dataset.slideId}`);
   fitStage();
   if(manual.classList.contains('open')) selectTab(activeTab);
@@ -621,7 +564,7 @@ function renderLibrary(){
   function paint(){
     const q=input.value.trim().toLowerCase();list.replaceChildren();
     slides.forEach((s,i)=>{
-      const hay=[s.getAttribute('aria-label'),s.dataset.chapter,s.dataset.job,s.dataset.use,s.dataset.tags].join(' ').toLowerCase();
+      const hay=[s.getAttribute('aria-label'),s.dataset.chapter,s.dataset.job].join(' ').toLowerCase();
       if(q&&!hay.includes(q))return;
       const b=document.createElement('button');b.className='library-item';b.type='button';
       b.innerHTML=`<span>${pad(i+1)}</span><b>${escapeHTML(s.getAttribute('aria-label')||'Page')}</b><small>${escapeHTML(s.dataset.job||'')}</small>`;
@@ -632,7 +575,7 @@ function renderLibrary(){
 }
 function renderGuide(){
   const s=slides[current];
-  manualBody.innerHTML=`<h4>${escapeHTML(s.getAttribute('aria-label')||'Page')}</h4><div class="guide-card"><div class="is-focus"><b>Job</b><p>${escapeHTML(s.dataset.job||'')}</p></div><div><b>Use when</b><p>${escapeHTML(s.dataset.use||'Not specified')}</p></div><div><b>Choose this over</b><p>${escapeHTML(s.dataset.choose||'Not specified')}</p></div><div><b>Limits</b><p>${escapeHTML(s.dataset.limits||'Not specified')}</p></div><div><b>Source mode</b><p>${s.dataset.sourceRequired==='true'?'External evidence requires a visible source.':'Illustrative reference page. Set data-source-required=\"true\" when copied content uses external evidence.'}</p></div><div><b>Agent tags</b><p class="mono">${escapeHTML(s.dataset.tags||'')}</p></div></div>`;
+  manualBody.innerHTML=`<h4>${escapeHTML(s.getAttribute('aria-label')||'Page')}</h4><div class="guide-card"><div class="is-focus"><b>Job</b><p>${escapeHTML(s.dataset.job||'')}</p></div><div><b>Source mode</b><p>${s.dataset.sourceRequired==='true'?'External evidence requires a visible source.':'No external evidence. Set data-source-required=\"true\" when this slide uses some.'}</p></div></div>`;
 }
 function renderNotes(){
   const notes=slides[current].querySelector('.slide-notes');
@@ -669,18 +612,10 @@ function runChecks(slide){
   add(badA11y.length===0?'pass':'fail','Figure accessibility',badA11y.length===0?'Every SVG has role, title, description, and an aria-labelledby that names something in it.':`${badA11y.length} SVG figure(s) lack role, title, description, or a usable aria-labelledby.`,badA11y[0]);
   const title=slide.querySelector('.zone-head h2,h1');const titleText=title?.textContent.trim()||'';
   add(titleText.length<=88?'pass':'warn','Title length',titleText.length<=88?`${titleText.length} characters.`:`${titleText.length} characters. Shorten for one-glance reading.`,titleText.length>88?title:null);
-  const missing=['job','use','choose','limits','tags'].filter(k=>!slide.dataset[k]);
-  add(missing.length===0?'pass':'fail','Agent metadata',missing.length===0?'Job, use, choice, limits, and tags are present.':`Missing: ${missing.join(', ')}.`,missing.length?slide:null);
-  const sources=slide.querySelectorAll('.source').length;const evidence=slide.querySelectorAll('table,.cx-card,.chart,.dgm,.evidence-stage__visual,.figure-card').length;const sourceRequired=slide.dataset.sourceRequired==='true';
-  add(!sourceRequired||evidence===0||sources>0?'pass':'warn','Source treatment',!sourceRequired?'Illustrative reference page; external sourcing is not enabled.':evidence===0?'No external evidence object detected.':'Evidence is present but no source line is visible.',sourceRequired&&evidence&&sources===0?zone:null);
-  // `.cx-card` is in the evidence selector because 1.2.0 rebuilt every chart on it and
-  // nobody updated this line. Nine pages here carry a cx chart, and the selector still
-  // named `.curve-card`, the card it replaced — so on an authored deck that sets
-  // data-source-required="true", a slide whose only evidence is a chart counted ZERO
-  // evidence objects and Source treatment passed as "No external evidence object
-  // detected". A check that passes because it cannot see the thing it is checking.
-  // The guidebook never caught it: no page here sets data-source-required="true", so
-  // the branch was never taken in the one deck anybody runs the QA on.
+  // A chart is evidence: `.cx-card` is in the selector, so a slide whose only evidence is a chart
+  // still owes a source line when it sets data-source-required="true".
+  const sources=slide.querySelectorAll('.source').length;const evidence=slide.querySelectorAll('table,.cx-card,.dgm,.evidence-stage__visual,.figure-card').length;const sourceRequired=slide.dataset.sourceRequired==='true';
+  add(!sourceRequired||evidence===0||sources>0?'pass':'warn','Source treatment',!sourceRequired?'External sourcing is not enabled on this slide.':evidence===0?'No external evidence object detected.':'Evidence is present but no source line is visible.',sourceRequired&&evidence&&sources===0?zone:null);
   // Figure geometry. The safe-area check above measures container scroll, but
   // .cx and .dgm are overflow:visible SVG - text can sit outside its viewBox,
   // overlap a neighbour, or run past the shape it labels and nothing scrolls.
@@ -762,8 +697,8 @@ function renderDeckQA(){
   pages.forEach(r=>{const s=slides[r.i];const f=r.checks.filter(c=>c.status==='fail').length;const w=r.checks.filter(c=>c.status==='warn').length;const b=document.createElement('button');b.className='library-item';b.innerHTML=`<span>${pad(r.i+1)}</span><b>${escapeHTML(s.getAttribute('aria-label'))}</b><small>${f} fail · ${w} warn</small>`;b.onclick=()=>{show(r.i);selectTab('qa')};list.append(b)});
 }
 function renderVersion(){
-  const manifest=JSON.parse(document.getElementById('housebook-manifest').textContent);
-  manualBody.innerHTML=`<h4>Version ${manifest.version}</h4><p>${escapeHTML(manifest.summary)}</p><h4>Contract</h4><ul><li>Single offline HTML file</li><li>Fixed 1440 × 810 canvas</li><li>Stable slide IDs and machine-readable metadata</li><li>Searchable library and copyable compositions</li><li>Current-page and deck QA</li></ul><h4>Pages</h4><p>${manifest.slides.length} reference pages across ${new Set(manifest.slides.map(s=>s.chapter)).size} chapter labels.</p>`;
+  const manifest=JSON.parse(manifestEl.textContent);
+  manualBody.innerHTML=`<h4>Version ${manifest.version}</h4><p>${escapeHTML(manifest.summary)}</p><h4>Contract</h4><ul><li>Single offline HTML file</li><li>Fixed 1440 × 810 canvas</li><li>Stable slide IDs and machine-readable metadata</li><li>Searchable library and copyable compositions</li><li>Current-page and deck QA</li></ul><h4>Pages</h4><p>${manifest.slides.length} pages across ${new Set(manifest.slides.map(s=>s.chapter)).size} chapter labels.</p>`;
 }
 function selectTab(name){
   activeTab=name;tabs.forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
@@ -780,6 +715,7 @@ tabs.forEach(t=>t.onclick=()=>selectTab(t.dataset.tab));
 document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>jump(b.dataset.jump));
 addEventListener('keydown',e=>{
   const tag=(e.target.tagName||'').toLowerCase();if(['input','textarea'].includes(tag))return;
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
   if(['ArrowRight',' ','PageDown'].includes(e.key)){e.preventDefault();show(current+1)}
   if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();show(current-1)}
   if(e.key==='Home')show(0);if(e.key==='End')show(slides.length-1);

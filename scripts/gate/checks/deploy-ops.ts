@@ -298,20 +298,14 @@ check("a pipeline never leaves a stage writing into a pipe that closed", () => {
   // command substitution, and `set -e` stops the script there — after whatever the statement had
   // already committed.
   //
-  // DEPLOY/issue-first-pat.sh was exactly that, and its statement is a token rotation: the failing
-  // run left the deployment with a fresh token and the previous bootstrap token revoked, and
-  // printed neither the token nor a reason. Measured against this host, same pipeline, same
-  // database: `awk '… exit'` returned psql=255 on 7 runs in 12; reading to `END`, 0 in 12. Nothing
-  // about it is docker-specific — it is the pipe.
-  //
   // An `awk` that prints from `END` instead needs nothing else and cannot race, because it reads
   // its input to the end before it prints anything.
+  //
+  // DELIBERATE: no piped awk at all is the clean state, not a check reading nothing.
   const bad: string[] = [];
-  let seen = 0;
   for (const f of sourceFiles(["deploy"], [".sh"])) {
     const code = readFileSync(join(root, f), "utf8");
     for (const m of code.matchAll(/\|\s*awk\s+(['"])((?:(?!\1)[^\\]|\\.)*)\1/g)) {
-      seen++;
       if (/\bexit\b/.test(m[2])) {
         bad.push(`${f}: an awk after a pipe whose program says \`exit\` — it can close the pipe ` +
                  "under the command feeding it, and `set -o pipefail` makes that a failed statement " +
@@ -319,7 +313,5 @@ check("a pipeline never leaves a stage writing into a pipe that closed", () => {
       }
     }
   }
-  // Not a count: a check that reads nothing passes. Said rather than assumed, like its neighbour.
-  if (!seen) return "no awk follows a pipe in deploy/ — this check is reading nothing";
   return bad.length ? bad.join("\n") : null;
 });

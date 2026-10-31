@@ -10,7 +10,7 @@
  * DELIBERATE: not through a shell. splitCommand turns the configured command into an argv,
  * because these command lines carry a database name beside an operator's own arguments.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { die } from "./cli.js";
 import { splitCommand } from "./shell.js";
@@ -54,8 +54,7 @@ export function psqlText(psql: string, sql: string, vars: Record<string, string>
  *
  * psqlText die()s, which is right for every tool that reads this database. A check is the one
  * caller that wants the opposite: it runs statements expecting some to be refused and has to
- * report all of them rather than the first — sql-check PREPAREs every one of this repository's
- * queries against a real schema.
+ * report all of them rather than the first.
  *
  * Here and not in a transport of its own: the argv rule this file holds — stdin and `-v`
  * bindings, never `-c` — is the same rule whether the caller can survive a failure or not.
@@ -77,6 +76,20 @@ export function psqlTry(psql: string, sql: string, vars: Record<string, string> 
     const e = err as { stderr?: string; stdout?: string; message?: string };
     return { ok: false, error: (e.stderr || e.stdout || e.message || "").trim() };
   }
+}
+
+/**
+ * A whole script in one psql session, where a refused statement is reported and the ones after it
+ * still run: what psql printed and what it wrote to its error stream, whatever its exit.
+ *
+ * `-f -` reads the script from stdin as a file, which is what makes each error name the input line
+ * its statement ended on (`psql:<stdin>:N: ERROR: …`) — the only way to tell which statement of a
+ * script a refusal belongs to.
+ */
+export function psqlScript(psql: string, sql: string): { status: number | null; stdout: string; stderr: string } {
+  const [cmd, ...rest] = splitCommand(psql);
+  const r = spawnSync(cmd, [...rest, "-tA", "-f", "-"], { input: sql, encoding: "utf8", maxBuffer: MAX_OUTPUT });
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
 /**

@@ -2,61 +2,41 @@
  * The versioned text analyzer for the tenant-information corpus. `ANALYZER_NAME` is which
  * version this build is.
  *
- * Three pure functions, no filesystem or database access: `passagesOf` (bounded overlapping
- * passages over a body of any length), `identifierTokens` (an identifier's exact spelling plus
- * its lowercased split parts), `derivationFingerprint` (hash over record format, parser,
- * analyzer, passage shape, projection shape and source content hash — changing `analyzer`
- * alone changes it, which is how a rebuild tells a stale derivation from a changed source).
- *
  * COUPLED: every analyzed body goes through `buildRowVector` below — a document write
  * (`document-save.ts`), a journal node (`index.ts`'s `indexNode`), a team reindex and the
- * rederivation pass — and this file's passages feed the derived search tables. No writer cuts a
- * body: `MAX_INPUT_BYTES` is the only bound, and a body past it is refused, never shortened.
- *
- * DELIBERATE: `identifierTokens` has no operator syntax. The query lexer strips quotes, OR and
- * exclusions first, so a `/` or `-` inside a path cannot trip it.
- *
- * DELIBERATE: passage `start`/`end` are UTF-8 byte offsets (`Buffer.byteLength`, never
- * `.length`). They agree with character offsets only for pure ASCII, and a character offset
- * stored under a byte-offset name is still a valid integer, so it corrupts silently.
+ * rederivation pass. No writer cuts a body: `MAX_INPUT_BYTES` is the only bound, and a body past it
+ * is refused, never shortened.
  */
-import { createHash } from "node:crypto";
+import { UPLOAD_MAX_BYTES } from "@zz/contracts";
 
 // The analyzer's own version, and the size the kernel is contracted to refuse
 
 /** Named so an incompatible analyzer is a new name rather than a silent behaviour change under
- *  the old one. Callers pass it into `derivationFingerprint` as `analyzer`.
+ *  the old one.
  *
  *  COUPLED: the rederivation walker rewrites a row only when
  *  `analyzer_version !== request.analyzer`, so bumping this name is what makes rows written
  *  under a broken construction repairable. */
 export const ANALYZER_NAME = "zz-lexical-v4";
-export const CURRENT_ANALYZER_VERSION = 4;
 
-/** 8 MiB. Text above this is refused where it is analyzed (`buildRowVector`, which every write
- *  path goes through) and never truncated to fit. `imported: true` is the named exception, for
- *  content that predates the limit. */
-export const MAX_INPUT_BYTES = 8 * 1024 * 1024;
+/** The most a stored body may be, in UTF-8 bytes: the upload limit's own figure, so a file one
+ *  upload may carry is a body a write accepts. A body above it is refused where it is analyzed
+ *  (`buildRowVector`, which every write path goes through) and never truncated to fit. */
+export const MAX_INPUT_BYTES = UPLOAD_MAX_BYTES;
 
 /** Thrown by `assertWithinInputLimit`. Carries the actual and allowed sizes as fields, not only
  *  in the message, so a caller building a structured refusal does not parse them back out of an
  *  Error. */
-export class InputTooLargeError extends Error {
+class InputTooLargeError extends Error {
   constructor(public readonly actualBytes: number, public readonly allowedBytes: number) {
     super(`input is ${actualBytes} bytes, which is over the ${allowedBytes}-byte limit`);
     this.name = "InputTooLargeError";
   }
 }
 
-/** The size gate. `imported` is the one escape hatch: content already durable from before this
- *  limit existed is indexed as-is, never refused and never truncated. Everything else is measured
- *  in bytes, not characters.
- *
- *  Called from `buildRowVector` below, which is where every analyzed byte enters — a document
- *  write, a journal node, a team reindex and the rederivation pass. It had no caller at all
- *  between the file store's retirement and that call's wiring. */
-export function assertWithinInputLimit(bytes: number, opts: { readonly imported?: boolean } = {}): void {
-  if (opts.imported) return;
+/** The size gate, in bytes rather than characters. Called from `buildRowVector` below, which is
+ *  where every analyzed byte enters. */
+function assertWithinInputLimit(bytes: number): void {
   if (bytes > MAX_INPUT_BYTES) throw new InputTooLargeError(bytes, MAX_INPUT_BYTES);
 }
 
@@ -68,117 +48,6 @@ export function inputLimitRefusal(what: string, err: unknown): string | null {
   const mib = (n: number) => (n / 1024 / 1024).toFixed(1);
   return `ERROR: SIZE_LIMIT — ${what} is ${mib(err.actualBytes)} MiB, over the ${mib(err.allowedBytes)} MiB a ` +
     "stored body may be — nothing was written. Split it into documents that cite each other.";
-}
-
-// Passages
-
-export interface Passage {
-  /** UTF-8 byte offset, inclusive. */
-  readonly start: number;
-  /** UTF-8 byte offset, exclusive. */
-  readonly end: number;
-  readonly text: string;
-}
-
-/** A passage holds at most this many Unicode scalar values — `[...text].length`, which counts
- *  an astral character as one, not the two UTF-16 code units `.length` would count. */
-export const PASSAGE_MAX_SCALARS = 8192;
-
-/** How far a passage backs up into the one before it, in scalar values, so any phrase shorter
- *  than this survives a split it would otherwise be cut by. */
-export const PASSAGE_OVERLAP_SCALARS = 512;
-
-/** How far back from a forced boundary this looks for a whitespace scalar before giving up. A
- *  run with no whitespace in the whole window splits at exactly `PASSAGE_MAX_SCALARS`, never at
- *  a point that depends on the rest of the document. */
-const BOUNDARY_SEARCH_WINDOW = 512;
-
-const isWhitespaceScalar = (s: string): boolean => /\s/.test(s);
-
-/** Bounded, overlapping, byte-offset passages over `body`, covering every byte with no
- *  truncation at any size. Splits into Unicode scalar values (`Array.from`, surrogate-pair
- *  aware), keeps a running UTF-8 byte offset per scalar boundary so `start`/`end` always fall on
- *  a valid UTF-8 boundary, then walks forward: each passage at most `PASSAGE_MAX_SCALARS` long,
- *  preferring to end on whitespace within `BOUNDARY_SEARCH_WINDOW` scalars of the ceiling, and
- *  starting `PASSAGE_OVERLAP_SCALARS` scalars before the previous passage's end. `text` is
- *  exactly what `buf.subarray(start, end).toString('utf8')` reconstructs.
- *
- *  An empty body produces no passages. */
-export function passagesOf(body: string): Passage[] {
-  const scalars = Array.from(body);
-  const n = scalars.length;
-  if (n === 0) return [];
-
-  const byteOffsetAt = new Array<number>(n + 1);
-  byteOffsetAt[0] = 0;
-  for (let i = 0; i < n; i++) byteOffsetAt[i + 1] = byteOffsetAt[i] + Buffer.byteLength(scalars[i], "utf8");
-
-  const passages: Passage[] = [];
-  let startIdx = 0;
-  let previousEndIdx = -1;
-  while (startIdx < n) {
-    let endIdx = Math.min(startIdx + PASSAGE_MAX_SCALARS, n);
-    if (endIdx < n) {
-      const floor = Math.max(startIdx + 1, endIdx - BOUNDARY_SEARCH_WINDOW);
-      let boundary = -1;
-      for (let i = endIdx; i > floor; i--) {
-        if (isWhitespaceScalar(scalars[i - 1])) { boundary = i; break; }
-      }
-      // No whitespace anywhere in the window: an oversized uninterrupted run, forced to split
-      // at the scalar ceiling rather than growing past it looking for one that never comes.
-      if (boundary !== -1) endIdx = boundary;
-    }
-    // Forward progress past whatever the last passage already covered — required so the
-    // overlap this passage starts with can never make it end before the previous one did.
-    if (previousEndIdx !== -1 && endIdx <= previousEndIdx) endIdx = Math.min(n, previousEndIdx + 1);
-
-    passages.push({ start: byteOffsetAt[startIdx], end: byteOffsetAt[endIdx], text: scalars.slice(startIdx, endIdx).join("") });
-    previousEndIdx = endIdx;
-    if (endIdx >= n) break;
-
-    const overlapStart = endIdx - PASSAGE_OVERLAP_SCALARS;
-    startIdx = overlapStart > startIdx ? overlapStart : startIdx + 1;
-  }
-  return passages;
-}
-
-// Identifier analysis
-
-const DELIMITER_RUN = /[._/:-]+/;
-// Boundaries inserted with a NUL marker and split on it at the end, applied in this order:
-//   lower/digit → Upper   ("fooBar" → "foo\0Bar", "v2Config" → "v2\0Config")
-//   an acronym run followed by a Capitalized word ("HTTPServer" → "HTTP\0Server")
-//   letter → digit and digit → letter, either direction ("v2" → "v\02", "2v" → "2\0v")
-const LOWER_OR_DIGIT_TO_UPPER = /([a-z0-9])([A-Z])/g;
-const ACRONYM_TO_WORD = /([A-Z]+)([A-Z][a-z])/g;
-const LETTER_TO_DIGIT = /([A-Za-z])(\d)/g;
-const DIGIT_TO_LETTER = /(\d)([A-Za-z])/g;
-
-/** camelCase, acronym and letter-digit boundaries within one delimiter-free part, as lowercase
- *  derived tokens. `"plugin"` stays `["plugin"]`; `"v2"` becomes `["v", "2"]`; `"HTTPServer2"`
- *  becomes `["http", "server", "2"]`. */
-function splitLatinBoundaries(part: string): string[] {
-  const marked = part
-    .replace(LOWER_OR_DIGIT_TO_UPPER, "$1\u0000$2")
-    .replace(ACRONYM_TO_WORD, "$1\u0000$2")
-    .replace(LETTER_TO_DIGIT, "$1\u0000$2")
-    .replace(DIGIT_TO_LETTER, "$1\u0000$2");
-  return marked.split("\u0000").filter((s) => s.length > 0);
-}
-
-/** The identifier's own unsplit spelling — verbatim, exact case and punctuation — plus every
- *  lowercased part `.`/`_`/`/`/`-`/`:`, camelCase, acronym and letter-digit splitting derives
- *  from it. Flat and deduplicated; order carries no meaning.
- *
- *  Called on text whose query operators a lexer has already stripped; this function has none. */
-export function identifierTokens(raw: string): string[] {
-  const tokens = new Set<string>();
-  tokens.add(raw);
-  for (const part of raw.split(DELIMITER_RUN)) {
-    if (!part) continue;
-    for (const sub of splitLatinBoundaries(part)) tokens.add(sub.toLowerCase());
-  }
-  return [...tokens];
 }
 
 // Zz-lexical-v2: Han unigram and adjacent-bigram analysis
@@ -335,31 +204,25 @@ function fieldTerms(text: string, weight: RowVectorWeight): RowVectorTerm[] {
 }
 
 /** Turns title/tags/body into the flat, weighted term list `body_tsv` is built from: title `A`,
- *  tags `B`, body `C` — and refuses text past `MAX_INPUT_BYTES`.
+ *  tags `B`, body `C` — and refuses a body past `MAX_INPUT_BYTES`.
  *
  *  COUPLED: both callers import this export rather than composing a vector of their own — the
  *  write path (`index.ts`, by way of `indexNode`) and the rederivation pass
  *  (`rederivation.ts`'s `rebuildRowVector`), which must agree or a rebuilt row stops matching the
  *  one the writer would store.
  *
- *  DELIBERATE: the kernel gate is enforced HERE, and this is the only place that needs it.
- *  `assertWithinInputLimit` was called from the tenant-info harness alone before the file store
- *  was retired, so the bound stayed on the books with nothing enforcing it: every analyzed byte in
- *  the platform goes through this function — a document write (`document-save.ts`'s `saveDocument`), a
- *  journal node (`indexNode`), a team reindex and the rederivation pass — so one call is the whole
- *  write path. It is the ONLY bound on a stored body: both writers used to cut the body at
- *  200,000 characters without saying so — a search-index cap from the file store that became the
- *  stored bytes when documents moved into rows — so the largest body production holds, 201 KB, is
- *  that cut and not a measurement. A body past this limit is refused, never shortened. */
+ *  DELIBERATE: the limit is enforced here and only here. Every analyzed byte in the platform goes
+ *  through this function — a document write (`document-save.ts`'s `saveDocument`), a journal node
+ *  (`indexNode`), a team reindex and the rederivation pass — so one call is the whole write path,
+ *  and it is the only bound on a stored body. It bounds the body alone, which is what an upload
+ *  becomes: a title and tags beside a file that fits do not push it over. */
 export function buildRowVector(input: {
   readonly title: string;
   readonly tags: readonly string[];
   readonly body: string;
 }): RowVector {
   const tags = input.tags.join(" ");
-  assertWithinInputLimit(
-    Buffer.byteLength(input.title, "utf8") + Buffer.byteLength(tags, "utf8") +
-    Buffer.byteLength(input.body, "utf8"));
+  assertWithinInputLimit(Buffer.byteLength(input.body, "utf8"));
   return {
     terms: [
       ...fieldTerms(input.title, "A"),
@@ -443,29 +306,3 @@ export function bodyTsvParams(vector: RowVector): string[] {
     latinText(vector.raw.C), termsByWeight(vector, "C", "han"),
   ];
 }
-
-// Derivation fingerprint
-
-/** Every version that decided the shape of one derived row, plus the hash of the source bytes
- *  those derivations ran over. `content_hash` changing means the source changed; any other field
- *  changing means a derivation changed while the source did not. Both are reasons to rebuild. */
-export interface DerivationVersions {
-  readonly content_hash: string;
-  readonly record_format: number;
-  readonly parser: number;
-  readonly analyzer: number;
-  readonly passage: number;
-  readonly projection: number;
-}
-
-/** A stable hash over exactly the fields above, in one fixed field order — an explicit object
- *  literal rather than a generic key-sort, so there is no field this can hash that the type does
- *  not name. Consumed by a rebuild/projection cache to decide staleness independently of whether
- *  the source bytes changed. */
-export function derivationFingerprint(v: DerivationVersions): string {
-  return createHash("sha256").update(JSON.stringify({
-    content_hash: v.content_hash, record_format: v.record_format, parser: v.parser,
-    analyzer: v.analyzer, passage: v.passage, projection: v.projection,
-  })).digest("hex");
-}
-

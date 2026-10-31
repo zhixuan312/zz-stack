@@ -18,7 +18,10 @@
  * the doctor's own bug. Anything else thrown is `unknown` too, tagged as the environment. Only
  * a probe that returns a description of a disagreement is `wrong`.
  */
-import { log, redact } from "../deployment.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { HOST, envToken, log, publicUrl, redact, root } from "../deployment.ts";
 import { errMessage } from "../gate/read.ts";
 
 /** A probe either agrees (returns `null`) or names how the two sides disagree. `ctx` is
@@ -74,14 +77,34 @@ export function layer(name: string, question: string, owns: string[] = []): void
  *
  *  `predeploy` marks a probe whose verdict the deploy itself cannot change: read-only, and asking
  *  only this checkout and the data already live. Its post-deploy answer is its pre-deploy answer,
- *  so a release asks it BEFORE deploying and refuses there, rather than deploying and rolling back
- *  over it (0.76.0). A probe that reads what the new release writes or runs — migrations applied,
+ *  so a release asks it before deploying and refuses there, rather than deploying and rolling back
+ *  over it. A probe that reads what the new release writes or runs — migrations applied,
  *  the skill registry, rows the running code emits — is never one. */
 export function probe(name: string, fn: ProbeFn, { predeploy = false }: { predeploy?: boolean } = {}): void {
   if (!current) throw new Error(`probe("${name}") was registered before any layer() — the entry file's import order decides which layer a probe lands in`);
   current.probes.push({ name, fn, predeploy });
 }
 
+/* A probe's preconditions, shared by every layer so one missing precondition reads one way in
+ * one report. Each throws, which the runner turns into `unknown`: not knowing where to look is
+ * not evidence that what you were looking for is broken. */
+
+/** The version this checkout declares. */
+export const checkoutVersion = (): string => JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+
+/** The deployment's public address. */
+export function liveUrl(): string {
+  const u = publicUrl({ quiet: true });
+  if (!u) throw new Error(`ZZ_PUBLIC_URL is not set and ${HOST} could not be asked for it — there is no address to probe`);
+  return u;
+}
+
+/** The token the authenticated doors are asked with. */
+export function liveToken(): string {
+  const t = envToken();
+  if (!t) throw new Error("no ZZ_TOKEN in the environment or this repository's .env — the authenticated doors cannot be asked");
+  return t;
+}
 
 /* DELIBERATE: ReferenceError alone. A SyntaxError or a TypeError raised inside a probe is often
  * the platform's doing — a Caddy 502 hands back an HTML page and JSON.parse throws SyntaxError
@@ -124,6 +147,13 @@ export function diagnose({ only = null, ctx = {}, predeploy = false }:
   const unknownNames = (only || []).filter((n) => !layers.some((l) => l.name === n));
   if (unknownNames.length) {
     throw new Error(`no such layer: ${unknownNames.join(", ")}. Layers are: ${layers.map((l) => l.name).join(", ")}`);
+  }
+  // No layer chosen is a question nobody asked, not one every layer answered: `--layer=,` or a
+  // pre-deploy subset that lost its last probe. Same empty-set rule as a layer with no probes.
+  if (!chosen.length) {
+    findings.push({ layer: "(none)", probe: "(the selection itself)", verdict: "unknown", mine: true,
+                    detail: `no layer was selected${predeploy ? " — no probe is marked pre-deploy" : ""}, so nothing was asked` });
+    return findings;
   }
   let firstWrong: string | null = null;
   for (const l of chosen) {

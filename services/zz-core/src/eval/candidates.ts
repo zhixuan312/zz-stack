@@ -35,7 +35,7 @@ import {
   complexityDelta, componentCounts, hypothesisDigest, parseUnifiedDiff, patchDigest, touchedComponents,
   type ComplexityInput, type PatchFile, type PatchStats, type TouchedComponent,
 } from "./complexity.js";
-import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { improvementRunOf } from "./initiative-run.js";
 import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { loadProposerBundle, REJECTED_CANDIDATE_STATUSES, type ProposerBundle } from "./proposer-bundle.js";
@@ -48,7 +48,6 @@ import { Refusal } from "../refusal.js";
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing can be recorded");
 const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[0] : v) ?? "";
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // -------------------------------------------------------------------------------------------
 // The wire vocabulary
@@ -140,6 +139,7 @@ export function registerCandidateTools(server: McpServer): void {
       // and the observation snapshot's `plugin_version_id` IS the release the run was bound to.
       // This value is the `${BASE_SUBJECT_VERSION}` every later `candidate_record` names, so it
       // has to be that release rather than a second reading of the column the migration retired.
+      if (!UUID_RE.test(eval_run_id)) return text(`ERROR: no eval_run ${eval_run_id}`);
       const run = (await p.query<{ id: string; subject_version_id: string }>(`
         select er.id::text as id, os.plugin_version_id::text as subject_version_id
           from zz.eval_run er
@@ -219,7 +219,8 @@ export function registerCandidateTools(server: McpServer): void {
       // all see.
       const targeted = [...new Set(finding_ids)];
 
-      const findings = await loadFindingsForCheck(p, targeted);
+      // A malformed id is one nothing minted: it is reported missing below, never cast.
+      const findings = await loadFindingsForCheck(p, targeted.filter((id) => UUID_RE.test(id)));
       const byId = new Map(findings.map((f) => [f.id, f]));
       const missing = targeted.filter((id) => !byId.has(id));
       if (missing.length) {
@@ -337,6 +338,7 @@ export function registerCandidateTools(server: McpServer): void {
       const baseVersionId = args[BASE_SUBJECT_VERSION];
       const patch = args[PATCHSET];
 
+      if (!UUID_RE.test(improvement_run_id)) return text(`ERROR: no improvement_run ${improvement_run_id}`);
       const run = (await p.query<{ id: string; eval_run_id: string }>(
         "select id::text as id, eval_run_id::text as eval_run_id from zz.improvement_run where id = $1::uuid",
         [improvement_run_id])).rows[0];
@@ -435,7 +437,7 @@ export function registerCandidateTools(server: McpServer): void {
       // the row it named, and an address that names nobody is a proposer the ledger cannot carry
       // — refused by name here rather than written as an id nothing joined.
       const proposer = (await p.query<{ id: string }>(
-        "select id::text as id from zz.principal where email = $1", [caller.email])).rows[0];
+        "select id::text as id from zz.principal where lower(email) = lower($1)", [caller.email])).rows[0];
       if (!proposer) {
         return text(`ERROR: ${caller.email || "this caller"} names no principal, so a candidate it ` +
           "proposed cannot record who proposed it — the evaluation door acts for a person this " +

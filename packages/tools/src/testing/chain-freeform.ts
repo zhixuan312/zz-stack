@@ -15,6 +15,8 @@
  */
 import { parseEnvelope } from "@zz/contracts";
 
+import { jsonOr } from "./chain-report.js";
+
 /** The pieces chain-check owns, handed in rather than re-made, so this walks the same door
  *  into the same result set. */
 interface FreeformDeps {
@@ -40,10 +42,11 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
     const freeSlug = `${SLUG}-freeform`;
     const free = await call("initiative_open", { slug: freeSlug });
     check("opening without a flow is accepted", free, false);
-    const freeName = (JSON.parse(free) as { initiative?: string; next_move?: unknown }).initiative;
-    record(JSON.parse(free).next_move === null,
+    const opened = jsonOr<{ initiative: string; next_move: unknown }>("initiative_open", free);
+    const freeName = opened.initiative;
+    record(opened.next_move === null,
       "a freeform initiative is given no next move",
-      `freeform next_move was ${JSON.stringify(JSON.parse(free).next_move)}, expected null`);
+      `freeform next_move was ${JSON.stringify(opened.next_move)}, expected null`);
     check("a write into an initiative nobody opened is refused",
       await writeDoc(`${SLUG}-never-opened/spec.md`, "x"), true, /initiative_open/);
     if (freeName) {
@@ -83,7 +86,7 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
       // stamping the caller as the acceptor would put `accepted_by` on a record whose outcome
       // says the opposite.
       const stopped = await call("initiative_open", { slug: `${SLUG}-stopped` });
-      const stoppedName = (JSON.parse(stopped) as { initiative?: string }).initiative;
+      const stoppedName = jsonOr<{ initiative: string }>("initiative_open", stopped).initiative;
       if (stoppedName) {
         check("an initiative that stopped short takes a document",
           await writeDoc(`${stoppedName}/notes.md`, "stopped here"), false);
@@ -122,7 +125,7 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
   const stopSlug = `${SLUG}-stopped-gov`;
   const stopOpen = await call("initiative_open", { slug: stopSlug, flow: FLOW });
   check("a governed initiative opens for the abandon walk", stopOpen, false);
-  const stopName = (JSON.parse(stopOpen) as { initiative?: string }).initiative;
+  const stopName = jsonOr<{ initiative: string }>("initiative_open", stopOpen).initiative;
   if (stopName) {
     const ledgerBefore = await call("initiative_status", { initiative: stopName });
     check("a governed initiative that stopped short takes its first document",
@@ -132,8 +135,8 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
     // Read off the initiative's own row: `<team>/_ledger.md` went with the store, and the
     // abandoned close is the outcome the row carries rather than a table row beside it.
     const ledgerAfter = await call("initiative_status", { initiative: stopName });
-    const stopped = JSON.parse(ledgerAfter) as { outcome?: string | null };
-    const stoppedBefore = JSON.parse(ledgerBefore) as { outcome?: string | null };
+    const stopped = jsonOr<{ outcome: string | null }>("initiative_status", ledgerAfter);
+    const stoppedBefore = jsonOr<{ outcome: string | null }>("initiative_status", ledgerBefore);
     record(Boolean(stopped.outcome) && !stoppedBefore.outcome,
       "an abandoned close records its outcome even off the closing document",
       `outcome was ${JSON.stringify(stopped.outcome)}`);

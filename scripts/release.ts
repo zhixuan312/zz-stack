@@ -70,6 +70,7 @@ import { recordAfterTag } from "./release-record.ts";
 import { regSql, skillVersionsMoved, writeRegistries } from "./release/registries.ts";
 import { refusalLines, rollbackGuard } from "./release/rollback-guard.ts";
 import { rollback } from "./release/rollback.ts";
+import { recordRollbackTarget } from "./release/rollback-target.ts";
 import { tagVerifiedLive } from "./release/tag-live.ts";
 import { verifyLive, verifyPredeploy } from "./release/verify.ts";
 
@@ -360,7 +361,7 @@ ssh(
   `cd ${REMOTE}/deploy && ` +
   // Record the outgoing version before switching, so --rollback works even if this
   // process dies. A rollback target held only in this script's memory is no target.
-  `grep -q '^ZZ_PREVIOUS_VERSION=' .env && sed -i 's/^ZZ_PREVIOUS_VERSION=.*/ZZ_PREVIOUS_VERSION=${previous}/' .env || echo 'ZZ_PREVIOUS_VERSION=${previous}' >> .env; ` +
+  `${recordRollbackTarget("ZZ_PREVIOUS_VERSION", previous, version)}; ` +
   `grep -q '^ZZ_VERSION=' .env && sed -i 's/^ZZ_VERSION=.*/ZZ_VERSION=${version}/' .env || echo 'ZZ_VERSION=${version}' >> .env; ` +
   // Nothing to restart behind this: the doors are stateless (packages/mcp-http) and there is
   // no front end on this host, so a client reconnects by making its next request.
@@ -376,7 +377,7 @@ if (dashVersion) {
   // DELIBERATE: this runs after the platform is up. The console is a client of the gateway, so
   // bringing it up first would point a new console at an old API for the length of a pull.
   const prevImage = consoleImage();
-  const prevDash = prevImage.includes(":") ? prevImage.split(":").pop() : "";
+  const prevDash = prevImage.includes(":") ? prevImage.split(":").pop() ?? "" : "";
   log(`  console host is currently on ${prevImage || "(nothing running)"}`);
   ssh(`mkdir -p ${DASH_REMOTE}`);
   run("scp", ["-o", "ConnectTimeout=30", join(DASH_SRC, "docker-compose.yml"),
@@ -388,7 +389,7 @@ if (dashVersion) {
       `touch .env && ` +
       // Recorded before the switch: a rollback target held only in this process's memory is
       // no target once this process dies.
-      `{ grep -q '^ZZ_DASHBOARD_PREVIOUS_VERSION=' .env && sed -i 's/^ZZ_DASHBOARD_PREVIOUS_VERSION=.*/ZZ_DASHBOARD_PREVIOUS_VERSION=${prevDash}/' .env || echo 'ZZ_DASHBOARD_PREVIOUS_VERSION=${prevDash}' >> .env; } && ` +
+      `${recordRollbackTarget("ZZ_DASHBOARD_PREVIOUS_VERSION", prevDash, dashVersion)} && ` +
       `{ grep -q '^ZZ_DASHBOARD_VERSION=' .env && sed -i 's/^ZZ_DASHBOARD_VERSION=.*/ZZ_DASHBOARD_VERSION=${dashVersion}/' .env || echo 'ZZ_DASHBOARD_VERSION=${dashVersion}' >> .env; } && ` +
       `{ docker compose up -d --remove-orphans >/tmp/zz-dash-up.log 2>&1 || ` +
       `{ echo "CONSOLE UP FAILED"; tail -8 /tmp/zz-dash-up.log; exit 1; }; }; tail -3 /tmp/zz-dash-up.log`);
@@ -558,7 +559,8 @@ if (problems.length) {
     // A same-version re-run moves nothing, so it must not be reported as rolled back.
     rolledBack = false;
     log(previous
-      ? `  \x1b[33m${HOST} was already on ${version} before this release — there is no earlier version to roll back to.\x1b[0m`
+      ? `  \x1b[33m${HOST} was already on ${version} before this release, so this run replaced nothing; ` +
+        "`node scripts/release.ts --rollback` returns to the target the host still records.\x1b[0m"
       : `  \x1b[33mNo previous version recorded — cannot roll back automatically.\x1b[0m`);
   }
   // `rolledBack`, not `previous`: a recorded previous version is a different claim from the

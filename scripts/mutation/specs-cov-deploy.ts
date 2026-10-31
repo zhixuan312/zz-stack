@@ -158,8 +158,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-release.ts",
     target: "the doctor changes nothing",
     subject: "scripts/doctor/layers/host.ts",
-    find: "docker compose ps --format '{{.Service}} {{.State}}' 2>/dev/null || true",
-    replace: "docker compose up -d >/dev/null 2>&1; docker compose ps --format '{{.Service}} {{.State}}' 2>/dev/null || true",
+    find: "docker compose ps -a --format '{{.Service}} {{.State}}'",
+    replace: "docker compose up -d >/dev/null 2>&1; docker compose ps -a --format '{{.Service}} {{.State}}'",
     planted: "the doctor starts the stack before asking whether it is running, so the tool " +
       "somebody reaches for during an outage changes the outage it was called to describe",
   },

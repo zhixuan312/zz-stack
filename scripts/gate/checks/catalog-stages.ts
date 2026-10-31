@@ -53,7 +53,7 @@ check("a document's requirement is met by the only thing its target can offer", 
       if (target && target.gate !== true) exposed.push(`${f.flow}: ${d.name} requires ${d.requires} (ungated)`);
     }
   }
-  if (exposed.length && !fn) {
+  if (exposed.length && bad.length) {
     bad.push(`and these declare the shape that breaks: ${exposed.join("; ")}`);
   }
   return bad.length ? bad.join("; ") : null;
@@ -176,17 +176,3 @@ check("no evaluation tool is wired to one flow", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-/* REMOVED: "a team overlay adds and cannot replace".
- *
- * It asserted the shape of a team's own skill text — an overlay appended after the shelf's, and
- * a skill root under the team's store — and both subjects are gone with the store. `teamOverlay`
- * read `join(await userRoot(), "overlays", name, "SKILL.md")`, and `userRoot()` was
- * `join(ARTIFACTS_DIR, "teams", sanitize(team))`: the overlay WAS the store. Re-pointing it would
- * mean naming where an overlay lives now, and the answer is nowhere — measured against 0.86.0's
- * production artifacts, no team root carries an `overlays/` directory or a `<team>/skills/`, so
- * this is a path nothing has ever taken rather than a capability somebody depends on. A check
- * whose whole subject is gone loses its assertion; it is not re-pointed at a spelling.
- *
- * The prose that taught it is gone from skills/zz-platform/SKILL.md in the same pass, which is
- * the half that matters more: a stale check fails and gets noticed, and stale prose teaches the
- * next reader to build something that cannot work. */

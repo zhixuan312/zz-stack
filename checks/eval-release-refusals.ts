@@ -75,7 +75,7 @@ function applyClient(sc: Scenario) {
     [/from zz\.membership/, (v) => (sc.teams ?? { [OWNER]: ["xuan"] })[String(v[0])]?.map((slug) => ({ slug })) ?? []],
     // The applier, resolved before the CAS: `release_attempt.applied_by` is a principal id, so
     // planApply looks the caller's address up rather than binding the address itself.
-    [/select id::text as id from zz\.principal where email/, () => [{ id: "c0000000-0000-4000-8000-0000000000aa" }]],
+    [/select id::text as id from zz\.principal where lower\(email\)/, () => [{ id: "c0000000-0000-4000-8000-0000000000aa" }]],
     [/pg_advisory_xact_lock/, () => []],
     [/where plugin_id = \$1::uuid and status = 'applying'/, () => sc.applying ?? []],
     [/status = 'prepared' and \(\$2::uuid is null/, (v) => prepared.filter((a) => v[1] === null || a.id === v[1])],
@@ -112,14 +112,14 @@ function applyClient(sc: Scenario) {
   return { client, updates };
 }
 
-const approvedDoc = (cites: string, approver = OWNER) => async () => ({
+const approvedDoc = (cites: string, approver = OWNER) => ({
   status: "approved", approved_by: approver,
   body: `Patch digest: \`${DIGEST}\`\n\nrelease_attempt_id: \`${cites}\` — initiative \`i\`.\n`,
 });
-const noDoc = async () => null;
-const run = (sc: Scenario, principal = OWNER, readDoc: () => Promise<unknown> = approvedDoc(A_OLD)) => {
+const noDoc = null;
+const run = (sc: Scenario, principal = OWNER, doc: unknown = approvedDoc(A_OLD)) => {
   const c = applyClient(sc);
-  return { ...c, done: planApply(c.client, CAND, DIGEST, "i", principal, readDoc) };
+  return { ...c, done: planApply(c.client, CAND, DIGEST, principal, doc) };
 };
 
 await assert.rejects(run({ candidate: [] }).done, /no candidate/);
@@ -182,7 +182,7 @@ assert.equal((await run({ candidate: [{ id: CAND, status: "released", base_plugi
   "not_eligible", "a candidate no longer valid (already released) is not releasable");
 {
   const c = applyClient({});
-  const out = await planApply(c.client, CAND, "e".repeat(64), "i", OWNER, approvedDoc(A_OLD));
+  const out = await planApply(c.client, CAND, "e".repeat(64), OWNER, approvedDoc(A_OLD));
   assert.equal(out.result.reason, "digest_mismatch");
 }
 await assert.rejects(run({ casError: { code: "23505" } }).done, /release_in_progress — another attempt of demo is already applying/);

@@ -36,8 +36,6 @@ type SkillKind = (typeof SKILL_KINDS)[number];
  *  flow's method, and one that names none is standalone capability. */
 const kindOf = (flow: string | null): SkillKind => (flow ? "flow_step" : "plugin_skill");
 
-const lit = (s: string): string => `'${String(s ?? "").replace(/'/g, "''")}'`;
-
 interface Found { name: string; kind: SkillKind; flow: string | null;
                   version: string; hash: string; bodyHash: string }
 
@@ -133,7 +131,8 @@ function changedWithoutBump(psql: string, found: readonly Found[]): Found[] {
   const held = psqlRows<{ name: string; version: string; content_hash: string }>(psql, `
     select s.name, sv.version, sv.content_hash
       from zz.skill_version sv join zz.skill s on s.id = sv.skill_id
-     where s.name in (${found.map((f) => lit(f.name)).join(", ")})`);
+     where s.name in (select jsonb_array_elements_text(:'names'::jsonb))`,
+    { names: JSON.stringify(found.map((f) => f.name)) });
   const hash = new Map(held.map((h) => [`${h.name}@${h.version}`, h.content_hash]));
   return found.filter((f) => {
     const was = hash.get(`${f.name}@${f.version}`);
@@ -172,21 +171,37 @@ function main(argv: string[]): number {
     console.error(`  WARNING: ${m.name} ${m.version} changed without a version bump; its registered hash is kept`);
   }
 
-  for (const s of found) {
-    if (args.flags.has("dry-run")) continue;
-    psqlText(psql, `
-      insert into zz.skill (name, flow)
-      values (${lit(s.name)}, ${s.flow ? lit(s.flow) : "null"})
-      on conflict (name) do update set flow = excluded.flow, retired = false`, STOP_ON_ERROR);
-    // `released_at` named, not left to its default. The column decides which version wrote a
-    // document older than the run link — the console reads it as a window — so it records the
-    // first time this row is written and never again. A registered version is never rewritten:
-    // re-registering it is not a re-release, and its hashes are what it was released as.
-    psqlText(psql, `
-      insert into zz.skill_version (skill_id, version, content_hash, body_hash, released_at)
-      select id, ${lit(s.version)}, ${lit(s.hash)}, ${lit(s.bodyHash)}, now()
-        from zz.skill where name = ${lit(s.name)}
-      on conflict (skill_id, version) do nothing`, STOP_ON_ERROR);
+  // Every skill, its version, and the retirement below, as one transaction in one psql session:
+  // a registration killed half-way leaves the registry as it was. The catalog travels as one JSON
+  // variable, so no name or hash is ever spelled into the statement.
+  //
+  // `released_at` named, not left to its default. The column decides which version wrote a
+  // document older than the run link — the console reads it as a window — so it records the first
+  // time this row is written and never again. A registered version is never rewritten:
+  // re-registering it is not a re-release, and its hashes are what it was released as.
+  //
+  // What the catalog does not carry is retired, not deleted, and recorded so no other reader has to
+  // diff the catalog to know.
+  const catalog = JSON.stringify(found.map((f) => (
+    { name: f.name, flow: f.flow, version: f.version, hash: f.hash, body_hash: f.bodyHash })));
+  if (!args.flags.has("dry-run")) {
+    // One literal per statement, so every reader of this repository's SQL sees each one alone.
+    psqlText(psql, [
+      "begin;",
+      `insert into zz.skill (name, flow)
+       select f.name, f.flow
+         from jsonb_to_recordset(:'catalog'::jsonb) as f(name text, flow text)
+       on conflict (name) do update set flow = excluded.flow, retired = false;`,
+      `insert into zz.skill_version (skill_id, version, content_hash, body_hash, released_at)
+       select s.id, f.version, f.hash, f.body_hash, now()
+         from jsonb_to_recordset(:'catalog'::jsonb) as f(name text, version text, hash text, body_hash text)
+         join zz.skill s on s.name = f.name
+       on conflict (skill_id, version) do nothing;`,
+      `update zz.skill set retired = true
+        where name not in (select f.name from jsonb_to_recordset(:'catalog'::jsonb) as f(name text))
+          and not retired;`,
+      "commit;",
+    ].join("\n"), { ...STOP_ON_ERROR, catalog });
   }
 
   const by = (k: SkillKind): number => found.filter((f) => f.kind === k).length;
@@ -204,12 +219,6 @@ function main(argv: string[]): number {
   // zz.skill. It has to: its versions are referenced by zz.skill_run and zz.plugin_version_skill, and
   // deleting the row would lose which version those runs and plugin releases were. They are
   // reported so nobody mistakes one for a failed registration, and never offered for removal.
-  const names = found.map((f) => lit(f.name)).join(", ");
-  // Recorded, so no other reader has to diff the catalog to know. One writer sets the fact;
-  // everything else reads it.
-  if (!args.flags.has("dry-run")) {
-    psqlText(psql, `update zz.skill set retired = true where name not in (${names}) and not retired`, STOP_ON_ERROR);
-  }
   // Ordered by name: `ordinal` was the order this list used and the migration dropped it, so the
   // one ordering left is the one the name carries.
   const stale = psqlRows<{ name: string; flow: string | null; runs: number }>(
@@ -219,8 +228,9 @@ function main(argv: string[]): number {
                join zz.skill_version sv on sv.id = r.skill_version_id
               where sv.skill_id = s.id) as runs
        from zz.skill s
-      where s.name not in (${names})
+      where s.name not in (select jsonb_array_elements_text(:'names'::jsonb))
       order by s.name`,
+    { names: JSON.stringify(found.map((f) => f.name)) },
   );
   if (stale.length) {
     console.log(`  ${stale.length} retired — in the registry, no longer in the catalog:\n`);

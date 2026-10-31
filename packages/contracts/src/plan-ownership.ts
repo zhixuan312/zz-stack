@@ -25,21 +25,20 @@ export interface OwnedTask {
  *  forever, and overflowing it costs a recompile and nothing else. */
 const PATTERN_CACHE = 5_000;
 
-/** Everything `overlaps` needs of one owned path, worked out once: whether it carries a wildcard, its
+/** Everything `overlapsOwned` needs of one owned path, worked out once: whether it carries a wildcard, its
  *  path without the trailing slashes, that path and its own separator (what a literal path owns
  *  beneath it), its compiled pattern, and the sample a pattern is tested against. */
 type Owned = { id: number; glob: boolean; path: string; under: string; pattern: RegExp; sample: string };
 
 /** Descriptors by the path they were built from, oldest first once the bound is reached.
  *
- *  DELIBERATE: memoized. `overlaps` is asked of every PAIR of a plan's owned paths, so a plan of N
- *  tasks does N² × paths² comparisons — the 183-task plan on this platform took 1.7 s of one
- *  `initiative_status` in `ownsPattern` alone, and every one of those patterns had already been
- *  compiled. A `RegExp` carries no state here (`test` with no `g` flag keeps no `lastIndex`), so
+ *  DELIBERATE: memoized. `overlapsOwned` is asked of every PAIR of a plan's owned paths, so a plan
+ *  of N tasks does N² × paths² comparisons, and without this each one would compile its patterns
+ *  again. A `RegExp` carries no state here (`test` with no `g` flag keeps no `lastIndex`), so
  *  sharing one is safe, and the descriptors are read and never written. */
 const owned = new Map<string, Owned>();
 
-/** The number a descriptor is known by, in the pair cache above. Never reused, so a remembered pair
+/** The number a descriptor is known by, in the pair cache below. Never reused, so a remembered pair
  *  cannot be read as another pair's answer. */
 let nextOwned = 1;
 
@@ -61,8 +60,8 @@ function ownedOf(p: string): Owned {
   return descriptor;
 }
 
-/** How many pair answers are kept. One big plan of this deployment asks about ~150,000 pairs; the
- *  bound is what a long-lived process may hold, and overflowing it costs a re-test of the pair. */
+/** How many pair answers are kept: the bound is what a long-lived process may hold, and
+ *  overflowing it costs a re-test of the pair. */
 const MET_CACHE = 200_000;
 
 /** Pair answers by both descriptors' own numbers, `low * 10^7 + high`, oldest first once the bound is
@@ -82,8 +81,7 @@ const met = new Map<number, boolean>();
  * because a plan of N tasks calls this N² × paths² times.
  *
  * DELIBERATE: the answer is memoized by the pair. Almost every `**Owns:**` line a plan writes is a
- * glob — 682 of 684 across this deployment — so the pair is two regular expressions and not two
- * strings, and the same handful of globs is compared over and over: a plan's tasks reuse a directory
+ * glob, so the pair is two regular expressions and not two strings, and the same handful of globs is compared over and over: a plan's tasks reuse a directory
  * (`services/gateway/src/console/**`) far more often than they name a new path. The pairing of two
  * paths cannot change while both are the same strings, which is what the descriptor cache already
  * guarantees, so a remembered answer is the answer.

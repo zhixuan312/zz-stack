@@ -140,10 +140,9 @@ check("an act and the act that undoes it are recorded the same way", () => {
 });
 
 check("nothing can clear the field that says an initiative already closed", () => {
-  // `outcome` is the whole record that an initiative closed. initiative_close() reads it off the
-  // document to refuse a second close; ledgerOnClose reads it off the file on disk to refuse a
-  // second row. Both guards are one field deep, so anything that removes the field reopens the
-  // initiative and lets the close run again, and _ledger.md records the same work twice.
+  // `outcome` on the closing document is the record that an initiative closed, and
+  // initiative_close() reads it off the document to refuse a second close. The guard is one field
+  // deep, so anything that removes the field lets the close run again over the same work.
   //
   // document_edit takes the approval off a changed approved document so the gate goes back to a
   // person; `outcome` must not go with it. closeCheck fires only on content that has an outcome, so no guard
@@ -155,8 +154,8 @@ check("nothing can clear the field that says an initiative already closed", () =
       if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;               // prose about it is the record
       if (!/delete\s+\w+\.outcome\b|\.outcome\s*=\s*(""|''|null|undefined)|putEnvelopeField\([^,]+,\s*"outcome",\s*""/.test(ln)) return;
       bad.push(`${rel}:${i + 1} clears \`outcome\` — \`${ln.trim().slice(0, 70)}\`. That is the ` +
-               "field initiative_close() and ledgerOnClose both read to know an initiative already " +
-               "closed, so removing it lets the same work be closed and counted twice");
+               "field initiative_close() reads to know an initiative already closed, so removing " +
+               "it lets the same work be closed twice");
     });
   }
   // And the change path itself has to carry the field, or the rule above is satisfied by a tool
@@ -166,8 +165,8 @@ check("nothing can clear the field that says an initiative already closed", () =
   // Carried forward, not refused. Refusing a change to a closed document defends the ledger by
   // making a closed report uncorrectable. The invariant is narrower: whatever a correction does to
   // the prose, the fields that say the initiative closed and who closed it come out the other side
-  // unchanged, while the approval comes off — the correction is a draft. initiative_close() still
-  // refuses a second close and ledgerOnClose still returns before appending.
+  // unchanged, while the approval comes off — the correction is a draft, and initiative_close()
+  // still refuses a second close.
   const core = zzCoreSource();
   const plan = withoutComments(functionBody(core, "planEdit") ?? "");
   if (!/const env = envelopeOf\(loaded\.text, a, approved, gated\)/.test(plan)
@@ -205,7 +204,7 @@ check("nothing can clear the field that says an initiative already closed", () =
       if (env.outcome !== "accepted" || env.closed_by !== "dana@example.com") {
         bad.push(`a correction of ${what} does not carry \`outcome\` and \`closed_by\` forward ` +
                  `(${JSON.stringify({ outcome: env.outcome, closed_by: env.closed_by })}) — they are the ` +
-                 "fields initiative_close() and ledgerOnClose read to know an initiative already closed");
+                 "fields initiative_close() reads to know an initiative already closed");
       }
       if (approved && (env.approved_by || env.approved_at || env.status === "approved")) {
         bad.push(`a correction of ${what} keeps its approval — a change is a draft until a person approves it again`);

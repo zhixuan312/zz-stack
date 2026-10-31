@@ -115,7 +115,8 @@ const richRejected: RawRejectedCandidate[] = [
 const richRaw: ProposerBundleRaw = { findings: richFindings, assessments: richAssessments, rejected: richRejected };
 const rich = buildProposerBundle(richRaw);
 assert.equal(rich.non_trivial, true);
-assert.equal(rich.failing_traces.length, 2, "both assessments score below the 0.5 threshold");
+assert.deepEqual(rich.failing_traces.map((t: { measure_key: string }) => t.measure_key), ["m1"],
+  "only the assessment scored below 0.5; the excluded one was never measured and is reported under errors");
 assert.equal(rich.evaluator_critiques.length, 1);
 assert.equal(rich.errors.length, 1);
 assert.equal(rich.refusal_text.length, 1, "the refusal-shaped defect");

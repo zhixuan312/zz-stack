@@ -50,7 +50,7 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { writeFindingsDoc } from "./findings-doc.js";
-import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { ledgerStamp, UUID_RE, withIdempotency, type IdempotencyOutcome, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
 import { measureByKey } from "./qualify.js";
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
@@ -126,6 +126,7 @@ export async function decideFinding(
   note: string,
   by: string,
 ): Promise<DecisionOutcome> {
+  if (!UUID_RE.test(findingId)) return { refused: decisionRefusal(findingId, undefined) };
   const actor = (await runner.query<{ id: string }>(
     "select id::text as id from zz.principal where lower(email) = lower($1)", [by])).rows[0];
   if (!actor) {
@@ -148,6 +149,39 @@ export async function decideFinding(
       left join zz.principal p on p.id = f.decided_by
      where f.id = $1::uuid`, [findingId])).rows[0];
   return { refused: decisionRefusal(findingId, was) };
+}
+
+/** What a replayed `finding_decide` answers: the rows read back, a finding counted as done only
+ *  when the call the ledger row records decided it — the same principal, in the same transaction —
+ *  and every other one refused as a fresh call would refuse it now. A finding somebody else
+ *  decided, before or since, is not this call's. */
+async function decisionsForReplay(
+  p: pg.Pool, findingIds: readonly string[], call: LedgerCall,
+): Promise<{ done: DecidedFinding[]; refused: string[] }> {
+  const stamp = await ledgerStamp(p, call);
+  const done: DecidedFinding[] = [];
+  const refused: string[] = [];
+  for (const id of findingIds) {
+    const row = UUID_RE.test(id) ? (await p.query<{
+      id: string; pattern: string; kind: string; decision: string | null; at: string | null;
+      by: string | null; note: string | null; superseded_by: string | null; mine: boolean | null;
+    }>(`
+      select f.id::text as id, f.pattern, f.kind, f.decision, f.decided_at::text as at, p.email as by,
+             f.decision_note as note, f.superseded_by::text as superseded_by,
+             (f.decided_by = $2::uuid and f.decided_at = $3::timestamptz) as mine
+        from zz.eval_finding f
+        left join zz.principal p on p.id = f.decided_by
+       where f.id = $1::uuid`, [id, stamp?.principal_id ?? null, stamp?.at ?? null])).rows[0] : undefined;
+    if (row?.mine && (row.decision === "applied" || row.decision === "rejected")) {
+      done.push({ id: row.id, pattern: row.pattern, decision: row.decision, at: row.at ?? "",
+                  decided_by: row.by ?? call.principal, note: row.note ?? "" });
+    } else if (row?.decision === "deferred") {
+      refused.push(`${id} is still deferred — the call this key records did not decide it`);
+    } else {
+      refused.push(decisionRefusal(id, row));
+    }
+  }
+  return { done, refused };
 }
 
 export function registerPluginRecordTools(server: McpServer): void {
@@ -201,6 +235,7 @@ export function registerPluginRecordTools(server: McpServer): void {
     async ({ eval_run_id, finding, supersedes, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
+      if (!UUID_RE.test(eval_run_id)) return text(`ERROR: no eval_run ${eval_run_id}`);
       const run = (await p.query<{ id: string; protocol_version_id: string }>(
         "select id::text as id, protocol_version_id::text as protocol_version_id from zz.eval_run where id = $1::uuid",
         [eval_run_id])).rows[0];
@@ -225,7 +260,7 @@ export function registerPluginRecordTools(server: McpServer): void {
       }
       // Checked before the ledger too, so a correction aimed at the wrong finding anchors nothing.
       if (supersedes !== undefined) {
-        const old = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(supersedes)
+        const old = UUID_RE.test(supersedes)
           ? (await p.query<{ kind: string; eval_run_id: string | null; decision: string | null; superseded_by: string | null }>(
               "select kind, eval_run_id::text as eval_run_id, decision, superseded_by::text as superseded_by " +
               "from zz.eval_finding where id = $1::uuid", [supersedes])).rows[0]
@@ -373,30 +408,9 @@ export function registerPluginRecordTools(server: McpServer): void {
           },
         );
 
-      let result: { done: DecidedFinding[]; refused: string[] };
-      if (outcome.replayed) {
-        // A replay re-reads by id rather than trusting a cached response the ledger never stored.
-        const rows = await Promise.all(decisions.map(async (d): Promise<DecidedFinding | null> => {
-          const row = (await p.query<{
-            id: string; pattern: string; decision: string | null; at: string;
-            by: string | null; note: string | null;
-          }>(`
-            select f.id::text as id, f.pattern, f.decision, f.decided_at::text as at,
-                   p.email as by, f.decision_note as note
-              from zz.eval_finding f
-              left join zz.principal p on p.id = f.decided_by
-             where f.id = $1::uuid`, [d.finding_id])).rows[0];
-          // `applied`/`rejected` only: a null decision is a strength, which this tool never closed.
-          return row && (row.decision === "applied" || row.decision === "rejected")
-            ? { id: row.id, pattern: row.pattern, decision: row.decision, at: row.at,
-                decided_by: row.by ?? who, note: row.note ?? "" }
-            : null;
-        }));
-        const done = rows.filter((r): r is DecidedFinding => r !== null);
-        result = { done, refused: decisions.length - done.length > 0 ? ["some decisions from the original call could not be re-read"] : [] };
-      } else {
-        result = outcome.result;
-      }
+      const result = outcome.replayed
+        ? await decisionsForReplay(p, decisions.map((d) => d.finding_id), { principal: who, tool: "finding_decide", key: idempotency_key })
+        : outcome.result;
 
       platformEvent({ actor: who, kind: "finding_decide", decided: result.done.length, refused: result.refused.length, replayed: outcome.replayed });
       return json({

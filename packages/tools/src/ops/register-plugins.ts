@@ -47,8 +47,6 @@ interface LockEntry {
   skills?: Record<string, string>;
 }
 
-const lit = (s: string): string => `'${String(s).replace(/'/g, "''")}'`;
-
 /** Ours or somebody else's, and it decides what an evaluation may do with its findings: for our own
  *  plugins they feed a change, for a third party's we assess and stop. Everything in this
  *  repository's own catalog is ours by definition; a third-party plugin is registered when somebody
@@ -93,7 +91,7 @@ function main(argv: string[]): number {
     console.log("    members recorded  0\n");
     return 0;
   }
-  const teamId = psqlText(psql, `select id from zz.team where slug = ${lit(ownerTeam)}`, STOP_ON_ERROR);
+  const teamId = psqlText(psql, "select id from zz.team where slug = :'team'", { ...STOP_ON_ERROR, team: ownerTeam });
   if (!teamId) {
     console.error(`\n  no team has the slug ${ownerTeam} — ZZ_CATALOG_OWNER_TEAM names the team every ` +
                   "catalog plugin's release authority resolves to, and zz.plugin.owner_team_id is a " +
@@ -103,85 +101,90 @@ function main(argv: string[]): number {
 
   for (const name of names) {
     const p = lock[name];
-    // owner_team_id/plugin_release_owner (002, FR-2, FR-47): every catalog plugin is the same
-    // team's to release, and that team is a relation — one `zz.plugin_release_owner` row per owner
-    // team — rather than a text column and a jsonb list. A plugin registered any other way
-    // (plugin_register, for a third party) never reaches these statements, so the
-    // catalog-registration path stays the only writer of this row shape, the way it already is the
-    // only writer of origin = 'platform'.
+    const skills = Object.keys(p.skills ?? {}).sort();
+    // One plugin version, one psql session: its writes are one transaction, so a registration
+    // killed half-way leaves this plugin as it was, never with its owners rewritten and no version
+    // row. Every value is a psql variable, never spelled into the statement.
     //
-    // The owner rows are replaced, not merely added to: the jsonb list these replaced was
-    // overwritten whole on every registration, so a team this release no longer names stops being
-    // an owner here too.
-    psqlText(psql, `
-      insert into zz.plugin (name, origin, owner_team_id)
-      values (${lit(name)}, ${lit(ORIGIN)}, ${lit(teamId)}::uuid)
-      on conflict (name) do update set origin = excluded.origin,
-                                      owner_team_id = excluded.owner_team_id`, STOP_ON_ERROR);
-    psqlText(psql, `
-      insert into zz.plugin_release_owner (plugin_id, team_id)
-      select id, ${lit(teamId)}::uuid from zz.plugin where name = ${lit(name)}
-      on conflict (plugin_id, team_id) do nothing`, STOP_ON_ERROR);
-    psqlText(psql, `
-      delete from zz.plugin_release_owner
-       where plugin_id = (select id from zz.plugin where name = ${lit(name)})
-         and team_id <> ${lit(teamId)}::uuid`, STOP_ON_ERROR);
-    // Written once, never rewritten. `plugin_version` is immutable history: a release that moves
-    // a version's content is a new version, not an edit of an existing one, and the gate has
-    // already refused a release whose declared version and content digest disagree — so on a
-    // re-registration there is nothing here to correct, and `do nothing` is the honest no-op.
-    psqlText(psql, `
-      insert into zz.plugin_version (plugin_id, version, digest)
-      select id, ${lit(p.version)}, ${lit(p.digest)}
-        from zz.plugin where name = ${lit(name)}
-      on conflict (plugin_id, version) do nothing`, STOP_ON_ERROR);
-    for (const skill of Object.keys(p.skills ?? {}).sort()) {
-      // Resolved by name against what register-skills wrote a moment earlier in the same release.
-      // A skill the registry has not heard of is counted and reported rather than skipped: a
-      // membership that is silently short is one the profile resolves events through anyway, and
-      // the symptom arrives much later as "this plugin was never used".
-      //
-      // One version per skill per plugin version, and `(plugin_version_id, skill_id)` is the key
-      // that says so. The `do update ... where` is what makes an already-recorded binding come
-      // back as a row — `do nothing` returns none, which is indistinguishable from a skill the
-      // registry has never heard of, and a warning that fires on the healthy path is one people
-      // learn to skip — while a binding that would move to another version is left exactly as it
-      // was. Moving it is not a re-registration; it is a different release of the same plugin
-      // version, and the follow-up below names it.
-      const out = psqlText(psql, `
-        insert into zz.plugin_version_skill (plugin_version_id, skill_id, skill_version_id)
-        select pv.id, sv.skill_id, sv.id
-          from zz.plugin_version pv
-          join zz.plugin pl on pl.id = pv.plugin_id
-          join zz.skill sk on sk.name = ${lit(skill)}
-          join zz.skill_version sv on sv.skill_id = sk.id
-         where pl.name = ${lit(name)} and pv.version = ${lit(p.version)}
-         order by sv.released_at desc limit 1
-        on conflict (plugin_version_id, skill_id) do update
-           set skill_version_id = zz.plugin_version_skill.skill_version_id
-         where zz.plugin_version_skill.skill_version_id = excluded.skill_version_id
-        returning 1`, STOP_ON_ERROR);
-      if (/1/.test(out)) { members++; continue; }
-      // Nothing was written. Either the registry has no version row for this skill, or this
-      // plugin version already binds it and the version this registration resolves is not the one
-      // bound. The second is refused by name: one plugin version binds one version of a skill, and
-      // the primary key is what makes that true whatever this path does.
-      const moved = psqlText(psql, `
-        select bound.version || ' is bound, and ' || newest.version || ' is what this registration resolves'
-          from zz.plugin_version pv
-          join zz.plugin pl on pl.id = pv.plugin_id
-          join zz.plugin_version_skill pvs on pvs.plugin_version_id = pv.id
-          join zz.skill sk on sk.id = pvs.skill_id and sk.name = ${lit(skill)}
-          join zz.skill_version bound on bound.id = pvs.skill_version_id
-          join lateral (select sv.id, sv.version from zz.skill_version sv
-                         where sv.skill_id = sk.id
-                         order by sv.released_at desc limit 1) newest on true
-         where pl.name = ${lit(name)} and pv.version = ${lit(p.version)}
-           and newest.id <> bound.id`, STOP_ON_ERROR);
-      if (moved) {
-        refusals.push(`${name} ${p.version}: skill ${skill} — ${moved}. One plugin version binds ` +
-                      "one version of a skill; cut a new plugin version instead.");
-      } else missing++;
+    // owner_team_id/plugin_release_owner (FR-2, FR-47): every catalog plugin is the same team's to
+    // release, and that team is a relation — one `zz.plugin_release_owner` row per owner team. A
+    // plugin registered any other way (plugin_register, for a third party) never reaches these
+    // statements, so the catalog-registration path stays the only writer of this row shape, the
+    // way it already is the only writer of origin = 'platform'. The owner rows are replaced, not
+    // merely added to, so a team this release no longer names stops being an owner here too.
+    //
+    // `plugin_version` is written once, never rewritten. It is immutable history: a release that
+    // moves a version's content is a new version, and the gate has already refused a release whose
+    // declared version and content digest disagree — so on a re-registration there is nothing to
+    // correct, and `do nothing` is the honest no-op.
+    //
+    // Then each skill the lock names, resolved by name against what register-skills wrote a moment
+    // earlier in the same release. One version per skill per plugin version, and
+    // `(plugin_version_id, skill_id)` is the key that says so. The `do update ... where` is what
+    // makes an already-recorded binding come back as a row — `do nothing` returns none, which is
+    // indistinguishable from a skill the registry has never heard of, and a warning that fires on
+    // the healthy path is one people learn to skip — while a binding that would move to another
+    // version is left exactly as it was and named by the select after it: moving it is not a
+    // re-registration but a different release of the same plugin version. A skill that is neither
+    // bound nor named has no version row at all, and is counted and reported rather than skipped:
+    // a membership that is silently short is one the profile resolves events through anyway, and
+    // the symptom arrives much later as "this plugin was never used".
+    //
+    // One literal per statement, so every reader of this repository's SQL sees each one alone.
+    const said = psqlText(psql, [
+      "\\set QUIET on",
+      "begin;",
+      `insert into zz.plugin (name, origin, owner_team_id)
+       values (:'name', :'origin', (:'team')::uuid)
+       on conflict (name) do update set origin = excluded.origin,
+                                       owner_team_id = excluded.owner_team_id;`,
+      `insert into zz.plugin_release_owner (plugin_id, team_id)
+       select id, (:'team')::uuid from zz.plugin where name = :'name'
+       on conflict (plugin_id, team_id) do nothing;`,
+      `delete from zz.plugin_release_owner
+        where plugin_id = (select id from zz.plugin where name = :'name')
+          and team_id <> (:'team')::uuid;`,
+      `insert into zz.plugin_version (plugin_id, version, digest)
+       select id, :'version', :'digest' from zz.plugin where name = :'name'
+       on conflict (plugin_id, version) do nothing;`,
+      `insert into zz.plugin_version_skill (plugin_version_id, skill_id, skill_version_id)
+       select pv.id, newest.skill_id, newest.id
+         from zz.plugin_version pv
+         join zz.plugin pl on pl.id = pv.plugin_id
+         join zz.skill sk on sk.name in (select jsonb_array_elements_text(:'skills'::jsonb))
+         join lateral (select sv.id, sv.skill_id from zz.skill_version sv
+                        where sv.skill_id = sk.id
+                        order by sv.released_at desc limit 1) newest on true
+        where pl.name = :'name' and pv.version = :'version'
+       on conflict (plugin_version_id, skill_id) do update
+          set skill_version_id = zz.plugin_version_skill.skill_version_id
+        where zz.plugin_version_skill.skill_version_id = excluded.skill_version_id
+       returning 'bound';`,
+      `select 'moved ' || sk.name || ' — ' || bound.version || ' is bound, and ' || newest.version ||
+              ' is what this registration resolves'
+         from zz.plugin_version pv
+         join zz.plugin pl on pl.id = pv.plugin_id
+         join zz.plugin_version_skill pvs on pvs.plugin_version_id = pv.id
+         join zz.skill sk on sk.id = pvs.skill_id
+                         and sk.name in (select jsonb_array_elements_text(:'skills'::jsonb))
+         join zz.skill_version bound on bound.id = pvs.skill_version_id
+         join lateral (select sv.id, sv.version from zz.skill_version sv
+                        where sv.skill_id = sk.id
+                        order by sv.released_at desc limit 1) newest on true
+        where pl.name = :'name' and pv.version = :'version'
+          and newest.id <> bound.id
+        order by sk.name;`,
+      "commit;",
+    ].join("\n"), { ...STOP_ON_ERROR, team: teamId, name, origin: ORIGIN, version: p.version, digest: p.digest,
+                  skills: JSON.stringify(skills) });
+    const lines = said.split("\n");
+    const bound = lines.filter((l) => l === "bound").length;
+    const moved = lines.filter((l) => l.startsWith("moved ")).map((l) => l.slice("moved ".length));
+    members += bound;
+    missing += skills.length - bound - moved.length;
+    for (const m of moved) {
+      refusals.push(`${name} ${p.version}: skill ${m}. One plugin version binds one version of a skill; ` +
+                    "cut a new plugin version instead.");
     }
   }
 

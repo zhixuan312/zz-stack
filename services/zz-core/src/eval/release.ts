@@ -66,7 +66,7 @@ import { writeImprovementDoc, type BaseScore } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { improvementRunOf, releasableCandidateOf } from "./initiative-run.js";
 import { loadSubjectForEvalRun, writeProposalDoc } from "./proposal-doc.js";
-import { describeApplyOutcomeForReplay, planApply, type ApplyResult } from "./release-apply.js";
+import { describeApplyOutcomeForReplay, planApply, readImprovementDoc, type ApplyResult } from "./release-apply.js";
 import { initiativePlace, prepareWithBranchFact } from "./release-prepare.js";
 import { describeRecordOutcomeForReplay, recordRelease, type RecordResult } from "./release-record.js";
 import { loadReleasePolicy, verifyRelease, type VerifyOutcome } from "./release-verify.js";
@@ -383,7 +383,8 @@ export function registerReleaseTools(server: McpServer): void {
         "attempt per candidate and one applying attempt per plugin. An approval counts only when " +
         "improvement.md is approved, cites THIS release_attempt_id in its body, quotes the " +
         "digest, and its approved_by is a MEMBER of an owner team; the caller must be an " +
-        "owner-team member too. RETURNS { status: applying|refused, reason, release_attempt_id, " +
+        "owner-team member too. RETURNS { status: applying|refused (a retry of the call that moved " +
+        "it to applying answers the attempt's status now), reason, release_attempt_id, " +
         "patch: {diff, patch_digest} | null, plan: {plugin, declared_version, " +
         BASE_SUBJECT_VERSION + ", branch, base_ref} | null } — base_ref is the commit the base " +
         "subject was released from, or null when nothing recorded one; patch/plan are null on a " +
@@ -417,12 +418,15 @@ export function registerReleaseTools(server: McpServer): void {
       if (!p) return noDb();
 
       const principal = parseCaller(requestHeaders()).email;
+      // Read before the transaction: see `ImprovementDoc`.
+      const doc = await readImprovementDoc(initiative);
       const outcome: IdempotencyOutcome<ApplyResult> = await withIdempotency(
         principal, "release_apply", idempotency_key, { candidate_id, approved_patch_digest, initiative },
-        (client) => planApply(client, candidate_id, approved_patch_digest, initiative, principal),
+        (client) => planApply(client, candidate_id, approved_patch_digest, principal, doc),
       );
       const result = outcome.replayed
-        ? await describeApplyOutcomeForReplay(p, outcome.result_id)
+        ? await describeApplyOutcomeForReplay(p, outcome.result_id,
+                                              { principal, tool: "release_apply", key: idempotency_key })
         : outcome.result;
 
       platformEvent({
@@ -507,7 +511,8 @@ export function registerReleaseTools(server: McpServer): void {
         }, principal),
       );
       const result = outcome.replayed
-        ? await describeRecordOutcomeForReplay(p, outcome.result_id)
+        ? await describeRecordOutcomeForReplay(p, outcome.result_id,
+                                               { principal, tool: "release_record", key: idempotency_key })
         : outcome.result;
 
       platformEvent({

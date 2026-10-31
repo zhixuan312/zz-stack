@@ -36,6 +36,10 @@ import type pg from "pg";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
+/** A uuid's shape. An id that fails it is refused as the id nothing minted, before a `::uuid`
+ *  cast answers with PostgreSQL's own `22P02` sentence. */
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Hand-built, not `JSON.stringify` over a key-sorted object: a caller-controlled args object can
  *  carry an integer-looking string key, and V8's own object key iteration would silently reorder
  *  it ahead of this function's sort. The tenant-information layer had a second one beside its own
@@ -189,9 +193,35 @@ function ledgerRefusal(err: unknown, principal: string): Refusal | null {
   return e.code === NOT_NULL_VIOLATION && e.column === "principal_id" ? noPrincipalRefusal(principal) : null;
 }
 
-/** The ledger's verdict on a request BEFORE a mutator does its slow work — for the tools that
- *  ask a model (`failure_discover`, `evaluator_qualify`, `evaluation_assess`). Those now ask outside the transaction, so without this a retry would
- *  re-ask every model before `withIdempotency` got to say "replay". Throws the same conflict
+/** Which call a ledger row records: the address that made it, the tool and the key. */
+export interface LedgerCall {
+  readonly principal: string;
+  readonly tool: string;
+  readonly key: string;
+}
+
+/** The principal a ledger row names and the instant it was written, or null when there is none.
+ *  A replay reads it to tell a write its own call made from one somebody else made since: every
+ *  write `withIdempotency`'s `fn` makes with `now()` shares this instant, because `now()` is the
+ *  transaction's start and the ledger row is written in the same transaction. `at` is ISO 8601
+ *  with microseconds, so `$n::timestamptz` reads it back exactly. */
+export async function ledgerStamp(
+  runner: Queryable, call: LedgerCall,
+): Promise<{ readonly principal_id: string; readonly at: string } | null> {
+  const { rows } = await runner.query<{ principal_id: string; at: string }>(
+    `select i.principal_id::text as principal_id, to_json(i.created_at)#>>'{}' as at
+       from zz.eval_idempotency i
+       join zz.principal p on p.id = i.principal_id
+      where lower(p.email) = lower($1) and i.tool = $2 and i.idempotency_key = $3`,
+    [call.principal, call.tool, call.key]);
+  return rows[0] ?? null;
+}
+
+/** The ledger's verdict on a request BEFORE a mutator does its slow work or refuses on a state its
+ *  own first call produced — the tools that ask a model (`failure_discover`, `evaluator_qualify`,
+ *  `evaluation_assess`), `plugin_profile`, which computes a whole observation, and
+ *  `protocol_affirm`, whose first call leaves the version affirmed. Without it a retry would redo
+ *  that work, or be refused, before `withIdempotency` got to say "replay". Throws the same conflict
  *  refusal `withIdempotency` would. Advisory only: `withIdempotency` still decides again inside
  *  its transaction, so a race between this read and that one is settled there, never here.
  *

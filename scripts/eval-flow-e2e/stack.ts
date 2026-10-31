@@ -124,6 +124,17 @@ const PAT_OF = (token: string): string => createHash("sha256").update(token).dig
 export async function up(stubPort: number): Promise<Stack> {
   const work = realpathSync(mkdtempSync(join(tmpdir(), "zz-eval-flow-")));
   const prefix = `zz-evalflow-${process.pid}`;
+  // A failed start removes what it made — the tree and its node_modules copy, the network and the
+  // containers — before it is reported: the caller holds no stack to take down.
+  try {
+    return await start(stubPort, work, prefix);
+  } catch (err) {
+    down({ prefix, work });
+    throw err;
+  }
+}
+
+async function start(stubPort: number, work: string, prefix: string): Promise<Stack> {
   const version = (JSON.parse(readFileSync(join(live, "package.json"), "utf8")) as { version: string }).version;
   // The gate the candidate build runs resolves the console's checkout as a sibling of the repo.
   const dash = resolve(live, "..", "zz-stack-dashboard");

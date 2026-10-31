@@ -7,13 +7,13 @@
 // The team is a relation now, not a jsonb list: the slug is resolved through zz.team into
 // `zz.plugin.owner_team_id` and written as the plugin's `zz.plugin_release_owner` row. The two
 // assertions below are pinned on the text of the statements that do it — the insert's column list,
-// and the slug it resolves and the id it writes — because a pattern that no longer matches the
+// and the slug it resolves and the id it writes, each bound as a psql variable — because a pattern that no longer matches the
 // statement it was written for passes while testing nothing.
 //
 // Drives the real `catalogOwnerTeam` and `writeRegistries` against a fake `ssh` first on PATH, so
 // nothing reaches a host: the fake answers the deploy/.env grep with a sentinel team and every
-// psql call with a row (the team's id where the statement asks zz.team for it), logs the SQL every
-// psql call is handed, and fails every psql call when told to. Then reads release.ts for the two
+// psql call with a row (the team's id where the statement asks zz.team for it), logs the SQL and
+// the bound `-v` variables every psql call is handed, and fails every psql call when told to. Then reads release.ts for the two
 // places it has to use them: the owner team before step 4, the failures before the rollback.
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -34,6 +34,7 @@ case "$*" in
   *"deploy/.env"*) exit 1 ;;
   *psql*)
     sql=$(cat)
+    echo "ARGS: $*" >> "${sqlLog}"
     echo "$sql" >> "${sqlLog}"
     [ -n "$FAKE_PSQL_FAILS" ] && { echo "psql: connection refused" >&2; exit 2; }
     case "$sql" in
@@ -71,10 +72,10 @@ try {
   const sql = (() => { try { return readFileSync(sqlLog, "utf8"); } catch { return ""; } })();
   is(/insert into zz\.plugin \(name, origin, owner_team_id\)/.test(sql),
      "register-plugins never reached the zz.plugin insert — the owner team was not handed to it");
-  is(sql.includes(`select id from zz.team where slug = '${SENTINEL}'`),
+  is(sql.includes("select id from zz.team where slug = :'team'") && sql.includes(`team=${SENTINEL}`),
      "register-plugins did not resolve the owner team's slug through zz.team, so the team it " +
      "writes is whatever text it was given rather than a team this deployment has");
-  is(sql.includes(`'${TEAM_ID}'::uuid`),
+  is(sql.includes("(:'team')::uuid") && sql.includes(`team=${TEAM_ID}`),
      "register-plugins did not write the resolved team as owner_team_id and as the plugin's one " +
      "zz.plugin_release_owner row");
   is(/insert into zz\.plugin_release_owner \(plugin_id, team_id\)/.test(sql),

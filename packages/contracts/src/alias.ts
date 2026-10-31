@@ -64,30 +64,10 @@ export const MANAGE_ALIAS: Record<string, string> = Object.freeze({
 /** `/eval`'s renames. `plugin_locate`, `plugin_profile` and `plugin_conform` keep their names,
  * `plugin` already being the noun, so they take no entry.
  *
- * `plugin_ruler`, `plugin_ruler_record` and `plugin_affirm` are gone from here, not repointed at
- * `protocol_read`/`protocol_record`/`protocol_affirm`: Task I-10 removed the `ruler_*` tools they
- * once resolved to, and `protocol_*` is a different measurement object with a different shape —
- * a genuinely new series, not the old one under a new name. The platform's own precedent for
- * exactly this (MANAGE_ALIAS's deleted `issue_my_access_token` and friends) is "deleted rather
- * than renamed, so they take no entry: aliasing them would merge two series."
- *
- * `plugin_judge`, `round_recommend` and `plugin_scores` went the same way: the tools they resolved
- * to — `round_judge`, `round_score` and `round_scores` — were deleted rather than renamed, and the
- * protocol lifecycle (`evaluation_*`) is a different measurement, not the old one under a new name. */
+ * A tool that was deleted rather than renamed takes no entry either, even where a later tool does
+ * similar work: aliasing it would merge two series. */
 export const EVAL_ALIAS: Record<string, string> = Object.freeze({
   plugin_finding_record: "finding_record",
-});
-/** The two skill renames.
- *
- * DELIBERATE, and its production reader is gone: `zz.event` held a `step` NAME, which this
- * resolved to the skill's current name so a report could group a window spanning the rename. The
- * column is a `skill_version_id` now, resolved through `zz.skill_version` to the skill's own name,
- * so nothing in the services resolves a step name any more. What still reads this map is the pair
- * of checks that pin the renames — `checks/skill-renames.ts` and `checks/alias-applied.ts` — which
- * is why it is kept rather than deleted with the column it was written for. */
-export const SKILL_ALIAS: Record<string, string> = Object.freeze({
-  "zz-backbone": "zz-platform",
-  "zz-knowledge": "zz-handover",
 });
 
 /** Which map answers for which door.
@@ -118,13 +98,6 @@ export function resolveToolKey(subject: string): string {
   const i = subject.indexOf(":");
   if (i < 0) return subject;
   return `${subject.slice(0, i)}:${resolveTool(subject.slice(0, i), subject.slice(i + 1))}`;
-}
-
-/** A skill NAME, resolved to the skill's current name — what the `step` column of `zz.event`
- *  held before the schema gave that column a version id, and what the two rename checks still
- *  resolve through. Separate from the tool resolvers because a step name carries no door. */
-export function resolveStep(step: string): string {
-  return SKILL_ALIAS[step] ?? step;
 }
 
 /** The doors this gateway serves, as a person types them.

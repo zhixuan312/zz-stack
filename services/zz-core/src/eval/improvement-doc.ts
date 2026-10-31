@@ -1,11 +1,8 @@
 /**
  * `improvement.md` (Task I-22, FR-48, AC-48.1): the authority-bearing gate a releasable owned
  * candidate crosses before its patch is ever applied. Written by `release_prepare`
- * (`release.ts`) the SAME way `document_write` writes any document into the initiative's documents, and
- * the same way `findings-doc.ts`'s `writeFindingsDoc` already does it for `findings.md`:
- * `chainFor` resolves the flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames
- * a near-miss heading, `documentGuards` decides whether the write may land, `saveDocument`
- * lands it. Nothing here invents a second write path.
+ * (`release.ts`) through `generated-doc.ts`'s `writeGeneratedDoc`, as `findings.md` and
+ * `proposal.md` are — the same internals `document_write` calls.
  *
  * Unlike `writeFindingsDoc`, this module takes no database handle — `release_prepare` has
  * already loaded everything the body needs (the candidate and its build, its base subject and
@@ -28,19 +25,10 @@
  * document already approved (a change to one is `document_edit`'s).
  */
 
-import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
-import { requestHeaders } from "@zz/mcp-http";
 
-import { chainFor } from "../chain.js";
-import { documentGuards } from "../guards.js";
-import { unopenedRefusal } from "../initiative-record.js";
-import { safeName, safePath } from "../paths.js";
-import { sealOf } from "../indexing.js";
-import { loadDocument } from "../versions.js";
-import { saveDocument } from "../document-save.js";
-import { stampEnvelope } from "../write-guards.js";
-import { db, teamFor } from "../platform-db.js";
-import { envelopeFor, normalizeSections } from "../write-guards.js";
+import { safeName } from "../paths.js";
+import { writeGeneratedDoc } from "./generated-doc.js";
+import { db } from "../platform-db.js";
 import { evaluateGuardrails } from "./evaluate-measures.js";
 
 /** One critical-guardrail reading, AS `evaluateGuardrails` produces it. The type is derived from
@@ -147,44 +135,8 @@ export async function writeImprovementDoc(
   // one more thing every caller has to have in hand to write a document.
   const p = db();
   if (!p) return "ERROR: no platform database — there is nowhere to write this document.";
-  const team = await teamFor(parseCaller(requestHeaders()).email);
-  if (!team) {
-    return "ERROR: this caller resolves to no team, so the document has no shelf to be filed on";
-  }
-  const path = `${initiative}/improvement.md`;
-  const unopened = await unopenedRefusal(p, team, path);
-  if (unopened) return unopened;
-  await safePath(path);
-  const chain = await chainFor(p, team, path, body);
-  const existing = await loadDocument(team, path);
-  // The carry is read from the document's own current revision — the rows a document IS
-  // — rather than from a file the store used to hold. A document this team does not have
-  // yet carries nothing, which is the same answer a missing file gave.
-  const onDisk = existing.ok ? parseEnvelope(existing.text) : {};
-  const carry: Record<string, string> = {};
-  for (const k of [...PLATFORM_OWNED, "version"]) {
-    if (onDisk[k]) carry[k] = onDisk[k];
-  }
-  const content = envelopeFor(chain, path, body, {
+  return writeGeneratedDoc(p, `${initiative}/improvement.md`, body, {
     title: `Improvement — ${data.plugin} ${data.declared_version}`,
     fields: { candidate_id: data.candidate_id, release_attempt_id: data.release_attempt_id },
-    carry,
   });
-  const fixed = normalizeSections(chain, path, content);
-  const gate = await documentGuards(chain, path, fixed.content, team);
-  if (gate) return gate;
-  // The ONE insert path: `saveDocument`, which stamps, files the row and its revision. Not a
-  // second one here — two writers for one row shape drift, and these two already had.
-  //
-  // `chars` is the stamped document's length, so the count this returns is the bytes that were
-  // filed rather than the bytes that were passed in.
-  const stamped = stampEnvelope(chain, path, fixed.content);
-  const actor = parseCaller(requestHeaders()).email;
-  const saved = await saveDocument({
-    team, relPath: path, initiative: path.split("/")[0], text: stamped, by: actor,
-    flow: chain.name ?? undefined, act: "write", mode: "rewrite",
-    seal: sealOf(stamped, existing.ok ? existing.rev : null),
-  });
-  if ("refusal" in saved) return saved.refusal;
-  return { path, chars: stamped.length };
 }

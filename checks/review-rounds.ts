@@ -13,21 +13,26 @@
  *      and a ledger with several of these at once is refused with every one, counted (AC-2.2)
  *   2. `reviewRoundOf` counts only the verifying document's own stage
  *   3. every reviewMove branch: round 1, fix, run_experiment, settled, out-of-scope, S1
- *      reproduced out of scope, a repeat, the budget on a non-converging review, a renewal, an accepted residual
+ *      reproduced out of scope, a repeat (and a repeat read after an unavailable reading), the budget on a non-converging review, a renewal, an accepted residual
  *   4. the approval rules: no round and no waiver, a stakeholder's waiver, no section, a missing row, a stray row, a bad status, no locator,
  *      a locator with a space after its colon, a table the gate cannot read, no quote, deferred
  *      with and without a stakeholder source, the Backlog, and `unavailable` — and a table with
  *      several independent problems, two on one row, refused with all of them, counted
  *   5. the readings: a task's whole criterion, the plan's declared checks bound to the criteria
  *      they verify and a row naming one asked only whether it passed, `no` refuses, `unclear`
- *      asks to sharpen, `unclear` again on new evidence goes to the stakeholder, whose source
+ *      asks to sharpen, a `no` taken after an `unavailable` reading of the same evidence refuses, `unclear` again on new evidence goes to the stakeholder, whose source
  *      accepts it
  *   6. the replay of 2026-09-24-plugin-eval-next-version: fix, fix, fix (converging, so no
  *      budget stop), settled after Round 4; Rounds 5-6 (inferred) route to run_experiment
+ *   7. a round introducing twelve S1/S2 findings asks every one, no more than eight at a time,
+ *      of a stub typed service on a local port
+ *   8. a source with no `added_at` is ordered by its row's own timestamp as an instant, not as text
  *
  * Run: node checks/review-rounds.ts   (also run by scripts/gate.ts)
  */
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -36,6 +41,19 @@ import pg from "pg";
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 delete process.env.TYPESAFE_API_KEY;
+
+// A typed service that answers every call 400 after a pause, counting how many calls it holds at
+// once. Only case 7 sets a key, so every other case asks nothing.
+const typed = { inFlight: 0, most: 0, calls: 0 };
+const typedServer = createServer((req, res) => {
+  typed.calls += 1;
+  typed.inFlight += 1;
+  typed.most = Math.max(typed.most, typed.inFlight);
+  req.resume();
+  setTimeout(() => { typed.inFlight -= 1; res.writeHead(400).end("stub"); }, 40);
+});
+await new Promise<void>((r) => typedServer.listen(0, "127.0.0.1", r));
+process.env.TYPESAFE_BASE_URL = `http://127.0.0.1:${(typedServer.address() as AddressInfo).port}`;
 
 const TEAM = "t1";
 /** One initiative's world: its own row, its documents, and the answers the assessor recorded. */
@@ -104,6 +122,8 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
                      probability: a.probability === null ? null : String(a.probability),
                      reason: null, asked_at: a.asked_at })));
   }
+  if (/insert into zz\.model_call\b/.test(sql)) return one([{ id: "1" }]);
+  if (/FROM zz\.membership m/.test(sql)) return one([{ slug: TEAM, role: "admin", active_slug: TEAM }]);
   if (/insert into zz\.assessment\b/.test(sql)) {
     // COUPLED: the insert's own bind order — family `$1`, reading `$5`, about `$13`, slug `$16`.
     world.get(String(values[15] ?? ""))?.answers.push({
@@ -301,6 +321,15 @@ const move = async (i: Fixture) =>
   recorded(d.name, `sources/${f2}#R2-A`, "repeats_finding", "yes", 0.9, "2026-09-26T02:00:00.000Z");
   m = await move(d);
   is(m?.action === "write_document", `a finding read as a repeat does not reopen the rounds: ${JSON.stringify(m)}`);
+  // A reading re-asked after the service was unavailable stands over the unavailable row before it.
+  const d2 = await fresh();
+  round(d2, ledger(1, [finding("R1-A", "S2")]), "2026-09-26T01:00:00.000Z");
+  const g2 = round(d2, ledger(2, [finding("R2-A", "S2")], ["R1-A"]), "2026-09-26T02:00:00.000Z");
+  recorded(d2.name, `sources/${g2}#R2-A`, "repeats_finding", "unavailable", 0, "2026-09-26T02:00:00.000Z");
+  recorded(d2.name, `sources/${g2}#R2-A`, "repeats_finding", "yes", 0.9, "2026-09-26T02:30:00.000Z");
+  m = await move(d2);
+  is(m?.action === "write_document",
+     `a repeat read after an unavailable reading was shadowed by the unavailable one: ${JSON.stringify(m)}`);
 
   // 4. the approval rules
   const approval = async (i: Fixture, body: string) =>
@@ -423,6 +452,17 @@ const move = async (i: Fixture) =>
     is(!/AC-1\.1: evidence_relation/.test(stale.refusal ?? ""),
        `a reading taken under another question was reused: ${stale.refusal}`);
   }
+  // A `no` taken after an unavailable reading of the same evidence is the reading that stands.
+  {
+    const u = await fresh();
+    round(u, ledger(1, []), "2026-09-26T00:30:00.000Z");
+    const about = `review.md#AC-1.1#${digestOf("AC-1.1", ok1)}`;
+    recorded(u.name, about, "evidence_relation", "unavailable", 0, "2026-09-26T00:40:00.000Z");
+    recorded(u.name, about, "evidence_relation", "no", 0.1, "2026-09-26T00:50:00.000Z");
+    const later = await approval(u, table([ok1, ok2, okT]));
+    is(/AC-1\.1: evidence_relation reads its evidence as not supporting/.test(later.refusal ?? ""),
+       `a no taken after an unavailable reading did not refuse: ${JSON.stringify(later)}`);
+  }
   reading("AC-1.1", ok1, "no", "2026-09-26T01:00:00.000Z");
   got = await approval(r, table([ok1, ok2, okT]));
   is(/AC-1\.1: evidence_relation reads its evidence as not supporting/.test(got.refusal ?? ""), `a no refuses: ${got.refusal}`);
@@ -484,6 +524,33 @@ const move = async (i: Fixture) =>
     is(rr.reviewRounds(world.get(u.name)!.docs, "sdlc-review", "review.md").length === 1,
        "a sdlc-review source linked to spec.md was counted as a round of review.md");
   }
+
+// 8. A source with no `added_at` is ordered by its row's `timestamptz` text, as an instant: compared
+// as a string against an ISO one, "2026-10-07 06:00:00+00" sorts before "2026-10-07T05:00:00.000Z".
+{
+  const o = await fresh();
+  round(o, ledger(1, [finding("R1-A", "S2")]), "2026-10-07T05:00:00.000Z", "2026-10-07-b-round-1.md");
+  const late = env(o.name, "sources/2026-10-07-a-round-2.md", { title: "Review round 2" },
+    content(ledger(2, [], ["R1-A"])), { stage: "sdlc-review" }, ["review.md"]);
+  world.get(o.name)!.docs.push({ ...late, updated_at: "2026-10-07 06:00:00+00" });
+  const order = rr.reviewRounds(world.get(o.name)!.docs, "sdlc-review", "review.md").map((x: { ledger: Ledger }) => x.ledger.round);
+  is(order.join(",") === "1,2", `rounds added at 05:00Z and 06:00Z (the second with no added_at) read in the order ${order.join(",")}`);
+}
+
+// 7. A round introducing many S1/S2 findings asks `repeats_finding` of every one, eight at a time:
+// each call holds a pool connection for up to 100 seconds inside `source_add`.
+{
+  const r = await fresh();
+  round(r, ledger(1, [finding("R1-A", "S2")]), "2026-09-26T01:00:00.000Z");
+  const many = Array.from({ length: 12 }, (_, k) => finding(`R2-${k}`, k % 2 ? "S1" : "S2"));
+  const file = round(r, ledger(2, many, ["R1-A"]), "2026-09-26T02:00:00.000Z");
+  process.env.TYPESAFE_API_KEY = "stub";
+  const said = await rr.assessReviewRound(db()!, TEAM, r.name, `sources/${file}`, "sdlc-review", "review.md", "ada@zz.test");
+  delete process.env.TYPESAFE_API_KEY;
+  is(typed.calls === 12, `a round of 12 new S1/S2 findings asked ${typed.calls} times: ${said}`);
+  is(typed.most <= 8, `a round of 12 new S1/S2 findings held ${typed.most} typed-service calls at once`);
+}
+typedServer.close();
 
 if (fail.length) {
   console.error(`review-rounds: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);

@@ -83,7 +83,7 @@ export function startStub(logFile: string, port = 0): Promise<{ server: Server; 
       try {
         const parsed: unknown = JSON.parse(raw);
         if (parsed && typeof parsed === "object") body = parsed as Record<string, unknown>;
-      } catch { /* answered below as a 400 */ }
+      } catch { /* an unparseable body is asked nothing, and answered with no answers */ }
       if (req.url === "/v1/systemone") {
         const state = typeof body.state === "string" ? body.state : "";
         const questions = (body.questions ?? {}) as Record<string, Question>;

@@ -1,9 +1,9 @@
 /**
  * The one write a `produces: "record"` stage of zz-plugin-eval makes into its initiative: the ids
- * it minted, under its own stage name (`_records.json`, initiative-record.ts). IDENTIFY, OBSERVE,
- * DISCOVER and EVALUATE produce no document, so without this a stage opened in a new
- * conversation had no tool that could hand it the subject, snapshot or eval run an earlier one
- * minted — and `initiative_status` could not tell which of them had run.
+ * it minted, under its own stage name (a `zz.initiative_record` row, initiative-record.ts).
+ * IDENTIFY, OBSERVE, DISCOVER and EVALUATE produce no document, so this record is what hands a
+ * stage opened in a new conversation the subject, snapshot or eval run an earlier one minted, and
+ * what tells `initiative_status` which of them has run.
  *
  * A stage that produces a document can owe acts after its approval that no document records.
  * DEFINE/QUALIFY is that stage: protocol.md approved is not yet the protocol bound

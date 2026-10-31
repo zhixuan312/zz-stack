@@ -61,7 +61,6 @@
  * `released` is recorded under a key derived from the attempt, so a lost response is retried as
  * a replay rather than a second write.
  */
-import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -70,8 +69,8 @@ import { fileURLToPath } from "node:url";
 
 import { Mcp } from "@zz/mcp-client";
 
-import { cloneConsoleSibling, consoleSiblingUsable } from "../candidate/tree.js";
-import { commitOf, fetchTags, git, gitQuiet, releaseRefFor, resolveBase, tagsContaining } from "./git.js";
+import { cloneConsoleSibling } from "../candidate/tree.js";
+import { commitOf, fetchTags, git, gitQuiet, releaseRefFor, resolveBase, runCommand, tagsContaining } from "./git.js";
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
 import { splitCommand } from "../lib/shell.js";
 
@@ -114,20 +113,6 @@ function applyDiff(worktreePath: string, diff: string): void {
     git(worktreePath, ["apply", "--whitespace=nowarn", patchPath]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-interface CommandOutcome { readonly ok: boolean; readonly output: string }
-
-function runCommand(cwd: string, argv: readonly string[], timeoutMs: number): CommandOutcome {
-  try {
-    const output = execFileSync(argv[0], argv.slice(1), {
-      cwd, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { ok: true, output };
-  } catch (err) {
-    const e = err as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, output: (e.stderr || e.stdout || e.message || "unknown error").trim() };
   }
 }
 
@@ -239,32 +224,29 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
     // A fresh worktree carries neither the locked dependencies nor a build, and the gate reads
     // both, and the console checkout it expects beside the repository. Without them the default
     // gate refused every release, whatever the patch said.
-    // Shared by every attempt's worktree; anything there that is not a checkout (a link whose
-    // target is gone, a clone interrupted half-way) is replaced rather than trusted.
+    //
+    // DELIBERATE: the console is cloned afresh for every attempt, from the operator's checkout
+    // beside the repository. The place it goes is shared by every attempt on this machine, so a
+    // clone kept from an earlier one would gate this release against that day's console.
     const sibling = join(dirname(path), "zz-stack-dashboard");
-    if (!consoleSiblingUsable(sibling)) {
-      rmSync(sibling, { recursive: true, force: true });
-      /* Refused here, BY NAME, rather than left for the gate to complain about.
-       *
-       * A clone of the console is what two of the gate's checks read: every `/api/console` route
-       * this gateway serves must have a caller, and the document panel's tokens are compared with
-       * the console's own. Without it they fail saying "the console is not checked out at
-       * <path>" — which names the symptom, in a list of a hundred and ninety-seven lines, and
-       * leaves whoever reads it to work out that the walk never cloned it. It is also what a walk
-       * of the whole eval flow died on, at the one stage CI has never reached.
-       *
-       * COUPLED: cloneConsoleSibling returns the clone's path so a sandbox can re-allow it —
-       * `candidate/build.ts` reads it for exactly that. Nothing here runs a sandbox, so this only
-       * needs to know whether it happened. */
-      if (!cloneConsoleSibling(repoRoot, path)) {
-        await recordFailed(
-          `no zz-stack-dashboard checkout beside ${repoRoot} to clone for the gate. The gate reads ` +
-          "the console twice — every /api/console route must have a caller, and the document panel's " +
-          "tokens are compared with it — so a release from a repository that has none would be " +
-          "gated on two checks that could not run. Put the console beside that checkout, or release " +
-          "from one that has it.");
-        return 1;
-      }
+    rmSync(sibling, { recursive: true, force: true });
+    /* Refused here, by name, rather than left for the gate to complain about. Two of the gate's
+     * checks read the console: every `/api/console` route this gateway serves must have a caller,
+     * and the document panel's tokens are compared with the console's own. Without it they fail
+     * saying "the console is not checked out at <path>", which names the symptom and not that the
+     * clone never happened.
+     *
+     * COUPLED: cloneConsoleSibling returns the clone's path so a sandbox can re-allow it —
+     * `candidate/build.ts` reads it for exactly that. Nothing here runs a sandbox, so this only
+     * needs to know whether it happened. */
+    if (!cloneConsoleSibling(repoRoot, path)) {
+      await recordFailed(
+        `no zz-stack-dashboard checkout beside ${repoRoot} to clone for the gate. The gate reads ` +
+        "the console twice — every /api/console route must have a caller, and the document panel's " +
+        "tokens are compared with it — so a release from a repository that has none would be " +
+        "gated on two checks that could not run. Put the console beside that checkout, or release " +
+        "from one that has it.");
+      return 1;
     }
     for (const [what, argv] of [["install", INSTALL_CMD], ["build", BUILD_CMD]] as const) {
       const prepared = runCommand(path, argv, GATE_TIMEOUT_MS);

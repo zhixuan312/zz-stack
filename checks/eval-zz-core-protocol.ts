@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-const { EvaluationProtocol } = await import(pathToFileURL(join(process.cwd(), "packages/contracts/dist/eval-protocol.js")).href);
+const { EvaluationProtocol } = await import(pathToFileURL(join(process.cwd(), "packages/contracts/dist/index.js")).href);
 const p = JSON.parse(readFileSync("catalog/zz/zz-plugin-eval/protocols/zz-core.json", "utf8"));
 assert.equal(EvaluationProtocol.safeParse(p).success, true);
 const w = Object.fromEntries(p.dimensions.map((d: { canonicalKind: string; weight: number }) => [d.canonicalKind, d.weight]));

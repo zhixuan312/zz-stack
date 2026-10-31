@@ -12,15 +12,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DASH_IMAGE, DASH_SRC, IMAGE, published, root } from "../../deployment.ts";
-import { layer, probe } from "../run.ts";
+import { DASH_IMAGE, DASH_SRC, IMAGE, published } from "../../deployment.ts";
+import { checkoutVersion, layer, probe } from "../run.ts";
 
 layer("image", "is what the registry holds what this checkout declares", ["Dockerfile", "services"]);
 
-const version = () => JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-
 probe("this version's platform image is published", () => {
-  const ref = `${IMAGE}:${version()}`;
+  const ref = `${IMAGE}:${checkoutVersion()}`;
   return published(ref) ? null : `${ref} is not in the registry — either nothing built it or a push failed halfway`;
 });
 

@@ -38,13 +38,10 @@
  * null: `ask()` records the call and hands back only the answer, not its id, so a writer that
  * filled the column would be guessing which of the rows under this purpose was its own.
  *
- * Where this platform registers its own built-in evaluators (this task's own choice, recorded
- * here because nothing else asked the question yet): inline, at the top of this handler, one
- * `registerEvaluator` call per request. `evaluators.ts`'s own header already prescribes this —
- * "a caller defines its evaluator once, in code, and calls this at the point it needs an
- * evaluator_version_id; there is no separate seeding step" — and `registerEvaluator` is
- * idempotent by content digest, so calling it on every `failure_discover` request costs one
- * upsert-and-read-back and never mints a second version of the same question.
+ * Where this platform registers its own built-in evaluators: inline, at the top of this handler,
+ * one `registerEvaluator` call per request — `evaluators.ts` has no separate seeding step and no
+ * fixed list — and `registerEvaluator` is idempotent by content digest, so calling it on every
+ * `failure_discover` request costs one read and never mints a second version of the same question.
  *
  * Errors: a model outage (typed-judgement transport failure, or the reading judge unreachable)
  * never drops a sighting — it is stored with `owner_kind = 'unknown'` and the failure's own
@@ -56,7 +53,7 @@
  * classification is the `not asked: …` reason inside its own `evidence_refs.ownership`.
  * DELIBERATE, and a real narrowing of "each ownership classification
  * is one registered bounded-semantic evaluator answer recorded through
- * `recordEvaluatorAssessment`" for exactly this one case: `judge.ts`'s `ask()` and
+ * `insertEvaluatorAnswer`" for exactly this one case: `judge.ts`'s `ask()` and
  * `typed-service.ts`'s `ask()` each carry up to a ~100s budget per call, and something between
  * this tool and its caller closes the request at about two minutes — asking N more times against
  * an endpoint already known to be down would spend that budget once per remaining group and
@@ -111,7 +108,7 @@ for (const k of EVAL_STATE_ENUMS.ownerKind) {
 
 /** The one evaluator this task defines (FR-13, FR-15): a `choice` over exactly
  *  `EVAL_STATE_ENUMS.ownerKind`, so its answer is in this table's vocabulary by construction —
- *  `recordEvaluatorAssessment` cannot return an option this schema did not declare. */
+ *  `askEvaluatorQuestion` cannot return an option this schema did not declare. */
 const OWNER_KIND_EVALUATOR: EvaluatorDefinition = {
   stable_key: "discover.owner_kind",
   kind: "choice",
@@ -299,7 +296,7 @@ async function criticDescribe(
   ].join("\n");
   const askedAt = new Date().toISOString();
   try {
-    const said = await ask(pool, snapshot.plugin, system, user, "failure-discover");
+    const said = await ask(pool, system, user, "failure-discover");
     const proposed = typeof said?.description === "string" ? said.description.trim() : "";
     if (!proposed) {
       return { description: fallback,
@@ -435,12 +432,12 @@ async function planCandidates(
 ): Promise<PlannedCandidate[]> {
   const entry = entryOf(snapshot.plugin);
   const stages = (entry?.manifest.stages ?? []).map((s) => s.name);
-  const reachable = toolsNamedBy(snapshot.plugin);
-  const serves = servesOwnDoor(snapshot.plugin);
+  const reachable = toolsNamedBy(snapshot.plugin, entry);
+  const serves = servesOwnDoor(snapshot.plugin, entry);
 
   const traces = await pluginTraces(
     pool, snapshot.plugin, snapshot.declared_version, reachable, stages, serves, snapshot.window,
-    helperSkillsOf(snapshot.plugin), stageDocumentsOf(snapshot.plugin));
+    helperSkillsOf(snapshot.plugin, entry), stageDocumentsOf(entry));
   const [refusals, totalCalls] = await Promise.all([
     refusalGroups(pool, snapshot.plugin, snapshot.declared_version, serves, snapshot.window),
     totalToolCallEvents(pool, snapshot.plugin, snapshot.declared_version, serves, snapshot.window),

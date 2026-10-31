@@ -18,7 +18,6 @@
  * applies the question's own `answer_spec`. An undeclared key is `invalid_response`, not a new
  * option; an out-of-range score is `invalid_response`, not a clamped one; a reply from a model
  * other than the pinned identity is `invalid_response`, not a substitution.
- * `authorizesSemanticAdvance` derives actionability from the recorded status alone.
  *
  * DELIBERATE: six envelope fields the approved contract declares `string` are `string | null`
  * here — `request_id`, `question_digest`, `evidence_snapshot_id`, `profile_digest`,
@@ -529,18 +528,4 @@ function ordinal(
       `the qualified mapping names the level ${reached.level_key}, which this question never declared`);
   }
   return record(env, "answered", { kind: "ordinal", level_key: reached.level_key }, scored, null);
-}
-
-// What the host may do with one
-
-/**
- * May this assessment carry a semantic advance. Derived from the recorded status and nothing
- * else, so the answer is a property of what was established rather than a flag on the reply.
- *
- * Enumerated positively: only `answered` may be consumed, so an unrecognised status added
- * later refuses. What an `unknown` predicate or a null key then means for a particular advance
- * is the trusted host's policy, decided against its qualification records.
- */
-export function authorizesSemanticAdvance(assessment: SemanticAssessment): boolean {
-  return assessment.status === "answered" && assessment.value !== null;
 }

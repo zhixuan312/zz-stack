@@ -1,23 +1,12 @@
 /**
  * The statement reader the gate's SQL checks share: every string or template literal that is a
  * statement, and the split of a source into code, literal and comment that makes that possible.
+ * `sql-scan.ts` reads `.query(` call sites through the same split.
  *
- * Five checks under `checks/` carried their own copy of this — `catalog-eval-columns`,
- * `dropped-columns`, `eval-family-readers`, `plugin-version-immutable` and `scored-run-terminal` —
- * six identical functions each, about a thousand lines in all. `lib/sql-scan.ts` was extracted for
- * two of the consumers (`check:sql` and the gate's console check) and says outright that "both must
- * agree exactly on where a statement starts and ends"; five private copies are five more that
- * nothing holds to that, and a scanner fixed in one place and not another makes a check that misses
- * the statement it exists to find. This is that scanner, once, for all of them.
- *
- * What stays with the caller is its POLICY: which files it walks, and what it does with a
+ * What stays with the caller is its policy: which files it walks, and what it does with a
  * statement once it has one. `sourceFiles` takes that as a predicate rather than guessing, because
- * the skip rules ARE the check's judgement — `scored-run-terminal` skips an applied migration and a
- * mutation spec, and a reader that decided that for it would be deciding it wrongly for the next
- * check that shares this.
- *
- * Moved verbatim from `checks/scored-run-terminal.ts`, whose copies had been identical to the other
- * four's byte for byte.
+ * the skip rules are the check's judgement — `scored-run-terminal` skips an applied migration and a
+ * mutation spec, and a reader that decided that for it would decide it wrongly for the next check.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -172,7 +161,7 @@ function declarationEnd(src: string, rs: Region[], from: number): number {
       if (c === "(") paren++;
       else if (c === ")") paren--;
       else if (c === "{" && paren === 0) { depth++; opened = true; }
-      else if (c === "}") { depth--; if (opened && depth <= 0) return k + 1; }
+      else if (c === "}" && paren === 0) { depth--; if (opened && depth <= 0) return k + 1; }
       else if (c === ";" && !opened && depth === 0) return k + 1;
     }
   }

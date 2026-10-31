@@ -98,17 +98,17 @@ check("every envelope field the platform writes is one the schema declares", () 
   // zz-core's document writer, which is the only place a document envelope is composed:
   // `env.<field> =` on a parsed envelope, and putEnvelopeField by name. The whole service,
   // because composing an envelope is zz-core's rule rather than one file's habit.
-  const f = "zz-core";
-  const src = zzCoreSource();
   const bad: string[] = [];
-  src.split("\n").forEach((ln, i) => {
-    if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
-    // setEnvelopeField too: it is how knowledge_supersede writes `supersededBy`.
-    for (const m of [...ln.matchAll(/\benv\.([a-zA-Z_]+)\s*=(?!=)/g),
-                     ...ln.matchAll(/(?:put|set)EnvelopeField\([^,]+,\s*"([a-zA-Z_]+)"/g)]) {
-      if (!declared.has(m[1])) bad.push(`${f}:${i + 1} writes '${m[1]}'`);
-    }
-  });
+  for (const f of sourceFiles(["services/zz-core/src"], [".ts"])) {
+    readFileSync(join(root, f), "utf8").split("\n").forEach((ln, i) => {
+      if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
+      // setEnvelopeField too: it is how knowledge_supersede writes `supersededBy`.
+      for (const m of [...ln.matchAll(/\benv\.([a-zA-Z_]+)\s*=(?!=)/g),
+                       ...ln.matchAll(/(?:put|set)EnvelopeField\([^,]+,\s*"([a-zA-Z_]+)"/g)]) {
+        if (!declared.has(m[1])) bad.push(`${f}:${i + 1} writes '${m[1]}'`);
+      }
+    });
+  }
   return bad.length
     ? `${firstOf(bad)} — the published schema does not declare it, and a flow may therefore claim the name`
     : null;

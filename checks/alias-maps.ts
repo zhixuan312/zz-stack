@@ -1,5 +1,5 @@
 // Every rename in the alias maps resolves, every deletion does not, and the counts hold.
-import { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS } from "../packages/contracts/dist/index.js";
+import { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS } from "../packages/contracts/dist/index.js";
 
 const fail: string[] = [];
 const size = (name: string, map: Record<string, string>, want: number) => {
@@ -18,7 +18,6 @@ size("MANAGE_ALIAS", MANAGE_ALIAS, 16);
 // round writers' `plugin_judge` and `round_recommend`, and `plugin_scores` with `round_scores` —
 // see EVAL_ALIAS's own comment for why. What remains is the one genuine rename.
 size("EVAL_ALIAS", EVAL_ALIAS, 1);
-size("SKILL_ALIAS", SKILL_ALIAS, 2);
 
 const resolves: [Record<string, string>, string, string][] = [
   [TOOL_ALIAS, "get_my_info", "session_whoami"],
@@ -29,8 +28,6 @@ const resolves: [Record<string, string>, string, string][] = [
   [MANAGE_ALIAS, "add_person", "person_add"],
   [MANAGE_ALIAS, "my_client_setup", "client_setup"],
   [EVAL_ALIAS, "plugin_finding_record", "finding_record"],
-  [SKILL_ALIAS, "zz-backbone", "zz-platform"],
-  [SKILL_ALIAS, "zz-knowledge", "zz-handover"],
 ];
 for (const [map, from, to] of resolves) {
   if (map[from] !== to) fail.push(`${from} resolves to ${map[from]}, expected ${to}`);
@@ -56,7 +53,7 @@ for (const same of ["initiative_status", "knowledge_add", "knowledge_supersede"]
   if (TOOL_ALIAS[same]) fail.push(`${same} is unchanged and must have no alias`);
 }
 // A control: a name nobody renamed must be absent from every map.
-for (const [n, m] of Object.entries({ TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS })) {
+for (const [n, m] of Object.entries({ TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS })) {
   if (m["a_name_nobody_ever_used"]) fail.push(`${n} resolves a name that does not exist`);
 }
 

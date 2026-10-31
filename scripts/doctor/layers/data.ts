@@ -10,10 +10,11 @@
  * what a release rolls back on.
  */
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { REMOTE, root, run, ssh } from "../../deployment.ts";
 import { ABSORBS } from "../../release/rollback-guard.ts";
+import { everySkill, readSkill } from "../../skill-versions.ts";
 import { layer, probe } from "../run.ts";
 
 layer("data", "is the data the shape this checkout expects", ["services/gateway/migrations", "catalog"]);
@@ -75,22 +76,25 @@ probe("every migration is applied, and every applied migration still exists", ()
 });
 
 // The registry is written from the catalog by the release's own deploy step, so a catalog that
-// grew a skill without a release leaves the two disagreeing — and the symptom is a skill an
-// agent cannot load, which looks like the agent's fault.
+// grew or renamed a skill without a release leaves the two disagreeing — and the symptom is a skill
+// an agent cannot load, which looks like the agent's fault.
+//
+// By name, against every SKILL.md register-skills registers (catalog/ and skills/), and against
+// LIVE rows only: `register-skills` marks a name the tree no longer carries `retired` rather than
+// deleting it, because runs and plugin releases reference its versions.
 probe("the skill registry is not behind the catalog", () => {
-  const onDisk = Number(run("bash", ["-c",
-    `find ${root}/catalog -name SKILL.md | wc -l`]).trim());
-  if (!onDisk) return "this checkout's catalog holds no SKILL.md at all — the doctor is reading nothing";
-  // LIVE rows, never every row. `zz.skill` keeps a row for every name ever registered and
-  // `register-skills` marks the ones the catalog no longer carries `retired` rather than deleting
-  // them — their versions are referenced by runs and plugin releases. So the total only ever
-  // grows, `rows >= onDisk` held permanently, and this probe could not fire for the case it names:
-  // a catalog that grew a skill with no release behind it.
-  const rows = Number((psql("select count(*) from zz.skill where not retired").trim() || "0"));
-  if (!rows) throw new Error("could not count zz.skill on the host");
-  return rows >= onDisk ? null
-    : `the catalog ships ${onDisk} skills and the registry holds ${rows} row(s) — the deploy step's ` +
-      `registry update has not run for what is on disk`;
+  const onDisk = everySkill(root).map((f) => {
+    const n = readSkill(f).name;
+    return n === f ? basename(dirname(f)) : n;
+  });
+  if (!onDisk.length) return "this checkout holds no SKILL.md at all — the doctor is reading nothing";
+  const live = new Set(psql("select name from zz.skill where not retired").split("\n").map((x) => x.trim()).filter(Boolean));
+  if (!live.size) throw new Error("could not read zz.skill on the host");
+  const missing = onDisk.filter((n) => !live.has(n));
+  return missing.length
+    ? `this checkout ships ${missing.length} skill(s) the registry does not hold live: ${missing.join(", ")} — ` +
+      `the deploy step's registry update has not run for what is on disk`
+    : null;
 });
 
 // Every run names a version that had been released when the run started, or the evaluation track is
@@ -156,14 +160,13 @@ probe("no initiative in the store was left behind by a probe", () => {
 // expected to carry one wherever it appears.
 //
 // DELIBERATE: a closed initiative is not read. It ran under the manifest of its day, and a flow
-// that later stops gating a document (0.76.0's findings.md) does not make an approval somebody
-// really gave into a false one. Rewriting its frontmatter would erase who agreed and when; and a
-// closed initiative's status feeds no gate anyone can still pass. What this protects is a live
-// initiative whose document claims an agreement its flow never asks for.
+// that later stops gating a document does not make an approval somebody really gave into a false
+// one. Rewriting its frontmatter would erase who agreed and when; and a closed initiative's status
+// feeds no gate anyone can still pass. What this protects is a live initiative whose document
+// claims an agreement its flow never asks for.
 //
 // Pre-deploy: its two sides are this checkout's manifests and documents already live, and the deploy
-// changes neither, so it is asked before the deploy — 0.76.0 was deployed and rolled back over this
-// one disagreement, which was already true of the data before a single container moved.
+// changes neither, so it is asked before the deploy rather than rolled back over after it.
 probe("no document carries a status its flow does not gate", () => {
   const gated = new Map<string, boolean>();
   for (const f of run("bash", ["-c", `ls ${root}/catalog/*/*/flow.json`]).split("\n").filter(Boolean)) {
@@ -179,9 +182,7 @@ probe("no document carries a status its flow does not gate", () => {
   const rows = psql(
     "select coalesce(i.flow,''), regexp_replace(d.path,'^.*/',''), d.status " +
     "from zz.doc d join zz.initiative i on i.id = d.initiative_id " +
-    "where d.status <> '' " +
-    "and not exists (select 1 from zz.initiative i join zz.team t on t.id = i.team_id " +
-    "where i.id = d.initiative_id and i.closed_at is not null)")
+    "where d.status <> '' and i.closed_at is null")
     .split("\n").filter(Boolean);
   const bad: string[] = [];
   for (const line of rows) {
@@ -200,13 +201,12 @@ probe("no document carries a status its flow does not gate", () => {
          `team reindexed.`;
 }, { predeploy: true });
 
-// The team an event is filed under and the initiative it names must be the same team's, and after
-// the delivery-telemetry phase that is the schema's job rather than a query's: `zz.event` carries
-// `team_id` and `initiative_id`, and the composite foreign key `(team_id, initiative_id)` can only
-// reference an initiative of that team. The old probe here counted rows violating that pair, and
-// there is no longer a row to count — a cross-team attribution is refused at insert.
+// The team an event is filed under and the initiative it names must be the same team's, and that is
+// the schema's job rather than a query's: `zz.event` carries `team_id` and `initiative_id`, and the
+// composite foreign key `(team_id, initiative_id)` can only reference an initiative of that team, so
+// a cross-team attribution is refused at insert and there is no row to count.
 //
-// So this asks the live question instead: is the guarantee actually installed on this deployment?
+// So this asks the live question: is the guarantee actually installed on this deployment?
 // That is a fact about a host, which is what this layer is for — the gate reads the schema target,
 // not the database a release is running against, so a deployment whose migration did not land looks
 // identical to a healthy one from off the host.
@@ -220,8 +220,8 @@ probe("the deployment holds a team and an initiative to the same team", () => {
   if (Number(present)) return null;
   return `zz.event carries no (team_id, initiative_id) foreign key on this deployment, so an ` +
          `event can name an initiative belonging to another team and every per-team report reads ` +
-         `it as that team's work. It is created by the delivery-telemetry migration ` +
-         `(services/gateway/migrations/), which has not run here — deploy it before trusting any ` +
+         `it as that team's work. services/gateway/migrations/001_init.sql creates it, so this ` +
+         `deployment is not on the schema this checkout declares — fix that before trusting any ` +
          `attribution in this store.`;
 });
 

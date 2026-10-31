@@ -29,7 +29,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PLATFORM_CLIENTS, refusalClass, resolveStep, resolveToolKey } from "@zz/contracts";
+import { PLATFORM_CLIENTS, refusalClass, resolveToolKey } from "@zz/contracts";
 
 import { die, optional, parseArgs } from "../lib/cli.js";
 import { showLedger, showMovement } from "./tool-report-history.js";
@@ -37,9 +37,9 @@ import { teachesTheRule } from "../lib/refusal.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 import { localStamp } from "../lib/shell.js";
 
-// Re-exported so the alias-applied and skill-renames checks find the resolvers `perTool` groups
-// through in one place. The maps and the resolution live in @zz/contracts/alias.ts.
-export { resolveToolKey, resolveStep };
+// Re-exported so `checks/alias-applied.ts` finds the resolver `perTool` groups through in one
+// place. The maps and the resolution live in @zz/contracts/alias.ts.
+export { resolveToolKey };
 
 // A refusal must teach the rule: a refusal that names a status and stops gives the agent nothing
 // to change, and it retries the same call until it gives up. The judgement lives in
@@ -139,7 +139,15 @@ function rows(psql: string, since: string, surface: string | null, actor: string
   // One run, one conversation, keyed on the caller hash. Without it the report mixes the run being
   // measured with whatever else touched the deployment while it ran, including the operator
   // setting the run up.
-  if (actor) where.push("e.detail->>'caller' = :'actor'");
+  //
+  // COUPLED: `detail.caller` is the first 12 hex of sha256(address NUL client), the gateway's
+  // `callerKey` (services/gateway/src/step-trace.ts) hashed in tool-telemetry.ts. No row carries the
+  // address, so the one given is hashed here with each row's own `detail.client`, folded the way
+  // the identity middleware folds the address it forwards.
+  if (actor) {
+    where.push("e.detail->>'caller' = left(encode(sha256(convert_to(lower(:'actor'), 'UTF8') || " +
+               "'\\x00'::bytea || convert_to(coalesce(e.detail->>'client', ''), 'UTF8')), 'hex'), 12)");
+  }
   const sql =
     // The kind is in the statement, not assembled into it.
     //

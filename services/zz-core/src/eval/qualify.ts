@@ -150,6 +150,10 @@ interface QualifyResult {
   };
 }
 
+/** What `zz.eval_evaluator_qualification.evidence` holds: the ladder's evidence, its reason and
+ *  every known-answer result, as `recordQualification` writes it. */
+type StoredEvidence = LadderEvidence & { reason?: string | null; results?: readonly AnchorResult[] };
+
 function respond(
   counted: LadderEvidence, results: readonly AnchorResult[], state: string, reason: string | null, qualificationId: string,
 ): QualifyResult {
@@ -201,14 +205,15 @@ async function gatherQualification(
   const anchors = await measureAnchors(p, measureId);
   const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
 
+  // By the index each ask is handed, so `recordQualification` inserts them in declared order.
   const asked: AskedEvaluatorAnswer[] = [];
   const { counts, results } = await gatherCountedEvidence({
     anchors,
-    ask: async (subject) => {
+    ask: async (subject, index) => {
       const answer = await askEvaluatorQuestion({
         evaluator_version_id: evaluatorVersionId, subject_text: subject, askedBy: principal,
       });
-      asked.push(answer);
+      asked[index] = answer;
       return answer.result;
     },
   });
@@ -325,10 +330,12 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
 
       let result: QualifyResult;
       if (outcome.replayed) {
-        const row = (await p.query<{ state: string; evidence: QualifyResult["evidence"] }>(
+        // The row stores the ladder's own evidence (`recordQualification`); the answer names its
+        // counts the way a fresh call does, through the same `respond`.
+        const row = (await p.query<{ state: string; evidence: StoredEvidence }>(
           "select state, evidence from zz.eval_evaluator_qualification where id = $1::uuid", [outcome.result_id])).rows[0];
         if (!row) throw new Refusal("ERROR: idempotency ledger points at a qualification this call cannot read back");
-        result = { qualification_id: outcome.result_id, state: row.state, evidence: row.evidence };
+        result = respond(row.evidence, row.evidence.results ?? [], row.state, row.evidence.reason ?? null, outcome.result_id);
       } else {
         result = outcome.result;
       }

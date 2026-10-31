@@ -19,7 +19,7 @@ import { pathToFileURL } from "node:url";
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { foldByRule, refusalRule, refusalKey, returnKey } = await load("services/zz-core/dist/eval/discover-groups.js");
-const { interpret } = await load("packages/contracts/dist/assessment.js");
+const { interpret } = await load("packages/contracts/dist/index.js");
 const { batchRefusal, refusalText } = await load("services/zz-core/dist/document-details.js");
 
 const fail: string[] = [];

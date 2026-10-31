@@ -26,17 +26,15 @@
 import type pg from "pg";
 
 import {
-  answerMeasure, excludedAnswer, isRunLevelRef, planAssessment, recordMeasureAnswer, runLevelRef,
+  answerMeasure, callSlots, excludedAnswer, isRunLevelRef, MODEL_CALL_WIDTH, planAssessment, recordMeasureAnswer, runLevelRef,
   type AnsweredMeasure, type DimensionRow, type MeasureAnswer, type MeasureRow, type SnapshotFacts,
   type SubjectKind,
 } from "./evaluate-measures.js";
-import { decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { decideBeforeWork, UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { resolveProtocol, unaffirmedRefusal } from "./qualify.js";
 import { resolveSubjectRef } from "./subject-ref.js";
 import { teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function pluginNameOf(p: pg.Pool, pluginVersionId: string): Promise<string | null> {
   if (!UUID_RE.test(pluginVersionId)) return null;
@@ -250,9 +248,12 @@ export const STORED_ANSWERS_SQL = `
          jsonb_build_object(
            'value', a.value, 'excluded', a.value is null,
            'excluded_reason', a.excluded_reason, 'assessment_id', a.assessment_id,
-           'detail', jsonb_build_object('raw_value', a.raw_value)) as answer
+           'detail', jsonb_build_object('raw_value', a.raw_value)
+                     || case when za.reading is null then '{}'::jsonb
+                             else jsonb_build_object('reading', za.reading) end) as answer
     from zz.eval_assessment a
     join zz.eval_run er on er.id = a.eval_run_id
+    left join zz.assessment za on za.id = a.assessment_id
     left join zz.doc d on d.id = a.doc_id
     left join zz.initiative i on i.id = d.initiative_id
     left join zz.knowledge_node k on k.id = a.knowledge_node_id`;
@@ -281,6 +282,9 @@ export async function startEvaluation(
   | { readonly error: string }> {
   const { subject_version_id, protocol_version_id, observation_snapshot_id, idempotency_key, initiative } = args;
   if (!UUID_RE.test(subject_version_id)) return { error: "ERROR: unknown subject_version_id" };
+  if (!UUID_RE.test(observation_snapshot_id)) {
+    return { error: "ERROR: unknown observation_snapshot_id — call plugin_profile first" };
+  }
 
   const snapshot = (await p.query<{ id: string; plugin_version_id: string }>(`
     select id::text as id, plugin_version_id::text as plugin_version_id from zz.eval_observation_snapshot where id = $1::uuid`,
@@ -419,18 +423,21 @@ export async function assessEvaluation(
         return !!q && q.state !== "unqualified";
       },
     });
-    for (const item of plan) {
+    // Every (measure, ref), and every part of a whole document, is an independent model call:
+    // all asked at once, through one set of slots, so the request holds no more than eight.
+    const slot = callSlots(MODEL_CALL_WIDTH);
+    const answers = await Promise.all(plan.map(async (item): Promise<AnsweredMeasure> => {
       const q = item.measure.evaluator_version_id ? qualification.get(item.measure.evaluator_version_id) ?? null : null;
-      const answer: AnsweredMeasure = item.ask
-        ? await answerMeasure({
+      return item.ask
+        ? answerMeasure({
             measure: item.measure, snapshot, subjectRef: item.subjectRef, principal,
             subjectText: resolvedRefs.get(item.subjectRef)?.text,
-            qualificationOf: async () => q,
+            qualificationOf: async () => q, slot,
           })
         : { ...excludedAnswer(item.excluded_reason ?? "excluded"), evaluator_version_id: item.measure.evaluator_version_id,
             qualification_id: q?.id ?? null, qualification_state: q?.state ?? null, pending: null };
-      answered.push({ subjectRef: item.subjectRef, measure: item.measure, answer });
-    }
+    }));
+    plan.forEach((item, k) => answered.push({ subjectRef: item.subjectRef, measure: item.measure, answer: answers[k] }));
   }
 
   type Assessed = {

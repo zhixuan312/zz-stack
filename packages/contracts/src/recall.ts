@@ -24,10 +24,6 @@
  * DELIBERATE: this builds no second store. It is a result type and a pure function over a search
  * outcome somebody else already obtained — it runs no query, reaches no network, and holds no
  * state.
- *
- * COUPLED: `matchKindFromVia` below mirrors the `via` values `services/zz-core`'s
- * `knowledge_search` returns. `@zz/contracts` sits below the services and must never depend
- * upward, so the mapping is stated here rather than imported from there.
  */
 
 // The closed sets
@@ -204,26 +200,6 @@ export interface RecallResult {
   readonly search_receipt_refs: readonly string[];
   readonly findings: readonly RecallFinding[];
   readonly unresolved_questions: readonly string[];
-}
-
-// The live handler's vocabulary, one way
-
-/**
- * `via` as `knowledge_search` spells it, mapped to what the hit is worth here. `lexical-broad`
- * means no document contained all the query terms — the platform re-asked with OR and handed back
- * what matched some of them — so those rows are leads. `evidence` is the graph lane: a row reached
- * because it cites the same initiative as a strong hit, sharing no vocabulary with the query. Both
- * stay leads until original text supports them.
- *
- * DELIBERATE: the priority is a label, never a promotion. A row fused from several lanes is named
- * by the weakest claim those lanes support, and the name changes nothing about `claim_kind`, which
- * is decided by whether original text was read and by nothing else.
- */
-export function matchKindFromVia(via: readonly string[]): RecallMatchKind {
-  if (via.includes("lexical-broad")) return "broadened_lead";
-  if (via.includes("lexical")) return "lexical";
-  if (via.includes("tag")) return "tag";
-  return "graph_lead";
 }
 
 // The mapping

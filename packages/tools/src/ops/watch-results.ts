@@ -2,7 +2,7 @@
  * watch-results — alert on results getting worse, not on the service being up.
  *
  *   zz-tool watch-results [--window '7 days'] [--psql '<command>']
- *                         [--health http://cred-proxy:8000/health]
+ *                         [--health http://127.0.0.1:8764/health]
  *
  * A liveness check answers "is the gateway answering", and the gateway is almost always answering.
  * The failures that cost something look nothing like an outage: five initiatives stuck on the same
@@ -10,6 +10,9 @@
  * produced nothing for seven days. Every one is invisible to a health endpoint and visible in data
  * the platform already writes — everything here reads zz.event, zz.doc and zz.initiative, and
  * collects nothing new.
+ *
+ * Run it on the deployment host: `--psql` defaults to the compose project, and `--health` to the
+ * gateway's host-published port (`CRED_PROXY_PORT` in deploy/docker-compose.yml).
  *
  * An empty window is an alert here, never an all-clear: if this cannot see any activity at all, the
  * likely explanation is that it is looking at the wrong place.
@@ -29,16 +32,14 @@ const WORSE = 2;
 const FLOOR = 5;
 
 interface EventRow {
-  ts: string; team_slug: string | null; subject: string; detail: Record<string, unknown>;
+  team_slug: string | null; subject: string; refusal: string | null;
   /** Null means the call was never measured — a pre-column row, or a caller shape the
    *  gateway cannot time. Never a zero: a zero would read as an instant call and drag a
    *  median down, which is the opposite of the alert this file exists to raise. */
   duration_ms: number | null;
 }
-interface DocRow {
-  team_slug: string; initiative: string; path: string; status: string; updated_at: string;
-}
-interface ClosedInitiativeRow { team_slug: string; slug: string }
+/** One team's drafts that have waited over a fortnight on an open initiative. */
+interface StuckRow { team_slug: string; n: number }
 
 
 const median = (ns: number[]): number => {
@@ -55,33 +56,36 @@ function main(): number {
   // This window and the one before it, so "worse" is measured against this platform's own
   // recent normal rather than against a number somebody guessed once.
   const evNow = psqlRows<EventRow>(psql,
-    "select e.ts, t.slug as team_slug, e.subject, e.detail, e.duration_ms" +
+    "select t.slug as team_slug, e.subject, e.refusal, e.duration_ms" +
     "  from zz.event e left join zz.team t on t.id = e.team_id" +
     " where e.kind = 'tool_call' and e.ts > now() - (:'w')::interval", { w: window });
   const evPrev = psqlRows<EventRow>(psql,
-    "select e.ts, t.slug as team_slug, e.subject, e.detail, e.duration_ms" +
+    "select t.slug as team_slug, e.subject, e.refusal, e.duration_ms" +
     "  from zz.event e left join zz.team t on t.id = e.team_id" +
     " where e.kind = 'tool_call'" +
     "   and e.ts <= now() - (:'w')::interval and e.ts > now() - 2 * (:'w')::interval", { w: window });
   // COUPLED: a document reaches its team and its initiative through `initiative_id` — `zz.doc`
   // carries neither slug — so both come from the joins rather than from retired columns.
-  const docs = psqlRows<DocRow>(psql,
-    "select t.slug as team_slug, i.slug as initiative, d.path, d.status, d.updated_at" +
+  //
+  // Only drafts a fortnight old on an open initiative: a closed initiative's own gates never change
+  // again, so counting its documents would fire the alert identically every run forever. Closed is
+  // zz.initiative's own closed_at, never a document's outcome.
+  const stuck = psqlRows<StuckRow>(psql,
+    "select t.slug as team_slug, count(*)::int as n" +
     "  from zz.doc d" +
     "  join zz.initiative i on i.id = d.initiative_id" +
-    "  join zz.team t on t.id = i.team_id", {});
-  // Which initiatives are closed — zz.initiative's own closed_at, never a document's outcome.
-  const closed = psqlRows<ClosedInitiativeRow>(psql,
-    "select t.slug as team_slug, i.slug from zz.initiative i" +
-    "  join zz.team t on t.id = i.team_id where i.closed_at is not null", {});
+    "  join zz.team t on t.id = i.team_id" +
+    " where d.status = 'draft' and i.closed_at is null and d.updated_at < now() - interval '14 days'" +
+    " group by t.slug", {});
 
   const alerts: string[] = [];
 
   // Provenance the database refused. events.ts writes those to a file and counts them, and /health
   // reports the count. Read here because this is the monitor. Failing to reach /health is not an
   // alert: this tool may be run from a checkout with no gateway on the network, and inventing an
-  // alarm out of "I could not ask" is how a monitor teaches people to ignore it.
-  const health = flags.get("health") || "http://cred-proxy:8000/health";
+  // alarm out of "I could not ask" is how a monitor teaches people to ignore it. It is said, once,
+  // so a stranded-event count nobody read is not mistaken for none.
+  const health = flags.get("health") || "http://127.0.0.1:8764/health";
   try {
     const raw = execFileSync("curl", ["-s", "-m", "10", health], { encoding: "utf8" });
     const body = JSON.parse(raw) as { stranded_events?: { count: number; last: string | null; file: string } };
@@ -90,7 +94,9 @@ function main(): number {
       alerts.push(`${st.count} events could not be written to the database and are sitting in ` +
                   `${st.file} (last ${st.last ?? "unknown"}) — the audit record has holes`);
     }
-  } catch { /* no gateway reachable from here: not something to wake anybody for */ }
+  } catch {
+    console.error(`  could not read the stranded-event count from ${health} — pass --health <url> to ask the gateway`);
+  }
 
   // The check on this tool itself, first. Silence is the failure mode a monitor has, and one that
   // reports "all clear" on an empty query has told you nothing while sounding like it told you
@@ -108,8 +114,8 @@ function main(): number {
   const classes = (rows: EventRow[]): Map<string, number> => {
     const m = new Map<string, number>();
     for (const e of rows) {
-      if (!e.detail.refusal) continue;
-      const c = refusalClass(String(e.detail.refusal));
+      if (!e.refusal) continue;
+      const c = refusalClass(e.refusal);
       m.set(c, (m.get(c) ?? 0) + 1);
     }
     return m;
@@ -129,7 +135,9 @@ function main(): number {
     for (const e of rows) {
       const surface = e.subject.split(":")[0];
       if (typeof e.duration_ms !== "number") continue;
-      m.set(surface, [...(m.get(surface) ?? []), e.duration_ms]);
+      const ns = m.get(surface);
+      if (ns) ns.push(e.duration_ms);
+      else m.set(surface, [e.duration_ms]);
     }
     return m;
   };
@@ -144,19 +152,7 @@ function main(): number {
 
   // 3. Documents stuck at a gate. A draft nobody approved is normal for a day and a question after
   //    a fortnight, and a gate waiting on a person looks identical to one forgotten.
-  //
-  //    A closed initiative's own gates never change again, so skipping its documents is what
-  //    stops the alert firing identically every run forever. Read from zz.initiative.closed_at,
-  //    never from a document's outcome.
-  const closedInitiatives = new Set(closed.map((d) => `${d.team_slug} ${d.slug}`));
-  const stuck = new Map<string, number>();
-  for (const d of docs) {
-    if (closedInitiatives.has(`${d.team_slug} ${d.initiative}`)) continue;
-    if (d.status !== "draft") continue;
-    const age = (Date.now() - Date.parse(d.updated_at)) / 86_400_000;
-    if (age > 14) stuck.set(d.team_slug, (stuck.get(d.team_slug) ?? 0) + 1);
-  }
-  for (const [team, n] of stuck) {
+  for (const { team_slug: team, n } of stuck) {
     if (n >= 3) alerts.push(`${team}: ${n} documents have sat in draft for over a fortnight`);
   }
 

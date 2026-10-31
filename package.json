@@ -43,7 +43,7 @@
     "@zz/indexing": "*",
     "@zz/mcp-client": "*",
     "typescript": "^5.8.0",
-    "@types/node": "^22.7.0"
+    "@types/node": "^24"
   },
   "version": "0.100.0",
   "license": "MIT",

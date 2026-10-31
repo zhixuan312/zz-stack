@@ -8,29 +8,15 @@
  * than by count. A count passes a tool that was renamed, passes one deleted while another was
  * added, and can only ever notice a door that lost one and gained nothing.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { envToken, initFrame, publicUrl, root } from "../../deployment.ts";
+import { initFrame } from "../../deployment.ts";
 import { mcpFrame, type McpFrame } from "../../door-frame.ts";
 import { zzCoreTools } from "../../gate/read.ts";
-import { layer, probe } from "../run.ts";
+import { checkoutVersion, layer, liveToken, liveUrl, probe } from "../run.ts";
 
 layer("contract", "is the live surface the one the source declares", ["services/zz-core/src", "packages/contracts/src"]);
 
-function url() {
-  const u = publicUrl({ quiet: true });
-  if (!u) throw new Error("no address to probe — ZZ_PUBLIC_URL is unset and the host could not be asked");
-  return u;
-}
-function token() {
-  const t = envToken();
-  if (!t) throw new Error("no ZZ_TOKEN — the tool list cannot be asked for");
-  return t;
-}
-
 /** One MCP call to a door, with this layer's own address and token resolved first. */
-const mcp = (path: string, body: string): McpFrame => mcpFrame(url(), token(), path, body);
+const mcp = (path: string, body: string): McpFrame => mcpFrame(liveUrl(), liveToken(), path, body);
 
 probe("every tool the source registers is on the live door", () => {
   // The initialize handshake first: the doors are stateless, but a server that throws at
@@ -88,7 +74,7 @@ probe("every tool the source registers is on the live door", () => {
 });
 
 probe("the live door is running this version", () => {
-  const want = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+  const want = checkoutVersion();
   // The handshake, not a package download. `serverInfo.version` answers what the running image
   // thinks it is in one frame, from the same `serviceVersion` read, with no archive in the middle.
   const hello = mcp("/core/mcp", initFrame("doctor"));

@@ -65,7 +65,7 @@ check("the doctor changes nothing", () => {
     [/docker\s+compose[^"'`\n]*\s(up|down|restart|stop|start|rm)\b/, "a docker compose command that changes what is running"],
     [/\bdocker\s+(run|rm|kill|restart|pull|push)\b/, "a docker command that changes state"],
     [/\bgit\s+(checkout|commit|push|reset|clean|fetch|pull)\b/, "a git command that changes the tree or the remote"],
-    [/\b(insert\s+into|update\s+\w+\s+set|delete\s+from|drop\s+table|truncate)\b/i, "a SQL statement that writes"],
+    [/\b(insert\s+into|update\s+[\w.]+\s+set|delete\s+from|drop\s+table|truncate)\b/i, "a SQL statement that writes"],
     [/\bcrontab\s+-r\b/, "a crontab removal"],
     [/\brm\s+-[rf]/, "a recursive or forced remove"],
   ];
@@ -222,9 +222,9 @@ check("a dry run cannot write git history", () => {
 
 check("the console's version moves on both release paths", () => {
   // The console's package.json and compose literal are set by setConsoleVersion. The local build
-  // calls it before it builds the console image; `--images-from-ci` skips that build, and until
-  // 0.89.0 it skipped the bump with it, so the console would have been deployed and tagged at a
-  // number its own repository did not carry. Both paths have to reach it.
+  // calls it before it builds the console image; `--images-from-ci` skips that build, and must
+  // not skip the bump with it, or the console is deployed and tagged at a number its own
+  // repository does not carry. Both paths have to reach it.
   const bad = [];
   const build = functionBody(readFileSync(join(root, "scripts/release/build.ts"), "utf8"), "buildAndSmoke");
   if (!build) return "scripts/release/build.ts no longer defines buildAndSmoke() — this check cannot run";
@@ -310,9 +310,8 @@ check("a failed rollback is reported, not thrown", () => {
 });
 
 check("a breaking change says what to do about it", () => {
-  // An upgrade-notes entry is the part of a changelog a reader has to act on. Two shapes are
-  // checked: a bullet with nothing after its bold lead, and a bullet whose lead says
-  // "Breaking" without saying what to do.
+  // An upgrade-notes entry is the part of a changelog a reader has to act on: a bullet with
+  // nothing after its bold lead, "Breaking" or not, says nothing to do.
   const bad: string[] = [];
   for (const rel of ["CHANGELOG.md", "README.md"]) {
     const f = join(root, rel);
@@ -325,8 +324,6 @@ check("a breaking change says what to do about it", () => {
       const continued = (lines[i + 1] ?? "").startsWith("  ");
       if (!rest.trim() && !continued) {
         bad.push(`${rel}:${i + 1} "${lead.slice(0, 60)}" is a bullet with no explanation`);
-      } else if (/breaking/i.test(lead) && !rest.trim() && !continued) {
-        bad.push(`${rel}:${i + 1} announces a breaking change and says nothing to do about it`);
       }
     });
   }

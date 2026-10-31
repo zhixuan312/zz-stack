@@ -1,9 +1,9 @@
 /**
- * close.ts — what a closing record may say, and what a handover may claim to have verified.
+ * close.ts — what a closing record may say.
  *
- * The honest version of each record here and the flattering version look identical to a later
- * reader. This module is the only assembler of all three, so the flattering version is not
- * something it refuses — it is something it cannot express.
+ * The honest version of a closing record and the flattering version look identical to a later
+ * reader. This module is the only assembler of one, so the flattering version is not something it
+ * refuses — it is something it cannot express.
  *
  * It has no notion of order: no list of stages, and every stage name is opaque caller text, so
  * it cannot name a stage nobody mentioned.
@@ -13,16 +13,13 @@
  *
  * A closing record is corrected by revising it. A second closing call is refused.
  */
+import { OUTCOMES } from "./outcomes.js";
 
 // The vocabulary
 
-/**
- * The three outcomes the platform derives, and the only three strings this module produces as
- * one. A single frozen list rather than a type alone, because {@link deriveOutcome} produces
- * from it and the hand-written-outcome observation tests membership of it.
- */
-const OUTCOMES = Object.freeze(["accepted", "delivered", "abandoned"] as const);
-
+/** The three outcomes the platform derives, and the only three strings this module produces as
+ *  one: {@link deriveOutcome} produces from the list and the hand-written-outcome observation
+ *  tests membership of it. */
 type Outcome = (typeof OUTCOMES)[number];
 
 /**
@@ -40,20 +37,9 @@ type StageState = "established" | "not_established";
  *  said no" are different facts, and collapsing them makes a record assert an unmade claim. */
 type GatePosture = "recorded" | "unrecorded" | "unstated";
 
-/** Where a claim in a handover came from. `read-back` is stampable by exactly one builder. */
-export type ClaimBasis = "self-reported" | "read-back";
-const SELF_REPORTED: ClaimBasis = "self-reported";
-const READ_BACK: ClaimBasis = "read-back";
-
-/** A non-empty string, and the answer to "does an acceptor exist" and "was a reader named". */
+/** A non-empty string, and the answer to "does an acceptor exist". */
 function named(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
-}
-
-/** Present enough to record. `0` is a real count and must survive: a handover that minted
- *  nothing still has a number to report. */
-function present(value: unknown): boolean {
-  return value !== undefined && value !== null && String(value).trim().length > 0;
 }
 
 /** Whether a value is one of the three words the platform derives — asked of the same frozen
@@ -86,7 +72,9 @@ interface OutcomeBasis {
  */
 export function deriveOutcome(basis: OutcomeBasis): Outcome | null {
   if (basis.disposition === "abandoned") return "abandoned";
-  if (basis.disposition === "finished") return named(basis.accepted_by) ? "accepted" : "delivered";
+  if (basis.disposition === "finished") {
+    return (named(basis.accepted_by) ? "accepted" : "delivered") satisfies (typeof OUTCOMES)[number];
+  }
   return null;
 }
 
@@ -253,116 +241,5 @@ export function closeInitiative(request: CloseRequest): CloseRecord {
     no_signoff_reason: reason,
     unstated: Object.freeze(unstated),
     refusals: Object.freeze(refusals),
-  });
-}
-
-// The handover
-
-/** One thing a handover states, and where it got it. */
-export interface Claim {
-  readonly field: string;
-  readonly value: string;
-  readonly basis: ClaimBasis;
-}
-
-const PROPOSED_FIELD = "proposed_team_nodes";
-const MINTED_FIELD = "minted_team_nodes";
-const EXPECTED_FIELD = "expected_impact";
-const OBSERVED_FIELD = "observed_impact";
-
-/**
- * A claim in the author's own words. The function takes no reader argument, so there is no
- * basis but this one.
- */
-function declaredClaim(field: string, value: unknown): Claim | null {
-  if (!present(value)) return null;
-  return Object.freeze({ field, value: String(value), basis: SELF_REPORTED });
-}
-
-/**
- * The only builder that can stamp {@link READ_BACK}, and it will not do so without a named
- * reader: a value wrongly routed here stays self-reported until something is named as having
- * read it.
- */
-function observedClaim(field: string, value: unknown, readBy: unknown): Claim | null {
-  if (!present(value)) return null;
-  return Object.freeze({ field, value: String(value), basis: named(readBy) ? READ_BACK : SELF_REPORTED });
-}
-
-/**
- * What a handover is handed. Each field routes to exactly one builder, in code, below.
- *
- * `impactReading` and `impactReadBy` are one fact in two halves and are consumed as one: a
- * measurement with nothing named as having taken it is not an observation. `expectedImpact` is
- * the author's forecast and reaches neither of them.
- */
-export interface HandoverDeclaration {
-  /** The author's own count of what they propose. Nothing reads this back. */
-  readonly proposed_team_nodes?: string | number;
-  /** How many were actually minted. */
-  readonly mintedTeamNodes?: number;
-  /** What read the minted count back, if anything did. */
-  readonly mintedReadBy?: string;
-  /** What the author expects to change. A forecast. */
-  readonly expectedImpact?: string;
-  /** A measurement of what actually changed. */
-  readonly impactReading?: string;
-  /** What took that measurement. */
-  readonly impactReadBy?: string;
-}
-
-/**
- * A handover that describes its own verification.
- *
- * Every field here is an observation of `claims`. A flag beside the claims, computed from
- * something else, is free to disagree with them, so `selfReported` counts the same list the
- * statement prints and `expectedImpact` is the forecast claim's own value.
- *
- * `selfReported` answers a general question — does this handover assert anything nobody read
- * back? `proposedIsEnforced` keeps a narrow reading because it names the one field it is
- * about, and with no count declared there is nothing presented as enforced.
- */
-interface HandoverRecord {
-  readonly claims: readonly Claim[];
-  /** Computed from `claims`: this handover asserts at least one thing nobody read back. */
-  readonly selfReported: boolean;
-  /** Computed: something read the proposed count back. Nothing does, and a handover that
-   *  declares no count has nothing to present as enforced, so this is false either way. */
-  readonly proposedIsEnforced: boolean;
-  /** The forecast, taken from its own claim so the two can never disagree. */
-  readonly expectedImpact: string | null;
-  /** Present only when a measurement and a reader both arrived. Absent is the default; a
-   *  forecast can never land here. */
-  readonly observedImpact?: string;
-  /** The sentence the handover carries: what was read back, and what is the author's word. */
-  readonly statement: string;
-}
-
-export function handoverClaims(declaration: HandoverDeclaration): HandoverRecord {
-  // The routing is the contract: two fields go to the declaring builder, two pairs to the
-  // reading one, and no input moves any of them across.
-  const proposed = declaredClaim(PROPOSED_FIELD, declaration.proposed_team_nodes);
-  const expected = declaredClaim(EXPECTED_FIELD, declaration.expectedImpact);
-  const minted = observedClaim(MINTED_FIELD, declaration.mintedTeamNodes, declaration.mintedReadBy);
-  const observed = observedClaim(OBSERVED_FIELD, declaration.impactReading, declaration.impactReadBy);
-
-  const claims = Object.freeze(
-    [proposed, minted, expected, observed].filter((c): c is Claim => c !== null),
-  );
-
-  const readBack = claims.filter((c) => c.basis === READ_BACK).map((c) => c.field);
-  const asserted = claims.filter((c) => c.basis === SELF_REPORTED).map((c) => c.field);
-
-  return Object.freeze({
-    claims,
-    // The same list the statement prints. Not `proposed?.basis === SELF_REPORTED`: that answers
-    // a question about one field under a name that promises one about the handover.
-    selfReported: asserted.length > 0,
-    proposedIsEnforced: proposed?.basis === READ_BACK,
-    expectedImpact: expected?.value ?? null,
-    observedImpact: observed !== null && observed.basis === READ_BACK ? observed.value : undefined,
-    statement:
-      `read back: ${readBack.length > 0 ? readBack.join(", ") : "nothing"}; ` +
-      `self-reported and not read back: ${asserted.length > 0 ? asserted.join(", ") : "nothing"}`,
   });
 }

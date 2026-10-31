@@ -71,8 +71,11 @@ function confinedLocalDir(locator: string): string | { error: string } {
  *  binary (git / npm / tar) against a caller-controlled locator, so every call here goes through
  *  `tryExec`: argv arrays only, `--` ahead of the untrusted token so it can never be read as a
  *  flag, a bounded timeout and a bounded output buffer. Neither git nor npm caps how much they
- *  write to *disk*, so `directorySizeBytes` below is the actual backstop against an oversized or
- *  bombed fetch — the buffer limit only bounds what a command prints. */
+ *  write to *disk*. A package is refused from `npm pack`'s own report of its tarball and unpacked
+ *  sizes before tar extracts anything; past that, `directorySizeBytes` below refuses to capture a
+ *  tree over the cap, measured after the clone or extraction has written it, so for a clone it
+ *  bounds what is captured and not what the fetch writes first. The buffer limit only bounds what
+ *  a command prints. */
 const EXEC_TIMEOUT_MS = 120_000;
 const MAX_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024;
 /** Generous for a plugin's own skills and servers, and still a real ceiling: a shallow git clone
@@ -217,6 +220,8 @@ interface NpmPackEntry {
   filename: string;
   integrity?: string;
   shasum?: string;
+  size?: number;
+  unpackedSize?: number;
 }
 
 /** A registry spec and nothing else: `name`, `@scope/name`, either with `@<version-or-tag>`.
@@ -253,6 +258,13 @@ async function resolvePackage(spec: string): Promise<SourceResolution> {
     }
     const entry = entries[0];
     if (!entry?.filename) return { error: "npm pack produced no tarball" };
+    // npm lists the tarball's entries to report these, so a compression bomb is refused here,
+    // before tar writes it out.
+    const reported = Math.max(entry.size ?? 0, entry.unpackedSize ?? 0);
+    if (reported > MAX_SOURCE_BYTES) {
+      return { error: `${oversizeError(MAX_SOURCE_BYTES)}: npm reports it unpacks to ` +
+                       `${Math.round(reported / (1024 * 1024))}MB` };
+    }
 
     const extracted = join(dir, "extracted");
     mkdirSync(extracted);

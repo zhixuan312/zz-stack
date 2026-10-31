@@ -6,8 +6,8 @@
  *      of sha256 over `stable_key + "\n" + version + "\n" + question`.
  *   2. `registerEvaluator` refuses a `kind` outside `noul|choice|score` and a `kind`/
  *      `answer_schema.type` mismatch before it ever reaches a database.
- *   3. With no `TEAM_DB_URL`, `registerEvaluator`, `askEvaluator` and `recordEvaluatorAssessment`
- *      all refuse — "no platform database" — rather than silently doing nothing.
+ *   3. With no `TEAM_DB_URL`, `registerEvaluator` and `askEvaluatorQuestion` both refuse — "no
+ *      platform database" — rather than silently doing nothing.
  *
  * Not proven here: an evaluator resolving to its registered `zz.eval_evaluator_version`, one
  * noul/choice/score assessment row satisfying 001's checks, an unregistered `evaluator_version_id`
@@ -37,9 +37,9 @@ const sampleDefinition: EvaluatorDefinition = {
 void sampleDefinition;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
-const { evaluatorQuestionDigest, recordEvaluatorAssessment } =
+const { evaluatorQuestionDigest, askEvaluatorQuestion } =
   await load("services/zz-core/dist/semantic.js");
-const { registerEvaluator, askEvaluator } = await load("services/zz-core/dist/eval/evaluators.js");
+const { registerEvaluator } = await load("services/zz-core/dist/eval/evaluators.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
@@ -88,22 +88,18 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
     /no platform database/,
     "registerEvaluator refuses with no platform database");
   await assert.rejects(
-    () => askEvaluator("11111111-1111-1111-1111-111111111111", "subject", undefined, "ada@zz.test"),
-    /no platform database/,
-    "askEvaluator refuses with no platform database (it resolves through recordEvaluatorAssessment)");
-  await assert.rejects(
-    () => recordEvaluatorAssessment({
+    () => askEvaluatorQuestion({
       evaluator_version_id: "11111111-1111-1111-1111-111111111111",
       subject_text: "subject", askedBy: "ada@zz.test",
     }),
     /no platform database/,
-    "recordEvaluatorAssessment refuses with no platform database");
+    "askEvaluatorQuestion refuses with no platform database");
   // This does NOT prove a malformed id is refused as "not registered" — that needs a database,
   // since resolveEvaluatorVersion checks `db()` before its own UUID-shape guard. What it proves
   // is only that the no-database refusal fires unconditionally, for a garbage id exactly as for
   // a well-formed one — established live instead, against zz-squash-a.
   await assert.rejects(
-    () => recordEvaluatorAssessment({
+    () => askEvaluatorQuestion({
       evaluator_version_id: "not-a-uuid", subject_text: "subject", askedBy: "ada@zz.test",
     }),
     /no platform database/,

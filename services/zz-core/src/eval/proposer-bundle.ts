@@ -88,7 +88,7 @@ const REFUSAL_WORDS = /refus|reject|declin|cannot|won'?t|will not/i;
  *  live worker can hand this fixture rows and get the exact same bundle back. */
 export function buildProposerBundle(raw: ProposerBundleRaw): ProposerBundle {
   const failing_traces = raw.assessments
-    .filter((a) => a.value === null || a.value < FAILING_THRESHOLD)
+    .filter((a) => a.value !== null && a.value < FAILING_THRESHOLD)
     .map((a) => ({ measure_key: a.measure_key, subject_ref: a.subject_ref, detail: a.detail }));
 
   // `detail.reading` is a bounded_semantic/generative_critic answer's own choice/score legend

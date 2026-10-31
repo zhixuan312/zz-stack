@@ -185,10 +185,6 @@ check("every check this gate registers is a file git will carry", () => {
 
 check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, search-extension release and actual preload membership",
       runsCheck("postgres-image-pinned.ts"));
-check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
-      runsCheck("tenant-complete-text.ts"));
-check("the text analyzer handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
-      runsCheck("tenant-passage-analysis.ts"));
 check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
       runsCheck("tenant-checks-registered.ts"));
 check("a migration needing an extension declares it, and the runner still defers rather than taking the database down",

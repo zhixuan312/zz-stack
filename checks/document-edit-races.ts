@@ -35,8 +35,8 @@
  *     `.yaml` are stored byte for byte (a BOM removed and said), an envelope-shaped `.yaml` is
  *     refused into a document with its way out and taken as a source, and `document_edit` takes one
  *     as the whole body; one used, another principal's or team's, expired or unstaged is refused
- *     and writes nothing; a refused write, a fault in the commit and a body over the stored limit
- *     leave it unconsumed; of two writes consuming one, one lands; a keyed consumption replays after
+ *     and writes nothing; a refused write and a fault in the commit leave it unconsumed, and one of
+ *     exactly the upload limit is written; of two writes consuming one, one lands; a keyed consumption replays after
  *     the upload expired, while an independent one is refused; an unkeyed no_change consumes
  *     nothing and a keyed one consumes and records; `source_add` takes one literally, its receipt
  *     naming file, digest and route, and with a `request_id` files one source — on a retry, after
@@ -499,7 +499,7 @@ async function uploads(c: Core, second: Mcp): Promise<void> {
   for (const id of [theirs.upload, otherTeam.id]) await unconsumed(c, step, id);
   c.pass(step);
 
-  step = "a refused write, a fault in the write's commit, and a body over the stored limit each leave the upload unconsumed";
+  step = "a refused write and a fault in the write's commit each leave the upload unconsumed, and one of exactly the upload limit is written";
   const kept = await upload(c, step, "kept.md", "# Kept\n");
   await c.refused(step, "document_write", { path: d, upload: kept.id }, /^ERROR: TARGET_EXISTS — /);
   await unconsumed(c, step, kept.id);
@@ -523,8 +523,7 @@ async function uploads(c: Core, second: Mcp): Promise<void> {
   }
   await c.ok(step, "document_write", { path: k, upload: kept.id });
   const big = await upload(c, step, "big.txt", Buffer.alloc(8 * 1024 * 1024, 0x61));
-  await c.refused(step, "document_write", { path: `${U}/big.md`, upload: big.id }, /^ERROR: SIZE_LIMIT — /);
-  await unconsumed(c, step, big.id);
+  await c.ok(step, "document_write", { path: `${U}/big.md`, upload: big.id });
   c.pass(step);
 
   step = "two writes consuming one upload, released together: one lands, the other is UPLOAD_USED";

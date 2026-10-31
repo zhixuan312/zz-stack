@@ -35,60 +35,16 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "arrived becomes indistinguishable from an assessor that answered badly",
   },
   {
-    check: "scripts/gate/checks/audit-identity.ts",
-    target: "audit identity survives import and no assessment erases a finding",
-    subject: "packages/contracts/src/audit-legacy-import.ts",
-    find: "    target: SPEC_DOC, approval_version: 4, round: 1,",
-    replace: "    target: PLAN_DOC, approval_version: 4, round: 1,",
-    planted: "one legacy spec audit is imported as a plan audit, so the import no longer " +
-      "accounts for three audits of each target",
-  },
-  {
-    check: "scripts/gate/checks/central-binding.ts",
-    target: "a default binding change reaches new runs only, and a rebind cannot inherit calibration",
-    subject: "packages/contracts/src/bindings.ts",
-    find: "    inheritedCalibration: inherited(state.calibration.filter((e) => e.in_force)),",
-    replace: "    inheritedCalibration: true,",
-    planted: "a rebind carries the old profile's calibration onto the new one by name",
-  },
-  {
     check: "scripts/gate/checks/close-truthfulness.ts",
-    target: "a close says only what is known and a handover claims only what it verified",
+    target: "a close says only what is known",
     subject: "packages/contracts/src/close.ts",
     // Written as a negation rather than by naming the two outcome words: @zz/contracts owns that
     // vocabulary, and a second spelling of it is what "the envelope vocabulary is defined once"
     // refuses.
-    find: '  if (basis.disposition === "finished") return named(basis.accepted_by)',
-    replace: '  if (basis.disposition === "finished") return !named(basis.accepted_by)',
+    find: '    return (named(basis.accepted_by) ? "accepted"',
+    replace: '    return (!named(basis.accepted_by) ? "accepted"',
     planted: "a close with no sign-off is derived as accepted and one with an acceptor as " +
       "merely delivered, so the record states an acceptance nobody gave",
-  },
-  {
-    check: "scripts/gate/checks/commit-result-reconciliation.ts",
-    target: "a canonical no-op is durable, and an unknown commit reconciles instead of replaying",
-    subject: "packages/contracts/src/commit-reconciliation.ts",
-    find: 'return { state: "applied", durable, followUp, nextRequest: null };',
-    replace: 'return { state: "reconciling", durable, followUp, nextRequest: null };',
-    planted: "a write the store confirmed is left in an unsettled state, so a durable result " +
-      "is treated as one still needing to be chased",
-  },
-  {
-    check: "scripts/gate/checks/dependency-invalidation.ts",
-    target: "a grant invalidates when a dependency moves even though the target bytes do not",
-    subject: "packages/contracts/src/dependency-snapshot.ts",
-    find: '  return revalidate(snap, world).state === "valid";',
-    replace: "  return snap !== undefined && world !== undefined;",
-    planted: "a grant is reported valid whatever moved underneath it, which is the " +
-      "record-local digest assumption this whole snapshot exists to replace",
-  },
-  {
-    check: "scripts/gate/checks/gap-routing.ts",
-    target: "every gap kind reaches its resolver and no stage deadlocks",
-    subject: "packages/contracts/src/gap-routing.ts",
-    find: '  if (kind === "verification") return "run-experiment";',
-    replace: '  if (kind === "verification") return "deepen-analysis";',
-    planted: "an untested claim is routed to more analysis instead of to the experiment that " +
-      "would settle it — the deadlock this router exists to prevent",
   },
   {
     check: "scripts/gate/checks/generic-host-genericity.ts",
@@ -104,30 +60,10 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     target: NCP_MEMBERSHIP,
     assertion: "every probe published on the door is actually run by the file that vouches for them",
     subject: "packages/contracts/src/control-loop.ts",
-    find: "export { auditIdentityProbe, type AuditIdentityProbeRow }",
-    replace: "export { auditIdentityProbe, auditIdentityProbe as spareProbe, type AuditIdentityProbeRow }",
+    find: "export { closeProbe, type CloseProbeRow }",
+    replace: "export { closeProbe, closeProbe as spareProbe, type CloseProbeRow }",
     planted: "a probe name reaches the door that the file vouching for the probes never runs — a " +
       "probe nothing runs proves nothing, and the door would say otherwise",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the audit-identity negative control fires on every planted fault",
-    assertion: "the audit-identity probe's own rows report that each planted fault was detected",
-    subject: "packages/contracts/src/audit-identity-probe.ts",
-    find: "  fires: healthy[0] && faulted[0],",
-    replace: "  fires: healthy[0] && !faulted[0],",
-    planted: "the audit-identity negative control reports that no detector fired on the faults it " +
-      "planted, so the control that proves the detector works has stopped proving it",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the gap-routing negative control fires on every planted fault",
-    assertion: "the gap-routing probe's own rows report that each planted fault was detected",
-    subject: "packages/contracts/src/gap-routing-probe.ts",
-    find: "  fires: healthy[0] && faulted[0],",
-    replace: "  fires: healthy[0] && !faulted[0],",
-    planted: "the gap-routing negative control reports that no detector fired on the faults it " +
-      "planted, so the control that proves the detector works has stopped proving it",
   },
   {
     check: "scripts/gate/checks/negative-control-probes.ts",
@@ -138,66 +74,6 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     replace: "  fires: healthy[0] && !faulted[0],",
     planted: "the close negative control reports that no detector fired on the faults it " +
       "planted, so the control that proves the detector works has stopped proving it",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the stage-control negative control fires on every planted fault",
-    assertion: "the stage-control probe's own rows report that each planted fault was detected",
-    subject: "packages/contracts/src/stage-control-probe.ts",
-    find: "  fires: healthy[0] && faulted[0],",
-    replace: "  fires: healthy[0] && !faulted[0],",
-    planted: "the stage-control negative control reports that no detector fired on the faults it " +
-      "planted, so the control that proves the detector works has stopped proving it",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the recall-trial negative control fires on every planted fault",
-    assertion: "the recall-trial probe's own rows report that each planted fault was detected",
-    subject: "packages/contracts/src/recall-trial-probe.ts",
-    find: "  fires: healthy[0] && faulted[0],",
-    replace: "  fires: healthy[0] && !faulted[0],",
-    planted: "the recall-trial negative control reports that no detector fired on the faults it " +
-      "planted, so the control that proves the detector works has stopped proving it",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the profile-rebind negative control fires on every planted fault",
-    assertion: "the rebind probe's rolled-up everyDetectorFires follows from its scenarios",
-    subject: "packages/contracts/src/bindings.ts",
-    find: "&& s.sameRef.calibrationRetired === 0 && s.rebadge.inheritedCalibration",
-    replace: "&& s.sameRef.calibrationRetired === 0 && !s.rebadge.inheritedCalibration",
-    planted: "the rebind probe rolls its nine scenarios up into a verdict that no longer follows " +
-      "from them, so the one boolean a reader trusts stops describing what was measured",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the commit-boundary negative control shows each field can come back the bad way",
-    assertion: "the commit-boundary probe still returns every variant the table names",
-    subject: "packages/contracts/src/commit-boundary.ts",
-    find: 'row("split_transaction", split,',
-    replace: 'row("split_transactions", split,',
-    planted: "the variant that shows `serialized` can come back false is renamed out of the table, " +
-      "so the field it alone proves is not constant goes unexercised",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the dependency-snapshot negative control shows the coverage audit can refuse",
-    assertion: "the dependency-snapshot probe still returns every arrangement the table names",
-    subject: "packages/contracts/src/dependency-snapshot.ts",
-    find: 'arrangement: "one dependency dropped from the closed set",',
-    replace: 'arrangement: "one dependency dropped from the set",',
-    planted: "the arrangement that shows the coverage audit can refuse a dropped dependency is " +
-      "renamed, so the audit is no longer shown to be load-bearing",
-  },
-  {
-    check: "scripts/gate/checks/negative-control-probes.ts",
-    target: "the commit-reconciliation negative control shows each flag can come back the bad way",
-    assertion: "the commit-reconciliation probe still returns every variant the table names",
-    subject: "packages/contracts/src/commit-reconciliation.ts",
-    find: 'row("no_op_mints_a_transaction_id", NO_OP, {},',
-    replace: 'row("no_op_mints_a_transaction_ids", NO_OP, {},',
-    planted: "the variant that shows a no-op can invent a transaction id is renamed out of the " +
-      "table, so one of the four flags loses the fault that proves it independent",
   },
   {
     check: "scripts/gate/checks/search-predicate-parameters.ts",
@@ -241,52 +117,12 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "permitted with a declared gate left unrecorded",
   },
   {
-    check: "scripts/gate/checks/grant-claim-refusals.ts",
-    target: "a grant stops redeeming when the world it was decided over moves",
-    assertion: "the control redeems — an unperturbed grant is not refused, so a refusal below is evidence of something",
-    subject: "packages/contracts/src/control-grant.ts",
-    find: "  if (grant.use.spent >= grant.use.limit) {",
-    replace: "  if (grant.use.spent >= 0) {",
-    planted: "every grant reads as spent the moment it is issued, so nothing redeems at all — and a " +
-      "guard that refuses everything passes any check that reads only the refusals",
-  },
-  {
-    check: "scripts/gate/checks/grant-claim-refusals.ts",
-    target: "a grant stops redeeming when the world it was decided over moves",
-    assertion: "a world that moved under the grant is CAUGHT — the permission epoch case",
-    subject: "packages/contracts/src/control-grant.ts",
-    find: "  if (grant.permission_epoch !== store.permissionEpoch()) {",
-    replace: "  if (grant.permission_epoch !== grant.permission_epoch) {",
-    planted: "the permission epoch is compared against itself rather than against the store, so a " +
-      "grant issued under permissions that have since changed still redeems",
-  },
-  {
-    check: "scripts/gate/checks/grant-claim-refusals.ts",
-    target: "a grant stops redeeming when the world it was decided over moves",
-    assertion: "a lease is refused as a mutation grant — the one case with nothing to perturb",
-    subject: "packages/contracts/src/control-grant.ts",
-    find: '  if (decision.effect.holds === "lease") {',
-    replace: "  if (decision.effect.holds !== decision.effect.holds) {",
-    planted: "the lease guard can never fire, so holding a resource and being authorised to change " +
-      "it stop being separate decisions",
-  },
-  {
-    check: "scripts/gate/checks/grant-claim-refusals.ts",
-    target: "a grant stops redeeming when the world it was decided over moves",
-    assertion: "a refusal names the guard under test — the expiry case is refused FOR expiry",
-    subject: "packages/contracts/src/control-grant.ts",
-    find: "    return deny(`${grant.id} expired at ${grant.expires_at}`);",
-    replace: "    return deny(`${grant.id} is past its window at ${grant.expires_at}`);",
-    planted: "the expiry refusal stops naming expiry, so a caller — and this check — cannot tell " +
-      "which guard fired, and a different guard firing would read as the right one",
-  },
-  {
     check: "scripts/gate/checks/contracts-door.ts",
     target: DOOR,
     assertion: "a wildcard re-export is refused, because it publishes names nothing can enumerate",
     subject: "packages/contracts/src/control-loop.ts",
     find: "export {\n  createHost,",
-    replace: 'export * from "./check-state.js";\n\nexport {\n  createHost,',
+    replace: 'export * from "./recall.js";\n\nexport {\n  createHost,',
     planted: "the door gains a wildcard, so a module's whole surface is published without " +
       "naming any of it — every name it adds is invisible to the reader and to this check",
   },
@@ -331,15 +167,6 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "rather than a control, and nobody can finish a run",
   },
   {
-    check: "scripts/gate/checks/issuer-unreachable.ts",
-    target: "the grant issuer is unreachable by any caller and still works for the host",
-    subject: "packages/contracts/src/control-grant-fixture.ts",
-    find: '  evidence_record: {\n    minRole: "member",',
-    replace: '  evidence_record: {\n    minRole: "superadmin",',
-    planted: "recording evidence is raised out of a member's reach, so contrary evidence " +
-      "cannot be filed while progression is held",
-  },
-  {
     check: "scripts/gate/checks/jev-adapter.ts",
     target: "the first provider adapter validates identity, ranges and retry classification",
     subject: "packages/contracts/src/adapters/jev-retry.ts",
@@ -349,39 +176,13 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "will repeat forever is retried instead of surfaced",
   },
   {
-    check: "scripts/gate/checks/label-only-adapter.ts",
-    target: "a label-only adapter cannot manufacture a probability or drift to the cloud",
-    subject: "packages/contracts/src/label-adapter.ts",
-    find: "  native_distributions: false as const,",
-    replace: "  native_distributions: true as const,",
-    planted: "a backend class with no probability primitive declares that it has one",
-  },
-  {
-    check: "scripts/gate/checks/observation-manifests.ts",
-    target: "observation manifests include ignored outputs and keep check states distinct",
-    subject: "packages/contracts/src/observation-manifest.ts",
-    find: '    exclusions.every((rule) => rule.source !== "git_ignore")',
-    replace: '    exclusions.some((rule) => rule.source === "git_ignore")',
-    planted: "the capture reports that it included ignored outputs precisely when it excluded " +
-      "them, so generated output is invisible in the record that says it is there",
-  },
-  {
     check: "scripts/gate/checks/plan-validator.ts",
-    target: "the plan validator blocks malformed plans from controlled execution but not from being written",
+    target: "the plan validator refuses a duplicate task id, a dependency cycle and a task with no Output",
     subject: "packages/contracts/src/plan-validation.ts",
     find: "    const firstAt = claimedAt.get(id);\n    if (firstAt !== undefined) {",
     replace: "    const firstAt = claimedAt.get(id);\n    if (firstAt !== undefined && line < 0) {",
     planted: "a second task claiming an id already taken is no longer reported, so two tasks " +
-      "share one identity through the whole of controlled execution",
-  },
-  {
-    check: "scripts/gate/checks/readiness-basis.ts",
-    target: "readiness rests on evidence and gates, never on volume, rounds or a score",
-    subject: "packages/contracts/src/readiness.ts",
-    find: "  const advance = blockers.length === 0;",
-    replace: "  const advance = blockers.length >= 0;",
-    planted: "readiness advances with its blockers still standing, so an open gap and an " +
-      "unrecorded gate stop holding anything back",
+      "share one identity in every wave the plan is executed in",
   },
   {
     check: "scripts/gate/checks/recall-result-contract.ts",
@@ -391,49 +192,5 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     replace: '      result: "no_relevant_match_in_searched_scope",',
     planted: "a search that could not answer reports a clean scoped no-match, which is the " +
       "one reading that must never be produced from a blocked search",
-  },
-  {
-    check: "scripts/gate/checks/search-read-synthesis.ts",
-    target: "search to pinned read to synthesis holds in both languages and cannot be redirected",
-    subject: "packages/contracts/src/recall-trial.ts",
-    find: '  return /\\p{Script=Han}/u.test(question) ? "zh" : "en";',
-    replace: '  return question.length >= 0 ? "en" : "zh";',
-    planted: "the asker's language is no longer read off the question, so a question asked in " +
-      "Chinese is answered in English and the reader is handed a language they did not use",
-  },
-  {
-    check: "scripts/gate/checks/trial-analyzer-agreement.ts",
-    target: "the recall trial's analyzer finds the same Han terms as @zz/indexing's",
-    subject: "packages/contracts/src/recall-trial-corpus.ts",
-    assertion: "the trial's analyzer and @zz/indexing's find the same Han unigrams and adjacent bigrams",
-    find: "      if (i + 1 < scalars.length) terms.push(scalars[i] + scalars[i + 1]);",
-    replace: "      if (i + 2 < scalars.length) terms.push(scalars[i] + scalars[i + 2]);",
-    planted: "the trial's copy of the analyzer pairs scalars the real one keeps apart and " +
-      "drops the pairs it ranks, so the two implementations of one segmentation disagree on " +
-      "what is adjacent — the drift this check exists to notice",
-  },
-  {
-    // The second assertion of the same check; the row above establishes the other one. That check
-    // claims both that `searchCorpus` still defaults to the trial's analyzer and that the analyzer
-    // still means what the real one means, and a mutation to either says nothing about the other.
-    // The coupling is a default parameter, so only the default itself can be moved.
-    check: "scripts/gate/checks/trial-analyzer-agreement.ts",
-    target: "the recall trial's analyzer finds the same Han terms as @zz/indexing's",
-    subject: "packages/contracts/src/recall-trial-corpus.ts",
-    assertion: "searchCorpus still defaults to the trial's own analyzer, so the agreement above is with a function something calls",
-    find: "  analyzer: TrialAnalyzer = trialAnalyze,",
-    replace: "  analyzer: TrialAnalyzer = (text) => text.split(/\\s+/).filter(Boolean),",
-    planted: "the trial searches by splitting on whitespace instead of through its own " +
-      "analyzer, so an unspaced Han run is handed back whole and matches nothing — and the " +
-      "agreement the check verifies below is with a function nothing calls any more",
-  },
-  {
-    check: "scripts/gate/checks/runtime-adapter-portability.ts",
-    target: "a second runtime adapter runs the same protocol with a different event format",
-    subject: "packages/contracts/src/adapters/conformance.ts",
-    find: "      passed: reason === null,",
-    replace: "      passed: false,",
-    planted: "the shared conformance protocol never passes, so the second adapter cannot " +
-      "demonstrate it runs the same protocol",
   },
 ];

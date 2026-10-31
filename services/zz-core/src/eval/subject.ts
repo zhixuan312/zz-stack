@@ -88,24 +88,25 @@ const SUBJECT_SELECT = `
          where r.plugin_id = p.id) owners on true`;
 
 /** Everything IDENTIFY needs about one released (plugin, version), resolved once before any write.
- *  Returns null for a plugin or a version this platform never released — the caller turns that
- *  into the contract's exact refusal text; this function does no I/O beyond reading. */
+ *  Answers which of the two is missing when it resolves nothing — a plugin this platform never
+ *  registered, or a version it has no row for — and the caller turns that into the contract's
+ *  refusal text; this function does no I/O beyond reading. */
 async function resolveSubjectVersion(
   runner: Pick<pg.Pool, "query">, plugin: string, version: string | undefined,
-): Promise<SubjectVersionRow | null> {
+): Promise<SubjectVersionRow | { missing: "plugin" | "version" }> {
   const pluginId = (await runner.query<{ id: string }>(
     "select id::text as id from zz.plugin where name = $1", [plugin])).rows[0]?.id;
-  if (!pluginId) return null;
+  if (!pluginId) return { missing: "plugin" };
   // The current release is `currentVersionOf`'s (../release-head.ts), the same reader
   // release_apply's baseline uses: for a catalog plugin, the version the running deployment
   // declares; for any other, the newest by semver with every version a rollback retracted left
   // out. A retracted row stays in zz.plugin_version, and naming its exact version still resolves
   // it — verifying and explaining a rolled-back release needs it.
   const target = version ?? await currentVersionOf(runner, pluginId);
-  if (target === null) return null;
+  if (target === null) return { missing: "version" };
   const row = (await runner.query<SubjectVersionRow>(
     `${SUBJECT_SELECT} where p.name = $1 and pv.version = $2`, [plugin, target])).rows[0];
-  return row ?? null;
+  return row ?? { missing: "version" };
 }
 
 /** The `plugin_locate` response: the row's own facts, read back rather than re-derived — a
@@ -174,7 +175,7 @@ async function subjectResponse(
     owner_team: row.owner_team,
     release_owners: row.release_owners,
     // Ownership's own release track, not the per-initiative branch fact of the same name
-    // FR-52/FR-58 has `release_prepare`/`proposal_prepare` write into `_facts.json` (Task I-27).
+    // FR-52/FR-58 has `release_prepare`/`proposal_prepare` write as a `zz.initiative_fact` row.
     // That later fact is read from THIS one: a subject with no release owners can never be
     // promoted (FR-47), so it is `proposal_only`; the reverse is `promotable`, contingent on
     // every later gate this initiative still has to pass. Never `not_applicable` here — that
@@ -297,8 +298,13 @@ export function registerSubjectTools(server: McpServer): void {
       if (!pool) return noDb();
 
       const resolved = await resolveSubjectVersion(pool, plugin, version);
-      if (!resolved) {
-        return text(`ERROR: no plugin named ${plugin} is registered — plugin_register adds one that is not in the catalog`);
+      if ("missing" in resolved) {
+        if (resolved.missing === "plugin") {
+          return text(`ERROR: no plugin named ${plugin} is registered — plugin_register adds one that is not in the catalog`);
+        }
+        return text(version
+          ? `ERROR: ${plugin} has no registered version ${version} — omit version for the one currently released`
+          : `ERROR: ${plugin} has no released version this platform can name as current — pass the version to evaluate`);
       }
 
       const principal = parseCaller(requestHeaders()).email;

@@ -74,6 +74,14 @@ is("both key shapes are read, and prose spelling is normalised",
 is("a verdict outside the vocabulary is not a row",
    I.decisionRows("| AC-1.1 | met | the endpoint answers |"), []);
 is("a body with no table yields nothing", I.decisionRows("# Spec\n\njust prose\n"), []);
+// The same ledger as prose reads its verdict through the same vocabulary as the table does.
+is("a prose ledger row reads every spelling the table reads, and keeps the parenthetical",
+   I.decisionRows([
+     "**AC-2.1 — An email enquiry creates a case.** *Native (BookIt).* An email case source.",
+     "**AC-2.2 — A web form creates a case.** *Not_possible (CaseBox).* No form intake.",
+     "**AC-2.3 — A call creates a case.** *Met.* Not a verdict.",
+   ].join("\n")).map((r: { key: string; verdict: string; qualifier: string }) => [r.key, r.verdict, r.qualifier]),
+   [["AC-2.1", "native", "(BookIt)"], ["AC-2.2", "not_possible", "(CaseBox)"]]);
 
 if (failed) { console.error(`\ndocument-rules: ${failed} case(s) failed`); process.exit(1); }
 console.log(`\ndocument-rules: all cases passed`);

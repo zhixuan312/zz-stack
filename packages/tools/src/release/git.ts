@@ -21,6 +21,27 @@ export function gitQuiet(cwd: string, args: string[]): void {
   try { execFileSync("git", args, { cwd, timeout: GIT_TIMEOUT_MS, stdio: "ignore" }); }
   catch { /* nothing there to remove, or already gone — both are the success case here */ }
 }
+/** What one command a release attempt ran said, and whether it succeeded. */
+interface CommandOutcome { readonly ok: boolean; readonly output: string }
+
+/** One command, argv only, for `release-apply` and `release-rollback`.
+ *
+ *  A failure's output is both streams, stderr first: `npm run gate` prints its failed checks to
+ *  stdout and npm's own "Lifecycle script failed" to stderr, and the record keeps the tail, so the
+ *  gate's report is what ends it. Either stream alone hides what the other said. */
+export function runCommand(cwd: string, argv: readonly string[], timeoutMs: number): CommandOutcome {
+  try {
+    const output = execFileSync(argv[0], argv.slice(1), {
+      cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { ok: true, output };
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string };
+    const streams = `${e.stderr ?? ""}${e.stdout ?? ""}`.trim();
+    return { ok: false, output: streams || (e.message ?? "unknown error").trim() };
+  }
+}
+
 /** The commit `ref` names in `repoRoot`, or null when it names none. */
 export function commitOf(repoRoot: string, ref: string): string | null {
   try { return git(repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]); }

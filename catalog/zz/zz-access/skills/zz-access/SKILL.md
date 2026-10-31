@@ -1,6 +1,6 @@
 ---
 name: zz-access
-version: 2.7
+version: 2.8
 description: "Your platform access token and your client setup — issuing one, replacing one, and revoking one fast when it is exposed. Reach for this whenever a credential has leaked, been shown on a screen share or in a recording, been committed, or is suspected compromised and needs killing before anything else; also when a tool will not authenticate, a call returns 401, or somebody asks what access they have. Everything here is about the person in front of you; administering other people is the zz-admin skill, on the same door."
 when_to_use: "A credential is exposed, leaked, committed or visible in a recording and has to be revoked. A tool will not connect or answers 401. Someone wants a token, lost one, or asks what access they have. Load it on the INCIDENT, not only when somebody names the platform — a person whose key just leaked describes what happened to them, not which tool they need."
 ---
@@ -80,9 +80,8 @@ ignored, check whether they are using one.
 
 ## Their client setup
 
-`client_setup()` prints the install for Claude Code, which is the one client this
-platform packages: a few commands that fetch a small package built for that person —
-their MCP endpoints, the required plugins, and one command per flow. It takes NO
+`client_setup()` prints the install for Claude Code: a few commands that fetch a small
+package built for that person — their MCP endpoints, the required plugins, and one command per flow. It takes NO
 `client` argument; the only argument it has is an optional `email`, and passing one
 prints the setup for that person instead of for you.
 

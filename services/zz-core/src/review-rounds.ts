@@ -31,10 +31,13 @@
  */
 import type pg from "pg";
 
-import { DELEGATED_DECISION, ROUND_BUDGET } from "./audit-rounds.js";
+import {
+  addedAtOf, DELEGATED_DECISION, msOf, ROUND_BUDGET, sourceName, stageOf, supportsOf,
+} from "./audit-rounds.js";
 import { refusalText } from "./document-details.js";
 import { docRows, isCapturedCause, type DocRow } from "./indexing.js";
-import { assessFamily, type Assessment } from "./semantic.js";
+import { assessFamily, standingReading, type Assessment } from "./semantic.js";
+import type { Chain } from "./write-guards.js";
 
 /** The answers already recorded for an initiative's sources, keyed by the `about` they were asked
  *  under — `sources/<file>` for a round's own question, `sources/<file>#<finding id>` for the
@@ -88,7 +91,6 @@ export async function assessmentsFor(
   }
   return out;
 }
-import type { Chain } from "./write-guards.js";
 
 const IMPACTS = ["S1", "S2", "S3", "S4"] as const;
 const EVIDENCE_KINDS = ["reproduced", "cited", "inferred"] as const;
@@ -106,14 +108,6 @@ interface Ledger {
 }
 
 const str = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
-
-/** The source rows a review reads. `stage` is the revision's own envelope payload, `added_at`
- *  the day `source_add` stamped, `supports` the `doc_link` rows the revision filed, and `body`
- *  the revision's bytes. */
-const stageOf = (d: DocRow): string => (d.fields?.stage ?? "").trim();
-const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
-const sourceName = (d: DocRow): string => d.path.slice("sources/".length);
-const supportsOf = (d: DocRow): string[] => d.supports;
 
 /** The verifying document this source is a review round of, or null: a stage that writes a
  *  document declaring `verifies`, and a source supporting that document. */
@@ -219,7 +213,7 @@ export function reviewRounds(sources: readonly DocRow[], stage: string, document
       out.push({ file: sourceName(d), added_at: addedAtOf(d), ledger });
     }
   }
-  return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
+  return out.sort((a, b) => msOf(a.added_at) - msOf(b.added_at) || a.file.localeCompare(b.file));
 }
 
 interface StakeholderSource { file: string; added_at: string; body: string }
@@ -230,7 +224,7 @@ export function stakeholderSources(sources: readonly DocRow[], document: string)
   return sources
     .filter((d) => !stageOf(d) && !isCapturedCause(d) && supportsOf(d).includes(document))
     .map((d) => ({ file: sourceName(d), added_at: addedAtOf(d), body: d.body }))
-    .sort((a, b) => a.added_at.localeCompare(b.added_at));
+    .sort((a, b) => msOf(a.added_at) - msOf(b.added_at));
 }
 
 /** Whether `text` names `id` as a whole token — `R1-C1` is not named by `R1-C10`. */
@@ -258,7 +252,7 @@ export async function assessReviewRound(p: pg.Pool, team: string, initiative: st
     .map((f) => `- ${f.id} [${f.impact}] ${f.locator}: ${f.claim}`).join("\n")).join("\n\n");
   // DELIBERATE: the recovery is `assess`, never the same `source_add`: the round is filed, and
   // sending it again files a second round. Its subject is the one composed here, given whole.
-  const answers = await Promise.all(asked.map((f) => {
+  const ask = (f: Finding) => {
     const subject = `${f.id} [${f.impact}] ${f.locator}: ${f.claim}`;
     return assessFamily({
       family: "repeats_finding", subject, context, initiative, about: `sources/${file}#${f.id}`, askedBy: by,
@@ -267,7 +261,11 @@ export async function assessReviewRound(p: pg.Pool, team: string, initiative: st
                "findings, each round under `## Round <n>` and each finding on its own line in the subject's shape. " +
                "Any other S1/S2 finding this round introduced may need the same. Do not send this source again: " +
                "it is filed, and a second would be a second round." });
-  }));
+  };
+  // COUPLED: eight at a time, as `spec-gate.ts` and `review-acceptance.ts` ask the same kind of
+  // call: each holds one of the pool's connections for up to 100 seconds inside `source_add`.
+  const answers: Awaited<ReturnType<typeof ask>>[] = [];
+  for (let i = 0; i < asked.length; i += 8) answers.push(...await Promise.all(asked.slice(i, i + 8).map(ask)));
   // Persisted by `assessFamily` itself as each answer was taken, so the memo IS the record.
   return "assessed: " + answers.map((a, i) => `repeats_finding(${asked[i].id}) = ${a.reading}` +
     (a.probability !== null ? ` (p=${a.probability.toFixed(2)})` : "")).join("; ");
@@ -293,7 +291,7 @@ function findingStates(rounds: ReviewRound[], repeats: (file: string, id: string
   });
   return [...latest.values()].map(({ finding: f, index, at, introduced }) => {
     const open = !((resolvedAt.get(f.id) ?? -1) > index);
-    const accepted = decisions.some((d) => d.added_at > at && names(d.body, f.id));
+    const accepted = decisions.some((d) => msOf(d.added_at) > msOf(at) && names(d.body, f.id));
     const repeat = repeats(introduced, f.id) === "yes";
     const serious = f.impact === "S1" || f.impact === "S2";
     const inScope = f.introduced_by_scope || (f.impact === "S1" && f.evidence === "reproduced");
@@ -322,8 +320,8 @@ function routeReview(initiative: string, stage: string, document: string, rounds
   const states = findingStates(rounds, repeats, decisions);
   const blocking = states.filter((s) => s.blocking);
   if (!blocking.length) return null;
-  const lastDecision = decisions.length ? decisions[decisions.length - 1].added_at : "";
-  const sinceDecision = rounds.filter((r) => r.added_at > lastDecision).length;
+  const lastDecision = decisions.length ? msOf(decisions[decisions.length - 1].added_at) : -Infinity;
+  const sinceDecision = rounds.filter((r) => msOf(r.added_at) > lastDecision).length;
   const ids = (xs: FindingState[]) => xs.map((s) => `${s.finding.id} (${s.finding.impact}, ${s.finding.evidence})`).join(", ");
   // Convergence: how many evidenced blockers each round raised for the first time. A review whose
   // rounds keep finding fewer is converging and is let run; the budget stops one that is not —
@@ -368,8 +366,8 @@ function routeReview(initiative: string, stage: string, document: string, rounds
 export function reviewMove(initiative: string, stage: string, document: string,
                            sources: readonly DocRow[], answers: RoundAssessments): ReviewMove | null {
   const rounds = reviewRounds(sources, stage, document);
-  const repeats = (file: string, id: string) => answers.get(`sources/${file}#${id}`)
-    ?.find((a) => a.family === "repeats_finding")?.reading;
+  const repeats = (file: string, id: string) => standingReading(
+    (answers.get(`sources/${file}#${id}`) ?? []).filter((a) => a.family === "repeats_finding"))?.reading;
   return routeReview(initiative, stage, document, rounds, repeats, stakeholderSources(sources, document));
 }
 

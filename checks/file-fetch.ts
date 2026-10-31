@@ -257,12 +257,13 @@ is("refusal" in slow && /^ERROR: FILE_UNAVAILABLE — /.test(slow.refusal) && /3
    `a download that does not finish in 30 seconds is stopped as unavailable: ${text(slow).slice(0, 200)}`);
 
 // ── no URL anywhere ─────────────────────────────────────────────────────────────────────────────
-// The rule itself, over the spellings an IPv6 address can hide an internal IPv4 in: every one
-// refused, and a public address in each family, and a 6to4 or NAT64 neighbour that is not one of
-// those prefixes, still allowed.
+// The rule itself, over the spellings an IPv6 address can hide an internal IPv4 in — Teredo
+// included — and the deprecated site-local range: every one refused, and a public address in each
+// family, and a 6to4 or NAT64 neighbour that is not one of those prefixes, still allowed.
 for (const a of ["::ffff:127.0.0.1", "::ffff:7f00:1", "0:0:0:0:0:ffff:7f00:1", "::ffff:a9fe:a9fe", "fe80::1%eth0", "::1", "::",
                  "::7f00:1", "::127.0.0.1", "::a00:5", "64:ff9b::a9fe:a9fe", "64:ff9b:1::7f00:1", "64:ff9b:1:ffff::1",
-                 "2002:7f00:1::", "2002:a9fe:a9fe::1", "2002:c0a8:101::1", "2002:808:808::1", "fd00:ec2::254"]) {
+                 "2002:7f00:1::", "2002:a9fe:a9fe::1", "2002:c0a8:101::1", "2002:808:808::1", "fd00:ec2::254",
+                 "2001:0:4136:e378:8000:63bf:3fff:fdd2", "2001::1", "fec0::1"]) {
   is(internalAddress(a), `${a} is internal`);
 }
 for (const a of ["198.51.100.7", "203.0.113.10", "2001:db8::8888", "2003::1", "64:ff9a::1"]) {

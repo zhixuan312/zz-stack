@@ -47,11 +47,11 @@
  * `release_apply` takes an `initiative` argument the spec's frozen interface table did not name:
  * `improvement.md`'s approval has to be read from somewhere, and a bare candidate_id names no path.
  */
-import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
+import { documentBody, EVAL_STATE_ENUMS, parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
-import type { MutatorOutcome } from "./idempotency.js";
+import { ledgerStamp, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
 import { compareSemver, currentVersionOf } from "../release-head.js";
 import { applyingRefusal, approvedOwners, releaseDecision, STALE_APPLYING_MS } from "./release-rules.js";
 import { safeName } from "../paths.js";
@@ -183,8 +183,9 @@ async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<str
 }
 
 /** What `planApply` reads of `<initiative>/improvement.md`: its gate status, its signer and its
- *  body. A parameter of `planApply` so a check can hand it a document without a request context
- *  (`readImprovementDoc` below resolves the caller's team from the request).
+ *  body. Read by `readImprovementDoc` before the ledger transaction opens and handed to
+ *  `planApply`: the read takes a pool connection of its own, and one taken while the transaction
+ *  holds another, behind the plugin's advisory lock, is how the pool starves.
  *
  *  It is READ from the document's rows, never from a path: the store a document used to be a
  *  file in is retired (`versions.ts`), and a `readFileSync` of the old path answered `null` for
@@ -195,9 +196,8 @@ interface ImprovementDoc {
   readonly approved_by: string;
   readonly body: string;
 }
-type ReadImprovementDoc = (initiative: string) => Promise<ImprovementDoc | null>;
 
-async function readImprovementDoc(initiative: string): Promise<ImprovementDoc | null> {
+export async function readImprovementDoc(initiative: string): Promise<ImprovementDoc | null> {
   const badInitiative = safeName(initiative, "initiative");
   if (badInitiative) throw new Refusal(badInitiative);
   // A document is filed under a TEAM, so the team is resolved first and off the caller — the
@@ -229,8 +229,13 @@ async function improvementApprovals(
 // -------------------------------------------------------------------------------------------
 // release_apply's own result shape, and the orchestrator withIdempotency calls into.
 
+/** An attempt's status as `release_apply` answers it: `prepared` reads as the refusal it was. */
+type AttemptStatus = (typeof EVAL_STATE_ENUMS.releaseAttemptStatus)[number];
+
 export interface ApplyResult {
-  readonly status: "applying" | "refused";
+  /** `applying` or `refused` from a fresh call; a replay of the call that moved the attempt to
+   *  applying answers wherever the attempt has moved since. */
+  readonly status: Exclude<AttemptStatus, "prepared">;
   readonly reason: string | null;
   readonly release_attempt_id: string;
   readonly patch: { diff: string; patch_digest: string } | null;
@@ -310,12 +315,12 @@ function inProgressRefusal(
  *
  *  Two refusal shapes: anything with no persisted outcome (an unknown candidate, no prepared
  *  attempt, a cited attempt that is not this candidate's prepared one, a caller who is no owner,
- *  an attempt already applying, no registered or no captured current subject, a bad initiative)
+ *  an attempt already applying, no registered or no captured current subject)
  *  THROWS, so the transaction rolls back and the ledger records nothing; `releaseDecision`'s
  *  verdicts are RETURNED, because the row write they make has to commit and be ledgered. */
 export async function planApply(
-  client: Queryable, candidateId: string, approvedPatchDigest: string, initiative: string,
-  principal: string, readDoc: ReadImprovementDoc = readImprovementDoc,
+  client: Queryable, candidateId: string, approvedPatchDigest: string, principal: string,
+  doc: ImprovementDoc | null,
 ): Promise<MutatorOutcome<ApplyResult>> {
   const candidate = await loadCandidateForApply(client, candidateId);
   if (!candidate) throw new Refusal(`ERROR: no candidate ${candidateId}`);
@@ -373,7 +378,6 @@ export async function planApply(
     throw inProgressRefusal(subject.plugin, held, heldCandidate, candidateId);
   }
 
-  const doc = await readDoc(initiative);
   const attempt = await loadPreparedAttempt(client, candidateId, doc ? citedReleaseAttempt(doc.body) : null);
   if (!attempt) {
     throw new Refusal(
@@ -435,7 +439,7 @@ export async function planApply(
   // this same principal through `zz.principal`; writing it an address is what the uuid type
   // refuses with a raw `22P02`.
   const applier = (await client.query<{ id: string }>(
-    "select id::text as id from zz.principal where email = $1", [principal])).rows[0];
+    "select id::text as id from zz.principal where lower(email) = lower($1)", [principal])).rows[0];
   if (!applier) {
     throw new Refusal(
       `ERROR: ${principal || "this caller"} names no principal, so the release it applies cannot ` +
@@ -467,7 +471,17 @@ export async function planApply(
   return { result, result_table: "zz.release_attempt", result_id: attempt.id };
 }
 
-/** `release_apply`'s replay path — see `describeApplyOutcome`. Read-only, so it runs on the pool. */
-export async function describeApplyOutcomeForReplay(pool: pg.Pool, attemptId: string): Promise<ApplyResult> {
-  return describeApplyOutcome(pool, attemptId);
+/** `release_apply`'s replay path. Read-only, so it runs on the pool. The patch and the plan go
+ *  only to a replay of the call that moved the attempt to applying — the principal the attempt's
+ *  `applied_by` names, at the instant its `applying_at` records, which is that call's ledger row.
+ *  A replay of a call that was refused answers that refusal, whatever another call did with the
+ *  attempt since: handing it the patch would have two callers apply one release. */
+export async function describeApplyOutcomeForReplay(pool: pg.Pool, attemptId: string, call: LedgerCall): Promise<ApplyResult> {
+  const stamp = await ledgerStamp(pool, call);
+  const row = (await pool.query<{ moved_by_this_call: boolean | null; reason: string | null }>(`
+    select (applied_by = $2::uuid and applying_at = $3::timestamptz) as moved_by_this_call, reason
+      from zz.release_attempt where id = $1::uuid`, [attemptId, stamp?.principal_id ?? null, stamp?.at ?? null])).rows[0];
+  if (!row) throw new Refusal(`ERROR: release_attempt ${attemptId} no longer exists`);
+  if (row.moved_by_this_call) return describeApplyOutcome(pool, attemptId);
+  return { status: "refused", reason: row.reason, release_attempt_id: attemptId, patch: null, plan: null };
 }

@@ -1,8 +1,8 @@
 ---
 name: zz-breakout
-version: 1.7
+version: 1.8
 description: Spin up one named expert teammate for a bounded deep dialogue, keep that conversation out of the main thread, and close by writing the confirmed insights to the ZZ knowledge base. Widens a thin option space before a decision is made.
-when_to_use: "A decision needs a perspective the main thread cannot hold — a domain expert, an adversary, a specialist lens — and the exchange will be long enough to pollute the main context. The sdlc-flow spec stage leans on this when the options are thin, and so may any other flow. Typed on purpose as /zz-core:breakout in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
+when_to_use: "A decision needs a perspective the main thread cannot hold — a domain expert, an adversary, a specialist lens — and the exchange will be long enough to pollute the main context. The sdlc-flow spec stage leans on this when the options are thin, and so may any other flow. Only when a person opens it by name: `/zz-core:breakout` in Claude Code, `$zz-core:breakout` in Codex. Standalone — no initiative, no gate, no place in the sequence."
 ---
 
 <!-- Design note: the close-out writes to the ZZ knowledge base with knowledge_add, so an
@@ -25,8 +25,10 @@ what was said.
 This depends on **addressable background teammates**: spawning a named agent, talking to it
 directly over several turns, and stopping it.
 
-**Claude Code has this.** Spawn with the `Agent` tool, `run_in_background: true`, addressed by
-`@name`, stopped with `TaskStop`.
+**Claude Code has this.** Spawn with the `Agent` tool, `run_in_background: true` and a `name`;
+the person addresses it as `@name`, you address it with `SendMessage(to: <name>)`, and
+`TaskStop` stops it. A background teammate's plain reply reaches nobody: what it owes you
+arrives only as a `SendMessage` to you.
 
 **A harness without it: say so rather than pretending.** Run the persona in-session as a
 bounded role instead — declare the role, hold the dialogue, and apply the same close-out
@@ -55,7 +57,8 @@ Exactly one named background teammate. Its prompt must tell it:
   transcript
 - when asked to close out, it distils the **whole** breakout into journal-ready insights, each
   shaped `{ learning, type }` with `type` from `decision · design · behavior · process ·
-  knowledge · style`
+  knowledge · style`, and **sends that list to the main agent with `SendMessage`** — a plain
+  reply reaches nobody
 
 ## While it runs
 
@@ -77,7 +80,8 @@ reason for the breakout in one move.
 When the person says it is done:
 
 1. **Ask the teammate to distil** the entire breakout from its own context into a list of
-   insights, each with `learning` and `type`.
+   insights, each with `learning` and `type`, and to `SendMessage` it to you. If nothing
+   arrives, ask once more; never reconstruct the list from your relay view.
 2. **Show that list to the person before anything is recorded.**
 3. Let them edit, reorder, remove, or approve.
 4. **Only then write.** For each approved insight, search the knowledge base first, then

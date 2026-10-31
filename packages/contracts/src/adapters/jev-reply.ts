@@ -29,8 +29,7 @@
  * `readings` carries the supplier's own numbers beside the record — the per-level
  * `probabilities` of a score and the `legend`, which the port has no column for and this
  * adapter validates itself, together with the numbers read back out of the port's signals. It
- * decides nothing: `status` and `value` remain the port's, and `authorizesSemanticAdvance`
- * reads the status alone.
+ * decides nothing: `status` and `value` remain the port's.
  *
  * DELIBERATE: the score distribution does not go through the port's native channel, which
  * requires a distribution to sum to one within its rounding bound (0.005 per key). The supplier's
@@ -46,7 +45,7 @@ import type {
   IdentityAssurance, SemanticAssessment,
 } from "../assessment.js";
 import { interpret } from "../assessment.js";
-import { stableDigest } from "../profiles.js";
+import { stableDigest } from "../canonical.js";
 
 // The supplier's three primitives, and what each one answers here
 
@@ -179,8 +178,7 @@ export interface JevParseResult extends SemanticAssessment {
 
 /** A refusal is still the port's record. Every envelope field the caller supplied is carried
  *  so a rejected reply is as traceable as an accepted one; `value` is null, `signals` empty and
- *  every reading null because nothing was measured; and the status is never `answered`, which
- *  is what `authorizesSemanticAdvance` reads. */
+ *  every reading null because nothing was measured; and the status is never `answered`. */
 export function rejected(
   opts: JevParseOptions, status: AssessmentStatus, reason: string,
   observed: string | null, assurance: IdentityAssurance,

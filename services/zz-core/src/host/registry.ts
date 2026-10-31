@@ -1,10 +1,9 @@
 /**
  * Registering a reviewed module: the allowlist, the digest, and the three things refused.
  *
- * COUPLED: `@zz/contracts` owns what a module is and what a host does with one, so a fixture
- * drives the same engine the service does. This module owns which bodies the release packages,
- * which of them are approved, and the comparison that decides whether the body in hand is the
- * body that was reviewed.
+ * COUPLED: `@zz/contracts` owns what a module is and what a host does with one. This module owns
+ * which bodies the release packages, which of them are approved, and the comparison that decides
+ * whether the body in hand is the body that was reviewed.
  *
  * Three refusals:
  *

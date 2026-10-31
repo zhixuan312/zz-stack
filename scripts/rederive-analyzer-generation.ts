@@ -55,7 +55,7 @@ try {
     });
     for (const r of records) {
       console.log(`  ${r.corpus}: census=${r.sourceCensus} rederived=${r.rederived} skipped=${r.skipped} `
-        + `failures=${r.failures.length} complete=${r.complete} watermark=${r.watermark ?? "<none>"}`);
+        + `failures=${r.failures.length} watermark=${r.watermark ?? "<none>"}`);
       for (const f of r.failures) console.log(`    FAILED ${f.key}: ${f.reason}`);
     }
     console.log("\nwritten.");

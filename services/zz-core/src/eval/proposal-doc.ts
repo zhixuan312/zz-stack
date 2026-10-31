@@ -4,12 +4,9 @@
  * ends on instead of `improvement.md`. FR-51's own boundary: "a plugin for which the current
  * principal lacks release authority may still proceed through evaluation, diagnosis and
  * isolated proposal generation... It produces an owner-facing proposal with patch/evidence
- * where possible and stops before promotion." Written the SAME way `document_write` writes any
- * document into the initiative's documents — `chainFor` resolves the flow, `envelopeFor` builds the
- * frontmatter, `normalizeSections` renames a near-miss heading, `documentGuards` decides whether
- * the write may land, `saveDocument` lands it — exactly the path `findings-doc.ts`'s own
- * `writeFindingsDoc` and `improvement-doc.ts`'s own `writeImprovementDoc` already take. Nothing
- * here invents a second write path.
+ * where possible and stops before promotion." Written through `generated-doc.ts`'s
+ * `writeGeneratedDoc`, as `findings.md` and `improvement.md` are — the same internals
+ * `document_write` calls.
  *
  * EXPLICIT GUARD (the task's own words: "a non-owned subject never causes a repository write,
  * ever — make that an explicit guard"): this file imports nothing that can touch a real
@@ -40,20 +37,10 @@
  * improvement_run_id can still pick up a built candidate once one lands.
  */
 
-import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
-import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
-import { chainFor } from "../chain.js";
-import { documentGuards } from "../guards.js";
-import { unopenedRefusal } from "../initiative-record.js";
-import { safeName, safePath } from "../paths.js";
-import { sealOf } from "../indexing.js";
-import { loadDocument } from "../versions.js";
-import { saveDocument } from "../document-save.js";
-import { stampEnvelope } from "../write-guards.js";
-import { teamFor } from "../platform-db.js";
-import { envelopeFor, normalizeSections } from "../write-guards.js";
+import { safeName } from "../paths.js";
+import { writeGeneratedDoc } from "./generated-doc.js";
 
 interface ImprovementRunRow {
   readonly id: string; readonly eval_run_id: string;
@@ -258,44 +245,9 @@ export async function writeProposalDoc(
   const body = renderBody(
     initiative, improvementRunId, run.eval_run_id, subject, findings, sourceAvailable,
     sourceAvailable ? reportable : []);
-  const team = await teamFor(parseCaller(requestHeaders()).email);
-  if (!team) {
-    return "ERROR: this caller resolves to no team, so the document has no shelf to be filed on";
-  }
-  const path = `${initiative}/proposal.md`;
-  const unopened = await unopenedRefusal(p, team, path);
-  if (unopened) return unopened;
-  await safePath(path);
-  const chain = await chainFor(p, team, path, body);
-  const existing = await loadDocument(team, path);
-  // The carry is read from the document's own current revision — the rows a document IS
-  // — rather than from a file the store used to hold. A document this team does not have
-  // yet carries nothing, which is the same answer a missing file gave.
-  const onDisk = existing.ok ? parseEnvelope(existing.text) : {};
-  const carry: Record<string, string> = {};
-  for (const k of [...PLATFORM_OWNED, "version"]) {
-    if (onDisk[k]) carry[k] = onDisk[k];
-  }
-  const content = envelopeFor(chain, path, body, {
+  const written = await writeGeneratedDoc(p, `${initiative}/proposal.md`, body, {
     title: `Proposal — ${subject.plugin} ${subject.declared_version} — not released by ZZ Stack`,
     fields: { improvement_run_id: improvementRunId, eval_run_id: run.eval_run_id },
-    carry,
   });
-  const fixed = normalizeSections(chain, path, content);
-  const gate = await documentGuards(chain, path, fixed.content, team);
-  if (gate) return gate;
-  // The ONE insert path: `saveDocument`, which stamps, files the row and its revision. Not a
-  // second one here — two writers for one row shape drift, and these two already had.
-  //
-  // `chars` is the stamped document's length, so the count this returns is the bytes that were
-  // filed rather than the bytes that were passed in.
-  const stamped = stampEnvelope(chain, path, fixed.content);
-  const actor = parseCaller(requestHeaders()).email;
-  const saved = await saveDocument({
-    team, relPath: path, initiative: path.split("/")[0], text: stamped, by: actor,
-    flow: chain.name ?? undefined, act: "write", mode: "rewrite",
-    seal: sealOf(stamped, existing.ok ? existing.rev : null),
-  });
-  if ("refusal" in saved) return saved.refusal;
-  return { path, chars: stamped.length, candidates_included: candidatesIncluded };
+  return typeof written === "string" ? written : { ...written, candidates_included: candidatesIncluded };
 }

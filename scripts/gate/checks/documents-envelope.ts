@@ -8,7 +8,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { contractsSource, functionBody, gateOwnSource, root, sourceFiles, stderrOf, toolAtLine, unbuilt, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
+import { parseEnvelope } from "@zz/contracts";
+
+import { contractsSource, functionBody, gateOwnSource, root, sourceFiles, stderrOf, toolAtLine, unbuilt, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 import { envelopeFields, ownedFields } from "../facts.ts";
 
@@ -67,30 +69,51 @@ check("nothing reads an envelope field except parseEnvelope", () => {
     : null;
 });
 
+// The writers put a value on its line as it was given — `initiative_close`'s reason, an acceptor's
+// name, a title — and nothing escapes a `#` in it, so the reader has to take the line whole. A
+// trailing-comment rule here shortens a stored value on every later read.
+check("an envelope value is read whole, a hash in it included", () => {
+  const read = parseEnvelope("---\nno_signoff_reason: waiting on vendor ticket #42 to close\n" +
+    "title: Fix #12 regression\naccepted_by: ops #2\nstatus: draft\nstatus: approved\n---\n\n# body\n");
+  const want: Record<string, string> = {
+    no_signoff_reason: "waiting on vendor ticket #42 to close",
+    title: "Fix #12 regression",
+    accepted_by: "ops #2",
+    status: "approved",
+  };
+  for (const [key, value] of Object.entries(want)) {
+    if (read[key] !== value) return `parseEnvelope read ${key} as ${JSON.stringify(read[key])}, not ${JSON.stringify(value)}`;
+  }
+  return null;
+});
+
 check("only an act may move the fields the platform owns", () => {
   // ownershipCheck refuses a write that introduces or changes status, approved_by,
   // approved_at, outcome or closed_by — unless the caller passes `via`, saying it is the act
   // that legitimately moves them. `via` is a bypass, so it is only safe while the list of
   // callers holding it is exactly the list that should.
   const ACTS = ["document_approve", "initiative_close", "document_edit"];
-  const src = zzCoreSource();
-  const lines = src.split("\n");
-  const holders: { tool: string; via: string; line: number }[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!/documentGuards\(/.test(lines[i])) continue;
-    const call = lines.slice(i, i + 3).join(" ");
-    const via = /documentGuards\([^)]*,\s*"([a-z_]+)"\s*\)/.exec(call);
-    if (!via) continue;
-    // Which tool this call sits inside, from the one parser. Walking upward for a bare
-    // `registerTool(` followed by a name line finds only the newline form, so a reformat to
-    // `registerTool("document_approve", {` would report the act as passing the wrong `via`.
-    const tool = toolAtLine(src, i) ?? "(unknown)";
-    holders.push({ tool, via: via[1], line: i + 1 });
+  // File by file, so a holder is reported at a line its file has.
+  const holders: { file: string; tool: string; via: string; line: number }[] = [];
+  for (const file of sourceFiles(["services/zz-core/src"], [".ts"])) {
+    const src = readFileSync(join(root, file), "utf8");
+    const lines = src.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (!/documentGuards\(/.test(lines[i])) continue;
+      const call = lines.slice(i, i + 3).join(" ");
+      const via = /documentGuards\([^)]*,\s*"([a-z_]+)"\s*\)/.exec(call);
+      if (!via) continue;
+      // Which tool this call sits inside, from the one parser. Walking upward for a bare
+      // `registerTool(` followed by a name line finds only the newline form, so a reformat to
+      // `registerTool("document_approve", {` would report the act as passing the wrong `via`.
+      const tool = toolAtLine(src, i) ?? "(unknown)";
+      holders.push({ file, tool, via: via[1], line: i + 1 });
+    }
   }
   const wrong = holders.filter((h) => !ACTS.includes(h.tool) || h.via !== h.tool);
   const missing = ACTS.filter((a) => !holders.some((h) => h.tool === a));
   const bad = [
-    ...wrong.map((h) => `server.ts:${h.line} — ${h.tool} passes via "${h.via}"`),
+    ...wrong.map((h) => `${h.file}:${h.line} — ${h.tool} passes via "${h.via}"`),
     ...missing.map((a) => `${a} no longer passes via, so its own writes are refused`),
   ];
   return bad.length
@@ -103,11 +126,16 @@ check("the envelope vocabulary is defined once", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
   // @zz/contracts holds the schema and everything else imports it. This check refuses a
-  // second copy: the vocabulary as a literal list anywhere but the definition.
+  // second copy: the vocabulary as a literal list anywhere but the definition — inside
+  // @zz/contracts too, where a module that cannot import the door is the one tempted to copy.
   const bad = [];
   // Every source file, not a named list of the ones somebody found a copy in.
-  const files = sourceFiles(["services", "packages", "scripts"], [".ts"])
-    .filter((f) => !f.startsWith("packages/contracts/"));
+  const files = sourceFiles(["services", "packages", "scripts"], [".ts"]);
+  // The one statement allowed to spell each list: its exported definition.
+  const DEFINITION = /\bexport\s+const\s+(?:OUTCOMES|STATUSES|PLATFORM_OWNED)\b/;
+  // A statement that declares a private list under one of the three names is a copy, not a
+  // reference, so the declaration is taken out before asking whether the statement names one.
+  const PRIVATE_DECLARATION = /\b(?:const|let|var)\s+(?:OUTCOMES|STATUSES|PLATFORM_OWNED)\b/g;
   // The words as a literal set — a list, an alternation, or a chain of comparisons against
   // each of them — rather than any mention of them.
   const COPIES = [
@@ -133,7 +161,9 @@ check("the envelope vocabulary is defined once", () => {
       // and the words spill onto the second.
       let from = i;
       while (from > 0 && !/[;{}]\s*$/.test(lines[from - 1])) from -= 1;
-      if (/\bOUTCOMES\b|\bSTATUSES\b|\bPLATFORM_OWNED\b/.test(lines.slice(from, i + 1).join(" "))) continue;
+      const statement = lines.slice(from, i + 1).join(" ");
+      if (DEFINITION.test(statement)) continue;
+      if (/\bOUTCOMES\b|\bSTATUSES\b|\bPLATFORM_OWNED\b/.test(statement.replace(PRIVATE_DECLARATION, ""))) continue;
       if (COPIES.some((re) => re.test(line))) {
         bad.push(`${f}:${i + 1}`);
       }

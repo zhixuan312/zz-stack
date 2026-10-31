@@ -146,13 +146,12 @@ export function criticalGuardrailRefusal(
 }
 
 /** Every `evaluator_version_id` a `bounded_semantic`/`generative_critic` measure resolves to,
- *  keyed by `dimensionKey.measureKey` — registered ahead of the ledger, the same reason
- *  `discover.ts` registers `discover.owner_kind` ahead of it: `registerEvaluator` reaches its own
- *  pool through `db()` and is idempotent by content, so calling it before the transaction costs
- *  one upsert-and-read-back and never mints a duplicate version. Returns a refusal string on the
- *  first bad measure. */
+ *  keyed by `dimensionKey.measureKey` — registered in the recording's own transaction, so a
+ *  refusal after this point leaves no evaluator version behind. `registerEvaluator` is idempotent
+ *  by content: a definition already registered resolves to its existing version. Returns a
+ *  refusal string on the first bad measure. */
 async function resolveMeasureEvaluators(
-  body: EvaluationProtocol,
+  client: pg.PoolClient, body: EvaluationProtocol,
 ): Promise<Map<string, string> | string> {
   const resolved = new Map<string, string>();
   for (const dim of body.dimensions) {
@@ -160,7 +159,7 @@ async function resolveMeasureEvaluators(
       if (measure.evaluatorType !== "bounded_semantic" && measure.evaluatorType !== "generative_critic") continue;
       const def = asEvaluatorDefinition(measure.evaluator, `${dim.key}.${measure.key}`);
       if (typeof def === "string") return def;
-      const version = await registerEvaluator(def);
+      const version = await registerEvaluator(def, client);
       resolved.set(`${dim.key}.${measure.key}`, version.evaluator_version_id);
     }
   }
@@ -309,9 +308,7 @@ interface RecordedVersion {
 export async function recordProtocolVersion(
   client: pg.PoolClient, pluginId: string, body: EvaluationProtocol, recordedBy: string,
 ): Promise<RecordedVersion | string> {
-  // Checked first, purely in memory, before any evaluator is registered or written: a protocol
-  // whose factPath/criticalGuardrails content is wrong should not leave a half-registered
-  // evaluator version behind for a caller who fixes the typo and tries again.
+  // Checked first, purely in memory, before anything is read or written.
   for (const dim of body.dimensions) {
     for (const measure of dim.measures) {
       const factIssue = factPathRefusal(measure);
@@ -323,9 +320,6 @@ export async function recordProtocolVersion(
   const guardrailIssue = criticalGuardrailRefusal(body);
   if (guardrailIssue) return `REFUSED: ${guardrailIssue}`;
 
-  const evaluators = await resolveMeasureEvaluators(body);
-  if (typeof evaluators === "string") return `REFUSED: ${evaluators}`;
-
   const maxRow = (await client.query<{ max: number | null }>(
     `select max(version) as max from zz.eval_protocol_version where plugin_id = $1::uuid`,
     [pluginId])).rows[0];
@@ -334,6 +328,9 @@ export async function recordProtocolVersion(
 
   const lineage = await resolveLineage(client, pluginId, body);
   if (typeof lineage === "string") return lineage;
+
+  const evaluators = await resolveMeasureEvaluators(client, body);
+  if (typeof evaluators === "string") return `REFUSED: ${evaluators}`;
 
   const guards = guardrailsByMeasureKey(body);
   const digest = sha256Digest(canonicalJson(body));

@@ -126,3 +126,21 @@ check("a name on the contracts door has an importer", () => {
        "importer — bounded and listed by name, which is not the same as adopted");
   return null;
 });
+
+check("nothing outside @zz/contracts imports one of its modules past the package's door", () => {
+  // `index.ts` is the one definition point every importer sees, so a name moved between the
+  // package's own modules is a change nothing outside it has to follow. A consumer that loads
+  // `dist/<module>.js` or `@zz/contracts/<module>` directly is bound to the file layout instead.
+  // Checks and probes included: a dynamic `import()` of a built path counts as much as a static one.
+  const deep = /(?:@zz\/contracts\/|packages\/contracts\/dist\/)(?!index\.js\b)[\w./-]+\.js/;
+  const bad: string[] = [];
+  for (const rel of sourceFiles(["services", "packages", "scripts", "checks", "testing", "catalog"], [".ts", ".mjs", ".js"])) {
+    if (rel.startsWith("packages/contracts/")) continue;
+    const lines = withoutComments(readFileSync(join(root, rel), "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      const m = deep.exec(line);
+      if (m) bad.push(`${rel}:${i + 1} loads ${m[0]} — import it from the package's door, dist/index.js`);
+    });
+  }
+  return firstOf(bad);
+});

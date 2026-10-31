@@ -338,7 +338,9 @@ export function normalizeSections(chain: Chain, relPath: string, content: string
     ? chain.documents.find((d) => d.name === parts[1])?.sections : undefined;
   if (!want?.length) return { content, renamed: [] };
 
-  const words = (h: string) => new Set(h.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+  // Letters and digits in any script: an ASCII-only pattern reads a non-Latin heading as no
+  // words at all, and every word of an empty set is in every heading.
+  const words = (h: string) => new Set(h.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
   const headings = [...content.matchAll(/^(##[ \t]+)(.*)$/gm)].map((m) => m[2].trim());
   const renamed: string[] = [];
   let out = content;
@@ -346,6 +348,7 @@ export function normalizeSections(chain: Chain, relPath: string, content: string
   for (const target of want) {
     if (headings.includes(target)) continue;
     const tw = words(target);
+    if (!tw.size) continue;
     // DELIBERATE: containment, not a ratio. "What past work recorded" against "What past work
     // with these blocks recorded" shares all four of its words but scores 4/7, under any
     // threshold high enough to be safe. The question is whether the author's heading says

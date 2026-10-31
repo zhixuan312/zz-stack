@@ -300,7 +300,7 @@ check("an environment variable's default is one value, wherever it is spelled", 
       for (const re of PATTERNS) {
         for (const m of ln.matchAll(re)) {
           const [, name, value] = m;
-          if (!value || value.includes("$")) return;         // derived, not a second spelling
+          if (!value || value.includes("$")) continue;       // derived, not a second spelling
           if (!seen.has(name)) seen.set(name, new Map());
           const byValue = seen.get(name);
           byValue.set(value, [...(byValue.get(value) ?? []), `${rel}:${i + 1}`]);

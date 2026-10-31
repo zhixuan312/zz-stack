@@ -168,7 +168,7 @@ check("a call's origin is one rule: three maintenance clients are platform, ever
 check("the chain check runs where a deployment exists, and not in this gate",
       runsCheck("chain-check-wiring.ts"));
 
-check("every completion the judge asks for is recorded, and an unreported figure stays null",
+check("every completion the judge asks for is recorded, a 200 that is not JSON included, an unreported figure stays null, and only a 429 or a quota answer is reported as quota",
       runsCheck("judge-usage.ts"));
 
 // Phase 6's first: the document store's shape. It asserts the TARGET — `doc_revision` and
@@ -233,3 +233,7 @@ check("a release's record reads its summary, upgrade notes, client action and co
       runsCheck("release-record.ts"));
 check("a release is recorded once at its first time, a conflicting record is reported and changes nothing, the backfill writes one row per tag and reconciles the count, a release whose row failed to write names `node scripts/release-record.ts --record <version>`, which writes every missing row once while `--correct` refuses a version with none, and every tagged section of this changelog yields a summary, on a throwaway database",
       runsCheck("release-record-db.ts"));
+check("the SQL readers read code as code: a helper whose parameters destructure folds to its whole statement, and only a .query( in code is a call site, its escapes kept", runsCheck("sql-scanners.ts"));
+check("watch-results alerts on a refusal class read from the refusal column, and tool-report --actor selects one address's calls by the gateway's own caller hash, on a throwaway database", runsCheck("ops-readers-live.ts"));
+check("a team's rebuild re-derives every stale row of that team across pages and no other team's, naming a row it cannot re-derive and going on, and the every-team walk resumes from its watermark, on a throwaway database", runsCheck("reindex-walk.ts"));
+check("chain-check records a refusal where its walk expects JSON as a FAILED line and still ends on its summary", runsCheck("chain-check-refusals.ts"));

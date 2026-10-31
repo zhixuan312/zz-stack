@@ -17,7 +17,7 @@
 import type pg from "pg";
 
 import { BUILD_LEASE_MS, buildRequired, judgeBuild } from "./candidate-build-rules.js";
-import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { Refusal } from "../refusal.js";
 
 interface CandidateRow {
@@ -69,6 +69,7 @@ type BuildRequired = ReturnType<typeof buildRequired>;
 export async function validateCandidate(
   p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string,
 ): Promise<ValidOutcome | BuildRequired | { error: string }> {
+  if (!UUID_RE.test(candidateId)) return { error: `ERROR: no candidate ${candidateId}` };
   await releaseExpiredBuild(p, candidateId);
   const candidate = await loadCandidate(p, candidateId);
   if (!candidate) return { error: `ERROR: no candidate ${candidateId}` };

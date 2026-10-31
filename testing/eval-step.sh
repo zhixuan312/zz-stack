@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run every requirement in a flow's corpus through one step, and keep what it produced.
 #
-#   ZZ_URL=… ZZ_TOKEN=… ./testing/eval-step.sh --flow sdlc/sdlc-flow --step sdlc-explore --out evals/explore
+#   ZZ_TOKEN=… ./testing/eval-step.sh --flow sdlc/sdlc-flow --step sdlc-explore --out evals/explore
 #   ./testing/eval-step.sh --flow … --step … --out … --only r01,r02   # while iterating
 #   ./testing/eval-step.sh --flow … --step sdlc-spec --out … --from evals/explore
 #
@@ -73,7 +73,7 @@ VERSION="$(sed -n 's/^version: *//p' "$SKILL_FILE" | head -1)"
   echo "version:  $VERSION"
   echo "model:    $MODEL"
   echo "corpus:   $CORPUS"
-  echo "gateway:  ${ZZ_URL:-(from the installed client)}"
+  echo "gateway:  the installed zz-core plugin's"
   echo "started:  $(date -u +%FT%TZ)"
   echo "---"
 } | tee "$OUT/run.txt"
@@ -92,6 +92,13 @@ INTERVIEWS="$(node -e '
   if (!s) { console.error(`no entry for ${process.argv[2]} in steps.json`); process.exit(2); }
   process.stdout.write(s.interviews ? "yes" : "no");' "$HERE/$STEPS" "$STEP")"
 echo "  interviews: $INTERVIEWS"
+if [ "$INTERVIEWS" = "yes" ]; then
+  ASK="A stakeholder has sent you this. Ask what you need to know: the stakeholder will answer
+your questions in this conversation."
+else
+  ASK="A stakeholder has sent you this, and it is all you have. There is nobody to ask: work from
+what is written."
+fi
 
 n=0
 for id in $IDS; do
@@ -105,11 +112,11 @@ for id in $IDS; do
 
   printf '\n──── %s (%d)\n' "$id" "$n"
 
-  # With --from, a later step continues the initiative the previous run recorded for this
-  # requirement, rather than starting from the brief.
+  # With --from, a later step continues the initiative the latest run into that directory
+  # recorded for this requirement, rather than starting from the brief.
   CONTINUE=""
   if [ -n "$FROM" ]; then
-    CONTINUE="$(sed -n "s|^$id \\([^/]*\\)/.*|\\1|p" "$FROM/produced.txt" 2>/dev/null | head -1)"
+    CONTINUE="$(sed -n "s|^$id \\([^/]*\\)/.*|\\1|p" "$FROM/produced.txt" 2>/dev/null | tail -1)"
     [ -n "$CONTINUE" ] || { echo "  SKIPPED: $FROM recorded no initiative for $id"; continue; }
   fi
 
@@ -134,8 +141,7 @@ stage of the flow."
     PROMPT="Call the zz-core tool skill_read, passing zz-platform as its name argument, and then
 again passing ${STEP}. Follow those skills exactly — they are the method.
 
-A stakeholder has sent you this, and it is all you have. There is nobody to ask: work from
-what is written.
+${ASK}
 
 ---
 ${BRIEF}
@@ -155,7 +161,9 @@ stage of the flow."
     #
     # DELIBERATE: no tools and no MCP servers. A persona with the agent's tools could do the
     # agent's work, and the run would then score the pair rather than the step.
+    # One session for the stakeholder too, so each answer is given knowing the ones before it.
     SID="$(uuidgen | tr 'A-Z' 'a-z')"
+    HEARD="--session-id $SID"
     echo '{"mcpServers":{}}' > "$OUT/$id.nomcp.json"
     PERSONA="You are the manager at ${REQUESTER} who asked for this. In your own words, this is what
 you want:
@@ -203,7 +211,8 @@ How you behave, without exception:
       # A reply with no question ends the interview.
       printf '%s' "$REPLY" | grep -q '?' || break
 
-      SAY="$(claude -p --model "$MODEL" --permission-mode bypassPermissions \
+      # shellcheck disable=SC2086
+      SAY="$(claude -p --model "$MODEL" --permission-mode bypassPermissions $HEARD \
         --mcp-config "$OUT/$id.nomcp.json" --strict-mcp-config \
         --disallowedTools "Skill,Task,Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch" \
         --append-system-prompt "$PERSONA" \
@@ -212,6 +221,7 @@ How you behave, without exception:
 $REPLY
 
 Reply as yourself." < /dev/null 2>/dev/null || true)"
+      HEARD="--resume $SID"
       [ -n "$SAY" ] || break
     done
   fi

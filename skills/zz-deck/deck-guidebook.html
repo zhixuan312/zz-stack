@@ -4,11 +4,10 @@
 <meta charset="UTF-8">
 <title>The House Book — Guidebook Reference</title>
 <!--
-  Composition reference split out of deck-template.html: the 53 reference slide
-  sections, in original order, and the housebook manifest script that describes
-  them. This document is not wired to the chassis's dock, pagination, or style
-  scripts (those live in deck-chassis.html) -- it exists so a person or a check can
-  read the slide markup and the manifest JSON directly.
+  The composition reference: the 53 reference slide sections and the housebook manifest
+  script that describes them. It carries no style and no scripts (those are deck-chassis.html),
+  so a browser shows it unstyled; it exists so a person or a check can read the slide markup
+  and the manifest JSON directly.
 -->
 </head>
 <body>
@@ -256,11 +255,11 @@
 </div>
 <footer class="zone-foot"></footer>
 </div>
-</section><section aria-label="Type" class="slide" data-chapter="Ch 1 · Foundations" data-choose="Many arbitrary sizes." data-component="Type" data-job="Define type hierarchy" data-limits="Four weights; body floor 18.5px." data-slide-id="type" data-source-required="false" data-tags="typography hierarchy" data-use="Separate display, reading, and label registers." data-version="1.2.3">
+</section><section aria-label="Type" class="slide" data-chapter="Ch 1 · Foundations" data-choose="Many arbitrary sizes." data-component="Type" data-job="Define type hierarchy" data-limits="Body floor 18.5px." data-slide-id="type" data-source-required="false" data-tags="typography hierarchy" data-use="Separate display, reading, and label registers." data-version="1.2.3">
 <div class="sheet">
 <header class="zone-head">
 <div><p class="kicker">Ch 1 · Foundations</p><h2>Three type registers create hierarchy without noise.</h2></div>
-<p class="head-note">Display attracts, reading explains, labels annotate. Four weights are enough.</p>
+<p class="head-note">Display attracts, reading explains, labels annotate.</p>
 </header>
 <div class="zone-stage">
 <div class="guide">
@@ -324,7 +323,7 @@
 <ul>
 <li>Gaps come from --s1 … --s10 only</li>
 <li>2px ink = object boundary · 1px line = interior rule</li>
-<li>Shadows are hard offsets, never blurs</li>
+<li>Elevation comes from --shadow and --shadow-focus, both soft</li>
 </ul>
 </div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Boxing every idea. Use proximity to group; add a boundary only when the content has a real boundary.</p></div>
 <div class="rail-block rail-block--avoid">
@@ -1414,8 +1413,8 @@
 </aside>
 <div class="guide__sample">
 <div class="band-stack">
-<div class="band band--bronze"><p class="band__label">Bronze · raw</p><p class="band__body">Landed exactly as received. No schema enforced, nothing dropped, replayable from source.</p></div>
-<div class="band band--silver"><p class="band__label">Silver · conformed</p><p class="band__body">Typed, deduplicated, joined to reference data. One row means one thing.</p></div>
+<div class="band"><p class="band__label">Bronze · raw</p><p class="band__body">Landed exactly as received. No schema enforced, nothing dropped, replayable from source.</p></div>
+<div class="band"><p class="band__label">Silver · conformed</p><p class="band__body">Typed, deduplicated, joined to reference data. One row means one thing.</p></div>
 <div class="band band--gold band--focus"><p class="band__label">Gold · served</p><p class="band__body"><strong>The only tier anyone outside the platform may query.</strong> Aggregates and contracts live here.</p></div>
 </div>
 </div>
@@ -1492,7 +1491,7 @@
 </aside>
 <div class="guide__sample">
 <div class="quadrant-frame">
-<p class="quadrant-axis quadrant-axis--y">Effort to change →</p>
+<p class="quadrant-axis quadrant-axis--y">Value delivered →</p>
 <div class="quadrant">
 <div class="quadrant__cell"><h3>Schedule</h3><p>High value, high effort. Needs a plan and a named owner.</p><span class="quadrant__item" style="left:10%;top:42%">Data migration</span><span class="quadrant__item" style="left:44%;top:66%">Regional rollout</span></div>
 <div class="quadrant__cell quadrant__cell--focus"><h3>Do now</h3><p>High value, low effort. Nothing should sit here for long.</p><span class="quadrant__item" style="left:12%;top:40%">Billing retry</span><span class="quadrant__item" style="left:50%;top:58%">SSO</span><span class="quadrant__item" style="left:22%;top:78%">Audit log</span></div>
@@ -1500,7 +1499,7 @@
 <div class="quadrant__cell"><h3>Batch</h3><p>Low value, low effort. Fold into other work.</p><span class="quadrant__item" style="left:14%;top:44%">Email footer</span><span class="quadrant__item" style="left:48%;top:68%">Tooltip copy</span></div>
 </div>
 <span></span>
-<p class="quadrant-axis">← Value delivered →</p>
+<p class="quadrant-axis">← Effort to change</p>
 </div>
 </div>
 </div>
@@ -1939,7 +1938,7 @@
 <p class="head-note">Version the design contract inside the file so copied pages retain their provenance and refinement history.</p>
 </header>
 <div class="zone-stage">
-<div class="changelog"><div class="changelog__row"><p class="changelog__v">1.2.3</p><p class="changelog__what"><strong>Dead rules removed.</strong> Fifty rules whose selectors matched no element in the book and no string in its scripts: the pre-1.2.0 chart system, superseded when every chart moved to <code>cx-*</code>, and fifteen orphaned component variants. Nothing renders differently &mdash; a rule that matches nothing cannot.</p></div><div class="changelog__row"><p class="changelog__v">1.2.2</p><p class="changelog__what"><strong>Breathing room, and exhibits that obey their own rules.</strong> The guide rail starts at one inset book-wide instead of sixteen, and no label sits closer than 24 units to its plate. Chart cards fill their row. The quadrant plots items, the pyramid&rsquo;s widths carry its numbers, and data marks are filled only from data tokens.</p></div><div class="changelog__row"><p class="changelog__v">1.2.1</p><p class="changelog__what"><strong>Accent and status separated.</strong> The third accent and the third chart series moved off status-green to a deep teal, so the accent trio and the reserved status trio read as different families and &ldquo;never a chart series&rdquo; holds in the charts themselves.</p></div><div class="changelog__row"><p class="changelog__v">1.2.0</p><p class="changelog__what"><strong>Chart-system unification and reference accuracy.</strong> Every chart rebuilt as inline SVG on two fixed viewBoxes, so scale, stroke weight and type match across the book, on one palette with a neutral population and a single accent focal. Annotation collisions cleared, and reference pages corrected to name the tokens that actually exist.</p></div><div class="changelog__row"><p class="changelog__v">1.1.1</p><p class="changelog__what"><strong>Diagram and chart refinement pass.</strong> Tighter type hierarchy, calmer diagram styling, cleaner labels, improved callouts, and reworked graph-family exemplars.</p></div><div class="changelog__row"><p class="changelog__v">1.1.0</p><p class="changelog__what"><strong>The professional guidebook rebuild.</strong> One coherent style layer, offline system fonts, stronger hierarchy, searchable library, agent-readable manifest, full-slide copy, automated QA, direct page routing, and eleven new practical compositions.</p></div>
+<div class="changelog"><div class="changelog__row"><p class="changelog__v">1.2.3</p><p class="changelog__what"><strong>Dead rules removed.</strong> Fifty rules whose selectors matched no element in the book and no string in its scripts: the pre-1.2.0 chart system, superseded when every chart moved to <code>cx-*</code>, and fifteen orphaned component variants. Nothing renders differently &mdash; a rule that matches nothing cannot.</p></div><div class="changelog__row"><p class="changelog__v">1.2.2</p><p class="changelog__what"><strong>Breathing room, and exhibits that obey their own rules.</strong> The guide rail starts at one inset book-wide instead of sixteen, and no label sits closer than 24 units to its plate. Chart cards fill their row. The quadrant plots items, the pyramid&rsquo;s widths carry its numbers, and data marks are filled only from data tokens.</p></div><div class="changelog__row"><p class="changelog__v">1.2.1</p><p class="changelog__what"><strong>Accent and status separated.</strong> The third accent and the third chart series moved off status-green to a deep teal, so the accent trio and the reserved status trio read as different families and &ldquo;never a chart series&rdquo; holds in the charts themselves.</p></div><div class="changelog__row"><p class="changelog__v">1.2.0</p><p class="changelog__what"><strong>Chart-system unification and reference accuracy.</strong> Every chart rebuilt as inline SVG, on one palette with a neutral population and a single accent focal. Annotation collisions cleared, and reference pages corrected to name the tokens that actually exist.</p></div><div class="changelog__row"><p class="changelog__v">1.1.1</p><p class="changelog__what"><strong>Diagram and chart refinement pass.</strong> Tighter type hierarchy, calmer diagram styling, cleaner labels, improved callouts, and reworked graph-family exemplars.</p></div><div class="changelog__row"><p class="changelog__v">1.1.0</p><p class="changelog__what"><strong>The professional guidebook rebuild.</strong> One coherent style layer, offline system fonts, stronger hierarchy, searchable library, agent-readable manifest, full-slide copy, automated QA, direct page routing, and eleven new practical compositions.</p></div>
 <div class="changelog__row">
 <p class="changelog__v">1.0.0</p>
 <p class="changelog__what"><strong>The guidebook rebuild.</strong> Zone contract (head · stage · foot as grid rows), the guide rail on every teaching page, one isolated Menu holding method, notes, this page's code, present, and the version record, forty-two pages, and all twenty-seven diagram types in chapter four.</p>
@@ -2066,7 +2065,7 @@
       "job": "Define type hierarchy",
       "use": "Separate display, reading, and label registers.",
       "choose": "Many arbitrary sizes.",
-      "limits": "Four weights; body floor 18.5px.",
+      "limits": "Body floor 18.5px.",
       "tags": [
         "typography",
         "hierarchy"

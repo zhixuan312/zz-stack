@@ -24,13 +24,14 @@
  * It needs docker and runs for minutes, so it is not a gate check.
  *
  * Loopback only. The walk is handed its gateway, token and database by the stack it stood up, and
- * checks them against the same fail-closed allowlist scripts/control-loop-e2e.ts uses — this
+ * checks them against the fail-closed allowlist in scripts/scratch-only.ts — this
  * writes sixteen initiatives, a release and a rollback into whatever it is pointed at.
  */
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { refuseUnlessScratch } from "./scratch-only.ts";
 import { transcript, Conversation } from "./eval-flow-e2e/doors.ts";
 import { improve, promoteVerify } from "./eval-flow-e2e/improve.ts";
 import { seedUsage } from "./eval-flow-e2e/seed.ts";
@@ -38,18 +39,8 @@ import { down, restartGateway, up, type Stack } from "./eval-flow-e2e/stack.ts";
 import { asked, startStub } from "./eval-flow-e2e/stub-model.ts";
 import { defineQualify, discover, evaluate, explain, identify, observe, type Walk } from "./eval-flow-e2e/walk.ts";
 
-const LOOPBACK = /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])(:\d+)?([/?]|$)/;
-const localDb = (url: string): boolean => /@(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(url);
-
-function refuseUnlessScratch(url: string, pat: string, db: string): string | null {
-  if (!url || !pat || !db) return "REFUSED — no gateway, token or database to walk against.";
-  if (!LOOPBACK.test(url)) return `REFUSED — ${url} is not a loopback address.`;
-  if (!localDb(db)) return "REFUSED — the database is not on this machine.";
-  return null;
-}
-
 async function walk(stack: Stack): Promise<void> {
-  const refusal = refuseUnlessScratch(stack.url, stack.pat, stack.db);
+  const refusal = refuseUnlessScratch(stack.url, stack.pat, stack.db, "sixteen initiatives, a release and a rollback");
   if (refusal) throw new Error(refusal);
   const tag = `evalflow-${Date.now().toString(36)}`;
   const t0 = Date.now();

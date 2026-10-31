@@ -309,18 +309,20 @@ export async function pluginTraces(
   const n = async (sql: string): Promise<number> =>
     Number((await pool.query<{ n: string }>(sql, params)).rows[0]?.n ?? 0);
 
-  const runs = await n(`select count(*)::text as n ${RUNS_OF}`);
+  // Every query below depends only on the arguments, so all of them are in flight at once and
+  // awaited together; what is computed from them follows.
+  const runsQ = n(`select count(*)::text as n ${RUNS_OF}`);
   // A run is usable when it can be placed on a stage, and the step is nameable only through the
   // skill version the event names: the retired `step` text is gone, and an event whose version
   // could not be resolved at the door is a step no reader can name. Those events are counted in
   // the coverage gap below rather than dropped from the denominator.
-  const usable = await n(`
+  const usableQ = n(`
     select count(*)::text as n ${RUNS_OF}
       and r.initiative_id is not null
       and exists (select 1 from zz.event e
                    where e.run_id = r.id and e.skill_version_id is not null)`);
 
-  const refs = await subjectRefsOf(pool, plugin, version, servesOwnDoor, window);
+  const refsQ = subjectRefsOf(pool, plugin, version, servesOwnDoor, window);
 
   // Coverage over the events these runs own. `resolvable` is the count that can be placed on a
   // stage at all; the gap between it and `events` is what every other figure here is missing.
@@ -329,7 +331,7 @@ export async function pluginTraces(
   // naming a skill version, `with_initiative` an event naming an initiative, and `resolvable` the
   // narrower question of whether that version's skill is in the registry at all. The two text
   // columns are gone, so an event whose name resolved nothing is a null id and counts in neither.
-  const cov = (await pool.query<{ events: string; with_step: string; with_initiative: string; resolvable: string }>(`
+  const covQ = pool.query<{ events: string; with_step: string; with_initiative: string; resolvable: string }>(`
     select count(*)::text                                                            as events,
            count(*) filter (where e.skill_version_id is not null)::text              as with_step,
            count(*) filter (where e.initiative_id is not null)::text                 as with_initiative,
@@ -337,7 +339,7 @@ export async function pluginTraces(
                                             join zz.skill s on s.id = esv.skill_id
                                            where esv.id = e.skill_version_id))::text as resolvable
       from zz.event e
-     where e.run_id in (select r.id ${RUNS_OF})`, params)).rows[0];
+     where e.run_id in (select r.id ${RUNS_OF})`, params).then((r) => r.rows[0]);
 
   // One row per visit, not one per step, and the difference is the whole measurement.
   //
@@ -362,7 +364,7 @@ export async function pluginTraces(
   // the migration: partitioning on the version splits two of the 80 visits the old query returns,
   // on `2026-09-26-eval-zz-core` and `2026-09-26-eval-zz-core-2`; partitioning on the name returns
   // those 80 rows unchanged. The version is how the name is reached, not what the step is.
-  const pathRows = (await pool.query<{ initiative: string; step: string; first_ts: string; last_ts: string }>(`
+  const pathRowsQ = pool.query<{ initiative: string; step: string; first_ts: string; last_ts: string }>(`
     select i.slug as initiative, x.step, min(x.ts)::text as first_ts, max(x.ts)::text as last_ts
       from (select e.initiative_id, s.name as step, e.ts,
                    row_number() over (partition by e.initiative_id order by e.ts)
@@ -375,62 +377,38 @@ export async function pluginTraces(
       join zz.initiative i on i.id = x.initiative_id
      where i.slug ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'
      group by i.slug, x.step, x.visit
-     order by i.slug, min(x.ts)`, params)).rows;
-
-  const stage_paths: PluginTraces["stage_paths"] = [];
-  const helper = new Set(helpers);
-  for (const row of pathRows) {
-    if (helper.has(row.step)) continue;
-    let entry = stage_paths.find((s) => s.initiative === row.initiative);
-    if (!entry) { entry = { initiative: row.initiative, steps: [] }; stage_paths.push(entry); }
-    entry.steps.push({ step: row.step, first_ts: row.first_ts, last_ts: row.last_ts });
-  }
-
-  // A step no declared stage places. A plugin that declares no stage order has none to place a
-  // step against: its runs record the steps of whichever flow called it.
-  const at = new Map(stages.map((s, i) => [s, i]));
-  const unplacedCount = new Map<string, number>();
-  if (stages.length) {
-    for (const path of stage_paths) {
-      for (const s of path.steps) {
-        if (!at.has(s.step)) unplacedCount.set(s.step, (unplacedCount.get(s.step) ?? 0) + 1);
-      }
-    }
-  }
+     order by i.slug, min(x.ts)`, params).then((r) => r.rows);
 
   // A return, off the documents (see `returns`). Nothing more: the classification a reader
   // wants — re-grounding or thrash — belongs to the ruler. The initiative is the written path's,
   // not the event's: a caller working on one initiative can revise another's document.
+  const at = new Map(stages.map((s, i) => [s, i]));
   const placed = stageDocuments.filter((d) => at.has(d.stage));
-  const writeRows = placed.length ? (await pool.query<{ initiative: string; ts: string; back_to_step: string; from_step: string | null }>(`
+  const writeRowsQ = placed.length ? pool.query<{ initiative: string; ts: string; back_to_step: string; from_step: string | null }>(`
     with pos(doc, stage, p) as (select * from unnest($5::text[], $6::text[], $7::int[])),
     w as (
-      select e.ts, t.slug as team_slug,
+      select e.ts, e.team_id,
              split_part(e.detail->'ids'->>'path', '/', 1) as initiative,
              split_part(e.detail->'ids'->>'path', '/', 2) as doc
         from zz.event e
-        -- The event's own team, joined rather than read off the row. An inner join is safe here
-        -- because every event this statement admits names a run, and zz.event holds a run only
-        -- where its team resolved: a row dropped by this join is a row that could not exist.
-        join zz.team t on t.id = e.team_id
        where e.run_id in (select r.id ${RUNS_OF})
          and e.kind = 'tool_call' and e.ok is true
          and split_part(coalesce(e.tool_key, e.subject), ':', 2) in ('document_write', 'document_edit')
     )
     select w.initiative, w.ts::text as ts, wp.stage as back_to_step,
-           (select lp.stage from zz.doc d join pos lp on lp.doc = d.path
-             where d.team_slug = w.team_slug and d.initiative = w.initiative
+           (select lp.stage from zz.doc d
+              join zz.initiative di on di.id = d.initiative_id
+              join pos lp on lp.doc = d.path
+             where di.team_id = w.team_id and di.slug = w.initiative
                and lp.p > wp.p and d.created_at < w.ts
              order by lp.p desc limit 1) as from_step
       from w join pos wp on wp.doc = w.doc
      order by w.ts`,
-    [...params, placed.map((d) => d.document), placed.map((d) => d.stage), placed.map((d) => at.get(d.stage) ?? 0)])).rows : [];
-  const returns: PluginTraces["returns"] = writeRows.flatMap((r) => r.from_step
-    ? [{ initiative: r.initiative, from_step: r.from_step, back_to_step: r.back_to_step, ts: r.ts }] : []);
-
+    [...params, placed.map((d) => d.document), placed.map((d) => d.stage), placed.map((d) => at.get(d.stage) ?? 0)]).then((r) => r.rows)
+    : Promise.resolve([]);
   // A repeated read, off the event rows: the same path, the same run, nothing written to it
   // between. What a judge was asked of each run's trace, and left a quarter of them unanswered.
-  const readRow = (await pool.query<{ reads: string; repeats: string }>(`
+  const readRowQ = pool.query<{ reads: string; repeats: string }>(`
     with ev as (
       select e.run_id, e.ts, split_part(coalesce(e.tool_key, e.subject), ':', 2) as tool,
              e.detail->'ids'->>'path' as target, coalesce(e.detail->'args', '[]'::jsonb) as args
@@ -450,7 +428,7 @@ export async function pluginTraces(
                                  where w.run_id = r.run_id and w.target = r.target
                                    and w.tool in ('document_write', 'document_edit')
                                    and w.ts > r0.ts and w.ts < r.ts)))::text as repeats
-      from reads r`, params)).rows[0];
+      from reads r`, params).then((r) => r.rows[0]);
 
   // Through tool_key, the alias-resolved name — never the raw subject. `subject` is what the
   // caller literally typed; `tool_key` folds a rename onto one series. Read raw, one tool appears
@@ -467,7 +445,7 @@ export async function pluginTraces(
   // plugin's "was this ever called" question belongs to an unbounded window named at the call
   // site, rather than to a special case inside this function.
   const useSource = toolCallEvents(servesOwnDoor);
-  const useRows = (await pool.query<{ tool: string; calls: string; refusals: string;
+  const useRowsQ = pool.query<{ tool: string; calls: string; refusals: string;
                                       guardrail: string; ours: string; theirs: string;
                                       unattributed: string }>(`
     select coalesce(e.tool_key, e.subject) as tool,
@@ -482,7 +460,34 @@ export async function pluginTraces(
            count(*) filter (where e.ok is false and e.refusal_owner is null)::text as unattributed
       ${useSource}
      group by coalesce(e.tool_key, e.subject)
-     order by count(*) desc`, params)).rows;
+     order by count(*) desc`, params).then((r) => r.rows);
+
+  const [runs, usable, refs, cov, pathRows, writeRows, readRow, useRows] = await Promise.all(
+    [runsQ, usableQ, refsQ, covQ, pathRowsQ, writeRowsQ, readRowQ, useRowsQ]);
+
+  const stage_paths: PluginTraces["stage_paths"] = [];
+  const helper = new Set(helpers);
+  for (const row of pathRows) {
+    if (helper.has(row.step)) continue;
+    let entry = stage_paths.find((s) => s.initiative === row.initiative);
+    if (!entry) { entry = { initiative: row.initiative, steps: [] }; stage_paths.push(entry); }
+    entry.steps.push({ step: row.step, first_ts: row.first_ts, last_ts: row.last_ts });
+  }
+
+  // A step no declared stage places. A plugin that declares no stage order has none to place a
+  // step against: its runs record the steps of whichever flow called it.
+  const unplacedCount = new Map<string, number>();
+  if (stages.length) {
+    for (const path of stage_paths) {
+      for (const s of path.steps) {
+        if (!at.has(s.step)) unplacedCount.set(s.step, (unplacedCount.get(s.step) ?? 0) + 1);
+      }
+    }
+  }
+
+  const returns: PluginTraces["returns"] = writeRows.flatMap((r) => r.from_step
+    ? [{ initiative: r.initiative, from_step: r.from_step, back_to_step: r.back_to_step, ts: r.ts }] : []);
+
   const use = useRows.map((r) => ({
     tool: r.tool, calls: Number(r.calls), refusals: Number(r.refusals),
     guardrail: Number(r.guardrail), ours: Number(r.ours), theirs: Number(r.theirs),

@@ -1,25 +1,20 @@
 /**
  * `findings.md` (Task I-13, AC-22.1): a measurement output, generated from what `evaluation_score`
- * stored and what `finding_record` has recorded against one `eval_run_id`, and written the SAME
- * way `document_write` writes any document into the initiative's documents — `chainFor` resolves the
- * flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames a near-miss heading,
- * `documentGuards` decides whether the write may land, `saveDocument` lands it. Nothing here
- * invents a second write path: `artifacts.ts`'s `document_write` is the only place this platform
- * writes a governed document, and this file calls the same internals it does.
+ * stored and what `finding_record` has recorded against one `eval_run_id`, and written through
+ * `generated-doc.ts`'s `writeGeneratedDoc` — the same internals `document_write` calls:
+ * `chainFor` resolves the flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames
+ * a near-miss heading, `documentGuards` decides whether the write may land, `saveDocument` lands it.
  *
  * `catalog/zz/zz-plugin-eval/flow.json` declares `findings.md` with `gate: false`, `requires:
  * protocol.md` and its eight sections, so a write that satisfies those guards is finished by being
- * written — exactly as `write-guards.ts`'s own `sectionCheck` treats an ungated document. The
- * manifest carried `gate: true` while this file was being built and Task I-28 changed it;
- * `documentGuards` reads whatever manifest is live, so nothing here depends on that history.
+ * written — exactly as `write-guards.ts`'s own `sectionCheck` treats an ungated document;
+ * `documentGuards` reads whatever manifest is live.
  *
  * On a freeform initiative (no flow declared) `chainFor` returns `EMPTY_CHAIN`,
  * `chain.documents` is empty, and every guard above no-ops — which is the shape the live
  * end-to-end check for this task exercises.
  */
 
-import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
-import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
 import {
@@ -27,16 +22,9 @@ import {
   type MeasureAnswer,
 } from "./evaluate-measures.js";
 import { loadDimensions, STORED_ANSWERS_SQL } from "./evaluate-run.js";
-import { chainFor } from "../chain.js";
-import { documentGuards } from "../guards.js";
-import { unopenedRefusal } from "../initiative-record.js";
-import { safeName, safePath } from "../paths.js";
-import { sealOf } from "../indexing.js";
-import { loadDocument } from "../versions.js";
-import { saveDocument } from "../document-save.js";
-import { stampEnvelope } from "../write-guards.js";
-import { teamFor } from "../platform-db.js";
-import { envelopeFor, normalizeSections } from "../write-guards.js";
+import { safeName } from "../paths.js";
+import { writeGeneratedDoc } from "./generated-doc.js";
+import { loadSubjectForEvalRun } from "./proposal-doc.js";
 
 /** One run, as this document reads it back. Nothing here is a second copy of a fact: the subject
  *  release is reached through the observation snapshot the run is bound to (FR-27), the score is
@@ -90,27 +78,6 @@ async function loadEvalRun(p: pg.Pool, evalRunId: string): Promise<EvalRunRow | 
       join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
      where er.id = $1::uuid`, [evalRunId])).rows[0];
   return row ?? null;
-}
-
-/** The subject release, as `plugin_locate` reads it back: `plugin_version` joined to its plugin,
- *  with the owner team and the release-owner teams resolved through the relations that replaced
- *  the `owner_team` text column, `evolvable` and the `release_owners` jsonb. */
-async function loadSubject(p: pg.Pool, pluginVersionId: string) {
-  return (await p.query<{
-    plugin: string; declared_version: string; origin: string; owner_team: string | null;
-    release_owners: string[];
-  }>(`
-    select pl.name as plugin, pv.version as declared_version, pl.origin, t.slug as owner_team,
-           owners.slugs as release_owners
-      from zz.plugin_version pv
-      join zz.plugin pl on pl.id = pv.plugin_id
-      left join zz.team t on t.id = pl.owner_team_id
-      left join lateral (
-        select coalesce(array_agg(t2.slug order by t2.slug), '{}'::text[]) as slugs
-          from zz.plugin_release_owner r
-          join zz.team t2 on t2.id = r.team_id
-         where r.plugin_id = pl.id) owners on true
-     where pv.id = $1::uuid`, [pluginVersionId])).rows[0];
 }
 
 /** The protocol version this run was scored under. The `eval_protocol` header folded into the
@@ -168,10 +135,10 @@ async function loadDimensionScores(p: pg.Pool, run: EvalRunRow): Promise<Dimensi
     const list = answers.get(a.measure_id);
     if (list) list.push(a.answer); else answers.set(a.measure_id, [a.answer]);
   }
-  // A measure is a guardrail exactly when its own `guardrail_threshold` is set — the same
-  // derivation `evaluation_score` reduces the run's guardrail status from, read off the run's own
-  // measures rather than parsed out of a policy object.
-  const critical = new Set(guardrailsOfMeasures(dims.flatMap((d) => d.measures)).map((g) => g.key));
+  // A measure is a guardrail exactly when its own `guardrail_threshold` is set and its dimension
+  // applies — the same derivation `evaluation_score` reduces the run's guardrail status from, read
+  // off the run's own measures rather than parsed out of a policy object.
+  const critical = new Set(guardrailsOfMeasures(dims.filter((d) => d.applicable).flatMap((d) => d.measures)).map((g) => g.key));
 
   return dims.map((d): DimensionScoreRow => {
     // A dimension that does not apply was never assessed; its measures carry its reason, not an
@@ -215,40 +182,14 @@ function renderDimensions(dims: DimensionScoreRow[]): string {
 
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
-/** The stored interval, as a sentence: bounds, level and how many subjects it resampled — or why
- *  there is no real interval. Never the raw JSON.
- *
- *  A run scored under the reshaped family carries only its two bounds
- *  (`zz.eval_run.score_lower`/`score_upper`): the level, the resample count and the subject count
- *  were fields of the `score_interval` jsonb this phase drops, so there is nothing to report but
- *  the interval itself. That shape is rendered as the bounds alone — a level printed as `?` and a
- *  resample count printed as zero would be two figures nobody measured. */
-export function renderInterval(i: Record<string, unknown> | null): string {
-  if (!i) return "not computed";
-  const n = typeof i.n_subjects === "number" ? i.n_subjects : 0;
-  const bound = (v: unknown) => (typeof v === "number" ? v.toFixed(2) : null);
-  const bounds = [bound(i.lower), bound(i.upper)];
-  if (typeof i.level !== "number" && typeof i.iterations !== "number" && !("n_subjects" in i)) {
-    const said = bounds[0] === null && bounds[1] === null
-      ? "not computed — this run published no interval bounds"
-      : `${bounds[0] ?? "—"}–${bounds[1] ?? "—"}`;
-    return i.note ? `${said} — ${String(i.note)}` : said;
-  }
-  const level = typeof i.level === "number" ? pct(i.level) : "?";
-  if (i.degenerate) {
-    return n === 0 ? `none — ${String(i.note ?? "no subject was scored")}`
-      : `${bounds[0] ?? "—"} (one subject; ${String(i.note ?? "nothing to resample")})`;
-  }
-  const iterations = typeof i.iterations === "number" ? `, ${i.iterations} resamples` : "";
-  return `${bounds[0] ?? "—"}–${bounds[1] ?? "—"} (${level} bootstrap over ${n} subjects${iterations})` +
-    (i.note ? ` — ${String(i.note)}` : "");
-}
-
-/** The interval a run published, in the shape `renderInterval` reads it: the two bounds it stores
- *  and nothing else — see that function's own note on why the rest is absent rather than zero. */
-function storedInterval(run: EvalRunRow): Record<string, unknown> | null {
-  if (run.score_lower === null && run.score_upper === null) return null;
-  return { lower: run.score_lower, upper: run.score_upper };
+/** The interval a run published, as a sentence: the two bounds it stores
+ *  (`zz.eval_run.score_lower`/`score_upper`), or that it published none. No level, resample count
+ *  or subject count is stored, so none is printed — a figure nobody measured is not written. */
+export function renderInterval(run: { score_lower: number | null; score_upper: number | null }): string {
+  const bound = (v: number | null) => (typeof v === "number" ? v.toFixed(2) : null);
+  const [lower, upper] = [bound(run.score_lower), bound(run.score_upper)];
+  if (lower === null && upper === null) return "not computed";
+  return `${lower ?? "—"}–${upper ?? "—"}`;
 }
 
 /** Why a score is not established, as `evaluation_score` recorded it — nothing when it is. */
@@ -292,7 +233,7 @@ export function renderFindings(findings: FindingRow[], kind: FindingRow["kind"])
 
 function renderBody(
   run: EvalRunRow, subject: { plugin: string; declared_version: string; origin: string;
-    owner_team: string | null; release_owners: string[] },
+    owner_team: string | null; release_owners: readonly string[] },
   dims: DimensionScoreRow[],
   protocol: { protocol_key: string; version: number },
   trust: EvaluatorTrustRow[], findings: FindingRow[],
@@ -304,7 +245,7 @@ function renderBody(
     `- Status: **${run.score_status ?? "not_established"}**` + blockedBy(run.establishment_blocked_by),
     `- Overall: ${run.overall_score === null ? "—" : Number(run.overall_score).toFixed(2)} / 10`,
     `- Protocol: \`${protocol.protocol_key}\` version ${protocol.version}`,
-    `- Interval: ${renderInterval(storedInterval(run))}`,
+    `- Interval: ${renderInterval(run)}`,
     `- Coverage: ${run.measure_coverage === null
       ? "not recorded"
       : `${pct(run.measure_coverage)} of the protocol's measure weight scored`}`,
@@ -355,50 +296,15 @@ export async function writeFindingsDoc(
   const run = await loadEvalRun(p, evalRunId);
   if (!run) return `ERROR: no eval_run ${evalRunId}`;
   const [subject, protocol, trust, findings, dims] = await Promise.all([
-    loadSubject(p, run.plugin_version_id), loadProtocol(p, run.protocol_version_id),
+    loadSubjectForEvalRun(p, evalRunId), loadProtocol(p, run.protocol_version_id),
     loadEvaluatorTrust(p, run.protocol_version_id), loadFindings(p, evalRunId),
     loadDimensionScores(p, run),
   ]);
   if (!subject || !protocol) return `ERROR: eval_run ${evalRunId} names a subject or protocol version this call cannot read back`;
 
   const body = renderBody(run, subject, dims, protocol, trust, findings);
-  const team = await teamFor(parseCaller(requestHeaders()).email);
-  if (!team) {
-    return "ERROR: this caller resolves to no team, so the document has no shelf to be filed on";
-  }
-  const path = `${initiative}/findings.md`;
-  const unopened = await unopenedRefusal(p, team, path);
-  if (unopened) return unopened;
-  await safePath(path);
-  const chain = await chainFor(p, team, path, body);
-  const existing = await loadDocument(team, path);
-  // The carry is read from the document's own current revision — the rows a document IS
-  // — rather than from a file the store used to hold. A document this team does not have
-  // yet carries nothing, which is the same answer a missing file gave.
-  const onDisk = existing.ok ? parseEnvelope(existing.text) : {};
-  const carry: Record<string, string> = {};
-  for (const k of [...PLATFORM_OWNED, "version"]) {
-    if (onDisk[k]) carry[k] = onDisk[k];
-  }
-  const content = envelopeFor(chain, path, body, {
+  return writeGeneratedDoc(p, `${initiative}/findings.md`, body, {
     title: `Findings — ${subject.plugin} ${subject.declared_version}`,
-    fields: { eval_run_id: evalRunId }, carry,
+    fields: { eval_run_id: evalRunId },
   });
-  const fixed = normalizeSections(chain, path, content);
-  const gate = await documentGuards(chain, path, fixed.content, team);
-  if (gate) return gate;
-  // The ONE insert path: `saveDocument`, which stamps, files the row and its revision. Not a
-  // second one here — two writers for one row shape drift, and these two already had.
-  //
-  // `chars` is the stamped document's length, so the count this returns is the bytes that were
-  // filed rather than the bytes that were passed in.
-  const stamped = stampEnvelope(chain, path, fixed.content);
-  const actor = parseCaller(requestHeaders()).email;
-  const saved = await saveDocument({
-    team, relPath: path, initiative: path.split("/")[0], text: stamped, by: actor,
-    flow: chain.name ?? undefined, act: "write", mode: "rewrite",
-    seal: sealOf(stamped, existing.ok ? existing.rev : null),
-  });
-  if ("refusal" in saved) return saved.refusal;
-  return { path, chars: stamped.length };
 }

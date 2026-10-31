@@ -39,7 +39,7 @@ import {
   ownTools, pluginTraces, subjectRefsOf, surfaceCoverage, unboundedRunsClause, versionsWithUse, type EvidenceWindow,
 } from "./plugin-profile.js";
 import { OWN_TOOLS } from "../door.js";
-import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { canonicalJson, decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { recordStage } from "./stage-record.js";
 import { platformEvent } from "../indexing.js";
 import { PLATFORM_VERSION } from "../platform-version.js";
@@ -155,12 +155,12 @@ async function computeObservation(
 ): Promise<Observation> {
   const entry = entryOf(plugin);
   const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-  const serves = servesOwnDoor(plugin);
+  const serves = servesOwnDoor(plugin, entry);
   const surface = await doorSurface(pool, plugin, version, serves);
-  const reachable = ownTools(toolsNamedBy(plugin), surface.tools);
+  const reachable = ownTools(toolsNamedBy(plugin, entry), surface.tools);
 
-  const traces = await pluginTraces(pool, plugin, version, reachable, stages, serves, window, helperSkillsOf(plugin),
-    stageDocumentsOf(plugin));
+  const traces = await pluginTraces(pool, plugin, version, reachable, stages, serves, window,
+    helperSkillsOf(plugin, entry), stageDocumentsOf(entry));
   // Whoever's calls wrote a document: a door's own record, or a flow's runs writing through the
   // baseline door. Read off `record` alone, every flow reported "wrote no document".
   const writesDocuments = traces.use.some((u) =>
@@ -329,6 +329,35 @@ function respond(
   };
 }
 
+/** A replayed `plugin_profile`: the snapshot the first call recorded, recomputed over the row's
+ *  OWN stored window, never this call's — a `last_runs: n` request resolves against whatever runs
+ *  exist at call time, so a replay must recompute against what was actually observed then. */
+async function replayProfile(
+  pool: pg.Pool, snapshotId: string, subjectVersionId: string, plugin: string, declaredVersion: string,
+  principal: string, initiative: string | undefined,
+) {
+  const stored = (await pool.query<{
+    id: string; window_from: string | null; window_to: string | null; evidence_digest: string;
+  }>(`
+    select id::text as id, window_from::text as window_from, window_to::text as window_to,
+           evidence_digest
+      from zz.eval_observation_snapshot where id = $1::uuid`,
+    [snapshotId])).rows[0];
+  if (!stored) {
+    throw new Refusal("ERROR: idempotency ledger points at an observation snapshot this call cannot read back");
+  }
+  const storedColumns = windowOf(stored);
+  const recomputed = await computeObservation(pool, plugin, declaredVersion, storedColumns);
+  const freshDigest = sha256(canonicalJson(recomputed.facts));
+  platformEvent({ actor: principal, kind: "plugin_profile", initiative, plugin, version: declaredVersion,
+      observation_snapshot_id: stored.id, replayed: true,
+      evidence_digest_drifted: freshDigest !== stored.evidence_digest });
+  const recorded = await recordStage(initiative, "zz-plugin-observe",
+    { subject_version_id: subjectVersionId, observation_snapshot_id: stored.id });
+  return json({ ...respond(stored.id, plugin, declaredVersion, storedColumns, recomputed,
+    { stored_evidence_digest: stored.evidence_digest, drifted: freshDigest !== stored.evidence_digest }), ...recorded });
+}
+
 export function registerObserveTools(server: McpServer): void {
   server.registerTool(
     "plugin_profile",
@@ -338,8 +367,8 @@ export function registerObserveTools(server: McpServer): void {
         "WHEN a subject (from plugin_locate/plugin_register) needs its pre-protocol evidence " +
         "computed: OBSERVE. Builds deterministic production facts — outcomes, stage paths and " +
         "returns, tool calls, refusals (normalised text and dependency owner), latency " +
-        "p50/p90, request/response bytes, document approvals/revisions, never-called tools, " +
-        "tokens/cost where recorded, dependency failures — every count and rate carrying " +
+        "p50/p90, request/response bytes, document approvals and deferrals, never-called tools, " +
+        "dependency failures — every count and rate carrying " +
         "numerator, denominator and coverage, a missing input `null` with a named reason and " +
         "never 0. RETURNS an immutable observation_snapshot_id with no protocol required. A " +
         "mutator: it writes exactly one zz.eval_observation_snapshot row through the " +
@@ -367,6 +396,15 @@ export function registerObserveTools(server: McpServer): void {
       if (!subject) throw new Refusal("ERROR: unknown subject_version_id");
       const { plugin, declaredVersion } = subject;
 
+      // A retry is answered from the snapshot its first call recorded, before anything is
+      // computed: what the window holds now is not what that call observed.
+      const principal = parseCaller(requestHeaders()).email;
+      const args = { subject_version_id, evidence_window };
+      const prior = await decideBeforeWork(principal, "plugin_profile", idempotency_key, args);
+      if (prior.replayed) {
+        return replayProfile(pool, prior.result_id, subject_version_id, plugin, declaredVersion, principal, initiative);
+      }
+
       const serves = servesOwnDoor(plugin);
       const window = await resolveWindow(pool, plugin, declaredVersion, serves, evidence_window);
       const observation = await computeObservation(pool, plugin, declaredVersion, window);
@@ -389,7 +427,6 @@ export function registerObserveTools(server: McpServer): void {
             : `No version of ${plugin} has been used yet.`));
       }
 
-      const principal = parseCaller(requestHeaders()).email;
       // The row names who observed it: `recorded_by` is a principal, and an address no principal
       // carries is refused rather than written as an attribution nobody has.
       const observer = (await pool.query<{ id: string }>(
@@ -400,7 +437,7 @@ export function registerObserveTools(server: McpServer): void {
       }
       const windowColumns = storedWindow(window);
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-        principal, "plugin_profile", idempotency_key, { subject_version_id, evidence_window },
+        principal, "plugin_profile", idempotency_key, args,
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
           const row = (await client.query<{ id: string }>(`
             insert into zz.eval_observation_snapshot
@@ -420,38 +457,14 @@ export function registerObserveTools(server: McpServer): void {
         },
       );
 
-      if (!outcome.replayed) {
-        platformEvent({ actor: principal, kind: "plugin_profile", initiative, plugin, version: declaredVersion,
-            observation_snapshot_id: outcome.result.id, replayed: false });
-        const recorded = await recordStage(initiative, "zz-plugin-observe",
-          { subject_version_id, observation_snapshot_id: outcome.result.id });
-        return json({ ...respond(outcome.result.id, plugin, declaredVersion, window, observation), ...recorded });
+      if (outcome.replayed) {
+        return replayProfile(pool, outcome.result_id, subject_version_id, plugin, declaredVersion, principal, initiative);
       }
-
-      // Replay: recompute over the ROW'S OWN stored window, not necessarily this call's — a
-      // `last_runs: n` request resolves against whatever runs exist at call time, so a replay
-      // years later must recompute against what was actually observed then, read back from the
-      // row's own `window_from`/`window_to`, never re-resolved.
-      const stored = (await pool.query<{
-        id: string; window_from: string | null; window_to: string | null; evidence_digest: string;
-      }>(`
-        select id::text as id, window_from::text as window_from, window_to::text as window_to,
-               evidence_digest
-          from zz.eval_observation_snapshot where id = $1::uuid`,
-        [outcome.result_id])).rows[0];
-      if (!stored) {
-        throw new Refusal("ERROR: idempotency ledger points at an observation snapshot this call cannot read back");
-      }
-      const storedColumns = windowOf(stored);
-      const recomputed = await computeObservation(pool, plugin, declaredVersion, storedColumns);
-      const freshDigest = sha256(canonicalJson(recomputed.facts));
       platformEvent({ actor: principal, kind: "plugin_profile", initiative, plugin, version: declaredVersion,
-          observation_snapshot_id: stored.id, replayed: true,
-          evidence_digest_drifted: freshDigest !== stored.evidence_digest });
+          observation_snapshot_id: outcome.result.id, replayed: false });
       const recorded = await recordStage(initiative, "zz-plugin-observe",
-        { subject_version_id, observation_snapshot_id: stored.id });
-      return json({ ...respond(stored.id, plugin, declaredVersion, storedColumns, recomputed,
-        { stored_evidence_digest: stored.evidence_digest, drifted: freshDigest !== stored.evidence_digest }), ...recorded });
+        { subject_version_id, observation_snapshot_id: outcome.result.id });
+      return json({ ...respond(outcome.result.id, plugin, declaredVersion, window, observation), ...recorded });
     },
   );
 }

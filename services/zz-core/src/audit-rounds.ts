@@ -23,7 +23,7 @@
 import { ENVELOPE_BLOCK } from "@zz/contracts";
 import type pg from "pg";
 
-import { assessFamily } from "./semantic.js";
+import { assessFamily, standingReading } from "./semantic.js";
 import { docRows, isCapturedCause, type DocRow } from "./indexing.js";
 import type { RoundAssessments } from "./review-rounds.js";
 import type { Chain } from "./write-guards.js";
@@ -34,10 +34,10 @@ const stripEnvelope = (s: string): string => s.replace(ENVELOPE_BLOCK, "");
  *  revision's own envelope payload — `stage` and `supports` name which round a source is, and
  *  `audits_version` says which PUBLIC version it read — so both are read off the row rather than
  *  parsed out of a file. */
-const stageOf = (d: DocRow): string => (d.fields?.stage ?? "").trim();
+export const stageOf = (d: DocRow): string => (d.fields?.stage ?? "").trim();
 const auditsVersionOf = (d: DocRow): number => Number(d.fields?.audits_version) || 1;
-const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
-const sourceName = (d: DocRow): string => d.path.slice("sources/".length);
+export const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
+export const sourceName = (d: DocRow): string => d.path.slice("sources/".length);
 
 /** What every `decide` says after its call: the person may have delegated the decision, and then it
  *  is the agent's to record. A standing delegation is the person's decision made in advance; the
@@ -109,11 +109,11 @@ function seriousOf(round: Round, continueOn: readonly AuditWeight[]): { raised: 
 
 /** The documents a source bears on — the `doc_link` rows of kind `supports` its revision
  *  filed, which `docRows` reads onto the row. */
-const supportsOf = (d: DocRow): string[] => d.supports;
+export const supportsOf = (d: DocRow): string[] => d.supports;
 
 /** An instant as milliseconds, from an ISO string or from a `timestamptz` column's own text
  *  (`2026-10-19 08:00:00.5+00`), which a string comparison with an ISO one would misorder. */
-const msOf = (s: string): number => Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
+export const msOf = (s: string): number => Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
 
 /** The rounds of one audit stage on one document that read a version after `since`, oldest first. */
 function roundsOf(sources: readonly DocRow[], stage: string, document: string, since: number): Round[] {
@@ -211,7 +211,7 @@ export function auditMove(initiative: string, stage: string, document: string,
   }
   const last = rounds[rounds.length - 1];
   const n = rounds.length;
-  const a = answers.get(`sources/${last.file}`)?.find((x) => x.family === "changes_commitment");
+  const a = standingReading((answers.get(`sources/${last.file}`) ?? []).filter((x) => x.family === "changes_commitment"));
   const reopens = a?.reading === "yes";
   const decided = decidedSince(sources, document, last.added_at);
   if (reopens && last.version === version && !decided) {

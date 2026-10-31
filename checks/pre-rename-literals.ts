@@ -15,14 +15,14 @@
 // prunes.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS }
+import { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS }
   from "../packages/contracts/dist/index.js";
 
 import { withoutComments } from "../scripts/gate/read.ts";
 
 const fail = [];
 const OLD = new Set([...Object.keys(TOOL_ALIAS), ...Object.keys(MANAGE_ALIAS),
-                     ...Object.keys(EVAL_ALIAS), ...Object.keys(SKILL_ALIAS)]);
+                     ...Object.keys(EVAL_ALIAS)]);
 
 // The maps' own home defines these names; it is not a consumer of them.
 const EXEMPT = new Set(["packages/contracts/src/alias.ts", "packages/contracts/src/index.ts"]);
@@ -40,7 +40,7 @@ const walk = (d: string, out: string[] = []) => {
 for (const f of [...walk("packages"), ...walk("services")]) {
   if (EXEMPT.has(f)) continue;
   const src = readFileSync(f, "utf8");
-  if (!/\bresolveToolKey\b|\bresolveStep\b/.test(src)) continue;   // not a resolving file
+  if (!/\bresolveToolKey\b/.test(src)) continue;   // not a resolving file
 
   const lines = src.split("\n");
   // Comments are blanked before looking for a literal: prose recording an old name is history,
@@ -75,8 +75,7 @@ for (const f of [...walk("packages"), ...walk("services")]) {
       if (!OLD.has(m[1]) || marked) continue;
       fail.push(`${f}:${i + 1} matches the pre-rename name "${m[1]}" in a file that resolves ` +
                 `names through the alias maps — resolved values never carry it, so this ` +
-                `matches nothing. Use "${{ ...TOOL_ALIAS, ...MANAGE_ALIAS, ...EVAL_ALIAS,
-                ...SKILL_ALIAS }[m[1]]}", or mark the line \`RAW NAME:\` and say why it is raw.`);
+                `matches nothing. Use "${{ ...TOOL_ALIAS, ...MANAGE_ALIAS, ...EVAL_ALIAS }[m[1]]}", or mark the line \`RAW NAME:\` and say why it is raw.`);
     }
   }
 }

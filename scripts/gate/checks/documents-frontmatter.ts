@@ -5,10 +5,8 @@
  *
  * The rule an envelope a caller sends is held to: content's envelope never becomes the stored
  * envelope — the keys the platform owns are ignored and reported, a malformed key is refused, and
- * only the platform renders the envelope. It REPLACES "content that opens with frontmatter is
- * refused" (`frontmatterRefusal`, deleted in Phase 2 of 2026-10-06-doc-write-and-update-paradigm):
- * that rule refused a Markdown thematic break too, and a document read back and sent whole. The
- * new one is run, not read — `normalizeContent` from the built zz-core, on planted envelopes.
+ * only the platform renders the envelope. It is run, not read — `normalizeContent` from the built
+ * zz-core, on planted envelopes.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -132,16 +130,19 @@ check("a caller's words cannot write a frontmatter field", () => {
            "extraction must fail loudly rather than quietly stop checking";
   }
 
-  const chain = { name: "ops-flow", roles: {}, docs: new Set(["spec.md"]), documents: [] };
-  const doc = build(chain, "i/spec.md", "# Spec\n\nbody\n",
-    { tags: ["ordinary", "harmless\nflow: some-other-flow\ntype: guide"] });
   // Read back exactly as parseEnvelope does, last value of a repeated key and all.
-  const env: Record<string, string> = {};
-  const fm = /^---[ \t]*\n([\s\S]*?)\n---/.exec(doc);
-  for (const line of (fm?.[1] ?? "").split("\n")) {
-    const kv = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
-    if (kv) env[kv[1]] = kv[2].trim();
-  }
+  const read = (d: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    const block = /^---[ \t]*\n([\s\S]*?)\n---/.exec(d);
+    for (const line of (block?.[1] ?? "").split("\n")) {
+      const kv = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
+      if (kv) out[kv[1]] = kv[2].trim();
+    }
+    return out;
+  };
+  const chain = { name: "ops-flow", roles: {}, docs: new Set(["spec.md"]), documents: [] };
+  const env = read(build(chain, "i/spec.md", "# Spec\n\nbody\n",
+    { tags: ["ordinary", "harmless\nflow: some-other-flow\ntype: guide"] }));
   if (env.flow !== "ops-flow") {
     bad.push(`a tag rewrote the envelope's flow to ${JSON.stringify(env.flow)} — which is ` +
              "what decides the gates, the required documents and the closing rule");
@@ -179,15 +180,6 @@ check("a caller's words cannot write a frontmatter field", () => {
     return `the envelope editors could not be evaluated: ${errMessage(err)}`;
   }
   const base = "---\nflow: ops-flow\ntype: spec\nstatus: draft\n---\n\n# Spec\n\nbody\n";
-  const read = (d: string): Record<string, string> => {
-    const out: Record<string, string> = {};
-    const block = /^---[ \t]*\n([\s\S]*?)\n---/.exec(d);
-    for (const line of (block?.[1] ?? "").split("\n")) {
-      const kv = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
-      if (kv) out[kv[1]] = kv[2].trim();
-    }
-    return out;
-  };
   // Both halves: adding a field that was absent, and rewriting one that was there.
   for (const [field, why] of [["approved_by", "document_approve(on_behalf_of)"], ["status", "a rewrite"]]) {
     const after = read(put(base, field, "Dana Reyes\nflow: some-other-flow\noutcome: accepted"));

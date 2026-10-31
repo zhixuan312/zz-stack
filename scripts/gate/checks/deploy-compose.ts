@@ -132,26 +132,36 @@ check("only the authenticated door may be published beyond loopback", () => {
   if (fronted.size === 0) return "deploy/Caddyfile proxies nothing — no door can be identified";
   const bad: string[] = [];
   let svc = null;
+  let inPorts = false;
   for (const raw of compose.split("\n")) {
     const m = /^ {2}([a-z0-9][a-z0-9_-]*):\s*$/.exec(raw);
-    if (m) { svc = m[1]; continue; }
-    if (!/^\s+ports:/.test(raw) && !/^\s+- "\$\{/.test(raw)) continue;
-    const bind = /\$\{([A-Z_]+)(?::-|\})/.exec(raw)?.[1];
-    const published = /:\$\{[A-Z_]+:-(\d+)\}:/.exec(raw)?.[1];
-    if (published && fronted.has(published)) continue;
-    if (!bind) {
-      // A hard-coded bind has no variable to carry the loopback default, so the literal is the
-      // whole of it. This used to `continue` here, which meant the one shape that cannot be
-      // defaulted safely was the one shape never judged — `0.0.0.0:8763:8000` on zz-core passed,
-      // and zz-core has no authentication of its own. Only a loopback literal is a pass.
-      if (!/^\s*(-\s*)?"?127\.0\.0\.1:\d+:\d+"?,?\s*$/.test(raw)) {
-        bad.push(`${svc} publishes a port with no loopback literal and no variable to default it: ` +
-                 raw.trim());
-      }
+    if (m) { svc = m[1]; inPorts = false; continue; }
+    // Every entry of a ports list, inline (`ports: ["…", "…"]`) or one per line under `ports:`,
+    // judged on its own: a second entry is as published as the first.
+    let entries: string[];
+    const inline = /^\s+ports:\s*\[(.*)\]/.exec(raw);
+    if (inline) {
+      inPorts = false;
+      entries = [...inline[1].matchAll(/"([^"]*)"|'([^']*)'|([^,\s]+)/g)].map((e) => e[1] ?? e[2] ?? e[3]);
+    } else if (/^\s+ports:\s*$/.test(raw)) {
+      inPorts = true;
+      continue;
+    } else if (inPorts && /^\s+-\s/.test(raw)) {
+      entries = [raw.replace(/^\s+-\s*/, "").replace(/\s+#.*$/, "").trim().replace(/^(["'])(.*)\1$/, "$2")];
+    } else {
+      if (inPorts && /^\s+\S/.test(raw)) inPorts = false;
       continue;
     }
-    if (!/:-127\.0\.0\.1/.test(raw)) {
-      bad.push(`${svc} publishes with ${bind} and no loopback default`);
+    for (const e of entries) {
+      // [host:]published:container. With no host part the port is published on every address.
+      const parts = /^(?:(\$\{[^}]*\}|[^:]*):)?(\$\{[^}]*\}|\d+):(\d+)$/.exec(e);
+      if (!parts) { bad.push(`${svc} publishes ${e}, which this check cannot read`); continue; }
+      const [, bind, port] = parts;
+      const published = /^\$\{[A-Z_]+:-(\d+)\}$/.exec(port)?.[1] ?? (/^\d+$/.test(port) ? port : null);
+      if (published && fronted.has(published)) continue;
+      // A loopback literal, or a variable whose default is loopback. Nothing else.
+      if (bind === "127.0.0.1" || /^\$\{[A-Z_]+:-127\.0\.0\.1\}$/.test(bind ?? "")) continue;
+      bad.push(`${svc} publishes ${e} beyond loopback, and nothing fronts it`);
     }
   }
   return bad.length ? bad.join("; ") : null;

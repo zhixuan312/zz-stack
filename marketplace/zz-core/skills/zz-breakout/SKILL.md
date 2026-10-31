@@ -25,8 +25,10 @@ what was said.
 This depends on **addressable background teammates**: spawning a named agent, talking to it
 directly over several turns, and stopping it.
 
-**Claude Code has this.** Spawn with the `Agent` tool, `run_in_background: true`, addressed by
-`@name`, stopped with `TaskStop`.
+**Claude Code has this.** Spawn with the `Agent` tool, `run_in_background: true` and a `name`;
+the person addresses it as `@name`, you address it with `SendMessage(to: <name>)`, and
+`TaskStop` stops it. A background teammate's plain reply reaches nobody: what it owes you
+arrives only as a `SendMessage` to you.
 
 **A harness without it: say so rather than pretending.** Run the persona in-session as a
 bounded role instead — declare the role, hold the dialogue, and apply the same close-out
@@ -55,7 +57,8 @@ Exactly one named background teammate. Its prompt must tell it:
   transcript
 - when asked to close out, it distils the **whole** breakout into journal-ready insights, each
   shaped `{ learning, type }` with `type` from `decision · design · behavior · process ·
-  knowledge · style`
+  knowledge · style`, and **sends that list to the main agent with `SendMessage`** — a plain
+  reply reaches nobody
 
 ## While it runs
 
@@ -77,7 +80,8 @@ reason for the breakout in one move.
 When the person says it is done:
 
 1. **Ask the teammate to distil** the entire breakout from its own context into a list of
-   insights, each with `learning` and `type`.
+   insights, each with `learning` and `type`, and to `SendMessage` it to you. If nothing
+   arrives, ask once more; never reconstruct the list from your relay view.
 2. **Show that list to the person before anything is recorded.**
 3. Let them edit, reorder, remove, or approve.
 4. **Only then write.** For each approved insight, search the knowledge base first, then

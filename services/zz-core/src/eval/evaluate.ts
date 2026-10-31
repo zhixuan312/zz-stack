@@ -50,6 +50,8 @@ const rankOf = (state: string): number => Math.max(QUALIFICATION_RANK.indexOf(st
 
 interface ProtocolPolicy {
   qualification: QualificationPolicy | null; bootstrap: boolean; uncertainty: Record<string, unknown>;
+  /** `scoring.establishment.minCoverage` as recorded — `coverageMet` reads the two numbers it knows. */
+  minCoverage: Record<string, unknown> | undefined;
 }
 
 async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promise<ProtocolPolicy> {
@@ -58,12 +60,14 @@ async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promis
       from zz.eval_protocol_version where id = $1::uuid`,
     [protocolVersionId])).rows[0];
   const qual = QualificationPolicy.safeParse(row?.qualification_policy);
-  const scoring = row?.scoring_policy as { establishment?: unknown; uncertainty?: unknown } | undefined;
+  const scoring = row?.scoring_policy as
+    { establishment?: { minCoverage?: Record<string, unknown> }; uncertainty?: unknown } | undefined;
   const establishment = EstablishmentPolicy.safeParse(scoring?.establishment ?? {});
   return {
     qualification: qual.success ? qual.data : null,
     bootstrap: establishment.success ? establishment.data.bootstrap : false,
     uncertainty: (scoring?.uncertainty as Record<string, unknown>) ?? {},
+    minCoverage: scoring?.establishment?.minCoverage,
   };
 }
 
@@ -87,12 +91,9 @@ async function qualificationMet(
     .filter((m) => m.required &&
       (m.evaluator_type === "bounded_semantic" || m.evaluator_type === "generative_critic"));
   if (!modelBacked.length) return true;
-  for (const m of modelBacked) {
-    if (!m.evaluator_version_id) return false;
-    const q = await latestQualification(p, m.evaluator_version_id, protocolVersionId);
-    if (!q || rankOf(q.state) < rankOf(minimum)) return false;
-  }
-  return true;
+  if (modelBacked.some((m) => !m.evaluator_version_id)) return false;
+  const latest = await Promise.all(modelBacked.map((m) => latestQualification(p, m.evaluator_version_id!, protocolVersionId)));
+  return latest.every((q) => !!q && rankOf(q.state) >= rankOf(minimum));
 }
 
 /** `EstablishmentPolicy.minCoverage` is `FreeformRecord` (spec v8 fixes no shape — this task's
@@ -141,6 +142,9 @@ export async function scoreEvaluation(
 
   const dims = await loadDimensions(p, run.protocol_version_id);
   const measures = dims.flatMap((d) => d.measures);
+  /** The measures this run assesses: a dimension the protocol marks not applicable is never
+   *  assessed, so its measures are neither guardrails nor required here. */
+  const applicableMeasures = dims.filter((d) => d.applicable).flatMap((d) => d.measures);
   /** A dimension's own row id, by key — what `zz.eval_run_dimension` points at. */
   const dimensionIdByKey = new Map(dims.map((d) => [d.key, d.id]));
   const assessed = (await p.query<{ n: string }>(
@@ -175,7 +179,7 @@ export async function scoreEvaluation(
   const snapshot = await loadSnapshotFacts(p, run.observation_snapshot_id);
   // The run's guardrails are its own measures' bars (`eval_measure.guardrail_threshold`), so the
   // list is read off the measures this run was assessed under rather than a policy object.
-  const criticalGuardrails: CriticalGuardrail[] = guardrailsOfMeasures(measures);
+  const criticalGuardrails: CriticalGuardrail[] = guardrailsOfMeasures(applicableMeasures);
   const criticalKeys = new Set(criticalGuardrails.map((g) => g.key));
 
   // The doc-friendly per-measure detail findings.md reads back (findings-doc.ts) — denominators
@@ -203,13 +207,7 @@ export async function scoreEvaluation(
     measures: d.measures.map((m) => ({ weight: m.weight, required: m.required, value: overallDetail.get(m.id)!.value })),
   }));
 
-  const minCoverageRow = (await p.query<{
-    scoring_policy: { establishment?: { minCoverage?: Record<string, unknown> } };
-  }>("select scoring_policy from zz.eval_protocol_version where id = $1::uuid",
-    [run.protocol_version_id])).rows[0];
-  const coverage_met = coverageMet(
-    minCoverageRow?.scoring_policy?.establishment?.minCoverage,
-    snapshot.usable_run_count, subjectRefs.size);
+  const coverage_met = coverageMet(policy.minCoverage, snapshot.usable_run_count, subjectRefs.size);
   const qualification_met = await qualificationMet(p, dims, run.protocol_version_id, policy);
 
   // The guardrails, evaluated against each measure's already-reduced [0,1] value — keyed by
@@ -261,7 +259,7 @@ export async function scoreEvaluation(
   // Why a score is not established, said rather than left for a reader to reverse-engineer
   // from three flags: every required measure left unscored, and each policy not met.
   const establishment_blocked_by = scored.status === "established" ? [] : [
-    ...dimension_scores.flatMap((d) => d.measures.filter((m) => m.required && m.excluded)
+    ...dimension_scores.filter((d) => d.applicable).flatMap((d) => d.measures.filter((m) => m.required && m.excluded)
       .map((m) => `required measure ${m.key} not scored: ${m.excluded_reason ?? "no assessment"}`)),
     ...(coverage_met ? [] : [`coverage floor not met: ${snapshot.usable_run_count} usable run(s), ${subjectRefs.size} subject ref(s)`]),
     ...(qualification_met ? [] : ["a required model-backed measure's evaluator is below the protocol's qualification minimum, or the protocol is a bootstrap"]),

@@ -14,7 +14,10 @@
  *     links carried onto it, as revised with evidence;
  *   - `edits_without_cause` and `edits_with_cause` count the same population as the rest of the
  *     record: this plugin's own door, evaluation traffic excluded — a `document_edit` recorded on
- *     another door, or made by an evaluation flow's skill, is not counted.
+ *     another door, or made by an evaluation flow's skill, is not counted;
+ *   - the approval facts count every gated document, however many share one text;
+ *   - a write to a stage's document after a later stage's document exists in the same initiative
+ *     is a return from the later stage to the earlier one.
  *
  * The only database it touches is the one it started.
  *
@@ -32,6 +35,7 @@ const NAME = "eval-profile-record";
 const PLUGIN = "zz-core";
 const VERSION = "0.0.0-check";
 const { pluginTraces } = await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/plugin-profile.js")).href);
+const { outcomeAndApprovalFacts } = await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/observe-facts.js")).href);
 
 /** A document of `initiative` with one snapshot per entry of `versions` (revision numbers from 1,
  *  the last current), each citing `cites` when given. */
@@ -97,6 +101,42 @@ async function run(db: pg.Client): Promise<string[]> {
   if (JSON.stringify(rec) !== JSON.stringify(want)) {
     fail.push(`the record is ${JSON.stringify(rec)}, not ${JSON.stringify(want)}`);
   }
+
+  // Three gated documents, every one a draft with the same text: three documents, not one.
+  const facts = await outcomeAndApprovalFacts(db, PLUGIN, VERSION, true, true, { from: "-infinity", to: "infinity" }) as
+    Record<string, { denominator?: number }>;
+  if (facts.doc_approval_rate?.denominator !== 3) {
+    fail.push(`three gated documents with one text count as ${facts.doc_approval_rate?.denominator} in doc_approval_rate`);
+  }
+
+  // A return: a run of this door writes spec.md after plan.md, a later stage's document, exists.
+  // The statement that finds the stage written from is planned only when a stage document is
+  // placed, so this is the call that reaches it.
+  const sv = await db.query<{ id: string }>(
+    `with s as (insert into zz.skill (name, flow) values ('sdlc-spec', 'sdlc-flow') returning id)
+     insert into zz.skill_version (skill_id, version, content_hash) select id, '1.0.0', repeat('b', 64) from s returning id`);
+  const run = await db.query<{ id: string }>(
+    `INSERT INTO zz.skill_run (initiative_id, skill_version_id, started_at, ended_at, team_id)
+     VALUES ($1, $2, now(), now(), $3) RETURNING id`, [initiative, sv.rows[0]!.id, team]);
+  await db.query(
+    `INSERT INTO zz.event (kind, subject, detail, ok, team_id, initiative_id, plugin, plugin_version, tool_key,
+                           skill_version_id, run_id, ts)
+     VALUES ('tool_call', 'core:document_write', $1, true, $2, $3, $4, $5, 'core:document_write', $6, $7,
+             now() + interval '1 second')`,
+    [JSON.stringify({ ids: { path: "2026-10-07-record/spec.md" } }), team, initiative, PLUGIN, VERSION,
+     sv.rows[0]!.id, run.rows[0]!.id]);
+  try {
+    const staged = await pluginTraces(db, PLUGIN, VERSION, ["document_write"], ["sdlc-spec", "sdlc-plan"], true,
+                                      { from: "-infinity", to: "infinity" }, [],
+                                      [{ document: "spec.md", stage: "sdlc-spec" }, { document: "plan.md", stage: "sdlc-plan" }]);
+    const got = (staged.returns as { from_step: string; back_to_step: string }[])
+      .map((r) => `${r.from_step}->${r.back_to_step}`);
+    if (JSON.stringify(got) !== JSON.stringify(["sdlc-plan->sdlc-spec"])) {
+      fail.push(`a write to spec.md after plan.md existed reads as returns ${JSON.stringify(got)}, not ["sdlc-plan->sdlc-spec"]`);
+    }
+  } catch (err) {
+    fail.push(`pluginTraces with stage documents failed: ${(err as Error).message}`);
+  }
   return fail;
 }
 
@@ -116,7 +156,7 @@ async function main(): Promise<number> {
     for (const f of fail) console.error(`${NAME}: ${f}`);
     return 1;
   }
-  console.log(`${NAME}: revised counts public versions, and edits count this door's own traffic: ok`);
+  console.log(`${NAME}: revised counts public versions, edits count this door's own traffic, approvals count every gated document, and a write to an earlier stage's document is a return: ok`);
   return 0;
 }
 

@@ -35,7 +35,7 @@ export function registerCandidateBuildTools(server: McpServer): void {
       annotations: READS,
       description:
         "WHEN npm run candidate-build starts (or anyone needs one candidate's recorded patch): " +
-        "RETURNS { candidate_id, status, patch_digest, candidate_patchset: { diff, files }, " +
+        "RETURNS { candidate_id, status, patch_digest, candidate_patchset: { diff }, " +
         "subject_plugin, subject_source_locator, subject_declared_version, subject_release_digest, " +
         "subject_content_digest, subject_release_identity, build_requested_at, " +
         "build_lease_expires_at, build_recorded_at } — the build clones v<subject_declared_version> " +
@@ -51,7 +51,7 @@ export function registerCandidateBuildTools(server: McpServer): void {
       if (!UUID_RE.test(candidate_id)) return text(`ERROR: unknown candidate_id ${candidate_id}`);
       const row = (await p.query<{
         candidate_id: string; status: string; patch_digest: string;
-        candidate_patchset: { diff: string; files?: string[] };
+        candidate_patchset: { diff: string };
         subject_plugin: string | null; subject_source_locator: unknown;
         subject_declared_version: string | null; subject_release_digest: string | null;
         subject_content_digest: string | null; subject_release_identity: Record<string, unknown> | null;

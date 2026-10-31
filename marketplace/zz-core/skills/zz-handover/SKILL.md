@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.17
+version: 2.18
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has recorded the close on the initiative.  Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -32,6 +32,9 @@ anything, as the signal this cycle is actually done.
   beside it by its `content_revision`, as the console's version history does, and
   `document_read(<path>, content_revision: …)` reads it. Never read version N's last state as
   the approved text.
+- `activity_refusals(initiative: <initiative>, since: <the date the initiative's name starts
+  with>)` — this initiative's calls and refused calls by week, the refusals by tool, and the most
+  frequent refusal messages. Without `since` it reads only the last seven days.
 - `initiative_status(<initiative>)` — the close: its outcome, who closed it, its date, and the
   next move the platform computes from the record. Written by the platform and not by the agent,
   which is why it is the one to measure against.
@@ -56,9 +59,9 @@ anything, as the signal this cycle is actually done.
 ## Compute before you interpret
 
 From what the platform's tools return — `initiative_status`, each document's versions and
-their dates, `source_list` — mechanically. These are statistics, not judgements. Report the
-figures those returns carry; a figure below that no tool returns to you is named as not
-available, never estimated.
+their dates, `source_list`, `activity_refusals` — mechanically. These are statistics, not
+judgements. Report the figures those returns carry; a figure below that no tool returns to you
+is named as not available, never estimated.
 
 - **End-to-end time** — first activity to close, split into agent-working time and
   waiting-on-stakeholder time. The second is where most wall-clock lives; report both.
@@ -119,10 +122,15 @@ judgement above. For every `platform`-scoped candidate, mint it now with
 for everybody. For every `team`-scoped candidate, do **not** mint it. Write it into
 `handover.md`'s "Proposed for the team" section instead — title and what it will say — and
 stop there. This pass ends with the document written and unapproved; it does not wait around
-for the approval, because that is a human's turn, not this skill's.
+for the approval, because that is a human's turn, not this skill's. When it proposes any team
+node, end with a line for the person: whoever approves `handover.md` loads `zz-handover` with
+`skill_read` in that same session, straight after the approval, and it mints the nodes the
+document proposes.
 
 **Pass 2 — `handover.md` exists and is `approved`, and its proposed team nodes are not yet
-minted.** For each line under "Proposed for the team", call
+minted.** For each line under "Proposed for the team", first
+`knowledge_search(query: "<the line's title>")`: a result with `shelf: "team"` and that title
+means an earlier run already minted it, so skip it. Otherwise call
 `knowledge_add(scope: "team", ...)` using exactly the title and content that line already
 promised. The approval was of that text, not of whatever you might decide to write today —
 do not re-run the judgement, add candidates that were not in the document, or change what a

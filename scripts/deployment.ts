@@ -127,7 +127,13 @@ export function catalogOwnerTeam({ quiet = false }: { quiet?: boolean } = {}): s
  * from a local tag, which is only this checkout's opinion about what a server holds.
  * `docker manifest inspect` reads the manifest without pulling a layer. */
 export const published = (ref: string): boolean => {
-  try { run("docker", ["manifest", "inspect", ref]); return true; } catch { return false; }
+  try { run("docker", ["manifest", "inspect", ref]); return true; } catch (err) {
+    // Only the registry saying it has no such manifest is an answer. docker missing, no daemon,
+    // not logged in or offline is a question that could not be asked, and throws.
+    const e = asExecError(err);
+    if (/no such manifest|manifest unknown/i.test(e.stderr ?? "")) return false;
+    throw new Error(`docker manifest inspect ${ref} could not ask the registry: ${(e.stderr || e.message).trim().slice(-200)}`);
+  }
 };
 
 /** The MCP protocol version this platform speaks, from the one place that defines it.

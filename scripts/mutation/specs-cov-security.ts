@@ -263,11 +263,10 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "the platform database is reached one way",
     assertion: "no caller writes the transport's own result envelope by hand",
     subject: "packages/tools/src/ops/watch-results.ts",
-    // COUPLED: the selected columns. `outcome` came out of this statement when the lifecycle facts
-    // moved onto `zz.initiative`, so the anchor follows the statement that is actually there.
-    find: '    "select t.slug as team_slug, i.slug as initiative, d.path, d.status, d.updated_at" +',
+    // COUPLED: the selected columns, so the anchor follows the statement that is actually there.
+    find: '    "select t.slug as team_slug, count(*)::int as n" +',
     replace: '    "docker compose exec -T postgres psql" + ' +
-      '"select t.slug as team_slug, i.slug as initiative, d.path, d.status, d.updated_at" +',
+      '"select t.slug as team_slug, count(*)::int as n" +',
     planted: "a caller writes psqlRows' own json_agg envelope by hand, so the rows come back " +
       "wrapped twice and the tool reads nothing — composing that wrapper is the transport's " +
       "job, and a hand-written one is how the rule it carries, statement on stdin and never " +
@@ -498,7 +497,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/data-telemetry.ts",
-    target: "a step's version comes from the skill, never from a file beside it",
+    target: "a step's hash comes from the skill, never from a file beside it",
     assertion: "the hash recorded for a step is the hash of the skill, not of a supporting file",
     subject: "services/gateway/src/step-trace.ts",
     find: "    stepSha: whole ? createHash(\"sha256\").update(servedBody).digest(\"hex\")" +

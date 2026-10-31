@@ -20,7 +20,7 @@ import { Mcp } from "@zz/mcp-client";
 
 import { flowDeclaration } from "./flow-declaration.js";
 
-import { RESULTS, check, eitherOr, record } from "./chain-report.js";
+import { check, eitherOr, jsonOr, record, summary } from "./chain-report.js";
 import { walkBugs } from "./chain-bugs.js";
 import { walkEvalDoor } from "./chain-eval.js";
 import { walkFreeform } from "./chain-freeform.js";
@@ -28,6 +28,11 @@ import { walkReads } from "./chain-reads.js";
 import { walkShelf } from "./chain-shelf.js";
 import { die, envRequired, parseArgs } from "../lib/cli.js";
 
+// DELIBERATE: names of its own, never ZZ_URL/ZZ_TOKEN through platformToken(). The walk opens an
+// initiative, writes, approves and closes documents as whoever the token names, so it runs only
+// as the token its caller hands it on purpose — the release mints one for the walk
+// (scripts/release/chain-live.ts, scripts/release/tool-chain.ts) — never as one platformToken()
+// would find on the machine in ~/.zz/token.
 const GW = envRequired("ZZ_GATEWAY", "the gateway to walk the chain against").replace(/\/+$/, "");
 const PAT = envRequired("ZZ_PAT", "a person's platform token");
 /**
@@ -171,16 +176,16 @@ async function main(): Promise<number> {
   // the platform, which prepends today's date to the slug.
   if (!INIT) {
     const body = await call("initiative_open", { slug: SLUG, flow: FLOW });
-    const parsed = JSON.parse(body) as { initiative?: string; opened_at?: string; opened_by?: string };
+    const parsed = jsonOr<{ initiative: string; opened_at: string; opened_by: string }>("initiative_open", body);
     if (!parsed.initiative) {
-      console.log(`  FAIL  initiative_open returned no name: ${body.slice(0, 300)}`);
-      return 1;
+      record(false, "initiative_open names the initiative it opened", body);
+      return summary();
     }
     INIT = parsed.initiative;
     console.log(`  ok    initiative_open("${SLUG}", "${FLOW}") -> ${INIT}`);
-    // The anchor row (002_initiative_anchor.sql, Task I-6): opened_at/opened_by are inserted in
-    // the same call, not derived later by a reconciler. There is no MCP surface for the row
-    // itself, so this is asserted through the tool's own response.
+    // The initiative's own row: opened_at/opened_by are inserted in the same call, not derived
+    // later by a reconciler. There is no MCP surface for the row itself, so this is asserted
+    // through the tool's own response.
     record(typeof parsed.opened_at === "string" && parsed.opened_at.length > 0,
       "initiative_open records opened_at on the anchor row in the same call", body.slice(0, 300));
     let callerEmail = "";
@@ -197,8 +202,8 @@ async function main(): Promise<number> {
       await call("initiative_open", { slug: SLUG }), true, /already taken/);
     // And the other direction: the flow-driven initiative opened above must still be told its
     // first document.
-    const govNext = JSON.parse(
-      await call("initiative_status", { initiative: INIT })) as { next_move?: { action?: string } };
+    const govNext = jsonOr<{ next_move: { action?: string } }>("initiative_status",
+      await call("initiative_status", { initiative: INIT }));
     record(govNext.next_move?.action === "write_document",
       "a flow-driven initiative is told its first document",
       `governed next_move was ${JSON.stringify(govNext.next_move)}, expected write_document`);
@@ -215,8 +220,8 @@ async function main(): Promise<number> {
   // insert that writes the document's row — no reindex or reconciler needed to catch up. `doc_index`, reported by `initiative_status` for a named initiative, is the one MCP
   // surface for that column (`zz.doc.initiative_id` itself has none): `tagged === total`
   // immediately after this first write is the observable proof.
-  const afterFirstWrite = JSON.parse(
-    await call("initiative_status", { initiative: INIT })) as { doc_index?: { total: number; tagged: number } };
+  const afterFirstWrite = jsonOr<{ doc_index: { total: number; tagged: number } }>("initiative_status",
+    await call("initiative_status", { initiative: INIT }));
   if (afterFirstWrite.doc_index) {
     record(afterFirstWrite.doc_index.tagged === afterFirstWrite.doc_index.total,
       "a document written into the initiative carries initiative_id immediately",
@@ -334,19 +339,19 @@ async function main(): Promise<number> {
     /approved_at: \d{4}-\d{2}-\d{2}/.test(signed);
   record(both, "document_approve() stamps an approver AND a day", signed);
 
-  const status = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
+  const status = jsonOr<{
     documents: { name: string; status?: string | null; gate?: boolean }[];
-    next_move?: { action?: string; document?: string };
-  };
+    next_move: { action?: string; document?: string };
+  }>("initiative_status", await call("initiative_status", { initiative: INIT }));
   // The flow's own documents, without the platform's handover. `initiative_status.documents`
   // includes the handover the platform appends to every gating flow, and the handover is written
   // after the close — zz-handover requires the outcome to exist already.
-  const docs = status.documents.filter((d) => d.name !== "handover.md").map((d) => d.name);
+  const docs = (status.documents ?? []).filter((d) => d.name !== "handover.md").map((d) => d.name);
   // What is already approved, from the platform's own answer, whether or not it is gated:
   // document_write on an approved document is refused, and a gate decides whether an approval is
   // required, never whether one that exists may be overwritten. That refusal is asserted directly
   // further down.
-  const settled = new Set(status.documents
+  const settled = new Set((status.documents ?? [])
     .filter((d) => d.status === "approved").map((d) => d.name));
   // The team, from the platform rather than an environment variable — the team-rejection check
   // below is only meaningful if it passes the real team name.
@@ -363,7 +368,7 @@ async function main(): Promise<number> {
   // wrote are skipped: a write creates, and is refused on a path that exists. Those are the opening
   // document, which carries no gate when it is not the first gated one, and the first gated one,
   // approved above; `document_approve` refuses a document the manifest declares without a gate.
-  const gatedName = new Set(status.documents.filter((d) => d.gate === true).map((d) => d.name));
+  const gatedName = new Set((status.documents ?? []).filter((d) => d.gate === true).map((d) => d.name));
   const written = new Set([OPENS_ON, FIRST_GATED]);
   for (const name of docs) {
     if (settled.has(name) || written.has(name)) continue;
@@ -395,9 +400,8 @@ async function main(): Promise<number> {
   // the document they audited rather than a document of their own, so writing and approving every
   // declared document does not complete the flow. The loop below keeps doing what `next_move`
   // says until it says the close.
-  let owed = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
-    next_move?: { action?: string; document?: string };
-  };
+  let owed = jsonOr<{ next_move: { action?: string; document?: string } }>("initiative_status",
+    await call("initiative_status", { initiative: INIT }));
   // Before the rounds, the platform must name them: with every document written and approved and
   // no audit run, the next move is the owed audit stage rather than the close.
   //
@@ -425,7 +429,7 @@ async function main(): Promise<number> {
   }
   // And only now does the close become the next move. Re-asked rather than assumed: the point of
   // the assertion above is that this answer changed because the rounds ran.
-  const nxtAfter = JSON.parse(await call("initiative_status", { initiative: INIT })) as typeof owed;
+  const nxtAfter: typeof owed = jsonOr("initiative_status", await call("initiative_status", { initiative: INIT }));
 
   // NOT A TOOL: `close` here is `next_move.action`, initiative_status's own verb vocabulary —
   // the tool it names in its `why` is initiative_close.
@@ -472,12 +476,11 @@ async function main(): Promise<number> {
   record(/outcome: accepted/.test(closedDoc) && /accepted_by: \S/.test(closedDoc),
          "a close with nobody named records the caller as the acceptor", closedDoc);
 
-  // The anchor row (002_initiative_anchor.sql, Task I-6): the same close records closed_at,
-  // closed_by and outcome on the row in the same call, and initiative_status now reads all
-  // three from it. Asserted through initiative_status's own answer, the one MCP surface for
-  // the row.
-  const afterClose = JSON.parse(
-    await call("initiative_status", { initiative: INIT })) as { outcome?: string; closed_by?: string };
+  // The initiative's own row: the same close records closed_at, closed_by and outcome on it in
+  // the same call, and initiative_status reads all three from it. Asserted through
+  // initiative_status's own answer, the one MCP surface for the row.
+  const afterClose = jsonOr<{ outcome: string; closed_by: string }>("initiative_status",
+    await call("initiative_status", { initiative: INIT }));
   record(afterClose.outcome === "accepted",
     "initiative_status reads outcome from the anchor row after a close", JSON.stringify(afterClose));
   record(!!afterClose.closed_by,
@@ -597,8 +600,8 @@ async function main(): Promise<number> {
   await walkReads({ call, core, check, record });
 
   // knowledge_reindex, probed through its refusal rather than its rebuild: a bare call means every
-  // team on the deployment. A slug no team carries comes back named, because reindexTeam deletes
-  // the rows of a team with no store directory and a typo has no directory.
+  // team on the deployment. A slug no team carries is refused by name, because the tool looks the
+  // team up before it rebuilds anything and a typo names no team.
   //
   // Registered `if (sup)`, so a PAT whose role is not superadmin is not offered it, and `call`
   // throws McpError on a tool the door does not publish.
@@ -622,16 +625,13 @@ async function main(): Promise<number> {
   // scoped to INIT rather than to a prefix, so the `<INIT>-freeform` probe beside this one cannot
   // answer for it.
   const after = await call("initiative_status", { initiative: INIT });
-  const closedRow = JSON.parse(after) as { outcome?: string | null; closed_by?: string | null };
-  const beforeRow = JSON.parse(before) as { outcome?: string | null };
+  const closedRow = jsonOr<{ outcome: string | null; closed_by: string | null }>("initiative_status", after);
+  const beforeRow = jsonOr<{ outcome: string | null }>("initiative_status", before);
   record(Boolean(closedRow.outcome) && !beforeRow.outcome,
     "closing records an outcome the model cannot write",
     `outcome was ${JSON.stringify(closedRow.outcome)}, closed_by ${JSON.stringify(closedRow.closed_by)}`);
 
-  const bad = RESULTS.filter((r) => !r.ok);
-  console.log(`\n${RESULTS.length - bad.length}/${RESULTS.length} platform checks passed`);
-  for (const r of bad) console.log(`  FAILED: ${r.name}\n          ${r.got}`);
-  return bad.length ? 1 : 0;
+  return summary();
 }
 
 process.exit(await main());

@@ -265,9 +265,11 @@ async function secondTeamRows(sql: pg.Client, s: Seeded): Promise<string> {
 async function storedText(sql: pg.Client, s: Seeded): Promise<string> {
   const { rows } = await sql.query<{ all: string }>(
     // `zz.doc` keeps no copy of a document's bytes: the body is the revision's, and `r` below is
-    // every revision of the document, so `r.body` covers what `d.body` used to add.
+    // every revision of the document, so `r.body` covers what `d.body` used to add. A team holds
+    // several knowledge nodes, so theirs are read together rather than one picked by the join.
     `select concat_ws(' ', t.slug, t.name, i.slug, d.title, r.title, r.body, b.title, b.detail, b.surface, b.resolution,
-                      f.pattern, f.decision_note, f.owner_ref, pv.protocol_key, m.key, e.detail::text, k.title, k.body) as all
+                      f.pattern, f.decision_note, f.owner_ref, pv.protocol_key, m.key, e.detail::text,
+                      (select string_agg(k.title || ' ' || k.body, ' ') from zz.knowledge_node k where k.team_id = t.id)) as all
        from zz.team t
        join zz.initiative i on i.team_id = t.id and i.closed_at is null
        join zz.doc d on d.initiative_id = i.id
@@ -277,7 +279,6 @@ async function storedText(sql: pg.Client, s: Seeded): Promise<string> {
        join zz.eval_finding f on f.eval_run_id = er.id
        join zz.eval_protocol_version pv on pv.id = er.protocol_version_id
        join zz.eval_measure m on m.id = f.measure_id
-       join zz.knowledge_node k on k.team_id = t.id
        join zz.event e on e.team_id = t.id and e.kind = 'knowledge.add' and e.subject = '1'
       where t.slug = $1 and i.slug = $2
       order by e.ts limit 1`, [s.two.slug, s.two.initiative]);

@@ -128,17 +128,17 @@ if (!invokedDirectly) {
   writeFileSync(LOCK, `${JSON.stringify(lock, null, 2)}\n`);
   console.log(`  recorded ${rows.length} skill(s) in skills.lock.json`);
 } else {
-  const prev: Record<string, LockedSkill> = existsSync(LOCK) ? JSON.parse(readFileSync(LOCK, "utf8")) : {};
+  const prev = readLock();
   const pad = (s: string, n: number) => String(s).padEnd(n);
   console.log(`\n  ${pad("skill", 24)}${pad("declared", 11)}${pad("content", 14)}state`);
   for (const r of rows) {
-    const was = prev[r.name];
-    const state = !was ? "new"
-      : was.sha === r.sha ? "unchanged"
-      : was.version === r.version ? "CHANGED WITHOUT A VERSION BUMP"
-      : major(was.version) !== major(r.version)
-        ? `${was.version} -> ${r.version}  (MAJOR: what it is for changed — do not compare rates across this)`
-        : `${was.version} -> ${r.version}  (minor: same job, made more reliable — comparable)`;
+    // The gate's own rule (stateOf), so this table says what the gate will.
+    const s = stateOf(r, prev);
+    const state = s.bad ? `REFUSED: ${s.bad}`
+      : !s.moved ? "unchanged"
+      : s.moved === "major"
+        ? `${s.from} -> ${r.version}  (MAJOR: what it is for changed — do not compare rates across this)`
+        : `${s.from} -> ${r.version}  (minor: same job, made more reliable — comparable)`;
     console.log(`  ${pad(r.name, 24)}${pad(r.version || "(none)", 11)}${pad(r.sha, 14)}${state}`);
   }
   console.log();

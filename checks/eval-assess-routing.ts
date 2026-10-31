@@ -156,8 +156,8 @@ const later = readingsOf([
 assert.deepEqual(later, { bug_evidence: [{ ref: "bug:1", value: 0.9, reading: "yes", assessment_id: 7 }] });
 
 // -- findings.md renders the interval as a sentence, never raw JSON -------------------------------
-const line = renderInterval({ lower: 6.1, upper: 7.85, level: 0.95, iterations: 1000, n_subjects: 6, degenerate: false, note: null });
-assert.equal(line, "6.10–7.85 (95% bootstrap over 6 subjects, 1000 resamples)");
-assert.ok(!renderInterval({ lower: 5, upper: 5, level: 0.95, iterations: 1000, n_subjects: 1, degenerate: true, note: "one" }).includes("{"));
-assert.match(renderInterval({ lower: null, upper: null, level: 0.95, iterations: 1000, n_subjects: 0, degenerate: true, note: "no subject was scored" }), /^none/);
+// A run stores its two bounds and nothing else, so the sentence is the bounds alone.
+assert.equal(renderInterval({ score_lower: 6.1, score_upper: 7.85 }), "6.10–7.85");
+assert.equal(renderInterval({ score_lower: 5, score_upper: null }), "5.00–—");
+assert.equal(renderInterval({ score_lower: null, score_upper: null }), "not computed");
 console.log("ok eval-assess-routing");

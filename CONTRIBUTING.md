@@ -218,7 +218,7 @@ Three more prefixes exist and are enforced by checks, so they are not a style ch
 
     NOT A TOOL:   checks/core-names.ts
     RAW NAME:     checks/pre-rename-literals.ts
-    SYNTHETIC:    checks/skill-renames.ts
+    SYNTHETIC:    checks/skill-paths.ts
 
 Each marks a code line that names a pre-rename tool word — `close`, `approve`, `add_source`,
 `reconcile` — in a string or a regex, and says it is the English word rather than the tool.

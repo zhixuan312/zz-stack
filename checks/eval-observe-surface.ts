@@ -4,7 +4,8 @@
 // The live zz-core evaluation reported surface 16 observed over 15 total (tool_coverage 1.067,
 // unscorable): its skills name /manage's team_switch, and its door serves tools no skill names.
 // And its traces carried no run id, so no run-kind subject_ref could be obtained by any tool.
-// Pure: the traces query runs against a fake pool that answers only the run-refs query.
+// Pure: the traces query runs against a fake pool that answers only the run-refs query, and a slow
+// one shows the traces queries are in flight together.
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
@@ -43,4 +44,21 @@ const runSql = seen.find((q) => /as run_id/.test(q)) ?? "";
 assert.match(runSql, /zz\.team/, "the team is resolved, since an initiative slug is only unique within a team");
 assert.match(runSql, /exists \(select 1 from zz\.event e where e\.run_id = r\.id\)/,
   "only runs a run-kind subject_ref can resolve (it needs zz.event rows) are listed");
+// -- the traces queries overlap -------------------------------------------------------------------
+// Each depends only on the arguments, and the profile runs inside a request severed at about two
+// minutes: they are asked together, not one after another.
+{
+  let inFlight = 0;
+  let most = 0;
+  const slow = {
+    query: async (sql: string) => {
+      inFlight += 1; most = Math.max(most, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight -= 1;
+      return { rows: /as run_id/.test(sql) ? [runRow] : [] };
+    },
+  };
+  await pluginTraces(slow, "zz-core", "0.75.0", own, [], true, { from: "-infinity", to: "infinity" });
+  assert.ok(most > 1, `the traces queries ran one at a time (${most} in flight at most)`);
+}
 console.log("ok eval-observe-surface");

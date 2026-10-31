@@ -29,9 +29,8 @@ import { KNOWLEDGE_TEAM } from "../paths.js";
 import { loadDocument } from "../versions.js";
 
 import type { SubjectKind } from "./evaluate-measures.js";
+import { UUID_RE } from "./idempotency.js";
 import { traceOf } from "./judge-trace.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface ResolvedSubject {
   readonly text: string;

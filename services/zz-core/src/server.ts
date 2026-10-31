@@ -1,9 +1,8 @@
 /**
  * zz-core — process-layer MCP server: the shared zz skills library and the team/per-user
- * store. Skills are read from /skills (the platform's own skills), from every package
- * in /catalog, and from the team's own store, so a package synced today serves without a
- * restart. See allSkillRoots for the order, which decides which of two skills of one name
- * answers.
+ * store. Skills are read from /skills (the platform's own skills) and from every package in
+ * /catalog, so a package synced today serves without a restart. See allSkillRoots for the order,
+ * which decides which of two skills of one name answers.
  *
  * When TEAM_DB_URL is set (the platform database), a team's documents and knowledge are ROWS in
  * that database — there is no store on a disk beside it — and membership is read live from
@@ -22,8 +21,7 @@ import express from "express";
 import { OWN_TOOLS, recordingDoor } from "./door.js";
 import { buildEvalServer } from "./eval-door.js";
 import { listenHost, listenPort } from "./listen-port.js";
-import { refuseIssuanceOnDoors, reviewedModuleHost,
-         type ReviewedModuleHost } from "./host/index.js";
+import { reviewedModuleHost, type ReviewedModuleHost } from "./host/index.js";
 import { packagedModules } from "./reviewed-modules.js";
 
 import { coreServer } from "./orientation.js";
@@ -219,12 +217,6 @@ if (reviewed.registered.length) {
 // credential unlocks.
 buildServer(true);
 buildEvalServer();
-// Above `listen`, for the reason the block before it gives. Grant issuance is reached from a
-// trusted call after a stored controller decision and from nowhere else; a door that has
-// registered it is reachable by a direct call from anybody that door admits, and no role,
-// administrative ones included, confers the authority to mint authority. A process in that
-// state must not come up.
-refuseIssuanceOnDoors(OWN_TOOLS);
 
 // Also above `listen`: a bad `--port` or `--host` has to stop the process before anything is bound.
 const port = listenPort(process.argv);

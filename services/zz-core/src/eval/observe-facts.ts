@@ -191,11 +191,13 @@ export async function outcomeAndApprovalFacts(
     -- A document reaches its initiative through initiative_id and its approval through the
     -- revision it currently points at; zz.doc carries neither. A revision filed at an
     -- approval is a doc_revision row, never a second zz.doc row, so there is no snapshot
-    -- path to exclude and one document is one row. DELIBERATE: the text is the revision's own,
-    -- and a document with no current revision has none — a null cannot match the deferral
-    -- expression below, so it is not counted as a document that sends its reader elsewhere.
-    live as (select distinct et.slug as team_slug, i.slug as initiative, d.status, r.body,
-                    r.approved_by
+    -- path to exclude and one document is one row, never collapsed with another of the same
+    -- text. DELIBERATE: the text is the revision's own, read for a gated document alone, and a
+    -- document with no current revision has none — it is not counted as a document that sends
+    -- its reader elsewhere.
+    live as (select d.id, et.slug as team_slug, i.slug as initiative, d.status,
+                    r.approved_by is not null as approved,
+                    case when d.status <> '' then coalesce(r.body ~* '${DEFERRAL}', false) else false end as deferring
                from zz.doc d
                join zz.initiative i on i.id = d.initiative_id
                join zz.team et on et.id = i.team_id
@@ -217,11 +219,11 @@ export async function outcomeAndApprovalFacts(
            -- Gated documents only — the ones a flow puts a status on. Sources and free documents
            -- are never approved by design; counted in, 259 sources put sdlc at 13 of 291.
            (select count(*) from live where status <> '')::text as documents,
-           (select count(*) from live where status <> '' and approved_by is not null)::text as approved,
+           (select count(*) from live where status <> '' and approved)::text as approved,
            -- A gated document that sends its reader somewhere else for what it means: to a
            -- conversation, a meeting, a thread, or to later. Read whole, across every team's
            -- documents in the window — a text judge could read one team's, 24,000 characters at a time.
-           (select count(*) from live where status <> '' and body ~* '${DEFERRAL}')::text as deferring`,
+           (select count(*) from live where deferring)::text as deferring`,
     [plugin, version, window.from, window.to])).rows[0];
 
   const initiatives = N(row?.initiatives);

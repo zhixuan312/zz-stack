@@ -69,14 +69,17 @@ export function decisionRows(body: string): DecisionRow[] {
   //
   // The verdict carries a parenthetical in this shape — `*Native (BookIt).*`,
   // `*Achievable (RuleMill -> CaseBox).*` — and it names the product per row, where the
-  // document's frontmatter only names them for the whole choice.
+  // document's frontmatter only names them for the whole choice. The verdict is read by
+  // `verdictFromProse`, the table's own reader, so both shapes accept the same spellings.
   for (const m of body.matchAll(new RegExp(
-    `^\\*\\*${CLAIM_KEY}[^*]*?\\*\\*\\s*\\*(Native|Achievable|Workaround|Not possible)([^*]*)\\*\\s*(.*)$`,
-    "gim"))) {
+    `^\\*\\*${CLAIM_KEY}[^*]*?\\*\\*\\s*\\*([^*]+)\\*\\s*(.*)$`, "gim"))) {
     if (rows.has(m[1])) continue;
-    rows.set(m[1], { key: m[1], verdict: m[2].toLowerCase().replace(" ", "_"),
-                     qualifier: cap(m[3].replace(/^[\s.]+|[\s.]+$/g, "")),
-                     detail: cap(m[4]), checker: "" });
+    const said = m[2].trim();
+    const verdict = verdictFromProse(said);
+    if (!verdict) continue;
+    rows.set(m[1], { key: m[1], verdict,
+                     qualifier: cap(said.slice(verdict.length).replace(/^[\s.]+|[\s.]+$/g, "")),
+                     detail: cap(m[3]), checker: "" });
   }
 
   // A plan's task, and the criteria it discharges. A plan states its claims as

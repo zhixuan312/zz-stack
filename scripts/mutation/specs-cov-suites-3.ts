@@ -223,23 +223,11 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   },
   {
     check: SUITES_SURFACE,
-    target: "the two misnamed core skills are renamed, every caller moved, and an old step " +
-      "still resolves",
-    assertion: "the renamed skill declares its new name in its own frontmatter",
-    subject: "skills/zz-platform/SKILL.md",
-    find: "name: zz-platform",
-    // SEAMED, and the prose below is worded around the old name rather than quoting it: the
-    // rename sweep reads every tracked file under scripts/ and cannot tell a spec quoting a
-    // dead skill name from a caller still using one.
-    replace: "name: zz-back" + "bone",
-    // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
-    // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
-    // writes the reconstructed string into, so seaming the source is not enough. `redact`
-    // base64-encodes it there, so the experiment stays reproducible and neither file is the
-    // finding.
-    redact: true,
-    planted: "the platform skill announces itself under its pre-rename name again, in the " +
-      "frontmatter skill_read resolves by, so the rename is a directory that moved and a name " +
-      "that did not — every caller asking for zz-platform gets a skill that says it is " +
-      "something else",
+    target: "every skill path a script or a check names is a skill on disk, and the shelf builds",
+    assertion: "a skill path naming no file on disk fails unless its line is marked SYNTHETIC",
+    subject: "checks/eval-candidates-pure.ts",
+    find: '  ["skills/foo/SKILL.md", "modified"], // SYNTHETIC: fixture path, not a real file',
+    replace: '  ["skills/foo/SKILL.md", "modified"],',
+    planted: "a check names a skill file that exists nowhere, with nothing saying the path is a " +
+      "field rather than a file, so the read it implies would throw ENOENT instead of reporting",
   },];

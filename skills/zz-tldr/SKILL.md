@@ -1,18 +1,18 @@
 ---
 name: zz-tldr
-version: 1.3
+version: 1.4
 description: Compress a long document, thread, or transcript down to what the reader actually needs to act on — the decisions, the open questions, and what changed, not a proportional summary of everything.
-when_to_use: "Something is too long for the person who has to act on it. Typed on purpose as /zz-core:tldr in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
+when_to_use: "Something is too long for the person who has to act on it. Only when a person opens it by name: `/zz-core:tldr` in Claude Code, `$zz-core:tldr` in Codex. Standalone — no initiative, no gate, no place in the sequence."
 ---
 
 # /zz-core:tldr
 
 A command that makes a long or difficult source understandable in about three minutes —
-`/zz-core:tldr` on Claude Code. It runs entirely in your own context:
+`/zz-core:tldr` in Claude Code, `$zz-core:tldr` in Codex. It runs entirely in your own context:
 no platform tool is called and nothing is dispatched.
 
-It arrives with the `zz-core` plugin, which every account carries, as `/zz-core:tldr` on Claude
-Code. No flow has to be installed for it to be there.
+It arrives with the `zz-core` plugin, which every account carries, as `/zz-core:tldr` in Claude
+Code and `$zz-core:tldr` in Codex. No flow has to be installed for it to be there.
 
 **The result always has two reading layers.** The TLDR comes first and gives the source's shape at
 a glance. The supporting detail follows, and carries the context, qualifications, key points,

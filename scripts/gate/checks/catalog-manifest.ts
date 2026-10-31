@@ -381,15 +381,17 @@ check("a plugin's recorded membership is the one it ships", () => {
   const lockPath = join(root, "plugins.lock.json");
   if (!existsSync(lockPath)) return null;   // the check above already says this
   const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
+  if (NAMING.error || !NAMING.pluginName) return NAMING.error ?? "NAMING has no pluginName";
+  const pluginOf = NAMING.pluginName;
   const bad = [];
   for (const [plugin, entry] of Object.entries(recorded) as [string, { skills?: Record<string, unknown> }][]) {
-    // catalogPackages is an array of {owner, flow, dir} with dir already absolute, so the plugin
-    // name is its flow with the -flow suffix off, the rule pluginName() applies everywhere else.
-    const dirs = plugin === BASELINE
-      ? [join(root, "skills")]
-      : catalogPackages.filter((e) => e.flow.replace(/-flow$/, "") === plugin)
-                       .map((e) => join(e.dir, "skills"));
-    if (!dirs.length || !dirs.some((d) => existsSync(d))) continue;
+    const packages = catalogPackages.filter((e) => pluginOf(e.flow) === plugin);
+    if (!packages.length) {
+      bad.push(`${plugin} is in plugins.lock.json and no catalog package ships it`);
+      continue;
+    }
+    const dirs = packages.map(skillsDirOf);
+    if (!dirs.some((d) => existsSync(d))) continue;
     const onDisk = new Set(dirs.flatMap((d) => existsSync(d)
       ? readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
       : []));

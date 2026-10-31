@@ -71,6 +71,17 @@ function die(why: string): never {
   process.exit(6);
 }
 
+/** Every value a repeatable flag was given, in either form, each refused when empty as `flag()` refuses one. */
+function flags(name: string): string[] {
+  const argv = process.argv;
+  const out: string[] = [];
+  argv.forEach((a, i) => {
+    if (a.startsWith(`--${name}=`)) out.push(valueOrDie(name, a.slice(name.length + 3)));
+    else if (a === `--${name}`) out.push(valueOrDie(name, argv[i + 1]));
+  });
+  return out;
+}
+
 function valueOrDie(name: string, raw: string | undefined): string {
   if (raw === undefined || raw === "" || raw.startsWith("--")) {
     console.error(`  REFUSED — --${name} was given with no value after it`);
@@ -99,7 +110,7 @@ const shardFiles = ((): string[] | null => {
   if (!mine) die(`--shard ${shardArg}: the declared set splits into only ${groups.length} group(s)`);
   return mine;
 })();
-const only = shardFiles ?? process.argv.filter((_, i) => process.argv[i - 1] === "--only");
+const only = shardFiles ?? flags("only");
 // `--merge` takes every argument after it up to the next flag: one report per shard, in K order.
 const mergeFrom = ((): string[] => {
   const at = process.argv.indexOf("--merge");
@@ -120,7 +131,9 @@ const workAt = flag("work") ?? join(tmpdir(), "zz-mutation");
 // shards the check files, spawns this same script once per shard with a work directory of its own,
 // then merges what they wrote. See mutation/parallel.ts for why that shape rather than an async
 // loop.
-const workers = Math.max(1, Number(flag("workers") ?? 1));
+const workersArg = flag("workers") ?? "1";
+if (!/^[1-9]\d*$/.test(workersArg)) die(`--workers takes a whole number from 1; got "${workersArg}"`);
+const workers = Number(workersArg);
 const out = resolve(flag("out") ?? join(root, "testing/mutation-report.json"));
 
 interface GateRun {
@@ -140,14 +153,20 @@ interface GateRun {
  */
 const CHILD_TIMEOUT_MS = 300_000;
 
-/** Kill anything the timed-out child left behind. `spawnSync`'s timeout kills the process it
- *  started, not the tree below it, and an orphaned `tsc` holding the workspace is what makes the
- *  next row hang too. */
-function reapUnder(repo: string): void {
-  try {
-    execFileSync("pkill", ["-9", "-f", repo.replace(/[.[\]*+?^${}()|\\]/g, "\\$&")],
-      { stdio: "ignore" });
-  } catch { /* nothing matched, which is the ordinary case */ }
+/** Runs `cmd` in a process group of its own and waits for it. Past CHILD_TIMEOUT_MS the whole group
+ *  is killed: the child and every process under it — npm's `tsc` included, whose orphan holding the
+ *  workspace makes the next row hang too — and nothing else on the machine. */
+const GROUPED = `
+  const { spawn } = await import("node:child_process");
+  const [ms, cmd, ...args] = JSON.parse(process.argv[1]);
+  const c = spawn(cmd, args, { detached: true, stdio: "inherit" });
+  const t = setTimeout(() => { try { process.kill(-c.pid, "SIGKILL"); } catch {} process.exit(124); }, ms);
+  c.on("exit", (code) => { clearTimeout(t); process.exit(code ?? 1); });`;
+function runGrouped(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env):
+    { status: number | null; stdout: string; stderr: string; timedOut: boolean } {
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", GROUPED, JSON.stringify([CHILD_TIMEOUT_MS, cmd, ...args])],
+    { cwd, env, encoding: "utf8" });
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", timedOut: r.status === 124 };
 }
 
 /**
@@ -160,10 +179,8 @@ function reapUnder(repo: string): void {
  * only if the build happens in a process that ends before the gate's begins.
  */
 function prebuild(repo: string): string | null {
-  const r = spawnSync("npm", ["run", "-s", "build"],
-    { cwd: repo, encoding: "utf8", timeout: CHILD_TIMEOUT_MS, killSignal: "SIGKILL" });
-  if (r.error && (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
-    reapUnder(repo);
+  const r = runGrouped("npm", ["run", "-s", "build"], repo);
+  if (r.timedOut) {
     return `the build did not finish within ${CHILD_TIMEOUT_MS / 1000}s and was killed — ` +
       "this is a hang, not a slow build; the row it belongs to measured nothing";
   }
@@ -176,14 +193,12 @@ function prebuild(repo: string): string | null {
  *  not. */
 function runGate(repo: string, reportPath: string): GateRun {
   const began = Date.now();
-  const r = spawnSync("node", ["scripts/gate.ts", "--quiet", "--report", reportPath],
-    { cwd: repo, encoding: "utf8", env: { ...process.env, ZZ_GATE_RUNNING: "" },
-      timeout: CHILD_TIMEOUT_MS, killSignal: "SIGKILL" });
+  const r = runGrouped("node", ["scripts/gate.ts", "--quiet", "--report", reportPath], repo,
+    { ...process.env, ZZ_GATE_RUNNING: "" });
   const ms = Date.now() - began;
   // A timed-out gate is not a passing gate and not a failing one. It is a run that did not
   // happen, and the row has to read that way.
-  if (r.error && (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
-    reapUnder(repo);
+  if (r.timedOut) {
     return { verdict: "TIMED OUT", exit: -1, failed: [], ms };
   }
   if (!existsSync(reportPath)) {

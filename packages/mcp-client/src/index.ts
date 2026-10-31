@@ -190,8 +190,8 @@ export class Mcp {
   /** One JSON-RPC call, returning the envelope.
    *
    * COUPLED: a 404 on a request carrying a session id means the server no longer knows that
-   * session, and the answer is to open a new one. @zz/mcp-http reclaims an idle session after
-   * two hours and answers 404 for exactly this.
+   * session, and the answer is to open a new one. Only a server that manages sessions answers
+   * it — a third party's; @zz/mcp-http is stateless and issues no session id.
    *
    * DELIBERATE: once. A second 404 is the server refusing a session it has just issued, which
    * must not become a retry loop against somebody else's endpoint.

@@ -284,21 +284,14 @@ check("every header the telemetry correlates on is actually sent", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("a step's version comes from the skill, never from a file beside it", () => {
-  // `skill_read(name, file: "references/…")` serves a supporting file, not the skill. A
-  // version taken from that file's bytes names a skill version that does not exist, and
-  // runs.ts joins step_version against zz.skill_version, so the call leaves every per-version
-  // report.
+check("a step's hash comes from the skill, never from a file beside it", () => {
+  // `skill_read(name, file: "references/…")` serves a supporting file, not the skill. A hash
+  // taken from that file's bytes names a version of the skill that does not exist.
   const trace = withoutComments(readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8"));
   const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
   const bad: string[] = [];
   if (!/function stepLoaded\([^)]*whole\s*:\s*boolean/s.test(trace)) {
     bad.push("stepLoaded does not take whether the SKILL ITSELF was served — it cannot tell a skill from a file beside it");
-  }
-  // The version and the hash both, because either one taken from a supporting file is a claim
-  // about the skill that the skill never made.
-  if (!/stepVersion:\s*whole\s*\?/.test(trace)) {
-    bad.push("stepVersion is not conditioned on the whole skill having been served");
   }
   if (!/stepSha:\s*whole\s*\?/.test(trace)) {
     bad.push("stepSha is taken from a supporting file's bytes — the hash then names a version of the skill that does not exist");

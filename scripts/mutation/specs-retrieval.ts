@@ -72,15 +72,6 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
       "surface form stops being findable with no error and nothing in the row to see",
   },
   {
-    check: "scripts/gate/checks/snippet-byte-ranges.ts",
-    target: "a snippet addresses original bytes and never splits a CJK character or an emoji",
-    subject: "packages/indexing/src/snippet.ts",
-    find: "  while (start > 0 && isContinuationByte(bytes[start])) start--;",
-    replace: "  while (start < 0 && isContinuationByte(bytes[start])) start--;",
-    planted: "a snippet's start is no longer widened onto a lead byte, so a citation that " +
-      "begins mid-character comes back with a replacement character in it",
-  },
-  {
     check: "scripts/gate/checks/text-search-config-agreement.ts",
     target: "the analyzer's opaque terms and its stemmable words are stored through different configurations",
     subject: "packages/indexing/src/tenant-analysis.ts",

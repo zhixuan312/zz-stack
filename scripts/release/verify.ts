@@ -42,10 +42,9 @@ export function verifyLive() {
 }
 
 /**
- * The same probes, asked BEFORE the deploy: only the ones registered `predeploy: true`, whose
- * verdict the deploy cannot change (scripts/doctor/run.ts `probe`). 0.76.0 was built, pushed,
- * deployed and rolled back over one of these, whose disagreement was already true before a
- * container moved.
+ * The same probes, asked before the deploy: only the ones registered `predeploy: true`, whose
+ * verdict the deploy cannot change (scripts/doctor/run.ts `probe`), so a disagreement already true
+ * of the data stops the release before a container moves.
  *
  * Both non-ok verdicts stop the release there. `wrong` is what step 5 would roll back on; `unknown`
  * means the host could not be read, and step 5 would then leave the new version live and untagged.

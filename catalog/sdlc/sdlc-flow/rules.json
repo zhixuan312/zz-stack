@@ -117,7 +117,6 @@
       },
       "also_claimed_in": [
         "sdlc-spec/SKILL.md",
-        "sdlc-spec/SKILL.md",
         "sdlc-spec-audit/SKILL.md"
       ]
     },
@@ -232,7 +231,6 @@
       "behavioural_test": "packages/tools/src/testing/chain-check.ts — after the first gated document is approved, an uncaused `document_edit` of its whole body must be refused CAUSE_REQUIRED naming `sources` and `source_content`; the successful control is the same walk's earlier uncaused change of that document while it was a draft, beside which `document_write` onto it is refused TARGET_EXISTS. The freeform half is packages/tools/src/testing/chain-freeform.ts ('an approved freeform document is not edited afterwards without its cause'). Offline, checks/document-edit.ts drives the same refusal against a throwaway database",
       "note": "The live half requires a deployment; checks/edit-cause.ts and checks/document-edit.ts drive the CAUSE_REQUIRED refusal offline.",
       "also_claimed_in": [
-        "sdlc-plan/SKILL.md",
         "sdlc-plan/SKILL.md"
       ],
       "report": "npm run chain-check, run by scripts/release.ts against the live deployment"
@@ -341,10 +339,7 @@
       "note": "Correctly labelled as a convention by the skills themselves — this entry records that the label is accurate, not that a gap was found. A dispatched subagent is an ordinary agent with the caller's tools.",
       "also_claimed_in": [
         "sdlc-investigate/SKILL.md",
-        "sdlc-investigate/SKILL.md",
         "sdlc-spec-audit/SKILL.md",
-        "sdlc-spec-audit/SKILL.md",
-        "sdlc-plan-audit/SKILL.md",
         "sdlc-plan-audit/SKILL.md",
         "sdlc-review/SKILL.md"
       ]

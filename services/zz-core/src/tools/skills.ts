@@ -255,8 +255,8 @@ export function registerSkillTools(server: McpServer): void {
       annotations: READS,
       description:
         "Read a skill's full instructions (e.g. 'sdlc-spec'). Load a skill before " +
-        "following it. Scoped to your team: a flow your team has not installed is " +
-        "not readable here. " +
+        "following it. Every skill on this deployment's shelf is readable, whatever your " +
+        "team has installed. " +
         "A skill may ship supporting files beside its SKILL.md — reference material " +
         "too long to carry in every load; SKILL.md names them where they apply. Pass " +
         "`file` to read one, e.g. file: 'references/verified-traps.md'. Relative to the " +

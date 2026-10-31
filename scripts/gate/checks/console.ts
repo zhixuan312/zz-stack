@@ -12,6 +12,16 @@ import { join } from "node:path";
 import { consoleSource, root, sourceFiles, unbuilt, withoutComments } from "../read.ts";
 import { check, note } from "../run.ts";
 
+/** The text from `from` to the bracket that closes the one opened just before it. */
+function enclosed(src: string, from: number, open = "{", close = "}"): string {
+  let depth = 1, i = from;
+  for (; i < src.length && depth > 0; i++) {
+    if (src[i] === open) depth++;
+    else if (src[i] === close) depth--;
+  }
+  return src.slice(from, i - 1);
+}
+
 check("the initiatives list answers the active team and nothing a request names", () => {
   // Work is the active team's, for the superadmin too. A list that took its team from the request
   // would hand a member who names another team that team's work, and a superadmin asking for the
@@ -24,12 +34,7 @@ check("the initiatives list answers the active team and nothing a request names"
       "this check is reading the wrong file or the list's wrapper changed under it";
   }
   // The list's body, from its opening brace to the matching close.
-  let depth = 1, i = open.index + open[0].length;
-  for (; i < src.length && depth > 0; i++) {
-    if (src[i] === "{") depth++;
-    else if (src[i] === "}") depth--;
-  }
-  const body = src.slice(open.index + open[0].length, i - 1);
+  const body = enclosed(src, open.index + open[0].length);
   const bad: string[] = [];
   if (/req\.query\.(?:team|scope)\b|req\.query\[\s*["'](?:team|scope)["']\s*\]/.test(body)) {
     bad.push(`${f}'s list reads a team or a scope the request names — a request may not move Work off the active team`);
@@ -71,14 +76,7 @@ check("a console query cannot fall back to every team", () => {
   const bodies = [];
   const open = /handler\("([^"]*)",\s*async\s*\(([^)]*)\)\s*=>\s*\{/g;
   let m;
-  while ((m = open.exec(src))) {
-    let depth = 1, i = open.lastIndex;
-    for (; i < src.length && depth > 0; i++) {
-      if (src[i] === "{") depth++;
-      else if (src[i] === "}") depth--;
-    }
-    bodies.push({ name: m[1], params: m[2], body: src.slice(open.lastIndex, i - 1) });
-  }
+  while ((m = open.exec(src))) bodies.push({ name: m[1], params: m[2], body: enclosed(src, open.lastIndex) });
   if (!bodies.length) {
     bad.push("no handler(\"name\", async (req, res, scope) => {...}) bodies were found — this " +
              "check is reading the wrong file or the wrapper's shape changed under it");
@@ -105,14 +103,7 @@ check("a console query cannot fall back to every team", () => {
   const teamlessBodies = [];
   const openTeamless = /teamless\("([^"]*)",\s*async\s*\(([^)]*)\)\s*=>\s*\{/g;
   let t;
-  while ((t = openTeamless.exec(src))) {
-    let depth = 1, i = openTeamless.lastIndex;
-    for (; i < src.length && depth > 0; i++) {
-      if (src[i] === "{") depth++;
-      else if (src[i] === "}") depth--;
-    }
-    teamlessBodies.push({ name: t[1], body: src.slice(openTeamless.lastIndex, i - 1) });
-  }
+  while ((t = openTeamless.exec(src))) teamlessBodies.push({ name: t[1], body: enclosed(src, openTeamless.lastIndex) });
   for (const h of teamlessBodies) {
     if (/\bteam_slug\s*=(?!=)/.test(h.body) || /\bt\.slug\s*=(?!=)/.test(h.body)) {
       bad.push(`teamless("${h.name}", ...) filters by team — it resolves no scope, so nothing ` +
@@ -133,19 +124,19 @@ check("a console query is a literal check:sql can PREPARE", () => {
   // COUPLED: the scanner is packages/tools/src/lib/sql-scan.ts, shared with check:sql.
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
+  // One child for every file, scanning each on its own: the scanner answers line numbers within
+  // the text it is handed, so the concatenation would name lines no file has.
   const SCAN =
+    `import { readFileSync } from "node:fs";` +
     `import { queriesIn } from ${JSON.stringify(join(root, "packages/tools/dist/lib/sql-scan.js"))};` +
     "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>" +
-    "process.stdout.write(JSON.stringify(queriesIn(s))));";
-  // Per FILE, never on the concatenation. The scanner answers line numbers within the text it is
-  // handed, and `consoleSource()` hands it every console file joined — so a violation in
-  // knowledge.ts was reported as `console.ts:<its line across all of them>`, naming the wrong file
-  // at a line nobody can find.
+    "process.stdout.write(JSON.stringify(JSON.parse(s).map((f)=>queriesIn(readFileSync(f,'utf8'))))));";
   const bad: string[] = [];
-  for (const rel of sourceFiles(["services/gateway/src/console"], [".ts"])) {
-    const out = execFileSync("node", ["--input-type=module", "-e", SCAN],
-      { encoding: "utf8", input: readFileSync(join(root, rel), "utf8") });
-    for (const q of JSON.parse(out)) {
+  const files = sourceFiles(["services/gateway/src/console"], [".ts"]);
+  const scanned: { why?: string; line: number; sql: string }[][] = JSON.parse(execFileSync("node",
+    ["--input-type=module", "-e", SCAN], { encoding: "utf8", input: JSON.stringify(files.map((rel) => join(root, rel))) }));
+  for (const [k, rel] of files.entries()) {
+    for (const q of scanned[k]) {
       if (q.why) {
         bad.push(`${rel}:${q.line} passes .query() a variable, not a literal — check:sql ` +
                  `cannot PREPARE it, whatever it is built from`);
@@ -223,14 +214,7 @@ check("every console write route records the door it came through", () => {
     const open = /app\.(post|put|delete)\(/g;
     let m;
     const routes = [];
-    while ((m = open.exec(src))) {
-      let depth = 1, i = open.lastIndex;
-      for (; i < src.length && depth > 0; i++) {
-        if (src[i] === "(") depth++;
-        else if (src[i] === ")") depth--;
-      }
-      routes.push({ method: m[1], body: src.slice(open.lastIndex, i - 1) });
-    }
+    while ((m = open.exec(src))) routes.push({ method: m[1], body: enclosed(src, open.lastIndex, "(", ")") });
     if (!routes.length) {
       bad.push(`no app.post/put/delete(...) route was found in ${path} — this check is reading ` +
                "the wrong file or the route's shape changed under it");
@@ -252,12 +236,7 @@ check("every console write route records the door it came through", () => {
       let sawCall = false, sawMarker = false;
       while (callOpen.exec(r.body)) {
         sawCall = true;
-        let depth = 1, j = callOpen.lastIndex;
-        for (; j < r.body.length && depth > 0; j++) {
-          if (r.body[j] === "(") depth++;
-          else if (r.body[j] === ")") depth--;
-        }
-        if (/via\s*:\s*"web"/.test(r.body.slice(callOpen.lastIndex, j - 1))) sawMarker = true;
+        if (/via\s*:\s*"web"/.test(enclosed(r.body, callOpen.lastIndex, "(", ")"))) sawMarker = true;
       }
       if (!sawCall) {
         bad.push(`${path}: app.${r.method}(...) writes but never calls ${callNames.join("/")}() — the act has no audit row at all`);
@@ -435,6 +414,17 @@ check("every route this gateway serves has a caller", () => {
     }
     return "/" + out.join("/");
   };
+  // In the console's source a route is called where its suffix opens a string — `'/teams`,
+  // `"/teams`, `` `/teams `` — and the path ends, goes on with `/` or `?`, or interpolates. A
+  // comment line is not a call. A page path of the same name still counts: the two share names.
+  const calledByConsole = (suffix: string): boolean => {
+    let out: string;
+    try {
+      out = execFileSync("git", ["grep", "-h", "--fixed-strings", suffix, "--", "*.ts", "*.tsx"], { cwd: dash, encoding: "utf8" });
+    } catch { return false; }
+    const call = new RegExp(`["'\`]${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=["'\`/?$])`);
+    return out.split("\n").some((l) => !/^\s*(\/\/|\*|\/\*)/.test(l) && call.test(l));
+  };
   const hits = (cwd: string, needle: string, spec: string[]): boolean => {
     try {
       execFileSync("git", ["grep", "-q", "--fixed-strings", needle, ...spec],
@@ -450,7 +440,7 @@ check("every route this gateway serves has a caller", () => {
     if (p === "/" || p === "") continue;
     const suffix = p.startsWith("/api/console") ? (p.slice("/api/console".length) || "/") : p;
     const called =
-      (existsSync(dash) && hits(dash, suffix, [])) ||
+      (existsSync(dash) && calledByConsole(suffix)) ||
       // DELIBERATE: the whole gate tree is excluded as a caller, not just the entry file. A
       // gate module's prose naming a route would otherwise vouch for it.
       hits(root, p, ["--", ":(glob)services/gateway/app/**", ":(glob)scripts/**",

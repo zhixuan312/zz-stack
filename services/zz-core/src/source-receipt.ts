@@ -48,11 +48,10 @@ export function sourceReceipt(o: {
 export async function citedRevisions(
   p: Pick<pg.Pool, "query">, team: string, initiative: string, names: string[],
 ): Promise<{ path: string; revision: number }[]> {
-  const out: { path: string; revision: number }[] = [];
-  for (const d of names) {
+  const found = await Promise.all(names.map(async (d) => {
     const path = `${initiative}/${d}`;
     const at = await documentAt(p, team, path);
-    if (at && at.current_revision !== null) out.push({ path, revision: at.current_revision });
-  }
-  return out;
+    return at && at.current_revision !== null ? [{ path, revision: at.current_revision }] : [];
+  }));
+  return found.flat();
 }

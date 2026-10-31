@@ -37,20 +37,15 @@ const count = (v: unknown): number | null =>
  * The timeout is explicit because fetch has none.
  *
  * `purpose` names what `zz.model_call.purpose` records for this call. `discover.ts`'s
- * generative-critic step (Task I-9) passes `"failure-discover"`; historic rows from the removed
- * round loop carry `"plugin-judge"`, so a new caller passes its own label rather than borrowing
- * one and making two callers' spend indistinguishable.
- *
- * `_plugin` is kept to hold the positional argument `discover.ts` passes. It is named and not
- * written: the phase-2 migration drops `zz.model_call.plugin`, because a row that already
- * says what purpose it served does not need a second copy of it. */
-export async function ask(p: pg.Pool, _plugin: string | null,
-                   system: string, user: string, purpose: string): Promise<Record<string, unknown> | null> {
+ * generative-critic step passes `"failure-discover"`; a new caller passes its own label rather
+ * than borrowing one and making two callers' spend indistinguishable. */
+export async function ask(p: pg.Pool, system: string, user: string, purpose: string): Promise<Record<string, unknown> | null> {
   if (!LLM_BASE || !LLM_KEY) throw new Error("no LLM endpoint configured for the judge");
   let body: string;
 
   /* What this call cost, recorded on every path that actually sent a request: the fetch throwing,
-   * a non-2xx answer, a truncated answer, and a whole one. `ok` separates the four. A truncated
+   * a non-2xx answer, a body that is not JSON, a truncated answer, and a whole one. `ok`
+   * separates them. A truncated
    * answer spent the entire output budget, so it is recorded too.
    *
    * DELIBERATE: the refusal above writes nothing — no request was made, so there is no call to
@@ -105,11 +100,18 @@ export async function ask(p: pg.Pool, _plugin: string | null,
     const t = (await r.text()).slice(0, 300);
     await record(false, undefined);
     // Quota is not a formatting slip, and a caller asking many times must be able to stop on it.
-    if (r.status === 429 || /limit|quota/i.test(t)) throw new Error(`the judge is out of quota: ${t}`);
+    // A bare "limit" is not quota: a context-length 400 says it too.
+    if (r.status === 429 || /quota|rate.?limit/i.test(t)) throw new Error(`the judge is out of quota: ${t}`);
     throw new Error(`the judge answered ${r.status}: ${t}`);
   }
-  const said = (await r.json()) as {
-    choices?: { finish_reason?: string; message?: { content?: string } }[]; usage?: Usage };
+  const raw = await r.text();
+  let said: { choices?: { finish_reason?: string; message?: { content?: string } }[]; usage?: Usage };
+  try {
+    said = JSON.parse(raw) as typeof said;
+  } catch {
+    await record(false, undefined);
+    throw new Error(`the judge answered 200 with a body that is not JSON: ${raw.slice(0, 300)}`);
+  }
   // Said out loud, because a truncated answer is not a bad answer and must never be read as one.
   if (said.choices?.[0]?.finish_reason === "length") {
     // Recorded before the throw, with the figures the provider reported rather than nulls: this

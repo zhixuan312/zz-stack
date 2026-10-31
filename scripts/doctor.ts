@@ -41,12 +41,11 @@ const args = process.argv.slice(2);
 const flag = (name: string): string | null => {
   const hit = args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
   if (!hit) return null;
-  if (hit.includes("=")) return hit.split("=").slice(1).join("=");
-  // A flag given with nothing after it is refused, never read as absent: `--layer` followed by
-  // nothing would otherwise run every layer and report a clean bill for a question nobody
-  // asked.
-  const next = args[args.indexOf(hit) + 1];
-  if (!next || next.startsWith("--")) {
+  // A flag given with nothing after it, or with nothing after its `=`, is refused, never read as
+  // absent: `--layer` followed by nothing would otherwise run every layer, and `--layer=` none,
+  // and either report a clean bill for a question nobody asked.
+  const next = hit.includes("=") ? hit.split("=").slice(1).join("=") : args[args.indexOf(hit) + 1];
+  if (!next || (!hit.includes("=") && next.startsWith("--"))) {
     console.error(`\n\x1b[31m--${name} was given with no value.\x1b[0m`);
     process.exit(2);
   }
@@ -55,6 +54,10 @@ const flag = (name: string): string | null => {
 
 const json = args.includes("--json");
 const only = flag("layer")?.split(",").map((s) => s.trim()).filter(Boolean) ?? null;
+if (only && !only.length) {
+  console.error("\n\x1b[31m--layer names no layer.\x1b[0m");
+  process.exit(2);
+}
 const known = flag("since");
 
 if (!json) {

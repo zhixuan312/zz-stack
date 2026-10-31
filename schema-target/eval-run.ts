@@ -637,8 +637,8 @@ export const EVAL_RUN: Record<string, TableTarget> = {
         deferrable: false,
       },
     ],
-    // Ephemeral, swept after 30 days, and keyed to the principal that made the call rather than
-    // to the address it was made from.
+    // Ephemeral, declared for 30 days though nothing deletes a row yet, and keyed to the principal
+    // that made the call rather than to the address it was made from.
     checks: [],
     indexes: [],
     comment: "class=ephemeral; authority=this; question=has this caller already made this call with this key, and which row did the first one produce?; retention=declared 30 days: past that age an entry is replay-dead, and no production path deletes one yet",

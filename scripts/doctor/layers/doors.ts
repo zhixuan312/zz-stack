@@ -10,25 +10,12 @@
  * an operator is most likely to act on it. Here a missing token is a probe that did not run,
  * which is never a verdict about the platform. See run.ts.
  */
-import { DASH_REMOTE, HOST, REMOTE, asExecError, envToken, publicUrl, run, ssh } from "../../deployment.ts";
+import { DASH_REMOTE, REMOTE, asExecError, run, ssh } from "../../deployment.ts";
 import { initializeRefusal } from "../../door-frame.ts";
-import { layer, probe } from "../run.ts";
+import { layer, liveToken, liveUrl, probe } from "../run.ts";
 
 layer("doors", "does every door answer", ["services/gateway/src"]);
 
-/** The address, or a throw — which the runner turns into `unknown`, never into a failure
- *  attributed to the platform. This is the distinction the whole runner exists for: not
- *  knowing where to look is not evidence that what you were looking for is broken. */
-function url() {
-  const u = publicUrl({ quiet: true });
-  if (!u) throw new Error(`ZZ_PUBLIC_URL is not set and ${HOST} could not be asked for it — there is no address to probe`);
-  return u;
-}
-function token() {
-  const t = envToken();
-  if (!t) throw new Error("no ZZ_TOKEN in the environment or this repository's .env — the authenticated doors cannot be asked");
-  return t;
-}
 /* A probe may throw only for a precondition — no address, no token, no host. Once a request has
  * been sent, whatever comes back is the platform's answer and must be returned, because the
  * runner turns a throw into `unknown` and `unknown` is not evidence.
@@ -44,7 +31,7 @@ const code = (args: string[]): string => {
 };
 
 probe("gateway /health", () => {
-  const c = code([`${url()}/health`]);
+  const c = code([`${liveUrl()}/health`]);
   return c === "200" ? null : `http ${c}`;
 });
 
@@ -57,7 +44,7 @@ probe("gateway /health", () => {
 // Every door this gateway serves, including the one added last. A door left out of this list is
 // a door whose failure to mount looks exactly like a healthy deployment.
 for (const path of ["/core/mcp", "/eval/mcp", "/manage/mcp"]) {
-  probe(`MCP initialize ${path}`, () => initializeRefusal(url(), token(), path, "doctor"));
+  probe(`MCP initialize ${path}`, () => initializeRefusal(liveUrl(), liveToken(), path, "doctor"));
 }
 
 // Public, and emitted at request time from the live zod schemas — so a construct the emitter
@@ -65,7 +52,7 @@ for (const path of ["/core/mcp", "/eval/mcp", "/manage/mcp"]) {
 // somebody reads before writing a flow.
 for (const name of ["envelope", "manifest"]) {
   probe(`schema ${name} is public`, () => {
-    const c = code([`${url()}/schemas/${name}.json`]);
+    const c = code([`${liveUrl()}/schemas/${name}.json`]);
     return c === "200" ? null : `http ${c}`;
   });
 }

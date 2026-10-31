@@ -80,9 +80,8 @@ ignored, check whether they are using one.
 
 ## Their client setup
 
-`client_setup()` prints the install for Claude Code, which is the one client this
-platform packages: a few commands that fetch a small package built for that person —
-their MCP endpoints, the required plugins, and one command per flow. It takes NO
+`client_setup()` prints the install for Claude Code: a few commands that fetch a small
+package built for that person — their MCP endpoints, the required plugins, and one command per flow. It takes NO
 `client` argument; the only argument it has is an optional `email`, and passing one
 prints the setup for that person instead of for you.
 

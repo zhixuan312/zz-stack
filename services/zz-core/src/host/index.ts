@@ -11,7 +11,6 @@
  */
 import { createHost, type Host, type ReviewedModule } from "@zz/contracts";
 
-import { refuseIssuanceInRegistry } from "./grant-issuance.js";
 import { evaluateRun, type StepEvaluation } from "./jobs.js";
 import { refuseUnapprovedBodies, registerReviewedModule, type AllowlistEntry,
          type PackagedCatalogue, type RegistrationRequest } from "./registry.js";
@@ -45,25 +44,6 @@ export function reviewedModuleHost(packaged: PackagedCatalogue): ReviewedModuleH
     registered,
     evaluate: (module, runId) => evaluateRun(host, module, runId),
   };
-}
-
-/**
- * Refuse any door in this process that has registered the grant issuance operation.
- *
- * Takes what the doors actually registered: `door.ts` records every `registerTool` call against
- * the door it was made on, so this reads the registrations themselves rather than a declaration
- * kept alongside, which would be the list a reviewer reads and not the one the process serves.
- *
- * Grouped by door so the refusal can name which one.
- */
-export function refuseIssuanceOnDoors(registered: ReadonlyMap<string, string>): void {
-  const byDoor = new Map<string, string[]>();
-  for (const [name, door] of registered) {
-    const names = byDoor.get(door) ?? [];
-    names.push(name);
-    byDoor.set(door, names);
-  }
-  for (const [door, names] of byDoor) refuseIssuanceInRegistry(door, names);
 }
 
 /**

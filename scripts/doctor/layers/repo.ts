@@ -10,11 +10,9 @@ import { join } from "node:path";
 
 import { root, run } from "../../deployment.ts";
 import { manifestPaths } from "../../manifests.ts";
-import { layer, probe } from "../run.ts";
+import { checkoutVersion, layer, probe } from "../run.ts";
 
 layer("repo", "does this checkout agree with itself", ["package.json", "deploy/docker-compose.yml", "CHANGELOG.md"]);
-
-const version = () => JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
 probe("every manifest carries one version", () => {
   const seen = manifestPaths(root)
@@ -27,35 +25,35 @@ probe("the compose literal is that version", () => {
   const txt = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   const lit = (/ZZ_VERSION:-([0-9][^}]*)\}/.exec(txt) || [])[1];
   if (!lit) return "deploy/docker-compose.yml declares no ZZ_VERSION default — nothing pins the version a bare `docker compose up` would run";
-  return lit === version() ? null : `manifests say ${version()}, the compose literal says ${lit}`;
+  return lit === checkoutVersion() ? null : `manifests say ${checkoutVersion()}, the compose literal says ${lit}`;
 });
 
 probe("the version has a changelog section", () => {
   const txt = readFileSync(join(root, "CHANGELOG.md"), "utf8");
-  return new RegExp(`^## \\[${version().replace(/\./g, "\\.")}\\]`, "m").test(txt)
+  return new RegExp(`^## \\[${checkoutVersion().replace(/\./g, "\\.")}\\]`, "m").test(txt)
     ? null
-    : `CHANGELOG.md has no "## [${version()}]" section — whatever is on this checkout ships undescribed`;
+    : `CHANGELOG.md has no "## [${checkoutVersion()}]" section — whatever is on this checkout ships undescribed`;
 });
 
 // The tag is the only thing that says this version was ever released. A checkout with no
 // matching tag is either mid-release or a bump nobody finished, and the two look identical
 // from inside the repository, so this reports rather than refuses.
+//
+// git failing (no .git, no git) throws, and the runner reads a throw as `unknown`: a checkout
+// git cannot read has no tag and no clean tree to report.
 probe("the tag for this version exists", () => {
-  const tags = safe(() => run("git", ["tag", "--list", `v${version()}`], { cwd: root }));
+  const tags = run("git", ["tag", "--list", `v${checkoutVersion()}`], { cwd: root });
   if (tags) return null;
-  const head = safe(() => run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root }));
-  return `no v${version()} tag — this checkout declares a version nothing has released` +
+  const head = run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root });
+  return `no v${checkoutVersion()} tag — this checkout declares a version nothing has released` +
          (head ? ` (on ${head})` : "");
 });
 
 probe("the tree is clean", () => {
-  const dirty = safe(() => run("git", ["status", "--porcelain"], { cwd: root }))
-    .split("\n").filter(Boolean);
+  const dirty = run("git", ["status", "--porcelain"], { cwd: root }).split("\n").filter(Boolean);
   return dirty.length
     ? `${dirty.length} uncommitted change(s) — every later layer compares the host against a ` +
       `claim that is not committed anywhere: ${dirty.slice(0, 3).map((d) => d.trim()).join("; ")}` +
       (dirty.length > 3 ? " …" : "")
     : null;
 });
-
-function safe(fn: () => string, fallback = ""): string { try { return fn(); } catch { return fallback; } }

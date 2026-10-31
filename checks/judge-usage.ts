@@ -16,6 +16,8 @@
  *                cost.
  *   threw      — the fetch itself throwing: one row, not ok, tokens null.
  *   refused    — the endpoint answering 500: one row, not ok.
+ *   not JSON   — a 200 whose body is an HTML page: one row, not ok.
+ *   limit      — a 400 about the context length is not reported as quota; a 429 is.
  *
  * `duration_ms` is tested against a real delay: the stub sleeps 25ms and the row must show at
  * least 10, so `duration_ms: 0` and a NaN duration both go red.
@@ -128,7 +130,7 @@ async function round(stub: FetchStub) {
   const real = globalThis.fetch;
   (globalThis as Record<string, unknown>).fetch = stub;
   try {
-    await ask(pool(rows), "zz-core", "the system prompt", "the failure group", "failure-discover");
+    await ask(pool(rows), "the system prompt", "the failure group", "failure-discover");
   } catch {
     // Asserted through the rows below: every path out of the fetch still writes exactly one.
   } finally {
@@ -140,7 +142,7 @@ async function round(stub: FetchStub) {
 /** Answers after a real 25ms, so `duration_ms` has something to measure. */
 const answers = (payload: Record<string, unknown>) => async () => {
   await new Promise((done) => setTimeout(done, 25));
-  return { ok: true, status: 200, headers: NO_HEADERS, text: async () => "", json: async () => payload };
+  return { ok: true, status: 200, headers: NO_HEADERS, text: async () => JSON.stringify(payload), json: async () => payload };
 };
 
 /** Exactly one row, or say which scenario wrote how many — and never a column this phase retired,
@@ -230,6 +232,36 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
     eq("refused", row, "ok", false);
     for (const c of ["input_tokens", "output_tokens", "cache_read_tokens"]) eq("refused", row, c, null);
   }
+}
+
+// Not JSON: a 200 whose body is an HTML page from something in between. The call was still sent.
+{
+  const row = one(await round(async () => ({
+    ok: true, status: 200, headers: NO_HEADERS, text: async () => "<html>bad gateway</html>",
+    json: async () => { throw new SyntaxError("Unexpected token '<'"); },
+  })), "not JSON");
+  if (row) eq("not JSON", row, "ok", false);
+}
+
+// Limit: a 400 about the context length is not quota; a 429 is.
+{
+  const said = async (status: number, body: string): Promise<string> => {
+    const real = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = async () => ({
+      ok: false, status, headers: NO_HEADERS, text: async () => body, json: async () => ({}) });
+    try {
+      await ask(pool([]), "the system prompt", "the failure group", "failure-discover");
+      return "no throw";
+    } catch (err) {
+      return (err as Error).message;
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+  const context = await said(400, "This model's maximum context length limit is 128000 tokens");
+  if (/quota/.test(context)) fail.push(`limit: a context-length 400 was reported as quota: ${context}`);
+  const quota = await said(429, "slow down");
+  if (!/quota/.test(quota)) fail.push(`limit: a 429 was not reported as quota: ${quota}`);
 }
 
 // ---------------------------------------------------------------------------------------------

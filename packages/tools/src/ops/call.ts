@@ -6,6 +6,7 @@
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /eval/mcp plugin_locate
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp --list
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp document_edit @/tmp/args.json
+ *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp document_edit @/tmp/args.json --timeout 600000
  *
  * Every other tool here answers one question and is shaped around it, so none can call an
  * arbitrary tool. The gap is felt at two moments: setting a deployment up (`team_create`,
@@ -35,9 +36,9 @@ async function main(argv: string[]): Promise<number> {
   // told nothing while their argument quietly went nowhere.
   const args = parseArgs(argv, ["list", "strict"]);
   for (const name of args.flags.keys()) {
-    if (name !== "list" && name !== "strict") {
-      die(`call has no --${name} — the flags are --list (print the door's tools) and ` +
-          `--strict (a refusal that exits non-zero)`);
+    if (name !== "list" && name !== "strict" && name !== "timeout") {
+      die(`call has no --${name} — the flags are --list (print the door's tools), ` +
+          `--strict (a refusal that exits non-zero) and --timeout <ms> (how long one call may take)`);
     }
   }
   const door = args.positional[0];
@@ -45,7 +46,8 @@ async function main(argv: string[]): Promise<number> {
   const listing = args.flags.has("list");
 
   if (!door || (!tool && !listing)) {
-    die("usage: call <door> <tool> ['<json args>'|@<args file>]   |   call <door> --list\n" +
+    die("usage: call <door> <tool> ['<json args>'|@<args file>] [--strict] [--timeout <ms>]   |   " +
+        "call <door> --list\n" +
         `       doors: ${DOORS_PRINTED.join("  ")}`);
   }
   // From @zz/contracts, where the gateway's door set is stated once and the gate holds it against
@@ -54,6 +56,12 @@ async function main(argv: string[]): Promise<number> {
   if (!isDoor(door)) {
     die(`${JSON.stringify(door)} is not a door on this gateway — ` +
         `expected ${DOORS_PRINTED.join(", ")}`);
+  }
+
+  const asked = optional(args, "timeout", "milliseconds to wait for one call");
+  const timeout = Number(asked ?? "180000");
+  if (!Number.isFinite(timeout) || timeout <= 0) {
+    die(`--timeout takes a number of milliseconds, got ${JSON.stringify(asked)}`);
   }
 
   // Parsed before the network call. A mistyped argument object should cost nothing, and the
@@ -90,7 +98,6 @@ async function main(argv: string[]): Promise<number> {
   // Resolved, not demanded: ~/.zz/token is written by the platform's own install step — see
   // platformToken().
   const pat = platformToken();
-  const timeout = Number(optional(args, "timeout", "milliseconds to wait for one call") ?? "180000");
 
   const mcp = new Mcp(`${base}${door}`, { pat, client: "call", timeoutMs: timeout });
 

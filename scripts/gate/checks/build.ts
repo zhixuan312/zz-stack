@@ -16,7 +16,7 @@ import { MANIFESTS, catalogRoot, toolEntryPoints } from "../facts.ts";
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
  *  than assume it. Here it is an `execFileSync` failure, which carries `stdout`/`stderr`
  *  rather than a plain `message`; each is `undefined` exactly when the original untyped
- *  `err.stdout`/`err.stderr` would have been, so callers keep their own `??` chains. */
+ *  `err.stdout`/`err.stderr` would have been, and an empty Buffer becomes `""`. */
 function execFields(err: unknown): { stdout: string | undefined; stderr: string | undefined } {
   if (err && typeof err === "object") {
     const e = err as Record<string, unknown>;
@@ -36,8 +36,10 @@ check("tsc -b", () => {
     execFileSync("npm", ["run", "-s", "build"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
     return null;
   } catch (err) {
+    // `||`, not `??`: a build that fails writing only to stderr leaves stdout `""`, and an empty
+    // detail is a pass.
     const { stdout, stderr } = execFields(err);
-    return String(stdout ?? stderr ?? err).slice(-600);
+    return (stdout?.trim() || stderr?.trim() || String(err)).slice(-600);
   }
 });
 
@@ -79,8 +81,8 @@ check("no version is written as a literal in the source", () => {
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     const txt = readFileSync(join(root, rel), "utf8");
-    // Line-wise and context-based, not a fixed `version: "x.y.z"` shape, which misses a
-    // literal inside a template.
+    // Line-wise and context-based, not a fixed `version: "x.y.z"` shape: a quoted x.y.z on any
+    // line that says version, in double, single or back quotes.
     //
     // DELIBERATE: "0.0.0" is exempt — it is the sentinel for a manifest that could not be
     // read, not a claim about a release.
@@ -88,9 +90,9 @@ check("no version is written as a literal in the source", () => {
       const line = raw.trim();
       if (line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")) return;
       if (!/version/i.test(line)) return;
-      for (const m of line.matchAll(/"(\d+\.\d+\.\d+)"/g)) {
-        if (m[1] === "0.0.0") continue;
-        bad.push(`${rel}:${i + 1}: "${m[1]}" — derive it, never write it`);
+      for (const m of line.matchAll(/(["'`])(\d+\.\d+\.\d+)\1/g)) {
+        if (m[2] === "0.0.0") continue;
+        bad.push(`${rel}:${i + 1}: "${m[2]}" — derive it, never write it`);
       }
     });
   }

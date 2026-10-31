@@ -5,15 +5,12 @@ import { join } from "node:path";
 const fail = [];
 
 // 1. The resolver folds an old name onto its new one.
-const { resolveToolKey, resolveStep } = await import("../packages/tools/dist/testing/tool-report.js");
+const { resolveToolKey } = await import("../packages/tools/dist/testing/tool-report.js");
 if (resolveToolKey("core:write_file") !== resolveToolKey("core:document_write")) {
   fail.push("write_file and document_write resolve to different series");
 }
 if (resolveToolKey("manage:add_person") !== resolveToolKey("manage:person_add")) {
   fail.push("add_person and person_add resolve to different series");
-}
-if (resolveStep("zz-backbone") !== resolveStep("zz-platform")) {
-  fail.push("zz-backbone and zz-platform resolve to different steps");
 }
 // Control: two genuinely different tools must NOT fold together.
 if (resolveToolKey("core:document_read") === resolveToolKey("core:document_write")) {

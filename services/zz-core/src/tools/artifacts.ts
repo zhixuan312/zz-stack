@@ -31,6 +31,7 @@ import { assessReviewRound, ledgerRefusal, reviewRoundOf, reviewRounds } from ".
 import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
+import { Refusal } from "../refusal.js";
 import { PLAIN_TOKEN, safeName, safePath, tagRefusal, titleSlug, writeGuard } from "../paths.js";
 import { registerDocumentEditTool } from "./document-edit.js";
 import { registerSourceListTool } from "./source-list.js";
@@ -385,7 +386,15 @@ export function registerArtifactTools(server: McpServer): void {
       // per document and in that document's own review context, and nothing in this registration
       // touches it. checks/document-reads.ts asserts both halves.
       for (const rel of (single ? [path as string] : path as string[])) {
-        await safePath(rel);
+        // A refused path is its own entry: the documents before it were recorded as presented, and
+        // their text is what makes that record true.
+        try {
+          await safePath(rel);
+        } catch (err) {
+          if (!(err instanceof Refusal)) throw err;
+          out.push(err.message);
+          continue;
+        }
         // A path that names no document is answered with what the initiative DOES hold. The
         // initiative is taken off the path, never off a resolved one — `safePath` has already
         // refused anything that walks out.
@@ -487,7 +496,7 @@ export function registerArtifactTools(server: McpServer): void {
     async ({ initiative, title, content, upload, file, supports, stage, request_id }) => {
       // The same guard the other initiative-taking tools apply. safePath below only
       // stops a path leaving the store, which is a different question from whether the name
-      // is an initiative — and `join(root, initiative, d)` further down asks the second one.
+      // can be an initiative at all.
       const badInitiative = safeName(initiative, "initiative");
       if (badInitiative) return text(badInitiative);
       const who = parseCaller(requestHeaders());
@@ -516,9 +525,8 @@ export function registerArtifactTools(server: McpServer): void {
       // and it is what stops a tool added later from being the exception.
       const blocked = writeGuard(asked, "source_add");
       if (blocked) return text(blocked);
-      // The second creation path: `mkdirSync(..., {recursive:true})` below would build
-      // `<initiative>/sources/` for an initiative nobody opened, leaving a half-initiative
-      // with material in it and no record of anyone opening it.
+      // A source for an initiative nobody opened would leave material filed under it with no
+      // record of anyone opening it, so an unopened initiative is refused here.
       const p0 = db();
       if (!p0) return text(NO_DB);
       const team0 = await teamFor(who.email);

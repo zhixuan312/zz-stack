@@ -311,8 +311,8 @@ check("the deck skill counts the template's slides correctly", () => {
     bad.push(`zz-deck says the template has ${said} guidebook slides and it has ${slides}`);
   }
   // A third statement of the same list, inside the template itself. `#housebook-manifest` is
-  // JSON the page parses at runtime: renderVersion reports "N reference pages across M chapter
-  // labels" from it, and it is the only description of the deck a reader gets that is not the
+  // JSON the page parses at runtime: renderVersion reports "N pages across M chapter labels" from
+  // it, and it is the only description of the deck a reader gets that is not the
   // deck.
   const man = /<script id="housebook-manifest" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
   if (!man) {

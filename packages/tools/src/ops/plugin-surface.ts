@@ -22,8 +22,6 @@ import { diffSurfaces, renderSurfaceChange,
 
 interface VersionRow { version: string; id: string }
 
-const lit = (s: string): string => `'${String(s ?? "").replace(/'/g, "''")}'`;
-
 function main(argv: string[]): number {
   const args = parseArgs(argv);
   const psql = args.flags.get("psql") || DEFAULT_PSQL;
@@ -40,10 +38,10 @@ function main(argv: string[]): number {
     select bv.version, bv.id::text as id
       from zz.plugin_version bv
       join zz.plugin b on b.id = bv.plugin_id
-     where b.name = ${lit(plugin)}
+     where b.name = :'plugin'
        and exists (select 1 from zz.plugin_tool t where t.plugin_version_id = bv.id)
      order by bv.first_seen_at desc
-     limit 2`);
+     limit 2`, { plugin });
 
   if (!versions.length) {
     console.log(`\n  No recorded surface for ${plugin}. That is "nobody measured it", not`);
@@ -58,8 +56,8 @@ function main(argv: string[]): number {
     // fields is where `door` eventually goes missing from one of them.
     tools: psqlRows<RecordedTool>(psql, `
       select name, door from zz.plugin_tool
-       where plugin_version_id = ${lit(v.id)}::uuid
-       order by name`),
+       where plugin_version_id = (:'version')::uuid
+       order by name`, { version: v.id }),
   });
 
   const after = surfaceOf(versions[0]);

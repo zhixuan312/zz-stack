@@ -49,14 +49,14 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EvaluationProtocol, parseCaller } from "@zz/contracts";
-import { READS, WRITES, requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
 import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { affirmProtocolVersion, recordProtocolVersion } from "./protocol-record.js";
 import { recordAffirmed, recordDefineOwes } from "./stage-record.js";
-import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { decideBeforeWork, UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { factsFor, initiativeIdFor, lockInitiativeFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { platformEvent } from "../indexing.js";
 import { safeName } from "../paths.js";
@@ -186,7 +186,7 @@ export function registerProtocolTools(server: McpServer): void {
   server.registerTool(
     "protocol_read",
     {
-      annotations: READS,
+      annotations: WRITES,
       description:
         "WHEN starting or resuming the define stage: reads whether this subject's plugin " +
         "already has a compatible EvaluationProtocol. RETURNS protocol_version_id (null if " +
@@ -197,8 +197,8 @@ export function registerProtocolTools(server: McpServer): void {
         "never reuse: it answers create (no version was ever affirmed) or revise, plus " +
         "awaiting_affirmation: { version, content_digest } — with no trigger, get that version's " +
         "protocol.md approved and affirmed rather than recording another. Also RETURNS " +
-        "open_candidates: every DISCOVER candidate of this plugin still at status candidate " +
-        "({ id, description, prevalence, owner_kind, owner_ref — the plugin's name when owner_kind is plugin }) — the ids a failureTaxonomy entry's " +
+        "open_candidates: every DISCOVER sighting of this plugin no protocol version has folded in yet " +
+        "({ id, failure_mode_id, stable_key, description, prevalence, owner_kind, owner_ref — the plugin's name when owner_kind is plugin }) — the ids a failureTaxonomy entry's " +
         "candidateId/mergedCandidateIds fold in. Computed entirely from live state — no document, " +
         "no protocol_body — from the plugin plugin_locate/plugin_register already IDENTIFY'd. " +
         "Pass `initiative` to record protocol_action as that initiative's durable branch fact " +
@@ -207,7 +207,7 @@ export function registerProtocolTools(server: McpServer): void {
         "why) rather than refusing the whole call: a resumed read may legitimately recompute " +
         "reuse once protocol_record has since run, and that is informational, not an error. " +
         "REFUSES a subject_version_id nothing minted, and a deployment with no platform " +
-        "database. Otherwise read-only; never writes to zz.eval_protocol_version.",
+        "database. Without `initiative` it writes nothing; it never writes to zz.eval_protocol_version.",
       inputSchema: {
         subject_version_id: z.string(),
         initiative: z.string().optional().describe(
@@ -392,9 +392,9 @@ export function registerProtocolTools(server: McpServer): void {
     async ({ protocol_version_id, initiative, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
-      const row = (await p.query<{ content_digest: string; affirmed: boolean }>(
+      const row = UUID_RE.test(protocol_version_id) ? (await p.query<{ content_digest: string; affirmed: boolean }>(
         "select content_digest, approved_doc_id is not null as affirmed from zz.eval_protocol_version where id = $1::uuid",
-        [protocol_version_id])).rows[0];
+        [protocol_version_id])).rows[0] : undefined;
       if (!row) return text(`ERROR: unknown protocol_version_id ${protocol_version_id}`);
 
       // `initiative` is one path segment, never a nested path — `safePath` alone only keeps the
@@ -407,7 +407,13 @@ export function registerProtocolTools(server: McpServer): void {
         "call document_approve the moment they agree — then quote this version's content_digest " +
         `(${row.content_digest}) somewhere in the document's body before calling this again.`;
       const principal = parseCaller(requestHeaders()).email;
+      // The document is the caller's own team's: a slug is unique per team only, so a caller
+      // acting for no team names no protocol.md at all.
       const team = await teamFor(principal);
+      if (!team) {
+        return text(`ERROR: ${principal || "this caller"} acts for no team, so ${path} names no team's ` +
+          "document and nothing can be affirmed. Join or switch to the team that wrote it, then call this again.");
+      }
       // The document is read from the rows a document IS — `zz.doc` and the revision it points
       // at — never from a file. The affirmation names the document, not its path: `approved_doc_id`
       // is a row in `zz.doc` and the migration derived it from exactly this pair, and the digest
@@ -424,11 +430,9 @@ export function registerProtocolTools(server: McpServer): void {
           join zz.team t on t.id = i.team_id
           left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
           left join zz.principal a on a.id = r.approved_by
-         where i.slug = $1 and d.path = 'protocol.md'
-           and ($2::text is null or t.slug = $2)
-         order by d.updated_at desc limit 1`, [initiative, team])).rows[0];
+         where i.slug = $1 and d.path = 'protocol.md' and t.slug = $2`, [initiative, team])).rows[0];
       if (!docRow) {
-        return text(`ERROR: no approved ${path} is recorded for ${team ?? "this caller"}'s team — ` +
+        return text(`ERROR: no approved ${path} is recorded for ${team}'s team — ` +
           "the document's own row has not reached the platform's index yet. Call document_approve " +
           "and then this again.");
       }
@@ -448,7 +452,10 @@ export function registerProtocolTools(server: McpServer): void {
           "row carries no current revision, so this affirmation would pin nothing and read back " +
           "as a revision nobody recorded. Nothing was written.");
       }
-      if (row.affirmed) {
+      // A retry of the call that bound it replays; only another call is refused.
+      const args = { protocol_version_id, initiative };
+      const prior = await decideBeforeWork(principal, "protocol_affirm", idempotency_key, args);
+      if (row.affirmed && !prior.replayed) {
         return text(`ERROR: protocol version ${protocol_version_id} is already affirmed — a ` +
           "protocol version's payload and its affirmation are written once, and there is no path " +
           "that moves either again. Record the next version instead.");
@@ -459,7 +466,7 @@ export function registerProtocolTools(server: McpServer): void {
       if (!who) return text(`ERROR: no zz.principal carries "${principal}", so this affirmation has nobody to name`);
 
       const outcome: IdempotencyOutcome<null> = await withIdempotency(
-        principal, "protocol_affirm", idempotency_key, { protocol_version_id, initiative },
+        principal, "protocol_affirm", idempotency_key, args,
         async (client): Promise<MutatorOutcome<null>> => {
           // Guarded, not unconditional: the affirmation fields fill once, together, and a
           // concurrent call that got there first leaves this one with no row to move.

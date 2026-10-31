@@ -108,10 +108,10 @@ const specs: FileSpec[] = [
         "closedInitiatives is built by filtering zz.doc rows for a truthy `outcome` again." },
     ],
     require: [
-      { pattern: /from\s+zz\.initiative\s+i\s*\n?\s*"?\s*\+?\s*"?\s*join\s+zz\.team\s+t\s+on\s+t\.id\s*=\s*i\.team_id/,
-        message: "no query joins zz.initiative to zz.team to find which initiatives are closed." },
-      { pattern: /i\.closed_at\s+is\s+not\s+null/, message:
-        "no query filters zz.initiative on closed_at is not null." },
+      { pattern: /join\s+zz\.initiative\s+i\s+on\s+i\.id\s*=\s*d\.initiative_id/,
+        message: "the stuck-draft count does not reach a document's initiative through zz.initiative." },
+      { pattern: /i\.closed_at\s+is\s+null/, message:
+        "the stuck-draft count does not skip a closed initiative by zz.initiative.closed_at." },
     ],
   },
   {
@@ -122,7 +122,7 @@ const specs: FileSpec[] = [
         "zz.doc on `outcome <> ''` — read zz.initiative.closed_at instead." },
     ],
     require: [
-      { pattern: /from\s+zz\.initiative\s+i\s+join\s+zz\.team\s+t\s+on\s+t\.id\s*=\s*i\.team_id[\s\S]*?i\.closed_at\s+is\s+not\s+null/,
+      { pattern: /join\s+zz\.initiative\s+i\s+on\s+i\.id\s*=\s*d\.initiative_id[\s\S]*?i\.closed_at\s+is\s+null/,
         message: "the gated-status probe no longer excludes a closed initiative's documents via " +
           "zz.initiative.closed_at." },
     ],

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.15
+version: 0.16
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -51,7 +51,7 @@ you have a reason not to), `version` (this protocol's next number — `protocol_
 anything else; there is no edit), `pluginPurpose` (what `protocol_read`'s `purpose_changed`
 trigger compares against the catalog manifest's own `purpose`), `observableSurfaces` (the tool
 names `new_evidence_surface` checks this plugin's skills against), `failureTaxonomy` (below),
-`dimensions`, and four policy blocks — `suites`, `qualification`, `scoring`, `improvement` —
+`dimensions`, and three policy blocks — `qualification`, `scoring`, `improvement` —
 whose content this skill does not prescribe, except one: `improvement.release` is
 `{ minPostReleaseRuns, regressionBand }`, how a released improvement is judged on real use —
 how many real runs of the released version before it is evaluated, and how far below the base

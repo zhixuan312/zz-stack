@@ -33,7 +33,7 @@ export async function baseConflict(
 ): Promise<string> {
   const lead = `ERROR: BASE_CONFLICT — ${path} is at content revision ${current} now, not the one \`base\` names`;
   const again = "Read it again and apply the change to what it says now.";
-  const [was, now] = [await loadSnapshot(team, path, base), await loadSnapshot(team, path, current)];
+  const [was, now] = await Promise.all([loadSnapshot(team, path, base), loadSnapshot(team, path, current)]);
   let line: Line;
   if (!was.ok) {
     const why = /^ERROR: SNAPSHOT_UNAVAILABLE — (.*?)(; read the current one)?$/.exec(was.refusal)?.[1] ??

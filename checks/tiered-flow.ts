@@ -33,7 +33,7 @@ const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { specApprovalRefusal } = await load("services/zz-core/dist/spec-gate.js");
 const { chainFor } = await load("services/zz-core/dist/chain.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
-const { validatePlan } = await load("packages/contracts/dist/plan-validation.js");
+const { validatePlan } = await load("packages/contracts/dist/index.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(`FAIL: ${why}`); };

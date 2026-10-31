@@ -95,7 +95,11 @@ function subjectTagError(tags: string[] | undefined): string | null {
  *
  *  DELIBERATE: the shelves are the caller's own teams, plus the platform's — a platform-team
  *  member records a generalisable finding on the platform shelf with a tenant's initiative as
- *  evidence, and nobody may cite a shelf they cannot already read. */
+ *  evidence, and nobody may cite a shelf they cannot already read.
+ *
+ *  A slug is unique per team only, so two of those shelves can carry it. `shelves` is in order of
+ *  preference and the first shelf holding the slug wins: the team the caller acts for, then the
+ *  shelf the lesson lands on, then the rest by name. */
 async function initiativesNamed(
   p: pg.Pool, slugs: string[], shelves: string[],
 ): Promise<Map<string, string>> {
@@ -104,7 +108,8 @@ async function initiativesNamed(
   const { rows } = await p.query<{ slug: string; id: string }>(
     `select i.slug, i.id::text as id from zz.initiative i
        join zz.team t on t.id = i.team_id
-      where i.slug = any($1::text[]) and t.slug = any($2::text[])`,
+      where i.slug = any($1::text[]) and t.slug = any($2::text[])
+      order by array_position($2::text[], t.slug)`,
     [slugs, shelves]);
   for (const r of rows) if (!out.has(r.slug)) out.set(r.slug, r.id);
   return out;
@@ -197,7 +202,7 @@ export function registerKnowledgeTools(server: McpServer): void {
       // The shelf comes from `scope` — a team-scoped lesson lands on the caller's own shelf, a
       // platform-scoped one on KNOWLEDGE_TEAM's.
       const shelf = scope === "platform" ? KNOWLEDGE_TEAM : team as string;
-      const shelves = [...new Set([...evidenceTeams, KNOWLEDGE_TEAM, shelf])];
+      const shelves = [...new Set([team as string, shelf, ...[...evidenceTeams, KNOWLEDGE_TEAM].sort()])];
       const names = evidence.map((e) => e.trim());
       for (const e of names) {
         if (!PLAIN_TOKEN.test(e)) {

@@ -104,7 +104,8 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
   const located = await c.call("eval", "plugin_locate", { plugin: w.plugin, idempotency_key: c.key("locate") });
   const dims = (body.dimensions as { key: string; weight: number; measures: { key: string; evaluatorType: string }[] }[]);
   const path = `${w.initiative}/protocol.md`;
-  await c.call("core", "document_write", { path, content: [
+  // One body: the edit below appends a revision note to it and changes nothing else.
+  const sections = [
     "## The plugin under evaluation",
     `${w.plugin} ${String(located.declared_version)}, content digest ${String(located.content_digest)}; ` +
       `protocol version 1, content_digest ${digest}.`,
@@ -114,7 +115,8 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
     ...dims.flatMap((d) => d.measures.map((m) => `- ${m.key}: ${MODEL_BACKED.has(m.evaluatorType)
       ? "a qualified typed evaluator reading the artifact's text" : "a fact OBSERVE computed"}.`)),
     "",
-  ].join("\n") });
+  ];
+  await c.call("core", "document_write", { path, content: sections.join("\n") });
   await c.call("core", "document_present", { path });
   await c.call("core", "document_approve", { path });
   // The new-version step, and the reason this walk exists in this phase: an approval seals the
@@ -126,15 +128,8 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
   const revised = await c.call("core", "document_edit", {
     path,
     content: [
-      "## The plugin under evaluation",
-      `${w.plugin} ${String(located.declared_version)}, content digest ${String(located.content_digest)}; ` +
-        `protocol version 1, content_digest ${digest}.`,
-      "", "## What good means here",
-      ...dims.map((d) => `- **${d.key}** (weight ${d.weight}): ${d.measures.map((m) => m.key).join(", ")}.`),
-      "", "## The evidence each dimension reads",
-      ...dims.flatMap((d) => d.measures.map((m) => `- ${m.key}: ${MODEL_BACKED.has(m.evaluatorType)
-        ? "a qualified typed evaluator reading the artifact's text" : "a fact OBSERVE computed"}.`)),
-      "", "## Revision note",
+      ...sections,
+      "## Revision note",
       "The qualification thresholds this protocol is held to were read again before anything was",
       "scored, and nothing in it moved.",
       "",

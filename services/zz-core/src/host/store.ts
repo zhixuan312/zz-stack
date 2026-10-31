@@ -91,7 +91,7 @@ export async function openRun(r: {
   const { rows } = await db.query(
     `insert into zz.control_run (initiative_id, module_digest, started_by)
      select i.id, $3,
-            (select p.id from zz.principal p where p.email = $4 and p.status = 'active')
+            (select p.id from zz.principal p where lower(p.email) = lower($4) and p.status = 'active')
        from zz.initiative i
        join zz.team t on t.id = i.team_id
       where t.slug = $1 and i.slug = $2

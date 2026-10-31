@@ -17,7 +17,8 @@
  *      rebinding second lookup never happens — asserted against a stand-in `git` that records its
  *      argv, and only where this machine can resolve a public name at all.
  *   3. package: a path, a URL, `git+…`, `github:…`, `user/repo` or `file:` spec is refused as
- *      not a registry spec.
+ *      not a registry spec, and a pack whose own report unpacks past the size limit is refused
+ *      before tar extracts it — asserted against a stand-in `npm` and `tar`.
  *
  * Run: node checks/plugin-register-source.ts   (also run by scripts/gate.ts)
  */
@@ -117,6 +118,34 @@ for (const url of ["https://127.0.0.1/x.git", "https://[::1]/x.git", "https://16
 for (const spec of ["./plugin", "/tmp/x.tgz", "file:../x", "git+https://example.com/x.git",
                     "github:someone/x", "someone/x", "https://example.com/x.tgz", "--registry=http://x"]) {
   await refused("package", spec, /only a registry package spec/);
+}
+
+// A stand-in npm on PATH reports a pack whose content unpacks past the limit, and writes a
+// tarball the size it reports — the shape of a compression bomb. The capture is refused from npm's
+// own report, before tar extracts anything.
+{
+  const bin = mkdtempSync(join(tmpdir(), "plugin-register-source-npm-"));
+  const tarRan = join(bin, "tar-ran");
+  const report = JSON.stringify([{ filename: "bomb-1.0.0.tgz", size: 1024, unpackedSize: 300 * 1024 * 1024 }]);
+  writeFileSync(join(bin, "npm"), `#!/bin/sh\nwhile [ "$1" != "--pack-destination" ]; do shift; done\n` +
+    `: > "$2/bomb-1.0.0.tgz"\nprintf '%s' '${report}'\n`);
+  writeFileSync(join(bin, "tar"), `#!/bin/sh\n: > '${tarRan}'\nexit 1\n`);
+  chmodSync(join(bin, "npm"), 0o755);
+  chmodSync(join(bin, "tar"), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const got = await resolveSource("package", "bomb@1.0.0");
+    if (!("error" in got) || !/unpacks to 300MB/.test(got.error)) {
+      fail.push(`a pack reporting 300MB unpacked was not refused by its report: ${JSON.stringify(got).slice(0, 300)}`);
+    }
+    let ran = false;
+    try { readFileSync(tarRan); ran = true; } catch { /* tar never ran */ }
+    if (ran) fail.push("tar ran on a pack whose report was already over the limit");
+  } finally {
+    process.env.PATH = path;
+    rmSync(bin, { recursive: true, force: true });
+  }
 }
 
 if (fail.length) {

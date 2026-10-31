@@ -9,31 +9,30 @@
  * compose project name comes from the directory, so the same stack is `zz-*` on one host and
  * `deploy-*` on another, and a literal right for one is silently wrong for the other.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { DASH_IMAGE, DASH_REMOTE, HOST, IMAGE, REMOTE, root, ssh } from "../../deployment.ts";
-import { layer, probe } from "../run.ts";
+import { DASH_IMAGE, DASH_REMOTE, HOST, IMAGE, REMOTE, ssh } from "../../deployment.ts";
+import { checkoutVersion, layer, probe } from "../run.ts";
 
 layer("host", `is ${HOST} running what this checkout declares`, ["deploy"]);
-
-const version = () => JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
 probe("the host declares this version", () => {
   const live = ssh(`grep -oP '(?<=^ZZ_VERSION=).*' ${REMOTE}/deploy/.env 2>/dev/null || echo ''`).trim();
   if (!live) return `${REMOTE}/deploy/.env carries no ZZ_VERSION — nothing on the host names a version`;
-  return live === version() ? null
-    : `the host is on ${live}, this checkout is ${version()} — every layer below compares the host against ${version()}`;
+  return live === checkoutVersion() ? null
+    : `the host is on ${live}, this checkout is ${checkoutVersion()} — every layer below compares the host against ${checkoutVersion()}`;
 });
 
 probe("every declared service is up", () => {
-  // `docker compose ps` from the deploy directory, so compose resolves its own project rather
-  // than this script guessing the prefix.
-  const out = ssh(`cd ${REMOTE}/deploy && docker compose ps --format '{{.Service}} {{.State}}' 2>/dev/null || true`);
-  const rows = out.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => l.split(/\s+/));
-  if (!rows.length) return `no compose services answer at ${HOST}:${REMOTE}/deploy — the stack is not up, or compose cannot read its own project there`;
-  const down = rows.filter(([, state]) => state !== "running");
-  return down.length ? `${down.map(([s, st]) => `${s} is ${st}`).join(", ")}` : null;
+  // From the deploy directory, so compose resolves its own project rather than this script
+  // guessing the prefix. The declared list is compose's own, and `ps -a` lists stopped containers
+  // too: a service with no container, or one that exited, is down whatever the others say.
+  const declared = ssh(`cd ${REMOTE}/deploy && docker compose config --services`)
+    .split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!declared.length) throw new Error(`compose at ${HOST}:${REMOTE}/deploy declares no service`);
+  const state = new Map(ssh(`cd ${REMOTE}/deploy && docker compose ps -a --format '{{.Service}} {{.State}}'`)
+    .split("\n").map((l) => l.trim().split(/\s+/)).filter(([s]) => s).map(([s, st]) => [s, st]));
+  const down = declared.filter((s) => state.get(s) !== "running")
+    .map((s) => (state.has(s) ? `${s} is ${state.get(s)}` : `${s} has no container`));
+  return down.length ? down.join(", ") : null;
 });
 
 probe("the running containers carry the declared image tag", () => {
@@ -45,8 +44,8 @@ probe("the running containers carry the declared image tag", () => {
   if (!ours.length) {
     return `nothing on the host is running ${IMAGE} — the platform containers are somebody else's image`;
   }
-  const wrong = ours.filter((r) => !r.endsWith(`:${version()}`));
-  return wrong.length ? `${wrong.join("; ")} — this checkout is ${version()}` : null;
+  const wrong = ours.filter((r) => !r.endsWith(`:${checkoutVersion()}`));
+  return wrong.length ? `${wrong.join("; ")} — this checkout is ${checkoutVersion()}` : null;
 });
 
 probe("the console runs the image the host declares", () => {

@@ -4,22 +4,16 @@
  * ONE pooled connection.
  *
  * Why one connection: the facts check-and-write must be serialized against every other writer of
- * the same initiative's facts, in this process and in any other sharing the database. It used to
- * hold a session advisory lock on a pooled connection of its own for the whole body while
- * `withIdempotency` took a second for the ledger transaction — two connections per call, and four
- * concurrent prepares on the four-connection pool each held one and waited forever for another.
- * Now the lock is `pg_advisory_xact_lock` on the ledger transaction's own client
- * (`lockInitiativeFacts`, taken inside `writeBranchFacts`), released by that transaction's
- * COMMIT or ROLLBACK, and the in-process queue (`withInitiativeFactsLock`) keeps this process's
- * waiters from each holding a connection while they wait.
+ * the same initiative's facts, in this process and in any other sharing the database, without
+ * a call ever holding two of the pool's connections. The lock is `pg_advisory_xact_lock` on the
+ * ledger transaction's own client (`lockInitiativeFacts`, taken inside `writeBranchFacts`),
+ * released by that transaction's COMMIT or ROLLBACK, and the in-process queue
+ * (`withInitiativeFactsLock`) keeps this process's waiters from each holding a connection while
+ * they wait.
  *
- * DELIBERATE: the `_facts.json` write happens inside the transaction, before the ledger row
- * commits. A refused fact (a different `release_mode` already set, an unopened initiative)
- * throws, so the ledger row and the mutator's own row roll back with it and nothing is written.
- * A commit that fails AFTER the file write leaves the fact standing with no row behind it — a
- * retry proceeds fresh and writes the same fact as a no-op, and a same-key twin that loses the
- * ledger race rolls back its row over a file the lock guarantees it agreed with. Neither can
- * leave the file naming a branch no call chose.
+ * The fact is a `zz.initiative_fact` row written on that same client, so the fact, the
+ * mutator's own row and the ledger row commit or roll back together: a refused fact (a different
+ * `release_mode` already set, an unopened initiative) throws, and nothing is written.
  */
 import type pg from "pg";
 

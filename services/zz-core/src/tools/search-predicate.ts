@@ -93,8 +93,8 @@ export interface SearchPredicate {
   /** A ready `to_tsquery`/`websearch_to_tsquery` call for `ts_rank_cd`/`ts_headline` to rank and
    *  excerpt the ASCII portion by, or `null` when the query had no ASCII clause. */
   readonly rankExpr: string | null;
-  /** The text `rankExpr` was built from — the ASCII clauses as one document, quotes restored and
-   *  exclusions dropped. Carried beside it because a caller that excerpts rows in a statement of
+  /** The text `rankExpr` was built from — the ASCII clauses as one document, quotes restored,
+   *  exclusions kept as `-term`, and a broadened pass's relaxed terms joined by `or`. Carried beside it because a caller that excerpts rows in a statement of
    *  its own needs to name the query again, and `rankExpr`'s text is a bound parameter that a
    *  second statement's numbering cannot reuse. `null` exactly when `rankExpr` is. */
   readonly asciiText: string | null;
@@ -143,6 +143,8 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
   const excluded: string[] = [];
   const mandatory: string[] = [];
   const eligible: string[] = [];
+  /** Each relaxed ASCII term, and the parameter its fragment in `eligible` binds. */
+  const relaxed: { text: string; q: string }[] = [];
   let asciiRaw = "";
   let rankExpr: string | null = null;
   let asciiText: string | null = null;
@@ -203,7 +205,9 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
           const frag = `body ilike ${sqlLiteral(likePattern(clause.text))}`;
           if (mayRelax) eligible.push(frag); else mandatory.push(frag);
         } else if (mayRelax) {
-          eligible.push(`body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${put(clause.text)})`);
+          const q = put(clause.text);
+          relaxed.push({ text: clause.text, q });
+          eligible.push(`body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${q})`);
         } else {
           // Quotes restored for a phrase clause: `websearch_to_tsquery` reads `"a b"` as the
           // exact-phrase operator.
@@ -232,6 +236,15 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
     mandatory.push(`body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${q})`);
     rankExpr = `websearch_to_tsquery(${QUERY_CONFIG}, ${q})`;
     asciiText = text;
+  }
+  // A broadened pass ranks by what it matches: its mandatory ASCII clauses AND any one relaxed
+  // term. Built from the parameters the predicate already references, ORed as tsqueries, so it
+  // binds nothing the WHERE clause does not use; the excerpt text says the same in
+  // `websearch_to_tsquery`'s own grammar, where `or` binds tighter than the implicit AND.
+  if (relaxed.length) {
+    const any = `(${relaxed.map((r) => `websearch_to_tsquery(${QUERY_CONFIG}, ${r.q})`).join(" || ")})`;
+    rankExpr = rankExpr ? `(${rankExpr} && ${any})` : any;
+    asciiText = [asciiText, relaxed.map((r) => r.text).join(" or ")].filter(Boolean).join(" ");
   }
 
   // The group is always pushed; the flag is not. Every eligible clause has to reach the

@@ -25,25 +25,24 @@
  * and the row is the only record there is.
  *
  * The row names a principal and a team, not the text the caller handed over: `asked_by` is the
- * principal whose email was passed, `initiative_id` the initiative that slug names, and `team_id`
- * the team the judgment belongs to — resolved the way the phase-2 migration resolved them
- * for the rows already in the table, so a row written from now on and a row the migration carried
- * agree row for row.
+ * principal whose email was passed, `team_id` the team they act for, and `initiative_id` the
+ * initiative that slug names inside that team.
  *
  * Absence is an answer. With no typed-service key the reading is `unavailable`, the reason is
  * recorded, and every caller carries on with its deterministic rule alone.
  *
- * Another caller was added for plugin-eval's protocol-defined evaluators (FR-13, FR-15,
- * Task I-8): `recordEvaluatorAssessment`, called directly by a measure (e.g. `discover.ts`'s
- * ownership classification) or through `evaluators.ts`'s `askEvaluator`. Unlike a family, an
- * evaluator's question, answer shape (`noul`/`choice`/`score`), polarity and model policy are
- * not fixed in this file — they live in `zz.eval_evaluator_version`, written once when the
- * evaluator is defined, and resolved here by `evaluator_version_id`. Both callers share one
- * insert builder (`insertAssessmentRow`), so the two identity shapes (`family` xor
- * `evaluator_version_id`, enforced by 001's own check) land in one table through one
- * code path, and neither swallows a failed insert: `assessFamily` fails the call that asked
- * (`persistAssessment` says why), and `recordEvaluatorAssessment` throws, because a plugin-eval
- * measure with no recorded assessment_id is a measure that silently never happened.
+ * plugin-eval's protocol-defined evaluators (FR-13, FR-15) are asked here too, in two steps:
+ * `askEvaluatorQuestion` asks, with no write, and `insertEvaluatorAnswer` records the answer
+ * through the caller's own runner — `discover.ts`, `qualify.ts` and `evaluate-measures.ts` ask
+ * before their idempotency transaction and record inside it. Unlike a family, an evaluator's
+ * question, answer shape (`noul`/`choice`/`score`) and positive answer are not fixed in this
+ * file — they live in `zz.eval_evaluator_version`, written once when the evaluator is defined,
+ * and resolved here by `evaluator_version_id`. Families and evaluators share one insert builder
+ * (`insertAssessmentRow`), so the two identity shapes (`family` xor `evaluator_version_id`,
+ * enforced by 001's own check) land in one table through one code path, and neither swallows a
+ * failed insert: `assessFamily` fails the call that asked (`persistAssessment` says why), and
+ * `insertEvaluatorAnswer` throws, because a plugin-eval measure with no recorded assessment_id is
+ * a measure that silently never happened.
  */
 import { createHash } from "node:crypto";
 import { QUESTION_FAMILIES } from "@zz/contracts";
@@ -126,6 +125,14 @@ export function readingOf(probability: number | null): Assessment["reading"] {
   if (probability > READING_BANDS.yes_above) return "yes";
   if (probability < READING_BANDS.no_below) return "no";
   return "unclear";
+}
+
+/** The reading that stands among `rows`, given oldest first: the latest that is not
+ *  `unavailable`, and otherwise the latest. A row is re-asked while it holds only `unavailable`
+ *  readings, and the answer that call writes comes after them. */
+export function standingReading<T extends { reading: Assessment["reading"] }>(rows: readonly T[]): T | undefined {
+  for (let i = rows.length - 1; i >= 0; i -= 1) if (rows[i].reading !== "unavailable") return rows[i];
+  return rows[rows.length - 1];
 }
 
 export interface Assessment {
@@ -215,7 +222,7 @@ export async function assessFamily(opts: {
 /** One `zz.assessment` row, in the shape the table itself declares (001, reshaped by
  *  the phase-2 migration): a family question xor an evaluator question, and only a
  *  `choice`/`score` answer ever carries a `distribution`. Building it in one place is what keeps
- *  `assessFamily` and `recordEvaluatorAssessment` writing rows the table's own checks agree on.
+ *  `assessFamily` and `insertEvaluatorAnswer` writing rows the table's own checks agree on.
  *
  *  The four columns that name somebody else are not here: `asked_by`, `team_id` and
  *  `initiative_id` are resolved by the insert from `asked_by` the email and `initiative` the slug,
@@ -242,7 +249,7 @@ interface AssessmentInsertRow {
   /** The call this answer came from. `made` with no id is refused by the insert below. */
   call_made: boolean;
   model_call_id: number | null;
-  /** The initiative's slug, as the asker named it. Resolved to a row by the insert. */
+  /** The initiative's slug, as the asker named it. Resolved to a row of the asker's team by the insert. */
   initiative: string | null;
   about: string | null;
   /** The asker's address. Resolved to a principal by the insert. */
@@ -256,7 +263,7 @@ interface AssessmentInsertRow {
  *  the address, or nobody's live team to name. Every other failure may pass on a second try. */
 class Unattributable extends Error {}
 
-/** The one insert both callers share. Returns the new row's id — `recordEvaluatorAssessment`
+/** The one insert both callers share. Returns the new row's id — `insertEvaluatorAnswer`
  *  needs it for `assessment_id`; `assessFamily`'s `Assessment` has never carried one and does
  *  not start now. Throws on any failure: whether that is swallowed or not is each caller's own
  *  call, made where it decides what a failure means for it.
@@ -267,12 +274,10 @@ class Unattributable extends Error {}
  *  happened — that no call was made. An address no principal carries throws for the same reason:
  *  there is nobody to attribute the judgment to, and nothing here may invent one.
  *
- *  The three names are resolved here from the email and the slug the row carries, so a row written
- *  from now on and a row the migration carried agree about who asked and which initiative it was:
+ *  The three names are resolved here from the email and the slug the row carries:
  *  `asked_by` is the principal whose address this is; `initiative_id` is the initiative that slug
- *  names — the asker's team's preferred, and otherwise the only one that has it, so a slug two
- *  teams share resolves to the asker's own or to nothing; and `team_id` is that initiative's team,
- *  or the asker's own acting team where the slug resolved nothing.
+ *  names in the asker's acting team, or null where their team holds no such slug; and `team_id` is
+ *  the asker's acting team.
  *
  *  A person who acts for no team at all is refused for the same reason as an address nobody
  *  carries: `team_id` is `not null`, and the platform does not invent an attribution.
@@ -311,24 +316,20 @@ async function insertAssessmentRow(row: AssessmentInsertRow, runner?: Queryable)
       -- $17. That team, by slug, as an id. Empty when they act for none, which writes no row.
       select t.id from zz.team t where t.slug = $17 and t.status = 'active'
     ), target as (
-      -- $16. The initiative the slug names, by the migration's own rule — the asker's team's
-      -- where there is one, and otherwise the only initiative that has the slug at all.
-      select i.id, i.team_id
+      -- $16. The initiative the slug names inside the asker's acting team. A slug is unique per
+      -- team only, so a slug their team does not hold names no initiative of theirs.
+      select i.id
         from zz.initiative i
-       where i.slug = $16
-         and (i.team_id = (select id from act)
-              or (select count(*) from zz.initiative j where j.slug = $16) = 1)
-       order by (i.team_id = (select id from act)) desc
-       limit 1
+       where i.slug = $16 and i.team_id = (select id from act)
     )
     insert into zz.assessment
       (family, evaluator_version_id, instruction_version, question_digest, reading, probability,
        distribution, answer_kind, resolved_model, identity_assurance, reason,
        model_call_id, about, asked_at, asked_by, team_id, initiative_id)
     select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-           a.id, coalesce((select team_id from target), (select id from act)), (select id from target)
+           a.id, (select id from act), (select id from target)
       from asker a
-     where coalesce((select team_id from target), (select id from act)) is not null
+     where (select id from act) is not null
     returning id`,
     [row.family, row.evaluator_version_id, row.instruction_version, row.question_digest,
      row.reading, row.probability, row.distribution ? JSON.stringify(row.distribution) : null,
@@ -400,7 +401,7 @@ async function persistAssessment(a: Assessment, call: AssessmentCall, recover: s
   }
 }
 
-/** `zz.eval_evaluator_version` as `recordEvaluatorAssessment` needs to read it: the exact row
+/** `zz.eval_evaluator_version` as `askEvaluatorQuestion` needs to read it: the exact row
  *  a `bounded_semantic`/`generative_critic` measure resolved to, with its stable identity. The
  *  stable key lives on this row now — `zz.eval_evaluator` was a header carrying nothing but the
  *  key and a `kind` nothing read, and the phase-3 migration folded it onto the version. */
@@ -443,7 +444,7 @@ async function resolveEvaluatorVersion(evaluatorVersionId: string): Promise<Eval
   return row;
 }
 
-/** What `recordEvaluatorAssessment` hands back: exactly the plan header's response shape, plus
+/** What `insertEvaluatorAnswer` hands back: exactly the plan header's response shape, plus
  *  `reason` (Task I-9) — the same "why there is no reading" text `Assessment.reason` already
  *  carries for a family question, previously computed here and dropped on the way out. A caller
  *  that must persist an `unavailable` classification with its own cause (`discover.ts`'s "a
@@ -577,19 +578,6 @@ export async function insertEvaluatorAnswer(
 ): Promise<EvaluatorAssessmentResult> {
   const assessment_id = await insertAssessmentRow(asked.row, runner);
   return { assessment_id, ...asked.result };
-}
-
-/** Ask and record in one go, on the pool — for a caller that holds no transaction of its own
- *  (`evaluators.ts`'s `askEvaluator`, `qualify-evidence.ts`). A mutator asks with
- *  `askEvaluatorQuestion` before its transaction and records with `insertEvaluatorAnswer` inside
- *  it instead. */
-export async function recordEvaluatorAssessment(opts: {
-  evaluator_version_id: string; subject_text: string; context?: string; askedBy: string;
-}): Promise<EvaluatorAssessmentResult> {
-  const asked = await askEvaluatorQuestion(opts);
-  const p = db();
-  if (!p) throw new Error("no platform database configured");
-  return insertEvaluatorAnswer(p, asked);
 }
 
 // DELIBERATE: the three functions that lived here — `writeRoundAssessments`,

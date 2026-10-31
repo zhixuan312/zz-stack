@@ -11,7 +11,7 @@
  */
 
 /** Every claim this run made, in order, for the summary at the end. */
-export const RESULTS: { ok: boolean; name: string; got: string }[] = [];
+const RESULTS: { ok: boolean; name: string; got: string }[] = [];
 
 export function record(ok: boolean, name: string, got: string): void {
   RESULTS.push({ ok, name, got: got.trim().slice(0, 200) });
@@ -53,4 +53,28 @@ export function eitherOr(name: string, got: string, acceptableRefusal: RegExp): 
   const ok = !refused || acceptableRefusal.test(body);
   record(ok, name, got);
   if (!ok) console.log(`        refused for an unnamed reason: ${body.slice(0, 200)}`);
+}
+
+/**
+ * A JSON answer as an object — or, when the platform refused or answered anything else, a FAIL
+ * recorded under `name` carrying what came back, and an empty object. A refusal is something the
+ * walk records, never a SyntaxError that ends it before the summary, so a field read from it reads
+ * nothing and the walk goes on.
+ */
+export function jsonOr<T extends object>(name: string, got: string): Partial<T> {
+  try {
+    const v: unknown = JSON.parse(got);
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) return v as Partial<T>;
+  } catch { /* recorded below */ }
+  record(false, `${name} answers with JSON`, got);
+  return {};
+}
+
+/** The summary every run ends with — how many claims held and each one that did not — and the
+ *  exit status it means. */
+export function summary(): number {
+  const bad = RESULTS.filter((r) => !r.ok);
+  console.log(`\n${RESULTS.length - bad.length}/${RESULTS.length} platform checks passed`);
+  for (const r of bad) console.log(`  FAILED: ${r.name}\n          ${r.got}`);
+  return bad.length ? 1 : 0;
 }

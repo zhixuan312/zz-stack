@@ -182,8 +182,8 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     target: "a proposal is written up without its patch ever being applied",
     assertion: "the proposal module imports nothing that can run anything",
     subject: "services/zz-core/src/eval/proposal-doc.ts",
-    find: 'import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";',
-    replace: 'import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";\n' +
+    find: 'import { safeName } from "../paths.js";',
+    replace: 'import { safeName } from "../paths.js";\n' +
       'import { execFileSync } from "node:child_process";   // to check the patch applies, supposedly',
     planted: "a non-owned subject's write-up reaches for child_process — the one thing the task's own " +
       "words forbid ('a non-owned subject never causes a repository write, ever — make that an " +

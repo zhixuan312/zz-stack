@@ -2,8 +2,8 @@
  * The query-grammar lexer: quotes, exclusions and explicit `OR` alternatives, recognised on
  * the raw scalars a person typed, before any lexical normalization touches them.
  *
- * COUPLED: `identifierTokens`/`analyze` (`tenant-analysis.ts`) split on `.`/`_`/`/`/`-`/`:`,
- * camelCase and Han-scalar boundaries, which would eat this grammar's own syntax — a leading
+ * COUPLED: `analyze` (`tenant-analysis.ts`) splits on punctuation and Han-scalar boundaries,
+ * which would eat this grammar's own syntax — a leading
  * `-` is an exclusion operator, and the same `-` inside `primary_evidence-000037.txt` is
  * punctuation. Only the surface form tells them apart, and that is gone once a normalizer has
  * lowercased and split. Normalization runs afterwards, on each clause's own `.text`.
@@ -158,7 +158,7 @@ function buildClauses(tokens: readonly RawToken[], scalars: readonly string[]): 
 /** Parses `text` under this platform's query grammar and returns the clause tree, each clause
  *  carrying its own original text. Throws `QueryParseError` for an expression this grammar
  *  cannot read rather than degrading it into ordinary terms. Lexical normalization is not run
- *  here: a caller wanting `identifierTokens`/`analyze` applies it to a clause's `.text`
+ *  here: a caller wanting `analyze` applies it to a clause's `.text`
  *  afterwards. */
 export function parseQuery(text: string): QueryAst {
   const scalars = Array.from(text);

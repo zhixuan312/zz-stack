@@ -1,5 +1,5 @@
 /**
- * The deterministic structural report a plan must carry before a controlled Execute admits it.
+ * The deterministic structural report on a plan document.
  *
  * A plan document is a graph wearing markdown: `### Task I-N:` headings are its nodes, the
  * `**Dependencies:**` line under each is its edges, and the `**Output:**` line is what that node
@@ -10,12 +10,7 @@
  * a passing report says the document parses as a plan, and nothing about the plan. Judging that
  * is an independent semantic audit.
  *
- * Every report carries the digest of the bytes it read and the target it was computed against,
- * so admission can refuse a report that describes a version nobody is executing.
- *
- * `admitToExecute` requires both a report and an approval and accepts neither alone: an approval
- * is a verdict on content, a report a verdict on shape, and a missing report is not a silent
- * pass.
+ * Every report carries the digest of the bytes it read and the target it was computed against.
  *
  * `**Owns:**` is what lets tasks run in parallel without branches: the paths a task writes. Tasks
  * whose dependencies are done and whose Owns are disjoint form a wave. Two tasks owning an
@@ -531,9 +526,7 @@ function byLine(violations: readonly PlanViolation[]): PlanViolation[] {
  * with no model in the path.
  *
  * `target` is the version or digest the plan is validated against. Omitted, the report binds to
- * the digest of the text it just read, which says only that the report describes these bytes;
- * passing the version a caller believes it is executing is what lets `admitToExecute` catch a
- * stale report.
+ * the digest of the text it just read, which says only that the report describes these bytes.
  */
 export function validatePlan(text: string, target?: string): PlanStructuralReport {
   const digest = createHash("sha256").update(text, "utf8").digest("hex");
@@ -587,89 +580,4 @@ export function validatePlan(text: string, target?: string): PlanStructuralRepor
     currentPhase: phases.find((p) => p.taskIds.length > 0 && !p.built)?.phase ?? null,
     unplannedPhase: phases.find((p) => p.taskIds.length === 0 && !p.built)?.phase ?? null,
   };
-}
-
-/** Why a plan was kept out of controlled execution. Closed, so a caller can branch on one. */
-export type ExecuteRefusal =
-  | "no_structural_report"
-  | "structural_report_failed"
-  | "structural_report_stale"
-  | "no_human_approval";
-
-/** What admission is asked for. Both halves are optional in the type and neither is optional in
- *  effect: an absent structural report and an absent approval are each a refusal, stated. */
-export interface ExecuteAdmissionRequest {
-  /** A person read the plan and agreed with what it proposes. A verdict on content. */
-  readonly humanApproved?: boolean | undefined;
-  /** The report `validatePlan` produced. A verdict on shape. */
-  readonly structuralReport?: PlanStructuralReport | undefined;
-  /** The version being executed. Given, a report bound to anything else is stale. */
-  readonly currentTarget?: string | undefined;
-}
-
-export interface ExecuteAdmission {
-  readonly admitted: boolean;
-  readonly refusals: readonly ExecuteRefusal[];
-  /** One line describing what was and was not established. Descriptive of shape and of what is
-   *  on the record; never an opinion about the plan. */
-  readonly reason: string;
-}
-
-/**
- * Admit a plan to controlled execution, or say exactly why not.
- *
- * Both verdicts are required and neither substitutes for the other: an approval says a person
- * read the plan and wants it built, a passing report says the document parses as a plan. A
- * duplicate task id is invisible to the first and fatal to the second.
- *
- * Nothing here blocks writing. A malformed draft can be written, revised, read and approved;
- * this gate stands at controlled Execute and nowhere earlier.
- */
-export function admitToExecute(request: ExecuteAdmissionRequest): ExecuteAdmission {
-  const refusals: ExecuteRefusal[] = [];
-  const report = request.structuralReport;
-
-  if (!report) {
-    refusals.push("no_structural_report");
-  } else {
-    if (!report.ok) refusals.push("structural_report_failed");
-    if (request.currentTarget !== undefined && request.currentTarget !== report.target) {
-      refusals.push("structural_report_stale");
-    }
-  }
-  if (request.humanApproved !== true) refusals.push("no_human_approval");
-
-  if (refusals.length === 0) {
-    return {
-      admitted: true,
-      refusals: [],
-      reason: `admitted: a structural report with no violations, bound to ${report?.target}, ` +
-        "and a recorded human approval",
-    };
-  }
-
-  return { admitted: false, refusals, reason: `refused (${refusals.join(", ")}): ${explain(refusals, report)}` };
-}
-
-function explain(
-  refusals: readonly ExecuteRefusal[],
-  report: PlanStructuralReport | undefined,
-): string {
-  const said: string[] = [];
-  if (refusals.includes("no_structural_report")) {
-    said.push("no structural report was supplied, and an unchecked plan is not a checked one");
-  }
-  if (refusals.includes("structural_report_failed") && report) {
-    const named = report.violations
-      .map((violation) => `${violation.taskId ?? "document"}: ${violation.kind}`)
-      .join("; ");
-    said.push(`the structural report lists ${report.violations.length} violation(s) — ${named}`);
-  }
-  if (refusals.includes("structural_report_stale") && report) {
-    said.push(`the structural report is bound to ${report.target}, which is not the version being executed`);
-  }
-  if (refusals.includes("no_human_approval")) {
-    said.push("no human approval is on the record");
-  }
-  return said.join(". ");
 }

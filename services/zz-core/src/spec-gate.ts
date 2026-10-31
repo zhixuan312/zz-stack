@@ -38,7 +38,7 @@ import { refusalText } from "./document-details.js";
 import type { DocRow } from "./indexing.js";
 import { locatorProblem, readAcceptanceCache, rowDigest } from "./review-acceptance.js";
 import { names, stakeholderSources } from "./review-rounds.js";
-import { assessFamily } from "./semantic.js";
+import { assessFamily, standingReading } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
 
 const PHASE_OUTLINE = "Phase outline";
@@ -182,7 +182,7 @@ export async function specApprovalRefusal(
   const unavailable: string[] = [];
   for (const { r, digest } of holds) {
     const history = cache[r.id] ?? [];
-    const now = history.find((c) => c.digest === digest);
+    const now = standingReading(history.filter((c) => c.digest === digest));
     if (!now || now.reading === "unavailable") { unavailable.push(r.id); continue; }
     if (now.reading === "no") {
       bad.push(`${r.id}: evidence_relation reads its evidence as not supporting the statement ` +

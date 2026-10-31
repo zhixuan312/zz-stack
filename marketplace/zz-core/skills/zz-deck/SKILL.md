@@ -15,8 +15,8 @@ disable-model-invocation: true
 # /zz-core:deck
 
 A command that turns something already written — a changelog, a spec, a design doc, a report,
-the previous message — into a slide deck built on the house visual system. `/zz-core:deck` on
-Claude Code.
+the previous message — into a slide deck built on the house visual system. `/zz-core:deck` in
+Claude Code, `$zz-core:deck` in Codex.
 
 It runs entirely in your own context: no platform tool is called, nothing is dispatched, and the
 only output is one HTML file on disk.
@@ -157,20 +157,24 @@ CSS looks plausible and is not on the house system, which is the entire point of
 Read the chassis asset in full, then write the complete deck file in **one write**:
 
 - the `<style>` layer, the behaviour scripts, the dock and the self-QA travel **verbatim** —
-  copy them exactly, changing nothing.
+  copy them exactly, changing nothing. The `<title>` is the one line of the chassis you change:
+  it carries the deck's name, the same as the manifest's `name`, which the scripts show in the
+  tab, the Menu and every slide's foot.
 - **there is nothing to exclude.** The chassis holds no slides and no manifest, so everything in
   it travels. The composition reference — the 53 guidebook `<section>` elements carrying the
   `slide` class, plus the `<script id="housebook-manifest">` block that describes them — lives in
   a separate file, `skills/zz-deck/deck-guidebook.html`, which **this step does not read**.
-  Consult it in Phase 3 if you want to see a composition rendered; never copy from it, and never
+  Read its markup in Phase 3 if you want to see how a composition is built — it carries no style,
+  so a browser shows it unstyled; never copy from it, and never
   open it here. Reading only the chassis is the point: it is roughly a third of what the two
   files hold together.
 - **your own manifest is written once, here, from the slide plan** — a JSON object naming the
   deck, its canvas and its conclusion sentence, with one `slides` entry per planned slide, in
   deck order, mirroring that slide's attributes. Step 4b never revisits it. It goes in a
   `<script id="housebook-manifest" type="application/json">` block, and its `slides` order must
-  match the order your `<section>` elements appear in — the build check reads both out of the
-  one file and compares them position by position.
+  match the order your `<section>` elements appear in. Nothing compares them for you: the
+  Version tab counts the manifest while the Menu's library lists the sections, and Phase 5's
+  "the JSON manifest lists exactly the sections present" is the check, run by you.
 
   ```json
   {
@@ -191,11 +195,12 @@ Read the chassis asset in full, then write the complete deck file in **one write
   }
   ```
 
-  One entry per slide, `number` starting at 1. **The fields mirror the seven attributes above —
-  no `choose`, `use`, `limits` or `tags`**, for the same reason those are absent from the
-  section: they describe a reference deck, not yours. `version` must equal the `data-version` on
-  every slide, and must equal the one in the worked example above; a build check compares all
-  three.
+  One entry per slide, `number` starting at 1. **Its other fields mirror that slide's section
+  attributes below** — `id` is its `data-slide-id`, and `component`, `chapter` and `job` are
+  their `data-` namesakes; no `choose`, `use`, `limits` or `tags`, for the same reason those are
+  absent from the section: they describe a reference deck, not yours. `version` is the house
+  edition: it equals the `data-version` on every slide and the one in the section example
+  below. Nothing checks your deck for that, so copy the number as it stands.
 - **one real `<section>` per planned slide**, carrying its final attributes, and, as its entire
   body, a single placeholder line:
 
@@ -223,8 +228,7 @@ Read the chassis asset in full, then write the complete deck file in **one write
   **Those seven attributes are the whole set. Do not add `data-choose`, `data-use`,
   `data-limits` or `data-tags`.** Those four are the guidebook's teaching metadata — they answer
   "when would I pick this composition", which is a question about the reference deck, not about
-  your slide. A content slide has nothing to say for them, and Phase 5 tells you the QA row that
-  demands them is expected to fail on a real deck.
+  your slide. A content slide has nothing to say for them.
 
   A **cover** slide's attributes differ — `class="slide active slide--cover"`, with `active` on
   the first slide only — but it scaffolds the same way: final attributes now, one placeholder
@@ -351,16 +355,9 @@ If it does not hold together, the fault is the claim order from Phase 2, not the
 go back and re-order, do not re-phrase the titles.
 
 Then the structural checks. **The template runs most of them for you** — open the deck with
-`?qa`, or the Menu's QA tab, and read the per-slide results. Two things to know before you do,
-or the report is unusable:
-
-- **"Agent metadata" fails on every slide of a real deck, and that is correct.** It requires
-  `data-use`, `data-choose`, `data-limits` and `data-tags` — the guidebook's teaching metadata,
-  answering "when would I pick this composition". A content slide has a `data-job` and nothing
-  to say for the other four. Ignore that row; do not invent values to silence it.
-- Everything else applies: safe-area overflow, figure accessibility, reading floor, one dominant
-  composition, title length, source treatment, figure text fits and text contrast are real
-  findings on a real deck.
+`?qa`, or the Menu's QA tab, and read the per-slide results. Every row is a real finding on a
+real deck: safe-area overflow, one dominant composition, reading floor, figure accessibility,
+title length, source treatment, figure text fits and text contrast.
 
 The full list, whether you run the QA or check by hand:
 

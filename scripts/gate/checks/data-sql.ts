@@ -16,7 +16,7 @@ import { SCHEMA_TARGET } from "../../../schema-target.ts";
 
 /** The indexer, which lives in packages/indexing rather than services/zz-core.
  *
- *  Guarded rather than read bare: the check below already says "reindexTeam is gone — this check
+ *  Guarded rather than read bare: the check below already says "rederiveRows is gone — this check
  *  reads nothing" when the function is absent, and a bare readFileSync would replace that sentence
  *  with an ENOENT stack trace. */
 const indexerSource = () => {
@@ -37,12 +37,12 @@ check("a team's rebuild touches that team's rows and no others", () => {
   // second statement naming it later would be a second writer of the same column.
   // COUPLED: the two corpora are declared in ONE list, and that list is the whole of "which rows
   // a rebuild touches" — the table, the scope that reaches it, and the statement that moves the
-  // derived columns. Read from the list rather than from `reindexTeam`'s own body, because a
+  // derived columns. Read from the list rather than from `rederiveRows`'s own body, because a
   // check that sliced the body would see a loop over `corpus.select` and never the table's name:
   // the scopes are what it is about, and they live where they are declared.
   const src = indexerSource();
   const corpora = /const CORPORA = \[[\s\S]*?\] as const;/.exec(src)?.[0] ?? "";
-  const fn = /async function reindexTeam\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
+  const fn = /async function rederiveRows\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
   const all = /async function reindexAllTeams\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
   const bad = [];
   if (!corpora) {
@@ -76,9 +76,9 @@ check("a team's rebuild touches that team's rows and no others", () => {
       }
     }
   }
-  if (!fn) bad.push("reindexTeam is gone — this check reads nothing");
+  if (!fn) bad.push("rederiveRows is gone — this check reads nothing");
   else if (!/\$\{corpus\.select\}/.test(fn) || !/\$\{corpus\.scope\}/.test(fn)) {
-    bad.push("reindexTeam does not run the declared corpora — a list nothing iterates is a list " +
+    bad.push("rederiveRows does not run the declared corpora — a list nothing iterates is a list " +
              "that scopes nothing");
   }
   if (!all) bad.push("reindexAllTeams is gone — this check reads nothing");
@@ -398,9 +398,8 @@ check("a run is attributed to a version by time, not by a column nothing stamps"
 });
 
 check("the run reconcile rewrites only the runs that changed", () => {
-  // `reconcileRuns` runs every five minutes over every run, and an unconditional `do update`
-  // rewrote each row on every pass whether or not anything moved — 805,942 updates on 723 rows
-  // in production, all of them dead tuples. Every write skips a row it would leave as it is,
+  // `reconcileRuns` runs every five minutes over every run, so an unconditional `do update`
+  // rewrites each row on every pass, a dead tuple each time. Every write skips a row it would leave as it is,
   // compared against the values it would write: the door's upsert against `excluded`, the repair
   // against the aggregate it recomputed. One comparison, in both, because "nothing moved" has to
   // mean the same thing at the door and on the timer.

@@ -14,7 +14,7 @@
  *      independent problems, in its outline and across and within its rows, refused with all of
  *      them at once, counted (AC-2.2)
  *   2. passes: a complete spec; a `fails` row settled by a design change or by a stakeholder source
- *   3. the readings of a `holds` row: `no` refuses, `unclear` asks to sharpen, `unclear` again on
+ *   3. the readings of a `holds` row: `no` refuses, and still refuses after an earlier `unavailable`, `unclear` asks to sharpen, `unclear` again on
  *      new evidence goes to the stakeholder, `unavailable` passes and says so
  *   4. a flow that declares neither section is untouched
  *   5. the replay of 2026-09-24-plugin-eval-next-version: its design rested on candidates being
@@ -194,6 +194,10 @@ const stakeholder = (name: string, text: string) =>
       probability: reading === "no" ? 0.1 : 0.5, asked_at: "2026-09-26" }));
   const no = fresh(); seed(no, [[EVIDENCE, "no"]]);
   await refused(SPEC, /CS-1: evidence_relation reads its evidence as not supporting/, "a `no` reading was approved", no);
+  // The service was out at the first approval; the reading taken at the next one stands over it.
+  const outThenNo = fresh(); seed(outThenNo, [[EVIDENCE, "unavailable"], [EVIDENCE, "no"]]);
+  await refused(SPEC, /CS-1: evidence_relation reads its evidence as not supporting/,
+    "a `no` taken after an `unavailable` reading was shadowed by it", outThenNo);
   const unclear = fresh(); seed(unclear, [[EVIDENCE, "unclear"]]);
   await refused(SPEC, /evidence_relation is unclear \(p=0\.50\) — sharpen/, "a first `unclear` was approved", unclear);
   const again = fresh(); seed(again, [["run:relay-spike — `ok`", "unclear"], [EVIDENCE, "unclear"]]);

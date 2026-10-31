@@ -2,16 +2,15 @@
  * Evaluation Protocol contract types — spec v8 (FR-6, AC-6.1, AC-20.1): the durable measurement
  * object a plugin version is scored against. Pure zod schemas and their inferred types; no I/O.
  *
- * Field names below are the protocol body's own, camelCase, one-to-one with spec v8's
- * `EvaluationProtocol` type. The schema (services/gateway/migrations/001_init.sql) stores this
- * same content under snake_case columns on `zz.eval_protocol_version` — `suites`,
- * `qualification_policy`, `scoring_policy`, `improvement_policy` — mapped positionally by the
- * write path. This module never speaks snake_case.
+ * Field names below are the protocol body's own, camelCase. The write path
+ * (services/zz-core/src/eval/protocol-record.ts) stores this content under snake_case columns on
+ * `zz.eval_protocol_version` — `qualification_policy`, `scoring_policy`, `improvement_policy` —
+ * and its dimensions and measures on `zz.eval_dimension` and `zz.eval_measure`. This module never
+ * speaks snake_case.
  *
- * `PROTOCOL_ENUMS` and `EVAL_STATE_ENUMS` are the one source both this schema's `z.enum(...)`
- * calls and every later writer draw their vocabulary from — the check that validates a value and
- * the dashboard that renders it share one list, and so does the gate's "every state the schema
- * allows can actually be reached" check, which looks for each literal named somewhere in source.
+ * `EVAL_STATE_ENUMS` is the one source both this schema's `z.enum(...)` calls and the services'
+ * writers draw a state vocabulary from; `checks/eval-protocol-schema.ts` holds each list to the
+ * CHECK constraint on its column.
  *
  * Every zod object below follows the same pattern: `export const X = z.object({...});
  * export type X = z.infer<typeof X>;` — a value and a type sharing one name in two namespaces,
@@ -20,8 +19,8 @@
 import { z } from "zod";
 
 // -------------------------------------------------------------------------------------------
-// Enum vocabularies — one array per concept, each backing exactly one z.enum(...) below and one
-// entry of PROTOCOL_ENUMS or EVAL_STATE_ENUMS. Nothing restates a value list a second time.
+// Enum vocabularies — one array per concept, each backing a z.enum(...) below or an entry of
+// EVAL_STATE_ENUMS. Nothing restates a value list a second time.
 
 const CANONICAL_KINDS = [
   "effectiveness", "reliability", "constraint_adherence",
@@ -32,9 +31,6 @@ const EVALUATOR_TYPES = [
   "deterministic", "outcome", "bounded_semantic", "generative_critic", "human",
 ] as const;
 
-/** Which suite a measure runs in — zz.eval_measure.suite (001) and Measure.suite below. */
-const SUITES = ["capability", "regression", "production"] as const;
-
 /** zz.eval_evaluator_qualification.state (001) and
  *  QualificationPolicy.boundedSemanticMinimum below — the same ladder under two names: how sure
  *  an evaluator's verdict has to be before its qualification, or a protocol's minimum bar for
@@ -43,53 +39,36 @@ const QUALIFICATION_STATES = [
   "unqualified", "mechanically_qualified", "operationally_qualified", "human_calibrated",
 ] as const;
 
-/** zz.eval_failure_mode_candidate.owner_kind and zz.eval_finding.owner_kind (001) —
+/** zz.eval_failure_mode_sighting.owner_kind and zz.eval_finding.owner_kind (001) —
  *  the same vocabulary on two tables, so one array backs both check constraints. */
 const OWNER_KINDS = [
   "plugin", "dependency", "platform", "environment", "user_input", "unknown",
 ] as const;
 
-/** zz.eval_finding.kind (001) — Task I-13's EVALUATE-produced finding, distinct from the
- *  rubric-era finding's own `scope` (generic/specific), which keeps its separate vocabulary. */
+/** zz.eval_finding.kind (001): what an EVALUATE run concluded about one thing. */
 const FINDING_KINDS = ["strength", "defect", "unknown"] as const;
 
-const FAILURE_CANDIDATE_STATUSES = ["candidate", "accepted", "rejected", "merged"] as const;
-const EVAL_RUN_RUN_STATUSES = ["pending", "running", "completed", "failed", "cancelled"] as const;
+/** zz.eval_run.score_status and zz.eval_run.guardrail_status (001). */
 const EVAL_RUN_SCORE_STATUSES = ["established", "provisional", "not_established"] as const;
 const EVAL_RUN_GUARDRAIL_STATUSES = ["pass", "fail", "not_established"] as const;
-/** zz.candidate.status (002): recorded, then awaiting_build while the local CLI builds and gates
- *  the patch, then valid (releasable) or invalid; release_record moves a valid one to released,
- *  and a release that measured worse on real use to rolled_back. */
-const CANDIDATE_STATUSES = [
-  "recorded", "awaiting_build", "valid", "invalid", "released", "rolled_back",
-] as const;
+/** zz.candidate.status (001): recorded, then awaiting_build while the local CLI builds and gates
+ *  the patch, then valid (releasable) or invalid. What happened to a release of a valid one is
+ *  zz.release_attempt.status, below. */
+const CANDIDATE_STATUSES = ["recorded", "awaiting_build", "valid", "invalid"] as const;
+/** zz.release_attempt.status (001). */
 const RELEASE_ATTEMPT_STATUSES = [
   "prepared", "applying", "released", "refused", "failed", "rolled_back",
 ] as const;
+/** zz.assessment.answer_kind (001). */
 const ANSWER_KINDS = ["noul", "choice", "score"] as const;
 
-/** Every protocol-body enum — the field names inside Dimension, Measure and QualificationPolicy
- *  below, not a migration's check constraints. One source for the
- *  z.enum(...) calls in this file and for the dashboard that renders a protocol's own choices
- *  back to a person. */
-export const PROTOCOL_ENUMS = {
-  canonicalKind: CANONICAL_KINDS,
-  evaluatorType: EVALUATOR_TYPES,
-  suite: SUITES,
-  boundedSemanticMinimum: QUALIFICATION_STATES,
-} as const;
-
-/** Every state column the migrations constrain, one array per column (two columns sharing a
- *  vocabulary — owner_kind, the qualification ladder — share one array rather than restate it).
- *  Every later writer takes its values from here; a value that only ever lived in the SQL CHECK
- *  is a state the gate's "every state the schema allows can actually be reached" check reports
- *  as unreachable. */
+/** The evaluation's state columns, one array per constrained column (two columns sharing a
+ *  vocabulary — owner_kind — share one array rather than restate it). A writer takes its values
+ *  from here, so a value the CHECK refuses is not one it can write. */
 export const EVAL_STATE_ENUMS = {
   qualificationState: QUALIFICATION_STATES,
-  failureCandidateStatus: FAILURE_CANDIDATE_STATUSES,
   scoreStatus: EVAL_RUN_SCORE_STATUSES,
   guardrailStatus: EVAL_RUN_GUARDRAIL_STATUSES,
-  runStatus: EVAL_RUN_RUN_STATUSES,
   candidateStatus: CANDIDATE_STATUSES,
   releaseAttemptStatus: RELEASE_ATTEMPT_STATUSES,
   ownerKind: OWNER_KINDS,
@@ -139,7 +118,6 @@ export const Measure = z.object({
   // Positive, never zero or negative: a zero weight is a measure that counts for nothing, and a
   // negative one lets two measures sum to 1 while one of them scores backwards.
   weight: z.number().positive(),
-  suite: z.enum(SUITES),
   required: z.boolean(),
   definition: FreeformRecord,
   evaluator: FreeformRecord.nullable(),
@@ -318,13 +296,8 @@ export const FailureMode = z.union([z.string().min(1), z.object({ key: z.string(
 export type FailureMode = z.infer<typeof FailureMode>;
 
 // -------------------------------------------------------------------------------------------
-// The protocol body itself — spec v8's EvaluationProtocol type (FR-6). Field names are the
-// protocol body's own, camelCase, one-to-one; migration 001 stores this content under
-// snake_case columns on zz.eval_protocol_version, mapped positionally, never renamed here.
-
-/** One of `suites.capability` / `.regression` / `.production` — spec v8 does not fix a shape
- *  for a suite definition beyond "an object" naming that suite's own settings. */
-const SuiteDefinition = FreeformRecord;
+// The protocol body itself. Field names are the protocol body's own, camelCase; the write path
+// maps them onto zz.eval_protocol_version's snake_case columns, never renamed here.
 
 export const EvaluationProtocol = z.object({
   protocolKey: z.string().min(1),
@@ -333,18 +306,12 @@ export const EvaluationProtocol = z.object({
   observableSurfaces: z.array(z.string().min(1)),
   failureTaxonomy: z.array(FailureMode),
   dimensions: z.array(Dimension).min(1),
-  suites: z.object({
-    capability: SuiteDefinition,
-    regression: SuiteDefinition,
-    production: SuiteDefinition,
-  }),
   qualification: QualificationPolicy,
   scoring: z.object({
     establishment: EstablishmentPolicy,
     uncertainty: UncertaintyPolicy,
   }),
   improvement: z.object({
-    evolvable: z.boolean(),
     criticalGuardrails: z.array(Guardrail),
     release: ReleasePolicy,
   }),

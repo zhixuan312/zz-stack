@@ -41,12 +41,8 @@ check("every document write runs the guards", () => {
   // writes a DOCUMENT must have asked first. It does not verify which guards ran, only that the
   // two halves stay together.
   //
-  // Pairing by COUNT was the old rule, and it stopped meaning anything when the write path moved:
-  // `persistDocument` is now the store mirror *inside* `saveDocument`, and `saveDocument` is also
-  // what a SOURCE write goes through — a source has its own rules and does not pass the document
-  // gates. A count could not tell those apart; it compared a mirror against the guards, and a
-  // source write against a document's. Pairing per TOOL is what the rule was always about, and it
-  // is what the sibling check above already does.
+  // Per tool, not by count: `saveDocument` is also what a source write goes through, and a source
+  // has its own rules and does not pass the document gates.
   const bad: string[] = [];
   for (const { name, body } of zzCoreTools()) {
     if (!/^document_/.test(name)) continue;
@@ -63,20 +59,22 @@ check("no asymmetric fork in the document guards", () => {
   // mechanisable half is narrow: a required-ness conditional on another envelope field's value.
   // Matched by shape — a guard returning an ERROR about a missing field, from inside a branch
   // keyed to some other field — not by opinions about which fields matter.
-  const src = zzCoreSource();
   // From the schema, so a fork keyed on any envelope field is visible to this.
   const ENVELOPE = `(${envelopeFields().join("|")})`;
   const bad: string[] = [];
-  const lines = src.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    // a branch that tests one envelope field against a literal value
-    const guard = new RegExp(`\\benv(elope)?[.\\[]"?${ENVELOPE}"?\\]?\\s*===\\s*"`).exec(lines[i]);
-    if (!guard) continue;
-    // ...and, within the next few lines, refuses because a different envelope field is absent
-    const window = lines.slice(i, i + 6).join(" ");
-    const refusal = new RegExp(`ERROR[^"]*\\b${ENVELOPE}\\b`).exec(window);
-    if (refusal && refusal[1] !== guard[2] && /\b(no|missing|and no)\b/i.test(window)) {
-      bad.push(`server.ts:${i + 1} — \`${guard[2]}\` gates whether \`${refusal[1]}\` is required`);
+  // File by file, so a fork is reported at a line its file has.
+  for (const file of sourceFiles(["services/zz-core/src"], [".ts"])) {
+    const lines = readFileSync(join(root, file), "utf8").split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      // a branch that tests one envelope field against a literal value
+      const guard = new RegExp(`\\benv(elope)?[.\\[]"?${ENVELOPE}"?\\]?\\s*===\\s*"`).exec(lines[i]);
+      if (!guard) continue;
+      // ...and, within the next few lines, refuses because a different envelope field is absent
+      const window = lines.slice(i, i + 6).join(" ");
+      const refusal = new RegExp(`ERROR[^"]*\\b${ENVELOPE}\\b`).exec(window);
+      if (refusal && refusal[1] !== guard[2] && /\b(no|missing|and no)\b/i.test(window)) {
+        bad.push(`${file}:${i + 1} — \`${guard[2]}\` gates whether \`${refusal[1]}\` is required`);
+      }
     }
   }
   return bad.length
@@ -105,7 +103,7 @@ check("a refusal is classified in one place", () => {
 
 // A guard's answer is the guard. Calling one and discarding what it says compiles —
 // `writeGuard(path);` on its own line is a legal statement — and with it document_write accepts
-// a write to `_ledger.md`. Every guard returns `string | null` so a caller must decide, and
+// a write the guard refused. Every guard returns `string | null` so a caller must decide, and
 // every call site is the same two lines:
 //
 //   const blocked = writeGuard(path);
@@ -162,18 +160,15 @@ check("nothing is written before the guards that would refuse it", () => {
   // precede it; computing a name is free, and that is all a document needs to link forward.
   //
   // `saveDocument` is the write: the one entry point every tool's document write goes through
-  // (document-save.ts). This matched `writeFileSync`/`appendFileSync` until the mutation suite's first
-  // full run found it green over a planted `saveDocument` ahead of the guard — the store stopped
-  // being files, and the check went on looking for the files.
-  const src = zzCoreSource();
+  // (document-save.ts).
   const bad: string[] = [];
-  for (const { name, from, body } of zzCoreTools()) {
+  for (const { name, from, body, file } of zzCoreTools()) {
     const guard = body.search(/\bdocumentGuards\(/);
     if (guard < 0) continue;
     for (const w of body.matchAll(/\bsaveDocument\(/g)) {
       if (w.index < guard) {
-        const line = src.slice(0, from + w.index).split("\n").length;
-        bad.push(`${name} writes at line ${line}, before its documentGuards`);
+        const line = readFileSync(join(root, file), "utf8").slice(0, from + w.index).split("\n").length;
+        bad.push(`${name} writes at ${file}:${line}, before its documentGuards`);
       }
     }
   }
@@ -337,6 +332,7 @@ check("a refusal names a way out the tool it came from actually has", () => {
   const code = withoutComments(src);
   const declaredTools = [...code.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)].length;
   let readTools = 0;
+  const toolBodies = new Map(zzCoreTools().map((t) => [t.name, t.body]));
   for (const block of code.split(/(?=registerTool\(\s*\n?\s*")/)) {
     const tool = /^registerTool\(\s*\n?\s*"([a-z0-9_]+)"/.exec(block)?.[1];
     if (!tool) continue;
@@ -353,7 +349,7 @@ check("a refusal names a way out the tool it came from actually has", () => {
       // are no argument a caller can pass by name.
       declared = topLevelKeys(block.slice(block.indexOf("inputSchema:"), whole.index));
     } else continue;
-    const body = zzCoreTools().find((t) => t.name === tool)?.body ?? "";
+    const body = toolBodies.get(tool) ?? "";
     const reaches = (guard: string): boolean => body.includes(`${guard}(`)
       || [...functions].some(([fn, text]) => fn !== guard && body.includes(`${fn}(`) && text.includes(`${guard}(`));
     for (const [guard, names] of demands) {
@@ -398,6 +394,31 @@ check("a refusal class keeps the number that IS the refusal", () => {
   if (!/<n>/.test(counted)) bad.push(`a plain count survives redaction: ${counted}`);
   if (!/<initiative>/.test(counted)) bad.push(`an initiative survives redaction: ${counted}`);
   if (!/<date>/.test(dated)) bad.push(`a date survives redaction: ${dated}`);
+  return bad.length ? bad.join("; ") : null;
+});
+
+check("a refusal class takes out what a refusal quotes and leaves an apostrophe in its prose", () => {
+  // A possessive or a contraction is not an opening quote. Paired with the next quote in the
+  // sentence, it swallows the prose between them and leaves the quoted value behind, so the class
+  // keeps the instance it exists to drop and its quotes no longer balance.
+  //
+  // Run against the real function, on the platform's own refusal shapes.
+  const nothingToRun = unbuilt();
+  if (nothingToRun) return nothingToRun;
+  const out = execFileSync("node", ["--input-type=module", "-e",
+    `import { refusalClass } from ${JSON.stringify(join(root, "packages/contracts/dist/index.js"))};` +
+    "process.stdout.write(JSON.stringify([" +
+    "  refusalClass(\"ERROR: candidate abc's attempt 7 left 'prepared' before this call\")," +
+    "  refusalClass(\"ERROR: candidate abc's attempt 7 left 'valid' before this call\")," +
+    "  refusalClass(\"ERROR: scripts/x must be a path inside the skill's own directory — no '..', and no empty segments\")," +
+    "]));"], { cwd: root, encoding: "utf8" });
+  const [prepared, valid, path] = JSON.parse(out);
+  const bad: string[] = [];
+  const keptPossessive = "ERROR: candidate abc's attempt <n> left '…' before this call";
+  if (prepared !== keptPossessive) bad.push(`a possessive was read as a quote: ${prepared}`);
+  if (prepared !== valid) bad.push(`two refusals differing only in a quoted state are two classes: ${prepared} / ${valid}`);
+  const keptContraction = "ERROR: scripts/x must be a path inside the skill's own directory — no '…', and no empty segments";
+  if (path !== keptContraction) bad.push(`a possessive swallowed the prose up to the next quote: ${path}`);
   return bad.length ? bad.join("; ") : null;
 });
 

@@ -101,9 +101,8 @@ export function registerInitiativeCloseTool(server: McpServer): void {
     async ({ initiative, disposition, accepted_by, no_signoff_reason, document }) => {
       const who = parseCaller(requestHeaders());
       const team = await teamFor(who.email);
-      // The anchor row (002_initiative_anchor.sql) is where every disposition of this call now
-      // records the close, in the same call — refused without a database rather than falling
-      // back to a file-only close nothing downstream would then agree with.
+      // The initiative's own `zz.initiative` row is where every disposition of this call records
+      // the close, so a deployment with no database is refused.
       const p = db();
       if (!p) {
         return text(
@@ -136,18 +135,19 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       //
       // Refused, not silently corrected: `delivered` is a claim about the work and only the caller
       // can make it. The platform's job is to say the two do not agree.
+      // Read once: nothing below writes before the close, so the chain, the documents held and the
+      // branch facts every rule reads cannot change within this call.
+      const chain = await chainFor(p, team, join(initiative, "probe.md"));
+      const dirOf = await documentPaths(team, initiative);
+      const facts = await factsFor(p, team, initiative);
       if (disposition === OUTCOME_STOPPED) {
-        const chain = await chainFor(p, team, join(initiative, "probe.md"));
-        const held = new Set(await documentPaths(team, initiative));
+        const held = new Set(dirOf);
         // FR-58 (Task I-26): a gate or a requiredForClose document the branch has ruled out
         // (`not_applicable`) is excluded here too, for the same reason handover.md is —
         // without this, ANY flow declaring a conditional gate could never trip the refusal
         // below: the ruled-out document never exists, `gatesPassed`/`requiredPresent` would
         // read false forever, and the false-abandon refusal would never fire even when every
         // APPLICABLE gate is passed and everything the branch actually required exists.
-        // A damaged `_facts.json` reads as no facts here (`factsForWrite`): the abandon is the
-        // way out of an initiative whose branch cannot be read, so it must not refuse on it.
-        const facts = await factsFor(p, team, initiative);
         const ruledOut = (d: { name: string; when?: Record<string, string | string[]> }): boolean =>
           !!d.when && documentApplies(d, facts) === "not_applicable";
         // DELIBERATE: `handover.md` is excluded from the gate set. It is derived onto
@@ -183,8 +183,6 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // signed off, whether the work was already closed and whether its gates were recorded are
       // facts on the store, not only arguments to this call. `closeInitiative` in `@zz/contracts`
       // performs it — this file names none of the three outcome words and cannot.
-      const probe = join(initiative, "probe.md");
-      const chain = await chainFor(p, team, probe);
       // A freeform initiative closes too, and the caller says on what. There is no manifest to read
       // a closing document off, and the outcome is the row a team's counts are built from, so it
       // cannot sit on a document nobody chose. A flow that does declare one keeps answering for
@@ -196,7 +194,6 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // furthest declared document that exists instead. A caller may still name one with
       // `document`.
       const stopped = disposition === OUTCOME_STOPPED;
-      const dirOf = await documentPaths(team, initiative);
       // FR-58 (Task I-28): the flow's declared closing document (`chain.closingDoc`) can itself
       // be `when`-conditional — `improvement.md`, promotable only — and ruled out on every other
       // branch. That is not "stopped before it was written"; it is "this branch closes
@@ -205,7 +202,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // document the branch ruled out. `closingDocRuledOut` is the one question guards.ts's
       // `closeCheck` asks too, so the two never disagree about which document a close lands on.
       const declaredDoc = chain.documents.find((d) => d.name === chain.closingDoc);
-      const ruledOut = closingDocRuledOut(declaredDoc, await factsFor(p, team, initiative));
+      const ruledOut = closingDocRuledOut(declaredDoc, facts);
       const closingDoc = closeLandsOn({ initiative, stopped, held: dirOf, closingDoc: chain.closingDoc,
                                         documents: chain.documents, ruledOut, named: document ?? "" });
       if (!closingDoc) {
@@ -245,7 +242,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           // the row, not this call, is what a second concurrent close is refused by.
           const closed = (await p.query<{ closed_at: string }>(
             `update zz.initiative i set closed_at = now(), outcome = 'abandoned',
-                    closed_by = (select id from zz.principal where email = $3 and status = 'active')
+                    closed_by = (select id from zz.principal where lower(email) = lower($3) and status = 'active')
                from zz.team t
               where i.team_id = t.id and t.slug = $1 and i.slug = $2 and i.closed_at is null
               returning i.closed_at::text`,
@@ -343,7 +340,6 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           // the step's own completion rule would read `unmet` forever. A step with no document at
           // all, or one whose document still applies, is untouched — `documentApplies` answers
           // `applies` for anything carrying no `when`.
-          const facts = await factsFor(p, team, initiative);
           const ruledOutSteps = governed.module.steps
             .filter((st) => {
               const docs = chain.documents.filter((d) => d.stage === st.id);

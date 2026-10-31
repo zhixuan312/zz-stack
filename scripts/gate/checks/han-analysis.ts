@@ -18,10 +18,10 @@ check("an unspaced Han run is analysed into the terms a reader would search for"
   // Supplementary plane: iterate scalars, not UTF-16 units.
   const supp = analyze("\u{20000}\u{20001}");
   if (supp.base.length !== 2) return `a supplementary-plane pair analysed to ${supp.base.length} base terms, not 2 — UTF-16 units are being iterated`;
-  // Offsets must address the original bytes.
+  // Offsets must address the original bytes: each term's byte range reads back as the term.
   const src = "前migration后";
   for (const t of analyze(src).base) {
     const slice = Buffer.from(src, "utf8").subarray(t.start, t.end).toString("utf8");
-    if (!slice.length) return `term ${t.term} carries a byte range that does not address its source`;
+    if (slice.toLowerCase() !== t.term) return `term ${t.term} carries the byte range ${t.start}-${t.end}, which reads "${slice}"`;
   }
 });

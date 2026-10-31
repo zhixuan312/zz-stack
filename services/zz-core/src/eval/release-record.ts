@@ -33,7 +33,7 @@
 import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type pg from "pg";
 
-import type { MutatorOutcome } from "./idempotency.js";
+import { ledgerStamp, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
 import { decideFinding, type DecidedFinding, type DecisionOutcome } from "./plugin-record.js";
 import { currentReleasedHead } from "./release-apply.js";
 import { compareSemver } from "../release-head.js";
@@ -325,40 +325,42 @@ export async function recordRelease(
   return { result, result_table: "zz.release_attempt", result_id: attempt.id };
 }
 
-/** What a replayed record says about the findings: the durable rows, read back, because the ledger
- *  replays the RECORD and a response restating decisions the rows no longer hold would be a second
- *  memory of them. Only a `released` attempt carries any — a failed call and a rollback decided
- *  none, which is why they answer empty here rather than reporting decisions that belong to the
- *  release the rollback undid. */
+/** What a replayed record says about the findings: the durable rows, read back. A finding counts
+ *  as decided by this release only when the call the ledger row records decided it — the same
+ *  principal, in the same transaction — so one somebody else decided, before or since, is left
+ *  alone here as it was on the first call. Only a `released` attempt carries any: a failed call and
+ *  a rollback decided none. */
 async function findingsForReplay(
-  pool: pg.Pool, attemptId: string, status: string,
+  pool: pg.Pool, attemptId: string, status: string, call: LedgerCall,
 ): Promise<{ findings_decided: DecidedFinding[]; findings_left_alone: string[] }> {
   if (status !== "released") return { findings_decided: [], findings_left_alone: [] };
+  const stamp = await ledgerStamp(pool, call);
   const rows = (await pool.query<{
     id: string; pattern: string; decision: string | null;
-    at: string | null; by: string | null; note: string | null;
+    at: string | null; by: string | null; note: string | null; this_call: boolean | null;
   }>(`
     select f.id::text as id, f.pattern, f.decision, f.decided_at::text as at,
-           p.email as by, f.decision_note as note
+           p.email as by, f.decision_note as note,
+           (f.decided_by = $2::uuid and f.decided_at = $3::timestamptz) as this_call
       from zz.release_attempt ra
       join zz.candidate c on c.id = ra.candidate_id
       join zz.improvement_run_finding r on r.improvement_run_id = c.improvement_run_id
       join zz.eval_finding f on f.id = r.finding_id
       left join zz.principal p on p.id = f.decided_by
      where ra.id = $1::uuid
-     order by f.id`, [attemptId])).rows;
+     order by f.id`, [attemptId, stamp?.principal_id ?? null, stamp?.at ?? null])).rows;
   const decided: DecidedFinding[] = [];
   const left_alone: string[] = [];
   for (const row of rows) {
-    if (row.decision === "applied" || row.decision === "rejected") {
+    if (row.this_call && (row.decision === "applied" || row.decision === "rejected")) {
       decided.push({
         id: row.id, pattern: row.pattern, decision: row.decision,
         at: row.at ?? "", decided_by: row.by ?? "", note: row.note ?? "",
       });
     } else {
       left_alone.push(
-        `${row.id} is ${row.decision ?? "a strength"} — this release recorded no decision on it, ` +
-        "so it is exactly as the call that released left it");
+        `${row.id} is ${row.decision ?? "a strength"}${row.decision !== "deferred" && row.by ? ` by ${row.by}` : ""} — ` +
+        "this release recorded no decision on it");
     }
   }
   return { findings_decided: decided, findings_left_alone: left_alone };
@@ -366,7 +368,7 @@ async function findingsForReplay(
 
 /** `release_record`'s replay path — read the row back rather than trust anything held in memory
  *  from the original call. */
-export async function describeRecordOutcomeForReplay(pool: pg.Pool, attemptId: string): Promise<RecordResult> {
+export async function describeRecordOutcomeForReplay(pool: pg.Pool, attemptId: string, call: LedgerCall): Promise<RecordResult> {
   const row = (await pool.query<{
     status: string; released_plugin_version_id: string | null; release_ref: string | null;
   }>(`
@@ -376,6 +378,6 @@ export async function describeRecordOutcomeForReplay(pool: pg.Pool, attemptId: s
   return {
     status: row.status as RecordResult["status"], release_attempt_id: attemptId,
     [RELEASED_SUBJECT_VERSION]: row.released_plugin_version_id, release_ref: row.release_ref,
-    ...(await findingsForReplay(pool, attemptId, row.status)),
+    ...(await findingsForReplay(pool, attemptId, row.status, call)),
   };
 }

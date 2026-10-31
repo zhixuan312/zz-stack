@@ -203,7 +203,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     assertion: "the one orientation pointer names a skill that exists on disk",
     subject: "services/zz-core/src/tools/skills.ts",
     find: "how_this_works: 'skill_read(\"zz-platform\")",
-    // SEAMED: the retired skill name, which `skill-renames.ts` sweeps every tracked file for.
+    // SEAMED: the retired skill name, kept out of the tree as a literal.
     replace: "how_this_works: 'skill_read(\"zz-back" + "bone\")",
     // REDACTED, for the same reason as the row above: the payload is a pre-rename name, and
     // `plant()` writes the reconstructed string into the tracked report. `redact` base64-encodes

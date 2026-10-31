@@ -349,7 +349,7 @@ export const expire = (c: Core, id: string) => c.sql.query(
 export async function stagingRules(c: Core, g: Gateway): Promise<void> {
   const I = await c.open("staging-rules");
   const auth = { authorization: `Bearer ${g.token}` };
-  let step = "one byte past 8 MiB is refused at staging (SIZE_LIMIT); exactly 8 MiB stages, and its stored form over the limit is refused in the write and left unconsumed";
+  let step = "one byte past 8 MiB is refused at staging (SIZE_LIMIT); exactly 8 MiB stages and is written whole";
   const big = await start(c, step, "big.txt");
   const over = await g.send("PUT", routeOf(c, g, step, big, "shell"), { body: Buffer.alloc(MIB8 + 1, 0x61), headers: auth });
   if (over.status !== 413 || !String(over.json.error).startsWith("ERROR: SIZE_LIMIT — ") || (await rowOf(c, big.upload))?.sha256 !== null) {
@@ -357,8 +357,8 @@ export async function stagingRules(c: Core, g: Gateway): Promise<void> {
   }
   const full = Buffer.alloc(MIB8, 0x61);
   if ((await g.send("PUT", routeOf(c, g, step, big, "shell"), { body: full, headers: auth })).status !== 200) c.fail(step, "8 MiB did not stage");
-  await c.refused(step, "document_write", { path: `${I}/big.md`, upload: big.upload }, /^ERROR: SIZE_LIMIT — /);
-  await waiting(c, step, big.upload);
+  // The stored-body limit is the upload limit, so what stages is written: the envelope is not counted.
+  await c.ok(step, "document_write", { path: `${I}/big.md`, upload: big.upload });
   c.pass(step);
 
   step = "invalid UTF-8 and a file of another extension are refused at staging by name, and upload_start refuses an unsupported format before any upload exists";

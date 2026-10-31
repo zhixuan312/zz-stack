@@ -418,7 +418,7 @@ export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
       const a = w.closeAnchor;
       const { rowCount } = await client.query(
         `update zz.initiative set closed_at = now(), outcome = $2,
-                closed_by = (select id from zz.principal where email = $3 and status = 'active'),
+                closed_by = (select id from zz.principal where lower(email) = lower($3) and status = 'active'),
                 accepted_by = $4, no_signoff_reason = $5
           where id = $1::uuid and closed_at is null`,
         [initiativeId, a.outcome, a.closedBy, a.acceptedBy, a.noSignoffReason]);

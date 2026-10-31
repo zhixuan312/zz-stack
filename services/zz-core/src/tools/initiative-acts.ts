@@ -165,10 +165,10 @@ export function registerInitiativeActTools(server: McpServer): void {
       // the thing to fix: add them as a person, or approve on behalf of someone the platform knows.
       if (!(await principalId(p, signer))) {
         return text(
-          `ERROR: \`${signer}\` is not a person this platform knows, so the approval would carry no ` +
-          `attribution — and a gated document approved with nobody's name on it is refused by the ` +
-          `next gate it meets. Pass \`on_behalf_of\` an address or a name a principal carries, or ` +
-          `add them first (\`person_add\`).\n`);
+          `ERROR: \`${signer}\` is not the address of a person this platform knows, nor a name exactly ` +
+          `one active person carries, so the approval would carry no attribution — and a gated ` +
+          `document approved with nobody's name on it is refused by the next gate it meets. Pass ` +
+          `\`on_behalf_of\` their address, or add them first (\`person_add\`).\n`);
       }
       let doc = loaded.text;
       // COUPLED: release_apply (eval/release-apply.ts) counts this approval only for owner teams the

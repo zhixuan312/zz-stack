@@ -171,7 +171,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         "Every bug reported on this deployment, newest first. WHEN somebody asks what is known " +
         "to be broken, whether a thing they hit is already filed, or what is still open before " +
         "a release. Defaults to OPEN, because the common question is what is wrong right now; " +
-        "pass `status` to see what was decided. RETURNS the reports and a count by status, so a " +
+        "pass `status` to see what was decided. RETURNS the reports and, under the same filters, a count by status, so a " +
         "capped list cannot read as the whole answer. Reported through `bug_report` on /core, " +
         "which anybody may call; this side is the operator's.",
       inputSchema: {
@@ -185,8 +185,8 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
     async ({ status, impact, reported_by, query, limit }) => {
       const db = db_();
       if (!db) return noDb();
-      const args: unknown[] = [status ?? "open"];
-      const where = ["b.status = $1"];
+      const args: unknown[] = [];
+      const where: string[] = [];
       const put = (v: unknown): string => { args.push(v); return `$${args.length}`; };
       if (impact) where.push(`b.impact = ${put(impact)}`);
       // Through the principal, because the column is an id now and nobody searches for one. COUPLED:
@@ -199,6 +199,10 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         const q = put(`%${query.trim()}%`);
         where.push(`(b.title ilike ${q} or b.detail ilike ${q})`);
       }
+      // Every filter but the status: `by_status` counts what they match in each status, so a
+      // capped list is read against the whole of its own answer.
+      const filtered = where.length ? `where ${where.join(" and ")}` : "";
+      const listed = [...where, `b.status = ${put(status ?? "open")}`];
       // The ids are selected, and the slugs joined back beside them: the id is what every other
       // reader of this row joins on, and the slug is what a person reading the answer recognises.
       // A bug with no team or no initiative has none — left joins, so the row is still returned.
@@ -216,12 +220,12 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
            left join zz.principal rs on rs.id = b.resolved_by
            left join zz.team t on t.id = b.team_id
            left join zz.initiative i on i.id = b.initiative_id
-          where ${where.join(" and ")}
+          where ${listed.join(" and ")}
           order by b.reported_at desc limit ${limit ?? 25}`, args);
-      // Counted separately from what is shown: a list capped at 25 that says nothing about the cap
-      // reads as the whole answer.
       const { rows: tally } = await db.query<{ status: string; n: string }>(
-        "select status, count(*) as n from zz.bug group by status");
+        `select b.status, count(*) as n from zz.bug b
+           left join zz.principal rp on rp.id = b.reported_by
+         ${filtered} group by b.status`, args.slice(0, args.length - 1));
       return text(JSON.stringify({
         showing: rows.length,
         by_status: Object.fromEntries(tally.map((t) => [t.status, Number(t.n)])),

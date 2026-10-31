@@ -108,25 +108,31 @@ const keyOf = (r: ModelRow): string => JSON.stringify([r.team_slug, r.week_start
 const label = (r: ModelRow): string =>
   `${r.week_start} ${r.team_slug || "(no team)"} / ${r.tool_key || "(no tool)"} / ${r.refusal_owner || "(no owner)"}`;
 
-/** The model as `WEEK_BACKFILL` makes it, read inside a transaction that is always rolled back —
- *  so nothing this function runs survives it, whatever happened. */
-async function rebuilt(client: pg.Client): Promise<ModelRow[]> {
-  await client.query("begin");
-  try {
-    await client.query(WEEK_BACKFILL, [ZONE]);
-    return await modelRows(client);
-  } finally {
-    await client.query("rollback").catch(() => { /* the transaction is already gone */ });
+/** The model as it is held and as `WEEK_BACKFILL` makes it, both read from one snapshot inside a
+ *  transaction that is always rolled back — so a call landing between the reads is in neither, and
+ *  nothing this function runs survives it. A concurrent write to a bucket the backfill updates
+ *  fails the transaction as a serialization error; that is asked again, a few times. */
+async function heldAndRebuilt(client: pg.Client): Promise<{ held: ModelRow[]; said: ModelRow[] }> {
+  for (let attempt = 1; ; attempt++) {
+    await client.query("begin isolation level repeatable read");
+    try {
+      const held = await modelRows(client);
+      await client.query(WEEK_BACKFILL, [ZONE]);
+      return { held, said: await modelRows(client) };
+    } catch (err) {
+      if (attempt >= 5 || (err as { code?: string }).code !== "40001") throw err;
+    } finally {
+      await client.query("rollback").catch(() => { /* the transaction is already gone */ });
+    }
   }
 }
 
 /** `--check`: print every bucket that disagrees with the source, and answer whether any did. */
 async function check(client: pg.Client): Promise<boolean> {
-  const held = await modelRows(client);
-  const said = await rebuilt(client);
+  const { held, said } = await heldAndRebuilt(client);
   const have = new Map(held.map((r) => [keyOf(r), r]));
   const wrong: string[] = [];
-  // One direction only, and it is not an oversight: `rebuilt` reads the table back after the
+  // One direction only, and it is not an oversight: `said` is the table read back after the
   // upsert and the statement removes nothing, so every bucket `held` carries is a bucket `said`
   // carries — with the source's values where the source has calls for it, and untouched where it
   // does not. What this direction finds is a bucket the source has and the table lost, which is

@@ -40,6 +40,7 @@ import { renderEnvelope } from "./document-rules.js";
 import { DOCUMENT_EVENT_PREFIX } from "./attest.js";
 import { platformEvent } from "./indexing.js";
 import { db as platformDb } from "./platform-db.js";
+import { ZZ_TZ } from "./write-guards.js";
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════
  * The revision store: `doc`, `doc_revision` and `doc_link`.
@@ -104,11 +105,9 @@ type Loaded =
   | { ok: true; doc: DocIdentity; rev: RevisionRecord; text: string; history: RevisionRecord[] }
   | { ok: false; why: "no_database" | "missing" | "no_version" | "missing_legacy"; refusal: string };
 
-const TZ = (process.env.ZZ_TZ ?? "").trim() || "Asia/Singapore";
-
 /** The day a timestamp falls on, in the deployment's own timezone. */
 export const dayOf = (ts: string | null): string =>
-  ts ? new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(ts)) : "";
+  ts ? new Intl.DateTimeFormat("en-CA", { timeZone: ZZ_TZ }).format(new Date(ts)) : "";
 
 /** The pool, or null — a deployment with no database is an ordinary answer everywhere here. */
 function pool(): pg.Pool | null {
@@ -411,18 +410,21 @@ async function citationsOf(
  *  to Postgres to fail on a type. `document_approve`'s `on_behalf_of` is a person in words — "the
  *  person whose decision this is, when that is not the caller" — and an approver who writes a
  *  colleague's name rather than their address would otherwise seal nothing. Email first, because it
- *  is the identifier the platform stores; the display name is the fallback for exactly that case. */
+ *  is the identifier the platform stores; the display name is the fallback for exactly that case, and
+ *  only when exactly one active person carries it: a name two people share, or an empty one, names
+ *  nobody, and the caller refuses it rather than sealing to whichever row sorts first. */
 export async function principalId(
   p: Pick<pg.Pool, "query">, email: string,
 ): Promise<string | null> {
+  if (!email.trim()) return null;
   const { rows } = await p.query<{ id: string }>(
     "select id::text as id from zz.principal where lower(email) = lower($1) order by id limit 1",
     [email]);
   if (rows[0]?.id) return rows[0].id;
   const named = await p.query<{ id: string }>(
-    "select id::text as id from zz.principal where lower(display_name) = lower($1) order by id limit 1",
-    [email]);
-  return named.rows[0]?.id ?? null;
+    "select id::text as id from zz.principal where lower(display_name) = lower($1) and status = 'active' limit 2",
+    [email.trim()]);
+  return named.rows.length === 1 ? named.rows[0].id : null;
 }
 
 /** The platform's record of one act, as a `zz.event` row.

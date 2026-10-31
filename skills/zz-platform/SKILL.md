@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.90
+version: 3.91
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -32,7 +32,8 @@ read the table to know what you can do, read the prose to know what will stop yo
 |---|---|---|---|
 | nothing | `initiative_open(slug)`, or `initiative_open(slug, flow)` | open | you typed a date into the slug — the platform prepends its own |
 | open | `document_write`, `document_edit`, `document_approve`, `source_add` | open | see the document table |
-| open | `initiative_close(initiative, disposition)` | closed, with an `outcome` | a declared document is missing or its gate was never recorded |
+| open | `initiative_close(initiative, "finished")` | closed, `accepted` or `delivered` | a declared document is missing or its gate was never recorded |
+| open | `initiative_close(initiative, "abandoned")` | closed, `abandoned` | every gate the flow declares is approved and everything it requires to close exists — the record says the work was done |
 | closed | — | nothing reopens it | a closed initiative is a finished record, and a record's value is that it is not edited afterwards |
 
 `outcome` is exactly `delivered`, `accepted` or `abandoned`, and `initiative_close` derives it
@@ -79,7 +80,7 @@ and why. These are the situations it distinguishes:
 | an audit round reopened an agreement, or the stage's own round budget is spent with the work still unaudited or blocked | the stakeholder |
 | a finished close's handover is not written yet, or is written and awaiting its verdict — run `zz-handover`, then the person approves handover.md | you, then the person |
 | the chain's last document is ready and the initiative can be closed | you |
-| an outcome is recorded and nothing is owed: an abandoned close, or a finished one whose handover is approved | nobody |
+| an outcome is recorded and nothing is owed: an abandoned close, or a finished one whose handover is approved — if that handover proposes team nodes, the session that approved it loads `zz-handover` again to mint them | nobody |
 | nothing declared a chain: freeform, `next_move: null`, and `next_move_absent` says so | nobody |
 
 **You are told it without asking, too.** `document_write`, `document_edit`, `document_approve`
@@ -138,8 +139,8 @@ the timing; getting this wrong costs a plan, not a refusal.
 - The store is on the PLATFORM, not on any machine you can reach. The
   artifact tools are the only way in: `document_list`, `document_read`,
   `document_write`, `document_edit`. Paths are relative to your team's store, e.g.
-  `2026-08-19-sample-intake/spec.md`. Where your client also gives you a shell (Claude Code,
-  the one client this platform packages), it reaches your own disk and never the team's
+  `2026-08-19-sample-intake/spec.md`. Where your client also gives you a shell (Claude Code
+  or Codex, the clients this platform packages), it reaches your own disk and never the team's
   store, so the rule is the same one.
 - The store is shared with your whole team — you will see teammates'
   initiatives. **The platform scopes you to the team and no further.** It
@@ -261,9 +262,9 @@ the timing; getting this wrong costs a plan, not a refusal.
   `finished` records `accepted` with the closer as the acceptor. Name somebody ELSE
   in `accepted_by` when they are the one who said it; send `no_signoff_reason`, one
   line, when nobody accepted it at all, and the outcome is `delivered`. `abandoned`
-  is `abandoned`, and it may be recorded at any stage — the outcome goes on the
-  furthest document the work reached. You never write `outcome` or `closed_by`, and
-  writing either by hand is refused.
+  is `abandoned`, and it may be recorded at any stage before the work is complete — the
+  outcome goes on the furthest document the work reached. You never write `outcome` or
+  `closed_by`, and writing either by hand is refused.
 - **Every close names somebody, and the platform is what names them.** `closed_by`
   is stamped from your session on every close, whichever outcome it carries,
   because a close that names nobody reads exactly like one the agent decided for
@@ -581,39 +582,7 @@ restored from a backup. It is an operator's act and not a stage of anybody's flo
 the skill that teaches it. You will not need it in the middle of delivery work: every tool that
 writes a document indexes it in the same call.
 
-The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
-tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
-Most of them write. Six of those — `protocol_record`, `protocol_affirm`, `evaluator_qualify`,
-`finding_record`, `finding_decide` and `failure_discover` — record a fact or a decision and
-never a score. `evaluator_qualify` runs a protocol's own qualification policy over one
-evaluator version and records which of `unqualified` / `mechanically_qualified` /
-`operationally_qualified` / `human_calibrated` it earned, with the evidence behind it — a fact
-about whether an evaluator's answers can be trusted, never a mark against the plugin under
-evaluation. `failure_discover` mines one observation snapshot's own real evidence for candidate
-failure modes, before any protocol exists — it classifies who is at fault, never how good the
-plugin is. Three more — `evaluation_start`, `evaluation_assess` and `evaluation_score` — are
-EVALUATE's own protocol-driven run, and the only path on that door that scores a plugin:
-`evaluation_start` binds one protocol version to one plugin's own
-observation snapshot into an immutable run, `evaluation_assess` runs every measure the protocol's
-dimensions name against the `subject_ref`s you give it, and `evaluation_score` reduces what was
-assessed into one deterministic score (`scoreRun`, pure — no model call) with its status,
-guardrails and a bootstrap interval. Only `evaluation_assess`'s own `bounded_semantic`/
-`generative_critic` measures call a model; everything else is arithmetic over what the platform
-already recorded. Running them again to "check" appends to a stored series rather than re-reading one.
-`improvement_start` and `candidate_record` write
-IMPROVE's own ledger: `improvement_start` opens a durable improvement run against an
-`eval_run`'s plugin-owned findings, and `candidate_record` persists one proposed patch — its
-baseline, hypothesis, patch digest, complexity and touched owners — before anything about it
-executes. `candidate_validate` has the local `npm run candidate-build` build and gate it in a
-sandbox (recorded via `candidate_build_record`; zz-core never builds), and a passed build makes
-the candidate `valid` — releasable, with no replay and no proof. `improvement_stop` ends IMPROVE
-on an owned subject with nothing worth releasing. `release_prepare` is the promotion boundary itself: called on a `valid` candidate, it resolves required owners live from the base subject's own `release_owners`, records a `zz.release_attempt` (`prepared`), and writes `improvement.md` — the authority-bearing gate `release_apply` reads back. It applies no patch and touches no real repository; a third-party or not-yet-owned subject refuses `no_release_owners` and stays proposal-only. `release_apply` is the exactly-once compare-and-swap: it takes an advisory lock on the plugin, evaluates the prepared attempt against the plugin's CURRENTLY released subject, and on `apply` moves it to `applying` — guarded twice, by a compare-and-swap on that row and by migration 001's own partial unique index across every attempt the plugin's `release_prepare` calls ever wrote, so two concurrent calls produce at most one `applying`/`released` attempt. zz-core has no checkout of the plugin's repository, so applying the patch, running the gate and running the repository's release procedure happen in `zz-tool release-apply` (`packages/tools/src/release/apply.ts`), a CLI run by whoever has a shell, which reports back through `release_record` — `released` with the new subject version and release ref, or `failed` with the failing command's own output tail, leaving the repository at its pre-apply commit either way. `release_verify` is the automatic, no-gate check that follows a `released` attempt, on REAL use: once the released version has the protocol's `improvement.release.minPostReleaseRuns` real runs and an evaluation of them under the base's own protocol version, it compares that score with the base's — `rolled_back` on a failed critical guardrail or an overall more than `regressionBand` below the base, `established` otherwise, `not_established` when the base has no score to compare against. A `rolled_back` verdict applies nothing itself; it hands back a `rollback_plan` for `zz-tool release-rollback` (`packages/tools/src/release/rollback.ts`) to run the repository's own rollback procedure against, reporting back through `release_record` (`status: rolled_back`) — the same server-decides/CLI-executes split, one more time — so the prior subject is current again and the candidate is marked `rolled_back`. `proposal_prepare` is the path a non-owned or not-yet-owned subject takes instead of `release_prepare` — the tool `release_prepare`'s own `no_release_owners` refusal points callers toward: it refuses outright when the base subject DOES record `release_owners` ("use `release_prepare`, not `proposal_prepare`"), and otherwise writes `proposal.md`, ungated, always regenerated fresh from the improvement_run's current findings and candidates — built patches with their build result where a source existed to check out and build one against, findings-only behavioural proposals where it did not. It applies no patch and touches no real repository, on any subject, ever.
-
-**The judge is not the agent.** `evaluation_assess` takes an `eval_run_id` and `subject_ref`s and
-nothing else: never a measure, an artifact's text or a model. The measures come from the bound
-protocol version, each ref is resolved server-side, and a model-backed measure asks the evaluator
-the protocol binds, recorded on every assessment. That is what makes one run comparable with the
-next — a judge that varied with the conversation would make every number incomparable.
+The `/eval/mcp` tools are taught by the zz-plugin-eval skills, which own what each one does.
 
 - **A tool NOT on that list belongs to another plugin, whatever it is called.** The test is
   which server it comes from, never what the verb sounds like: zz-core's `document_approve`
@@ -673,8 +642,9 @@ against the platform's:
   catalog's packages, platform-owned ones ahead of every other. The first match answers, and
   the order is the same in every container.
 - **Structure was never a team's to change.** Which documents a flow has, which carry gates,
-  and which headings they need are `flow.json`'s. That has not moved, and an agent that writes
-  different headings still meets the section check at the write.
+  and which headings they need are `flow.json`'s, and an agent that writes different headings
+  still meets the section check: at the write for an ungated document, at the approval for a
+  gated one.
 - **What only your team knows goes on an initiative.** The vendors you may not use, the
   question your director always asks, the system that must never be touched on a Friday — those
   are facts about a piece of work, and a document is where the next reader, and the gates, find
@@ -693,7 +663,7 @@ through documents**, which across a quarter is the difference between asking and
 not asking.
 
 The kinds are checked. A free tag drifts the moment two people write it — `casebox`,
-`CaseBox`, `casebox` — and every variant quietly drops nodes from the answer
+`plugin:casebox` — and every variant quietly drops nodes from the answer
 without dropping them from the store: **the search says nothing is known while the
 knowledge sits right there.**
 

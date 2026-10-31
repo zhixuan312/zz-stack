@@ -98,11 +98,12 @@ export async function triggersFor(
   p: pg.Pool, pluginId: string, plugin: string, latest: LatestProtocolVersion,
 ): Promise<Trigger[]> {
   const fired: Trigger[] = [];
-  const entryPurpose = entryOf(plugin)?.manifest.purpose;
+  const entry = entryOf(plugin);
+  const entryPurpose = entry?.manifest.purpose;
   if (entryPurpose && entryPurpose !== latest.purpose) fired.push("purpose_changed");
   if (await newRecurringFailure(p, pluginId)) fired.push("new_recurring_failure");
   if (await evaluatorDrift(p, latest.id)) fired.push("evaluator_drift");
-  const named = toolsNamedBy(plugin);
+  const named = toolsNamedBy(plugin, entry);
   const surfaces = new Set(latest.observable_surfaces ?? []);
   if (named.some((n) => !surfaces.has(n))) fired.push("new_evidence_surface");
   return fired;

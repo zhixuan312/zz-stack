@@ -185,11 +185,7 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       },
     ],
     checks: [
-      // Validated, not `NOT VALID`: the carry left 336 rows that claimed `approved` with no
-      // approved revision — the frozen copies it filed twice — and `002_store_carry_repair.sql`
-      // deletes exactly those (guarded on the duplication still holding) and then validates this
-      // constraint. A deployment that has run it enforces the rule on every row; a fresh install
-      // enforces it from the start, because 001_init.sql creates the table empty.
+      // Validated, not `NOT VALID`: every row holds it.
       "CHECK ((((approved_revision IS NULL) OR (approved_revision <= current_revision)) AND ((status = 'approved'::text) = ((approved_revision IS NOT NULL) AND (approved_revision = current_revision)))))",
       // `current_version` is the `version` of the row `current_revision` names, so the two are null
       // together; `scripts/rehearse/invariants.ts` checks the value, this checks the shape.
@@ -306,8 +302,7 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         null,
       ],
       // The envelope's open payload: `stakeholder`, and every field a FLOW declares — an unbounded
-      // set by construction, which is why it is a map rather than more columns. Last in ordinal
-      // order because `004_envelope_fields.sql` adds it, and an `ADD COLUMN` appends.
+      // set by construction, which is why it is a map rather than more columns.
       //
       // Null means the revision carries no field outside the columns, which is the common case. The
       // writer computes the residual against the columns' own keys and the reader prefers the
@@ -473,7 +468,6 @@ export const DOCUMENTS: Record<string, TableTarget> = {
     uniques: [],
     // A document's links go with the document, as its revisions do: both are children of `zz.doc`,
     // and a link naming a revision the cascade has just removed would point at nothing.
-    // 009_doc_link_cascade.sql is the migration that makes the live catalog agree with this.
     foreignKeys: [
       {
         columns: [

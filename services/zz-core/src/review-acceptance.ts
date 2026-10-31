@@ -42,7 +42,7 @@ import type { DocRow } from "./indexing.js";
 import { names, reviewMove, reviewRounds, stakeholderSources, unbackloggedFindings,
          type RoundAssessments } from "./review-rounds.js";
 import { loadDocument } from "./versions.js";
-import { assessFamily, questionDigest, type Assessment } from "./semantic.js";
+import { assessFamily, questionDigest, standingReading, type Assessment } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
 
 const AC_STATUSES = ["established", "not_established", "blocked", "deferred"] as const;
@@ -406,7 +406,7 @@ export async function acceptanceApprovalRefusal(
     const { digest, bound } = questionOf(byCriterion.get(r.id)!, r.evidence);
     if (bound.length) onPlan.push(r.id);
     const history = cache[r.id] ?? [];
-    const now = history.find((c) => c.digest === digest);
+    const now = standingReading(history.filter((c) => c.digest === digest));
     if (!now || now.reading === "unavailable") { unavailable.push(r.id); continue; }
     if (now.reading === "no") {
       bad.push(`${r.id}: evidence_relation reads its evidence as not supporting the criterion ` +

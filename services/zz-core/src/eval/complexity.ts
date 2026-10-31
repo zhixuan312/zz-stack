@@ -55,45 +55,69 @@ export interface PatchStats {
 
 const DIFF_GIT_RE = /^diff --git a\/(.+) b\/(.+)$/;
 
-/** A standard `git diff`/unified-diff body: one `diff --git` header per file, an optional `new
- *  file mode`/`deleted file mode` line naming whether the whole file appeared or vanished, an
- *  `@@ ... @@` hunk header opening the body, then `+`/`-` body lines. Tolerant of a diff with no
- *  `diff --git` headers at all (a bare hunk against one implied file) by falling back to
- *  counting lines with no file entry — `complexityDelta` still gets a lines_added/lines_removed
- *  it can use even though `files` comes back empty in that case.
+/** A path as a `---`/`+++` header names it: the timestamp `diff -u` appends after a tab dropped,
+ *  and the `a/`/`b/` prefix stripped; null for `/dev/null`. */
+function headerPath(line: string): string | null {
+  const path = line.slice(4).split("\t")[0].trim();
+  return path === "/dev/null" ? null : path.replace(/^[ab]\//, "");
+}
+
+/** A unified-diff body: `git diff`'s, one `diff --git` header per file with an optional `new
+ *  file mode`/`deleted file mode` line, or `diff -ruN`'s, where a file opens with its `---`/`+++`
+ *  pair alone and `/dev/null` on one side says it appeared or vanished. Then `@@ ... @@` hunks
+ *  and their `+`/`-` body lines.
  *
- *  `+`/`-` are counted only INSIDE a hunk (after its own `@@` line, reset false at every `diff
- *  --git` header) rather than by excluding the `+++`/`---` path-header lines by their own
- *  prefix: a real body line can itself start with `---` (a YAML front-matter delimiter — every
- *  `SKILL.md` in this repository has one) or `++`, and excluding by prefix alone silently drops
- *  it from the count `complexityDelta` reduces to one number. The `+++`/`---` path headers
- *  always precede the first `@@` of their own file, so gating on "inside a hunk" excludes them
- *  for free and never misreads a body line that merely looks like one. */
+ *  `+`/`-` are counted only inside a hunk, never by excluding `+++`/`---` by prefix: a real body
+ *  line can itself start with `---` (a YAML front-matter delimiter — every `SKILL.md` in this
+ *  repository has one) or `++`. A hunk ends at the next file's header — a `diff --git` line, or a
+ *  `--- ` line directly followed by a `+++ ` line, which in a `diff -ruN` patch comes straight
+ *  after the previous file's last hunk. A hunk's own `@@` sizes are not trusted to end it: a
+ *  hand-written patch miscounts them more often than a body holds a removed `-- x` directly
+ *  followed by an added `++ y`. */
 export function parseUnifiedDiff(diff: string): PatchStats {
   let lines_added = 0;
   let lines_removed = 0;
   const files: PatchFile[] = [];
   let currentPath: string | null = null;
   let currentChange: FileChange = "modified";
+  /** The file was named by a `diff --git` header, so its `---`/`+++` pair names nothing new. */
+  let fromGitHeader = false;
   let inHunk = false;
 
   const flush = (): void => {
     if (currentPath) files.push({ path: currentPath, change: currentChange });
+    currentPath = null;
   };
 
-  for (const line of diff.split("\n")) {
+  const lines = diff.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     const header = DIFF_GIT_RE.exec(line);
     if (header) {
       flush();
       currentPath = header[2];
       currentChange = "modified";
+      fromGitHeader = true;
       inHunk = false;
       continue;
     }
-    if (line.startsWith("new file mode")) { currentChange = "added"; continue; }
-    if (line.startsWith("deleted file mode")) { currentChange = "removed"; continue; }
+    if (line.startsWith("--- ") && lines[i + 1]?.startsWith("+++ ")) {
+      inHunk = false;
+      i += 1;
+      if (fromGitHeader) { fromGitHeader = false; continue; }
+      flush();
+      const oldPath = headerPath(line);
+      const newPath = headerPath(lines[i]);
+      currentPath = newPath ?? oldPath;
+      currentChange = oldPath === null ? "added" : newPath === null ? "removed" : "modified";
+      continue;
+    }
     if (line.startsWith("@@")) { inHunk = true; continue; }
-    if (!inHunk) continue; // path headers, index/mode lines — never body lines
+    if (!inHunk) {
+      if (line.startsWith("new file mode")) currentChange = "added";
+      else if (line.startsWith("deleted file mode")) currentChange = "removed";
+      continue; // index/mode lines — never body lines
+    }
     if (line.startsWith("+")) { lines_added += 1; continue; }
     if (line.startsWith("-")) { lines_removed += 1; continue; }
   }

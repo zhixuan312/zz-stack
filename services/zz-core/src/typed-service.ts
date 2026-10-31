@@ -154,9 +154,10 @@ export type ModelCallRunner = Pick<pg.Pool, "query">;
 /** What one answered call hands back: the answers, and the call that produced them.
  *
  *  `model_call_id` is null exactly when no row could be written — this deployment has no
- *  database, or the insert itself failed — because bookkeeping never costs an answer. A caller
- *  that records the pairing (`semantic.ts` writes it as `assessment.model_call_id`) reads that
- *  null and writes no pairing, rather than one naming a row that was never inserted. */
+ *  database, or the insert itself failed. This file still hands the answer back; what the null
+ *  costs is the caller's call. `semantic.ts`, which records the pairing as
+ *  `assessment.model_call_id`, refuses to write an assessment that cannot name its call, so for
+ *  it the answer is lost with the row and the call that asked fails by name. */
 export interface TypedCall {
   model_call_id: number | null;
   /** What this file asked for, in the words the row carries. */
@@ -315,9 +316,8 @@ interface TypedUsage { input_tokens: number | null; output_tokens: number | null
  *  the phase-2 migration, which also dropped the judge's `confidence` mark — what a typed
  *  call spends is what this row records now, and the answer's own shape carries what it was worth.
  *
- *  Never throws: this is bookkeeping beside an answer already in hand, and a database hiccup
- *  must not turn a successful judgement into a lost one. It answers with null instead, and the
- *  caller writes no pairing rather than one naming a row that was never inserted. */
+ *  Never throws: it answers with null instead, and the caller decides what an answer with no
+ *  recorded call is worth (see `TypedCall.model_call_id`). */
 async function record(
   runner: ModelCallRunner | undefined, attempts: number, durationMs: number, ok: boolean,
   error: string | null, usage?: TypedUsage,

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
-const { EvaluationProtocol } = await load("packages/contracts/dist/eval-protocol.js");
+const { EvaluationProtocol } = await load("packages/contracts/dist/index.js");
 const { gatherCountedEvidence } = await load("services/zz-core/dist/eval/qualify-evidence.js");
 const { qualificationState, resolveThresholds } = await load("services/zz-core/dist/eval/qualify-ladder.js");
 
@@ -123,6 +123,29 @@ for (const m of semantic) {
   const { counts } = await gatherCountedEvidence({ anchors: [], ask: async () => { asked += 1; return noul("yes"); } });
   assert.equal(asked, 0);
   assert.deepEqual(qualificationState({ ...counts, labels: null }, thresholds), { state: "unqualified", reason: "no_anchors" });
+}
+
+// 8. The asks are independent model calls, made several at a time; the results keep the order
+// the texts are declared in, each text's three asks together, whatever order the answers arrive.
+{
+  const anchors = semantic[0].definition.qualification!.anchors;
+  let inFlight = 0;
+  let most = 0;
+  const calls: number[] = [];
+  const { results } = await gatherCountedEvidence({
+    anchors, ask: async (text: string, index: number) => {
+      calls.push(index);
+      inFlight += 1; most = Math.max(most, inFlight);
+      await new Promise((r) => setTimeout(r, 30 - (index % 3) * 10));
+      inFlight -= 1;
+      return truthful(text);
+    },
+  });
+  assert.ok(most > 1, `the ${anchors.length * 3} asks ran one at a time`);
+  assert.deepEqual(results.map((r: { id: string }) => r.id), anchors.flatMap((a) => [a.id, a.id, a.id]),
+    "the results are not in declared order");
+  assert.deepEqual([...calls].sort((a, b) => a - b), anchors.flatMap((_, i) => [3 * i, 3 * i + 1, 3 * i + 2]),
+    "each ask is handed its own index");
 }
 
 console.log("ok eval-qualify-anchors");

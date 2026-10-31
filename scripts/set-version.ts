@@ -32,6 +32,11 @@ if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
 
 const MANIFESTS = manifestPaths(repoRoot);
 
+/* DELIBERATE: every new content is computed and validated before any file is written. A bump
+ * that fails on the third location after writing the first two is the half-done state this
+ * script exists to prevent, and the next run sees nothing left to change. */
+const writes: { path: string; next: string; said: string }[] = [];
+
 let changed = 0;
 for (const rel of MANIFESTS) {
   const path = join(repoRoot, rel);
@@ -45,8 +50,7 @@ for (const rel of MANIFESTS) {
     process.exit(1);
   }
   if (next !== raw) changed++;
-  writeFileSync(path, next);
-  console.log(`  ${rel}: ${current} -> ${version}`);
+  writes.push({ path, next, said: `  ${rel}: ${current} -> ${version}` });
 }
 
 /* The lockfile carries the version many times: package-lock.json records one for the root and for
@@ -76,8 +80,7 @@ for (const [where, entry] of Object.entries(lock.packages ?? {})) {
   if (where !== "" && !MANIFESTS.includes(`${where}/package.json`)) continue;
   bump(entry);
 }
-writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
-console.log(`  package-lock.json: ${lockMoved} version(s) -> ${version}`);
+writes.push({ path: lockPath, next: `${JSON.stringify(lock, null, 2)}\n`, said: `  package-lock.json: ${lockMoved} version(s) -> ${version}` });
 
 /* The compose file carries the version as a literal, because it and the images it names are one
  * release. It has to move with the manifests or the bundle ships pointing at the previous
@@ -89,12 +92,15 @@ const bumped = compose.replace(
   `$1${version}$2`,
 );
 if (bumped === compose && !compose.includes(`ZZ_VERSION:-${version}}`)) {
-  console.error("error: could not find the ZZ_VERSION literal in deploy/docker-compose.yml");
+  console.error("error: could not find the ZZ_VERSION literal in deploy/docker-compose.yml — nothing was written");
   process.exit(1);
 }
-console.log(`  deploy/docker-compose.yml: zz-stack images -> ${version}`);
+writes.push({ path: composePath, next: bumped, said: `  deploy/docker-compose.yml: zz-stack images -> ${version}` });
 
-writeFileSync(composePath, bumped);
+for (const w of writes) {
+  writeFileSync(w.path, w.next);
+  console.log(w.said);
+}
 
 console.log(
   `\nAll ${MANIFESTS.length} manifests, the lockfile and the compose file at ${version} ` +

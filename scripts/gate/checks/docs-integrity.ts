@@ -12,17 +12,19 @@ import { gateCheckNames, gateOwnSource, root, sourceFiles, trackedFiles } from "
 import { check, note } from "../run.ts";
 import { flows, ourDocs, toolEntryPoints } from "../facts.ts";
 
+/** The README's map: the fenced block found by what it contains rather than by where it sits — a
+ *  quickstart fence above it would otherwise be read as the directory tree. */
+const fenceOf = (md: string): string => (md.match(/```[a-z]*\n([\s\S]*?)```/g) ?? [])
+  .map((b: string) => b.replace(/^```[a-z]*\n/, "").replace(/```$/, ""))
+  .find((b) => /^packages\//m.test(b)) ?? "";
+
 check("the README's map names every package, flow and script, and no others", () => {
   // The release command makes this map a release obligation, and it is checked both ways: a
   // name missing tells a newcomer a flow does not exist, a name left behind sends them to a
   // script that does not.
   const readme = readFileSync(join(root, "README.md"), "utf8");
-  // The map is the fenced block, found by what it contains rather than by where it sits — a
-  // quickstart fence above it would otherwise be read as the directory tree. Everything below
-  // reads that fence, not the prose around it.
-  const fenceOf = (md: string): string => (md.match(/```[a-z]*\n([\s\S]*?)```/g) ?? [])
-    .map((b: string) => b.replace(/^```[a-z]*\n/, "").replace(/```$/, ""))
-    .find((b) => /^packages\//m.test(b)) ?? "";
+  // Everything below reads the map's fence, not the prose around it.
+  const fence = fenceOf(readme);
   const bad: string[] = [];
 
   // A package is a directory with a package.json, exactly as the catalog loop below asks for
@@ -30,17 +32,16 @@ check("the README's map names every package, flow and script, and no others", ()
   // README.
   for (const p of readdirSync(join(root, "packages"), { withFileTypes: true })) {
     if (!p.isDirectory() || !existsSync(join(root, "packages", p.name, "package.json"))) continue;
-    if (!fenceOf(readme).includes(`packages/${p.name}/`)) bad.push(`packages/${p.name} is not in the map`);
+    if (!fence.includes(`packages/${p.name}/`)) bad.push(`packages/${p.name} is not in the map`);
   }
   for (const f of flows) {
-    if (!fenceOf(readme).includes(`${f.owner}/${f.flow}`)) {
+    if (!fence.includes(`${f.owner}/${f.flow}`)) {
       bad.push(`catalog/${f.owner}/${f.flow} is not in the map`);
     }
   }
 
   // Searched inside the map's `scripts/` paragraph, not the whole README: a substring match
   // over the file passes on prose that happens to contain the stem.
-  const fence = fenceOf(readme);
   const scriptsPara = fence.slice(fence.indexOf("\nscripts/") + 1);
   // What the repository counts as part of itself — the same question the packages loop above
   // answers with `package.json`. A raw readdir here would demand `.DS_Store` of the README.
@@ -166,10 +167,7 @@ check("the README describes the tree it ships with", () => {
 
   // Skill counts the README states per flow, read from the flow's own entry in the map and
   // bounded by the next one, so a count that wraps onto the following line is still checked.
-  // The map fence is found by content — see fenceOf above.
-  const fence = (readme.match(/```[a-z]*\n([\s\S]*?)```/g) ?? [])
-    .map((b) => b.replace(/^```[a-z]*\n/, "").replace(/```$/, ""))
-    .find((b) => /^packages\//m.test(b)) ?? "";
+  const fence = fenceOf(readme);
   const starts = flows
     .map((f) => ({ f, at: fence.indexOf(`${f.owner}/${f.flow}`) }))
     .filter((e) => e.at >= 0).sort((a, b) => a.at - b.at);

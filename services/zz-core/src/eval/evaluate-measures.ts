@@ -223,7 +223,9 @@ function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): Meas
 
 /** What one asked answer reduces to in `[0, 1]`. A `noul`'s own probability IS already the
  *  probability of `yes` (`semantic.ts`'s `readingOf` only thresholds it into a reading; the
- *  number itself is never rescaled), so it is the value directly. A `choice`/`score`'s
+ *  number itself is never rescaled), so it is the value directly — except in the unclear band,
+ *  where the evaluator said neither yes nor no and the answer is excluded, as an unclear reading
+ *  is everywhere else on the platform; `excluded_reason` names it with its probability. A `choice`/`score`'s
  *  distribution is read against `definition.qualification.positive` when the measure names
  *  one — the probability mass on that answer IS the value. With no
  *  named vocabulary, the distribution's keys are read as an ordered scale (first = worst, last =
@@ -249,6 +251,7 @@ function valueFromAnswer(r: Omit<EvaluatorAssessmentResult, "assessment_id">, de
 async function modelBackedAnswer(
   measure: MeasureRow, subjectText: string, context: string | undefined, principal: string,
   qualificationOf: (evaluatorVersionId: string) => Promise<{ id: string; state: string } | null>,
+  slot: Slot,
 ): Promise<AnsweredMeasure> {
   if (!measure.evaluator_version_id) {
     return {
@@ -272,13 +275,16 @@ async function modelBackedAnswer(
   // substantive", "nothing points elsewhere for its meaning") is asked of each part the judge can
   // read whole, and the document answers with its weakest part. Asked once, a long spec was
   // judged on the first 24,000 characters of its 50-180KB.
+  // The parts are independent calls, each with its own 100-second budget, inside a request
+  // severed at about two minutes: all of them are asked at once, through the caller's `slot`.
   const parts = measure.definition.wholeDocument === true ? documentParts(subjectText, PART_CHARS) : [subjectText];
+  const evaluatorVersionId = measure.evaluator_version_id;
+  const answers = await Promise.all(parts.map((part) => slot(() => askEvaluatorQuestion({
+    evaluator_version_id: evaluatorVersionId, subject_text: part, context, askedBy: principal,
+  }))));
   let worst: { asked: AskedEvaluatorAnswer; raw: number | null } | null = null;
   const partValues: (number | null)[] = [];
-  for (const part of parts) {
-    const asked = await askEvaluatorQuestion({
-      evaluator_version_id: measure.evaluator_version_id, subject_text: part, context, askedBy: principal,
-    });
+  for (const asked of answers) {
     const raw = valueFromAnswer(asked.result, measure.definition);
     partValues.push(raw);
     if (!worst || (raw !== null && (worst.raw === null || raw < worst.raw))) worst = { asked, raw };
@@ -288,7 +294,11 @@ async function modelBackedAnswer(
   return {
     value: raw,
     excluded: raw === null,
-    excluded_reason: raw === null ? "the evaluator returned no comparable answer" : null,
+    excluded_reason: raw === null
+      ? result.answer_kind === "noul" && result.reading === "unclear" && result.probability !== null
+        ? `the evaluator's answer was unclear (p=${result.probability.toFixed(2)})`
+        : "the evaluator returned no comparable answer"
+      : null,
     evaluator_version_id: measure.evaluator_version_id, assessment_id: null,
     qualification_id: qual.id, qualification_state: qual.state,
     // `model_call_id` is the call this value came from — the `zz.model_call` row the same call
@@ -366,6 +376,10 @@ export async function answerMeasure(opts: {
    *  split `semantic.ts`'s own state string keeps is still visible to whatever reads the raw
    *  assessment back later. */
   context?: string;
+  /** Where each model call waits its turn. A caller answering several measures at once passes one
+   *  `callSlots` for all of them, so the whole request holds no more than its width; omitted, this
+   *  measure's own parts are held to `MODEL_CALL_WIDTH`. */
+  slot?: Slot;
 }): Promise<AnsweredMeasure> {
   const { measure, snapshot, subjectRef, principal, qualificationOf, subjectText, context } = opts;
   if (measure.evaluator_type === "deterministic" || measure.evaluator_type === "outcome") {
@@ -379,7 +393,32 @@ export async function answerMeasure(opts: {
     };
   }
   const text = subjectText ?? `Measure "${measure.key}" against subject_ref "${subjectRef}".`;
-  return modelBackedAnswer(measure, text, context, principal, qualificationOf);
+  return modelBackedAnswer(measure, text, context, principal, qualificationOf, opts.slot ?? callSlots(MODEL_CALL_WIDTH));
+}
+
+/** How many typed-service calls one request holds at once — eight, as `spec-gate.ts` and
+ *  `review-acceptance.ts` ask theirs. */
+export const MODEL_CALL_WIDTH = 8;
+
+/** Runs `fn` when one of the slots is free. */
+export type Slot = <T>(fn: () => Promise<T>) => Promise<T>;
+
+/** `width` slots, handed out in the order they were asked for. A finished call hands its slot
+ *  straight to the next waiter, so a newcomer can never take it in between. */
+export function callSlots(width: number): Slot {
+  let busy = 0;
+  const waiting: (() => void)[] = [];
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (busy < width) busy += 1;
+    else await new Promise<void>((resolve) => waiting.push(resolve));
+    try {
+      return await fn();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else busy -= 1;
+    }
+  };
 }
 
 /** `evaluation_score`'s reduction of every stored `zz.eval_assessment.answer` for one measure,

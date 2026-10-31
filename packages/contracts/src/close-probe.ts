@@ -1,8 +1,8 @@
 /**
  * Planting each fault close.ts claims to prevent, and watching the prevention hold.
  *
- * Every negative answer that module gives — `acceptedByHand`, `ok`, `proposedIsEnforced`,
- * `observedImpact` — is a refusal, and a flag hard-wired to the comfortable answer passes every
+ * Every negative answer that module gives — `acceptedByHand`, `ok`, a stage left
+ * `not_established` — is a refusal, and a flag hard-wired to the comfortable answer passes every
  * test that only asks for the comfortable answer. So each row runs its detector twice: once on
  * a subject where it must stay silent, and once with a fault planted, where it must fire. A row
  * whose `fires` is false is a finding about close.ts, not about its subject.
@@ -12,22 +12,18 @@
  *
  * Where a caller can reach the flattering answer by what they pass, the fault is planted in the
  * call: an outcome supplied by hand, a stage handed a state it did not earn, a second closing
- * record. Where no input can reach it — nothing makes `proposedIsEnforced` true or turns a
- * forecast into a measurement, because those follow from which builder the value was routed
- * through — the fault is planted as a wrong implementation, written out here in full.
+ * record. Where no input can reach it — a stage's state is computed from its evidence, so nothing
+ * a caller passes sets it — the fault is planted as a wrong implementation, written out here in
+ * full.
  * DELIBERATE: that implementation is reimplemented rather than derived from the mechanism, so a
  * probe cannot go green by sharing the assumption it is testing.
  *
- * Nothing here is a measurement. Every count, reason and acceptor below is invented.
+ * Nothing here is a measurement. Every reason and acceptor below is invented.
  */
 import {
   closeInitiative,
   deriveOutcome,
-  handoverClaims,
-  type Claim,
-  type ClaimBasis,
   type CloseRequest,
-  type HandoverDeclaration,
   type StageEvidence,
   type StageRecord,
 } from "./close.js";
@@ -81,41 +77,6 @@ function faultedStageRecord(record: StageEvidence & { readonly state?: string })
     state: (record.state === "established" ? "established" : "not_established"),
     evidence: Object.freeze([...(record.evidence ?? [])]),
   });
-}
-
-/**
- * The wrong claim basis: a declared count routed through the reader's door — the count the
- * author typed, stamped with the name of something that never read it back.
- */
-function faultedProposedClaim(declaration: HandoverDeclaration): Claim {
-  const basis: ClaimBasis = "read-back";
-  return Object.freeze({ field: "proposed_team_nodes", value: String(declaration.proposed_team_nodes), basis });
-}
-
-/**
- * The narrow reading under a general name.
- *
- * `selfReported` answering "is the proposed count the author's word", under a name promising
- * "does this handover assert anything nobody read back", reports `false` for every call that
- * declared no count while self-reporting everything it had — and passes the declared check,
- * which only asks about a declaration that has a count.
- */
-function faultedSelfReported(claims: readonly Claim[]): boolean {
-  return claims.find((c) => c.field === "proposed_team_nodes")?.basis === "self-reported";
-}
-
-/**
- * The second predicate: the forecast read off the declaration again, beside the claim that
- * already holds it. Two readings of one fact, free to disagree — here over whitespace, which
- * the claim builder discards and this does not.
- */
-function faultedForecast(declaration: HandoverDeclaration): string | null {
-  return declaration.expectedImpact ?? null;
-}
-
-/** The wrong impact: the forecast, relabelled. Nobody measured anything. */
-function faultedObservedImpact(declaration: HandoverDeclaration): string | undefined {
-  return declaration.expectedImpact;
 }
 
 // The rows
@@ -250,94 +211,7 @@ function stageRows(): readonly CloseProbeRow[] {
   ];
 }
 
-function handoverRows(): readonly CloseProbeRow[] {
-  const declaration: HandoverDeclaration = { proposed_team_nodes: "2", mintedTeamNodes: 0 };
-  const h = handoverClaims(declaration);
-  const measured = handoverClaims({ expectedImpact: "fewer repeated questions", impactReading: "3 fewer", impactReadBy: "the console" });
-  const forecastOnly = handoverClaims({ expectedImpact: "fewer repeated questions" });
-  const readingWithNoReader = handoverClaims({ impactReading: "3 fewer" });
-  const mintedRead = handoverClaims({ mintedTeamNodes: 0, mintedReadBy: "the minting record" });
-
-  const faultedProposed = faultedProposedClaim(declaration);
-  const faultedImpact = faultedObservedImpact({ expectedImpact: "fewer repeated questions" });
-
-  // Two declarations that carry no proposed count — the shape the declared check never asks
-  // about.
-  const nothingAtAll = handoverClaims({});
-  const blankForecast = handoverClaims({ expectedImpact: "   " });
-  const readBackOnly = handoverClaims({ mintedTeamNodes: 0, mintedReadBy: "the minting record" });
-  // A count the author proposed, alongside a different count something really did read back.
-  // This is the declaration that tells "the proposed count is enforced" apart from "something
-  // around here was read back".
-  const proposedBesideARealReading = handoverClaims({
-    proposed_team_nodes: "2",
-    mintedTeamNodes: 1,
-    mintedReadBy: "the minting record",
-  });
-
-  return [
-    row("a self-reported count presented as enforcement",
-      [h.selfReported && !h.proposedIsEnforced
-        && h.statement.includes("self-reported and not read back: proposed_team_nodes")
-        && !forecastOnly.proposedIsEnforced
-        && forecastOnly.claims.every((c) => c.field !== "proposed_team_nodes")
-        && !proposedBesideARealReading.proposedIsEnforced
-        && proposedBesideARealReading.claims.some((c) => c.basis === "read-back"),
-        "the count is carried, labelled as the author's word, and named as unverified in the " +
-        "sentence the handover leads with; a handover that declares no count has nothing to " +
-        "present as enforced; and a count sitting beside a reading something really did take " +
-        "is still not enforced, because that reading was of a different fact"],
-      [faultedProposed.basis === "read-back"
-        && h.claims.find((c) => c.field === "proposed_team_nodes")?.basis === "self-reported",
-        "routing that same count through the reader's door stamps it read-back, where the " +
-        "real routing cannot: nothing reads it back, so there is no input that reaches this"]),
-    row("expected impact recorded as observed impact",
-      [measured.observedImpact === "3 fewer" && measured.expectedImpact === "fewer repeated questions",
-        "a real measurement is recorded as observed, and the forecast is kept beside it " +
-        "rather than replaced by it"],
-      [faultedImpact === "fewer repeated questions" && forecastOnly.observedImpact === undefined
-        && forecastOnly.expectedImpact === "fewer repeated questions",
-        "an implementation that reads the forecast produces an observation nobody took, " +
-        "where the real one leaves observed impact absent"]),
-    row("a handover that self-reports everything it has, announcing that it self-reports nothing",
-      [forecastOnly.selfReported
-        && forecastOnly.claims.every((c) => c.basis === "self-reported")
-        && !readBackOnly.selfReported && readBackOnly.claims.length === 1
-        && !nothingAtAll.selfReported && nothingAtAll.claims.length === 0
-        && h.selfReported,
-        "the flag answers the question its name asks, on every input: a handover carrying " +
-        "only a forecast says it self-reports something, one whose single claim was read " +
-        "back says it does not, and one that claims nothing asserts nothing"],
-      [!faultedSelfReported(forecastOnly.claims)
-        && forecastOnly.claims.every((c) => c.basis === "self-reported")
-        && faultedSelfReported(h.claims),
-        "narrowed to the proposed count's basis, the same handover full of the author's own " +
-        "words announces that it self-reports nothing — and stays green against a declared " +
-        "check that only ever hands it a declaration with a count in it"]),
-    row("a forecast field and the forecast claim disagreeing",
-      [forecastOnly.expectedImpact === "fewer repeated questions"
-        && forecastOnly.expectedImpact
-          === (forecastOnly.claims.find((c) => c.field === "expected_impact")?.value ?? null)
-        && blankForecast.expectedImpact === null
-        && blankForecast.claims.length === 0,
-        "the field is the claim's own value, so whitespace is a forecast in neither or both: " +
-        "here, in neither"],
-      [faultedForecast({ expectedImpact: "   " }) === "   "
-        && blankForecast.expectedImpact === null && blankForecast.claims.length === 0,
-        "a second reading of the declaration reports a forecast the claims do not hold, which " +
-        "is a record disagreeing with itself in the one place a reader checks"]),
-    row("a value with nothing named as having read it, stamped read-back",
-      [mintedRead.claims.find((c) => c.field === "minted_team_nodes")?.basis === "read-back"
-        && mintedRead.statement.includes("read back: minted_team_nodes"),
-        "a count with a named reader is read-back, and the statement says which claim that was"],
-      [h.claims.find((c) => c.field === "minted_team_nodes")?.basis === "self-reported"
-        && readingWithNoReader.observedImpact === undefined,
-        "the same count with no reader named degrades to the author's word, and a " +
-        "measurement with nobody behind it never becomes an observation"]),
-  ];
-}
-
 /** Every refusal in close.ts, watched twice. */
 export function closeProbe(): readonly CloseProbeRow[] {
-  return Object.freeze([...outcomeRows(), ...refusalRows(), ...stageRows(), ...handoverRows()]);
+  return Object.freeze([...outcomeRows(), ...refusalRows(), ...stageRows()]);
 }

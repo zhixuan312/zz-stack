@@ -1,36 +1,22 @@
 /**
- * A generation-aware rederivation pass over rows that already exist in
- * `zz.doc`/`zz.knowledge_node`. `body_tsv` and `analyzer_version` are the only columns it may
- * touch; content, revisions, approvals and historical citations stay as they are, and a row's
- * `content_hash` never gates it. An analyzer generation bump changes what a row's vector should
- * be while its content stays byte-identical.
- * COUPLED: `index.ts`'s `reindexTeam`/`reindexAllTeams` are the per-team entry point over the
- * same two columns; both derive a row's vector through `rebuildRowVector` below.
+ * The generation-aware rederivation's planning and its record, over rows that already exist in
+ * `zz.doc`/`zz.knowledge_node`. `body_tsv` and `analyzer_version` are the only columns a
+ * rederivation may touch; content, revisions, approvals and historical citations stay as they are,
+ * and a row's `content_hash` never gates it. An analyzer generation bump changes what a row's
+ * vector should be while its content stays byte-identical.
  *
- * Generation, not content, is the cursor. A row's `analyzer_version` column says which
- * analyzer last wrote its `body_tsv`, and is `null` for every row older than the column. A
- * row already at the target generation is left untouched; every other row is rederived.
+ * Generation, not content, is the cursor. A row's `analyzer_version` column says which analyzer
+ * last wrote its `body_tsv`, and is `null` for every row older than the column. A row already at
+ * the target generation is left untouched; every other row is rederived.
  *
- * Resumable by keyset, never by offset. Each corpus is walked in its own primary-key order,
- * and the watermark returned is the last key successfully passed, encoded for that corpus's
- * key shape. Resuming re-opens the cursor strictly greater than the watermark.
- *
- * COUPLED: every row's vector comes from `rebuildRowVector` below, which calls `buildRowVector`
- * (`tenant-analysis.ts`) — the function the write path calls on every write. `bodyTsvSql`/
- * `bodyTsvParams` are the write path's own construction, imported rather than restated, so the
- * two halves of a row cannot be stored through different configurations.
- *
- * `rebuildRowVector` lives here rather than in a module of its own because nothing else needs it:
- * the function exists to normalize a raw database row for `buildRowVector`, and no other walk
- * reads rows that way.
+ * COUPLED: the walk is `index.ts`'s `rederiveCorpus`, the same one `reindexTeam` runs, and every
+ * row's vector comes from `rebuildRowVector` below, which calls `buildRowVector`
+ * (`tenant-analysis.ts`) — the function the write path calls on every write.
  */
-import { bodyTsvParams, bodyTsvSql, buildRowVector } from "./tenant-analysis.js";
+import { buildRowVector } from "./tenant-analysis.js";
 
-/** The smallest shape this pass needs from a database connection: one `query(text, params)`.
- *
- * DELIBERATE: declared here rather than imported from a projections module. This pass reads and
- * writes only `zz.doc` and `zz.knowledge_node` through a single connection a caller hands in, so
- * the shape it needs is one method wide and belongs beside its only user. */
+/** The smallest shape the walk needs from a database connection: one `query(text, params)`. A
+ *  pool and a single client both have it. */
 export interface RederivationClient {
   query<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<{ rows: T[] }>;
 }
@@ -64,12 +50,8 @@ export function rebuildRowVector(row: RebuildRowInput): ReturnType<typeof buildR
 
 // Which corpora this pass knows, and only these
 
+/** COUPLED: the corpora `index.ts`'s `CORPORA` walks, by table name. */
 const REDERIVABLE_CORPORA = ["zz.doc", "zz.knowledge_node"] as const;
-type RederivableCorpus = typeof REDERIVABLE_CORPORA[number];
-
-function isRederivableCorpus(corpus: string): corpus is RederivableCorpus {
-  return (REDERIVABLE_CORPORA as readonly string[]).includes(corpus);
-}
 
 // Planning: pure, no I/O, no database in reach
 
@@ -144,211 +126,10 @@ export interface CorpusRebuildRecord {
   readonly rederived: number;
   readonly skipped: number;
   readonly failures: readonly { readonly key: string; readonly reason: string }[];
-  /** The last key this run passed, encoded for this corpus — `null` only when the corpus was
-   *  empty from the very first page. Feed straight back in as `afterWatermark` to resume. */
+  /** The last key this run passed, or the watermark it resumed from when it passed none. Feed
+   *  straight back in as `afterWatermark` to resume. */
   readonly watermark: string | null;
-  /** `true` only when this run's last page came back short of a full batch — the end of the
-   *  table, not "this run stopped". A caller resuming from `watermark` after `false` picks up
-   *  where this run left off. */
-  readonly complete: boolean;
   /** Who ran this and how it read the corpus — supplied by the caller, never guessed: only the
    *  caller knows which process is executing and which connection it reads through. */
   readonly route: { readonly worker: string; readonly reader: string };
-}
-
-const DEFAULT_BATCH_SIZE = 200;
-
-// zz.doc: primary key is the uuid `id` column
-
-interface DocRow {
-  readonly id: string;
-  readonly title: string | null;
-  readonly tags: readonly string[] | null;
-  readonly body: string | null;
-  readonly analyzer_version: string | null;
-}
-
-async function fetchDocPage(client: RederivationClient, after: string | null, limit: number): Promise<DocRow[]> {
-  // DELIBERATE: the body is the current revision's, read through the row the document points at.
-  // `zz.doc` carried a second copy of it until `015_doc_body_drop.sql` dropped the column; the
-  // revision table is now its only home. The join is LEFT so the page still holds every document —
-  // a keyset walk that skipped the ones with no current revision would return a watermark past
-  // rows it never visited — and `rebuildRowVector` reads a null body as no text.
-  const select = `select d.id::text as id, d.title, d.tags, r.body, d.analyzer_version
-                    from zz.doc d
-                    left join zz.doc_revision r
-                      on r.doc_id = d.id and r.revision = d.current_revision`;
-  const result = after
-    ? await client.query<DocRow>(
-        `${select}
-          where d.id > $1::uuid
-          order by d.id
-          limit $2`,
-        [after, limit])
-    : await client.query<DocRow>(
-        `${select}
-          order by d.id
-          limit $1`,
-        [limit]);
-  return result.rows;
-}
-
-async function writeDocRow(
-  client: RederivationClient, id: string, vector: ReturnType<typeof rebuildRowVector>, analyzer: string,
-): Promise<void> {
-  // Only the two derived columns move. Every other column is absent from this statement
-  // entirely, not merely left out of the SET list.
-  await client.query(
-    `update zz.doc
-        set analyzer_version = $2,
-            body_tsv = ${bodyTsvSql(3)}
-      where id = $1::uuid`,
-    [id, analyzer, ...bodyTsvParams(vector)]);
-}
-
-// zz.knowledge_node: primary key is the uuid `id` column
-
-interface NodeRow {
-  readonly id: string;
-  readonly title: string | null;
-  readonly tags: readonly string[] | null;
-  readonly body: string | null;
-  readonly analyzer_version: string | null;
-}
-
-async function fetchNodePage(client: RederivationClient, after: string | null, limit: number): Promise<NodeRow[]> {
-  const result = after
-    ? await client.query<NodeRow>(
-        `select id::text as id, title, tags, body, analyzer_version
-           from zz.knowledge_node
-          where id > $1::uuid
-          order by id
-          limit $2`,
-        [after, limit])
-    : await client.query<NodeRow>(
-        `select id::text as id, title, tags, body, analyzer_version
-           from zz.knowledge_node
-          order by id
-          limit $1`,
-        [limit]);
-  return result.rows;
-}
-
-async function writeNodeRow(
-  client: RederivationClient, id: string, vector: ReturnType<typeof rebuildRowVector>, analyzer: string,
-): Promise<void> {
-  await client.query(
-    `update zz.knowledge_node
-        set analyzer_version = $2,
-            body_tsv = ${bodyTsvSql(3)}
-      where id = $1::uuid`,
-    [id, analyzer, ...bodyTsvParams(vector)]);
-}
-
-// Census, and the walk itself
-
-/** `corpus` is narrowed to `RederivableCorpus` by every caller before this runs, and the two
- *  members of that closed set are this pass's own table names — never text a caller supplies,
- *  which is what makes interpolating it into the query text safe. */
-async function census(client: RederivationClient, corpus: RederivableCorpus): Promise<number> {
-  const result = await client.query<{ n: string }>(`select count(*)::text as n from ${corpus}`);
-  return Number(result.rows[0]?.n ?? "0");
-}
-
-/** Walks one corpus, from `request.afterWatermark` or the start, rederiving every row whose
- *  `analyzer_version` is not already `request.analyzer`; never gated on content. Every vector
- *  comes from `rebuildRowVector`, and this function never re-derives a term itself. A row that
- *  throws is recorded in `failures` and the walk continues past it, so a permanently-failing
- *  row cannot block every row after it on a resume. */
-export async function rederiveCorpus(
-  client: RederivationClient,
-  request: {
-    readonly corpus: string;
-    readonly analyzer: string;
-    readonly afterWatermark?: string | null;
-    readonly batchSize?: number;
-    readonly route: { readonly worker: string; readonly reader: string };
-  },
-): Promise<CorpusRebuildRecord> {
-  if (!isRederivableCorpus(request.corpus)) {
-    throw new RangeError(`${request.corpus} is not a corpus this rederivation pass knows — refusing rather than guessing its schema`);
-  }
-  const corpus = request.corpus;
-  const limit = request.batchSize ?? DEFAULT_BATCH_SIZE;
-  const sourceCensus = await census(client, corpus);
-
-  let rederived = 0, skipped = 0;
-  const failures: { key: string; reason: string }[] = [];
-  let watermark = request.afterWatermark ?? null;
-  let complete = false;
-
-  if (corpus === "zz.doc") {
-    let after = watermark;
-    for (;;) {
-      const page = await fetchDocPage(client, after, limit);
-      for (const row of page) {
-        try {
-          if (row.analyzer_version !== request.analyzer) {
-            await writeDocRow(client, row.id, rebuildRowVector(row), request.analyzer);
-            rederived++;
-          } else {
-            skipped++;
-          }
-        } catch (err) {
-          failures.push({ key: row.id, reason: err instanceof Error ? err.message : String(err) });
-        }
-        after = row.id;
-        watermark = row.id;
-      }
-      if (page.length < limit) { complete = true; break; }
-    }
-  } else {
-    let after = watermark;
-    for (;;) {
-      const page = await fetchNodePage(client, after, limit);
-      for (const row of page) {
-        try {
-          if (row.analyzer_version !== request.analyzer) {
-            await writeNodeRow(client, row.id, rebuildRowVector(row), request.analyzer);
-            rederived++;
-          } else {
-            skipped++;
-          }
-        } catch (err) {
-          failures.push({ key: row.id, reason: err instanceof Error ? err.message : String(err) });
-        }
-        after = row.id;
-        watermark = row.id;
-      }
-      if (page.length < limit) { complete = true; break; }
-    }
-  }
-
-  return { corpus, analyzer: request.analyzer, sourceCensus, rederived, skipped, failures, watermark, complete, route: request.route };
-}
-
-/** Every corpus `planRebuild` names for this generation pair, walked in the order it returns
- *  them — no parallelism across corpora, so a caller reading progress mid-run sees at most one
- *  corpus in flight. `afterWatermarks` resumes each corpus independently, keyed by corpus
- *  name, from a prior run's `CorpusRebuildRecord.watermark`. */
-export async function rederiveAll(
-  client: RederivationClient,
-  request: {
-    readonly analyzer: string;
-    readonly previous: string;
-    readonly afterWatermarks?: Readonly<Record<string, string | null>>;
-    readonly batchSize?: number;
-    readonly route: { readonly worker: string; readonly reader: string };
-  },
-): Promise<readonly CorpusRebuildRecord[]> {
-  const plan = planRebuild({ analyzer: request.analyzer, previous: request.previous });
-  const records: CorpusRebuildRecord[] = [];
-  for (const corpus of plan.corpora) {
-    records.push(await rederiveCorpus(client, {
-      corpus, analyzer: request.analyzer,
-      afterWatermark: request.afterWatermarks?.[corpus] ?? null,
-      batchSize: request.batchSize, route: request.route,
-    }));
-  }
-  return records;
 }

@@ -201,7 +201,7 @@ function main(): number {
 
   const established = [
     `the activation gate refuses while any precondition is blocked: ${gate.length} of ` +
-      `${REQUIRED.length} are blocked today and the derived verdict is REFUSE`,
+      `${REQUIRED.length} are blocked today and the derived verdict is ${gate.length ? "REFUSE" : "no blockers"}`,
     "the blocker list is derived from the eight precondition states alone — a copy of the " +
       "runbook carrying waivePreconditions, activation_allowed and executed derives the " +
       "identical list, so there is no path past a blocked precondition",

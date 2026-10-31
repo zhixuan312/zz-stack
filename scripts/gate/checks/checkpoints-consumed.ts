@@ -46,8 +46,7 @@ const CONSUMED: readonly Consumer[] = [
     reads: [/family: "evidence_relation"/, /now\.reading === "no"/, /now\.reading === "unclear"/] },
 ];
 
-/** Every violation, given each skill's text and a module reader. Pure, so a break-test can feed
- *  it a skill that names an unlisted family without touching the tree. */
+/** Every violation, given each skill's text and a module reader. */
 function unconsumed(skills: ReadonlyArray<{ name: string; text: string }>,
                            registry: readonly Consumer[], readModule: (rel: string) => string): string[] {
   const bad: string[] = [];

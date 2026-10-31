@@ -26,10 +26,10 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCK = join(root, "plugins.lock.json");
 
-// COUPLED: set before the dynamic import below, not after. `@zz/catalog` reads ZZ_CATALOG_DIR
-// into a module-level `const` at load time and plugin-lock.js does the same with ZZ_SKILLS_DIR, so a
-// value assigned afterwards is a value nothing reads. build-marketplace.ts carries the same two
-// lines.
+// COUPLED: set before the dynamic import below, not after. plugin-lock.js reads ZZ_SKILLS_DIR into a
+// module-level `const` at load time (`SKILLS_DIR` in services/gateway/src/package/files.ts), so a
+// value assigned afterwards is a value nothing reads; `@zz/catalog` reads ZZ_CATALOG_DIR per call.
+// build-marketplace.ts carries the same two lines.
 //
 // The defaults are the absolute paths the image has. On a laptop none exists, and a silently empty
 // catalog would produce a lock file recording nothing that the gate would then agree with.
@@ -71,7 +71,7 @@ if (process.argv.includes("--write")) {
   }
   const prev: Record<string, LockedPlugin> = existsSync(LOCK) ? JSON.parse(readFileSync(LOCK, "utf8")) : {};
   const pad = (s: string | number, n: number) => String(s).padEnd(n);
-  console.log(`\n  ${pad("plugin", 16)}${pad("declared", 11)}${pad("digest", 10)}${pad("cases", 8)}${pad("skills", 8)}state`);
+  console.log(`\n  ${pad("plugin", 16)}${pad("declared", 11)}${pad("digest", 10)}${pad("skills", 8)}state`);
   for (const p of entries) {
     const was = prev[p.name];
     // Every state that is not `unchanged` says what to do, in the imperative. `0.1.0 -> 0.2.0` is

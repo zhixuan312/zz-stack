@@ -3,7 +3,7 @@
  * tools, and the console.
  *
  * This file is the package's one door. Everything below is re-exported through it and no
- * consumer deep-imports a sibling module.
+ * consumer deep-imports a sibling module — `scripts/gate/checks/contracts-door.ts` refuses one.
  */
 
 import { createHash } from "node:crypto";
@@ -21,15 +21,16 @@ export { WHEN_FACT_NAMES, documentApplies,
          type WhenFactName, type FlowDocWhen, type Applicability } from "./flow-when.js";
 import { base32 } from "./base32.js";
 import { FlowDocWhen } from "./flow-when.js";
+import { OUTCOMES } from "./outcomes.js";
 
 // The one write path a platform access token goes through — pat_issue and pat_revoke call
 // these. Declared here rather than depending on the `pg` package: `Db` is the minimal shape
 // both services' pg.Pool satisfies.
 export { issuePat, revokePat, type Db } from "./pat.js";
 
-export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
+export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS,
          FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
-         resolveToolKey, resolveStep } from "./alias.js";
+         resolveToolKey } from "./alias.js";
 
 // The one base32 every opaque token is minted with — a leaf, so upload-text.ts imports it directly.
 export { base32, unbase32 } from "./base32.js";
@@ -54,20 +55,18 @@ export { normalizedRefusalSql } from "./refusal-normal.js";
 // The Platform prepared query's answer, `/api/console/platform/query` (console/platform-query.ts).
 export type { PlatformQuery, PlatformQueryFigure, PlatformQueryGroup } from "./platform-query.js";
 
-// The Evaluation Protocol contract (FR-6, spec v8): the durable measurement object a plugin
-// version is scored against. PROTOCOL_ENUMS and EVAL_STATE_ENUMS are the one source every
-// evaluation writer, and the gate's "every state the schema allows can actually be reached"
-// check, draw their vocabulary from.
+// The Evaluation Protocol contract: the durable measurement object a plugin version is scored
+// against. EVAL_STATE_ENUMS is the one source every evaluation writer draws a state vocabulary
+// from.
 export {
-  PROTOCOL_ENUMS, EVAL_STATE_ENUMS,
+  EVAL_STATE_ENUMS,
   EvaluationProtocol, Dimension, Measure, MeasureAnchor, MeasureQualification,
   QualificationPolicy, EstablishmentPolicy, UncertaintyPolicy,
   ReleasePolicy, Guardrail, FailureMode,
 } from "./eval-protocol.js";
 
 // DELIBERATE: the one wildcard in this file. `control-loop.js` is an aggregator, and a module
-// added to it must reach every consumer without an edit here — this file is near the 700-line
-// ceiling the gate enforces.
+// added to it must reach every consumer without an edit here.
 export * from "./control-loop.js";
 
 /**
@@ -101,15 +100,16 @@ export function contentRevision(docId: string, generation: number): string {
   return `cr_${base32(createHash("sha256").update(`${docId}:${generation}`, "utf8").digest()).slice(0, 26)}`;
 }
 
-/** A document's frontmatter envelope, or {} when there is none. Later keys win, and a value's
- *  trailing `# comment` is stripped. The only envelope parser; nothing re-implements it. */
+/** A document's frontmatter envelope, or {} when there is none. Later keys win, and a value is
+ *  the rest of its line, trimmed: the writers store values unescaped, so a `#` is part of one.
+ *  The only envelope parser; nothing re-implements it. */
 export function parseEnvelope(content: string): Record<string, string> {
   const m = content.match(ENVELOPE_BLOCK);
   const out: Record<string, string> = {};
   if (!m) return out;
   for (const line of m[1].split("\n")) {
     const kv = line.match(/^([A-Za-z0-9_-]+):[ \t]*(.*)$/);
-    if (kv) out[kv[1]] = kv[2].replace(/[ \t]+#.*$/, "").trim();
+    if (kv) out[kv[1]] = kv[2].trim();
   }
   return out;
 }
@@ -130,7 +130,9 @@ export function parseEnvelope(content: string): Record<string, string> {
  */
 const VARYING: [RegExp, string][] = [
   [/`[^`]*`/g, "`…`"],
-  [/'[^']*'/g, "'…'"],
+  // DELIBERATE: a `'` between two word characters is an apostrophe — `skill's`, `doesn't` — not a
+  // quote, so neither end of a quoted span may touch a word character.
+  [/(?<!\w)'[^']*'(?!\w)/g, "'…'"],
   [/"[^"]*"/g, '"…"'],
   [/\b[\w.+-]+@[\w-]+\.[\w.]+/g, "<email>"],
   [/\b\d{2}-\d{2}-\d{4}-[a-z0-9-]+/g, "<initiative>"],
@@ -197,23 +199,12 @@ export function refusalClass(text: string): string {
 /** `status` is exactly these. Not a vocabulary the model may extend. */
 export const STATUSES = ["draft", "approved"] as const;
 
-/** `outcome` is a closed set: the ledger is read by counting, and a free-text column cannot
- * answer "how many were accepted this quarter".
- *
- * `delivered` finished; `accepted` is a person saying it is what they wanted; `abandoned`
- * stopped. Each names who gave the verdict.
- *
- * DELIBERATE: there is no `superseded`. A closed record is not edited afterwards. Succession
- * belongs to knowledge, where `knowledge_supersede` already does it.
- */
-export const OUTCOMES = ["delivered", "accepted", "abandoned"] as const;
+export { OUTCOMES } from "./outcomes.js";
 
-/** `verdict` on a decision row is a closed set, so zz.decision can be counted. The parser, the
- * schema and the check all read this list.
- *
- * The order is a ladder: `native` is the block doing it itself, `achievable` needs
- * configuration, `workaround` needs something outside the block, `not_possible` is the answer
- * a selection is allowed to give. */
+/** The verdicts a fit ledger's claim row may carry, in the order of a ladder: `native` is the
+ * block doing it itself, `achievable` needs configuration, `workaround` needs something outside
+ * the block, `not_possible` is the answer a selection is allowed to give. The parser's vocabulary
+ * — `verdictFromProse` below reads a row against it and nothing else does. */
 const VERDICTS = ["native", "achievable", "workaround", "not_possible"] as const;
 
 /** A verdict as a person writes it in a fit ledger ("Not possible"), back to its literal. */

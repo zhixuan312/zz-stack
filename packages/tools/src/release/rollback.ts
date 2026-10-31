@@ -50,7 +50,6 @@
  * (`zz.release_attempt.verification`), so re-running this same command is always safe and is the
  * intended recovery: nothing here is lost by a first failed attempt.
  */
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,7 +60,7 @@ import { Mcp } from "@zz/mcp-client";
 
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
 import { splitCommand } from "../lib/shell.js";
-import { git, gitQuiet } from "./git.js";
+import { git, gitQuiet, runCommand } from "./git.js";
 
 const ROLLBACK_TIMEOUT_MS = 20 * 60_000;
 /** The failing command's own output tail — mirrors `apply.ts`'s own `OUTPUT_TAIL_CHARS`, printed
@@ -115,20 +114,6 @@ function removeRollbackWorktree(repoRoot: string, worktree: Worktree): void {
   gitQuiet(repoRoot, ["worktree", "remove", "--force", worktree.path]);
   if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true });
   gitQuiet(repoRoot, ["update-ref", "-d", worktree.ref]);
-}
-
-interface CommandOutcome { readonly ok: boolean; readonly output: string }
-
-function runCommand(cwd: string, argv: readonly string[], timeoutMs: number): CommandOutcome {
-  try {
-    const output = execFileSync(argv[0], argv.slice(1), {
-      cwd, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { ok: true, output };
-  } catch (err) {
-    const e = err as { stderr?: string; stdout?: string; message?: string };
-    return { ok: false, output: (e.stderr || e.stdout || e.message || "unknown error").trim() };
-  }
 }
 
 // -------------------------------------------------------------------------------------------

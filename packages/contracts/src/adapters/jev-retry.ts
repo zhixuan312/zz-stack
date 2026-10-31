@@ -20,7 +20,7 @@
  * answer is billed `uncertain` rather than `not_billed`, because the supplier may have done the
  * work.
  */
-import { stableDigest } from "../profiles.js";
+import { stableDigest } from "../canonical.js";
 
 // What kind of failure it was
 

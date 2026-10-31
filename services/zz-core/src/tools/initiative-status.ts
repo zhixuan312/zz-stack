@@ -37,11 +37,9 @@ import { closedMove, correctionsOf, type Move } from "./initiative-closed.js";
 import { initiativesNamed, namesRefusal } from "./initiative-status-names.js";
 import { registerKnowledgeReconcileTool } from "./knowledge-reconcile.js";
 
-
-/** The lifecycle facts `zz.initiative`'s anchor row carries (002_initiative_anchor.sql),
- *  resolved once by the async tool handler and handed to the (still synchronous)
- *  `initiativeState` below — see its own docstring for why the row is a parameter rather than
- *  a query this function makes itself.
+/** The lifecycle facts an initiative's own `zz.initiative` row carries. `initiativeState` reads it
+ *  itself when it is not handed one; the listing reads every initiative's at once and hands each
+ *  its own.
  *
  *  `closed_by` is already the closer's email, joined from `zz.principal` by the caller: the
  *  column itself is a uuid, and this function's callers and its fixtures both deal in the
@@ -79,10 +77,9 @@ interface DocState {
 /** What state an initiative is in, and what the next move is — the one computation both
  * `initiative_status` and `initiative_open` answer from.
  *
- * COUPLED: three queries and nothing else — the initiative's own row, its documents' rows, and
- * its key/value state. The directory listing, the envelope parses and the source-file walks this
- * used to do are all rows now, and `docFacts` is the one place a row becomes the envelope facts
- * every branch below reads.
+ * Everything it reads is a row: the initiative's own (`anchor`), its documents', its facts and
+ * stage records, and the assessments its review and audit rounds route on. `docFacts` is the one
+ * place a document row becomes the envelope facts every branch below reads.
  *
  * `next_move` is null exactly when nothing declared a chain, and `next_move_absent` says why
  * in that case and is undefined otherwise.
@@ -475,7 +472,7 @@ export async function initiativeState(
            // shape and a caller can read the field without knowing which branch answered.
            next_move_absent: undefined as string | undefined };
 }
-export const chainArgs = async (p: pg.Pool, team: string | null, name: string): Promise<[Chain, FlowDoc[]]> => {
+const chainArgs = async (p: pg.Pool, team: string | null, name: string): Promise<[Chain, FlowDoc[]]> => {
   const chain = await chainFor(p, team, `${name}/x.md`);
   return [chain, chain.documents];
 };
@@ -502,51 +499,54 @@ export async function anchorsFor(
   return out;
 }
 
-/** The no-argument `initiative_status`: every OPEN initiative, and a count of the closed ones.
- *  Closed ones are counted rather than dropped, so a filtered answer is not mistaken for an
- *  empty one.
+type State = Awaited<ReturnType<typeof initiativeState>>;
+/** What stands in for one initiative's state: a name the team does not hold, or a `Refusal`'s text. */
+type StateError = { initiative: string; error: string };
+
+/** Each named initiative's state, in the order asked, from the one `anchorsFor` read the caller
+ *  made: a name with no anchor is `no such initiative`, and a `Refusal` from one initiative is its
+ *  text against that one, so one initiative never takes down the others. Anything else still
+ *  throws: an error nobody named is not a fact about one initiative.
  *
- *  DELIBERATE: a `Refusal` from one initiative is reported against that initiative, with its
- *  text, and the listing goes on — one initiative must not take down the listing of every other.
- *  Anything else still throws: an error nobody named is not a fact about one initiative.
- *
- *  Overlapped, a few initiatives at a time. This is one round of reads per initiative — its
- *  documents, its facts, its records, its assessments and its chain — and it ran them strictly one
- *  after another, so a team paid the whole sequence once per initiative: 1.4–2.3 s and a 100 kB
- *  answer on the busiest team here, against 51–68 ms for a team with one. The width is the pool's
- *  own, so the reads overlap without pretending to more connections than the service holds, and
- *  `Promise.all` with the chunks taken in order keeps the answer in the order it was asked for. */
-async function initiativeListing(
-  p: pg.Pool, team: string | null, names: readonly string[], anchors?: Map<string, InitiativeAnchor>,
-) {
-  type State = Awaited<ReturnType<typeof initiativeState>>;
-  // One initiative's answer, or the sentence that stands in for it. Tagged, so a refusal is told
-  // from a state by what happened rather than by reaching into a wide object for a field.
-  const read = async (name: string): Promise<["state", State] | ["refused", string]> => {
-    if (!(anchors?.has(name) ?? false)) return ["refused", "no such initiative"];
+ *  Overlapped, a pool's width at a time. Each initiative is one round of reads — its documents,
+ *  facts, records, assessments and chain — and run strictly one after another a team paid the
+ *  whole sequence once per initiative: 1.4–2.3 s on the busiest team here, against 51–68 ms for a
+ *  team with one. The width is the pool's own, so the reads overlap without pretending to more
+ *  connections than the service holds, and the chunks taken in order keep the answer in the
+ *  order it was asked for. */
+export async function statesFor(
+  p: pg.Pool, team: string, names: readonly string[], anchors: Map<string, InitiativeAnchor>,
+): Promise<(State | StateError)[]> {
+  const read = async (name: string): Promise<State | StateError> => {
+    const anchor = anchors.get(name);
+    if (!anchor) return { initiative: name, error: "no such initiative" };
     try {
-      return ["state", await initiativeState(p, team, name, ...await chainArgs(p, team, name),
-                                            anchors?.get(name) ?? null)];
+      return await initiativeState(p, team, name, ...await chainArgs(p, team, name), anchor);
     } catch (err) {
       if (!(err instanceof Refusal)) throw err;
-      return ["refused", err.message];
+      return { initiative: name, error: err.message };
     }
   };
-
-  const answers: (["state", State] | ["refused", string])[] = [];
+  const out: (State | StateError)[] = [];
   const width = Number(process.env.ZZ_DB_POOL_MAX || 4) || 4;
-  for (let i = 0; i < names.length; i += width) {
-    answers.push(...await Promise.all(names.slice(i, i + width).map(read)));
-  }
-  const open: (State | { initiative: string; error: string })[] = [];
+  for (let i = 0; i < names.length; i += width) out.push(...await Promise.all(names.slice(i, i + width).map(read)));
+  return out;
+}
+
+/** The no-argument `initiative_status`: every OPEN initiative, and a count of the closed ones.
+ *  Closed ones are counted rather than dropped, so a filtered answer is not mistaken for an
+ *  empty one. */
+async function initiativeListing(
+  p: pg.Pool, team: string, names: readonly string[], anchors: Map<string, InitiativeAnchor>,
+) {
+  const open: (State | StateError)[] = [];
   let closedCount = 0;
-  answers.forEach(([kind, value], i) => {
-    if (kind === "refused") { open.push({ initiative: names[i], error: value }); return; }
+  for (const value of await statesFor(p, team, names, anchors)) {
     // optional-chained: `next_move` is null for a freeform initiative, and one such folder would
     // otherwise take down the listing of every initiative beside it.
-    if (value.next_move?.action === "closed") { closedCount++; return; }
+    if (!("error" in value) && value.next_move?.action === "closed") { closedCount++; continue; }
     open.push(value);
-  });
+  }
   return { open, closed_not_listed: closedCount };
 }
 
@@ -621,7 +621,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         ? await initiativesNamed(p, team, initiatives, anchors)
         : initiative
           ? (anchors.has(initiative)
-            ? await initiativeState(p, team, initiative, ...await chainArgs(p, team, initiative))
+            ? await initiativeState(p, team, initiative, ...await chainArgs(p, team, initiative), anchors.get(initiative))
             : { initiative, error: "no such initiative" })
           : await initiativeListing(p, team, names, anchors);
       // A console page's read records nothing: only the console's relay sends `x-zz-via: session`

@@ -25,6 +25,16 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
   /* The write guards */
   {
     check: "scripts/gate/checks/documents-guards.ts",
+    target: "a refusal class takes out what a refusal quotes and leaves an apostrophe in its prose",
+    subject: "packages/contracts/src/index.ts",
+    find: "  [/(?<!\\w)'[^']*'(?!\\w)/g, \"'…'\"],",
+    replace: "  [/'[^']*'/g, \"'…'\"],",
+    planted: "every apostrophe opens a quote, so a possessive pairs with the next real quote: the " +
+      "prose between them is swallowed, the quoted state survives, and every candidate is a " +
+      "class of one",
+  },
+  {
+    check: "scripts/gate/checks/documents-guards.ts",
     target: "every document write runs the guards",
     subject: "services/zz-core/src/tools/artifacts.ts",
     find: "      const gate = await documentGuards(plan.chain, path, plan.text, team);\n" +
@@ -54,8 +64,8 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-guards.ts",
     target: "a refusal is classified in one place",
     subject: "packages/tools/src/ops/watch-results.ts",
-    find: "      const c = refusalClass(String(e.detail.refusal));",
-    replace: "      const c = refusalClass(String(e.detail.refusal))\n" +
+    find: "      const c = refusalClass(e.refusal);",
+    replace: "      const c = refusalClass(e.refusal)\n" +
       "        .replace(/\\b\\d{4}-\\d{2}-\\d{2}\\b/g, \"<" + "date>\");",
     planted: "the alert that watches whether a refusal class got worse redacts a second time, " +
       "with its own vocabulary, after the gateway already redacted at write time — so the " +
@@ -159,6 +169,27 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     planted: "document_edit tells the guard it is the approval act, so the bypass that lets " +
       "an act move status, approved_by and the rest is held by a caller claiming somebody " +
       "else's name — and whichever act is named is the one the record will show",
+  },
+  {
+    check: "scripts/gate/checks/documents-envelope.ts",
+    target: "the envelope vocabulary is defined once",
+    assertion: "a private copy of the outcome words inside @zz/contracts",
+    subject: "packages/contracts/src/close.ts",
+    find: "type Outcome = (typeof OUTCOMES)[number];",
+    // SEAMED: the payload spells the outcome words, and this check sweeps scripts/ for them.
+    replace: 'const OUTCOME_WORDS = ["deliv' + 'ered", "accep' + 'ted", "abandoned"] as const;\n' +
+      "void OUTCOME_WORDS;\ntype Outcome = (typeof OUTCOMES)[number];",
+    planted: "close.ts keeps its own list of the outcome words beside the one it imports, so a " +
+      "fourth outcome added to the envelope is one this module can neither derive nor detect",
+  },
+  {
+    check: "scripts/gate/checks/documents-envelope.ts",
+    target: "an envelope value is read whole, a hash in it included",
+    subject: "packages/contracts/src/index.ts",
+    find: "    if (kv) out[kv[1]] = kv[2].trim();",
+    replace: '    if (kv) out[kv[1]] = kv[2].replace(/[ \\t]+#.*$/, "").trim();',
+    planted: "the parser strips a trailing comment the writers never escape, so a reason, an " +
+      "acceptor or a title carrying a `#` is stored whole and read back cut short",
   },  {
     check: "scripts/gate/checks/documents-envelope.ts",
     target: "the model writes the body and the platform writes the envelope",
@@ -314,9 +345,8 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/prose-names.ts",
     target: "no shipped prose names a skill no plugin ships",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-method/SKILL.md",
-    // SEAMED: `zz-backbone` is one of the two names in SKILL_ALIAS, and
-    // `checks/skill-renames.ts` sweeps `scripts/` with comments stripped and strings kept.
-    // `find` is left alone — it quotes the healthy current name.
+    // SEAMED: the retired skill name, kept out of the tree as a literal. `find` is left alone —
+    // it quotes the healthy current name.
     find: "call, the way `zz-platform`",
     replace: "call, the way `zz-back" + "bone`",
     // REDACTED, because the report is a tracked file this repository sweeps too. `plant()`

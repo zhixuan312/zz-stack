@@ -30,9 +30,10 @@ check("a registered procedure's chain is enforced all the way back, and still gr
     import { reviewedModuleHost } from ${JSON.stringify(join(dist, "host/index.js"))};
     import { packagedModules } from ${JSON.stringify(join(dist, "reviewed-modules.js"))};
     const bad = [];
+    let driven = 0;
     const SUBJECT = "a run this check opened";
 
-    // A CATALOGUE THAT WILL NOT REGISTER IS SOMEBODY ELSE'S FAULT, and saying so beats dying
+    // A catalogue that will not register is somebody else's fault, and saying so beats dying
     // on it: registration throws by design, and an uncaught call here would report a stack
     // tail for a defect the catalogue check already names in a sentence.
     try { reviewedModuleHost(packagedModules); }
@@ -45,10 +46,10 @@ check("a registered procedure's chain is enforced all the way back, and still gr
 
     for (const module of packagedModules.bodies.values()) {
       const last = module.steps[module.steps.length - 1];
-      // A PROCEDURE WITH NOTHING BEHIND ITS LAST STEP HAS NO CHAIN TO ENFORCE. Reporting that
-      // as a pass would be reporting it as covered; it is not a subject, and it is skipped by
-      // name so the count below can tell "no chain" from "no modules".
+      // A procedure with nothing behind its last step has no chain to enforce. It is not a
+      // subject, and it is skipped and not counted, so no procedure driven fails below.
       if (module.steps.length < 2 || !last.after.length || !last.grants.length) continue;
+      driven++;
       const action = last.grants[0];
       const earlier = module.steps.slice(0, -1).map((s) => s.id);
 
@@ -60,7 +61,7 @@ check("a registered procedure's chain is enforced all the way back, and still gr
         bad.push(module.id + ": " + action + " was granted on a run holding no evidence at all, so " +
                  "the steps the procedure declares before " + last.id + " are decoration");
       } else if (!earlier.some((id) => onEmpty.refusal.includes(id))) {
-        // THE REFUSAL MUST BE ABOUT THE CHAIN. A host that refused only on the last step's own
+        // The refusal must be about the chain. A host that refused only on the last step's own
         // rules would refuse here too, and pass a check that read nothing but \`granted\`.
         bad.push(module.id + ": " + action + " was refused on an empty run without naming any " +
                  "earlier step — the refusal reads \\"" + onEmpty.refusal + "\\", which is the last " +
@@ -112,6 +113,7 @@ check("a registered procedure's chain is enforced all the way back, and still gr
                  "] outstanding, so the grant and the evaluation disagree about the same run");
       }
     }
+    if (!driven) bad.push("no registered procedure has a step behind its last one that grants — this check drove nothing");
     process.stdout.write(JSON.stringify(bad));
   `;
   try {
@@ -142,12 +144,14 @@ check("a fact a later entry withdrew stops being counted, and the log still only
     import { reviewedModuleHost } from ${JSON.stringify(join(dist, "host/index.js"))};
     import { packagedModules } from ${JSON.stringify(join(dist, "reviewed-modules.js"))};
     const bad = [];
+    let driven = 0;
     for (const m of packagedModules.bodies.values()) {
       const gated = m.steps.find((s) => s.completion.some((c) => c.kind === "approval"));
       const last = m.steps[m.steps.length - 1];
       // Not every registered procedure has an approval to withdraw; one that does not is not
-      // a subject here, and skipping it by name keeps "no subject" apart from "no modules".
+      // a subject here, and is not counted.
       if (!gated || !last.grants.length) continue;
+      driven++;
       const { host } = reviewedModuleHost(packagedModules);
       const run = host.runStart(m.id, { subject: "withdrawal probe", profile: m.enrolment.requires });
       const recorded = [];
@@ -184,6 +188,7 @@ check("a fact a later entry withdrew stops being counted, and the log still only
                  "and the withdrawal is unproven");
       }
     }
+    if (!driven) bad.push("no registered procedure has an approval to withdraw and a last step that grants — this check drove nothing");
     console.log(JSON.stringify(bad));
   `;
   let out: string;
@@ -216,11 +221,13 @@ check("a stored run replays its withdrawals in order: a re-approval after a revi
     import { judgeClaim } from ${JSON.stringify(join(dist, "host/store.js"))};
     import { packagedModules } from ${JSON.stringify(join(dist, "reviewed-modules.js"))};
     const bad = [];
+    let driven = 0;
     const SUBJECT = "replay probe";
     for (const m of packagedModules.bodies.values()) {
       const gated = m.steps.find((s) => s.completion.some((c) => c.kind === "approval"));
       const last = m.steps[m.steps.length - 1];
       if (!gated || !last.grants.length || !gated.accepts.some((k) => k.name === "document")) continue;
+      driven++;
       const action = last.grants[0];
       const run = { id: "replay-probe", team_slug: "gate", initiative: SUBJECT, module_id: m.id,
                     module_digest: "", subject: SUBJECT, profile: m.enrolment.requires };
@@ -269,6 +276,7 @@ check("a stored run replays its withdrawals in order: a re-approval after a revi
                  onForeign.grant.refusal + "\\"");
       }
     }
+    if (!driven) bad.push("no registered procedure has a document approval to replay and a last step that grants — this check drove nothing");
     console.log(JSON.stringify(bad));
   `;
   let out: string;

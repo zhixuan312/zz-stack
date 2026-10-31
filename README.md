@@ -191,7 +191,9 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             doctor's doors and contract layers, release step 5 and the pre-push
             tool-chain walk), owned-containers.ts (labels every throwaway
             container and network with the pid that started it, and removes what
-            a killed run left before a starter creates anything), release.ts,
+            a killed run left before a starter creates anything), scratch-only.ts
+            (the loopback allowlist both end-to-end walks check their gateway and
+            database against), release.ts,
             release-record.ts (a
             release's row in zz.release, read from its changelog section and
             written by the release once its tag exists, every earlier tag with

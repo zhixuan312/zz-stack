@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-const { documentApplies } = await import(pathToFileURL(join(process.cwd(), "packages/contracts/dist/flow-when.js")).href);
+const { documentApplies } = await import(pathToFileURL(join(process.cwd(), "packages/contracts/dist/index.js")).href);
 assert.equal(documentApplies({}, {}), "applies", "no predicate, always applies");
 const imp = { when: { release_mode: "promotable" } };
 assert.equal(documentApplies(imp, { release_mode: "promotable" }), "applies");

@@ -38,6 +38,7 @@ import pg from "pg";
 
 import { owned, sweepOrphans } from "./owned-containers.ts";
 import { postgresService } from "./release/postgres-service.ts";
+import { refuseUnlessScratch } from "./scratch-only.ts";
 import { EXPLORE_BODY, specBody } from "./schema/spec-fixture.ts";
 
 /** The tree the deployment serves. The containers mount it and run the compiled services out of
@@ -49,34 +50,8 @@ const live = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OPERATOR = "control-loop@zz.invalid";
 const TEAM = "controlloop";
 
-/**
- * Where this may be aimed: loopback, and nothing else.
- *
- * An allowlist, not a blocklist, so it fails closed. A blocklist has to name every deployment that
- * must not be touched and fails open for the one somebody forgot or the one that gets a new
- * address next month; anything that is not plainly a local scratch deployment is refused here, and
- * a second deployment tomorrow is refused without anybody adding it. It also means this file names
- * no production address.
- */
-const LOOPBACK = /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])(:\d+)?([/?]|$)/;
-const localDb = (url: string): boolean =>
-  /@(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(url);
-
-function refuseUnlessScratch(url: string, pat: string, db: string): string | null {
-  if (!url || !pat || !db) {
-    return "REFUSED — no gateway, token or database to walk against.";
-  }
-  if (!LOOPBACK.test(url)) {
-    return "REFUSED — the gateway is not a loopback address. This walk writes an initiative, " +
-           "four documents, four sources and a close; it runs against a scratch deployment on " +
-           "this machine and nothing else.";
-  }
-  if (!localDb(db)) {
-    return "REFUSED — the database does not point at a database on this machine, and this walk " +
-           "writes evidence rows into whichever one it is given.";
-  }
-  return null;
-}
+/** What this walk writes, for a refusal to name (scratch-only.ts). */
+const WRITES = "an initiative, four documents, four sources, a close and evidence rows";
 
 function sh(cmd: string, args: string[]): string {
   return String(execFileSync(cmd, args, {
@@ -297,13 +272,13 @@ async function main(): Promise<void> {
 
   try {
     if (handed) {
-      const refusal = refuseUnlessScratch(given.url, given.pat, given.db);
+      const refusal = refuseUnlessScratch(given.url, given.pat, given.db, WRITES);
       if (refusal) { console.error(`  ${refusal}`); process.exit(2); }
       deployment = given;
     } else {
       deployment = await up();
     }
-    const refusal = refuseUnlessScratch(deployment.url, deployment.pat, deployment.db);
+    const refusal = refuseUnlessScratch(deployment.url, deployment.pat, deployment.db, WRITES);
     if (refusal) { console.error(`  ${refusal}`); process.exit(2); }
     console.log(`  deployment: gateway ${deployment.url}, database ${deployment.db.replace(/:[^:@/]+@/, ":***@")}`);
 

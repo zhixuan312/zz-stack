@@ -80,3 +80,6 @@ check("a file that resolves renamed tools never matches a pre-rename name",
 
 check("a failed check's reported detail ends with its reason — a FAILED or FAIL: line, a thrown error's message, a failure summary — whichever stream printed it, and a reason longer than the window keeps its head",
       runsCheck("check-failure-detail.ts"));
+check("call takes every flag it reads: --timeout reaches the client, a bad value and an unknown flag are refused by name", runsCheck("call-flags.ts"));
+check("testing/reset-store.sh reaches compose's psql through ssh, with the statement on stdin so psql interpolates its own variables", runsCheck("reset-store-transport.ts"));
+check("testing/eval-step.sh tells an interviewing step the stakeholder answers, keeps that stakeholder in one session, continues the latest --from run, and names no gateway it does not use", runsCheck("eval-step-harness.ts"));

@@ -117,7 +117,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
   },
   {
     check: SUITES_DATA,
-    target: "every completion the judge asks for is recorded, and an unreported figure stays null",
+    target: "every completion the judge asks for is recorded, a 200 that is not JSON included, an unreported figure stays null, and only a 429 or a quota answer is reported as quota",
     assertion: "an unreported token count is recorded as null, never as zero",
     subject: "services/zz-core/src/eval/judge.ts",
     find: "? Math.trunc(v) : null;",

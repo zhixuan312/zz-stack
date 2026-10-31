@@ -26,10 +26,14 @@ const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing about a " +
                         "plugin's use can be read");
 
+type Entry = ReturnType<typeof catalogEntries>[number] | undefined;
+
 /** A plugin's catalog entry, by the name a person installs it under.
  *
- * Through pluginName, the one rule for what a flow is called as a plugin. */
-export function entryOf(plugin: string): ReturnType<typeof catalogEntries>[number] | undefined {
+ * Through pluginName, the one rule for what a flow is called as a plugin. Each lookup walks the
+ * catalog on disk, so a caller asking several questions of one plugin resolves the entry once
+ * and passes it to the helpers below. */
+export function entryOf(plugin: string): Entry {
   return catalogEntries().find((e) => pluginName(e.flow) === plugin);
 }
 
@@ -49,9 +53,8 @@ const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
  * installs.
  *
  * Resolved here rather than at each call site so there is one answer to it. */
-function skillsDirOf(plugin: string): string {
+function skillsDirOf(plugin: string, entry: Entry): string {
   if (plugin === "zz-core") return SKILLS_DIR;
-  const entry = entryOf(plugin);
   return entry ? join(entry.dir, "skills") : "";
 }
 
@@ -81,17 +84,16 @@ export function serversOf(entry: ReturnType<typeof catalogEntries>[number] | und
 /** Does this plugin declare a server of its own? One that declares `servers` owns a door and
  * its evidence is that door's traffic; one that declares none rides the baseline and is a
  * flow, whose evidence is the runs of its own skills. */
-export function servesOwnDoor(plugin: string): boolean {
-  return (entryOf(plugin)?.manifest.servers?.length ?? 0) > 0;
+export function servesOwnDoor(plugin: string, entry: Entry = entryOf(plugin)): boolean {
+  return (entry?.manifest.servers?.length ?? 0) > 0;
 }
 
 /** The skills this flow ships that are not stages of it — the helpers a stage loads (sdlc's
  *  audit-criteria, method, recall, research, investigate, and the flow skill itself). A step
  *  recorded under one is the stage that loaded it at work, not a stage out of order: counted as
  *  unplaced, sdlc read 40 of 193 step visits as drift. */
-export function helperSkillsOf(plugin: string): string[] {
-  const entry = entryOf(plugin);
-  const skills = skillsDirOf(plugin);
+export function helperSkillsOf(plugin: string, entry: Entry = entryOf(plugin)): string[] {
+  const skills = skillsDirOf(plugin, entry);
   if (!entry || !skills || !existsSync(skills)) return [];
   const stages = new Set((entry.manifest.stages ?? []).map((st) => st.name));
   return readdirSync(skills, { withFileTypes: true })
@@ -101,8 +103,8 @@ export function helperSkillsOf(plugin: string): string[] {
 
 /** Each document this flow's stages write, with the stage that writes it — what a return is
  *  counted against (`pluginTraces`). Empty for a plugin whose stages write no document. */
-export function stageDocumentsOf(plugin: string): { document: string; stage: string }[] {
-  const manifest = entryOf(plugin)?.manifest;
+export function stageDocumentsOf(entry: Entry): { document: string; stage: string }[] {
+  const manifest = entry?.manifest;
   const stages = new Set((manifest?.stages ?? []).map((st) => st.name));
   return (manifest?.documents ?? []).flatMap((d) =>
     d.stage && stages.has(d.stage) ? [{ document: d.name, stage: d.stage }] : []);
@@ -114,8 +116,8 @@ export function stageDocumentsOf(plugin: string): { document: string; stage: str
  *
  * COUPLED: the static half is the gate's, which refuses a release whose skill names a tool its
  * package cannot reach. It is a precondition of a version existing, not an input here. */
-export function toolsNamedBy(plugin: string): string[] {
-  const skills = skillsDirOf(plugin);
+export function toolsNamedBy(plugin: string, entry: Entry = entryOf(plugin)): string[] {
+  const skills = skillsDirOf(plugin, entry);
   if (!skills || !existsSync(skills)) return [];
   const named = new Set<string>();
   const walk = (d: string): void => {
@@ -168,7 +170,7 @@ export function registerPluginEvalTools(server: McpServer): void {
       // never "is it in the catalog". Only the latter half changes what NO_SURFACE says below.
       let registeredWithNoManifest = false;
       if (entry) {
-        named = toolsNamedBy(plugin);
+        named = toolsNamedBy(plugin, entry);
         servesOwnSurface = (entry.manifest.servers ?? []).length > 0;
       } else {
         const pool = db();

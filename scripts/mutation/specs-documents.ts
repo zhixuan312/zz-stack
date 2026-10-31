@@ -114,9 +114,9 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-frontmatter.ts",
     target: "nothing sends the platform a document with frontmatter in it",
-    subject: "packages/contracts/src/check-state.ts",
-    find: "export const CHECK_STATES",
-    replace: "const ENVELOPE = `---\\nflow: x\\n---\\n`;\nvoid ENVELOPE;\n\nexport const CHECK_STATES",
+    subject: "packages/contracts/src/words.ts",
+    find: "export const WORDS_PER_HOUR",
+    replace: "const ENVELOPE = `---\\nflow: x\\n---\\n`;\nvoid ENVELOPE;\n\nexport const WORDS_PER_HOUR",
     planted: "a module outside zz-core composes a document that opens with frontmatter, which " +
       "is the third source of envelope fields the platform spent an initiative closing",
   },

@@ -118,6 +118,16 @@ const ns = (body: string) => G.normalizeSections(chain, P, doc({ status: "draft"
   else console.log("  ok   an unrelated heading is not captured");
 }
 
+{
+  // A declared section with no ASCII word: every word of an empty set is in any heading, so an
+  // unrelated heading would be renamed to it. Words are letters in any script.
+  const han = { documents: [{ name: "spec.md", sections: ["背景", "Über uns"] }] } as unknown as typeof chain;
+  const r = G.normalizeSections(han, P, doc({ status: "draft" }, "# Spec\n\n## Notes\n\nn\n\n## Uns\n\nu\n"));
+  const ok = r.renamed.length === 0 && r.content.includes("## Notes") && r.content.includes("## Uns");
+  if (!ok) { failed += 1; console.log(`  FAIL a heading shares no word with a non-Latin section and is not renamed to it  (renamed: ${JSON.stringify(r.renamed)})`); }
+  else console.log("  ok   a heading shares no word with a non-Latin section and is not renamed to it");
+}
+
 /* isoToday — every date this platform writes */
 if (!/^\d{4}-\d{2}-\d{2}$/.test(G.isoToday())) { failed += 1; console.log("  FAIL isoToday is YYYY-MM-DD"); }
 else console.log("  ok   isoToday is YYYY-MM-DD");

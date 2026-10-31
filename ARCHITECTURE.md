@@ -560,7 +560,7 @@ The measurements below are `EXPLAIN (ANALYZE, BUFFERS)` on this deployment, read
 **41,772 real-work calls** (`zz.event` where `kind = 'tool_call'` and `origin = 'work'`), the ten-times seed;
 a projection at ten times is that figure at ten times the row count, labelled as one. The rows and shared
 buffers were read again at **41,891 real-work calls**; the milliseconds are recorded, and the two evidence each budget.
-Every statement that reads `zz.event` from its first row was measured again on 2026-11-01, read only, at **47,698 real-work calls** (82,701 events), each as the built gateway issues it: the two register rows that name a raw query, the Usage and Status rows and `### What stays a raw query` carry those figures, and the other rows keep 2026-10-24's.
+Every statement that reads `zz.event` from its first row was measured again on 2026-11-01, read only, at **47,698 real-work calls** (82,701 events), each as the built gateway issues it: the three register rows that name a raw query, the Usage and Status rows and `### What stays a raw query` carry those figures, and the other rows keep 2026-10-24's.
 At that traffic both pages' ten-times projections are past their budgets; which statements move onto a read model is an open decision, recorded beside them.
 
 ### The metric register

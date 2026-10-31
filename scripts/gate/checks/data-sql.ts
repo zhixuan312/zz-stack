@@ -398,8 +398,8 @@ check("a run is attributed to a version by time, not by a column nothing stamps"
 });
 
 check("the run reconcile rewrites only the runs that changed", () => {
-  // `reconcileRuns` runs every five minutes over every run, so an unconditional `do update`
-  // rewrites each row on every pass, a dead tuple each time. Every write skips a row it would leave as it is,
+  // `reconcileRuns` runs over every run at start and over every run an event named lately every five
+  // minutes, so an unconditional `do update` rewrites each of those rows on every pass, a dead tuple each time. Every write skips a row it would leave as it is,
   // compared against the values it would write: the door's upsert against `excluded`, the repair
   // against the aggregate it recomputed. One comparison, in both, because "nothing moved" has to
   // mean the same thing at the door and on the timer.

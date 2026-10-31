@@ -93,7 +93,8 @@ export const versionAtEvent = (at: string, skill: string): string =>
  *  `since` bounds the pass to the runs an event named at or after it; null recounts every run. The
  *  gateway passes null once at start, to cover whatever was written while it was down, and a bound on
  *  its timer, because the whole log grows with every call and a run nothing named lately has nothing
- *  to repair. An event's `ts` is the time it was written, so the bound reads what arrived.
+ *  to repair. An event's `ts` is when its transaction began, which can be before it committed, so
+ *  a bound needs a margin for that gap; `runRepair` gives it an hour.
  *
  *  Returns the runs this pass rewrote and the events standing behind them — the numbers the boot
  *  line reports. */
@@ -142,4 +143,18 @@ export async function reconcileRuns(since: string | null): Promise<{ runs: numbe
   // measured zero on every deployment it ever ran on.
   return { runs: repaired.rowCount ?? 0,
            linked: repaired.rows.reduce((n, row) => n + Number(row.events), 0) };
+}
+
+/** The gateway's repair, one pass per call: the first recounts every run, which covers what was written
+ *  while the gateway was down, and each later one only the runs an event named since an hour before the
+ *  last pass that succeeded. A pass that fails leaves the bound where it was, so the next one reaches
+ *  back over it. */
+export function runRepair(): () => Promise<{ runs: number; linked: number }> {
+  let since: string | null = null;
+  return async () => {
+    const bound = new Date(Date.now() - 60 * 60_000).toISOString();
+    const done = await reconcileRuns(since);
+    since = bound;
+    return done;
+  };
 }

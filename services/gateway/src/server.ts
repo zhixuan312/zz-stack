@@ -24,7 +24,7 @@ import { identityMiddleware } from "./identity.js";
 import { mountMcpOauth } from "./mcp-oauth.js";
 import { mountPasskey, sweepSessions } from "./passkey.js";
 import { CORE_URL, EVAL_URL, passThrough } from "./relay.js";
-import { reconcileRuns } from "./runs.js";
+import { runRepair } from "./runs.js";
 import { mountSettings } from "./settings.js";
 import { mountUpload, sweepUploads } from "./upload.js";
 import { doorSurface, toolCallTelemetry } from "./tool-telemetry.js";
@@ -314,21 +314,16 @@ initPlatformDb()
         .catch((err: unknown) => console.error("upload sweep failed:", err instanceof Error ? err.message : err));
     }, 60 * 60_000).unref();
     // zz.skill_run's counters repaired from the event log, on start and every few minutes. The
-    // door writes each run with its event (runs.ts); this only recounts what late events moved.
-    // The first pass reads the whole log, which covers what was written while the gateway was down;
-    // each later one only the runs an event named since an hour before the last pass that succeeded.
-    let since: string | null = null;
-    const runs = () => {
-      const bound = new Date(Date.now() - 60 * 60_000).toISOString();
-      void reconcileRuns(since)
-        .then((n) => {
-          since = bound;
-          if (n.runs || n.linked) {
-            console.log(`runs: ${n.runs} recorded, ${n.linked} event(s) linked`);
-          }
-        })
-        .catch((err: unknown) => console.error("run reconcile failed:", err));
-    };
+    // door writes each run with its event (runs.ts); this only recounts what late events moved,
+    // the whole log on the first pass and the runs an event named lately after it (runRepair).
+    const repair = runRepair();
+    const runs = () => void repair()
+      .then((n) => {
+        if (n.runs || n.linked) {
+          console.log(`runs: ${n.runs} recorded, ${n.linked} event(s) linked`);
+        }
+      })
+      .catch((err: unknown) => console.error("run reconcile failed:", err));
     runs();
     setInterval(runs, 5 * 60_000).unref();
     void recordAccessSurface();

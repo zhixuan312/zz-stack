@@ -20,7 +20,8 @@
  *     `finding_decide` still decides the well-formed findings of the same batch;
  *   - `plugin_locate` naming a version a registered plugin has no row for names that version,
  *     not the plugin as unregistered;
- *   - `evaluator_qualify` retried with the same key answers what its first call answered;
+ *   - `evaluator_qualify` retried with the same key answers what its first call answered, and one
+ *     whose typed service answers nothing is refused with no qualification written;
  *   - `finding_decide` retried with the same key reports as decided only the findings that call
  *     decided, not one somebody else had already decided;
  *   - `plugin_profile` retried with the same key answers the snapshot it recorded after the
@@ -316,6 +317,38 @@ async function qualifyReplays(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
+/** An evaluator nobody could ask is not an evaluator that answered wrongly: with no typed service
+ *  answering, `evaluator_qualify` refuses and writes no qualification, rather than recording
+ *  `unqualified` with a reason blaming the anchors (runtime pass 2, F4). */
+async function qualifyOutageRecordsNothing(c: Core, s: Seed): Promise<void> {
+  const step = "evaluator_qualify while the typed service answers nothing";
+  const evaluator = (await one<{ id: string }>(c,
+    `insert into zz.eval_evaluator_version (version, question, answer_schema, content_digest, stable_key)
+     values (1, 'Does it hold?', '{"type":"noul"}', 'cd-outage', 'check-outage') returning id::text as id`)).id;
+  const dimension = (await one<{ id: string }>(c,
+    `insert into zz.eval_dimension (protocol_version_id, key, canonical_kind, weight, required)
+     values ($1, 'qo', 'reliability', 0, false) returning id::text as id`, [s.protocols.replayed])).id;
+  const anchors = [
+    { id: "a-yes", role: "anchor", text: "It holds.", expected: "yes" },
+    { id: "a-no", role: "anchor", text: "It does not hold.", expected: "no" },
+    { id: "f-1", role: "fault", text: "It holds, mostly.", expected: "no" },
+    { id: "c-1", role: "control", text: "A recipe for bread.", expected: "no" },
+  ];
+  const measure = (await one<{ id: string }>(c,
+    `insert into zz.eval_measure (dimension_id, key, evaluator_type, weight, required, definition, protocol_version_id,
+                                  evaluator_version_id)
+     values ($1, 'sem-outage', 'bounded_semantic', 1, false, $2::jsonb, $3, $4) returning id::text as id`,
+    [dimension, JSON.stringify({ qualification: { anchors } }), s.protocols.replayed, evaluator])).id;
+  const reply = await ask(evalDoor(c, c.email), "evaluator_qualify",
+    { protocol_version_id: s.protocols.replayed, measure_key: "sem-outage", idempotency_key: "qualify-outage-1" });
+  const rows = (await one<{ n: number }>(c,
+    "select count(*)::int as n from zz.eval_evaluator_qualification where measure_id = $1", [measure])).n;
+  if (!/^ERROR: .*no answer to 12 of 12 asks/.test(reply) || rows !== 0) {
+    c.fail(step, `${rows} qualification row(s) written, and it answered: ${reply.slice(0, 400)}`);
+  }
+  c.pass(step);
+}
+
 async function labelsPairWithinARun(c: Core, s: Seed): Promise<void> {
   const step = "label evidence pairs a decided finding with its own run's answers";
   const { pool } = await c.inProcess();
@@ -539,7 +572,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   const failed: string[] = [];
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
-                     notApplicableGuardrailIsNotRead, qualifyReplays, labelsPairWithinARun, staleRecordRegistersNothing,
+                     notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
                      partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {

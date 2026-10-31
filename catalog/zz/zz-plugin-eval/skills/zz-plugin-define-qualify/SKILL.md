@@ -263,7 +263,7 @@ and a `deterministic`/`outcome`/`human` measure, which is never qualified. It ru
 categories, all from the measure's own `definition.qualification.anchors` — **anchors**,
 **planted faults** and **controls** (each entry of that role, asked three times and passed only
 when all three answers are its `expected` — an unclear answer is a miss) and **stability** (the
-share of entries whose three answers agree) — plus **labels**, only where
+share of entries whose three answers agree; no answer agrees with nothing) — plus **labels**, only where
 the protocol's `qualification.labelMappings` names this evaluator's `stable_key`.
 
 RETURNS `{ measure_key, evaluator_version_id, qualification_id, state, evidence: { anchors,
@@ -273,7 +273,9 @@ planted_faults, controls, stability, labels, reason, results } }` — `state` is
 `results` lists each text's `{ id, role, expected, got }` — read them before blaming the
 evaluator: a text whose `got` a person would also give is a mislabelled anchor, fixed in a new
 protocol version. `unqualified` with `reason: no_anchors` means the measure declares no anchors.
-**Never refuses on thin evidence** — it always writes a row, honestly stating how thin.
+**Never refuses on thin evidence** — it always writes a row, honestly stating how thin. An outage is
+not evidence: when the typed service answers any ask with no reading, it refuses and writes nothing,
+and the same `idempotency_key` asks again once the service is back.
 
 **Qualify every `bounded_semantic`/`generative_critic` measure this protocol version names**
 before handing off, not only the ones you expect to be asked about — `evaluation_score` reads

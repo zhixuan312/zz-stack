@@ -268,7 +268,9 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         "have (naming the keys it does have); a key two dimensions share; and a " +
         "deterministic/outcome/human measure, which is not qualified. NEVER refuses on thin " +
         "evidence — a measure with no declared anchors answers state=unqualified, " +
-        "reason=no_anchors instead. A mutator: writes through the " +
+        "reason=no_anchors instead. REFUSES, writing nothing, when the typed service answers any " +
+        "ask with no reading (unreachable or not configured) — an outage is not a verdict on the " +
+        "evaluator. A mutator: writes through the " +
         "idempotency ledger, so a retried call with the same idempotency_key replays the same " +
         "row rather than re-asking any model. Pass `initiative` to record the state on the initiative.",
       inputSchema: {
@@ -316,6 +318,15 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
       } else {
         const gathered = await gatherQualification(
           p, evaluator_version_id, measure.id, who.id, protocol, stableKey, principal);
+        // An ask the typed service did not answer says nothing about the evaluator. Recording the
+        // ladder over it would write a durable `unqualified` blaming the anchors, and a retry with
+        // the same key would replay it; refusing writes nothing, so that retry asks again.
+        const unanswered = gathered.asked.filter((a) => a.result.reading === "unavailable");
+        if (unanswered.length) {
+          return text(`ERROR: the typed service gave no answer to ${unanswered.length} of ${gathered.asked.length} ` +
+            `asks (${unanswered[0].result.reason ?? "no reason given"}). That says nothing about the evaluator, ` +
+            "so no qualification was recorded — retry with the same idempotency_key once the service answers.");
+        }
         outcome = await withIdempotency(
           principal, "evaluator_qualify", idempotency_key, args,
           async (client): Promise<MutatorOutcome<QualifyResult>> => {

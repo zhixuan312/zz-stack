@@ -86,6 +86,15 @@ for (const m of semantic) {
   assert.equal(qualificationState({ ...counts, labels: null }, thresholds).state, "unqualified");
 }
 
+// 3c. No answer is not a stable answer: an evaluator that returned nothing comparable three times
+// over agrees with nobody (runtime pass 2, F4 — an outage read as 4/4 "agreeing").
+{
+  const { counts } = await gatherCountedEvidence({
+    anchors: semantic[0].definition.qualification!.anchors, ask: async () => noul("unavailable"),
+  });
+  assert.equal(counts.stability.passed, 0, `entries with no answer counted as stable: ${JSON.stringify(counts.stability)}`);
+}
+
 // 4. Mismatched anchors — a text labelled with the wrong answer — fail by name: the threshold,
 // and the anchor id with what it expected and what it got.
 {

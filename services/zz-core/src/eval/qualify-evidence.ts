@@ -10,7 +10,7 @@
  *     defect) the fault kill rate, `"control"` (an artifact of another kind) the control catch rate.
  *   - Every entry is asked three times, and passes only when all three answers are its
  *     `expected` — an unclear answer is a miss. Stability is the share of entries whose three
- *     answers agree.
+ *     answers agree, and an entry with no comparable answer agrees with nothing.
  *   - Labels come only through the protocol's `qualification.labelMappings`, matched by this
  *     evaluator's own `stable_key` — see `parseLabelMappings`/`mappingFor` — and pair a decided
  *     `zz.eval_finding` with the evaluator's answers of the same measure in the same run, which
@@ -84,7 +84,8 @@ export async function gatherCountedEvidence(opts: {
     tally[a.role].total += 1;
     if (answers.every((got) => got === a.expected)) tally[a.role].passed += 1;
     stability.total += 1;
-    if (answers.every((got) => got === answers[0])) stability.passed += 1;
+    // No answer is not an answer that agrees: three nulls are an evaluator nobody heard from.
+    if (answers.every((got) => got !== null && got === answers[0])) stability.passed += 1;
   }
 
   return {

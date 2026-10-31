@@ -27,7 +27,8 @@
  *     address nobody has or a person who is deactivated;
  *   - team_create names the slug rule it refuses by and refuses a blank or overlong name,
  *     pat_issue an overlong label, and team_switch takes a slug in any case and answers a switch
- *     to the current team as no change, recording none.
+ *     to the current team as no change, recording none;
+ *   - catalog_list's descriptions end where a sentence or a word does.
  *
  * The only database this touches is the one it started.
  *
@@ -42,7 +43,7 @@ import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from ".
 
 const NAME = "manage-door";
 const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
-  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, an unreadable body in JSON, a dead token says why, a roster counts who can act, and names are bounded: ok";
+  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, an unreadable body in JSON, a dead token says why, a roster counts who can act, names are bounded, and the shelf reads whole: ok";
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
@@ -315,6 +316,14 @@ async function namingActs(c: Core, g: Gateway): Promise<void> {
   await new Promise((r) => setTimeout(r, 500));
   if ((await switches()) !== 1) c.fail(step, `${await switches()} team.switch events, where one switch happened`);
   c.pass(step);
+
+  const shelf = "catalog_list's descriptions end where a sentence or a word does";
+  const { catalog } = JSON.parse(await ask("catalog_list", {})) as { catalog: { flow: string; description: string }[] };
+  if (!catalog.length) c.fail(shelf, "catalog_list listed nothing");
+  for (const { flow, description } of catalog) {
+    if (!/[.!?…]$/.test(description)) c.fail(shelf, `${flow}'s description ends "${description.slice(-30)}"`);
+  }
+  c.pass(shelf);
 }
 
 async function run(c: Core): Promise<void> {

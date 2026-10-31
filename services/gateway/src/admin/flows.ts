@@ -7,12 +7,13 @@
  * person's own choice.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { catalogManifest, installableFlows } from "@zz/catalog";
+import { installableFlows } from "@zz/catalog";
 import { READS, text } from "@zz/mcp-http";
 
 import { buildClientPackage, PLATFORM_VERSION, type ClientPackage } from "../client-package.js";
 import { callerIdentity as caller } from "../identity.js";
 import { describePackage } from "../package/describe.js";
+import { cardDescription } from "../package/skills.js";
 
 /** No default, deliberately. A client package is a file a person installs, and every URL inside
  *  it has to be the address they will actually reach — a fallback to this deployment's own
@@ -57,7 +58,8 @@ export function registerShelf(server: McpServer): void {
       return {
         flow,
         version: PLATFORM_VERSION,
-        description: (catalogManifest(flow)?.description ?? "").slice(0, 160),
+        // The shelf card's own description, trimmed where a reader would stop.
+        description: cardDescription(flow, ""),
       };
     });
     return text(JSON.stringify({ catalog }, null, 2));

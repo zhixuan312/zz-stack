@@ -115,14 +115,14 @@ export async function buildAndSmoke({ dash, dashVersion }: { dash: DashboardReso
   }
   log(`  image carries ${catalogCheck[0]} catalog owners, ${catalogCheck[1]} platform skills`);
 
-  // And carries no TypeScript: this repository is private and every deploy host pulls this
-  // image. The Dockerfile prunes in the build stage — a `find -delete` in the runtime stage
+  // And carries no TypeScript: nothing at runtime reads a source file, and every deploy host pulls
+  // whatever weight the image carries. The Dockerfile prunes in the build stage — a `find -delete` in the runtime stage
   // looks identical from inside a container and changes nothing, because layers are additive
   // and `docker save` still has the files. This checks the filesystem the services see.
   const sourceInImage = Number(run("docker", ["run", "--rm", "--entrypoint", "sh", `${IMAGE}:${version}`,
     "-c", "find /repo/packages /repo/services -name '*.ts' | wc -l"]).trim() || "0");
   if (sourceInImage) die(`the image ships ${sourceInImage} TypeScript source file(s); nothing at ` +
-                         "runtime reads one and this repository is private");
+                         "runtime reads one, and the Dockerfile's build stage is meant to prune them");
   log("  image ships no TypeScript source");
 
   /* Every query in the release, asked of a real Postgres before anything is pushed.

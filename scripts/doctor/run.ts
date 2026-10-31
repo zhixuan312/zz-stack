@@ -66,7 +66,7 @@ export const findings: Finding[] = [];
  * `owns` is the repository paths this layer's claim is made of, and it is not decoration —
  * `--since` reads it to say which commits since a known-good version touched the layer that
  * disagrees. A layer that owns nothing can still run; it just cannot be correlated, and
- * report() says so rather than implying the change list is empty. */
+ * `since()` (doctor/since.ts) says so rather than implying the change list is empty. */
 export function layer(name: string, question: string, owns: string[] = []): void {
   current = { name, question, owns, probes: [] };
   layers.push(current);

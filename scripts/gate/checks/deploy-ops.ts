@@ -125,7 +125,8 @@ check("a deployment's database is asked for its own role and name", () => {
   // and .env.example documents them as such, so on any host that sets either the command fails —
   // and release.ts's migration probe is step 5, which rolls a release back.
   //
-  // `docker compose exec` is the distinguishing mark: it means a deployment whose configuration
+  // `docker compose exec` is the distinguishing mark, with or without compose's own flags between
+  // the two words (`docker compose -f <file> exec`): it means a deployment whose configuration
   // lives in its own .env. A `docker exec` into a container the caller just started with
   // `-e POSTGRES_USER=…` configured that value itself and is right to repeat it.
   const bad = [];
@@ -149,7 +150,7 @@ check("a deployment's database is asked for its own role and name", () => {
       // `docker compose exec` and the `psql` it runs sit on different source lines. Removing the
       // seam makes the source read the way the shell will.
       .replace(/`\s*\+\s*\n?\s*`/g, "");
-    for (const m of src.matchAll(/docker compose exec[^\n]*?psql\s+([^\n]*)/g)) {
+    for (const m of src.matchAll(/docker compose(?:\s+--?[\w-]+(?:[ =](?!exec\b)\S+)?)*\s+exec\b[^\n]*?psql\s+([^\n]*)/g)) {
       const flags = m[1];
       for (const [flag, what] of [["-U", "role"], ["-d", "database"]]) {
         const v = new RegExp(`${flag}\\s+("?)([^\\s"']+)\\1`).exec(flags);

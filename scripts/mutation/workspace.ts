@@ -149,7 +149,7 @@ export function refusesAsWork(at: string): string | null {
  * a check file written and not yet added is in `trackedFiles()` and so is in the set this run
  * has to cover.
  */
-export function makeWorkspace(source: string, at: string, prepare?: (repo: string) => void): Workspace {
+export function makeWorkspace(source: string, at: string): Workspace {
   // The two directories a typo lands on, judged the same way as the checkout below and before the
   // delete rather than after it.
   const refuses = refusesAsWork(at);
@@ -196,9 +196,6 @@ export function makeWorkspace(source: string, at: string, prepare?: (repo: strin
   const repo = join(parent, basename(source));
   execFileSync("cp", ["-a", source, repo], { stdio: "pipe" });
   linkSiblings(source, parent);
-  // Before the commit and before the snapshot, so whatever `prepare` writes is part of the
-  // tree every mutation is restored to rather than something the first restore deletes.
-  if (prepare) prepare(repo);
 
   git(repo, ["-c", "user.name=mutation", "-c", "user.email=mutation@local", "add", "-A"]);
   if (git(repo, ["status", "--porcelain"]).trim()) {

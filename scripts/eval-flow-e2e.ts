@@ -25,7 +25,8 @@
  *
  * Loopback only. The walk is handed its gateway, token and database by the stack it stood up, and
  * checks them against the fail-closed allowlist in scripts/scratch-only.ts — this
- * writes sixteen initiatives, a release and a rollback into whatever it is pointed at.
+ * writes two rounds of seeded initiatives, the evaluation's own, a release and a rollback into
+ * whatever it is pointed at.
  */
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,7 +41,7 @@ import { asked, startStub } from "./eval-flow-e2e/stub-model.ts";
 import { defineQualify, discover, evaluate, explain, identify, observe, type Walk } from "./eval-flow-e2e/walk.ts";
 
 async function walk(stack: Stack): Promise<void> {
-  const refusal = refuseUnlessScratch(stack.url, stack.pat, stack.db, "sixteen initiatives, a release and a rollback");
+  const refusal = refuseUnlessScratch(stack.url, stack.pat, stack.db, "two rounds of seeded initiatives, an evaluation, a release and a rollback");
   if (refusal) throw new Error(refusal);
   const tag = `evalflow-${Date.now().toString(36)}`;
   const t0 = Date.now();

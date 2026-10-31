@@ -8,8 +8,10 @@
  * real deployment would end up with. Migrations are applied by `initPlatformDb` from
  * `services/gateway/src/db.ts` — imported from its built `dist`, because that file's own
  * relative imports use the `.js` extension convention `tsc` rewrites, which Node's type
- * stripping does not resolve back to a `.ts` file. That function's pool is a module-level
- * singleton (one migration run per process), so this only ever calls it once.
+ * stripping does not resolve back to a `.ts` file. Every call of that function opens a new pool on
+ * whichever URL is set and runs the migrations against it, so each throwaway this starts is
+ * migrated by its own call — a process that starts several gets several migrated databases — and
+ * the pool is ended here once the migrations are done.
  *
  * DELIBERATE: refuses outright if `PLATFORM_DB_URL` or `TEAM_DB_URL` is already set in this
  * process's environment before it starts anything. `initPlatformDb` reads whichever of the two

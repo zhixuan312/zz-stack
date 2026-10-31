@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { REMOTE, root, run, ssh } from "../../deployment.ts";
+import { PG_ROLE_DB_SH, REMOTE, root, run, ssh } from "../../deployment.ts";
 import { ABSORBS } from "../../release/rollback-guard.ts";
 import { everySkill, readSkill } from "../../skill-versions.ts";
 import { layer, probe } from "../run.ts";
@@ -21,9 +21,7 @@ layer("data", "is the data the shape this checkout expects", ["services/gateway/
 
 /** psql on the host, through compose, with the role and database read rather than typed. */
 const psql = (sql: string): string => ssh(
-  `cd ${REMOTE}/deploy && ` +
-  `U=$(grep -oP '(?<=^POSTGRES_USER=).*' .env || echo zz) && ` +
-  `D=$(grep -oP '(?<=^POSTGRES_DB=).*' .env || echo zz) && ` +
+  `cd ${REMOTE}/deploy && ${PG_ROLE_DB_SH} && ` +
   `docker compose exec -T postgres psql -U "$U" -d "$D" -tAc ${JSON.stringify(sql)} 2>/dev/null || true`);
 
 probe("every migration is applied, and every applied migration still exists", () => {
@@ -230,8 +228,9 @@ probe("the deployment holds a team and an initiative to the same team", () => {
 // rather than the property, and a rewrite can satisfy the grep and leave every row null.
 //
 // A door is a plugin's declared server, so a call that arrived on one is attributable by
-// construction; the only honest null is a surface no manifest claims, which is `admin`. So this
-// counts what is not attributed and excludes that one.
+// construction. Every surface the gateway files a call under — `core`, `eval` and `manage`
+// (`doorSurface` in services/gateway/src/tool-telemetry.ts) — is a server some manifest declares,
+// so no null here is honest, and this counts every one.
 probe("recent tool calls name the plugin whose door they arrived on", () => {
   // The last 200 calls, not all of them. Attribution is a property of the code that wrote a row, and
   // rows written before pluginForDoor landed carry nulls no deploy can fill; counting them forever
@@ -241,12 +240,10 @@ probe("recent tool calls name the plugin whose door they arrived on", () => {
   // A count-bounded window needs no timestamp and no marker, and corrects itself as the platform is
   // used. Expect it red for a short while after a release that changes the write path, while the
   // window still holds rows the old code wrote.
-  //
-  // `admin` is excluded: no manifest claims it, so it is the one null this platform is entitled to.
   const row = psql(
     "select count(*) || '|' || count(plugin) from (" +
     "  select plugin from zz.event where kind = 'tool_call'" +
-    "   and split_part(subject,':',1) <> 'admin' order by ts desc limit 200) r").trim();
+    "   order by ts desc limit 200) r").trim();
   const [totalRaw, withPluginRaw] = row.split("|");
   const total = Number(totalRaw);
   if (!row || Number.isNaN(total)) throw new Error("could not count zz.event on the host");

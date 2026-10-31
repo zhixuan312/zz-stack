@@ -189,8 +189,11 @@ interface ParsedTask extends OwnedTask {
 }
 
 function normaliseTail(tail: string): string {
-  // `none (runs after X)` is still none: a parenthetical explains, it does not add an edge.
-  return tail.trim().toLowerCase().replace(/\s*\(.*\)\s*$/, "").replace(/[.;,]+$/, "");
+  // `none (runs after X)` is still none: a parenthetical explains, it does not add an edge. And
+  // `` `none` `` or "none" is none: the refusals below tell a writer to type `none`, and a writer
+  // copying that keeps the backticks.
+  return tail.trim().toLowerCase().replace(/\s*\(.*\)\s*$/, "").replace(/[.;,]+$/, "")
+    .replace(/^([`"'])(.*)\1$/, "$2").trim();
 }
 
 /**

@@ -4,8 +4,12 @@
  * its stage records as `zz.initiative_record` rows, answered by a stubbed `pg.Pool.prototype.query`.
  *
  * COUPLED: each pattern below is the text of one statement zz-core issues (initiative-status.ts,
- * guards.ts, chain.ts, initiative-record.ts). When one of them changes, the stub stops answering it and
- * every check installing this world fails, which is what keeps a stub honest.
+ * guards.ts, chain.ts, initiative-record.ts).
+ *
+ * DELIBERATE: a statement no pattern matches is answered with no rows. The readers also ask for things
+ * this world never holds (`assessmentsFor`'s `zz.assessment`, for one), and an empty answer is what
+ * every check installing it wants there. So a changed statement is not refused here — it reads as an
+ * empty table, and a check fails only where it asserted something that table should have held.
  */
 import pg from "pg";
 

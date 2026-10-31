@@ -59,23 +59,23 @@ interface CallRow {
    * event carries `initiative_id` and `team_id`, and the statement resolves both to the slug, so a
    * row that names no team or no initiative comes back null rather than dropped. `step` is the
    * skill's name, resolved the same way through the version the event names: an event whose skill
-   * version could not be resolved is a step this cannot name, and says so with a null.
-   *
-   * `plugin` below is resolved from the door the call arrived on. */
+   * version could not be resolved is a step this cannot name, and says so with a null. */
   team_slug: string | null;
   initiative: string | null;
   step: string | null;
-  /** Which plugin owns the skill `step` names, and its released version — resolved at write
-   * time through zz.plugin_version_skill, never from the initiative's flow (a team's last
-   * install, not a skill's owner) and never guessed at: an unresolvable step leaves both null. */
+  /** Which plugin's door served the call, stamped at write and never resolved from the
+   * initiative's flow; null when no plugin door served it. `plugin_version` is the version that
+   * plugin reported in its initialize handshake: null whenever `plugin` is, and possibly null when
+   * it is not, because the door had not handshaken in that process. */
   plugin: string | null;
   plugin_version: string | null;
-  /** `<surface>:<tool>`, alias-resolved as of write time — a snapshot, not a live answer. A row
-   * older than this column carries none and falls back to `subject`. Either way it still passes
-   * through `resolveToolKey` below rather than being trusted outright: a tool renamed again after
-   * the snapshot would stay stuck under the superseded name. A no-op when it is already current. */
-  tool_key: string | null;
-  ok: boolean | null;
+  /** `<surface>:<tool>`, alias-resolved as of write time — a snapshot, not a live answer. Every
+   * tool_call row carries it (the table's CHECK says so). It still passes through `resolveToolKey`
+   * below rather than being trusted outright: a tool renamed again after the snapshot would stay
+   * stuck under the superseded name. A no-op when it is already current. */
+  tool_key: string;
+  /** Never null on a tool_call row: the same CHECK requires it. */
+  ok: boolean;
   refusal: string | null;
   /** Who the refusal belongs to, stamped at ingest by @zz/contracts' refusalOwner().
    *
@@ -224,7 +224,7 @@ export interface ReportShape {
   unreadable: number;
   accepted_rate: number;
   aborted: number;
-  /** A `subject` with no colon to split — counted under its own raw value in `tools` rather
+  /** A `tool_key` with no colon to split — counted under its own raw value in `tools` rather
    * than dropped, and named here so an operator can see the row exists and go read it. */
   unparseable: number;
   tools: Record<string, ToolStat>;
@@ -338,11 +338,11 @@ function main(argv: string[]): number {
   const example = new Map<string, { tool: string; args: string[]; shapes: Record<string, string>; text: string }>();
 
   for (const e of events) {
-    // `tool_key` preferred when the row has one, but resolved again rather than trusted outright:
-    // it is a write-time snapshot, and a second rename after that row was written would leave it
-    // stuck under a superseded name. `<surface>:<tool>` stays the display key either way.
-    if (!(e.tool_key ?? e.subject).includes(":")) unparseable++;
-    const subject = resolveToolKey(e.tool_key ?? e.subject);
+    // `tool_key` resolved again rather than trusted outright: it is a write-time snapshot, and a
+    // second rename after that row was written would leave it stuck under a superseded name.
+    // `<surface>:<tool>` stays the display key.
+    if (!e.tool_key.includes(":")) unparseable++;
+    const subject = resolveToolKey(e.tool_key);
     const d = e.detail ?? {};
     if (!perTool.has(subject)) perTool.set(subject, { calls: 0, ok: 0, refused: 0, unreadable: 0, ms: [], bytes: [] });
     const t = perTool.get(subject)!;
@@ -447,7 +447,7 @@ function main(argv: string[]): number {
         // A call that never came back is not refused, not accepted, and leaves no answer to
         // classify.
         (report.aborted ? `, ${report.aborted} never came back` : "") +
-        // A subject with no colon to split — counted under its own raw value above rather
+        // A tool_key with no colon to split — counted under its own raw value above rather
         // than dropped, and said out loud so an operator goes and reads that row.
         (report.unparseable ? `, ${report.unparseable} unparseable subject(s)` : ""),
     );

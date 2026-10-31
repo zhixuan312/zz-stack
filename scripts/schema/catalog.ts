@@ -9,9 +9,8 @@
  * so every `pg_get_constraintdef`/`pg_get_indexdef` below renders `zz.*` fully qualified
  * regardless of whatever search_path a different session would have carried.
  *
- * DELIBERATE: `schema_migration` and the three `search_*_default` partitions are excluded here,
- * not by the caller — `readCatalog` is the one place that knows what counts as a design table,
- * and every caller gets the same set.
+ * DELIBERATE: `schema_migration` is excluded here, not by the caller — `readCatalog` is the one
+ * place that knows what counts as a design table, and every caller gets the same set.
  */
 import type pg from "pg";
 
@@ -42,7 +41,6 @@ async function readTables(client: pg.Client): Promise<TableRow[]> {
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'zz'
       and c.relkind in ('r', 'p')
-      and not c.relispartition
       and c.relname <> 'schema_migration'
     order by c.relname
   `);

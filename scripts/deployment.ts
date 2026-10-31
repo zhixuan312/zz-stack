@@ -64,6 +64,14 @@ export const run = (cmd: string, cmdArgs: string[], opts: ExecFileSyncOptions = 
   String(execFileSync(cmd, cmdArgs, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", ...opts })).trim();
 export const ssh = (script: string): string => run("ssh", ["-o", "ConnectTimeout=30", HOST, script]);
 
+/** Sets `U` and `D` to the deployment's database role and name, in a host shell already in
+ *  `${REMOTE}/deploy`: POSTGRES_USER and POSTGRES_DB from its .env, `zz` where it sets neither —
+ *  what compose and the deploy scripts (backup.sh, issue-first-pat.sh) use. .env.example documents
+ *  both as settable, so a probe or a registry write that typed `zz` would read the wrong database. */
+export const PG_ROLE_DB_SH =
+  `U=$(grep -oP '(?<=^POSTGRES_USER=).*' .env || echo zz) && ` +
+  `D=$(grep -oP '(?<=^POSTGRES_DB=).*' .env || echo zz)`;
+
 /* The token that proves this caller to the deployment it is talking to: `ZZ_TOKEN` from the
  * environment or the repository's own gitignored .env, and nowhere else.
  *

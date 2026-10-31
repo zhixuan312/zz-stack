@@ -170,13 +170,14 @@ function runGrouped(cmd: string, args: string[], cwd: string, env: NodeJS.Proces
 }
 
 /**
- * The build runs before the gate, and this is not an optimisation.
+ * The build runs before the gate, for the diagnosis rather than for the build.
  *
- * `scripts/gate.ts` statically imports every check module, and an ES module graph is instantiated
- * in full before any module body is evaluated — so `packages/contracts/dist` is already in the
- * module registry by the time `check("tsc -b")` rebuilds it, and the rebuilt output cannot reach
- * the process that produced it. A defect planted in a shared package therefore reaches its check
- * only if the build happens in a process that ends before the gate's begins.
+ * The gate builds too — `check("tsc -b")` runs first and every other check module is loaded after
+ * it — so a planted defect reaches its check either way. What the gate's build cannot do is say
+ * which step went wrong: it has no timeout of its own, so a build that hangs is one more step of a
+ * gate killed at CHILD_TIMEOUT_MS and the row reads TIMED OUT with nothing naming the build. Run
+ * first, as its own process group under the same timeout, a hang or a failure is named on the row
+ * (`prebuild_failed`, `prebuild_error`) before the gate builds again over it.
  */
 function prebuild(repo: string): string | null {
   const r = runGrouped("npm", ["run", "-s", "build"], repo);
@@ -301,7 +302,7 @@ function main(): void {
   if (workers > 1 && !dry && !guardsOnly) {
     void runSharded({
       runner: join(root, "scripts/mutation-run.ts"), source: root, workAt, out, wanted: selected,
-      rowsFor, workers, extras: keep ? ["--keep"] : [],
+      rowsFor, workers, extras: keep ? ["--keep"] : [], keep,
       reportText,
     }).then(() => process.exit(0));
     return;
@@ -521,11 +522,11 @@ function main(): void {
         "read the verdict from that report's failed_ids, restore, verify the sha256 again",
       ],
       why_the_build_is_separate:
-        "scripts/gate.ts statically imports every check module, and an ES module graph is " +
-        "instantiated in full before any module body is evaluated — so packages/contracts/dist " +
-        "is already linked when check(\"tsc -b\") rebuilds it, and the rebuilt output cannot " +
-        "reach the process that produced it. Without a separate build step a defect planted " +
-        "in a shared package never reaches the check that imports it.",
+        "The gate builds first too, and every check module after its build is loaded with " +
+        "import(), so a planted defect reaches its check either way. The separate build is for " +
+        "the diagnosis: inside the gate a build that hangs is one step of a run killed at the " +
+        "timeout and reads TIMED OUT, while built first under its own timeout a hang or a " +
+        "failure is named on the row as prebuild_failed and prebuild_error.",
       failed_means:
         "the target check is in this run's failed_ids and was not in the baseline's",
       rows_are_per_registered_check:

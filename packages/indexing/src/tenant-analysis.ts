@@ -14,9 +14,9 @@ import { UPLOAD_MAX_BYTES } from "@zz/contracts";
 /** Named so an incompatible analyzer is a new name rather than a silent behaviour change under
  *  the old one.
  *
- *  COUPLED: the rederivation walker rewrites a row only when
- *  `analyzer_version !== request.analyzer`, so bumping this name is what makes rows written
- *  under a broken construction repairable. */
+ *  COUPLED: the rederivation walk (`index.ts`'s `rederiveRows`) rewrites a row only when its
+ *  `analyzer_version` is distinct from this name, unless forced, so bumping this name is what
+ *  makes rows written under a broken construction repairable. */
 export const ANALYZER_NAME = "zz-lexical-v4";
 
 /** The most a stored body may be, in UTF-8 bytes: the upload limit's own figure, so a file one

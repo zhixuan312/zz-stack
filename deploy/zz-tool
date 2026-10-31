@@ -73,10 +73,25 @@ shift
 # COUPLED: every name here is read by a tool in packages/tools/src, and every name such a tool
 # reads is here. The gate's config-env checks hold the second direction through the import graph;
 # the first only by finding the name somewhere in services/ or packages/.
+#
+# ZZ_TOKEN_FILE is the one that does not travel as itself: it names a file on this host, which the
+# container does not mount, so the file is read here and its token forwarded as ZZ_TOKEN — the
+# variable the tools read first. A set ZZ_TOKEN wins, as it does in the tools, and a file that
+# cannot be read, or holds nothing, stops this script naming the host path.
 pass=()
 for v in ZZ_PAT ZZ_TOKEN ZZ_TOKEN_FILE ZZ_URL ZZ_GATEWAY CHAIN_FLOW \
          ZZ_CATALOG_OWNER_TEAM; do
-  [ -n "${!v:-}" ] && pass+=(-e "$v")
+  [ -n "${!v:-}" ] || continue
+  if [ "$v" = ZZ_TOKEN_FILE ]; then
+    if [ -z "${ZZ_TOKEN:-}" ]; then
+      ZZ_TOKEN="$(cat "$ZZ_TOKEN_FILE")"
+      if [ -z "$ZZ_TOKEN" ]; then echo "\$ZZ_TOKEN_FILE names $ZZ_TOKEN_FILE, which holds no token." >&2; exit 2; fi
+      export ZZ_TOKEN
+      pass+=(-e ZZ_TOKEN)
+    fi
+    continue
+  fi
+  pass+=(-e "$v")
 done
 
 # `-T`: no TTY. Nothing here is interactive, and with one allocated an ssh session that

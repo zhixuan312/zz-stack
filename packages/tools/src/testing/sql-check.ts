@@ -23,8 +23,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { die, parseArgs } from "../lib/cli.js";
-import { type QuerySite, queriesIn as queriesInSource } from "../lib/sql-scan.js";
-import { DEFAULT_PSQL, psqlScript, psqlTry } from "../lib/psql.js";
+import { type PsqlSite, type QuerySite, psqlCallsIn, queriesIn as queriesInSource } from "../lib/sql-scan.js";
+import { DEFAULT_PSQL, psqlScript, psqlTry, rowsStatement } from "../lib/psql.js";
 
 /** Where the queries are. Sources, not dist: a template literal survives compilation, but
  * the line number that makes a failure actionable does not. */
@@ -33,6 +33,9 @@ const SRC = ["services", "packages"];
 /** This file, which contains the pattern that finds `.query(` and would otherwise find it
  * here. A check that reads its own text as evidence reports a defect nobody can fix. */
 const SELF = "packages/tools/src/testing/sql-check.ts";
+
+/** The psql readers' own module, whose calls of each other pass a statement through as a variable. */
+const PSQL = "packages/tools/src/lib/psql.ts";
 
 /**
  * What PREPARE accepts: SELECT, INSERT, UPDATE, DELETE, MERGE, VALUES, and a WITH leading
@@ -69,7 +72,29 @@ function sources(root: string, dirs: string[]): string[] {
 }
 
 /**
- * Every `.query(...)` in a file, with the statement it was handed.
+ * A psql reader's statement as the server is handed it. psql fills in `:'name'` and `:name` before
+ * the server sees the text, so each becomes a parameter, one per name, which PREPARE types from
+ * where it stands as the server types the literal psql writes there. A quoted SQL literal is passed
+ * over whole, and a `::` cast is not a variable. `:"name"` is an identifier, which no parameter can
+ * stand for.
+ */
+function bound(sql: string): { sql: string } | { why: string } {
+  const numbered = new Map<string, number>();
+  let identifier = false;
+  const out = sql.replace(/'(?:[^']|'')*'|(?<!:):(?:'(\w+)'|"(\w+)"|([A-Za-z_]\w*))/g,
+    (whole: string, quoted?: string, named?: string, raw?: string) => {
+      if (whole.startsWith("'")) return whole;
+      if (named) { identifier = true; return whole; }
+      const name = (quoted ?? raw)!;
+      if (!numbered.has(name)) numbered.set(name, numbered.size + 1);
+      return `$${numbered.get(name)}`;
+    });
+  return identifier ? { why: "it names an identifier through a psql variable, which no parameter can stand for" } : { sql: out };
+}
+
+/**
+ * Every `.query(...)` in a file, with the statement it was handed, and every `psqlRows(`,
+ * `psqlText(` and `psqlTry(`, with the statement psql hands the server.
  *
  * COUPLED: the scan is `@zz/tools/lib/sql-scan`, which the gate's console check also uses to hold
  * console.ts to literals; the two have to agree exactly on where a statement starts and ends.
@@ -78,10 +103,22 @@ function sources(root: string, dirs: string[]): string[] {
  */
 function queriesIn(file: string, root: string): Found[] {
   const rel = file.slice(root.length + 1);
-  return queriesInSource(readFileSync(file, "utf8")).map(({ line, sql, why }: QuerySite) => {
+  const src = readFileSync(file, "utf8");
+  const psqlSites = rel === PSQL ? [] : psqlCallsIn(src);
+  return [...queriesInSource(src), ...psqlSites].map((site: QuerySite | PsqlSite) => {
+    const { line, why } = site;
+    let sql = site.sql;
     if (why) return { file: rel, line, sql, why };
     if (/\$\{/.test(sql)) {
       return { file: rel, line, sql, why: "built at runtime, so there is no one statement to check" };
+    }
+    if ("via" in site) {
+      const b = bound(sql.replace(/;\s*$/, ""));
+      if ("why" in b) return { file: rel, line, sql, why: b.why };
+      if (b.sql.replace(/'(?:[^']|'')*'/g, "").includes(";")) {
+        return { file: rel, line, sql, why: "a script of several statements, which one PREPARE cannot hold" };
+      }
+      sql = site.via === "psqlRows" ? rowsStatement(b.sql) : b.sql;
     }
     if (!PREPARABLE.test(sql)) {
       return { file: rel, line, sql,

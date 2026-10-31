@@ -118,7 +118,7 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     subject: `${EVAL}/flow.json`,
     find: `  "entry": "zz-plugin-eval",\n`,
     replace: "",
-    planted: "a package with five stages no longer names the skill its agent opens first, so " +
+    planted: "a package with eight stages no longer names the skill its agent opens first, so " +
       "an agent sent to run the method has no door into it and whenToUse falls back to a " +
       "sentence the platform generated rather than the one the skill wrote",
   },

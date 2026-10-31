@@ -60,6 +60,14 @@ check("a plan that declares no Owns runs one task per wave", () => {
   }
 });
 
+check("a backticked or quoted `none` is none, in Dependencies and in Owns", () => {
+  // The validator's own refusals tell a writer to type `none`, and a writer copying that keeps the quotes.
+  const quoted = plan(task(1, "`none`", "`packages/a/**`"), task(2, "\"none\".", "`none`"));
+  const report = validatePlan(quoted);
+  if (!report.ok) return `a plan spelling none the way the refusals do failed: ${kinds(quoted).join(", ")}`;
+  if (JSON.stringify(report.waves) !== JSON.stringify([["I-1", "I-2"]])) return `waves read as ${JSON.stringify(report.waves)}`;
+});
+
 check("a plan written one phase at a time validates on the phases written, and yields the current phase's waves", () => {
   const phase1 = "## Phase 1 — Skeleton: runs end to end\n" +
     task(1, "none", "`packages/a/**`") + task(2, "none", "`packages/b/x.ts`") + task(3, "Task I-1", "`packages/a/y.ts`");

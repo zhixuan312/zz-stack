@@ -83,6 +83,11 @@ export function psqlScript(psql: string, sql: string): { status: number | null; 
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+/** The statement psqlRows runs for `select`: the json_agg wrapper it composes, which sql-check PREPAREs as
+ *  it is run. */
+export const rowsStatement = (select: string): string =>
+  `select coalesce(json_agg(row_to_json(t)), '[]') from (\n${select}\n) t`;
+
 /**
  * One SELECT, as rows. Give it the select; the json_agg is this function's.
  *
@@ -98,8 +103,7 @@ export function psqlScript(psql: string, sql: string): { status: number | null; 
  * that is not psql — would otherwise reach JSON.parse and come out as a SyntaxError with a
  * stack. */
 export function psqlRows<T>(psql: string, select: string, vars: Record<string, string> = {}): T[] {
-  const sql = `select coalesce(json_agg(row_to_json(t)), '[]') from (\n${select}\n) t;`;
-  const body = psqlText(psql, sql, vars);
+  const body = psqlText(psql, `${rowsStatement(select)};`, vars);
   if (!body) return [];
   try {
     return JSON.parse(body) as T[];

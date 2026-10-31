@@ -95,7 +95,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
     target: "a column nothing reads is not proof a column nothing needs",
     assertion: "the written tool_key is resolved again rather than read outright",
     subject: "packages/tools/src/testing/tool-report.ts",
-    find: "resolveToolKey(e.tool_key ?? e.subject)",
+    find: "resolveToolKey(e.tool_key)",
     replace: "resolveToolKey(e.subject)",
     planted: "the tool report goes back to grouping by the raw subject, so the snapshot column " +
       "written at call time is fetched and thrown away and a renamed tool appears as two " +

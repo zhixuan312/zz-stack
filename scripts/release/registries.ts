@@ -12,15 +12,32 @@
  * a warning, left every plugin with no release owner and the newest plugin version at 0.75.0, and
  * reported itself released.
  */
-import { HOST, REMOTE, asExecError, log, run, ssh } from "../deployment.ts";
+import { HOST, PG_ROLE_DB_SH, REMOTE, asExecError, log, run, ssh } from "../deployment.ts";
 
-const regPsql = `ssh ${HOST} docker compose -f ${REMOTE}/deploy/docker-compose.yml exec -T postgres psql -U zz -d zz`;
+let regPsqlMemo: string | null = null;
+/** psql on the deployment's database, as one command line a tool's `--psql` takes. The role and
+ *  database are asked of the host once (`PG_ROLE_DB_SH`) and then named literally, because the
+ *  line is split on spaces and handed to ssh; a value that could not survive that is refused. An
+ *  empty one is `zz`, as the deploy scripts' `${POSTGRES_USER:-zz}` reads it. */
+function regPsql(): string {
+  if (regPsqlMemo) return regPsqlMemo;
+  const [u = "", d = ""] = ssh(`cd ${REMOTE}/deploy && ${PG_ROLE_DB_SH} && printf '%s %s' "$U" "$D"`).split(" ");
+  const user = u || "zz", db = d || "zz";
+  const plain = /^[A-Za-z0-9_]+$/;
+  if (!plain.test(user) || !plain.test(db)) {
+    throw new Error(`the host's deploy/.env names the database role "${user}" and database "${db}", ` +
+                    "which a --psql command line cannot carry");
+  }
+  regPsqlMemo = `ssh ${HOST} docker compose -f ${REMOTE}/deploy/docker-compose.yml exec -T postgres ` +
+                `psql -U ${user} -d ${db}`;
+  return regPsqlMemo;
+}
 
 /** One statement on the deployment's database, through `regPsql`: the statement on standard input,
  *  the answer unaligned and tuples-only, and a refused statement a thrown error rather than an
  *  exit 0 that reads as no rows. */
 export async function regSql(sql: string): Promise<string> {
-  const [cmd, ...rest] = regPsql.split(" ");
+  const [cmd, ...rest] = regPsql().split(" ");
   return run(cmd, [...rest, "-q", "-tA", "-v", "ON_ERROR_STOP=1"],
              { input: sql, stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
 }
@@ -31,7 +48,7 @@ export async function regSql(sql: string): Promise<string> {
  *  read is reported the same way, since nothing then says the versions are sound. */
 export function skillVersionsMoved(): string[] {
   try {
-    run("node", ["packages/tools/dist/ops/register-skills.js", "--root", ".", "--psql", regPsql, "--check"]);
+    run("node", ["packages/tools/dist/ops/register-skills.js", "--root", ".", "--psql", regPsql(), "--check"]);
     return [];
   } catch (e) {
     const out = asExecError(e);
@@ -58,7 +75,7 @@ export function writeRegistries(ownerTeam: string): string[] {
   // Idempotent: it upserts on (skill, version), so a skill whose bytes did not move adds no row.
   try {
     const out = run("node", ["packages/tools/dist/ops/register-skills.js",
-                             "--root", ".", "--psql", regPsql]);
+                             "--root", ".", "--psql", regPsql()]);
     const registered = /(\d+) skill\(s\) registered/.exec(out)?.[1] ?? "?";
     log(`  registry updated from the catalog — ${registered} skill(s) registered`);
   } catch (e) {
@@ -79,7 +96,7 @@ export function writeRegistries(ownerTeam: string): string[] {
   // exists.
   try {
     const out = run("node", ["packages/tools/dist/ops/register-plugins.js",
-                             "--root", ".", "--psql", regPsql],
+                             "--root", ".", "--psql", regPsql()],
                     { env: { ...process.env, ZZ_CATALOG_OWNER_TEAM: ownerTeam } });
     // Unresolved is not a statistic. Zero is the only correct value: a member is a skill this lock
     // names, the gate holds the lock to the catalog, and register-skills above mirrors the catalog

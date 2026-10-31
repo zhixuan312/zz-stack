@@ -90,11 +90,14 @@ function child(runner: string, files: string[], work: string, out: string,
 export async function runSharded(opts: {
   runner: string; source: string; workAt: string; out: string; wanted: string[];
   rowsFor: (f: string) => number; workers: number; extras: readonly string[];
+  /** `--keep`: each worker keeps its own work directory, and so does this — the shard reports are
+   *  merged into `out` and removed either way. */
+  keep: boolean;
   /** Injected rather than re-implemented: `mutation-run.ts` owns the serialisation, and a
    *  second copy of it here is the duplicated-constant shape this repository refuses. */
   reportText: (doc: Record<string, unknown>) => string;
 }): Promise<void> {
-  const { runner, source, workAt, out, wanted, rowsFor, workers, extras, reportText } = opts;
+  const { runner, source, workAt, out, wanted, rowsFor, workers, extras, keep, reportText } = opts;
   if (!existsSync(out)) {
     console.error(`  REFUSED — a sharded run seeds every worker from ${out}, which does not exist`);
     process.exit(2);
@@ -124,9 +127,10 @@ export async function runSharded(opts: {
 
   // The tree must have been one tree, and the workers cannot answer that.
   //
-  // DELIBERATE: the workers' `snapshot_tree_sha256` values are not compared. `makeWorkspace` runs
-  // `seedProvisional` inside the copy before taking the snapshot, and what it seeds is the
-  // worker's own `--only` set, so N workers legitimately produce N different snapshots.
+  // DELIBERATE: the workers' `snapshot_tree_sha256` values are not compared. Each is a digest of
+  // one copy of the source, so they agree exactly when the source held still while the workers
+  // copied it — a narrower form of the question the source digest below answers for the whole
+  // pass.
   //
   // The question is about the source, so the source is what is asked. The parent digests it
   // before spawning and again now: identical means nothing edited the checkout while the pass was
@@ -141,7 +145,12 @@ export async function runSharded(opts: {
   const doc = mergeShardReports({ seed, groups, reports, wanted });
   writeFileSync(out, reportText(doc as unknown as Record<string, unknown>));
   console.log(`\n  ${doc.results.length} row(s) written to ${out} by ${groups.length} worker(s)`);
-  for (const s of shards) { rmSync(s.out, { force: true }); rmSync(s.work, { recursive: true, force: true }); rmSync(`${s.work}.lock`, { force: true }); }
+  for (const s of shards) {
+    rmSync(s.out, { force: true });
+    if (!keep) rmSync(s.work, { recursive: true, force: true });
+    rmSync(`${s.work}.lock`, { force: true });
+  }
+  if (keep) console.log(`  kept: ${shards.map((s) => s.work).join(", ")}`);
 }
 
 /**

@@ -40,7 +40,7 @@ function main(argv: string[]): number {
       join zz.plugin b on b.id = bv.plugin_id
      where b.name = :'plugin'
        and exists (select 1 from zz.plugin_tool t where t.plugin_version_id = bv.id)
-     order by bv.first_seen_at desc
+     order by bv.released_at desc
      limit 2`, { plugin });
 
   if (!versions.length) {

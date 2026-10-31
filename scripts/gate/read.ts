@@ -41,10 +41,14 @@ export function asRecord(v: unknown, label: string): Record<string, unknown> {
  *
  * A check that asks "does zz-core do X" asks it of zz-core, not of one file in it, so a rule moving
  * between modules does not turn it red. A check that genuinely means the entry file still names it.
- * `also` is for the subjects whose entry file does not sit in the directory the modules do. */
-const subjectSource = (dirs: string[], exts: string[], also: string[] = []) => (): string =>
-  [...also, ...sourceFiles(dirs, exts)]
+ * `also` is for the subjects whose entry file does not sit in the directory the modules do.
+ * Read once per process, as trackedFiles() is: a gate asks the same subject dozens of times, and
+ * a mutation plant runs its check in a process of its own. */
+const subjectSource = (dirs: string[], exts: string[], also: string[] = []) => {
+  let text: string | undefined;
+  return (): string => text ??= [...also, ...sourceFiles(dirs, exts)]
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
+};
 
 export const zzCoreSource = subjectSource(["services/zz-core/src"], [".ts"]);
 export const gatewaySource = subjectSource(["services/gateway/src"], [".ts"]);
@@ -385,10 +389,11 @@ export function constBody(src: string, name: string): string | null {
  *
  * DELIBERATE: not `toolsIn(zzCoreSource())`. A tool body runs to the next `registerTool(`, so the
  * last tool in a concatenation takes the next module's text as its body and is judged on evidence
- * that is not its own.
+ * that is not its own. Read once per process, as the subjects are.
  */
+let ZZ_CORE_TOOLS: (ReturnType<typeof toolsIn>[number] & { file: string })[] | undefined;
 export function zzCoreTools() {
-  return sourceFiles(["services/zz-core/src"], [".ts"])
+  return ZZ_CORE_TOOLS ??= sourceFiles(["services/zz-core/src"], [".ts"])
     .flatMap((f) => toolsIn(readFileSync(join(root, f), "utf8")).map((t) => ({ ...t, file: f })));
 }
 

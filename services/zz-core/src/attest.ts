@@ -132,12 +132,10 @@ export async function approvalConflict(
       line = `${lead}, and it changed again while this was answered. ${again}`;
     } else {
       const delta = deltaOf(changeSnapshot(was.text), changeSnapshot(now.text));
-      line = delta.kind === "full"
-        ? `${lead}; what changed since it is as long as the document itself. ${again}`
-        : !delta.records.length
-          ? `${lead}, though its content is what ${meant}'s was. ${again}`
-          : { lead: `${lead}; `, label: `changed since ${meant}`, items: delta.records.map(recordLine), sep: "; ",
-              tail: `. ${again}` };
+      line = !delta.records.length
+        ? `${lead}, though its content is what ${meant}'s was. ${again}`
+        : { lead: `${lead}; `, label: `changed since ${meant}`, items: delta.records.map(recordLine), sep: "; ",
+            tail: `. ${again}` };
     }
   } catch (err) {
     line = `${lead}, and what changed since it cannot be named: ${err instanceof Error ? err.message : String(err)}. ${again}`;

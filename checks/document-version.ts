@@ -33,8 +33,8 @@
  *     whose document moves twice answers that it changed while being closed, and commits nothing;
  *   - exact-target approval: presenting twice without a context and then approving rests on the
  *     most recent context, and the approval's one act row records that context and the snapshot it
- *     signed; a stale `expected_revision` — a metadata-only change after display included — is
- *     APPROVAL_CONFLICT naming what changed, an approval without one is PRESENTATION_REQUIRED
+ *     signed; a stale `expected_revision` — a metadata-only change after display included, on a body
+ *     shorter than the change's own record too — is APPROVAL_CONFLICT naming what changed, an approval without one is PRESENTATION_REQUIRED
  *     naming the context to present in, and the delta presented in it is then approved; an
  *     approval that would rename a heading is refused, sealing nothing; an approval and a close
  *     keep the version's note.
@@ -612,6 +612,17 @@ async function exactTarget(c: Core): Promise<void> {
   }
   await c.ok(step, "document_approve", { path: m, expected_revision: now, review_context: ctx });
   if ((await rowOf(c, m)).status !== "approved") c.fail(step, "the approval of the presented delta did not seal");
+  // A body shorter than the change's own record is presented in full, and the conflict still names
+  // the change rather than calling it "as long as the document itself".
+  const short = `${X}/metadata-short.md`;
+  await c.ok(step, "document_write", { path: short, content: "---\ntitle: C\n---\n\nc\n" });
+  const shortCtx = ctxOf(await c.ok(step, "document_present", { path: short }));
+  const shortShown = await tokenOf(c, short);
+  await c.ok(step, "document_edit", { path: short, title: "C renamed" });
+  const shortStale = await c.call(step, "document_approve", { path: short, expected_revision: shortShown, review_context: shortCtx });
+  if (!shortStale.startsWith("ERROR: APPROVAL_CONFLICT") || !shortStale.includes('title: was "C"; now "C renamed"')) {
+    c.fail(step, `a metadata-only change to a short body: ${shortStale}`);
+  }
   c.pass(step);
 
   step = "an approval that would rename a heading to the one the flow declares is refused, and seals nothing";

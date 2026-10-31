@@ -38,8 +38,9 @@ type DeltaRecord =
   | { kind: "metadata"; field: string; was: string; now: string };
 
 /** The records, and the text a reader is shown — or `full` when that text would be at least as long
- *  as the target's body, and the body itself is the shorter way to show it. */
-type Delta = { kind: "delta"; records: DeltaRecord[]; text: string } | { kind: "full" };
+ *  as the target's body, and the body itself is the shorter way to show it. A full delta keeps its
+ *  records: a conflict names what changed whichever way a reader would be shown it. */
+type Delta = { kind: "delta"; records: DeltaRecord[]; text: string } | { kind: "full"; records: DeltaRecord[] };
 
 /** One block: its heading line as written and as named, its content and its gap. */
 interface Block { line: string; head: string; level: number; title: string; core: string; gap: string; body: string }
@@ -184,5 +185,5 @@ export function deltaOf(baseline: Snapshot, target: Snapshot): Delta {
   if (was.trailing !== now.trailing) records.push({ kind: "trailing", was: was.trailing, now: now.trailing });
   records.push(...metadataRecords(baseline, target));
   const text = records.length ? [records.map(recordLine).join("\n"), ...shown].join("\n\n") : "";
-  return text.length >= target.body.length ? { kind: "full" } : { kind: "delta", records, text };
+  return text.length >= target.body.length ? { kind: "full", records } : { kind: "delta", records, text };
 }

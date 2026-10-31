@@ -43,12 +43,10 @@ export async function baseConflict(
     line = `${lead}, and it changed again while this was answered. ${again}`;
   } else {
     const delta = deltaOf(changeSnapshot(was.text), changeSnapshot(now.text));
-    line = delta.kind === "full"
-      ? `${lead}; what changed since \`base\` is as long as the document itself. ${again}`
-      : !delta.records.length
-        ? `${lead}, though its content is what \`base\`'s was. ${again}`
-        : { lead: `${lead}; `, label: "changed since `base`", items: delta.records.map(recordLine), sep: "; ",
-            tail: `. ${again}` };
+    line = !delta.records.length
+      ? `${lead}, though its content is what \`base\`'s was. ${again}`
+      : { lead: `${lead}; `, label: "changed since `base`", items: delta.records.map(recordLine), sep: "; ",
+          tail: `. ${again}` };
   }
   return settleRefusal(p, { who, team, path }, refusalText([line]));
 }

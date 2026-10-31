@@ -18,7 +18,7 @@ type Region = { kind: "code" | "literal" | "comment"; start: number; end: number
 
 /** A mutation spec quotes a statement in order to plant a defect in it. Its `find`/`replace` text is the subject of
  *  the check that owns the spec, and reading it as a call site would report the defect the spec exists to plant. */
-export const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
+const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
 
 /** An applied migration is history: the file that writes a table's DDL is exactly the file that must still spell
  *  what a scanner forbids everywhere else. */

@@ -80,10 +80,9 @@ type FileArgs = { file: import("../../services/zz-core/dist/upload-consume.js").
 /** `initiative_status`'s `next_move`. */
 interface NextMove { action?: string; document?: string; why?: string }
 
-/** Who a client calls as: the principal's address, the credential kind the gateway stamps, and the
- *  client it says it is (`x-zz-client`, asserted by the client and never trusted). */
-/** Who a client is: the seeded person unless `email` names another, `role` "admin" for the
- *  operator's door (the superadmin's tools), and the credential kind `via` and client it presents. */
+/** Who a client calls as: the principal's address, the credential kind the gateway stamps, the
+ *  client it says it is (`x-zz-client`, asserted by the client and never trusted), and `role`
+ *  "admin" for the operator's tools. */
 interface Caller { email?: string; via?: string; client?: string; role?: "admin" | "user" }
 
 /** What a check is handed. */

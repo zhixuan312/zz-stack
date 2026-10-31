@@ -29,7 +29,8 @@ jobs:
   gate:
     # 22.04, not `ubuntu-latest`, for the reason images.yml gives: the gate's candidate checks need a
     # working bwrap, and on 24.04 an AppArmor rule lets bwrap start a trivial command and refuse the
-    # build's own spec. Two of them answer exit 2 on a host with no working sandbox, which fails here.
+    # build's own spec. With none they skip (they must, inside a candidate's own sandboxed build), so
+    # the step below proves one before the gate, or they would never run here.
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     # Every step runs as if from a developer's checkout, one directory below the console's.

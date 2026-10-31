@@ -11,6 +11,7 @@ import { READS, WRITES, serviceVersion, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { registerAdminTools } from "./admin.js";
+import { isDeactivated, principalId } from "./admin/authority.js";
 import { caller } from "./credentials.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
@@ -222,7 +223,8 @@ export async function buildAccessServer(
         "being onboarded. RETURNS their setup: which marketplace to add, which plugins to " +
         "install, and where the token goes. Yours by default; pair it with pat_issue, since the setup needs a " +
         "token and that token is shown once. REFUSES another person's setup unless you are " +
-        "superadmin, and refuses a request it cannot identify.",
+        "superadmin, an address nobody on the platform has, a person who is deactivated, and " +
+        "a request it cannot identify.",
       inputSchema: {
         email: z.string().email().optional().describe("Whose setup. Omit for your own; anyone else needs superadmin."),
       },
@@ -238,6 +240,11 @@ export async function buildAccessServer(
       if (target !== me.toLowerCase() && !sup) {
         return text("ERROR: superadmin required to render another person's setup");
       }
+      // An onboarder who mistypes an address would otherwise get a convincing setup that fails at
+      // its token step, with nothing pointing back at the typo.
+      const pid = await principalId(platformDb(), target);
+      if (!pid) return text(`ERROR: no principal '${target}' — person_add first, or check the address`);
+      if (await isDeactivated(platformDb(), pid)) return text(`ERROR: ${target} is deactivated — person_add restores them first`);
       return text(await renderClientSetup(target));
     },
   );

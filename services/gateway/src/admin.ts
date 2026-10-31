@@ -396,8 +396,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     annotations: READS,
     description:
       "WHEN you need the teams themselves — how big each is and who set it up — rather than " +
-      "which one you are acting for, which is team_mine. RETURNS each team with its member " +
-      "count, who created it and when, and your own role in it. REFUSES to widen past your " +
+      "which one you are acting for, which is team_mine. RETURNS each team with how many " +
+      "people in it can still act, who created it and when, and your own role in it. REFUSES to widen past your " +
       "access: a member sees the teams they belong to and a superadmin sees all of them, " +
       "and a token bound to one team is read as that token rather than as its holder.",
     inputSchema: {},
@@ -407,11 +407,14 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     // A member sees the teams they belong to; a superadmin sees all of them.
     const mine = id.teams.map((t) => t.slug);
     // Who made it, and when: `created_by` is written on every team, and this is the query
-    // that reads it back.
+    // that reads it back. `members` counts the people who can still act: a deactivated person
+    // keeps the membership row for a restore, and an access review reading the count is asking
+    // who has access now.
     const columns =
       `select t.slug, t.name, t.status, t.created_at, c.email as created_by,
-              count(m.principal_id)::int as members
+              count(m.principal_id) filter (where mp.status = 'active')::int as members
          from team t left join membership m on m.team_id = t.id
+         left join principal mp on mp.id = m.principal_id
          left join principal c on c.id = t.created_by`;
     // isSuper, not platformRole: only isSuper can see a token's team binding, so a token
     // stamped with one team does not list them all.

@@ -22,7 +22,9 @@
  *     carrying one is still recorded;
  *   - a body that does not parse, on a public route, is refused in JSON with no stack;
  *   - a token that does not authenticate is told why — unknown, revoked, expired, its owner
- *     deactivated, its team archived — and pat_list shows an expired token as expired.
+ *     deactivated, its team archived — and pat_list shows an expired token as expired;
+ *   - team_list counts the people who can still act, and client_setup renders no setup for an
+ *     address nobody has or a person who is deactivated.
  *
  * The only database this touches is the one it started.
  *
@@ -37,7 +39,7 @@ import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from ".
 
 const NAME = "manage-door";
 const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
-  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, an unreadable body in JSON, and a dead token says why: ok";
+  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, an unreadable body in JSON, a dead token says why, and a roster counts who can act: ok";
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
@@ -263,6 +265,24 @@ async function tokenStateActs(c: Core, g: Gateway): Promise<void> {
   c.pass(step);
 }
 
+/** A roster read says who can act: a deactivated person is not counted, and gets no setup. */
+async function rosterActs(c: Core, g: Gateway): Promise<void> {
+  const step = "team_list counts active people, and client_setup refuses a typo or a departed person";
+  const ask = (name: string, args: Record<string, unknown>) => manageCall(g, g.token, name, args);
+  const size = async (): Promise<number | undefined> =>
+    (JSON.parse(await ask("team_list", {})) as { slug: string; members: number }[]).find((t) => t.slug === "lead-team")?.members;
+  const before = await size();
+  await ask("person_deactivate", { email: "mate@example.test", confirm: "mate@example.test" });
+  const after = await size();
+  if (before === undefined || after !== before - 1) c.fail(step, `lead-team counted ${before} members, then ${after} after one left`);
+  for (const [email, want] of [["nobody-at-all@example.test", /^ERROR: no principal 'nobody-at-all@example\.test'/],
+                               ["mate@example.test", /^ERROR: mate@example\.test is deactivated/]] as const) {
+    const said = await ask("client_setup", { email });
+    if (!want.test(said)) c.fail(step, `client_setup for ${email} answered: ${said.slice(0, 200)}`);
+  }
+  c.pass(step);
+}
+
 async function run(c: Core): Promise<void> {
   // A superadmin, so every tier of /manage is registered.
   await c.sql.query("update zz.principal set role = 'superadmin' where email = $1", [c.email]);
@@ -274,6 +294,7 @@ async function run(c: Core): Promise<void> {
     await nulActs(c, g);
     await bodyActs(c, g);
     await tokenStateActs(c, g);
+    await rosterActs(c, g);
   } finally {
     await g.stop();
   }

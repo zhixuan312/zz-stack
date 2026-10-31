@@ -58,14 +58,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { readsStatements, withoutSqlComments, writeShape } from "./sql-scan.ts";
+import { STATEMENT_ROOTS, statementSources, withoutSqlComments, writeShape } from "./sql-scan.ts";
 
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
-const { sourceFiles, statementsOf } =
+const { statementsOf } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
 
-/** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
 
 /** Every column a published result is: what the run found, never which run it is. */
 const SCORE_COLUMNS = [
@@ -86,7 +84,7 @@ const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []))) {
+for (const { path, src } of statementSources()) {
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(statement.sql);
     scanned++;
@@ -120,7 +118,7 @@ for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r,
 }
 
 if (!scanned || !files.size) {
-  fail.push("FAIL: this check read no statement under " + ROOTS.join(", ") +
+  fail.push("FAIL: this check read no statement under " + STATEMENT_ROOTS.join(", ") +
     " — a rule that reaches nothing passes for the wrong reason");
 }
 
@@ -160,5 +158,5 @@ if (fail.length) {
   process.exit(1);
 }
 console.log(`scored run terminal: ${scanned} statement(s) in ${files.size} file(s) under ` +
-            `${ROOTS.join(", ")} never rewrite a scored run's result, and evaluation_score refuses ` +
+            `${STATEMENT_ROOTS.join(", ")} never rewrite a scored run's result, and evaluation_score refuses ` +
             "a run already scored before it scores it");

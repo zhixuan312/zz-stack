@@ -28,28 +28,7 @@
  * COUPLED: `checks/insert-arity.ts` reads a statement's columns against its values; this asks
  * what the code around the statement does. The two read the same files and neither runs them.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-
-import { isMutationSpec } from "./sql-scan.ts";
-
-/** The trees that write to a database. `testing/` holds the mutation report — recorded runs of
- *  planted defects rather than call sites — and `checks/` reads files instead of writing rows. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-
-interface Source { path: string; src: string }
-
-function sources(dir: string, out: Source[] = []): Source[] {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) { sources(p, out); continue; }
-    if (!/\.(ts|sh)$/.test(name) || isMutationSpec(p)) continue;
-    out.push({ path: p, src: readFileSync(p, "utf8") });
-  }
-  return out;
-}
+import { STATEMENT_ROOTS, statementSources } from "./sql-scan.ts";
 
 /** The end of the string, template or regex-free literal that opens at `i` — the index just past
  *  its closing delimiter, or the end of the file for one that never closes. */
@@ -224,7 +203,7 @@ const fail: string[] = [];
 let seen = 0;
 let exempt = 0;
 
-for (const { path, src } of ROOTS.flatMap((r) => sources(r))) {
+for (const { path, src } of statementSources()) {
   // A shell script is scoped whole: `${…}` and an awk program are the braces it has, both
   // balanced, and blanking shell quoting is a guess this does not need to make.
   const masked = path.endsWith(".sh") ? src : blanked(src);
@@ -326,7 +305,7 @@ for (const { path, src } of ROOTS.flatMap((r) => sources(r))) {
 // A scan that finds no labelled writer prints a green line over nothing: a renamed table or a
 // reworded insert reads exactly like a tree with no writer at all.
 if (seen - exempt === 0) {
-  fail.push(`FAIL: no insert into zz.pat that names a purpose was found under ${ROOTS.join(", ")} ` +
+  fail.push(`FAIL: no insert into zz.pat that names a purpose was found under ${STATEMENT_ROOTS.join(", ")} ` +
             `(${seen} insert(s), ${exempt} exempt) — this check read nothing`);
 }
 

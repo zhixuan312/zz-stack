@@ -57,22 +57,18 @@
  *   spells `eval_subject_version`, `skill_asset` and `subject_ref` to explain the rule it
  *   applies, and read as call sites every one of those is a finding that reads nothing.
  */
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { SCHEMA_TARGET } from "../schema-target.ts";
-import { homeOf, readsStatements, withoutSqlComments } from "./sql-scan.ts";
+import { homeOf, STATEMENT_ROOTS, statementSources, withoutSqlComments } from "./sql-scan.ts";
 
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
-const { sourceFiles, regions, statementsOf, opensStatement, bindings, cteNames, bareMention,
+const { regions, statementsOf, opensStatement, bindings, cteNames, bareMention,
         foldInterpolations } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
 const HOME = homeOf(regions);
 
-/** The trees that write to a database. `testing/` holds the mutation report — recorded runs of
- *  planted defects rather than call sites — and `checks/` reads files instead of writing rows. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
 
 /**
  * The ten tables this phase drops whole. Keyed by the name they stop reading under.
@@ -120,7 +116,7 @@ const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []))) {
+for (const { path, src } of statementSources()) {
   const rs = regions(src);
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(foldInterpolations(statement.sql, src, rs, path, HOME));
@@ -198,4 +194,4 @@ if (fail.length) {
   process.exit(1);
 }
 console.log(`catalog and evaluation columns: ${scanned} statement(s) in ${files.size} file(s) under ` +
-            `${ROOTS.join(", ")} name no table or column the phase-3 migration retires`);
+            `${STATEMENT_ROOTS.join(", ")} name no table or column the phase-3 migration retires`);

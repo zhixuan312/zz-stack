@@ -53,25 +53,22 @@
  * check can be pointed at a scratch tree that plants a violation. Run it from the repository root
  * and it reads the repository.
  */
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { homeOf, readsStatements, withoutSqlComments, writeShape } from "./sql-scan.ts";
+import { homeOf, STATEMENT_ROOTS, statementSources, withoutSqlComments, writeShape } from "./sql-scan.ts";
 
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
-const { sourceFiles, regions, statementsOf, foldInterpolations } =
+const { regions, statementsOf, foldInterpolations } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
 const HOME = homeOf(regions);
 
-/** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
 
 const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []))) {
+for (const { path, src } of statementSources()) {
   const rs = regions(src);
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(foldInterpolations(statement.sql, src, rs, path, HOME));
@@ -91,4 +88,4 @@ if (fail.length) {
   process.exit(1);
 }
 console.log(`plugin_version is immutable: ${scanned} statement(s) in ${files.size} file(s) under ` +
-            `${ROOTS.join(", ")} never update it — an insert is the only write.`);
+            `${STATEMENT_ROOTS.join(", ")} never update it — an insert is the only write.`);

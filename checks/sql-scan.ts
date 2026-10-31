@@ -1,6 +1,6 @@
 /**
  * checks/sql-scan.ts — what the checks that read SQL statements out of the write trees share beside the
- * statement reader itself (`packages/tools/src/lib/sql-statements.ts`): which files are read, an SQL comment
+ * statement reader itself (`packages/tools/src/lib/sql-statements.ts`): which trees and files are read, an SQL comment
  * stripped from a statement, where an interpolated callee is declared, and the verbs that write a table.
  *
  * Not a check of its own: each scanner imports what it needs, so a policy changed here is changed for every
@@ -8,6 +8,11 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const { sourceFiles } = (await import(
+  pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href)) as
+  { sourceFiles: (dir: string, keep: (path: string) => boolean) => { path: string; src: string }[] };
 
 type Region = { kind: "code" | "literal" | "comment"; start: number; end: number };
 
@@ -22,6 +27,15 @@ const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/
 /** The files a scanner reads statements from: TypeScript and shell, neither a mutation spec nor an applied
  *  migration. */
 export const readsStatements = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
+
+/** The trees that write to a database, relative to the working directory so a scanner can be pointed at a scratch
+ *  tree. `testing/` holds the mutation report — recorded runs of planted defects rather than call sites — and
+ *  `checks/` reads files instead of writing rows. */
+export const STATEMENT_ROOTS = ["services", "packages", "scripts", "deploy"];
+
+/** Every file a scanner reads statements from, under the roots that exist. */
+export const statementSources = (): { path: string; src: string }[] =>
+  STATEMENT_ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []));
 
 /** A statement with the text after a `--` on each of its lines removed — an SQL comment inside a template literal is
  *  prose, and prose is not a statement. */

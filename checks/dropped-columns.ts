@@ -61,17 +61,14 @@ import { pathToFileURL } from "node:url";
 
 import { SCHEMA_TARGET } from "../schema-target.ts";
 import { PHASE3_RETIRED_COLUMNS } from "../scripts/schema/retired-columns.ts";
-import { homeOf, readsStatements, withoutSqlComments } from "./sql-scan.ts";
+import { homeOf, STATEMENT_ROOTS, statementSources, withoutSqlComments } from "./sql-scan.ts";
 
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
-const { sourceFiles, regions, statementsOf, opensStatement, bindings, cteNames, bareMention,
+const { regions, statementsOf, opensStatement, bindings, cteNames, bareMention,
         foldInterpolations } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
 const HOME = homeOf(regions);
 
-/** The trees that write to a database. `testing/` holds the mutation report — recorded runs of
- *  planted defects rather than call sites — and `checks/` reads files instead of writing rows. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
 
 /**
  * The columns the phases retired, and the one table renamed. Keyed by the table's name after
@@ -139,7 +136,7 @@ const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => sourceFiles(r, readsStatements))) {
+for (const { path, src } of statementSources()) {
   const rs = regions(src);
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(foldInterpolations(statement.sql, src, rs, path, HOME));
@@ -216,4 +213,4 @@ if (fail.length) {
   process.exit(1);
 }
 console.log(`dropped columns: ${scanned} statement(s) in ${files.size} file(s) under ` +
-            `${ROOTS.join(", ")} name no table or column the migrations retire`);
+            `${STATEMENT_ROOTS.join(", ")} name no table or column the migrations retire`);

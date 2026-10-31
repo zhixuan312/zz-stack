@@ -39,9 +39,8 @@ import { join } from "node:path";
 
 import { withoutComments } from "../scripts/gate/read.ts";
 
-/** The trees that write to a database. `testing/` holds the mutation report — recorded runs of
- *  planted defects rather than call sites — and `checks/` reads files instead of writing rows. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
+import { STATEMENT_ROOTS } from "./sql-scan.ts";
+
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 
 /** The columns each table stops carrying, with what carries the fact now. */
@@ -111,8 +110,8 @@ let scanned = 0;
 
 // A root that is not there is skipped rather than fatal — a check is run from wherever its
 // subject is — and the summary names what was read, so a run that scanned nothing says so.
-const present = ROOTS.filter((r) => existsSync(r));
-const absent = ROOTS.filter((r) => !existsSync(r));
+const present = STATEMENT_ROOTS.filter((r) => existsSync(r));
+const absent = STATEMENT_ROOTS.filter((r) => !existsSync(r));
 
 for (const { path, src } of present.flatMap((r) => sources(r))) {
   const sql = withoutComments(src);

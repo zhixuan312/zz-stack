@@ -40,15 +40,12 @@
 // read as a defect, and the branch parser ignores every term that is not one of the five child
 // foreign keys.
 //
-// DELIBERATE: the roots are relative to `process.cwd()`, not to this file's own location, so the
-// check can be pointed at a scratch tree that plants a violation. Run it from the repository root
-// and it reads the repository.
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+// DELIBERATE: the roots (sql-scan.ts's) are relative to `process.cwd()`, not to this file's own
+// location, so the check can be pointed at a scratch tree that plants a violation. Run it from the
+// repository root and it reads the repository.
+import { readFileSync } from "node:fs";
 
-/** The trees that write to a database — the same four `checks/dropped-columns.ts` scans. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+import { STATEMENT_ROOTS, statementSources } from "./sql-scan.ts";
 
 /** The declaration that gives the table this shape. */
 const MIGRATION = "services/gateway/migrations/001_init.sql";
@@ -262,22 +259,6 @@ if (!/constraint eval_assessment_value_check check \(+\s*\(value is null\)\s*=\s
 // The writer.
 // ---------------------------------------------------------------------------------------------
 
-interface Source { path: string; src: string }
-
-function sources(dir: string, out: Source[] = []): Source[] {
-  // A root that is not there is skipped rather than thrown on: the check is pointed at a scratch
-  // tree by its cwd, and a tree carrying only the three files this reads has no `packages/`. The
-  // absence is not silent — the "no insert anywhere" failure below names every root it read.
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) { sources(p, out); continue; }
-    if (!p.endsWith(".ts")) continue;
-    out.push({ path: p, src: read(p) });
-  }
-  return out;
-}
 
 /** The literal around `at` — the text between the nearest backticks on either side. Narrow on
  *  purpose: the statements this check reads are template literals with no interpolation, and a
@@ -319,7 +300,7 @@ function balanced(src: string, from: number): { body: string; end: number } | nu
 }
 
 const inserts: { path: string; line: number; columns: string[]; valueSlots: string[]; args: string[] }[] = [];
-for (const { path, src } of ROOTS.flatMap((r) => sources(r))) {
+for (const { path, src } of statementSources()) {
   for (const m of src.matchAll(/insert into zz\.eval_assessment\b/g)) {
     const statement = literalAround(src, m.index);
     const cols = balanced(statement, statement.indexOf("("));
@@ -345,7 +326,7 @@ for (const { path, src } of ROOTS.flatMap((r) => sources(r))) {
 }
 
 if (inserts.length === 0) {
-  fail.push("FAIL: no `insert into zz.eval_assessment` under " + ROOTS.join(", ") +
+  fail.push("FAIL: no `insert into zz.eval_assessment` under " + STATEMENT_ROOTS.join(", ") +
             " — either the writer moved or this check is reading the wrong trees, and neither is " +
             "a shape anybody can rely on");
 }

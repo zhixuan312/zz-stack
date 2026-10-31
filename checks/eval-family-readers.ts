@@ -66,10 +66,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { PHASE3_RETIRED_COLUMNS } from "../scripts/schema/retired-columns.ts";
-import { homeOf, readsStatements, withoutSqlComments } from "./sql-scan.ts";
+import { homeOf, readsStatements, statementSources, withoutSqlComments } from "./sql-scan.ts";
 
-/** The trees that write to a database — the same four `checks/catalog-eval-columns.ts` scans. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
 const { sourceFiles, regions, statementsOf, opensStatement, foldInterpolations, bindings,
         cteNames, bareMention } =
@@ -238,7 +236,7 @@ const withoutParameters = (sql: string): string => sql.trim().replace(/\$\d+/g, 
 interface Planned { path: string; line: number }
 
 function statementsUnder(): Statement[] {
-  return ROOTS.flatMap((r) => sourceFiles(r, readsStatements)).flatMap(({ path, src }) => {
+  return statementSources().flatMap(({ path, src }) => {
     const rs = regions(src);
     return statementsOf(path, src, true).map((s: Statement) => ({
       ...s,

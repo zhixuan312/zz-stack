@@ -45,19 +45,16 @@
  *   `status` and `merged_into_id` to explain the rule it applies, and read as a call site every
  *   one of those is a finding that reads nothing.
  */
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { withoutComments } from "../scripts/gate/read.ts";
-import { readsStatements } from "./sql-scan.ts";
+import { STATEMENT_ROOTS, statementSources } from "./sql-scan.ts";
 
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`, as checks/catalog-eval-columns.ts reads it.
-const { sourceFiles, statementsOf } =
+const { statementsOf } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
 
-/** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
-const ROOTS = ["services", "packages", "scripts", "deploy"];
 
 const fail: string[] = [];
 
@@ -244,7 +241,7 @@ const IDENTITY_MUST_NAME = ["plugin_id", "stable_key"];
 
 let scanned = 0;
 const files = new Set<string>();
-const writeTrees: { path: string; src: string }[] = ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []));
+const writeTrees: { path: string; src: string }[] = statementSources();
 
 for (const { path, src } of writeTrees) {
   const code = withoutComments(src);
@@ -325,7 +322,7 @@ for (const { path, src } of writeTrees) {
 }
 
 if (!writeTrees.length) {
-  fail.push("FAIL: no source tree was found under " + ROOTS.join(", ") + " — this check read nothing");
+  fail.push("FAIL: no source tree was found under " + STATEMENT_ROOTS.join(", ") + " — this check read nothing");
 }
 
 if (fail.length) {
@@ -335,5 +332,5 @@ if (fail.length) {
 console.log(`failure-mode identity: zz.${IDENTITY} is unique over (plugin_id, stable_key), ` +
             `zz.${SIGHTING} carries its own prevalence, owner and evidence and resolves through ` +
             `failure_mode_id, and ${scanned} statement(s) in ${files.size} file(s) under ` +
-            `${ROOTS.join(", ")} write neither the dropped candidate row nor an identity the ` +
+            `${STATEMENT_ROOTS.join(", ")} write neither the dropped candidate row nor an identity the ` +
             "sightings cannot resolve.");

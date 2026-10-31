@@ -46,7 +46,7 @@ import type { Express } from "express";
 
 import type { Figure, Part, ReadMeta } from "./figures.js";
 import { isActive, overlapOf, runsIn } from "./runs-observed.js";
-import { BAD_PAGE, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { midnight } from "./work-query-buckets.js";
 
 type RunRow = {
@@ -71,8 +71,6 @@ type RunsParams = { skill: string | null; limit: number; offset: number; since?:
 /** Before every record: a window from here is the whole of it. */
 const ALL_TIME = "1970-01-01T00:00:00Z";
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const mean = (xs: number[]): number | null => (xs.length ? xs.reduce((n, x) => n + x, 0) / xs.length : null);
 function median(xs: number[]): number | null {
   if (!xs.length) return null;

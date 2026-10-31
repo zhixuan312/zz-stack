@@ -33,7 +33,7 @@ import type pg from "pg";
 
 import { platformDb } from "../db.js";
 import type { ReadMeta } from "./figures.js";
-import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
 
 const FILTERS = ["administration", "all"] as const;
 export type Filter = (typeof FILTERS)[number];
@@ -52,8 +52,6 @@ const NOT_RECORDED = ["knowledge reindex", "knowledge reconcile", "client setup"
 
 export const KIND = /^[a-z_]+(\.[a-z_]+)?$/;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** The day a deleted report was filed, in the reporting timezone, as a sentence writes a day: `16 Sept 2026`,
  *  `3 Oct 2026`. */

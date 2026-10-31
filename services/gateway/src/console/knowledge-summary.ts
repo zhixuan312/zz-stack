@@ -38,7 +38,7 @@ import type { Express } from "express";
 import { platformDb } from "../db.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { lessonImports, shared } from "./imports.js";
-import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { lastWholeWeek, periodsOf, searchesWithResults } from "./work-figures.js";
 
 type Question = { question: string; asked: number; lastAsked: string };
@@ -62,8 +62,6 @@ const WHOLE_WEEKS = 24;
 const QUESTIONS = 50;
 const NEWEST = 5;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const unavailable = (window: Window): PeriodFigure =>
   ({ window, figure: { value: null, why: "unavailable" }, numerator: null, denominator: null });
 const counted = (n: number): Figure => ({ value: n, why: null });

@@ -357,6 +357,32 @@ async function cases(ask: (email: string | null, path: string, method?: string) 
        "run and output; plugin narrows them, zz-access and an unknown plugin answering none and a plugin given twice 400; " +
        "sdlc-spec's calls by door are team one's core calls, team two's its eval calls");
 
+  step = "a skill run under two versions";
+  // A second version of zz-platform with one run and one call of its own, before the first version's run so neither
+  // the last run nor the order of the plugins moves; taken out again so every later case reads the seed.
+  const v2 = (await db.query<{ id: string }>(
+    `insert into zz.skill_version (skill_id, version, content_hash)
+     select s.id, '1.1.0', repeat('a', 64) from zz.skill s where s.name = 'zz-platform' returning id::text as id`)).rows[0].id;
+  try {
+    await db.query(
+      `insert into zz.event (ts, kind, subject, ok, team_id, tool_key, skill_version_id)
+       select '2026-10-01T07:30:00Z', 'tool_call', 'core:skill_read', true, t.id, 'core:skill_read', $2::uuid from zz.team t where t.slug = $1`,
+      [ONE, v2]);
+    await db.query(
+      `insert into zz.skill_run (team_id, skill_version_id, session, calls, refusals, bytes_total, started_at, ended_at)
+       select t.id, $2::uuid, 'session-v2', 2, 0, 1024, '2026-10-01T07:00:00Z', '2026-10-01T08:00:00Z' from zz.team t where t.slug = $1`,
+      [ONE, v2]);
+    const rows = ((await ask(MEMBER, "/skills?plugin=zz-core")).body.skills as Obj[]);
+    const logged = Object.fromEntries(rows.map((r) => [String(r.version), r.logged]));
+    same(step, "zz-platform 1.0.0's logged calls", logged["1.0.0"], SKILLS_ONE[1].logged);
+    same(step, "zz-platform 1.1.0's logged calls", logged["1.1.0"], { calls: 1, failed: 0, tools: 1 });
+  } finally {
+    await db.query("delete from zz.event where skill_version_id = $1::uuid", [v2]);
+    await db.query("delete from zz.skill_run where skill_version_id = $1::uuid", [v2]);
+    await db.query("delete from zz.skill_version where id = $1::uuid", [v2]);
+  }
+  pass("a skill run under two versions answers a row for each, each row's logged calls its own version's alone");
+
   step = "a person in no team";
   for (const path of ["/plugins", "/skills", "/skills/sdlc-spec"]) {
     const a = await ask(NOBODY, path);

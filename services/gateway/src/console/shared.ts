@@ -169,11 +169,14 @@ export const BAD_PAGE = "limit must be a whole number from 1 to 100, and offset 
  * zone and are sent as they are.
  */
 
+/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
+export const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+
 /** What `stageOf` reads: four of the eight columns DocRow carries.
  *
- * DELIBERATE: separate from DocRow, and narrower. Selecting `bytes` makes Postgres detoast
- * every document body, which the list route does not need. DocRow is structurally
- * assignable to this, so the detail route passes unchanged.
+ * DELIBERATE: separate from DocRow, and narrower: the list route needs neither a body's size nor
+ * anything else of it. DocRow is structurally assignable to this, so the detail route passes
+ * unchanged.
  *
  * `type` is read twice in `stageOf`: by the no-manifest fallback, and as the stage a source was
  * recorded a round of. A source itself is told apart by `path` — relative to the initiative, so

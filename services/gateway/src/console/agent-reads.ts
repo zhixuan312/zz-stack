@@ -40,7 +40,7 @@ import { statusOf, type PlatformStatus } from "./platform-status.js";
 import { PERIODS, recordOf, type PeriodName, type RecordRead } from "./record.js";
 import { refusalGroups, type RefusalGroup } from "./refusals.js";
 import { runsAt, type Runs } from "./runs.js";
-import { BAD_PAGE, NO_TEAM, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, NO_TEAM, ZZ_TZ } from "./shared.js";
 import { addDays, isDate, localDay, midnight } from "./work-query-buckets.js";
 
 /** Who asks: the identity's address, and the role and active team platformPublic resolves from it. */
@@ -64,8 +64,6 @@ const MESSAGES = 10;
 const SINCE = `since must be a date, YYYY-MM-DD, on or before today in ${ZZ_TZ}`;
 const TOOL = "tool must name a tool one of the doors registers, a door (core, manage, eval) or console";
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const whole = (v: unknown, lo: number, hi: number): boolean => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
 const text = (v: unknown): boolean => typeof v === "string" && v.trim() !== "";
 /** A local date on or before the cutoff's, or absent. */

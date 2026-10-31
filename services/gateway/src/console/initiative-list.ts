@@ -45,7 +45,7 @@ import { isSuper } from "../identity.js";
 import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { teamPendingRevisions } from "./pending.js";
-import { BAD_PAGE, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, NO_TEAM, platformPublic, stageOf, type StageDoc, ZZ_TZ } from "./shared.js";
 import { closuresByWeek, grainFor, lastWholeWeek, periodsOf, type ClosureWeek, type Grain } from "./work-figures.js";
 
 /** Where an initiative goes next, as initiative_status answers it, its keys spelled as the console's. */
@@ -104,8 +104,6 @@ export function stateOf(a: { outcome: string | null; closed: boolean; touchedMs:
 /** The most names one initiative_status call answers. */
 const BATCH = 10;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** The query's filters and page, each given at most once, or the sentence a 400 says. Work's prepared
  *  queries take the same filters and page, so they read them here too. */
@@ -140,7 +138,7 @@ function moveOf(e: Entry): NextMove {
 
 /** Each named initiative's next move, asked in batches of ten at once; a name whose batch failed, or
  *  which zz-core answered with an error, is missing from the answer and counted. */
-async function nextMoves(names: string[], relay: Relay): Promise<{ moves: Map<string, NextMove | null>; missing: number; batches: number; failed: number }> {
+export async function nextMoves(names: string[], relay: Relay): Promise<{ moves: Map<string, NextMove | null>; missing: number; batches: number; failed: number }> {
   const batches: string[][] = [];
   for (let i = 0; i < names.length; i += BATCH) batches.push(names.slice(i, i + BATCH));
   const moves = new Map<string, NextMove | null>();

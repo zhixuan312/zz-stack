@@ -294,6 +294,22 @@ async function writeCases(db: pg.Client, as: (email: string, query?: string) => 
   pass("deactivating an email no principal has is refused with 400 naming it, and changes and records nothing");
 }
 
+/** A membership of an archived team is not a team the person acts for (identity reads active teams alone), so their
+ *  row names the live teams only. The team is archived for this case and put back. */
+async function archivedTeamCase(db: pg.Client, as: (email: string, query?: string) => Promise<Answer>): Promise<void> {
+  const step = "an archived team";
+  await db.query("update zz.team set status = 'archived' where slug = 'alder'");
+  try {
+    const ada = ((await as(SUPERADMIN, "?q=ada")).body.people as Obj[] | undefined)?.find((r) => r.email === `ada@${DOMAIN}`);
+    if (JSON.stringify(ada?.teams) !== JSON.stringify(["birch (member)"])) {
+      fail(step, `Ada, an admin of the archived alder and a member of birch, reads teams ${JSON.stringify(ada?.teams)}`);
+    }
+  } finally {
+    await db.query("update zz.team set status = 'active' where slug = 'alder'");
+  }
+  pass("a person's membership of an archived team is not listed among their teams");
+}
+
 async function run(db: pg.Client, url: string): Promise<void> {
   const seeded = await seedPeople(db, TIMEZONE);
   const cookie = new Map<string, string>();
@@ -346,6 +362,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     await filterCases(as, whole);
     await refusalCases(as, () => fetchAs({}, "/api/console/people"), failing);
     await failureCases(seeded, as, whole, failing);
+    await archivedTeamCase(db, as);
 
     const step = "the shapes the console's fake answers";
     let fake: { people: (who: Obj, q: URLSearchParams) => [number, unknown] };

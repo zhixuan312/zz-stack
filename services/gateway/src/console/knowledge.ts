@@ -24,7 +24,7 @@ import type { Express } from "express";
 import { platformDb } from "../db.js";
 import { PLATFORM_TEAM } from "../identity.js";
 import { KINDS } from "./platform-knowledge.js";
-import { BAD_PAGE, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 
 /** The node route's not-found, the same whatever the request named: one that repeated the team or the
  *  address would hand back the name of a lesson the caller may not read.
@@ -60,8 +60,6 @@ function listNode(r: NodeRow) {
 /** The shelf's filters and page, as the list reads them. */
 type ShelfParams = { q: string; kind: string | null; limit: number; offset: number };
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** The list's filters and page, each given at most once, or the sentence a 400 says. */
 function shelfParams(query: Record<string, unknown>): ShelfParams | string {
@@ -104,7 +102,7 @@ export async function shelfRows(team: string, end: string, p: { q: string; kind:
                from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
             -- An instant, like every other time this API sends.
             to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
-            length(coalesce(k.body,'')) as bytes,
+            coalesce(octet_length(k.body), 0) as bytes,
             -- DELIBERATE: the whitespace collapse runs over a bounded prefix, not the whole
             -- body. Collapsing can only ever shorten, and an excerpt is a preview rather than
             -- a fixed-width field, so a prefix that collapses below 220 characters shows a
@@ -343,7 +341,7 @@ export function mountKnowledge(app: Express): void {
               (select s.node_ordinal
                  from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
               to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
-              length(coalesce(k.body,'')) as bytes,
+              coalesce(octet_length(k.body), 0) as bytes,
               left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
          from zz.knowledge_node k
          join zz.team t on t.id = k.team_id

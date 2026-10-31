@@ -49,7 +49,7 @@ import type { Express } from "express";
 
 import { platformDb } from "../db.js";
 import { MEASURES, type Ctx, type Fact, type Measure, type Who } from "./platform-query-measures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, platformPublic, ZZ_TZ } from "./shared.js";
 import {
   BUCKETS, WEEKDAYS, addDays, bucketLabel, bucketOf, bucketsOf, isDate, midnight, type Bucket,
 } from "./work-query-buckets.js";
@@ -74,7 +74,6 @@ type Asked = {
   rows: number | null; top: number; limit: number; offset: number;
 };
 
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const bad = (error: string): Refusal => ({ status: 400, error });
 const counted = (n: number): PlatformQueryFigure => ({ value: n, why: null });
 const UNREAD: PlatformQueryFigure = { value: null, why: "unavailable" };

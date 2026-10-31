@@ -102,6 +102,12 @@ async function seedPluginEval(db: pg.ClientBase | pg.Pool): Promise<void> {
 
   await db.query("update zz.eval_run set measure_coverage = $2, establishment_blocked_by = '{}' where id = $1",
                  [alpha.run, EXPECTED_RUN.measureCoverage]);
+  // A defect a later finding of the same run corrected: findings.md shows only its replacement, and so must the page.
+  await db.query(
+    `insert into zz.eval_finding (eval_run_id, kind, pattern, owner_kind, decision, created_at, superseded_by)
+     select $1, 'defect', $2, 'plugin', 'rejected', '2026-09-26T00:00:00Z', f.id
+       from zz.eval_finding f where f.eval_run_id = $1 and f.pattern = $3`,
+    [alpha.run, SUPERSEDED_PATTERN, "PATTERN-SENTINEL-alpha-applied"]);
   await db.query(
     `insert into zz.eval_run_dimension (eval_run_id, protocol_version_id, dimension_id, score, coverage)
      values ($1, $2, $3, 0.71, 0.5)`, [alpha.run, alpha.protocol, alpha.dimension]);
@@ -144,6 +150,9 @@ async function seedPluginEval(db: pg.ClientBase | pg.Pool): Promise<void> {
   await db.query("insert into zz.plugin (name, origin, owner_team_id) values ($1, 'third_party', $2)",
                  [PLUGINS.neverProfiled, alpha.team]);
 }
+
+/** The pattern of the corrected defect seeded on the scored run. */
+const SUPERSEDED_PATTERN = "PATTERN-SUPERSEDED-alpha";
 
 const NAME = "console-plugin-eval-shape";
 const DONE = "console-plugin-eval-shape: a plugin's evaluation is answered scored, never scored, never profiled and " +
@@ -265,6 +274,13 @@ async function run(db: pg.Client, url: string): Promise<void> {
     const refused = await as(MEMBER, PLUGINS.unregistered);
     if (refused.status !== 403) fail(step, `the member asking for a name nothing registered answered ${refused.status}`);
     pass("the owning team's member reads the scored plugin as the superadmin does, and is refused 403 on a name nothing registered");
+
+    step = "a corrected finding";
+    const defects = (answers.scored.body as { findings?: { defects?: { pattern?: string }[] } }).findings?.defects ?? [];
+    if (defects.some((d) => d.pattern === SUPERSEDED_PATTERN) || !defects.some((d) => d.pattern === "PATTERN-SENTINEL-alpha-applied")) {
+      fail(step, `the scored run's defects are ${JSON.stringify(defects.map((d) => d.pattern))}`);
+    }
+    pass("a finding a later one corrected is not shown beside its replacement, as findings.md does not show it");
 
     step = "the shape the console's fake answers";
     let fake: (plugin: string) => unknown;

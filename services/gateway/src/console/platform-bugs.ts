@@ -31,7 +31,7 @@ import type { Express, Request } from "express";
 
 import { platformDb } from "../db.js";
 import type { Figure, Part, ReadMeta } from "./figures.js";
-import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
 
 type Impact = "blocks_work" | "wrong_result" | "confusing" | "cosmetic";
 type Status = "open" | "fixed" | "not_a_bug" | "duplicate";
@@ -48,8 +48,6 @@ const HOUR = 3_600_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 export type PublicBugRow = {
   id: string; title: string; impact: Impact; surface: string | null;
@@ -206,14 +204,15 @@ export function mountPlatformBugs(app: Express): void {
     // One instant for every statement, in whole seconds so the cutoff is the `asOf` the answer states.
     const asOfMs = Math.floor(Date.now() / 1000) * 1000;
     const asOf = new Date(asOfMs).toISOString();
-    const reports = await realReports(asOf);
-
     // The record begins with the first real-work call, the cohorts' denominator, or with the first
-    // real report if one came before it.
-    const cov = await db.query<{ first_ms: number | null }>(
-      `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms
-         from zz.event e
-        where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $1::timestamptz`, [asOf]);
+    // real report if one came before it: the two are read together.
+    const [reports, cov] = await Promise.all([
+      realReports(asOf),
+      db.query<{ first_ms: number | null }>(
+        `select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms
+           from zz.event e
+          where e.kind = 'tool_call' and e.origin = 'work' and e.ts < $1::timestamptz`, [asOf]),
+    ]);
     const coverageMs = bugsCoverage(cov.rows[0]?.first_ms ?? null, reports);
 
     // Every Monday-to-Monday week of the reporting timezone from the one coverage begins in through

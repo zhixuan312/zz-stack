@@ -47,8 +47,8 @@ import { platformDb } from "../db.js";
 import { PLATFORM_TEAM } from "../identity.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { lessonImports } from "./imports.js";
-import { readGrid, searchDays, searchesMeasure, type Grid } from "./platform-measures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { readGrid, searchDays, searchesMeasure, windowOf } from "./platform-measures.js";
+import { iso, platformPublic, ZZ_TZ } from "./shared.js";
 
 const POPULATION = "standing lessons on every shelf, imports included; lessons made outside import cohorts; real-work searches";
 /** How many weeks the charts and the questions reach back, the running one included. */
@@ -60,8 +60,6 @@ const MIN_SAMPLES = 30;
 /** Every kind a lesson may have. COUPLED: the CHECK on zz.knowledge_node.kind. */
 export const KINDS = ["decision", "design", "process", "knowledge", "behavior", "style"] as const;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 type Week = { fromMs: number; toMs: number };
 type Basis = "exact" | "by_day";
@@ -175,18 +173,6 @@ const orNull = <T>(what: string, read: Promise<T>): Promise<T | null> => read.ca
   return null;
 });
 
-/** A week's window, as `platform-measures.ts` bounds one: observed from where the record begins through the cutoff,
- *  and complete once it has ended and lies wholly inside the record. A week before the record was never observed. */
-function windowOf(w: Week, { asOfMs, coverageMs }: Grid): Window {
-  const observed = coverageMs !== null && w.toMs > coverageMs;
-  return {
-    from: iso(w.fromMs), to: iso(w.toMs),
-    observedFrom: observed ? iso(Math.max(w.fromMs, coverageMs)) : null,
-    observedThrough: observed ? iso(Math.min(w.toMs, asOfMs)) : null,
-    complete: observed && w.toMs <= asOfMs && w.fromMs >= coverageMs,
-  };
-}
-
 const unavailable = (window: Window): PeriodFigure => ({ window, figure: { value: null, why: "unavailable" }, numerator: null, denominator: null });
 const tally = (window: Window, n: number): PeriodFigure => ({ window, figure: { value: n, why: null }, numerator: n, denominator: null });
 /** A share of searches in percent: no share without a search, and under `MIN_SAMPLES` kept as insufficient. */
@@ -239,11 +225,11 @@ export function mountPlatformKnowledge(app: Express): void {
     // The searches measure's weeks, keyed by the instant each starts; a week it did not count is unavailable.
     const measured = new Map((measure?.weeks ?? []).map((w, i) => [Date.parse(w.window.from), { w, widened: measure!.widened![i] }]));
     const at = (w: Week): { w: PeriodFigure; widened: PeriodFigure } | null => measured.get(w.fromMs) ?? null;
-    const searchesIn = (w: Week): PeriodFigure => { const m = at(w); return m === null || m.w.denominator === null ? unavailable(windowOf(w, grid)) : tally(m.w.window, m.w.denominator); };
-    const noResultIn = (w: Week): PeriodFigure => { const m = at(w); return m === null ? unavailable(windowOf(w, grid)) : noResultOf(m.w); };
+    const searchesIn = (w: Week): PeriodFigure => { const m = at(w); return m === null || m.w.denominator === null ? unavailable(windowOf(grid, w)) : tally(m.w.window, m.w.denominator); };
+    const noResultIn = (w: Week): PeriodFigure => { const m = at(w); return m === null ? unavailable(windowOf(grid, w)) : noResultOf(m.w); };
     const madeIn = (w: Week, of: (l: Lesson) => boolean): number => lessons!.filter((l) => l.fromMs === w.fromMs && of(l)).length;
     const outside = (l: Lesson): boolean => !basis!.has(l.id);
-    const madeTile = (w: Week): PeriodFigure => { const window = windowOf(w, grid); return window.observedFrom === null ? unavailable(window) : tally(window, madeIn(w, outside)); };
+    const madeTile = (w: Week): PeriodFigure => { const window = windowOf(grid, w); return window.observedFrom === null ? unavailable(window) : tally(window, madeIn(w, outside)); };
 
     let shelves: KnowledgeHealth["shelves"] = failed;
     if (lessons !== null && basis !== null && measure !== null && counts !== null && slugs !== null) {
@@ -272,7 +258,7 @@ export function mountPlatformKnowledge(app: Express): void {
       made: lessons === null || basis === null ? failed : { state: "ok", data: {
         exactFrom: read!.exactFromMs === null ? null : iso(read!.exactFromMs),
         weeks: drawn.map((w) => ({
-          window: windowOf(w, grid), made: { value: madeIn(w, outside), why: null },
+          window: windowOf(grid, w), made: { value: madeIn(w, outside), why: null },
           importedExact: madeIn(w, (l) => basis.get(l.id) === "exact"), importedByDay: madeIn(w, (l) => basis.get(l.id) === "by_day"),
         })),
       } },
@@ -288,7 +274,7 @@ export function mountPlatformKnowledge(app: Express): void {
       cohorts: lessons === null || basis === null ? failed : { state: "ok", data: { rows: drawn.map((w) => {
         const exact = madeIn(w, (l) => basis.get(l.id) === "exact"), byDay = madeIn(w, (l) => basis.get(l.id) === "by_day");
         return {
-          window: windowOf(w, grid), made: madeIn(w, () => true), supersededSince: madeIn(w, (l) => !l.standing),
+          window: windowOf(grid, w), made: madeIn(w, () => true), supersededSince: madeIn(w, (l) => !l.standing),
           imported: exact + byDay, basis: byDay > 0 ? "by_day" : exact > 0 ? "exact" : null,
         };
       }) } },
@@ -298,7 +284,7 @@ export function mountPlatformKnowledge(app: Express): void {
       questions: !superadmin ? null : questions === null ? failed : { state: "ok", data: {
         window: drawn.length === 0
           ? { from: asOf, to: asOf, observedFrom: null, observedThrough: null, complete: false }
-          : { ...windowOf(drawn[0], grid), to: iso(drawn.at(-1)!.toMs), observedThrough: asOf, complete: false },
+          : { ...windowOf(grid, drawn[0]), to: iso(drawn.at(-1)!.toMs), observedThrough: asOf, complete: false },
         ...questions,
       } },
     };

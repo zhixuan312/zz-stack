@@ -31,7 +31,7 @@ import { platformDb } from "../db.js";
 import type { Figure, PeriodFigure, Window } from "./figures.js";
 import { shared } from "./imports.js";
 import { searchDays } from "./platform-measures.js";
-import { ZZ_TZ } from "./shared.js";
+import { iso, ZZ_TZ } from "./shared.js";
 import { localDay } from "./work-query-buckets.js";
 
 export type Grain = "week" | "month" | "quarter";
@@ -46,8 +46,6 @@ export type Period = { fromMs: number; toMs: number; window: Window };
 
 const HOUR = 3_600_000;
 const STEP: Record<Grain, string> = { week: "1 week", month: "1 month", quarter: "3 months" };
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** Weeks up to 26 of them, months up to three years, quarters beyond. */
 export function grainFor(window: Span): Grain {

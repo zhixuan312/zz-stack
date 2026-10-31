@@ -30,18 +30,16 @@ import type { Express, Request } from "express";
 import type pg from "pg";
 
 import { platformDb } from "../db.js";
-import type { Figure, PeriodFigure, ReadMeta, Window } from "./figures.js";
+import type { Figure, PeriodFigure, ReadMeta } from "./figures.js";
 import { pendingRevisions } from "./pending.js";
-import { readGrid, type Grid } from "./platform-measures.js";
-import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
+import { readGrid, windowOf, type Grid } from "./platform-measures.js";
+import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
 
 export const STATUSES = ["active", "archived"] as const;
 /** How many weeks a team's series reaches back, the running one included. */
 const WEEKS = 26;
 const POPULATION = "teams, their members, open work, revisions waiting, standing lessons and real-work tool calls";
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 type Week = { fromMs: number; toMs: number };
 /** A team as `zz.team` and its counts hold it, before any figure is read beside it. */
@@ -125,35 +123,28 @@ type Figures = {
 export async function readFigures(db: pg.Pool, asOfMs?: number): Promise<Figures> {
   const grid = await readGrid(db, asOfMs);
   const asOf = new Date(grid.asOfMs).toISOString();
+  // The weeks and the revisions waiting answer apart; the calls are read from the first week on.
+  const pendingRead = pendingRevisions(asOf);
+  pendingRead.catch(() => undefined);
   const weeks = await readWeeks(db, asOf);
-  const calls = await readCalls(db, weeks[0].fromMs, asOf).catch((err: unknown) => {
-    console.error("console the teams: the calls by week could not be read:", err);
-    return null;
-  });
+  const [calls, pending] = await Promise.all([
+    readCalls(db, weeks[0].fromMs, asOf).catch((err: unknown) => {
+      console.error("console the teams: the calls by week could not be read:", err);
+      return null;
+    }),
+    pendingRead,
+  ]);
   const waiting = new Map<string, number>();
-  const pending = await pendingRevisions(asOf);
   for (const p of pending) waiting.set(p.teamId, (waiting.get(p.teamId) ?? 0) + 1);
   // Only the weeks from the one the record begins in are drawn, as the status read draws them.
   const drawn = grid.coverageMs === null ? [] : weeks.filter((w) => w.toMs > grid.coverageMs!);
   return { grid, weeks, drawn, calls, waiting, pending: pending.length };
 }
 
-/** A week's window, as `platform-measures.ts` bounds one: observed from where the record begins through the cutoff,
- *  and complete once it has ended and lies wholly inside the record. A week before the record was never observed. */
-function windowOf(w: Week, { asOfMs, coverageMs }: Grid): Window {
-  const observed = coverageMs !== null && w.toMs > coverageMs;
-  return {
-    from: iso(w.fromMs), to: iso(w.toMs),
-    observedFrom: observed ? iso(Math.max(w.fromMs, coverageMs)) : null,
-    observedThrough: observed ? iso(Math.min(w.toMs, asOfMs)) : null,
-    complete: observed && w.toMs <= asOfMs && w.fromMs >= coverageMs,
-  };
-}
-
 /** One team's count in one week: a zero is a week read that held none; a week before the record, or one whose calls
  *  could not be read, is unavailable. */
 function weekFigure(f: Figures, team: string, w: Week, of: "calls" | "sessions"): PeriodFigure {
-  const window = windowOf(w, f.grid);
+  const window = windowOf(f.grid, w);
   if (f.calls === null || window.observedFrom === null) {
     return { window, figure: { value: null, why: "unavailable" }, numerator: null, denominator: null };
   }

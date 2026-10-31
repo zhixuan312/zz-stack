@@ -34,7 +34,7 @@ import type pg from "pg";
 import { summarise, type Measure, type MeasureKey, type PeriodFigure, type Window } from "./figures.js";
 import { shared } from "./imports.js";
 import type { realReports } from "./platform-bugs.js";
-import { ZZ_TZ } from "./shared.js";
+import { iso, ZZ_TZ } from "./shared.js";
 import type { FollowupRow } from "./usage-figures.js";
 
 /** A weekly platform rate or latency stands only on this many observations; fewer are `insufficient`. */
@@ -43,8 +43,6 @@ const MIN_SAMPLES = 30;
 /** How long after a refusal a success of the same tool counts as putting it right. */
 export const LOOKAHEAD_MS = 120_000;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** The read's one cutoff, in whole seconds so it is the `asOf` the answer states; where the record
  *  begins (the first real-work call, null when there is none) and its local date, today with none;
@@ -109,15 +107,17 @@ export async function readGrid(db: pg.Pool, asOfMs = Math.floor(Date.now() / 100
   return { asOfMs, coverageMs: cov.first_ms, coverageDay: cov.first_day, weeks };
 }
 
-/** A week of the grid as a window: observed from where the record begins through the cutoff, and
- *  complete once it has ended and `settleMs` more has been read after it, and when it lies wholly
- *  inside known coverage. */
+/** A week as a window: observed from where the record begins through the cutoff, and complete once it
+ *  has ended and `settleMs` more has been read after it, and when it lies wholly inside known coverage.
+ *  A week before the record begins, or with no record at all, was never observed. */
 export function windowOf(grid: Grid, w: { fromMs: number; toMs: number }, settleMs = 0): Window {
+  const { asOfMs, coverageMs } = grid;
+  const observed = coverageMs !== null && w.toMs > coverageMs;
   return {
     from: iso(w.fromMs), to: iso(w.toMs),
-    observedFrom: iso(Math.max(w.fromMs, grid.coverageMs!)),
-    observedThrough: iso(Math.min(w.toMs, grid.asOfMs)),
-    complete: w.toMs + settleMs <= grid.asOfMs && w.fromMs >= grid.coverageMs!,
+    observedFrom: observed ? iso(Math.max(w.fromMs, coverageMs)) : null,
+    observedThrough: observed ? iso(Math.min(w.toMs, asOfMs)) : null,
+    complete: observed && w.toMs + settleMs <= asOfMs && w.fromMs >= coverageMs,
   };
 }
 

@@ -44,6 +44,7 @@ import { searchDays } from "./platform-measures.js";
 import { migrationTimes, releaseRows, releaseTimes } from "./platform-releases.js";
 import { UNREGISTERED } from "./platform-usage.js";
 import { STATES as PERSON_STATES, peopleRows, signInDays, type PersonRow } from "./people.js";
+import { iso } from "./shared.js";
 import { STATUSES as TEAM_STATUSES, readBases, readFigures, rowOf, type Base } from "./teams.js";
 import { callDays, modelDays, modelsCalled, registeredTools, type CallDay } from "./usage-figures.js";
 import { addDays, localDay, midnight } from "./work-query-buckets.js";
@@ -86,7 +87,6 @@ export type Measure = {
   rows?(c: Ctx, kept: Fact[], want: number): Promise<Drilled>;
 };
 
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const words = (key: string): string => key[0].toUpperCase() + key.slice(1).replaceAll("_", " ");
 const closed = (name: string, values: readonly string[]) => (): string => `a filter on ${name} takes one of ${values.join(", ")}`;
 const inSpan = (day: string, s: Span): boolean => (s.from === null || day >= s.from) && day <= s.to;

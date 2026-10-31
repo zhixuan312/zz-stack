@@ -24,13 +24,12 @@ import type pg from "pg";
 
 import { platformDb } from "../db.js";
 import type { PeriodFigure, ReadMeta, Window } from "./figures.js";
-import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
+import { lastWholeWeek } from "./work-figures.js";
 
 export const STATES = ["active", "deactivated"] as const;
 const POPULATION = "people, their passkeys and their recorded console sign-ins";
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 export type PersonRow = {
   email: string; name: string; role: string; created: string; teams: string[];
@@ -70,8 +69,9 @@ export async function peopleRows(db: pg.Pool, asOf: string, q: string | null, st
   }>(
     `select p.email::text as email, p.display_name as name, p.role, p.status,
             to_char(p.created_at at time zone $1::text, 'YYYY-MM-DD') as created,
+            -- Live teams alone: a membership of an archived team is kept, but identity acts for active teams only.
             (select coalesce(array_agg(tm.slug || ' (' || m.role || ')' order by tm.slug), '{}')
-               from zz.membership m join zz.team tm on tm.id = m.team_id
+               from zz.membership m join zz.team tm on tm.id = m.team_id and tm.status = 'active'
               where m.principal_id = p.id)                                   as teams,
             (select count(*) from zz.passkey k where k.principal_id = p.id)  as passkeys,
             (select to_char(max(e.ts) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
@@ -141,25 +141,24 @@ export function mountPeople(app: Express): void {
     const asOfMs = Math.floor(Date.now() / 1000) * 1000;
     const asOf = iso(asOfMs);
 
-    const rows = await peopleRows(db, asOf, asked.q, asked.state, asked.limit, asked.offset);
-    const tiles = await peopleTiles(db, asOf, asked.q, asked.state);
-
-    // The last complete week, cut on the deployment's calendar: from the Monday before the running one.
-    const week = (await db.query<{ from_ms: number; to_ms: number }>(
-      `select (extract(epoch from ((date_trunc('week', $1::timestamptz at time zone $2::text) - interval '1 week')
-                                   at time zone $2::text)) * 1000)::float8 as from_ms,
-              (extract(epoch from (date_trunc('week', $1::timestamptz at time zone $2::text)
-                                   at time zone $2::text)) * 1000)::float8 as to_ms`,
-      [asOf, ZZ_TZ])).rows[0];
+    // Four reads, none waiting on another. The last complete week is cut on the deployment's calendar: from the Monday
+    // before the running one. A sign-in statement that fails makes the figure unavailable and the rows stand.
+    const [rows, tiles, last, days] = await Promise.all([
+      peopleRows(db, asOf, asked.q, asked.state, asked.limit, asked.offset),
+      peopleTiles(db, asOf, asked.q, asked.state),
+      lastWholeWeek(asOf),
+      signInDays(db, asOf).catch((err: unknown) => {
+        console.error("console people: the sign-ins could not be counted:", err);
+        return null;
+      }),
+    ]);
+    const week = { from_ms: Date.parse(last.from), to_ms: Date.parse(last.to) };
     // Where the record of sign-ins begins, and the count in that week, whose bounds are local midnights, so a day is
-    // wholly inside it or outside; a statement that fails makes the figure unavailable and the rows stand.
-    const signIns = await signInDays(db, asOf).then((days) => ({
+    // wholly inside it or outside.
+    const signIns = days && {
       first_ms: days.length ? Math.min(...days.map((d) => d.first_ms)) : null,
       n: days.filter((d) => d.day_ms >= week.from_ms && d.day_ms < week.to_ms).reduce((n, d) => n + d.n, 0),
-    }), (err: unknown) => {
-      console.error("console people: the sign-ins could not be counted:", err);
-      return null;
-    });
+    };
 
     const firstMs = signIns?.first_ms ?? null;
     const seen = firstMs !== null && firstMs < week.to_ms;

@@ -54,7 +54,7 @@ import { platformDb } from "../db.js";
 import type { Figure, PeriodFigure } from "./figures.js";
 import { lessonImports, shared } from "./imports.js";
 import { observedRuns } from "./runs-observed.js";
-import { ZZ_TZ } from "./shared.js";
+import { iso, ZZ_TZ } from "./shared.js";
 import { grainFor, mostOpenAtOnce, periodsOf, searchesWithResults } from "./work-figures.js";
 import { documentFacts, transitions } from "./writing.js";
 
@@ -79,8 +79,6 @@ type FirstsSlice = { bests: Best[]; firsts: { key: FirstKey; at: string }[] };
 
 /** Before every record: a window from here is the whole of it. */
 const ALL_TIME = "1970-01-01T00:00:00Z";
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const counted = (n: number): Figure => ({ value: n, why: null });
 /** The instants a window counts from and up to: inside it and before the cutoff. */
 const boundsOf = (window: Span, asOf: string): [number, number] =>

@@ -25,6 +25,7 @@ import { day, localDate } from "./findings.js";
 import type { PendingRevision } from "./pending.js";
 import type { realReports } from "./platform-bugs.js";
 import type { StatusMeasure } from "./platform-measures.js";
+import { iso } from "./shared.js";
 
 type NeedKind = "bugs" | "evaluation" | "approvals" | "drift" | "door";
 type Need = {
@@ -58,8 +59,6 @@ const WAIT_MS = 14 * 86_400_000;
 const ROWS = 5;
 const KINDS: readonly NeedKind[] = ["bugs", "door", "evaluation", "approvals", "drift"];
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const count = (n: number): string => n.toLocaleString("en-GB");
 const counted = (n: number, one: string, many: string): string => `${count(n)} ${n === 1 ? one : many}`;
 /** The local date an instant falls on, as a sentence prints it: `28 Sept`. */

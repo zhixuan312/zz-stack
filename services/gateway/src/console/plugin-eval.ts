@@ -183,14 +183,15 @@ export function mountPluginEval(app: Express): void {
           left join zz.eval_evaluator_qualification q on q.measure_id = m.id
          where m.protocol_version_id = $1::uuid and m.evaluator_version_id is not null
          order by ev.stable_key, q.qualified_at desc nulls last`, [run.protocol_version_id]),
-      // Learning: this run's own findings, ownership-classified (FR-12).
+      // Learning: this run's own standing findings, ownership-classified (FR-12). A finding a later one
+      // corrected is not shown beside its replacement, as findings.md (findings-doc.ts) does not show it.
       db.query<{
         id: string; kind: string; pattern: string; owner_kind: string | null; owner_ref: string | null;
         evidence_refs: unknown; expected_effect: unknown; decision: string; decision_note: string | null;
       }>(`
         select id::text as id, kind, pattern, owner_kind, owner_ref, evidence_refs, expected_effect,
                decision, decision_note
-          from zz.eval_finding where eval_run_id = $1::uuid order by created_at`, [run.id]),
+          from zz.eval_finding where eval_run_id = $1::uuid and superseded_by is null order by created_at`, [run.id]),
       // Evolution starts here: every improvement search this run's findings seeded (FR-34).
       db.query<{ id: string }>(`
         select id::text as id from zz.improvement_run where eval_run_id = $1::uuid order by created_at`,

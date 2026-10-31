@@ -27,6 +27,7 @@ import { REFUSAL_OWNERS, type RefusalOwner } from "@zz/contracts";
 
 import { platformDb } from "../db.js";
 import type { Window } from "./figures.js";
+import { iso } from "./shared.js";
 import { periodsOf, type Grain } from "./work-figures.js";
 
 /** A window as a caller names it: two instants, the first in it and the first after it. */
@@ -35,8 +36,6 @@ type Owners = Record<RefusalOwner, number>;
 export type RefusalPeriod = { window: Window; complete: boolean; calls: number; refused: number; owners: Owners };
 export type RefusalGroup = { owner: RefusalOwner; tool: string; message: string | null; count: number; lastSeen: string };
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const none = (): Owners => ({ guardrail: 0, ours: 0, theirs: 0, other: 0 });
 const sum = (owners: Owners): number => REFUSAL_OWNERS.reduce((n, o) => n + owners[o], 0);
 

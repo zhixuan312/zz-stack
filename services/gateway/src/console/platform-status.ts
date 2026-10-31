@@ -60,8 +60,9 @@ import {
 } from "./platform-measures.js";
 import { evaluationWaiting, needsOf, type DoorToday, type Needs } from "./platform-needs.js";
 import { audienceKey, cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, platformPublic, ZZ_TZ } from "./shared.js";
 import { followupWeeks, nextBoundaryOf, type FollowupRow } from "./usage-figures.js";
+import { localDay } from "./work-query-buckets.js";
 
 /** What the measures count, as `meta.population` says it. */
 const POPULATION = "real-work tool calls and searches, real bug reports, and closed initiatives";
@@ -70,15 +71,11 @@ const DOORS = ["core", "manage", "eval"] as const;
 /** How many days, today's included, a door's days reach back. */
 const DOOR_DAYS = 365;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-/** The local date an instant falls on in the reporting timezone. en-CA formats as YYYY-MM-DD. */
-const localDate = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: ZZ_TZ }).format(new Date(ms));
 /** The next instant the local calendar day changes after `asOfMs`. Status draws "today" (`doors`) and
- *  "through the latest complete day" (`records`) by `localDate`, so the clock alone moves those figures at
+ *  "through the latest complete day" (`records`) by `localDay`, so the clock alone moves those figures at
  *  midnight, exactly as a refusal turns at its 120 seconds and a running week completes at its end.
  *
- *  DELIBERATE: found by bisection on `localDate` rather than by adding 24 hours. A daylight-saving shift
+ *  DELIBERATE: found by bisection on `localDay` rather than by adding 24 hours. A daylight-saving shift
  *  moves a zone's midnight, and the question this answers is when the local DATE changes, not when a fixed
  *  span has passed; 26 hours is longer than any local day, so the search interval always contains the
  *  change. It costs a few dozen `Intl` calls once per computed answer, which is nothing beside the nine
@@ -86,10 +83,10 @@ const localDate = (ms: number): string => new Intl.DateTimeFormat("en-CA", { tim
 function nextDayBoundary(asOfMs: number): number {
   let lo = asOfMs;
   let hi = asOfMs + 26 * 3_600_000;
-  const start = localDate(lo);
+  const start = localDay(lo);
   while (hi - lo > 1) {
     const mid = Math.floor((lo + hi) / 2);
-    if (localDate(mid) === start) lo = mid;
+    if (localDay(mid) === start) lo = mid;
     else hi = mid;
   }
   return hi;
@@ -186,7 +183,7 @@ function daysFrom(first: string, last: string): string[] {
 
 /** Each door over its days, and each door's today for what needs attention. */
 function doorsOf(rows: DayRow[], grid: Grid): { doors: DoorObservation[]; today: DoorToday[] } {
-  const today = localDate(grid.asOfMs);
+  const today = localDay(grid.asOfMs);
   const from = grid.coverageDay > plusDays(today, 1 - DOOR_DAYS) ? grid.coverageDay : plusDays(today, 1 - DOOR_DAYS);
   const dates = daysFrom(from, today);
   const doors = DOORS.map((door): DoorObservation => {
@@ -223,7 +220,7 @@ function doorsOf(rows: DayRow[], grid: Grid): { doors: DoorObservation[]; today:
  *  day: the days in a row with a call ending on it, the days with calls under 1% tool failures, and
  *  the longest run of those, the earliest on a tie. */
 function recordsOf(rows: DayRow[], grid: Grid): Records {
-  const today = localDate(grid.asOfMs);
+  const today = localDay(grid.asOfMs);
   const by = new Map<string, { calls: number; failures: number }>();
   for (const r of rows) {
     const d = by.get(r.day) ?? { calls: 0, failures: 0 };
@@ -294,6 +291,29 @@ async function statusAnswer(
   // same rows. The reader's own team reads its own rows below.
   const followups = followupWeeks(db, grid, null);
   followups.catch(() => undefined);
+  // The reader's own team, from the identity alone, read beside the platform's measures rather than after them; a slug
+  // that names no team is no team.
+  const ownPart = (async (): Promise<Part<Own>> => {
+    let team: string | null;
+    try {
+      team = activeTeam === null ? null : (await db.query<{ id: string }>(
+        "select t.id::text as id from zz.team t where t.slug = $1", [activeTeam])).rows[0]?.id ?? null;
+    } catch (err) {
+      console.error("console the platform's status: the reader's team could not be read:", err);
+      return { state: "unavailable", reason: "query_failed" };
+    }
+    if (team === null) return { state: "unavailable", reason: "no_team" };
+    const [malformed, followup, sessions, mine] = await Promise.all([
+      orUnavailable(grid, "malformed_per_1000", team, malformedMeasure(db, grid, team)),
+      orUnavailable(grid, "same_tool_followup_pct", team, followupWeeks(db, grid, team).then((rows) => followupOf(grid, rows, team))),
+      orUnavailable(grid, "sessions", team, sessionsMeasure(db, grid, team)),
+      reports,
+    ]);
+    return mine === null
+      ? { state: "unavailable", reason: "query_failed" }
+      : { state: "ok", data: { malformed: malformed.weeks, followup: followup.weeks, sessions: sessions.weeks, bugs: ownBugs(mine, team) } };
+  })();
+  ownPart.catch(() => undefined);
   const [measures, pending, evaluation, running] = await Promise.all([
     Promise.all([
       orUnavailable(grid, "malformed_per_1000", null, malformedMeasure(db, grid)),
@@ -318,27 +338,7 @@ async function statusAnswer(
   const dayRows = await days;
   const observed = dayRows === null ? null : doorsOf(dayRows, grid);
 
-  // The reader's own team, from the identity alone; a slug that names no team is no team.
-  let own: Part<Own> = { state: "unavailable", reason: "no_team" };
-  let team: string | null = null;
-  try {
-    team = activeTeam === null ? null : (await db.query<{ id: string }>(
-      "select t.id::text as id from zz.team t where t.slug = $1", [activeTeam])).rows[0]?.id ?? null;
-  } catch (err) {
-    console.error("console the platform's status: the reader's team could not be read:", err);
-    own = { state: "unavailable", reason: "query_failed" };
-  }
-  if (team !== null) {
-    const [malformed, followup, sessions, mine] = await Promise.all([
-      orUnavailable(grid, "malformed_per_1000", team, malformedMeasure(db, grid, team)),
-      orUnavailable(grid, "same_tool_followup_pct", team, followupWeeks(db, grid, team).then((rows) => followupOf(grid, rows, team))),
-      orUnavailable(grid, "sessions", team, sessionsMeasure(db, grid, team)),
-      reports,
-    ]);
-    own = mine === null
-      ? { state: "unavailable", reason: "query_failed" }
-      : { state: "ok", data: { malformed: malformed.weeks, followup: followup.weeks, sessions: sessions.weeks, bugs: ownBugs(mine, team) } };
-  }
+  const own = await ownPart;
 
   const failed = { state: "unavailable", reason: "query_failed" } as const;
   const answer: PlatformStatus = {
@@ -368,7 +368,7 @@ async function statusAnswer(
   }
   // Three answers here move with the clock alone: the refusals still inside their 120 seconds, the running
   // week turning complete, and the local day turning over — `doors` draws today and `records` through the
-  // latest complete day, and both are `localDate`'s. The platform-wide read is the earlier of the two refusal
+  // latest complete day, and both are `localDay`'s. The platform-wide read is the earlier of the two refusal
   // boundaries, so it is the one the answer is held to; a read that failed contributes no boundary rather
   // than a wrong one.
   //

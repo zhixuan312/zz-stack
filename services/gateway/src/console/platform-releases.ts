@@ -39,7 +39,7 @@ import { platformDb } from "../db.js";
 import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
 import { malformedMeasure, readGrid } from "./platform-measures.js";
-import { BAD_PAGE, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
 
 /** How far either side of a release its windows reach. */
 const WINDOW_MS = 72 * 3_600_000;
@@ -85,8 +85,6 @@ type Stored = {
   client_action: string | null; changelog: string; upgrade_notes: string | null;
 };
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 const UNAVAILABLE: Figure = { value: null, why: "unavailable" };
 const NO_DATA: Figure = { value: null, why: "no_data" };
@@ -229,16 +227,13 @@ export async function releaseRows(db: pg.Pool, versions: string[], asOfMs: numbe
  *  `since` the releases recorded after that version; null when `since` names no recorded release. */
 export async function releasesOf(page: { limit: number; offset: number; since: string | null }): Promise<Releases<ReleaseDetail> | null> {
   const db = platformDb();
-  const all = await releaseTimes(db);
+  // Three reads that answer apart; the week and the measure are cut from the grid.
+  const [all, grid, applied] = await Promise.all([releaseTimes(db), readGrid(db), migrationTimes(db)]);
   // The releases after `since` are the ones before it in recorded order, newest first.
   const after = page.since === null ? all.length : all.findIndex((r) => r.version === page.since);
   if (after < 0) return null;
-  const grid = await readGrid(db);
   const { asOfMs, coverageMs } = grid;
-  const applied = await migrationTimes(db);
-  const whole = await lastWholeWeek(db, asOfMs);
-
-  const malformed = await malformedMeasure(db, grid);
+  const [whole, malformed] = await Promise.all([lastWholeWeek(db, asOfMs), malformedMeasure(db, grid)]);
   const weeks = malformed.weeks.map((w, i) => ({
     window: w.window,
     releases: all.filter((r) => r.ms >= grid.weeks[i].fromMs && r.ms < grid.weeks[i].toMs).length,

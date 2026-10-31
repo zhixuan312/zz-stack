@@ -64,7 +64,7 @@ import { initiativeList, type Drawn } from "./initiative-list.js";
 import { teamPendingRevisions } from "./pending.js";
 import { observedRuns } from "./runs-observed.js";
 import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
-import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
   closuresByWeek, grainFor, lastWholeWeek, medianHoursToClose, periodsOf, searchesWithResults, type ClosureWeek, type Period,
 } from "./work-figures.js";
@@ -98,8 +98,6 @@ const OPEN_ROWS = 5;
 /** The days before the last whole week's Monday read for the agents' run of days, enough to decide a run of 30. */
 const RUN_DAYS = 30;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 /** A local date moved by whole days, on the calendar alone. */
 const shiftDate = (date: string, days: number): string =>
   new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);

@@ -44,7 +44,7 @@ import type { Express, Request } from "express";
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { teamPendingRevisions } from "./pending.js";
-import { BAD_PAGE, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { grainFor, periodsOf, type Grain, type Period } from "./work-figures.js";
 
 type Presentation = "console_revision_shown" | "agent_context_covered" | "not_recorded" | "unknown";
@@ -81,8 +81,6 @@ const SHOWN = 26;
 /** How long a revision waits before the summary counts it as old. */
 const OLD_MS = 14 * 24 * 3_600_000;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** One approval as placed on the calendar: its exact time, or the local midnight of the day a revision
  *  sealed before the events was approved on; and whether it names the review context it rests on. */

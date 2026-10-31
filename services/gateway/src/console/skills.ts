@@ -110,7 +110,8 @@ export function mountSkills(app: Express): void {
         // is a step this cannot name, and it is left out of every group rather than folded onto
         // one; that gap is on the run side too, where `runs` counts what `logged` cannot reach.
         // The calls are the team's real work, as /plugins counts them: a maintenance client's call is no use of a skill.
-        `select s.name as step, count(*) as calls, count(*) filter (where e.ok = false) as failed,
+        // Grouped by version as the runs are, so a row's `logged` is the same version's calls as its runs.
+        `select s.name as step, v.version, count(*) as calls, count(*) filter (where e.ok = false) as failed,
                 count(distinct coalesce(e.tool_key, e.subject)) as tools
            from zz.event e
            join zz.skill_version v on v.id = e.skill_version_id
@@ -118,11 +119,11 @@ export function mountSkills(app: Express): void {
            join zz.team t on t.id = e.team_id
           where e.kind = 'tool_call' and e.origin = 'work' and t.slug = $2
             and ($1::timestamptz is null or e.ts >= $1)
-          group by 1`, [since, activeTeam]),
+          group by 1, 2`, [since, activeTeam]),
     ]);
-    const evBy = new Map(stepEvents.rows.map((e) => [e.step as string, e]));
+    const evBy = new Map(stepEvents.rows.map((e) => [`${e.step as string}@${e.version as string}`, e]));
     res.json({ skills: runs.rows.map((r) => {
-      const ev = evBy.get(r.name as string);
+      const ev = evBy.get(`${r.name as string}@${r.version as string}`);
       return {
         name: r.name, version: r.version, kind: r.kind, flow: r.flow,
         // Emitted, not merely selected: a `retired` column the response does not carry leaves

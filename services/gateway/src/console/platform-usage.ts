@@ -53,7 +53,7 @@ import {
 } from "./platform-measures.js";
 import { audienceKey, cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
 import { weekBuckets } from "./event-work-week.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, platformPublic, ZZ_TZ } from "./shared.js";
 import {
   approvalWeeks, followupWeeks, modelWeeks, nextBoundaryOf, rhythmCells, teamWeeks, toolWeeks, weekTraffic,
   type FollowupRow, type ToolWeek,
@@ -93,7 +93,6 @@ type Ended = { last: GridWeek; previous: GridWeek };
 /** The usage answer, and the earliest instant the clock alone changes it. */
 type UsageRead = { answer: Usage; boundary: number | null };
 
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const NO_WEEK = { state: "unavailable", reason: "no_data" } as const;
 
 /** A part as read, or `unavailable` when its statement failed; the failure is logged under `what`. */
@@ -233,8 +232,7 @@ export async function usageAnswer(superadmin: boolean, asOfMs?: number): Promise
 
   const [tiles, callsByWeek, traffic, followup, tooled, rhythm, perApproval, modelCalls] = await Promise.all([
     ended === null ? NO_WEEK : part("the tiles", async () => {
-      const at = await calls;
-      const [[, p95], sessions] = await Promise.all([latencyMeasures(db, grid), sessionsMeasure(db, grid)]);
+      const [at, [, p95], sessions] = await Promise.all([calls, latencyMeasures(db, grid), sessionsMeasure(db, grid)]);
       return {
         calls: tile(periodWeeks(grid, false, (w) => tally(at(w, "calls")))),
         refusedShare: tile(periodWeeks(grid, true, (w) => share(at(w, "refusals"), at(w, "calls"), 100))),

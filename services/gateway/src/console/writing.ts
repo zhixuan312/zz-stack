@@ -43,6 +43,7 @@ import { countWords, type WritingCoverage } from "@zz/contracts";
 import { platformDb } from "../db.js";
 import type { PeriodFigure } from "./figures.js";
 import { importedDocuments, lessonImports, shared } from "./imports.js";
+import { iso } from "./shared.js";
 import { wordCounts } from "./word-counts.js";
 import { grainFor, periodsOf, type Period } from "./work-figures.js";
 
@@ -78,8 +79,6 @@ const CONTENT_ACTS = ["write", "edit", "patch", "revise"].flatMap((a) => [`docum
 const SEAL_ACT = "document.document_approve";
 const MOST_REWRITTEN = 5;
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const eligible = (r: { kind: Kind }): boolean => r.kind === "work" || r.kind === "mixed";
 
 /** Words counted, by a revision's content_hash and by a lesson's id and updated_at: a body's count never

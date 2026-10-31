@@ -88,11 +88,11 @@ import { skillsOf } from "./catalog.js";
 import type { Figure, Part, ReadMeta, Window } from "./figures.js";
 import { localDate } from "./findings.js";
 import { lessonImports } from "./imports.js";
-import { initiativeList, listParams } from "./initiative-list.js";
+import { initiativeList, listParams, nextMoves } from "./initiative-list.js";
 import { shelfRows } from "./knowledge.js";
 import { runRow } from "./runs.js";
 import { runsIn } from "./runs-observed.js";
-import { NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { grainFor, lastWholeWeek, openedRows, periodsOf, type Grain, type Period } from "./work-figures.js";
 import { BUCKETS, WEEKDAYS, addDays, bucketLabel, bucketOf, bucketsOf, isDate, localDay, midnight, type Bucket } from "./work-query-buckets.js";
 import { lessonAdditions, transitions } from "./writing.js";
@@ -184,8 +184,6 @@ const BAD_WINDOW = "from and to must be ISO 8601 instants or dates, YYYY-MM-DD, 
 const MIXED_WINDOW = "from and to are both dates or both instants, not one of each";
 const NOT_DRILLED = "skill_calls is not drilled: its groups are its rows";
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const counted = (n: number): Figure => ({ value: n, why: null });
 const unread: Figure = { value: null, why: "unavailable" };
 
@@ -267,16 +265,6 @@ function local(ms: number): { weekday: string; hour: string } {
 
 /** A relay that answers no initiative: the population read, which reduces rows and never draws a next move. */
 const quiet: Relay = { call: async () => JSON.stringify({ initiatives: [] }) };
-
-/** The relay asked for the names a drilled page holds alone, so zz-core is asked nothing else. */
-function only(names: Set<string>, relay: Relay): Relay {
-  return {
-    call: async (tool, args) => {
-      const wanted = ((args as { initiatives: string[] }).initiatives).filter((n) => names.has(n));
-      return wanted.length ? relay.call(tool, { ...(args as object), initiatives: wanted }) : JSON.stringify({ initiatives: [] });
-    },
-  };
-}
 
 /** The team's lessons made inside the span before the cutoff, those of an import cohort left out. */
 async function lessonsIn(team: string, [from, end]: [string, string], asOf: string): Promise<{ kind: string; ms: number }[]> {
@@ -584,15 +572,10 @@ async function workQuery(a: Asked, from: From, toMs: number, team: string, calle
       return unanswered();
     }
     if (a.measure === "closures" || a.measure === "opened") {
-      // The page's next moves, asked of zz-core for its names alone; a batch it does not answer leaves them null.
-      const names = new Set(page.map((r) => (r as InitiativeRow).slug));
-      try {
-        const moved = new Map((await initiativeList(team, { ...a.filters, limit: ALL, offset: 0 }, asOf, only(names, relay))).rows.map((r) => [r.slug, r]));
-        page = page.map((r) => moved.get((r as InitiativeRow).slug) ?? r);
-      } catch (err) {
-        console.error("console work query: the drilled initiatives could not be read:", err);
-        return unanswered();
-      }
+      // The page's next moves, asked of zz-core for its names alone; a batch it does not answer leaves them null. The
+      // rows themselves are the population's, already read.
+      const { moves } = await nextMoves(page.map((r) => (r as InitiativeRow).slug), relay);
+      page = page.map((r) => ({ ...(r as InitiativeRow), nextMove: moves.get((r as InitiativeRow).slug) ?? null }));
     }
     rows = { state: "ok", data: { rows: page, total: counting ? drilled.reduce((n, f) => n + f.value!, 0) : drilled.length } };
   }

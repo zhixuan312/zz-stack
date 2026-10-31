@@ -37,7 +37,7 @@ import { redact } from "../redact.js";
 import { myTeamsSummary } from "../settings.js";
 import { renderClientSetup } from "../admin/flows.js";
 import type { ReadMeta } from "./figures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, platformPublic, ZZ_TZ } from "./shared.js";
 
 type AccessToken = { id: string; label: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null; application: string | null };
 type AccessApplication = { client: string; name: string; issuedCount: number; firstAt: string; lastUsedAt: string | null };
@@ -53,8 +53,6 @@ type Access = {
   setup: { client: string; config: string };
 };
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const at = (d: Date | null): string | null => (d === null ? null : iso(d.getTime()));
 /** What an OAuth client is called when it registered no name, as its tokens' labels call it. */
 const UNNAMED = "unnamed client";

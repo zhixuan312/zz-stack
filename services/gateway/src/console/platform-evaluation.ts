@@ -29,7 +29,7 @@ import type { Express } from "express";
 
 import { platformDb } from "../db.js";
 import type { Figure, Part, ReadMeta } from "./figures.js";
-import { platformPublic, ZZ_TZ } from "./shared.js";
+import { iso, platformPublic, ZZ_TZ } from "./shared.js";
 
 /** What the read counts, as `meta.population` says it. */
 const POPULATION = "scored evaluation runs";
@@ -66,8 +66,6 @@ type ScoredRow = {
   standing: Standing; score: number | null; lower: number | null; upper: number | null;
 };
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /** The population kind each form `doorSurface` writes is read as; the first two name a plugin version,
  *  and the second a version other than the snapshot's own. COUPLED: the sentences `doorSurface` writes
@@ -242,8 +240,9 @@ export function mountPlatformEvaluation(app: Express): void {
     // One instant for every statement, in whole seconds so the cutoff is the `asOf` the answer states.
     const asOfMs = Math.floor(Date.now() / 1000) * 1000;
     const asOf = iso(asOfMs);
-    // The tiles. A plugin's latest score is its most recent scoring; a day is a local date in ZZ_TZ.
-    const tiles = (await db.query<{ established: number; first_ms: number | null; last_ms: number | null; days: number; waiting: number }>(
+    // The tiles, read beside the parts below, which none of them waits on. A plugin's latest score is its most recent
+    // scoring; a day is a local date in ZZ_TZ.
+    const tilesRead = db.query<{ established: number; first_ms: number | null; last_ms: number | null; days: number; waiting: number }>(
       `with scored as (
          select pv.plugin_id, r.id, r.scored_at, r.score_status
            from zz.eval_run r
@@ -258,7 +257,8 @@ export function mountPlatformEvaluation(app: Express): void {
               (select count(distinct (scored_at at time zone $2::text)::date)::int from scored) as days,
               (select count(*)::int from zz.eval_finding f
                 where f.decision = 'deferred' and f.kind in ('defect', 'unknown') and f.superseded_by is null
-                  and f.created_at <= $1::timestamptz) as waiting`, [asOf, ZZ_TZ])).rows[0];
+                  and f.created_at <= $1::timestamptz) as waiting`, [asOf, ZZ_TZ]);
+    tilesRead.catch(() => undefined);
 
     // byDecision and byOwner count one read of the findings, and either fails with it.
     const counted = countedFindings(asOf);
@@ -281,6 +281,7 @@ export function mountPlatformEvaluation(app: Express): void {
         return { rows, total: rows.length };
       }),
     ]);
+    const tiles = (await tilesRead).rows[0];
 
     const answer: Evaluation = {
       meta: {

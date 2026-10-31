@@ -44,7 +44,7 @@
  * work-record.ts and work-runs.ts, which draw these figures.
  */
 import { platformDb } from "../db.js";
-import { ZZ_TZ } from "./shared.js";
+import { iso, ZZ_TZ } from "./shared.js";
 
 /** A window as a caller names it: two instants, the first in it and the first after it. */
 type Span = { from: string; to: string };
@@ -73,8 +73,6 @@ const ACTIVE_MS = 5 * 60_000;
 export const isActive = (endedMs: number, asOfMs: number): boolean => endedMs <= asOfMs && asOfMs - endedMs <= ACTIVE_MS;
 /** Above this many active runs they are grouped by initiative, and this many groups are answered. */
 const GROUPS = 4;
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 type Row = {
   id: string; initiative: string | null; skill: string; started_ms: number; ended_ms: number;

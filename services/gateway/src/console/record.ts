@@ -70,7 +70,7 @@ import { callerApprovals } from "./approvals.js";
 import type { Figure, Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { localDate } from "./findings.js";
 import { agentsSlice, firstsSlice, knowledgeSlice } from "./record-slices.js";
-import { BAD_PAGE, flowShape, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
+import { BAD_PAGE, flowShape, iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
   closuresByWeek, grainFor, medianHoursToAbandon, medianHoursToClose, mostOpenAtOnce, openedRows, periodsOf, type ClosureWeek,
 } from "./work-figures.js";
@@ -125,8 +125,6 @@ const HOUR = 3_600_000;
 /** Before every record: a window from here is the whole of it. */
 const ALL_TIME = "1970-01-01T00:00:00Z";
 
-/** An instant as the gateway spells one: ISO 8601 in UTC, whole seconds, with the Z. */
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const counted = (n: number): Figure => ({ value: n, why: null });
 const unread: Figure = { value: null, why: "unavailable" };
 const sum = (figures: PeriodFigure[]): number => figures.reduce((n, p) => n + (p.figure.value ?? 0), 0);

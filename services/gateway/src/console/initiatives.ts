@@ -21,9 +21,7 @@ import { decisionRows } from "@zz/indexing";
 import { platformDb } from "../db.js";
 import { mountInitiativeList, stateOf } from "./initiative-list.js";
 import { teamPendingRevisions } from "./pending.js";
-import { flowShape, NO_TEAM, platformPublic, stageOf, type DocRow, ZZ_TZ } from "./shared.js";
-
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+import { flowShape, iso, NO_TEAM, platformPublic, stageOf, type DocRow, ZZ_TZ } from "./shared.js";
 
 /** The envelope keys the platform reserves; every other field is a flow's own. COUPLED:
  *  RESERVED_ENVELOPE in services/zz-core/src/document-rules.ts derives from the same schema. */
@@ -31,7 +29,8 @@ const RESERVED = new Set(Object.keys(Envelope.shape));
 
 /** The three document types that state claims. The type is the document's own, and it is what
  *  the role on every claim is stamped from — the reader that already knows the type does not
- *  have to be told it twice. */
+ *  have to be told it twice. COUPLED: the claim statement in `mountInitiatives` selects these
+ *  three types by name. */
 const CLAIM_ROLES = /^(selection|agreement|plan)$/;
 
 /** The not-found answers, each the same whatever the request named.
@@ -129,7 +128,7 @@ export function mountInitiatives(app: Express): void {
                              where l.from_doc_id = d.id and l.from_revision = r.revision
                                and l.kind = 'supports') as supports,
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-                length(coalesce(r.body,'')) as bytes,
+                coalesce(octet_length(r.body), 0) as bytes,
                 case when i.closed_at is not null and d.status <> 'approved' and d.path <> 'handover.md'
                            and coalesce(i.flow, '') <> '' and d.approved_revision is not null and d.updated_at > i.closed_at
                            and (i.outcome <> 'abandoned'
@@ -142,15 +141,16 @@ export function mountInitiatives(app: Express): void {
            left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
            left join zz.principal a on a.id = r.approved_by
           where t.slug = $1 and i.slug = $2 order by d.path`, [team, slug]),
-      // The bodies the claims are recomputed from, in their own statement: the select above
-      // reads `length(body)` and must not detoast every document to answer it.
+      // The bodies the claims are recomputed from, in their own statement and only of the types
+      // that state claims (`CLAIM_ROLES`, as `claimsOf` reads them): every other body would be
+      // decompressed to be thrown away.
       db.query<{ path: string; type: string | null; body: string | null }>(
         `select d.path, d.type, r.body as body
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id
            left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-          where t.slug = $1 and i.slug = $2
+          where t.slug = $1 and i.slug = $2 and trim(d.type) in ('selection', 'agreement', 'plan')
           order by d.path`, [team, slug]),
       // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (001), read for `stageOf`
       // below the same way the list (initiative-list.ts) reads it for every initiative.
@@ -300,7 +300,7 @@ export function mountInitiatives(app: Express): void {
                 d.status = 'superseded' as superseded,
                 r.body as body,
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-                length(coalesce(r.body,'')) as bytes
+                coalesce(octet_length(r.body), 0) as bytes
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id

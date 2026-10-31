@@ -20,6 +20,7 @@ import type pg from "pg";
 import { weekBuckets, type WorkWeekBucket } from "./event-work-week.js";
 import type { Grid } from "./platform-measures.js";
 import { ZZ_TZ } from "./shared.js";
+import { localDay } from "./work-query-buckets.js";
 
 const asOfOf = (grid: Grid): string => new Date(grid.asOfMs).toISOString();
 /** The first instant of the grid's first week, or the cutoff when it has none. */
@@ -145,11 +146,6 @@ function summed<R extends { calls: number }>(rows: R[], key: (r: R) => string): 
   return [...out.values()];
 }
 
-/** The local date an instant falls on, as the read model dates a bucket: a bucket is keyed by the
- *  Monday of its week in the reporting zone, and the grid's weeks are those same Mondays as instants. */
-function localDay(ms: number): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: ZZ_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(ms);
-}
 
 /** The grid's weeks by the local date each starts on, giving the instant a model bucket's week starts
  *  at. A bucket whose week is not in this map lies outside the grid and is one the figure does not

@@ -350,7 +350,7 @@ export async function seedMeasures(db: pg.ClientBase | pg.Pool, s: Seeded, now =
   await report(2, 1, one, "not_a_bug", "seeded B3");
   await report(1, 0, one, "duplicate", "seeded B4", fixed);
   await report(1, 1, two, "open", "seeded B5");
-  await report(1, 2, one, "open", "chain-check probe 2026-09-30-chain-check-0930-a1b2c3");
+  await report(1, 2, one, "open", "chain-check probe 2026-09-30-chain-check-0930-a1b2");
 
   for (const [back, ms, team, outcome, slug] of [
     [3, 3 * DAY, one, "abandoned", "2026-09-02-first-close"], [2, 3 * DAY, one, "accepted", "2026-09-03-accepted"],
@@ -594,7 +594,7 @@ export async function seedNeeds(db: pg.ClientBase, timezone: string, now = Date.
      returning id`, [ago(5), title, impact, status, team, member]);
   const open = await report("seeded open", "open", "blocks_work", teams[0]);
   await report("seeded fixed", "fixed", "confusing", teams[0]);
-  await report("chain-check probe 2026-10-01-chain-check-1001-a1b2c3", "open", "blocks_work", null);
+  await report("chain-check probe 2026-10-01-chain-check-1001-a1b2", "open", "blocks_work", null);
 
   const plugin = await one("insert into zz.plugin (name, origin, owner_team_id) values ('needs-plugin', 'platform', $1) returning id", [teams[0]]);
   const protocol = await one(

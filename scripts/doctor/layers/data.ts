@@ -134,7 +134,10 @@ probe("every run names a skill version that was released when it started", () =>
 // Not a gate check: the gate is offline and this is a fact about data. The source can be perfect
 // while the store fills up.
 probe("no initiative in the store was left behind by a probe", () => {
-  const n = psql("select count(*) from zz.initiative where slug like '%chain-check-%'").trim();
+  // The exact name chain-check mints, as scripts/ops/purge-probes.ts selects it: a person's initiative may say
+  // chain-check in its name and is not a probe.
+  const n = psql("select count(*) from zz.initiative " +
+    "where slug ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-chain-check-[0-9]{4}-[0-9a-f]{4}$'").trim();
   if (n === "") throw new Error("could not count zz.initiative on the host");
   if (n === "0") return null;
   return `${n} initiative(s) named chain-check-* are still in the store. The live chain check ` +

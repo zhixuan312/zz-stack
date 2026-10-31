@@ -405,7 +405,7 @@ export async function finishedMeasure(db: pg.Pool, grid: Grid): Promise<Measure>
   const first = (await db.query<{ day: string | null }>(
     `select to_char(min(i.closed_at) at time zone $2::text, 'YYYY-MM-DD') as day
        from zz.initiative i
-      where i.closed_at < $1::timestamptz and i.slug not like '%chain-check-%'
+      where i.closed_at < $1::timestamptz and i.slug !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-chain-check-[0-9]{4}-[0-9a-f]{4}$'
         and not exists (select 1 from zz.event c
                           where c.initiative_id = i.id and c.kind = 'initiative_close' and c.origin = 'platform')`,
     [asOf, ZZ_TZ])).rows[0];
@@ -413,7 +413,7 @@ export async function finishedMeasure(db: pg.Pool, grid: Grid): Promise<Measure>
     `select (extract(epoch from (date_trunc('week', i.closed_at at time zone $1::text) at time zone $1::text)) * 1000)::float8 as from_ms,
             count(*)::int as finished
        from zz.initiative i
-      where i.closed_at < $2::timestamptz and i.outcome in ('accepted', 'delivered') and i.slug not like '%chain-check-%'
+      where i.closed_at < $2::timestamptz and i.outcome in ('accepted', 'delivered') and i.slug !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-chain-check-[0-9]{4}-[0-9a-f]{4}$'
         and not exists (select 1 from zz.event c
                           where c.initiative_id = i.id and c.kind = 'initiative_close' and c.origin = 'platform')
       group by 1`, [ZZ_TZ, asOf])).rows);

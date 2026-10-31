@@ -99,7 +99,7 @@ function publicTitle(surface: string | null): string {
 
 /**
  * Every real report filed by `asOf`, newest first with the id breaking a tie. A report is real
- * unless it is a release check's own: its initiative's slug carries `chain-check-`, the rule
+ * unless it is a release check's own: its initiative's slug has the exact shape chain-check mints, the rule
  * scripts/ops/purge-probes.ts deletes by, or its title opens `chain-check probe `, which a probe
  * keeps after a purge sets its initiative null.
  *
@@ -119,7 +119,7 @@ export async function realReports(asOf: string): Promise<RealReport[]> {
        from zz.bug b
       where b.reported_at <= $1::timestamptz
         and b.title not like 'chain-check probe %'
-        and not exists (select 1 from zz.initiative i where i.id = b.initiative_id and i.slug like '%chain-check-%')
+        and not exists (select 1 from zz.initiative i where i.id = b.initiative_id and i.slug ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-chain-check-[0-9]{4}-[0-9a-f]{4}$')
       order by b.reported_at desc, b.id`, [asOf]);
   return rows.map((r) => ({
     id: r.id, teamId: r.team_id, impact: r.impact, status: r.status, surface: canonicalSurface(r.surface, words),

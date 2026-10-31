@@ -84,7 +84,7 @@ export const REPORTS: Readonly<Record<Key, Report>> = {
 };
 
 /** The two initiatives' slugs, which no member's answer may hold. */
-export const INITIATIVES = { probe: "2026-09-02-chain-check-0209-a1b2c3", real: "2026-09-20-console-rework" } as const;
+export const INITIATIVES = { probe: "2026-09-02-chain-check-0209-a1b2", real: "2026-09-20-console-rework" } as const;
 
 /** A cohort as the read must answer it, by `back`: counts, then the rate's value and reason, then
  *  the median's. */

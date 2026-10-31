@@ -17,8 +17,10 @@
  *   node scripts/ops/purge-probes.ts              # counts only, changes nothing
  *   node scripts/ops/purge-probes.ts --apply      # deletes
  *
- * The pattern is not an argument. It is `chain-check-`, fixed: a purge that takes a pattern from the
- * command line is one typo away from deleting a team's work.
+ * What it deletes is not an argument, and not a pattern a person's work can share: an initiative whose
+ * slug has exactly the shape chain-check mints, `<date>-chain-check-<DDMM>-<four hex>`, and a lesson
+ * whose every citation is one of those. A person's `fix-chain-check-wiring`, or a lesson titled
+ * "Chain-check leaves litter", is theirs whatever its name says.
  *
  * It used to have a second half that removed the probe's FILES off the team-store volume as well,
  * because the files were the source of truth and `zz.doc` was an index projected from them. The
@@ -28,18 +30,16 @@
  */
 import pg from "pg";
 
-/** The one pattern this script will ever match. See the docblock: not an argument. */
-const PROBE = "chain-check-";
-const LIKE = `%${PROBE}%`;
-
-/** The probe initiatives themselves, named by id: the one relation every other count and delete
- *  below is measured against.
- *
- *  `zz.initiative.slug` is the only text column left that carries this pattern. `002_delivery_
- *  telemetry.sql` dropped `zz.event.initiative` and `zz.assessment.initiative` and gave both
- *  tables an `initiative_id` reference instead, so a purge still matching them on the slug would
- *  match nothing and report a clean store. */
-const PROBES = `select i.id from zz.initiative i where i.slug like '${LIKE}'`;
+/** The probe initiatives, by the exact name chain-check mints (packages/tools/src/testing/chain-check.ts
+ *  `freshSlug`, under the date the platform prepends): the one relation every count and delete below is
+ *  measured against. */
+const PROBES = `select i.id from zz.initiative i
+                 where i.slug ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-chain-check-[0-9]{4}-[0-9a-f]{4}$'`;
+/** The probe lessons: nodes whose every citation is a probe initiative (chain-shelf.ts files them with
+ *  the probe as their only evidence). A node that cites anything else is somebody's lesson. */
+const PROBE_NODES = `select e.node_id from zz.knowledge_node_evidence e
+                      group by e.node_id
+                     having bool_and(e.initiative_id in (${PROBES}))`;
 
 const APPLY = process.argv.includes("--apply");
 
@@ -55,24 +55,21 @@ async function census() {
     // store, and a document's initiative is the row it is filed under. Counting on the retired
     // column is what killed this script mid-purge and left probe litter that then failed every
     // later release's verification — the litter this very sweep exists to remove.
-    one("doc", `select count(*) n from zz.doc d
-                  join zz.initiative i on i.id = d.initiative_id
-                 where i.slug like '${LIKE}'`),
-    one("initiative", `select count(*) n from zz.initiative where slug like '${LIKE}'`),
+    one("doc", `select count(*) n from zz.doc where initiative_id in (${PROBES})`),
+    one("initiative", `select count(*) n from zz.initiative where id in (${PROBES})`),
     one("event", `select count(*) n from zz.event where initiative_id in (${PROBES})`),
     one("run", `select count(*) n from zz.skill_run r where r.initiative_id in (${PROBES})`),
     // From zz.knowledge_node, which is where a node lives. A node is its own table rather than a
     // document, so a probe node is counted here and never among the documents above.
-    one("node", `select count(*) n from zz.knowledge_node where slug ilike '${LIKE}'`),
+    one("node", `select count(*) n from zz.knowledge_node where id in (${PROBE_NODES})`),
     one("assessment", `select count(*) n from zz.assessment where initiative_id in (${PROBES})`),
-    one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
+    one("REAL initiative", `select count(*) n from zz.initiative where id not in (${PROBES})`),
     // Initiative documents only — nodes are their own table. Counting both makes deleting probe
     // nodes look like real documents going missing, and fires the survivor assertion on a purge that
     // did the right thing.
     one("REAL doc", `select count(*) n from zz.doc d
-                       join zz.initiative i on i.id = d.initiative_id
-                      where i.slug not like '${LIKE}' and d.path not like 'nodes/%'`),
-    one("REAL node", `select count(*) n from zz.knowledge_node where slug not ilike '${LIKE}'`),
+                      where d.initiative_id not in (${PROBES}) and d.path not like 'nodes/%'`),
+    one("REAL node", `select count(*) n from zz.knowledge_node where id not in (${PROBE_NODES})`),
   ]));
 }
 
@@ -103,23 +100,27 @@ if (!APPLY) {
 // to `zz.doc` did not cascade while `doc_revision`'s did, and a plain delete of a document died
 // on `doc_link_to_doc_id_fkey` with the probe rows half-removed; `009_doc_link_cascade.sql`
 // (folded into 001_init.sql) gave it the cascade its sibling always had, so the schema does it.
-await db.query("begin");
+// One client, so the transaction is one connection: a pool's own query may take a different one per
+// statement, and `begin` on one leaves every delete after it outside the transaction.
+const tx = await db.connect();
 try {
-  const d = await db.query(
-    `delete from zz.doc d using zz.initiative i
-      where i.id = d.initiative_id and i.slug like '${LIKE}'`);
-  const e = await db.query(`delete from zz.event where initiative_id in (${PROBES})`);
+  await tx.query("begin");
+  const d = await tx.query(`delete from zz.doc where initiative_id in (${PROBES})`);
+  const e = await tx.query(`delete from zz.event where initiative_id in (${PROBES})`);
   // The chain check asks `assess` and records two audit rounds, and every answer is a row here.
-  const a = await db.query(`delete from zz.assessment where initiative_id in (${PROBES})`);
-  const k = await db.query(`delete from zz.knowledge_node where slug ilike '${LIKE}'`);
-  const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
+  const a = await tx.query(`delete from zz.assessment where initiative_id in (${PROBES})`);
+  // Before the initiatives: a probe lesson is known by the probe initiatives it cites.
+  const k = await tx.query(`delete from zz.knowledge_node where id in (${PROBE_NODES})`);
+  const i = await tx.query(`delete from zz.initiative where id in (${PROBES})`);
   console.log(`  knowledge nodes: ${k.rowCount}`);
   console.log(`  assessments: ${a.rowCount}`);
-  await db.query("commit");
+  await tx.query("commit");
   console.log(`deleted: ${d.rowCount} doc, ${e.rowCount} event, ${i.rowCount} initiative (+ runs, by cascade)`);
 } catch (err) {
-  await db.query("rollback");
+  await tx.query("rollback");
   throw err;
+} finally {
+  tx.release();
 }
 
 const after = await census();
@@ -129,7 +130,7 @@ console.log("after:", after);
 // deleting the wrong 463; "every real initiative is still here" is not.
 const bad: string[] = [];
 for (const k of ["doc", "initiative", "event", "run", "node", "assessment"]) {
-  if (after[k] !== 0) bad.push(`${after[k]} ${k} rows still match ${PROBE}`);
+  if (after[k] !== 0) bad.push(`${after[k]} ${k} rows of chain-check's are still there`);
 }
 for (const k of ["REAL initiative", "REAL doc", "REAL node"]) {
   if (after[k] !== before[k]) bad.push(`${k}: ${before[k]} before, ${after[k]} after — this purge took real work with it`);

@@ -113,7 +113,10 @@ export async function listenGateway(c: Core): Promise<Gateway> {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await db.platformDb().end().catch(() => undefined);
-      for (const k of ["CONSOLE_PUBLIC_URL", "TEAM_DB_URL", "ZZ_CATALOG_DIR", "CORE_MCP_URL"]) delete process.env[k];
+      delete process.env.CONSOLE_PUBLIC_URL;
+      delete process.env.TEAM_DB_URL;
+      delete process.env.ZZ_CATALOG_DIR;
+      delete process.env.CORE_MCP_URL;
     },
   };
 }

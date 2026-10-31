@@ -541,12 +541,14 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     assertion: "a _by column written on every row is selected somewhere",
     subject: "services/gateway/src/admin.ts",
     find: "      `select t.slug, t.name, t.status, t.created_at, c.email as created_by,\n" +
-      "              count(m.principal_id)::int as members\n" +
+      "              count(m.principal_id) filter (where mp.status = 'active')::int as members\n" +
       "         from team t left join membership m on m.team_id = t.id\n" +
+      "         left join principal mp on mp.id = m.principal_id\n" +
       "         left join principal c on c.id = t.created_by`;",
     replace: "      `select t.slug, t.name, t.status, t.created_at, c.email as creator,\n" +
-      "              count(m.principal_id)::int as members\n" +
+      "              count(m.principal_id) filter (where mp.status = 'active')::int as members\n" +
       "         from team t left join membership m on m.team_id = t.id\n" +
+      "         left join principal mp on mp.id = m.principal_id\n" +
       "         left join principal c on c.id = t.id`;",
     planted: "who set a team up goes back to being written on every row and read by nothing, " +
       "so 'who created this team' can only be answered by opening the database by hand — " +

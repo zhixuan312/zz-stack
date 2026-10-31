@@ -1,7 +1,7 @@
 /**
  * scripts/schema/eval-door-seed.ts — one plugin's release, protocol versions, observation, evaluation
  * run and an approved protocol.md, seeded with SQL on a `withThrowawayCore` database, and a client
- * of its `/eval-mcp` door as any person: what the evaluation door's checks stand on.
+ * of its `/eval-mcp` door as whichever person a check names: what the evaluation door's checks stand on.
  */
 import { Mcp } from "@zz/mcp-client";
 

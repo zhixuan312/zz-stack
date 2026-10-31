@@ -124,10 +124,10 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     target: "an insert names as many values as it names columns",
     assertion: "a literal insert's column list and values list are the same length",
     subject: "packages/contracts/src/pat.ts",
-    find: "values ($1,$2,$3,$4,$5,$6) returning id",
+    find: "values ($1,$2,$3,$4,$5,$6,$7) returning id",
     // SEAMED: `insert-arity.ts` parses any insert/values pair it finds, this one included.
-    replace: "values ($1,$2,$3,$4,$5) returning id",
-    planted: "the one PAT insert names six columns and supplies five values, so Postgres refuses " +
+    replace: "values ($1,$2,$3,$4,$5,$6) returning id",
+    planted: "the one PAT insert names seven columns and supplies six values, so Postgres refuses " +
       "the statement outright — and it is on a write path, where the refusal lands inside a " +
       "catch: the service starts, the door answers, and issuing a token silently stops working",
   },

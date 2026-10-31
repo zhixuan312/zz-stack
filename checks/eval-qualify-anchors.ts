@@ -42,10 +42,17 @@ for (const m of semantic) {
 // protocol_read's new_evidence_surface on the shipped protocol itself, before any evaluation
 // (runtime pass 2, F8). A tool another door serves is not zz-core's surface, as protocol_read and
 // OBSERVE narrow it (ownTools): zz-core's skills name /manage's team_switch, and listing it put a
-// tool zz-core never serves into its protocol. What zz-core serves is what its source registers.
+// tool zz-core never serves into its protocol. What zz-core's door serves is what its source
+// registers, less the modules eval-door.ts imports: the same process serves the /eval door, whose
+// tools are zz-plugin-eval's (pluginForDoor), as checks/eval-door.ts derives them.
 {
-  const registered = new Set(sourceFiles("services/zz-core/src", (p) => p.endsWith(".ts"))
+  const evalModules = new Set([...readFileSync("services/zz-core/src/eval-door.ts", "utf8")
+    .matchAll(/from "\.\/(eval\/[\w-]+)\.js"/g)].map((m) => join("services/zz-core/src", `${m[1]}.ts`)));
+  assert.ok(evalModules.size > 0, "eval-door.ts imports no evaluation module — the /eval door's tools are not known");
+  const registered = new Set(sourceFiles("services/zz-core/src", (p) => p.endsWith(".ts") && !evalModules.has(p))
     .flatMap(({ src }) => [...src.matchAll(/registerTool\(\s*"([a-z0-9_]+)"/g)].map((m) => m[1])));
+  assert.ok(!registered.has("release_apply") && registered.has("document_read"),
+    "the /core door's tools are told apart from the /eval door's");
   const named: string[] = toolsNamedBy("zz-core");
   assert.ok(named.includes("team_switch") && !registered.has("team_switch"),
     "the case this narrows, a tool zz-core's skills name and another door serves, is still there");

@@ -88,10 +88,9 @@ async function run(url: string): Promise<string | null> {
 }
 
 async function main(): Promise<number> {
-  let url = "";
   let problem: string | null = null;
   try {
-    await withThrowawayDb(async () => { problem = await run(url); }, async (u) => { url = u; });
+    await withThrowawayDb(async (_sql, url) => { problem = await run(url); });
   } catch (err) {
     if (err instanceof Error && /Docker is not running/.test(err.message)) {
       console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);

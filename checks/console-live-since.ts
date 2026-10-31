@@ -265,9 +265,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
 }
 
 async function main(): Promise<number> {
-  let url = "";
   try {
-    await withThrowawayDb((sql) => run(sql, url), async (u) => { url = u; });
+    await withThrowawayDb(run);
   } catch (err) {
     if (err instanceof CaseFailure) { console.error(err.message); return 1; }
     if (/Docker is not running/.test(String(err))) {

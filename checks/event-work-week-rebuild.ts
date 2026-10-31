@@ -351,9 +351,8 @@ function dockerUnavailable(err: unknown): boolean {
 }
 
 async function main(): Promise<number> {
-  let url = "";
   try {
-    await withThrowawayDb((client) => run(client, url), async (minted) => { url = minted; });
+    await withThrowawayDb(run);
   } catch (err) {
     if (dockerUnavailable(err)) {
       console.error("event-work-week-rebuild: Docker is not available — the check could not run, and that is not a pass");

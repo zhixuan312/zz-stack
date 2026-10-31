@@ -670,9 +670,8 @@ function base32(bytes: Buffer): string {
 }
 
 async function main(): Promise<number> {
-  let dbUrl = "";
   try {
-    await withThrowawayDb((db) => run(db, dbUrl), async (url) => { dbUrl = url; });
+    await withThrowawayDb(run);
   } catch (err) {
     if (err instanceof Error && /Docker is not running/.test(err.message)) {
       console.error("document-store: Docker is not available — the check could not run, which is not a pass");

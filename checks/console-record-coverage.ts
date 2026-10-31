@@ -244,9 +244,8 @@ async function run(url: string): Promise<void> {
 }
 
 async function main(): Promise<number> {
-  let dbUrl = "";
   try {
-    await withThrowawayDb(async (db) => { await seed(db); await run(dbUrl); }, async (u) => { dbUrl = u; });
+    await withThrowawayDb(async (db, url) => { await seed(db); await run(url); });
   } catch (err) {
     if (err instanceof Error && /Docker is not running/.test(err.message)) {
       console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);

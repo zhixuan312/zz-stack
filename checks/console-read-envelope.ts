@@ -258,12 +258,10 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     for (const s of servers) s.close();
   }
 }
-
-let url = "";
 try {
   if (!built()) throw new Error("the tree is not built — run npm run build");
   await staticArm();
-  await withThrowawayDb((sql) => run(sql, url), async (u) => { url = u; });
+  await withThrowawayDb(run);
 } catch (err) {
   if (err instanceof CaseFailure) {
     console.error(err.message);

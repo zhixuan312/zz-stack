@@ -257,7 +257,6 @@ export async function withThrowawayCore(
   name: string, done: string, fn: (core: Core) => Promise<void>, opts: CoreOptions = {},
 ): Promise<number> {
   const catalog = opts.catalog ?? `${root}/catalog`;
-  let url = "";
   let child: Child | null = null;
   let holder: pg.Client | null = null;
   let inProc: InProcess | null = null;
@@ -265,7 +264,7 @@ export async function withThrowawayCore(
     throw new CaseFailure(`${name}: FAILED at "${step}": ${detail}`);
   };
   try {
-    await withThrowawayDb(async (sql) => {
+    await withThrowawayDb(async (sql, url) => {
       await seed(sql);
       child = await startOnFreePort(name, url, catalog);
       const live = (): Child => child ?? fail("zz-core", "not running");
@@ -483,7 +482,7 @@ export async function withThrowawayCore(
         await (inProc as InProcess | null)?.pool.end().catch(() => undefined);
         delete process.env.TEAM_DB_URL;
       }
-    }, async (u) => { url = u; });
+    });
   } catch (err) {
     if (err instanceof Error && /Docker is not running/.test(err.message)) {
       console.error(`${name}: Docker is not available — the check could not run, which is not a pass`);

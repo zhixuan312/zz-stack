@@ -326,10 +326,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     delete process.env.ZZ_CATALOG_DIR;
   }
 }
-
-let url = "";
 try {
-  await withThrowawayDb((sql) => run(sql, url), async (u) => { url = u; });
+  await withThrowawayDb(run);
   console.log(DONE);
 } catch (err) {
   if (err instanceof CaseFailure) { console.error(err.message); process.exitCode = 1; }

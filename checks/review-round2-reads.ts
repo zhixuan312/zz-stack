@@ -315,10 +315,9 @@ async function run(db: pg.Client, url: string): Promise<string[]> {
 }
 
 async function main(): Promise<number> {
-  let dbUrl = "";
   let failed: string[];
   try {
-    failed = await withThrowawayDb((db) => run(db, dbUrl), async (u) => { dbUrl = u; });
+    failed = await withThrowawayDb(run);
   } catch (err) {
     if (err instanceof Error && /Docker is not running/.test(err.message)) {
       console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);

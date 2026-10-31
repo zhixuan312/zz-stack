@@ -662,10 +662,9 @@ async function main(): Promise<number> {
     console.error(`${NAME}: ${why} — the skeleton could not run, which is not a pass`);
     return 2;
   }
-  let dbUrl = "";
   try {
     buildPlatform();
-    await withThrowawayDb((db) => run(db, dbUrl), async (u) => { dbUrl = u; });
+    await withThrowawayDb(run);
   } catch (err) {
     if (err instanceof Error && /Docker is not running/.test(err.message)) {
       console.error(`${NAME}: Docker is not available — the skeleton could not run, which is not a pass`);

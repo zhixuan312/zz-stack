@@ -288,11 +288,10 @@ async function run(sql: pg.Client, url: string, load: (p: string) => Promise<unk
 }
 
 async function main(): Promise<number> {
-  let dbUrl = "";
   const load = (p: string): Promise<unknown> => import(pathToFileURL(join(root, "services/gateway/dist", p)).href);
   Date.now = () => clock;
   try {
-    await withThrowawayDb((sql) => run(sql, dbUrl, load), async (u) => { dbUrl = u; });
+    await withThrowawayDb((sql, dbUrl) => run(sql, dbUrl, load));
   } catch (err) {
     if (err instanceof Error && /Docker is not running/.test(err.message)) {
       console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);

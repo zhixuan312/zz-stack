@@ -582,11 +582,9 @@ async function cases(sql: pg.Client, pool: pg.Pool, servers: Server[],
   }
   ok("the sweep removes an expired body and keeps its row, deletes a row no write consumed a day after its window, and keeps a consumed one");
 }
-
-let url = "";
 try {
   sourceReads();
-  await withThrowawayDb((sql) => run(sql, url), async (u) => { url = u; });
+  await withThrowawayDb(run);
   console.log(`${NAME}: binding, conflict, expiry, ownership, size, format, the link page and its bounds, and the sweep: ok`);
 } catch (err) {
   if (err instanceof CaseFailure) { console.error(err.message); process.exitCode = 1; }

@@ -13,7 +13,7 @@ import { z } from "zod";
 import { BUILD_LEASE_MS, BUILD_STAGES, buildRecordRefusal } from "./candidate-build-rules.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { platformEvent } from "../indexing.js";
-import { db } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -42,13 +42,17 @@ export function registerCandidateBuildTools(server: McpServer): void {
         "for a catalog subject, or fetches a third-party one at its captured identity. " +
         "build_lease_expires_at is null unless the candidate is awaiting_build; build_recorded_at is " +
         "set once its build is recorded. Read-only. " +
-        "REFUSES an unknown candidate_id and a deployment with no platform database.",
+        "REFUSES an unknown candidate_id — one of another team's evaluations reads as unknown — " +
+        "and a deployment with no platform database.",
       inputSchema: { candidate_id: z.string() },
     },
     async ({ candidate_id }) => {
       const p = db();
       if (!p) return noDb();
       if (!UUID_RE.test(candidate_id)) return text(`ERROR: unknown candidate_id ${candidate_id}`);
+      // A candidate is the team's whose evaluation it improves, as the eval run is. Another team's
+      // reads as unknown rather than refused, so an id says nothing about what exists elsewhere.
+      const team = await teamFor(parseCaller(requestHeaders()).email);
       const row = (await p.query<{
         candidate_id: string; status: string; patch_digest: string;
         candidate_patchset: { diff: string };
@@ -74,9 +78,12 @@ export function registerCandidateBuildTools(server: McpServer): void {
                  as subject_release_identity,
                c.build_requested_at, c.build_recorded_at
           from zz.candidate c
+          join zz.improvement_run ir on ir.id = c.improvement_run_id
+          join zz.eval_run er on er.id = ir.eval_run_id
+          join zz.team t on t.id = er.team_id
           join zz.plugin_version pv on pv.id = c.base_plugin_version_id
           left join zz.plugin pl on pl.id = pv.plugin_id
-         where c.id = $1::uuid`, [candidate_id])).rows[0];
+         where c.id = $1::uuid and t.slug = $2`, [candidate_id, team])).rows[0];
       if (!row) return text(`ERROR: unknown candidate_id ${candidate_id}`);
       const awaiting = row.status === "awaiting_build" && row.build_requested_at;
       return json({

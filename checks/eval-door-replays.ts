@@ -43,7 +43,8 @@
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
  *   - a knowledge subject_ref resolves, for the text judged and for the row pinned, to the node its
- *     ordinal and slug name, on the caller's shelf or the platform's, with both numbering from one.
+ *     ordinal and slug name, on the caller's shelf or the platform's, with both numbering from one;
+ *   - candidate_read answers only the team whose evaluation the candidate improves.
  *
  * The only database it touches is the one it started.
  *
@@ -555,6 +556,31 @@ async function knowledgeRefsResolve(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
+/** A candidate is its team's: candidate_read answers the team whose evaluation it improves, and a
+ *  caller acting for another team is told no such candidate exists, never handed its patch. */
+async function candidateReadStaysInTheTeam(c: Core, s: Seed): Promise<void> {
+  const step = "candidate_read from another team";
+  const improvement = (await one<{ id: string }>(c,
+    "insert into zz.improvement_run (eval_run_id, created_at) values ($1, now()) returning id::text as id", [s.run])).id;
+  const candidate = (await one<{ id: string }>(c,
+    `insert into zz.candidate (improvement_run_id, base_plugin_version_id, hypothesis, expected_effect, patch_digest,
+                               complexity_delta, touched_components, status, created_at, patch, proposed_by)
+     values ($1, $2, 'check', '{}', 'digest-candidate', 0, '[]', 'recorded', now(), 'diff --git a/secret b/secret', $3)
+     returning id::text as id`, [improvement, s.versionId, s.me])).id;
+  const outsider = "outsider@example.test";
+  await c.sql.query(
+    `with p as (insert into zz.principal (email, display_name) values ($1, 'Outsider') returning id),
+          t as (insert into zz.team (slug, name, created_by) select 'elsewhere', 'Elsewhere', id from p returning id)
+     insert into zz.membership (team_id, principal_id, role, added_by) select t.id, p.id, 'admin', p.id from t, p`, [outsider]);
+  const theirs = await ask(evalDoor(c, outsider), "candidate_read", { candidate_id: candidate });
+  if (!theirs.startsWith(`ERROR: unknown candidate_id ${candidate}`) || theirs.includes("secret")) {
+    c.fail(step, `another team's caller was answered ${theirs.slice(0, 200)}`);
+  }
+  const mine = await ask(evalDoor(c, c.email), "candidate_read", { candidate_id: candidate });
+  if (!mine.includes("diff --git a/secret")) c.fail(step, `the candidate's own team was answered ${mine.slice(0, 200)}`);
+  c.pass(step);
+}
+
 async function supersedeClosesTheOld(c: Core, s: Seed): Promise<void> {
   const step = "finding_record with supersedes";
   const door = evalDoor(c, c.email);
@@ -629,7 +655,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, labelsPairWithinARun, staleRecordRegistersNothing,
                      partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, scoredRunIsNotRescored,
-                     recordRegistersEvaluators, knowledgeRefsResolve]) {
+                     recordRegistersEvaluators, knowledgeRefsResolve, candidateReadStaysInTheTeam]) {
     try {
       await run(c, s);
     } catch (err) {

@@ -467,6 +467,20 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
      `an edit's own cause filed after the approval was read as the stakeholder waiving the round: ${JSON.stringify(cm)}`);
 }
 
+// 16. A decision filed with no `added_at` is dated by its row's `updated_at`, the column's own text
+//     (`2026-09-24 09:00:00+00`). Compared as text with a round's ISO `added_at` the space sorts
+//     below "T", so a decision made hours after the last round read as made before it.
+{
+  const d = await fresh(4);
+  for (let i = 1; i <= ROUND_BUDGET; i++) round(d.name, i, i);
+  world.get(d.name)!.docs.push(docRow(d.name, "sources/2026-09-24-decision-undated.md", {
+    title: "Stakeholder decision", body: "Keep it as agreed.", supports: ["spec.md"],
+    updated_at: "2026-09-24 09:00:00+00", fields: {} }));
+  const dm = await move(d);
+  is(dm?.action !== "decide",
+     `a decision dated only by its row's updated_at, after the last round, did not release the spent budget: ${JSON.stringify(dm)}`);
+}
+
 if (fail.length) {
   console.error(`audit-rounds: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);

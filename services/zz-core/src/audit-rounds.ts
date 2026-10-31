@@ -111,6 +111,10 @@ function seriousOf(round: Round, continueOn: readonly AuditWeight[]): { raised: 
  *  filed, which `docRows` reads onto the row. */
 const supportsOf = (d: DocRow): string[] => d.supports;
 
+/** An instant as milliseconds, from an ISO string or from a `timestamptz` column's own text
+ *  (`2026-10-19 08:00:00.5+00`), which a string comparison with an ISO one would misorder. */
+const msOf = (s: string): number => Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
+
 /** The rounds of one audit stage on one document that read a version after `since`, oldest first. */
 function roundsOf(sources: readonly DocRow[], stage: string, document: string, since: number): Round[] {
   const out: Round[] = [];
@@ -118,19 +122,15 @@ function roundsOf(sources: readonly DocRow[], stage: string, document: string, s
     if (stageOf(d) !== stage || !supportsOf(d).includes(document) || auditsVersionOf(d) <= since) continue;
     out.push({ file: sourceName(d), version: auditsVersionOf(d), added_at: addedAtOf(d), body: d.body });
   }
-  return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
+  return out.sort((a, b) => msOf(a.added_at) - msOf(b.added_at) || a.file.localeCompare(b.file));
 }
 
 /** Material supporting the document that landed after a given moment and is neither a round nor a
  *  change's own cause: where a stakeholder's decision on a round is recorded. */
 function decidedSince(sources: readonly DocRow[], document: string, since: string): boolean {
   return sources.some((d) =>
-    !stageOf(d) && !isCapturedCause(d) && supportsOf(d).includes(document) && addedAtOf(d) > since);
+    !stageOf(d) && !isCapturedCause(d) && supportsOf(d).includes(document) && msOf(addedAtOf(d)) > msOf(since));
 }
-
-/** An instant as milliseconds, from an ISO string or from a `timestamptz` column's own text
- *  (`2026-10-19 08:00:00.5+00`), which a string comparison with an ISO one would misorder. */
-const msOf = (s: string): number => Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
 
 /** Material supporting the document, neither a round nor a change's own cause, filed after the
  *  document's current version was approved: where a stakeholder accepts an approved version no round

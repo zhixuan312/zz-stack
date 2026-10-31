@@ -78,7 +78,9 @@ process.exitCode = await withThrowawayCore(NAME,
     step = "document_list shows the caller's own nodes by the address document_read serves";
     const listed = JSON.parse(await c.ok(step, "document_list", { prefix: "_knowledge" })) as string[];
     if (!listed.includes(own)) c.fail(step, `document_list(prefix: "_knowledge") answered ${JSON.stringify(listed)}, without ${own}`);
-    if (shared.some((a) => a !== own && listed.includes(a) && ordinalOf(a) !== ordinalOf(own))) {
+    // Every platform node, the one sharing the team node's ordinal included: a join on the ordinal
+    // alone across the shelves is the leak most likely, and the addresses differ by slug.
+    if (shared.some((a) => a !== own && listed.includes(a))) {
       c.fail(step, `document_list lists a platform node on the caller's shelf: ${JSON.stringify(listed)}`);
     }
     c.pass(step);

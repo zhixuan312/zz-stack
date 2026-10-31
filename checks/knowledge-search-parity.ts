@@ -256,6 +256,10 @@ async function run(c: Core): Promise<void> {
     // A row reached only through what a hit cites need not contain a word of the question, so its
     // excerpt says nothing about it: it follows every row the question matched, never between them.
     step = "a match outranks a row reached only by citation";
+    // Only judged where a citation-only row comes back at all: if none did, the order was never asked.
+    if (!QUESTIONS.some(({ q }) => (answered.get(q) ?? []).some((l) => l.split(" | ")[5] === "evidence"))) {
+      c.fail(step, "no question returned a row reached only by citation, so nothing here judged the order");
+    }
     for (const { q } of QUESTIONS) {
       const vias = (answered.get(q) ?? []).map((l) => l.split(" | ")[5]);
       const firstCited = vias.findIndex((v) => v === "evidence");

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * checks/eval-door-inputs.ts — the evaluation door refuses an argument that names nothing real, or
- * the wrong thing, in the tool's own words, and records nothing for it.
+ * the wrong thing, in the tool's own words; where a refused call could have written something, the
+ * case below says it records nothing and counts the rows.
  *
  *   node checks/eval-door-inputs.ts   # needs Docker and a built tree (`npm run build`)
  *
@@ -13,9 +14,9 @@
  *     exist, and a version already bound under a later document is told it is bound;
  *   - a malformed id handed to `protocol_affirm`, `improvement_start`, `candidate_record`,
  *     `candidate_validate`, `finding_record`, `finding_decide`, `evaluation_start`, `protocol_read`,
- *     `protocol_record`, `release_verify` or `release_apply` is refused with `ERROR:`, never with
- *     PostgreSQL's `invalid input syntax for type uuid`, and `finding_decide` still decides the
- *     well-formed findings of the same batch;
+ *     `protocol_record`, `release_verify` or `release_apply` is refused with `ERROR:` naming the
+ *     malformed value, never with PostgreSQL's `invalid input syntax for type uuid`, and
+ *     `finding_decide` still decides the well-formed findings of the same batch;
  *   - `plugin_locate` naming a version a registered plugin has no row for names that version, not
  *     the plugin as unregistered;
  *   - `plugin_profile` refuses a window bound that is not an ISO date or timestamp, and a window
@@ -24,7 +25,8 @@
  *     improvement run;
  *   - `candidate_record` on a version other than the one the run evaluated, or with a patch that
  *     names no file, is refused and records nothing;
- *   - `plugin_register` refuses a blank name or version, and a catalog plugin's name in any case;
+ *   - `plugin_register` refuses a blank name or version, one with spaces around it, and a catalog
+ *     plugin's name in any case;
  *   - `plugin_conform` refuses a version the plugin never registered;
  *   - `finding_record` refuses a blank pattern, and an expected_effect on a finding another owner
  *     holds.

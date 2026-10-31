@@ -46,7 +46,7 @@ async function run(c: Core): Promise<void> {
   const old = idOf(await lesson("Retry ceiling", "Payment retries stop after the quokka ceiling of five."));
   const replacement = idOf(await lesson("Retry ceiling, revised", "Payment retries stop after three attempts."));
   await c.ok("supersede the first lesson", "knowledge_supersede", { old_id: old, new_id: replacement });
-  await lesson("支付重试", "支付重试在三次之后停止。");
+  const hanLesson = idOf(await lesson("支付重试", "支付重试在三次之后停止。"));
 
   const superseded = await search(c, "a superseded match", { query: "quokka", include_superseded: false });
   if (superseded.results.length || !/^1 superseded row\(s\) match/.test(superseded.note ?? "")
@@ -64,7 +64,8 @@ async function run(c: Core): Promise<void> {
   c.pass("a filter value that names nothing says the filters selected no row");
 
   const han = await search(c, "a Han query", { query: "支付重试" });
-  if (!han.results.some((r) => /^nodes\/\d+-/.test(String(r.path)))) {
+  // That lesson itself, not any node: a broadened search that answers the English ones passes nothing.
+  if (!hanLesson || !han.results.some((r) => String(r.path).startsWith(`nodes/${hanLesson}-`))) {
     c.fail("a Han query", `answered ${JSON.stringify(han).slice(0, 400)}`);
   }
   c.pass("a Han query finds a lesson written in Han");

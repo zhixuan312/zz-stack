@@ -19,7 +19,8 @@
  *     seeded team's text;
  *   - afterwards the run holds the same assessments, findings, decisions, improvement runs and
  *     candidates it held before, and the run is still unscored;
- *   - the seeded team's own caller reads its candidate, so the refusal is about the team;
+ *   - the seeded team's own caller reads its candidate, records a finding and decides one, so the
+ *     refusals are about the team;
  *   - a run of a plugin whose release owners are another team is not promotable for the run's own
  *     team, and is once that team is an owner too; release_prepare reads the same rule, so a member
  *     of the owner team acting for the run's team is sent to proposal_prepare.
@@ -116,6 +117,15 @@ async function outsiderChangesNothing(c: Core, s: Seed): Promise<void> {
 
   const mine = await ask(evalDoor(c, c.email), "candidate_read", { candidate_id: candidate });
   if (!mine.includes(`diff --git a/${SECRET}`)) c.fail(step, `the candidate's own team was answered ${mine.slice(0, 200)}`);
+  // And a mutator: finding_record and finding_decide, refused to the outsider above, go through for
+  // the run's own team, so those refusals were about the team and not a lookup that refuses everybody.
+  const recorded = await ask(evalDoor(c, c.email), "finding_record", { eval_run_id: s.run, idempotency_key: "own-record",
+    finding: { kind: "defect", pattern: "recorded by the run's own team", owner_kind: "plugin" } });
+  const decided = await ask(evalDoor(c, c.email), "finding_decide", { idempotency_key: "own-decide",
+    decisions: [{ finding_id: found, decision: "rejected", note: "decided by the run's own team" }] });
+  if (recorded.startsWith("ERROR") || !/"decided": 1/.test(decided)) {
+    c.fail(step, `the run's own team was answered ${recorded.slice(0, 200)} and ${decided.slice(0, 200)}`);
+  }
   c.pass(step);
 }
 

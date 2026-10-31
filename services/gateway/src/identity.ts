@@ -292,7 +292,7 @@ async function fromComposeNetwork(req: Request): Promise<boolean> {
   if (!TRUSTED_FORWARD_HOST) return false;
   const addr = peerAddress(req.socket);
   if (!addr) return false;
-  const trusted = await trustedForwardIps();
+  const trusted = await trustedForwardIps(addr);
   if (trusted) return trusted.has(addr);
   // DELIBERATE: no private-range fallback. An unresolvable host refuses rather than guessing,
   // because a platform that answers wrongly is worse than one that admits it cannot answer.

@@ -97,6 +97,17 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/security-boundary.ts",
+    target: "both services authenticate their own network the same way",
+    assertion: "a peer missing from the cached set is looked up again before it is refused",
+    subject: "packages/contracts/src/identity.ts",
+    find: "      if (Date.now() - cache.at < (hit ? ttlMs : missMs)) return cache.ips;",
+    replace: "      if (Date.now() - cache.at < ttlMs) return cache.ips;",
+    planted: "the cached set answers every peer until its TTL runs out, so a gateway recreated " +
+      "on a new compose address during a deploy is refused 403 by zz-core for up to a minute, " +
+      "though it is exactly the peer configured",
+  },
+  {
+    check: "scripts/gate/checks/security-boundary.ts",
     target: "the paths documented as public are the ones the gateway exempts",
     assertion: "a document that lists the unauthenticated paths lists all of them",
     subject: "deploy/README.md",

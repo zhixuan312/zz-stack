@@ -153,6 +153,10 @@ export function internalAddress(address: string): boolean {
 export const peerAddress = (socket: { remoteAddress?: string | undefined }): string =>
   hostAddress(socket.remoteAddress ?? "");
 
+/** Every address `host` resolves to; a host that is not deployed is not one of ours. */
+const systemLookup = async (host: string): Promise<string[]> =>
+  (await dnsLookup(host, { all: true })).map((r) => r.address);
+
 /**
  * The addresses a set of hostnames currently resolves to — the mechanism both services
  * authenticate their own network with. The policy differs and stays in each service: the
@@ -161,23 +165,33 @@ export const peerAddress = (socket: { remoteAddress?: string | undefined }): str
  *
  * Null, never a guess, on three cases: no hosts to trust, DNS unable to answer, and a hostname
  * that resolves to nothing. A returned set is never empty.
+ *
+ * Ask with the peer at hand: a set that does not hold it is looked up again before it is refused,
+ * because a peer recreated on a new address is still the one configured. At most once per
+ * `missMs`, and a null answer is held as long, so refused traffic is not DNS traffic; lookups
+ * already in flight are shared.
  */
 export function addressResolver(
   hosts: readonly string[],
-  ttlMs = 60_000,
-): () => Promise<Set<string> | null> {
-  let cache: { ips: Set<string>; expires: number } | null = null;
-  return async () => {
+  { ttlMs = 60_000, missMs = 5_000, lookup = systemLookup }: {
+    ttlMs?: number; missMs?: number; lookup?: (host: string) => Promise<string[]>;
+  } = {},
+): (peer?: string) => Promise<Set<string> | null> {
+  let cache: { ips: Set<string> | null; at: number } | null = null;
+  let pending: Promise<Set<string> | null> | null = null;
+  const resolve = async (): Promise<Set<string> | null> => {
+    const found = await Promise.all(hosts.map((h) => lookup(h).catch(() => [] as string[])));
+    const ips = new Set(found.flat().map(hostAddress));
+    cache = { ips: ips.size ? ips : null, at: Date.now() };
+    return cache.ips;
+  };
+  return async (peer) => {
     if (!hosts.length) return null;
-    if (cache && cache.expires > Date.now()) return cache.ips;
-    const ips = new Set<string>();
-    for (const host of hosts) {
-      try {
-        for (const r of await dnsLookup(host, { all: true })) ips.add(hostAddress(r.address));
-      } catch { /* a host that is not deployed is not one of ours */ }
+    if (cache) {
+      const hit = cache.ips !== null && (peer === undefined || cache.ips.has(peer));
+      if (Date.now() - cache.at < (hit ? ttlMs : missMs)) return cache.ips;
     }
-    if (!ips.size) return null;
-    cache = { ips, expires: Date.now() + ttlMs };
-    return ips;
+    pending ??= resolve().finally(() => { pending = null; });
+    return pending;
   };
 }

@@ -47,7 +47,7 @@ function fromPeers(peers: readonly string[]): express.RequestHandler {
   return (req, res, next) => {
     void (async () => {
       const addr = peerAddress(req.socket);
-      const trusted = await trustedIps();
+      const trusted = await trustedIps(addr);
       if (trusted && trusted.has(addr)) {
         next();
         return;

@@ -554,7 +554,7 @@ export async function publicHttpsUrl(url: string): Promise<{ error: string } | {
   }
   if (parsed.protocol !== "https:") return { error: `only https:// repositories are read, not ${parsed.protocol}` };
   const host = parsed.hostname.replace(/^\[|\]$/g, "");
-  const addresses = await addressResolver([host], 0)();
+  const addresses = await addressResolver([host], { ttlMs: 0 })();
   if (!addresses) return { error: `the host ${host} does not resolve` };
   const internal = [...addresses].some((a) => internalAddress(a));
   if (internal) {

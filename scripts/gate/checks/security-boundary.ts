@@ -285,6 +285,18 @@ check("both services authenticate their own network the same way", () => {
     if (await addressResolver(["nothing.invalid"])() !== null) bad.push("a hostname that cannot be resolved must be null, not a guess");
     const local = await addressResolver(["localhost"])();
     if (!local || !local.has("127.0.0.1")) bad.push("a resolvable host must come back: " + JSON.stringify(local && [...local]));
+    // A peer recreated on a new address is the one configured: a miss is looked up again before it
+    // is refused, and only once per missMs, so refused traffic is not DNS traffic.
+    let looked = 0;
+    const moving = addressResolver(["peer"], { missMs: 0, lookup: async () => [looked++ ? "10.0.0.2" : "10.0.0.1"] });
+    await moving("10.0.0.1");
+    const moved = await moving("10.0.0.2");
+    if (!moved || !moved.has("10.0.0.2")) bad.push("a peer whose address moved is refused from the cache until the TTL runs out: " + JSON.stringify(moved && [...moved]));
+    let asked = 0;
+    const held = addressResolver(["peer"], { lookup: async () => { asked++; return ["10.0.0.1"]; } });
+    await held("10.0.0.1");
+    await Promise.all([held("10.0.0.9"), held("10.0.0.9")]);
+    if (asked !== 1) bad.push("a miss inside missMs of the last lookup looked the host up again (" + asked + " lookups), so every refused request is DNS traffic");
     process.stdout.write(bad.join("; "));
   `;
   try {

@@ -174,7 +174,7 @@ const app = express();
 app.use((req, res, next) => {
   void (async () => {
     const addr = peerAddress(req.socket);
-    const trusted = await trustedPeerIps();
+    const trusted = await trustedPeerIps(addr);
     if (trusted && trusted.has(addr)) {
       next();
       return;

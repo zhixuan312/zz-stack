@@ -46,7 +46,7 @@ const MAX_REDIRECTS = 5;
 
 /** Every address `host` resolves to now, through the platform's one resolver (@zz/contracts), uncached:
  *  a cached answer would be a resolution the check did not make. */
-const systemLookup = async (host: string): Promise<string[]> => [...(await addressResolver([host], 0)()) ?? []];
+const systemLookup = async (host: string): Promise<string[]> => [...(await addressResolver([host], { ttlMs: 0 })()) ?? []];
 
 const forbidden = (why: string): { refusal: string } => ({
   refusal: `ERROR: FORBIDDEN — ${why}; stage the file with upload_start instead.`,

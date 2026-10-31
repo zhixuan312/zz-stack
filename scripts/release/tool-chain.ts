@@ -16,8 +16,9 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 
-import { IMAGE, die, log, reapLeaked, root, run } from "../deployment.ts";
+import { IMAGE, die, log, root, run } from "../deployment.ts";
 import { initializeRefusal } from "../door-frame.ts";
+import { owned, sweepOrphans } from "../owned-containers.ts";
 import { postgresService } from "./postgres-service.ts";
 
 /** A throwaway name per process, so two releases on one machine cannot collide. */
@@ -53,21 +54,21 @@ export function walkToolChain(version: string | undefined): void {
   // Registered before anything starts, like the sql-check stack: a die() between here and the
   // teardown would otherwise leave three containers running on whoever ran the release.
   process.on("exit", drop);
-  // An exit handler cannot run when the process is killed outright, so anything a previous
-  // release left under this prefix goes first. See reapLeaked().
-  reapLeaked("zz-chain-");
+  // An exit handler cannot run when the process is killed outright, so whatever a killed run
+  // left goes first (scripts/owned-containers.ts).
+  sweepOrphans();
   try {
     // A network, not links, because two of these names are load-bearing: zz-core answers only
     // the hosts in TRUSTED_PEERS, which defaults to `cred-proxy`, and the gateway reaches
     // zz-core at `zz-core`. A `--link` alias reaches only the container that declares it; on a
     // network every alias resolves for everybody, as the deployment's own compose network does.
-    run("docker", ["network", "create", net]);
+    run("docker", ["network", "create", ...owned(), net]);
     // The deployment's own database image, read from compose (postgres-service.ts): a cluster
     // offering different extensions walks a chain the deployment does not have. Its command
     // comes too — the image ships `shared_buffers = 8GB` and compose cuts that down to
     // something a release host can map.
     const pgsvc = postgresService(root);
-    run("docker", ["run", "-d", "--name", pg, "--network", net, "--network-alias", "postgres",
+    run("docker", ["run", "-d", ...owned(), "--name", pg, "--network", net, "--network-alias", "postgres",
                    "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=chaincheck",
                    "-e", "POSTGRES_DB=zz", pgsvc.image, ...pgsvc.command]);
     waitFor("postgres", () => {
@@ -75,9 +76,9 @@ export function walkToolChain(version: string | undefined): void {
     }, 60);
 
     const db = "postgresql://zz:chaincheck@postgres:5432/zz";
-    run("docker", ["run", "-d", "--name", core, "--network", net, "--network-alias", "zz-core",
+    run("docker", ["run", "-d", ...owned(), "--name", core, "--network", net, "--network-alias", "zz-core",
                    "-e", "SERVICE=zz-core", "-e", `TEAM_DB_URL=${db}`, `${IMAGE}:${version}`]);
-    run("docker", ["run", "-d", "--name", gw, "--network", net, "--network-alias", "cred-proxy",
+    run("docker", ["run", "-d", ...owned(), "--name", gw, "--network", net, "--network-alias", "cred-proxy",
                    "-e", "SERVICE=gateway", "-e", `TEAM_DB_URL=${db}`,
                    "-e", `SUPERADMIN_EMAIL=${OPERATOR}`,
                    "-e", "GATEWAY_PUBLIC_URL=http://127.0.0.1:0",

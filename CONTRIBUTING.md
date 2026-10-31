@@ -130,7 +130,9 @@ runs those checks or the rehearsal never needs Docker.
 
 Each starts a container from the postgres image and removes it — with `-v` and `--rm`, because that
 image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to
-`docker ps` and never reclaimed. If a machine that has run them for a while is short of disk:
+`docker ps` and never reclaimed. A run killed with SIGKILL removes nothing, so every starter labels
+what it creates with its own pid and first removes whatever a dead pid left
+(`scripts/owned-containers.ts`). If a machine that has run them for a while is short of disk:
 
 ```bash
 docker volume prune -f      # the leaked ones: 128 GB across 2,043 of them on one machine

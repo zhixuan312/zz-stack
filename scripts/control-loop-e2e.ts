@@ -36,6 +36,7 @@ import { fileURLToPath } from "node:url";
 
 import pg from "pg";
 
+import { owned, sweepOrphans } from "./owned-containers.ts";
 import { postgresService } from "./release/postgres-service.ts";
 
 /** The tree the deployment serves. The containers mount it and run the compiled services out of
@@ -179,10 +180,11 @@ const PAT_OF = (token: string): string => createHash("sha256").update(token).dig
 async function up(): Promise<Deployment> {
   const prefix = `zz-control-${process.pid}`;
   const net = `${prefix}-net`, pgName = `${prefix}-pg`, core = `${prefix}-core`, gw = `${prefix}-gw`;
-  sh("docker", ["network", "create", net]);
+  sweepOrphans();
+  sh("docker", ["network", "create", ...owned(), net]);
 
   const pgsvc = postgresService(live);
-  sh("docker", ["run", "-d", "--name", pgName, "--network", net, "--network-alias", "postgres",
+  sh("docker", ["run", "-d", ...owned(), "--name", pgName, "--network", net, "--network-alias", "postgres",
     "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=controlloop", "-e", "POSTGRES_DB=zz",
     "-p", "127.0.0.1:0:5432", pgsvc.image, ...pgsvc.command]);
   waitFor("postgres", () => {
@@ -207,7 +209,7 @@ async function up(): Promise<Deployment> {
   const q = (sql: string): string =>
     sh("docker", ["exec", pgName, "psql", "-U", "zz", "-d", "zz", "-tAc", sql]);
 
-  sh("docker", ["run", "-d", "--name", gw, "--network", net, "--network-alias", "cred-proxy", ...mounts,
+  sh("docker", ["run", "-d", ...owned(), "--name", gw, "--network", net, "--network-alias", "cred-proxy", ...mounts,
     "-e", `SUPERADMIN_EMAIL=${OPERATOR}`, "-e", `BOOTSTRAP_TEAM=${TEAM}`,
     "-e", `GATEWAY_PUBLIC_URL=http://127.0.0.1:${gwPort}`, "-p", `127.0.0.1:${gwPort}:8000`,
     "node:24", "node", "services/gateway/dist/server.js"]);
@@ -218,7 +220,7 @@ async function up(): Promise<Deployment> {
     } catch { return false; }
   });
 
-  sh("docker", ["run", "-d", "--name", core, "--network", net, "--network-alias", "zz-core", ...mounts,
+  sh("docker", ["run", "-d", ...owned(), "--name", core, "--network", net, "--network-alias", "zz-core", ...mounts,
     "node:24", "node", "services/zz-core/dist/server.js"]);
 
   // COUPLED: the row `deploy/issue-first-pat.sh` writes, as `stack.ts` does. The label names one

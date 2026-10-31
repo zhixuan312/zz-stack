@@ -189,7 +189,10 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             live door, judged on its JSON-RPC frame and its HTTP status, since a
             door whose upstream is down answers 200 with an error — used by the
             doctor's doors and contract layers, release step 5 and the pre-push
-            tool-chain walk), release.ts, release-record.ts (a
+            tool-chain walk), owned-containers.ts (labels every throwaway
+            container and network with the pid that started it, and removes what
+            a killed run left before a starter creates anything), release.ts,
+            release-record.ts (a
             release's row in zz.release, read from its changelog section and
             written by the release once its tag exists, every earlier tag with
             it; `--correct <version>` rewrites one row from the current changelog;

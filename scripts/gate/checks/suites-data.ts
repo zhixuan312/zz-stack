@@ -14,6 +14,8 @@ check("an aggregate nothing measured renders as null, never a confident zero",
 
 check("SCHEMA.md states the standard the spec fixed", runsCheck("schema-standard.ts"));
 check("the real migrations produce SCHEMA_TARGET's catalog, exactly", runsCheck("schema-inventory.ts"));
+check("every throwaway container and network is labelled with the process that started it, and a starter removes what a killed one left before it starts anything",
+      runsCheck("owned-containers.ts"));
 // Phase 2's read model. It is compared at its own grain against the statement it replaces, so a wrong
 // key cannot hide behind a right total, and both write paths are re-read through it rather than trusted.
 check("the read model answers what the statement it replaces answers, and composes with it",

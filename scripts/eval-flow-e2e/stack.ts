@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 
 import { Mcp } from "@zz/mcp-client";
 
+import { owned, sweepOrphans } from "../owned-containers.ts";
 import { postgresService } from "../release/postgres-service.ts";
 
 export const live = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -131,9 +132,10 @@ export async function up(stubPort: number): Promise<Stack> {
   const { seed, origin } = seedRepository(work, version);
 
   const net = `${prefix}-net`, pg = `${prefix}-pg`, core = `${prefix}-core`, gw = `${prefix}-gw`;
-  sh("docker", ["network", "create", net]);
+  sweepOrphans();
+  sh("docker", ["network", "create", ...owned(), net]);
   const pgsvc = postgresService(live);
-  sh("docker", ["run", "-d", "--name", pg, "--network", net, "--network-alias", "postgres",
+  sh("docker", ["run", "-d", ...owned(), "--name", pg, "--network", net, "--network-alias", "postgres",
     "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=evalflow", "-e", "POSTGRES_DB=zz",
     "-p", "127.0.0.1:0:5432", pgsvc.image, ...pgsvc.command]);
   waitFor("postgres", () => { try { sh("docker", ["exec", pg, "pg_isready", "-U", "zz", "-d", "zz"]); return true; } catch { return false; } });
@@ -154,11 +156,11 @@ export async function up(stubPort: number): Promise<Stack> {
   // Fixed rather than `127.0.0.1:0`: docker picks a new port for `:0` on every restart, and the
   // walk restarts the gateway once to make it reconcile runs.
   const gwPort = sh("node", ["-e", "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})"]);
-  sh("docker", ["run", "-d", "--name", core, "--network", net, "--network-alias", "zz-core", ...mounts,
+  sh("docker", ["run", "-d", ...owned(), "--name", core, "--network", net, "--network-alias", "zz-core", ...mounts,
     "-e", "TYPESAFE_API_KEY=stub", "-e", `TYPESAFE_BASE_URL=${stub}`, "-e", "TYPESAFE_ATTEMPTS=1",
     "-e", `LLM_BASE_URL=${stub}/v1`, "-e", "LLM_API_KEY=stub",
     "node:24", ...boot("services/zz-core/dist/server.js")]);
-  sh("docker", ["run", "-d", "--name", gw, "--network", net, "--network-alias", "cred-proxy", ...mounts,
+  sh("docker", ["run", "-d", ...owned(), "--name", gw, "--network", net, "--network-alias", "cred-proxy", ...mounts,
     "-e", `SUPERADMIN_EMAIL=${OPERATOR}`, "-e", `BOOTSTRAP_TEAM=${TEAM}`,
     "-e", `GATEWAY_PUBLIC_URL=http://127.0.0.1:${gwPort}`, "-p", `127.0.0.1:${gwPort}:8000`,
     "node:24", ...boot("services/gateway/dist/server.js")]);

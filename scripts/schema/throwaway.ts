@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 import pg from "pg";
 
 import { root } from "../deployment.ts";
+import { owned, sweepOrphans } from "../owned-containers.ts";
 import { postgresService } from "../release/postgres-service.ts";
 
 function dockerAvailable(): boolean {
@@ -106,7 +107,10 @@ export async function withThrowawayDb<T>(
   // VOLUME, so every container gets an anonymous volume of its own — and `docker rm -f` without
   // `-v` leaves it behind. A year of throwaways had leaked 2,043 volumes and 128 GB on the machine
   // this ran on, none of them reachable and all of them invisible to `docker ps`.
-  run("docker", ["run", "-d", "--rm", "--name", container, "-p", "127.0.0.1::5432",
+  // A signal is handled below and a return or throw by the `finally`; SIGKILL is neither, so what a killed run left
+  // goes first (scripts/owned-containers.ts).
+  sweepOrphans();
+  run("docker", ["run", "-d", "--rm", ...owned(), "--name", container, "-p", "127.0.0.1::5432",
     "-e", "POSTGRES_USER=zz", `-e`, `POSTGRES_PASSWORD=${pwd}`, "-e", "POSTGRES_DB=zz",
     pgsvc.image, ...pgsvc.command]);
   // A signal skips every `finally`, and a gate that is stopped stops each check it is running with

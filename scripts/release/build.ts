@@ -16,7 +16,8 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { execFileSync, execSync } from "node:child_process";
 import { join } from "node:path";
 
-import { DASH_IMAGE, DASH_SRC, IMAGE, PLATFORM, die, log, reapLeaked, root, run, step } from "../deployment.ts";
+import { DASH_IMAGE, DASH_SRC, IMAGE, PLATFORM, die, log, root, run, step } from "../deployment.ts";
+import { owned, sweepOrphans } from "../owned-containers.ts";
 import { dryRun, version } from "./config.ts";
 import { postgresService } from "./postgres-service.ts";
 import type { DashboardResolution } from "./dashboard.ts";
@@ -95,7 +96,7 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
   ];
   for (const [img, envVar, values] of serviceSmoke) {
     for (const v of values) {
-      const cid = run("docker", ["run", "-d", "-e", `${envVar}=${v}`, img]);
+      const cid = run("docker", ["run", "-d", ...owned(), "-e", `${envVar}=${v}`, img]);
       execSync("sleep 4");
       const logs = run("docker", ["logs", cid], { stdio: ["ignore", "pipe", "pipe"] });
       const alive = run("docker", ["inspect", "-f", "{{.State.Running}}", cid]);
@@ -150,11 +151,11 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
     // Registered before anything starts. A die() between here and the teardown below would
     // otherwise leave two containers running on whoever ran the release.
     process.on("exit", drop);
-    // An exit handler does not run when the process is killed, so a previous release's
-    // containers are reaped by name first.
-    reapLeaked("zz-sqlcheck-");
+    // An exit handler does not run when the process is killed, so whatever a killed run left
+    // goes first (scripts/owned-containers.ts).
+    sweepOrphans();
     const pgsvc = postgresService(root);
-    run("docker", ["run", "-d", "--name", pg, "-e", "POSTGRES_USER=zz",
+    run("docker", ["run", "-d", ...owned(), "--name", pg, "-e", "POSTGRES_USER=zz",
                    "-e", "POSTGRES_PASSWORD=sqlcheck", "-e", "POSTGRES_DB=zz",
                    pgsvc.image, ...pgsvc.command]);
     for (let i = 0; ; i++) {
@@ -163,7 +164,7 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
         execSync("sleep 1");
       }
     }
-    run("docker", ["run", "-d", "--name", gw, "--link", `${pg}:postgres`, "-e", "SERVICE=gateway",
+    run("docker", ["run", "-d", ...owned(), "--name", gw, "--link", `${pg}:postgres`, "-e", "SERVICE=gateway",
                    "-e", "TEAM_DB_URL=postgresql://zz:sqlcheck@postgres:5432/zz",
                    "-e", "GATEWAY_PUBLIC_URL=https://sql-check.invalid", `${IMAGE}:${version}`]);
     const migrationFiles = readdirSync(join(root, "services/gateway/migrations")).filter((f) => f.endsWith(".sql"));

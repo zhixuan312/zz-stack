@@ -169,29 +169,3 @@ export function asExecError(err: unknown): ExecError {
   return { message, stdout: text(r.stdout), stderr: text(r.stderr) };
 }
 
-/**
- * Removes containers a previous release left behind, by the name prefix that release gave
- * them.
- *
- * The two rehearsal stacks name their containers `<prefix><pid>` and register
- * `process.on("exit", …)` to tear them down, which covers a normal exit and a `die()` but not
- * SIGKILL, a crashed terminal or a sleeping laptop.
- *
- * DELIBERATE: safe to run unconditionally. The PID in each name is from a process that is
- * gone, and a release does not run concurrently with another.
- */
-export function reapLeaked(prefix: string): void {
-  let names: string[];
-  try {
-    names = run("docker", ["ps", "-a", "--filter", `name=^${prefix}`, "--format", "{{.Names}}"])
-      .split("\n").map((n) => n.trim()).filter(Boolean);
-  } catch { return; }                       // no docker, or nothing to list — the caller's own start will say so
-  if (names.length === 0) return;
-  warn(`  reaping ${names.length} container(s) a previous release left behind: ${names.join(", ")}`);
-  for (const n of names) {
-    // `-v`, because what this reaps includes throwaway postgres containers: that image declares
-    // its data directory as a VOLUME, so `rm -f` alone leaves an anonymous volume behind — one per
-    // interrupted run, invisible to `docker ps` and never reclaimed.
-    try { run("docker", ["rm", "-f", "-v", n], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
-  }
-}

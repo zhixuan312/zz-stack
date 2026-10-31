@@ -71,7 +71,8 @@ hard to attribute.
 candidate_record(improvement_run_id, base_subject_version_id, hypothesis, expected_effect, patchset: { diff }, idempotency_key)
 ```
 
-`patchset.diff` is a unified diff against the base subject's own release — the file list and
+`base_subject_version_id` is the one `improvement_start` returned — the release the run evaluated;
+any other version is refused. `patchset.diff` is a unified diff against that release — the file list and
 added/removed state are derived from it, never supplied separately. RETURNS `{ candidate_id,
 patch_digest, complexity_delta, touched_components, touched_owners, status: 'recorded' }`.
 **REFUSES a hypothesis whose normalised text already matches a candidate of this plugin that is

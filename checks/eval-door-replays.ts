@@ -47,6 +47,8 @@
  *     findings.md says so;
  *   - `improvement_start` naming a finding already decided, or a strength, is refused and opens no
  *     improvement run;
+ *   - `candidate_record` on a version other than the one the run evaluated, or with a patch that
+ *     names no file, is refused and records nothing;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
@@ -209,6 +211,30 @@ async function profileWindowIsTimes(c: Core, s: Seed): Promise<void> {
     if (!reply.startsWith("ERROR:") || !reply.includes(said)) c.fail(step, `${JSON.stringify(window)} answered ${reply.slice(0, 300)}`);
   }
   if (await snapshots() !== before) c.fail(step, "a snapshot was recorded");
+  c.pass(step);
+}
+
+async function candidateBaseIsTheEvaluatedVersion(c: Core, s: Seed): Promise<void> {
+  const step = "candidate_record on another version, or with no diff";
+  const door = evalDoor(c, c.email);
+  const improvement = (await one<{ id: string }>(c,
+    "insert into zz.improvement_run (eval_run_id, created_at) values ($1, now()) returning id::text as id", [s.run])).id;
+  const later = (await one<{ id: string }>(c,
+    "insert into zz.plugin_version (plugin_id, version, digest) values ($1, '0.0.2', 'check') returning id::text as id",
+    [s.pluginId])).id;
+  const diff = "--- a/skills/x/SKILL.md\n+++ b/skills/x/SKILL.md\n@@ -1 +1 @@\n-old\n+new\n";
+  const candidates = async () => Number((await one<{ n: string }>(c, "select count(*)::text as n from zz.candidate")).n);
+  const before = await candidates();
+  for (const [base, patch, said] of [
+    [later, diff, `version 0.0.2, not ${PLUGIN} ${VERSION}`],
+    [s.versionId, "hello world", "names no file"],
+  ] as const) {
+    const reply = await ask(door, "candidate_record", {
+      improvement_run_id: improvement, base_subject_version_id: base, hypothesis: `base check ${said}`,
+      expected_effect: {}, patchset: { diff: patch }, idempotency_key: `base-${said}` });
+    if (!reply.startsWith("ERROR:") || !reply.includes(said)) c.fail(step, `answered ${reply.slice(0, 300)}`);
+  }
+  if (await candidates() !== before) c.fail(step, "a candidate was recorded");
   c.pass(step);
 }
 
@@ -699,7 +725,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

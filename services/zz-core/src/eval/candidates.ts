@@ -321,8 +321,9 @@ export function registerCandidateTools(server: McpServer): void {
         "release_owners — every touched component inherits plugin-level ownership in " +
         "this initiative). RETURNS { candidate_id, patch_digest, complexity_delta, " +
         "touched_components, " + TOUCHED_OWNERS + ", status: 'recorded' }. REFUSES an " +
-        "improvement_run_id nothing minted; a " + BASE_SUBJECT_VERSION + " nothing minted, or one of a " +
-        "different plugin than the run's eval_run; a caller whose address names no principal; " +
+        "improvement_run_id nothing minted; a " + BASE_SUBJECT_VERSION + " other than the release the " +
+        "run's eval_run evaluated (the one improvement_start returned); a " + PATCHSET + ".diff naming no file; " +
+        "a caller whose address names no principal; " +
         "and a hypothesis whose normalised-text digest " +
         "matches a candidate of the same plugin already " + REJECTED_CANDIDATE_STATUSES.join("/") +
         " — \"ERROR: hypothesis already rejected as candidate <id>\" (an idea that failed " +
@@ -366,31 +367,31 @@ export function registerCandidateTools(server: McpServer): void {
         [baseVersionId])).rows[0];
       if (!subject) return text(`ERROR: no plugin_version ${baseVersionId}`);
 
-      // FR-36's own ledger integrity: a candidate that builds on
-      // a DIFFERENT plugin than the one its own improvement_run's eval_run scored would inherit
-      // that plugin's release owners and component manifest while claiming to descend from a run
-      // that never evaluated it — the same "identity must not drift" rule evaluation_start's own
-      // observation-snapshot check already applies one join over. The run names its release
-      // through its observation snapshot (FR-29): the snapshot's `plugin_version_id` IS the
-      // release both halves were bound to.
-      const runPlugin = (await p.query<{ plugin_id: string; plugin_name: string }>(`
-        select pv.plugin_id::text as plugin_id, pl.name as plugin_name
+      // FR-36's own ledger integrity: a candidate builds on the release its improvement_run's
+      // eval_run evaluated, and nothing else. Another plugin's would inherit that plugin's release
+      // owners and manifest; another version of the same plugin — a later one, or one a rollback
+      // retracted — is code the run's evidence never judged, and the patch would be built against
+      // the wrong base. The run names its release through its observation snapshot (FR-29).
+      const evaluated = (await p.query<{ id: string; plugin_name: string; version: string }>(`
+        select pv.id::text as id, pl.name as plugin_name, pv.version
           from zz.eval_run er
           join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
           join zz.plugin_version pv on pv.id = os.plugin_version_id
           join zz.plugin pl on pl.id = pv.plugin_id
          where er.id = $1::uuid`, [run.eval_run_id])).rows[0];
-      if (runPlugin && runPlugin.plugin_id !== subject.plugin_id) {
-        const subjectPlugin = (await p.query<{ name: string }>(
-          "select name from zz.plugin where id = $1::uuid", [subject.plugin_id])).rows[0];
+      if (evaluated && evaluated.id !== subject.id) {
         return text(
-          `ERROR: ${BASE_SUBJECT_VERSION} ${baseVersionId} belongs to plugin ` +
-          `${subjectPlugin?.name ?? subject.plugin_id}, not improvement_run ${improvement_run_id}'s ` +
-          `own eval_run plugin ${runPlugin.plugin_name}`);
+          `ERROR: ${BASE_SUBJECT_VERSION} ${baseVersionId} is ${subject.plugin} version ` +
+          `${subject.declared_version}, not ${evaluated.plugin_name} ${evaluated.version}, which ` +
+          `improvement_run ${improvement_run_id}'s eval_run evaluated — use the ${BASE_SUBJECT_VERSION} ` +
+          `improvement_start returned (${evaluated.id})`);
       }
 
       const stats: PatchStats = parseUnifiedDiff(patch.diff);
       const files: readonly PatchFile[] = stats.files;
+      if (!files.length) {
+        return text(`ERROR: ${PATCHSET}.diff names no file — it must be a unified diff (--- a/<path> / +++ b/<path> and hunks)`);
+      }
       const counts = componentCounts(files);
       const complexityInput: ComplexityInput = {
         lines_added: stats.lines_added, lines_removed: stats.lines_removed,

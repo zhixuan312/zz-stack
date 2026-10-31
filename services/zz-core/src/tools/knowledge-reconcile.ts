@@ -13,7 +13,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
-import { decisionRows, type DecisionRow } from "@zz/indexing";
+import { decisionRows, type DecisionRow, unreadVerdicts } from "@zz/indexing";
 import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -29,6 +29,7 @@ export function registerKnowledgeReconcileTool(server: McpServer): void {
       description:
         "What a stage committed to, for one initiative: the fit ledger keyed by acceptance " +
         "criterion, the criteria themselves and who verifies each, as the stage recorded them. " +
+        "A ledger row whose verdict is not one of the four is listed apart, under verdicts_not_read. " +
         "Ask by `initiative`. It returns the claims only — nothing records which plugin a claim " +
         "is about, so nothing joins them to tool-call telemetry.",
       inputSchema: {
@@ -63,14 +64,18 @@ export function registerKnowledgeReconcileTool(server: McpServer): void {
           order by d.path`,
         [team, initiative]);
       const claims: (DecisionRow & { path: string })[] = [];
+      const unread: { path: string; key: string; said: string }[] = [];
       for (const d of docs) {
         // A type that states no claims is skipped, and a body this cannot read is one document
         // with no claims, never an empty answer for the whole initiative.
         const role = (d.type ?? "").trim();
         if (!/^(selection|agreement|plan)$/.test(role) || typeof d.body !== "string") continue;
-        for (const c of decisionRows(d.body).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
-          claims.push({ path: d.path, ...c });
-        }
+        const rows = decisionRows(d.body).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+        for (const c of rows) claims.push({ path: d.path, ...c });
+        // A ledger row whose verdict is outside the four is named, not dropped: the stage that
+        // wrote it believes it recorded a claim.
+        const read = new Set(rows.filter((r) => r.verdict).map((r) => r.key));
+        for (const u of unreadVerdicts(d.body)) if (!read.has(u.key)) unread.push({ path: d.path, ...u });
       }
       if (!claims.length) {
         return text(`No claims recorded for ${initiative}. A stage records them by writing its fit ledger or its acceptance criteria; nothing to reconcile until one has.`);
@@ -91,6 +96,11 @@ export function registerKnowledgeReconcileTool(server: McpServer): void {
         note: "What a stage predicted, in the flow's own words. Nothing records which plugin a " +
               "claim is about, so a claim listed here has not been checked against anything.",
         claims_recorded: out,
+        ...(unread.length ? {
+          verdicts_not_read: unread,
+          verdicts_note: "These fit ledger rows carry a verdict outside native, achievable, workaround and " +
+                         "not possible, so none is a claim above. Edit the row to one of the four to record it.",
+        } : {}),
       }, null, 2));
     },
   );

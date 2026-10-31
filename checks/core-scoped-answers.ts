@@ -13,6 +13,8 @@
  *   - `source_list`, `knowledge_reconcile` and `assess` refuse a name the team holds no initiative
  *     under, naming the dated initiative an undated slug is short for; `bug_list` refuses a
  *     `reported_by` no principal carries, and still takes a known address in any case;
+ *   - `knowledge_reconcile` names a fit ledger row whose verdict is outside the four apart from the
+ *     claims, rather than dropping it;
  *   - `document_present` with an array whose later path is refused still answers the earlier
  *     document it recorded as presented; an empty array is refused by it and by `document_read`;
  *     and `document_write` names the body length `document_present` pages beside the file's;
@@ -84,6 +86,24 @@ async function unknownNamesAreRefused(c: Core): Promise<void> {
   await c.refused(`${step}: bug_list reported_by`, "bug_list", { reported_by: "Skeleton" },
                   /^ERROR: nobody on this platform has the address "Skeleton"/, operator);
   await c.ok(`${step}: bug_list by a known address`, "bug_list", { reported_by: c.email.toUpperCase() }, operator);
+  c.pass(step);
+}
+
+/** A fit ledger row whose verdict is outside the four is named apart, not dropped with the count
+ *  reading as though the ledger held only what was read. */
+async function reconcileNamesUnreadVerdicts(c: Core): Promise<void> {
+  const step = "knowledge_reconcile names a ledger row it cannot read";
+  const slug = await c.open("ledger");
+  await c.ok(step, "document_write", { path: `${slug}/selection.md`, content: "# Selection\n\n" +
+    "| Criterion | Verdict | How |\n|---|---|---|\n| AC-1 sends | **Native** | built in |\n" +
+    "| AC-2 logs | **Achievable** - needs a log | config |\n| AC-3 magic | **Maybe** | ? |\n" });
+  // The type a stage document carries; a freeform write leaves it unset.
+  await c.sql.query("update zz.doc set type = 'selection' where path = 'selection.md'");
+  const got = JSON.parse(await c.ok(step, "knowledge_reconcile", { initiative: slug })) as
+    { claims: number; verdicts_not_read?: { path: string; key: string; said: string }[] };
+  if (got.claims !== 2 || JSON.stringify(got.verdicts_not_read) !== JSON.stringify([{ path: "selection.md", key: "AC-3", said: "Maybe" }])) {
+    c.fail(step, `answered ${JSON.stringify(got).slice(0, 600)}`);
+  }
   c.pass(step);
 }
 
@@ -171,7 +191,7 @@ async function emailLookupsAreCaseless(c: Core): Promise<void> {
 // Every case runs, and the failures are reported together: the cases share nothing but the database.
 process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   const failed: string[] = [];
-  for (const run of [assessStaysOnTeam, unknownNamesAreRefused, presentAnswersWhatItRecorded, bugTallyFollowsFilters, principalByName,
+  for (const run of [assessStaysOnTeam, unknownNamesAreRefused, reconcileNamesUnreadVerdicts, presentAnswersWhatItRecorded, bugTallyFollowsFilters, principalByName,
                      emailLookupsAreCaseless]) {
     try {
       await run(c);

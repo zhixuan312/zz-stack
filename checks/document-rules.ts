@@ -76,6 +76,12 @@ is("both key shapes are read, and prose spelling is normalised",
 is("a verdict outside the vocabulary is not a row",
    I.decisionRows("| AC-1.1 | met | the endpoint answers |"), []);
 is("a body with no table yields nothing", I.decisionRows("# Spec\n\njust prose\n"), []);
+// A ledger row the vocabulary cannot read is named when its table is a ledger, and only then.
+is("an unreadable verdict in a ledger is named; a table with no readable verdict names nothing",
+   I.unreadVerdicts([
+     "| Claim | Verdict | Detail |", "| AC-1.1 | native | itself |", "| AC-1.2 | **Maybe** | ? |", "",
+     "| AC | Task | Note |", "| AC-1.1 | I-1 | traced |",
+   ].join("\n")), [{ key: "AC-1.2", said: "Maybe" }]);
 // The same ledger as prose reads its verdict through the same vocabulary as the table does.
 is("a prose ledger row reads every spelling the table reads, and keeps the parenthetical",
    I.decisionRows([

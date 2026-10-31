@@ -22,6 +22,36 @@ export interface DecisionRow {
  * flow's business and this does not ask. */
 const CLAIM_KEY = "([A-Z]{1,4}-\\d+(?:\\.\\d+)*)";
 
+/** A table line whose first cell opens with a claim's key: the key, the second cell as said, the
+ *  third as the detail. Null for any other line. */
+function ledgerRow(line: string): { key: string; said: string; detail: string } | null {
+  if (!line.startsWith("|")) return null;
+  const cells = line.split("|").slice(1, -1);
+  if (cells.length < 3) return null;
+  const key = new RegExp(`^\\s*\\*{0,2}${CLAIM_KEY}`, "i").exec(cells[0])?.[1];
+  return key ? { key, said: cells[1].replace(/\*\*/g, "").trim(), detail: cells[2] } : null;
+}
+
+/** The fit ledger rows `decisionRows` cannot read: a key-first row whose verdict is outside the four,
+ *  in a table where another row's verdict is one of them — so the table is a ledger and the row a
+ *  claim that went unrecorded. A table with no readable verdict at all is some other table (a
+ *  traceability or evidence table), and none of its rows is named. */
+export function unreadVerdicts(body: string): { key: string; said: string }[] {
+  const unread: { key: string; said: string }[] = [];
+  let table: { key: string; said: string; read: boolean }[] = [];
+  const close = () => {
+    if (table.some((r) => r.read)) unread.push(...table.filter((r) => !r.read).map(({ key, said }) => ({ key, said })));
+    table = [];
+  };
+  for (const line of body.split("\n")) {
+    if (!line.startsWith("|")) { close(); continue; }
+    const row = ledgerRow(line);
+    if (row) table.push({ key: row.key, said: row.said, read: verdictFromProse(row.said) !== null });
+  }
+  close();
+  return unread;
+}
+
 /** The claims a stage document makes, as rows, from text the stage already wrote.
  *
  * More than one shape: stages state a commitment in different ways, and each is already in the
@@ -42,12 +72,9 @@ export function decisionRows(body: string): DecisionRow[] {
 
   // A fit ledger row: the first cell opens with the criterion's key, then labels it.
   for (const line of body.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").slice(1, -1);
-    if (cells.length < 3) continue;
-    const key = new RegExp(`^\\s*\\*{0,2}${CLAIM_KEY}`, "i").exec(cells[0])?.[1];
-    if (!key) continue;
-    const said = cells[1].replace(/\*\*/g, "").trim();
+    const row = ledgerRow(line);
+    if (!row) continue;
+    const { key, said } = row;
     // The vocabulary comes from @zz/contracts, not a regex spelled here, so a database
     // constraint can agree with the same list.
     const verdict = verdictFromProse(said);
@@ -56,7 +83,7 @@ export function decisionRows(body: string): DecisionRow[] {
       key,
       verdict,
       qualifier: cap(said.slice(verdict.length).replace(/^[\s\u2014\u2013-]+/, "")),
-      detail: cap(cells[2]),
+      detail: cap(row.detail),
       checker: "",
     });
   }

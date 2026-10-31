@@ -20,7 +20,7 @@ import { rebuildRowVector } from "./rederivation.js";
 
 // The package's door: a consumer imports `@zz/indexing`, not a path inside it. That is why
 // the pure rules are re-exported here rather than reached by a deep import.
-export { decisionRows, type DecisionRow } from "./rules.js";
+export { decisionRows, type DecisionRow, unreadVerdicts } from "./rules.js";
 // The versioned analyzer's identity. `buildRowVector` is also imported
 // below, not only re-exported, because `indexNode` calls it to write a row's `body_tsv`; the
 // reindex pass goes through `rebuildRowVector` so a raw database row is normalized the one way.

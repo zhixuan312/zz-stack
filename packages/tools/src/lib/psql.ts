@@ -36,16 +36,8 @@ const MAX_OUTPUT = 256 * 1024 * 1024;
  * A failure exits 2, the readers' "could not tell": 1 is what watch-results and tool-report
  * answer when they looked and found something. */
 export function psqlText(psql: string, sql: string, vars: Record<string, string> = {}): string {
-  const [cmd, ...rest] = splitCommand(psql);
-  const argv = [...rest, "-tA", "-v", "ON_ERROR_STOP=1"];
-  for (const [k, v] of Object.entries(vars)) argv.push("-v", `${k}=${v}`);
-  try {
-    return execFileSync(cmd, argv,
-      { input: sql, encoding: "utf8", maxBuffer: MAX_OUTPUT, stdio: ["pipe", "pipe", "pipe"] }).trim();
-  } catch (err) {
-    const e = err as { stderr?: string; stdout?: string; message?: string };
-    return die(`psql failed: ${(e.stderr || e.stdout || e.message || "").trim().slice(-400)}`, 2);
-  }
+  const r = psqlTry(psql, sql, vars);
+  return r.ok ? r.text : die(`psql failed: ${r.error.slice(-400)}`, 2);
 }
 
 /**

@@ -10,6 +10,7 @@ import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { issuePat, type Db } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 import type { Express, RequestHandler } from "express";
 import type pg from "pg";
@@ -95,9 +96,7 @@ export async function listenGateway(c: Core): Promise<Gateway> {
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
 
   const hex = (s: string): string => hash(s).toString("hex");
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
-  await c.sql.query("insert into zz.pat (principal_id, token_hash) select id, $2 from zz.principal where email = $1",
-                    [c.email, hex(token)]);
+  const { token } = await insertPat(c, c.email, "", null);
   const session = randomBytes(24).toString("hex");
   const teamSession = randomBytes(24).toString("hex");
   await c.sql.query(
@@ -140,20 +139,20 @@ export async function manageCall(g: Gateway, token: string, name: string, args: 
   return env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? `HTTP ${res.status}`;
 }
 
-/** A PAT inserted for `email`, labelled and bound as asked: the plaintext and its row id. It replaces
- *  a live token of the same label, as every writer of a token does (checks/pat-one-live-per-label.ts). */
+/** A PAT issued for `email` through issuePat, the one write path a token goes through, labelled and
+ *  bound as asked: the plaintext and its row id. A live token of the same label is replaced, as
+ *  issuePat always does (checks/pat-one-live-per-label.ts). */
 export async function insertPat(c: Core, email: string, label: string, team: string | null,
                                 extra: { door?: string; oauthClientId?: string } = {}): Promise<{ token: string; id: string }> {
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
-  await c.sql.query(
-    `update zz.pat set revoked_at = now()
-      where principal_id = (select id from zz.principal where email = $1) and label = $2 and label <> '' and revoked_at is null`,
-    [email, label]);
-  const id = String((await c.sql.query(
-    `insert into zz.pat (principal_id, token_hash, label, team_id, door, oauth_client_id)
-     values ((select id from zz.principal where email = $1), $2, $3, (select id from zz.team where slug = $4), $5, $6)
-     returning id`, [email, hash(token).toString("hex"), label, team, extra.door ?? null, extra.oauthClientId ?? null])).rows[0].id);
-  return { token, id };
+  const { principal_id: principalId, team_id: teamId } = (await c.sql.query<{ principal_id: string; team_id: string | null }>(
+    "select p.id as principal_id, (select id from zz.team where slug = $2) as team_id from zz.principal p where p.email = $1",
+    [email, team])).rows[0];
+  // The check's one client stands in for a pool: issuePat's transaction runs on it, released to nobody.
+  const query = ((text: string, params?: unknown[]) => c.sql.query(text, params)) as Db["query"];
+  const db: Db = { query, connect: async () => ({ query, release: () => undefined }) };
+  const { token, patId } = await issuePat(db, { principalId, teamId, label, expiresAt: null,
+    door: extra.door ?? null, oauthClientId: extra.oauthClientId ?? null });
+  return { token, id: patId };
 }
 
 /** Minimal CBOR: the unsigned and negative integers, byte and text strings, and maps a WebAuthn

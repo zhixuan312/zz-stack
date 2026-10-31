@@ -74,8 +74,7 @@ export function registerKnowledgeReconcileTool(server: McpServer): void {
         for (const c of rows) claims.push({ path: d.path, ...c });
         // A ledger row whose verdict is outside the four is named, not dropped: the stage that
         // wrote it believes it recorded a claim.
-        const read = new Set(rows.filter((r) => r.verdict).map((r) => r.key));
-        for (const u of unreadVerdicts(d.body)) if (!read.has(u.key)) unread.push({ path: d.path, ...u });
+        for (const u of unreadVerdicts(d.body)) unread.push({ path: d.path, ...u });
       }
       if (!claims.length) {
         return text(`No claims recorded for ${initiative}. A stage records them by writing its fit ledger or its acceptance criteria; nothing to reconcile until one has.`);

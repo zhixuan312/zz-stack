@@ -416,7 +416,8 @@ async function run(c: Core): Promise<void> {
     step = "a ledger row whose verdict is outside the four stays on the page, with no verdict";
     const ledger = slug("o-fresh");
     await c.ok(step, "document_write", { path: `${ledger}/selection.md`, content: "# Selection\n\n" +
-      "| Criterion | Verdict | How |\n|---|---|---|\n| AC-1 sends | **Native** | built in |\n| AC-3 magic | **Maybe** | ? |\n" });
+      "| Criterion | Verdict | How |\n|---|---|---|\n| AC-1 sends | **Native** | built in |\n| AC-3 magic | **Maybe** | ? |\n" +
+      "\n- [ ] **AC-3** the magic, as a checklist line with no verdict of its own\n" });
     await c.sql.query("update zz.doc set type = 'selection' where path = 'selection.md'");
     const ledgerPage = await answer(built.detail, request(SUPER, {}, { team: c.team, slug: ledger }));
     const claimed = (ledgerPage.body.decisions as Obj[]).map((d) => [d.key, d.verdict, d.qualifier]);

@@ -65,11 +65,14 @@ function claimsOf(docs: { path: string; type: string | null; body: string | null
     // A body this cannot read is one document with no claims, never an empty panel for the
     // whole initiative.
     if (typeof d.body !== "string") continue;
-    const rows = decisionRows(d.body);
     // A ledger row whose verdict is outside the four stays on the page with no verdict and what it
     // said as its qualifier, rather than vanishing from a ledger a reader compares with the document.
-    const unread = unreadVerdicts(d.body).filter((u) => !rows.some((r) => r.key === u.key));
-    rows.push(...unread.map((u) => ({ key: u.key, verdict: "", qualifier: u.said, detail: "", checker: "" })));
+    // It stands in for a verdict-less row of the same key (a checklist line), which says less.
+    const unread = unreadVerdicts(d.body);
+    const rows = [
+      ...decisionRows(d.body).filter((r) => r.verdict || !unread.some((u) => u.key === r.key)),
+      ...unread.map((u) => ({ key: u.key, verdict: "", qualifier: u.said, detail: "", checker: "" })),
+    ];
     // Keyed the way the ledger was keyed: by path, then by key within the document.
     for (const c of rows.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
       out.push({ path: d.path, role, ...c });

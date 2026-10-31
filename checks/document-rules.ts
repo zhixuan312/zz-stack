@@ -82,6 +82,17 @@ is("an unreadable verdict in a ledger is named; a table with no readable verdict
      "| Claim | Verdict | Detail |", "| AC-1.1 | native | itself |", "| AC-1.2 | **Maybe** | ? |", "",
      "| AC | Task | Note |", "| AC-1.1 | I-1 | traced |",
    ].join("\n")), [{ key: "AC-1.2", said: "Maybe" }]);
+// A key that also stands as a checklist line has no verdict there, so its unread ledger row is still named.
+is("an unreadable verdict is named beside a verdict-less row of the same key, and not beside a read one",
+   I.unreadVerdicts([
+     "| Claim | Verdict | Detail |", "| AC-1.1 | native | itself |", "| AC-6.1 | Partial | half |", "",
+     "- [ ] **AC-6.1** the half that is built", "- [ ] **AC-1.1** **Maybe** again",
+   ].join("\n")), [{ key: "AC-6.1", said: "Partial" }]);
+is("a key one ledger table reads is not named for another table that cannot read it",
+   I.unreadVerdicts([
+     "| Claim | Verdict | Detail |", "| AC-1.1 | native | itself |", "| AC-1.2 | native | too |", "",
+     "| Claim | Verdict | Detail |", "| AC-1.1 | Maybe | again |", "| AC-1.2 | achievable | yes |",
+   ].join("\n")), []);
 // The same ledger as prose reads its verdict through the same vocabulary as the table does.
 is("a prose ledger row reads every spelling the table reads, and keeps the parenthetical",
    I.decisionRows([

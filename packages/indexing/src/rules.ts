@@ -35,7 +35,11 @@ function ledgerRow(line: string): { key: string; said: string; detail: string } 
 /** The fit ledger rows `decisionRows` cannot read: a key-first row whose verdict is outside the four,
  *  in a table where another row's verdict is one of them — so the table is a ledger and the row a
  *  claim that went unrecorded. A table with no readable verdict at all is some other table (a
- *  traceability or evidence table), and none of its rows is named. */
+ *  traceability or evidence table), and none of its rows is named. Nor is a key the document reads
+ *  a verdict for elsewhere; a key standing elsewhere with no verdict (a checklist line, a plan
+ *  task) is still named, since nothing else records its verdict.
+ *
+ *  COUPLED: the console's ledger and `knowledge_reconcile` both take these as they are. */
 export function unreadVerdicts(body: string): { key: string; said: string }[] {
   const unread: { key: string; said: string }[] = [];
   let table: { key: string; said: string; read: boolean }[] = [];
@@ -49,7 +53,8 @@ export function unreadVerdicts(body: string): { key: string; said: string }[] {
     if (row) table.push({ key: row.key, said: row.said, read: verdictFromProse(row.said) !== null });
   }
   endTable();
-  return unread;
+  const read = new Set(decisionRows(body).filter((r) => r.verdict).map((r) => r.key));
+  return unread.filter((u) => !read.has(u.key));
 }
 
 /** The claims a stage document makes, as rows, from text the stage already wrote.

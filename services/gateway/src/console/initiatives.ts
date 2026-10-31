@@ -39,6 +39,8 @@ const CLAIM_ROLES = /^(selection|agreement|plan)$/;
 export const NO_INITIATIVE = "No initiative of the team you act for has that name.";
 const NO_DOCUMENT = "No document of the team you act for is at that address.";
 const NO_REVISION = "No snapshot of a document of the team you act for has that number.";
+/** The largest revision number the column can hold (`revision integer`). */
+const INT_MAX = 2_147_483_647;
 
 /** One row of the claim ledger, before the fields that cannot state absence state it. */
 interface ClaimRow {
@@ -263,9 +265,14 @@ export function mountInitiatives(app: Express): void {
      * two texts the diff is drawn between, not every text the document has ever had.
      *
      * The version is validated as digits before it reaches the statement, so an empty or
-     * malformed parameter is not silently read as revision 0. */
+     * malformed parameter is not silently read as revision 0; a number past what the integer column
+     * holds is a snapshot nobody has, answered as one without asking. */
     const wantRevision = typeof req.query.revision === "string" && /^\d+$/.test(req.query.revision)
       ? Number(req.query.revision) : null;
+    if (wantRevision !== null && wantRevision > INT_MAX) {
+      res.status(404).json({ error: NO_REVISION });
+      return;
+    }
     if (wantRevision !== null) {
       const { rows } = await db.query<{ version: number; revision: number; body: string | null }>(
         `select r.version, r.revision, r.body

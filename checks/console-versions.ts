@@ -412,6 +412,11 @@ async function run(c: Core): Promise<void> {
     }
     ok("?revision= fetches one snapshot and names its public version");
 
+    // A number past what the column holds is a snapshot nobody has, not a read that failed.
+    const huge = await call(documentRoute, { team: TEAM, initiative: VERSIONS, 0: "notes.md" }, { revision: "99999999999" });
+    if (huge.status !== 404) fail("?revision= past an integer", `answered ${huge.status} ${JSON.stringify(huge.body)}`);
+    ok("?revision= past what a revision number can be answers that no snapshot has it");
+
     const corrected = await call(initiativeRoute, { team: TEAM, slug: CORRECTED });
     if (corrected.status !== 200) fail("corrected initiative", `answered ${corrected.status}: ${JSON.stringify(corrected.body)}`);
     const correction = JSON.stringify(corrected.body.correction);

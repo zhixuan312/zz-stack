@@ -6,7 +6,9 @@
  *
  *   npm run check:redaction      # exits non-zero on failure, like every engine here
  *
- * Every case below is a settings shape modelled on a real tool response in server.ts. Each names
+ * Each case below is a response shape with secrets planted where a settings answer could carry
+ * them; the routes that answer through redact() are settings.ts, settings/{me,team,platform}.ts and
+ * console/access.ts. Each names
  * the secret values it plants and the metadata it expects back untouched, and `check()` asserts
  * both against the real `redact`, driven through the real `looksSecret`/`SECRET_NAME_PARTS`
  * field rule exported from redact.ts, never a copy of either.

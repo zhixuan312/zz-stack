@@ -13,9 +13,9 @@
  * superadmin session to be one, so `deploy/issue-enrolment.sh` mints the first one on the host,
  * where shell access is the authority. Every later link comes from the console.
  *
- * The RP ID is `CONSOLE_PUBLIC_URL`'s hostname, which encodes the droplet's IP address. A
- * credential is bound to the RP ID it was created under, so moving the droplet stops every
- * credential in `zz.passkey` verifying at once and everyone re-enrols.
+ * The RP ID is `CONSOLE_PUBLIC_URL`'s hostname. A credential is bound to the RP ID it was created
+ * under, so moving the console to another hostname stops every credential in `zz.passkey`
+ * verifying at once and everyone re-enrols.
  *
  * Same origin is load-bearing. Caddy serves the console app and this API from one host,
  * splitting on path, so the session cookie is a plain first-party cookie: host-only,
@@ -435,9 +435,8 @@ export function mountPasskey(app: Express): void {
 /** Delete what has expired: sessions, half-finished ceremonies, unopened invitations, and
  * authorization codes nobody exchanged.
  *
- * On a timer rather than at read time — `resolveSession` runs on every request, and a read that
- * also writes turns each page load into a transaction. One pass for all four. Called from
- * server startup. */
+ * On a timer rather than at read time: `resolveSession` runs on every request, and deleting there
+ * would put a delete beside each read. One pass for all four. Called from server startup. */
 export async function sweepSessions(): Promise<void> {
   if (!platformDbReady()) return;
   const db = platformDb();

@@ -310,8 +310,7 @@ initPlatformDb()
   })
   .finally(() => {
     // Expired sessions and abandoned half-finished logins, swept on a timer rather than at
-    // read time: `resolveSession` runs on every authenticated request, and a read that also
-    // writes turns each page load into a transaction. The rows are already refused by their
+    // read time: `resolveSession` runs on every authenticated request. The rows are already refused by their
     // own expiry, so this only keeps the table from growing. `unref` so a sweep pending at
     // shutdown does not hold the process open.
     setInterval(() => {
@@ -322,9 +321,9 @@ initPlatformDb()
       void sweepUploads()
         .catch((err: unknown) => console.error("upload sweep failed:", err instanceof Error ? err.message : err));
     }, 60 * 60_000).unref();
-    // zz.run recomputed from the event log, on start and every few minutes. It is derived
-    // data with no writer — see runs.ts — so nothing else keeps it current. Set-based and
-    // idempotent, so re-running it costs little.
+    // zz.skill_run's counters repaired from the event log, on start and every few minutes. The
+    // door writes each run with its event (runs.ts); this only recounts what late events moved.
+    // Set-based and idempotent, so re-running it costs little.
     const runs = () => void reconcileRuns()
       .then((n) => {
         if (n.runs || n.linked) {

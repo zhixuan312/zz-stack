@@ -242,8 +242,9 @@ export function logEvent(e: {
   ok?: boolean;
   refusal?: string;
   /** Who the refusal belongs to — guardrail, ours, theirs or other, from @zz/contracts'
-   *  refusalOwner(). Derived here rather than asked of the caller, so one table does not end up
-   *  holding four vocabularies. Null whenever `ok` is not false. */
+   *  refusalOwner(). Derived at the insert rather than asked of the caller, so one table does not
+   *  end up holding four vocabularies: this field names the column and is never set. Null whenever
+   *  `ok` is not false. COUPLED: the telemetry gate reads the written fields off this type. */
   refusalOwner?: string;
 
   /* What a tool call cost. Nullable, and null means "not measured", never a guessed zero:

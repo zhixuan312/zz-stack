@@ -6,10 +6,8 @@
  * runs point at. A skill whose runs stop being recorded is indistinguishable, in every query, from
  * one nobody used.
  *
- * Stamped at the door, not derived on a timer (FR-19, FR-20). Phase 0 argued the opposite here —
- * that a run is a grouping of events and writing rows per call would put a second write in the hot
- * path of every tool call — and this phase reverses it. The cost is real: one transaction per event
- * instead of one insert. What it buys is that the trace and the row it belongs to cannot disagree,
+ * Stamped at the door, not derived on a timer (FR-19, FR-20). The cost is real: one transaction per
+ * event instead of one insert. What it buys is that the trace and the row it belongs to cannot disagree,
  * because they are written together, and that an event's `run_id` is on the row from the moment the
  * row exists rather than from the next tick of a five-minute timer.
  *
@@ -98,17 +96,12 @@ export async function reconcileRuns(): Promise<{ runs: number; linked: number }>
   if (!platformDbReady()) return { runs: 0, linked: 0 };
   const db = platformDb();
 
-  // zz.initiative is no longer derived here (002_initiative_anchor.sql, Task I-6):
-  // `initiative_open` inserts the row itself, synchronously, in the same call that opens the
-  // work — including `opened_at`/`opened_by`, which this reconciler never knew. An event or a
-  // document naming an initiative this table has never heard of is now telemetry for work that
-  // predates a database, or a store this reconciler cannot repair; it is no longer grounds to
-  // mint a row for it.
+  // zz.initiative is not derived here: `initiative_open` inserts its row in the call that opens the
+  // work, so an event naming an initiative the table has never heard of is not grounds to mint one.
 
   // The counters, recomputed rather than added to: running this every few minutes has to produce
   // the same answer as running it once at the end. The guard is the same comparison the door's
-  // upsert uses, so a pass over runs nothing moved rewrites nothing — 805,942 updates on 723 rows
-  // was what an unguarded version cost.
+  // upsert uses, so a pass over runs nothing moved rewrites nothing.
   //
   // The identity is not rewritten. Which run an event belongs to was decided by the door that wrote
   // the event; this recounts what is already attributed, and an event naming a run that does not

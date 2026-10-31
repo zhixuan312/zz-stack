@@ -608,11 +608,11 @@ export function registerFailureDiscoverTools(server: McpServer): void {
         throw new Refusal(`ERROR: no zz.principal carries "${principal}", so this discovery has nobody to name`);
       }
       const prior = await decideBeforeWork(
-        principal, "failure_discover", idempotency_key, { observation_snapshot_id });
+        principal, "failure_discover", idempotency_key, { observation_snapshot_id, initiative });
       const planned = prior.replayed ? [] : await planCandidates(
         pool, snapshot, evaluator.evaluator_version_id, principal, idempotency_key);
       const outcome: IdempotencyOutcome<FailureDiscoverResult> = prior.replayed ? prior : await withIdempotency(
-        principal, "failure_discover", idempotency_key, { observation_snapshot_id },
+        principal, "failure_discover", idempotency_key, { observation_snapshot_id, initiative },
         async (client): Promise<MutatorOutcome<FailureDiscoverResult>> => {
           const result = await insertPlanned(client, snapshot, planned, discoverer.id);
           // Anchored at the snapshot, not at a sighting row: a window with zero refusals and

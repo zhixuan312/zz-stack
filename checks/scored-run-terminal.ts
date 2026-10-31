@@ -138,10 +138,10 @@ const gate = fn.indexOf("run.scored_at !== null");
 assert.ok(gate > 0, "a scored run is recognised by its own terminal marker");
 assert.ok(gate < fn.indexOf("loadDimensions("), "the refusal comes before any scoring work");
 assert.match(fn.slice(gate, gate + 400),
-  /decideBeforeWork\(principal, "evaluation_score", idempotency_key, \{ eval_run_id \}\)\)\.replayed/,
+  /decideBeforeWork\(principal, "evaluation_score", idempotency_key, \{ eval_run_id, initiative \}\)\)\.replayed/,
   "a retry under the key that scored the run is recognised as a replay first, with the same ledger " +
   "args withIdempotency digests");
-assert.match(fn, /withIdempotency\(\s*principal, "evaluation_score", idempotency_key, \{ eval_run_id \}/,
+assert.match(fn, /withIdempotency\(\s*principal, "evaluation_score", idempotency_key, \{ eval_run_id, initiative \}/,
   "the ledger args the replay check digests are the ones the write records");
 assert.match(fn, /is already scored and its score is ` \+\s*"published[\s\S]*?A re-score is a new eval_run/,
   "the refusal names the run and says a re-score is a new eval_run");

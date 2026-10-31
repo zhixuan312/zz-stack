@@ -137,7 +137,7 @@ export async function scoreEvaluation(
     "published; scoring it again would overwrite that result. A re-score is a new eval_run — " +
     "call evaluation_start";
   if (run.scored_at !== null &&
-      !(await decideBeforeWork(principal, "evaluation_score", idempotency_key, { eval_run_id })).replayed) {
+      !(await decideBeforeWork(principal, "evaluation_score", idempotency_key, { eval_run_id, initiative })).replayed) {
     return { error: alreadyScored };
   }
 
@@ -267,7 +267,7 @@ export async function scoreEvaluation(
   ];
 
   const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-    principal, "evaluation_score", idempotency_key, { eval_run_id },
+    principal, "evaluation_score", idempotency_key, { eval_run_id, initiative },
     async (client): Promise<MutatorOutcome<{ id: string }>> => {
       // The terminal test is repeated here because a concurrent score under another key can
       // score the run between the check above and this write: `scored_at` is null only while the

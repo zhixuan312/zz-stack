@@ -192,7 +192,7 @@ export function registerCandidateTools(server: McpServer): void {
         // row is this ledger's anchor — a re-select, never an insert — the shape proposal_prepare
         // uses (release.ts) for a call that writes no new row of its own.
         const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-          principal, "improvement_start", idempotency_key, { eval_run_id, skip: true },
+          principal, "improvement_start", idempotency_key, { eval_run_id, skip: true, initiative },
           async (client): Promise<MutatorOutcome<{ id: string }>> => {
             const row = (await client.query<{ id: string }>(
               "select id::text as id from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0];
@@ -265,7 +265,7 @@ export function registerCandidateTools(server: McpServer): void {
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-        principal, "improvement_start", idempotency_key, { eval_run_id, finding_ids: targeted },
+        principal, "improvement_start", idempotency_key, { eval_run_id, finding_ids: targeted, initiative },
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
           const row = (await client.query<{ id: string }>(`
             insert into zz.improvement_run (eval_run_id, created_at)

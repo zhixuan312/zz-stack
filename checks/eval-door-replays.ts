@@ -49,6 +49,8 @@
  *     improvement run;
  *   - `candidate_record` on a version other than the one the run evaluated, or with a patch that
  *     names no file, is refused and records nothing;
+ *   - a key retried with a different `initiative` is a different request, refused as a conflict,
+ *     and records nothing in that initiative;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
@@ -235,6 +237,23 @@ async function candidateBaseIsTheEvaluatedVersion(c: Core, s: Seed): Promise<voi
     if (!reply.startsWith("ERROR:") || !reply.includes(said)) c.fail(step, `answered ${reply.slice(0, 300)}`);
   }
   if (await candidates() !== before) c.fail(step, "a candidate was recorded");
+  c.pass(step);
+}
+
+async function replayIntoAnotherInitiative(c: Core, s: Seed): Promise<void> {
+  const step = "a key replayed with another initiative";
+  const door = evalDoor(c, c.email);
+  const records = async () => Number((await one<{ n: string }>(c,
+    `select count(*)::text as n from zz.initiative_record r join zz.initiative i on i.id = r.initiative_id
+      where i.slug = $1 and r.stage = 'zz-plugin-identify'`, [SLUG])).n);
+  const first = await ask(door, "plugin_locate", { plugin: PLUGIN, version: VERSION, idempotency_key: "locate-elsewhere" });
+  if (first.startsWith("ERROR:")) c.fail(step, `the first call answered ${first.slice(0, 300)}`);
+  const before = await records();
+  const again = await ask(door, "plugin_locate",
+    { plugin: PLUGIN, version: VERSION, initiative: SLUG, idempotency_key: "locate-elsewhere" });
+  if (!again.includes("idempotency_conflict") || await records() !== before) {
+    c.fail(step, `answered ${again.slice(0, 300)}; ${SLUG}'s identify records went from ${before} to ${await records()}`);
+  }
   c.pass(step);
 }
 
@@ -725,7 +744,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, replayIntoAnotherInitiative, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

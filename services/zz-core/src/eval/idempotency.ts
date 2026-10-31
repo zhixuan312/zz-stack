@@ -57,13 +57,15 @@ export function canonicalJson(value: unknown): string {
     const keys = Object.keys(record).sort();
     return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(record[k])}`).join(",")}}`;
   }
-  return "null"; // undefined, function, symbol — none of these reach here from parsed JSON args
+  return "null"; // undefined (an optional argument left out, such as `initiative`); nothing else reaches here from parsed JSON args
 }
 
 /** sha256 hex of a tool's argument object, independent of key order and of the
  *  `idempotency_key` field itself. The key is excluded so that two requests differing only in
  *  which key they happened to be sent under are still recognised as the same request — the
- *  digest is what decides "same request", the key is only where the ledger row lives. */
+ *  digest is what decides "same request", the key is only where the ledger row lives. A tool that
+ *  takes `initiative` passes it here too: the same key retried into another initiative is another
+ *  request, refused as a conflict, never a replay recorded into that initiative. */
 export function requestDigest(args: Record<string, unknown>): string {
   const { idempotency_key: _idempotency_key, ...rest } = args;
   return createHash("sha256").update(canonicalJson(rest), "utf8").digest("hex");

@@ -411,7 +411,7 @@ export function registerObserveTools(server: McpServer): void {
       // A retry is answered from the snapshot its first call recorded, before anything is
       // computed: what the window holds now is not what that call observed.
       const principal = parseCaller(requestHeaders()).email;
-      const args = { subject_version_id, evidence_window };
+      const args = { subject_version_id, evidence_window, initiative };
       const prior = await decideBeforeWork(principal, "plugin_profile", idempotency_key, args);
       if (prior.replayed) {
         return replayProfile(pool, prior.result_id, subject_version_id, plugin, declaredVersion, principal, initiative);

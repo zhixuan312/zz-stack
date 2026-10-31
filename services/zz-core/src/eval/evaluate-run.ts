@@ -319,7 +319,7 @@ export async function startEvaluation(
   const outcome: IdempotencyOutcome<{ eval_run_id: string; observation_snapshot_id: string; replayed: boolean }> =
     await withIdempotency(
       principal, "evaluation_start", idempotency_key,
-      { subject_version_id, protocol_version_id, observation_snapshot_id },
+      { subject_version_id, protocol_version_id, observation_snapshot_id, initiative },
       async (client): Promise<MutatorOutcome<{ eval_run_id: string; observation_snapshot_id: string; replayed: boolean }>> => {
         const ins = await client.query<{ id: string }>(`
           insert into zz.eval_run

@@ -271,7 +271,7 @@ export function registerPluginRecordTools(server: McpServer): void {
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string; kind: string; pattern: string }> = await withIdempotency(
-        principal, "finding_record", idempotency_key, { eval_run_id, finding, supersedes },
+        principal, "finding_record", idempotency_key, { eval_run_id, finding, supersedes, initiative },
         async (client): Promise<MutatorOutcome<{ id: string; kind: string; pattern: string }>> => {
           // A strength is terminal at insert — what is working is not open work — so its decision
           // lands null. Every other kind starts `deferred`, the open state finding_decide closes.

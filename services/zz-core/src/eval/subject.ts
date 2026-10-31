@@ -306,7 +306,7 @@ export function registerSubjectTools(server: McpServer): void {
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<string> = await withIdempotency(
-        principal, "plugin_locate", idempotency_key, { plugin, version },
+        principal, "plugin_locate", idempotency_key, { plugin, version, initiative },
         // The ledger is the only row this call writes, and it anchors on the release's own
         // `plugin_version` id — the identity itself is immutable history no path updates
         // (AC-6.2), so a replay and a fresh resolve answer with the same row and cannot disagree.
@@ -404,7 +404,7 @@ export function registerSubjectTools(server: McpServer): void {
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<string> = await withIdempotency(
         principal, "plugin_register", idempotency_key,
-        { name, version, source_kind, source_locator },
+        { name, version, source_kind, source_locator, initiative },
         async (client): Promise<MutatorOutcome<string>> => {
           const pluginRow = (await client.query<{ id: string }>(`
             insert into zz.plugin (name, origin) values ($1, 'third_party')

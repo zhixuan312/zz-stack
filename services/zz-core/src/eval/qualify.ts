@@ -310,7 +310,7 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
 
       // Every model call happens before the transaction: a retry is ruled out first (so it never
       // re-asks), then the ladder asks on the pool, then the transaction only writes.
-      const args = { protocol_version_id, measure_key };
+      const args = { protocol_version_id, measure_key, initiative };
       const prior = await decideBeforeWork(principal, "evaluator_qualify", idempotency_key, args);
       let outcome: IdempotencyOutcome<QualifyResult>;
       if (prior.replayed) {

@@ -188,8 +188,11 @@ async function resolvePat(token: string): Promise<Identity | null> {
   const row = r.rows[0];
   if (!row || row.status !== "active") return null;
   // Logged because a permanently failing update here is indistinguishable from a succeeding
-  // one, and this column is what "when was this token last used" answers.
-  void db.query("update pat set last_used_at = now() where id = $1", [row.id])
+  // one, and this column is what "when was this token last used" answers. At most once a
+  // minute: every tool call authenticates, and a minute is all that answer is read to.
+  void db.query(
+    "update pat set last_used_at = now() where id = $1 and (last_used_at is null or last_used_at < now() - interval '1 minute')",
+    [row.id])
     .catch((err) => console.error("pat.last_used_at update failed:", err));
   const base = await principalByEmail(row.email);
   if (!base) return null;
@@ -238,7 +241,10 @@ async function resolveSession(token: string): Promise<Identity | null> {
   );
   const row = r.rows[0];
   if (!row || row.status !== "active") return null;
-  void db.query("update console_session set last_seen_at = now() where id = $1", [row.id])
+  // At most once a minute, as a token's last use: a page fans out to several reads.
+  void db.query(
+    "update console_session set last_seen_at = now() where id = $1 and (last_seen_at is null or last_seen_at < now() - interval '1 minute')",
+    [row.id])
     .catch((err) => console.error("console_session.last_seen_at update failed:", err));
   const base = await principalByEmail(row.email);
   if (!base) return null;

@@ -147,7 +147,9 @@ export interface Core {
   inProcess(): Promise<InProcess>;
 }
 
-function freePort(): Promise<number> {
+/** A port nothing listens on now. It is closed again before it is returned, so another process can
+ *  take it before the caller binds it: a child started on it goes through `startOnFreePort`. */
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer();
     srv.once("error", reject);
@@ -172,7 +174,7 @@ async function seed(db: pg.Client): Promise<void> {
 }
 
 /** A running zz-core child and what it has said, its tail kept for a failure to print. */
-interface Child { proc: ChildProcess; port: number; output: () => string }
+export interface Child { proc: ChildProcess; port: number; output: () => string }
 
 /** What a check may change about the zz-core it is given. */
 interface CoreOptions {
@@ -184,18 +186,20 @@ interface CoreOptions {
 /** Starts zz-core on a free port. freePort closes the port it found before the child binds it, so
  *  under a parallel gate another process can take it first and the child exits with EADDRINUSE
  *  before listening; that start is retried on a fresh port, and any other failure is the answer. */
-async function startOnFreePort(name: string, url: string, catalog: string): Promise<Child> {
+export async function startOnFreePort(name: string, url: string, catalog: string,
+                                      env: Record<string, string> = {}): Promise<Child> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await startCore(name, url, await freePort(), catalog);
+      return await startCore(name, url, await freePort(), catalog, env);
     } catch (err) {
       if (attempt >= 3 || !(err instanceof Error) || !err.message.includes("EADDRINUSE")) throw err;
     }
   }
 }
 
-/** Starts zz-core and resolves once it says it is listening on `port`. */
-function startCore(name: string, url: string, port: number, catalog: string): Promise<Child> {
+/** Starts zz-core and resolves once it says it is listening on `port`; `env` is added to what this
+ *  process inherited. */
+function startCore(name: string, url: string, port: number, catalog: string, env: Record<string, string>): Promise<Child> {
   return new Promise((resolve, reject) => {
     const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port), "--host", "127.0.0.1"], {
       cwd: root,
@@ -205,6 +209,7 @@ function startCore(name: string, url: string, port: number, catalog: string): Pr
         TRUSTED_PEERS: "localhost",
         ZZ_CATALOG_DIR: catalog,
         ZZ_SKILLS_DIR: `${root}/skills`,
+        ...env,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

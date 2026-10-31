@@ -43,9 +43,7 @@
  * holding none of the second team's words. `lead` reads one page that way for every page step of the skeleton,
  * and answers the page for a step that reads more of it.
  */
-import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import net from "node:net";
 import { join } from "node:path";
 
 import { lastJson } from "@zz/mcp-client";
@@ -53,10 +51,9 @@ import type pg from "pg";
 
 import { root } from "./deployment.ts";
 import { signIn } from "./schema/status-seed.ts";
+import { startOnFreePort, type Child } from "./schema/throwaway-core.ts";
 import { EXPLORE_BODY, SPEC_BODY } from "./schema/spec-fixture.ts";
 
-/** How long zz-core has to say it is listening. */
-const CORE_START_MS = 30_000;
 /** How long the telemetry of the calls made has to land. */
 const SETTLE_MS = 15_000;
 const ACTING = "acting-superadmin@status.example.test";
@@ -87,43 +84,24 @@ interface WorkContext {
   pass(line: string): void;
 }
 
-let core: ChildProcess | null = null;
+let core: Child | null = null;
 
 /** Starts zz-core on the throwaway database at `url`, its agent reads asking the gateway at `gateway`
- *  (`GATEWAY_INTERNAL_URL`), and answers its MCP address once it listens.
- *  COUPLED: `startCore` in scripts/schema/throwaway-core.ts starts it the same way, but for the gateway it
- *  leaves to the environment, and the sentinel is services/zz-core/src/server.ts's `listening on :<port>`. */
+ *  (`GATEWAY_INTERNAL_URL`), and answers its MCP address once it listens. */
 export async function startCore(url: string, gateway: string, fail: WorkContext["fail"]): Promise<string> {
-  const port = await new Promise<number>((resolve) => {
-    const s = net.createServer();
-    s.listen(0, "127.0.0.1", () => { const p = (s.address() as net.AddressInfo).port; s.close(() => resolve(p)); });
-  });
-  const proc = spawn(process.execPath, ["services/zz-core/dist/server.js", "--port", String(port), "--host", "127.0.0.1"], {
-    cwd: root, stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, TEAM_DB_URL: url, TRUSTED_PEERS: "localhost", GATEWAY_INTERNAL_URL: gateway,
-           ZZ_CATALOG_DIR: join(root, "catalog"), ZZ_SKILLS_DIR: join(root, "skills") },
-  });
-  core = proc;
-  let seen = "";
-  const listening = await new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => resolve(false), CORE_START_MS);
-    // Read for the life of the child, so a full pipe never stalls it.
-    const keep = (b: Buffer): void => {
-      seen = (seen + b.toString()).slice(-3000);
-      if (seen.includes(`listening on :${port}`)) { clearTimeout(timer); resolve(true); }
-    };
-    proc.stdout!.on("data", keep);
-    proc.stderr!.on("data", keep);
-    proc.once("exit", () => { clearTimeout(timer); resolve(false); });
-  });
-  if (!listening) fail("zz-core starts", `no \`listening on :${port}\` within ${CORE_START_MS / 1000} s:\n${seen.trim() || "(no output)"}`);
-  return `http://127.0.0.1:${port}/mcp`;
+  try {
+    core = await startOnFreePort("the walking skeleton", url, join(root, "catalog"), { GATEWAY_INTERNAL_URL: gateway });
+  } catch (err) {
+    return fail("zz-core starts", err instanceof Error ? err.message : String(err));
+  }
+  return `http://127.0.0.1:${core.port}/mcp`;
 }
 
 /** Stops zz-core by its own process id, if it runs. */
 export function stopCore(): void {
-  if (core?.pid !== undefined && core.exitCode === null && core.signalCode === null) {
-    try { process.kill(core.pid, "SIGTERM"); } catch { /* already gone */ }
+  const proc = core?.proc;
+  if (proc?.pid !== undefined && proc.exitCode === null && proc.signalCode === null) {
+    try { process.kill(proc.pid, "SIGTERM"); } catch { /* already gone */ }
   }
 }
 
@@ -215,18 +193,8 @@ export async function workCases(ctx: WorkContext): Promise<WorkReaders> {
        `spec, an approval by the member and one by the acting superadmin, an abandoned and a delivered close, ${sent} tool calls recorded`);
 
   /** A gateway answer as `email`'s console session, an object or the step's failure. */
-  const ask = async (step: string, email: string, path: string, body?: Obj): Promise<Obj> => {
-    const res = await fetch(`${gateway}${path}`, {
-      method: body ? "POST" : "GET", signal: AbortSignal.timeout(60_000),
-      headers: { cookie: `zz_console=${cookies.get(email)}`, ...(body ? { "content-type": "application/json" } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-    const text = await res.text();
-    if (res.status !== 200) fail(step, `answered ${res.status}: ${text.slice(0, 400)}`);
-    const answer: unknown = JSON.parse(text);
-    if (typeof answer !== "object" || answer === null || Array.isArray(answer)) fail(step, `answered something other than an object: ${text.slice(0, 200)}`);
-    return answer as Obj;
-  };
+  const ask = (step: string, email: string, path: string, body?: Obj): Promise<Obj> =>
+    answer({ gateway, cookies, fail }, step, email, path, body);
   const ok = <T>(step: string, name: string, p: unknown): T => {
     const part = p as Part<T> | undefined;
     if (part?.state !== "ok") return fail(step, `${name} is ${part ? `unavailable (${(part as { reason: string }).reason})` : "missing"}, not ok`);
@@ -348,9 +316,15 @@ export interface PageContext {
 /** A count as the console writes one. */
 export const count = (n: number): string => n.toLocaleString("en-US");
 
-/** A gateway answer as `email`'s console session: an object, or the step's failure. */
-export async function answer(ctx: PageContext, step: string, email: string, path: string): Promise<Obj> {
-  const res = await fetch(`${ctx.gateway}${path}`, { headers: { cookie: `zz_console=${ctx.cookies.get(email)}` }, signal: AbortSignal.timeout(60_000) });
+/** A gateway answer as `email`'s console session, a POST of `body` where one is given: an object, or the
+ *  step's failure. */
+export async function answer(ctx: Pick<PageContext, "gateway" | "cookies" | "fail">, step: string, email: string,
+                             path: string, body?: Obj): Promise<Obj> {
+  const res = await fetch(`${ctx.gateway}${path}`, {
+    method: body ? "POST" : "GET", signal: AbortSignal.timeout(60_000),
+    headers: { cookie: `zz_console=${ctx.cookies.get(email)}`, ...(body ? { "content-type": "application/json" } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
   const text = await res.text();
   if (res.status !== 200) ctx.fail(step, `${path} answered ${res.status}: ${text.slice(0, 400)}`);
   const parsed: unknown = JSON.parse(text);

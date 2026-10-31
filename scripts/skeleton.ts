@@ -101,7 +101,6 @@ import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_pr
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import net from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -112,6 +111,7 @@ import { root } from "./deployment.ts";
 import { seedIsolation } from "./schema/isolation-seed.ts";
 import { EXPECTED, MEMBER, SUPERADMIN, TEAM_TWO, seedStatus, signIn, weekStart } from "./schema/status-seed.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
+import { freePort } from "./schema/throwaway-core.ts";
 import { nowhere, removedAddresses, words } from "./skeleton-addresses.ts";
 import { agentReads } from "./skeleton-agents.ts";
 import { destinationCases, destinationPages, probe } from "./skeleton-destinations.ts";
@@ -161,11 +161,6 @@ function consoleEnv(gateway: string): NodeJS.ProcessEnv {
                    ...Object.keys(env).filter((x) => x.startsWith("ASSISTANT_"))]) env[k] = "";
   return env;
 }
-
-const freePort = (): Promise<number> => new Promise((resolve) => {
-  const s = net.createServer();
-  s.listen(0, "127.0.0.1", () => { const p = (s.address() as net.AddressInfo).port; s.close(() => resolve(p)); });
-});
 
 /** What a page answered: its status, where it redirects, its whole body, and the body as a reader sees it. */
 interface Page extends ConsolePage { location: string | null }

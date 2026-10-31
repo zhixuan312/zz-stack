@@ -156,9 +156,11 @@ export function cachedWithHit<T>(
   const started = Date.now();
   const value = read();
   if (answers.size >= KEPT) {
+    // Expired answers go first, since none can be served again; then the oldest, until half the room is free.
+    const now = Date.now();
+    for (const [old, e] of answers) if (old !== full && e.expires <= now) answers.delete(old);
     for (const old of answers.keys()) {
       if (answers.size < KEPT / 2) break;
-      // An entry under a marker that has moved can never be served again; the rest go oldest first.
       if (old !== full) answers.delete(old);
     }
   }

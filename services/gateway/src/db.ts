@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import pg from "pg";
 
-import { PLATFORM_TEAM, TEAM_SLUG, toTeamSlug } from "./identity.js";
+import { PLATFORM_TEAM, toTeamSlug } from "./identity.js";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 
@@ -118,11 +118,12 @@ export async function initPlatformDb(): Promise<void> {
       await client.query("commit");
       console.log("migration applied:", file);
     } catch (err) {
-      await client.query("rollback");
-      // Withdraw the pool before rethrowing: the caller starts the server anyway, and `pool`
-      // was assigned before migrations ran, so platformDbReady() would otherwise keep saying
-      // yes and every feature would query a half-migrated schema.
+      // Withdraw the pool first, before anything else can throw: the caller starts the server
+      // anyway, and `pool` was assigned before migrations ran, so platformDbReady() would otherwise
+      // keep saying yes and every feature would query a half-migrated schema. A rollback that fails
+      // too (the server restarting mid-migration) must not replace the migration's own error.
       pool = undefined;
+      await client.query("rollback").catch(() => { /* the connection is gone with the transaction */ });
       throw err;
     } finally {
       client.release();
@@ -182,7 +183,7 @@ async function seed(): Promise<void> {
     return;
   }
   const slug = toTeamSlug(raw);
-  if (!slug || !TEAM_SLUG.test(slug)) {
+  if (!slug) {
     console.warn(`BOOTSTRAP_TEAM "${raw}" has no usable team slug — skipped`);
     return;
   }

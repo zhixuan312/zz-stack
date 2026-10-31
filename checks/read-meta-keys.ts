@@ -79,6 +79,20 @@ if (typeof kept !== "function") {
   if (a?.hit !== false || b?.hit !== false || unmarked !== 2) {
     fail.push(`with no marker the cache reported hit=${a?.hit} then ${b?.hit} over ${unmarked} computation(s), not two misses over 2`);
   } else ok("with no marker nothing is kept: both reads are computations");
+
+  // 5. A full cache drops what has expired before anything live: 40 live answers, then 23 whose own boundary
+  // has passed, then one more. Oldest-first alone would drop 33 of the live ones and keep the expired.
+  type Bounded = <T>(key: string, read: () => Promise<T>, prefix: string, boundary: (v: T) => number | null) => Promise<{ value: T; hit: boolean }>;
+  const bounded = kept as unknown as Bounded;
+  const ev = "read-meta-keys|evict";
+  for (let i = 0; i < 40; i++) await bounded(`live-${i}`, async () => i, ev, () => null);
+  for (let i = 0; i < 23; i++) await bounded(`soon-${i}`, async () => i, ev, () => Date.now() + 5);
+  await new Promise((r) => setTimeout(r, 30));
+  await bounded("last", async () => 0, ev, () => null);
+  let survivors = 0;
+  for (let i = 0; i < 40; i++) if ((await bounded(`live-${i}`, async () => -1, ev, () => null)).hit) survivors++;
+  if (survivors < 30) fail.push(`a full cache kept ${survivors} of 40 live answers, dropping them ahead of 23 expired ones`);
+  else ok(`a full cache drops expired answers before live ones (${survivors} of 40 live answers kept)`);
 }
 
 if (fail.length) {

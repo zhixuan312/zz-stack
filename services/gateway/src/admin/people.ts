@@ -25,7 +25,8 @@ export async function listPeople(
 ): Promise<{ ok: true; rows: unknown[] } | { ok: false; status: 403; error: string }> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
   // `membership.added_by` is selected here because it answers the question an access review
-  // asks: who put this person in this team.
+  // asks: who put this person in this team. Only active teams: an archived team keeps its
+  // memberships for a restore, but grants nothing while it is archived.
   const r = await platformDb().query(
     `select p.email, p.display_name, p.role, p.status, p.created_at,
             coalesce(json_agg(json_build_object(
@@ -33,7 +34,7 @@ export async function listPeople(
               order by t.slug) filter (where t.slug is not null), '[]') as teams
        from principal p
        left join membership m on m.principal_id = p.id
-       left join team t on t.id = m.team_id
+       left join team t on t.id = m.team_id and t.status = 'active'
        left join principal a on a.id = m.added_by
       group by p.id order by p.email`);
   return { ok: true, rows: r.rows };

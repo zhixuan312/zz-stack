@@ -1,31 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildRowVector, planRebuild, queryGeneration, rebuildRowVector } from "@zz/indexing";
+import { buildRowVector, rebuildRowVector } from "@zz/indexing";
 import { root, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 
-check("rederivation covers old rows and refuses to mix analyzer generations", () => {
-  const p = planRebuild({ analyzer: "zz-lexical-v2", previous: "zz-lexical-v1" });
-  for (const c of ["zz.doc", "zz.knowledge_node"]) {
-    if (!p.corpora.includes(c)) return `${c} is not in the rebuild plan, so its existing rows keep v1 terms`;
-  }
-  if (p.skipUnchangedContentHash) {
-    return "the rebuild skips rows whose content hash is unchanged — but the analyzer changed and the hash did not, "
-         + "so every old Chinese document would stay invisible";
-  }
-  const mixed = queryGeneration({ indexGeneration: "zz-lexical-v1", queryGeneration: "zz-lexical-v2" });
-  if (mixed.status === "ok") return "a one-sided analyzer upgrade reported ok; a complete empty would be indistinguishable from no match";
-  if (!["index_not_ready", "incomplete", "compatible_pair"].includes(mixed.status)) {
-    return `a one-sided upgrade reported ${mixed.status}, which does not disclose the mismatch`;
-  }
-  if (!p.resumable) return "the rebuild declares no watermark, so an interrupted run cannot resume";
-
-  // One construction, two callers — never two implementations of the same weighting. Checked
-  // two ways, because neither alone is enough: the rederivation module must literally import the
-  // write path's builder, and the two must agree on a row.
-  //
-  // DELIBERATE: this does not demand `rebuildRowVector === buildRowVector`. Identity forces an
-  // alias export and makes the agreement test below dead code.
+// One construction, two callers — never two implementations of the same weighting. Checked two
+// ways, because neither alone is enough: the rederivation module must literally import the write
+// path's builder, and the two must agree on a row.
+//
+// DELIBERATE: this does not demand `rebuildRowVector === buildRowVector`. Identity forces an alias
+// export and makes the agreement test below dead code.
+check("the rebuild and the write path build a row's vector with one implementation", () => {
   const rebuildSrc = withoutComments(readFileSync(join(root, "packages/indexing/src/rederivation.ts"), "utf8"));
   if (!/import\s*\{[^}]*\bbuildRowVector\b/.test(rebuildSrc)) {
     return "rederivation.ts does not import buildRowVector — a second implementation of the same "

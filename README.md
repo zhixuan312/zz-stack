@@ -209,11 +209,7 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             argument one level up, for the unit a person actually installs: each
             plugin's declared version beside a digest of what it ships, recorded in
             plugins.lock.json so the gate can refuse content that moved under a
-            frozen number), rederive-analyzer-generation.ts
-            (dry-run by default: rederives every existing `zz.doc`/`zz.knowledge_node`
-            row's `body_tsv`/`analyzer_version` under the current analyzer generation
-            through `@zz/indexing`'s `rederiveAll`, resumable by watermark — `--write`
-            is the only path that changes anything),
+            frozen number),
             rebuild-event-work-week.ts (dry-run by default: runs the read model's own
             backfill — the same `insert … select` `011_event_work_week.sql` ran — inside one
             transaction and rolls it back, then reads the model and the raw calls as one

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
  * checks/reindex-walk.ts — a team's rebuild re-derives every stale row of that team, past a page boundary, and no
- * other team's; a row that cannot be re-derived is named and the walk goes on past it. The same walk across every
- * team (`rederiveCorpus`) re-derives what is left, and resumed from its watermark finds nothing more.
+ * other team's; a row that cannot be re-derived is named and the walk goes on past it.
  *
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), seeds 450 documents and two
  * knowledge nodes for one team with a stale `analyzer_version` — one document's body past the stored-body limit — and
@@ -21,7 +20,7 @@ import { root } from "../scripts/deployment.ts";
 import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 type Indexing = typeof import("../packages/indexing/dist/index.js");
-const { ANALYZER_NAME, MAX_INPUT_BYTES, configureIndexing, reindexTeam, rederiveCorpus }: Indexing =
+const { ANALYZER_NAME, MAX_INPUT_BYTES, configureIndexing, reindexTeam }: Indexing =
   await import(pathToFileURL(join(root, "packages/indexing/dist/index.js")).href);
 
 const NAME = "reindex-walk";
@@ -75,21 +74,6 @@ process.exitCode = await withThrowawayDbCheck(NAME, DONE, async (c, url) => {
     const other = await count("reindex-b", STALE);
     if (other !== 3) fail(step, `the other team's documents were touched: ${3 - other} of 3 moved`);
     console.log(`  ${step}: 449 documents and 2 nodes re-derived, the unreadable one named, the other team untouched`);
-
-    // What is left stale is the other team's three and the unreadable one, two to a page.
-    const across = "rederiveCorpus over every team's documents, then resumed from its watermark";
-    const route = { worker: NAME, reader: "keyset" };
-    const all = await rederiveCorpus(pool, { corpus: "zz.doc", analyzer: ANALYZER_NAME, batchSize: 2, route });
-    if (all.sourceCensus !== 453 || all.rederived !== 3 || all.failures.length !== 1 || all.skipped !== 449) {
-      fail(across, `the first walk answered ${JSON.stringify({ ...all, failures: all.failures.map((f) => f.key) })}`);
-    }
-    if (await count("reindex-b", ANALYZER_NAME) !== 3) fail(across, "the other team's documents were not re-derived");
-    const again = await rederiveCorpus(pool,
-      { corpus: "zz.doc", analyzer: ANALYZER_NAME, batchSize: 2, route, afterWatermark: all.watermark });
-    if (again.rederived !== 0 || again.failures.length !== 0) {
-      fail(across, `the resumed walk answered ${JSON.stringify(again)}`);
-    }
-    console.log(`  ${across}: 3 re-derived, the unreadable one named again, nothing past the watermark`);
   } finally {
     await pool.end();
   }

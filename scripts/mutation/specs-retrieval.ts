@@ -41,12 +41,12 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/rederivation-generation.ts",
-    target: "rederivation covers old rows and refuses to mix analyzer generations",
+    target: "the rebuild and the write path build a row's vector with one implementation",
     subject: "packages/indexing/src/rederivation.ts",
-    find: "  return { corpora: [...REDERIVABLE_CORPORA], skipUnchangedContentHash: false, resumable: true };",
-    replace: "  return { corpora: [...REDERIVABLE_CORPORA], skipUnchangedContentHash: true, resumable: true };",
-    planted: "the rebuild skips every row whose content hash is unchanged — but the analyzer " +
-      "changed and the hash did not, so the old corpus is never rederived",
+    find: '    title: row.title ?? "",',
+    replace: '    title: "",',
+    planted: "the rebuild drops a row's title, so every rebuilt row loses the weight its title " +
+      "carries on the write path and search ranks it differently after a reindex",
   },
   {
     check: "scripts/gate/checks/text-search-config-agreement.ts",

@@ -1,6 +1,6 @@
 /**
  * The knowledge index's door: the analyzer, the query grammar, the decision reader and the
- * generation-aware rederivation pass, re-exported so a consumer imports `@zz/indexing` rather than
+ * rebuild, re-exported so a consumer imports `@zz/indexing` rather than
  * a path inside it.
  *
  * A document's bytes are `zz.doc_revision` rows and its identity is a `zz.doc` row, so a rebuild
@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import { ANALYZER_NAME, bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "./tenant-analysis.js";
-import { planRebuild, rebuildRowVector, type CorpusRebuildRecord, type RederivationClient } from "./rederivation.js";
+import { rebuildRowVector } from "./rederivation.js";
 
 // The package's door: a consumer imports `@zz/indexing`, not a path inside it. That is why
 // the pure rules are re-exported here rather than reached by a deep import.
@@ -34,10 +34,9 @@ export {
   type AnalysisField, type AnalysisTerm, type AnalysisResult,
   type RowVector, type RowVectorTerm, type RowVectorWeight,
 } from "./tenant-analysis.js";
-// The generation-aware rederivation's planning and its record. `rederivation.js` imports only
-// `tenant-analysis.js`, never this file, so re-exporting it here creates no import cycle; the walk
-// itself is `rederiveCorpus` below, the same one a team's rebuild runs.
-export { planRebuild, queryGeneration, rebuildRowVector, type RebuildRowInput, type RebuildPlan, type GenerationQuery, type GenerationStatusResult, type CorpusRebuildRecord, type RederivationClient } from "./rederivation.js";
+// One raw row's vector. `rederivation.js` imports only `tenant-analysis.js`, never this file, so
+// re-exporting it here creates no import cycle; the walk itself is `reindexTeam` below.
+export { rebuildRowVector, type RebuildRowInput } from "./rederivation.js";
 // The query-grammar lexer: quotes, exclusions and explicit `OR`, read on the raw text before
 // `analyze` above ever sees it.
 export {
@@ -204,7 +203,7 @@ export interface TeamReindex {
  *  scopes it to one team, the column the skip tests and the statement that writes the derived
  *  columns back. The `select` is per corpus rather than a table name, because the two do not read
  *  the same shape — a document's body is its CURRENT REVISION's, and no column of `zz.doc` carries
- *  it. `reindexTeam` and `rederiveCorpus` walk them alike. */
+ *  it. */
 const CORPORA = [
   {
     corpus: "zz.doc",
@@ -231,23 +230,17 @@ const CORPORA = [
 ] as const;
 type Corpus = typeof CORPORA[number];
 
-const DEFAULT_BATCH_SIZE = 200;
+const BATCH_SIZE = 200;
 
 /** What one walk of one corpus did. */
 interface Walk {
   visited: number;
   rederived: number;
   failures: { key: string; reason: string }[];
-  /** The last key the walk passed, or null when it passed none. */
-  watermark: string | null;
 }
 
-interface WalkOptions {
-  team: string | null; force: boolean; analyzer: string; after: string | null; batchSize: number;
-}
-
-/** One corpus, re-derived a page at a time in key order: `team` scopes it to one team's rows (null
- *  for every row), and a row already at `analyzer` is skipped unless `force`.
+/** One team's rows of one corpus, re-derived a page at a time in key order; a row already at the
+ *  current analyzer is skipped unless `force`.
  *
  *  DELIBERATE: the skip is the STATEMENT's, not a test after the row arrives. A row whose
  *  `analyzer_version` names the current analyzer cannot produce a different vector — the
@@ -255,36 +248,34 @@ interface WalkOptions {
  *  body to then discard it would make every start read and hash every team's documents only to
  *  skip them all. `visited` is therefore the rows this walk had to look at.
  *
- *  Paged by key, never by offset, so one page of bodies is in memory at a time and a resumed walk
- *  (`after`) opens strictly past the last key it passed. A row that throws is recorded in
- *  `failures` and the walk continues past it, so one bad row cannot leave every row after it
- *  stale. */
-async function rederiveRows(client: RederivationClient, corpus: Corpus, opts: WalkOptions): Promise<Walk> {
-  const walk: Walk = { visited: 0, rederived: 0, failures: [], watermark: null };
-  let after = opts.after;
+ *  Paged by key, never by offset, so one page of bodies is in memory at a time. A row that throws
+ *  is recorded in `failures` and the walk continues past it, so one bad row cannot leave every row
+ *  after it stale. */
+async function rederiveRows(client: pg.Pool, corpus: Corpus, teamId: string, force: boolean): Promise<Walk> {
+  const walk: Walk = { visited: 0, rederived: 0, failures: [] };
+  let after: string | null = null;
   for (;;) {
-    const page = (await client.query<{ id: string; title: string | null; tags: string[] | null;
-                                       body: string | null; analyzer_version: string | null }>(
-      `${corpus.select}
-        where ($1::uuid is null or ${corpus.scope})
-          and ($2::boolean or ${corpus.analyzer} is distinct from $3)
-          and ($4::uuid is null or ${corpus.key} > $4::uuid)
-        order by ${corpus.key}
-        limit $5`,
-      [opts.team, opts.force, opts.analyzer, after, opts.batchSize])).rows;
+    const page: { id: string; title: string | null; tags: string[] | null; body: string | null }[] =
+      (await client.query(
+        `${corpus.select}
+          where ${corpus.scope}
+            and ($2::boolean or ${corpus.analyzer} is distinct from $3)
+            and ($4::uuid is null or ${corpus.key} > $4::uuid)
+          order by ${corpus.key}
+          limit $5`,
+        [teamId, force, ANALYZER_NAME, after, BATCH_SIZE])).rows;
     for (const row of page) {
       walk.visited++;
       try {
         const vector = rebuildRowVector(row);
-        await client.query(corpus.update, [row.id, opts.analyzer, ...bodyTsvParams(vector)]);
+        await client.query(corpus.update, [row.id, ANALYZER_NAME, ...bodyTsvParams(vector)]);
         walk.rederived++;
       } catch (err) {
         walk.failures.push({ key: row.id, reason: err instanceof Error ? err.message : String(err) });
       }
       after = row.id;
-      walk.watermark = row.id;
     }
-    if (page.length < opts.batchSize) return walk;
+    if (page.length < BATCH_SIZE) return walk;
   }
 }
 
@@ -308,8 +299,7 @@ export async function reindexTeam(
   let scanned = 0, indexed = 0;
   const failures: Walk["failures"] = [];
   for (const corpus of CORPORA) {
-    const walk = await rederiveRows(p, corpus,
-      { team: teamId, force, analyzer: ANALYZER_NAME, after: null, batchSize: DEFAULT_BATCH_SIZE });
+    const walk = await rederiveRows(p, corpus, teamId, force);
     scanned += walk.visited;
     indexed += walk.rederived;
     failures.push(...walk.failures);
@@ -317,64 +307,6 @@ export async function reindexTeam(
   if (!failures.length) return { team: teamSlug, scanned, indexed };
   return { team: teamSlug, scanned, indexed,
            error: `${failures.length} row(s) could not be re-derived, first ${failures[0].key}: ${failures[0].reason}` };
-}
-
-/** Walks one corpus across every team, from `request.afterWatermark` or the start, re-deriving
- *  every row whose `analyzer_version` is not already `request.analyzer`; never gated on content.
- *  `skipped` is the census less the rows walked: the rows already at the target generation, and on
- *  a resumed walk the rows before its watermark too. */
-export async function rederiveCorpus(
-  client: RederivationClient,
-  request: {
-    readonly corpus: string;
-    readonly analyzer: string;
-    readonly afterWatermark?: string | null;
-    readonly batchSize?: number;
-    readonly route: { readonly worker: string; readonly reader: string };
-  },
-): Promise<CorpusRebuildRecord> {
-  const corpus = CORPORA.find((c) => c.corpus === request.corpus);
-  if (!corpus) {
-    throw new RangeError(`${request.corpus} is not a corpus this rederivation pass knows — refusing rather than guessing its schema`);
-  }
-  // The table name is this pass's own constant, never text a caller supplies, which is what makes
-  // interpolating it safe.
-  const census = await client.query<{ n: string }>(`select count(*)::text as n from ${corpus.corpus}`);
-  const sourceCensus = Number(census.rows[0]?.n ?? "0");
-  const after = request.afterWatermark ?? null;
-  const walk = await rederiveRows(client, corpus,
-    { team: null, force: false, analyzer: request.analyzer, after, batchSize: request.batchSize ?? DEFAULT_BATCH_SIZE });
-  return {
-    corpus: corpus.corpus, analyzer: request.analyzer, sourceCensus, rederived: walk.rederived,
-    skipped: sourceCensus - walk.visited, failures: walk.failures, watermark: walk.watermark ?? after,
-    route: request.route,
-  };
-}
-
-/** Every corpus `planRebuild` names for this generation pair, walked in the order it returns
- *  them — no parallelism across corpora, so a caller reading progress mid-run sees at most one
- *  corpus in flight. `afterWatermarks` resumes each corpus independently, keyed by corpus
- *  name, from a prior run's `CorpusRebuildRecord.watermark`. */
-export async function rederiveAll(
-  client: RederivationClient,
-  request: {
-    readonly analyzer: string;
-    readonly previous: string;
-    readonly afterWatermarks?: Readonly<Record<string, string | null>>;
-    readonly batchSize?: number;
-    readonly route: { readonly worker: string; readonly reader: string };
-  },
-): Promise<readonly CorpusRebuildRecord[]> {
-  const plan = planRebuild({ analyzer: request.analyzer, previous: request.previous });
-  const records: CorpusRebuildRecord[] = [];
-  for (const corpus of plan.corpora) {
-    records.push(await rederiveCorpus(client, {
-      corpus, analyzer: request.analyzer,
-      afterWatermark: request.afterWatermarks?.[corpus] ?? null,
-      batchSize: request.batchSize, route: request.route,
-    }));
-  }
-  return records;
 }
 
 /** Rebuild every team: `knowledge_reindex` with no `team`.

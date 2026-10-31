@@ -24,7 +24,7 @@ import type pg from "pg";
 
 import { deltaOf, recordLine } from "./document-delta.js";
 import { type Line, refusalText, settleRefusal } from "./document-details.js";
-import { contextState, coverageOf, pagesOf, type Viewer } from "./review-context.js";
+import { contextState, coverageOf, gapsOf, pagesOf, type Viewer } from "./review-context.js";
 import { changeSnapshot } from "./stale-base.js";
 import { loadSnapshot } from "./versions.js";
 
@@ -73,11 +73,16 @@ export async function approvalBasis(
       }
       if (s.covered.includes(target)) return { target, context: a.context };
       if (s.baseline && s.open?.target !== target) return { refusal: await approvalConflict(p, who, rel, s.baseline, target) };
+      // The ranges still owed, read from the context's own pages: a last part that ran to the end
+      // names no next offset, so "the offset its last part named" would point at nothing.
+      const gaps = s.open?.target === target ? gapsOf(await pagesOf(p, who, rel, a.context), s.open) : [];
       return { refusal:
         `ERROR: PRESENTATION_REQUIRED — the review context ${a.context} has not covered ${target}, the current ` +
-        `snapshot of ${rel}: its presentation of it is not complete. Continue it — \`document_present\` with path ` +
-        `"${rel}", review_context: "${a.context}" and the \`offset\` its last part named — put every part in front ` +
-        "of the person, then approve with that `review_context`." };
+        `snapshot of ${rel}: its presentation of it is not complete` +
+        (gaps.length ? ` — characters ${gaps.map(([x, y]) => `${x}–${y}`).join(", ")} were never shown` : "") +
+        `. Continue it — \`document_present\` with path "${rel}", review_context: "${a.context}" and ` +
+        (gaps.length ? `offset: ${gaps[0][0]}` : "the `offset` its last part named") +
+        " — put every part in front of the person, then approve with that `review_context`." };
     }
     const by = new Map<string, Awaited<ReturnType<typeof pagesOf>>>();
     for (const page of await pagesOf(p, who, rel, null)) {

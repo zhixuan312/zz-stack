@@ -14,7 +14,8 @@
  *     under, naming the dated initiative an undated slug is short for; `bug_list` refuses a
  *     `reported_by` no principal carries, and still takes a known address in any case;
  *   - `document_present` with an array whose later path is refused still answers the earlier
- *     document it recorded as presented;
+ *     document it recorded as presented; an empty array is refused by it and by `document_read`;
+ *     and `document_write` names the body length `document_present` pages beside the file's;
  *   - `bug_list`'s `by_status` counts the reports its filters match, not every report;
  *   - `principalId` resolves a name only when exactly one active person carries it, and an empty
  *     name to nobody;
@@ -89,7 +90,15 @@ async function unknownNamesAreRefused(c: Core): Promise<void> {
 async function presentAnswersWhatItRecorded(c: Core): Promise<void> {
   const step = "document_present with a refused later path";
   const slug = await c.open("present-many");
-  await c.ok(step, "document_write", { path: `${slug}/notes.md`, content: "# Notes\n\nThe sentinel paragraph.\n" });
+  const written = await c.ok(step, "document_write", { path: `${slug}/notes.md`, content: "# Notes\n\nThe sentinel paragraph.\n" });
+  // Two lengths: the file's, which document_read pages, and the body's, which document_present pages.
+  const body = "# Notes\n\nThe sentinel paragraph.".length;
+  if (!new RegExp(`^written: ${slug}/notes\\.md \\(\\d+ chars; document_present pages its ${body}-character body\\)`, "m").test(written)) {
+    c.fail(step, `the write did not name the ${body}-character body document_present pages: ${written.slice(0, 300)}`);
+  }
+  for (const tool of ["document_present", "document_read"]) {
+    await c.refused(step, tool, { path: [] }, /^ERROR: `path` is an empty array/);
+  }
   const reply = await c.call(step, "document_present", { path: [`${slug}/notes.md`, `${slug}/../escape.md`] });
   if (!/The sentinel paragraph\./.test(reply)) {
     c.fail(step, `the reply withheld the document it presented: ${reply.slice(0, 400)}`);

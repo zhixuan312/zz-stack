@@ -84,7 +84,7 @@ export async function present(
     version: target.rev.version, revision: target.rev.revision,
     current: isCurrent ? { revision: loaded.rev.revision, generation: Number(loaded.rev.content_generation ?? loaded.doc.content_generation) } : null,
     meta_bytes: panel ? Buffer.byteLength(JSON.stringify(panel)) : 0,
-  }, (covered) => {
+  }, (covered, gaps) => {
     const lines = [factsOf(rel, target)];
     if (kind === "full") lines.push(metadataLine(target.text));
     if (plan.note) lines.push(`${plan.note}.`);
@@ -104,7 +104,9 @@ export async function present(
         `as presented. Pass review_context "${ctx}" to the next document_present of ${rel} to be shown only what ` +
         "changed since; `full: true` shows it whole."
       : `Presented in part. It does NOT yet count as presented: present the rest with \`offset\` and ` +
-        `review_context "${ctx}". A client that shows the document panel puts all of it in front of the person ` +
+        `review_context "${ctx}"` +
+        (gaps.length ? ` — not yet shown: characters ${gaps.map(([a, b]) => `${a}–${b}`).join(", ")}` : "") +
+        ". A client that shows the document panel puts all of it in front of the person " +
         "and records that itself — if the person can see the panel, leave the rest to it.");
     if (paged) {
       const of = kind === "delta" ? `the changes from ${plan.baseline} to ${plan.target}` : "the body, frontmatter excluded";

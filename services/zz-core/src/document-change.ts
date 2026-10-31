@@ -44,6 +44,7 @@ import { contentIdentity, documentState, type saveDocument, targetExists } from 
 import { sourceDocument } from "./indexing.js";
 import { DOC_REF, tagRefusal, titleSlug } from "./paths.js";
 import { assessAcceptance, verifyingDoc } from "./review-acceptance.js";
+import { presentedBody } from "./review-context.js";
 import { baseConflict } from "./stale-base.js";
 import { type Consumption, fileHosts, fileSource, type FileSource, type OpenAIFile, type Staged, stagedUpload,
          uploadContent, uploadLines } from "./upload-consume.js";
@@ -666,7 +667,9 @@ export async function planCreate(
   const id = randomUUID();
   const ref = mintRef();
   const lines = (filed?: string): Line[] => [
-    `written: ${path} (${fixed.content.length} chars)`,
+    // Two lengths, because two readers page it: document_read with `offset` pages the whole file,
+    // frontmatter included, and document_present pages the body.
+    `written: ${path} (${fixed.content.length} chars; document_present pages its ${presentedBody(fixed.content).length}-character body)`,
     // A new document's content generation is 0 until its first change.
     `content revision: ${contentRevision(id, 0)}`,
     ...causeLines(causes, capturedCause, filed, [...sent.normalised, ...refs.normalised]),

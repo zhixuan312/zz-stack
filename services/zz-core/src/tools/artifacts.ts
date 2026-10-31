@@ -67,6 +67,8 @@ const PART_INPUT = {
 const HOSTS = fileHosts();
 const FILES = fileSource({ hosts: HOSTS });
 const FILE_ARG = fileArgument(HOSTS);
+/** An empty `path` array names no document: answered, so a model is not handed empty text. */
+const EMPTY_PATHS = (verb: string) => `ERROR: \`path\` is an empty array — name the document to ${verb}, or an array of them.`;
 
 export function registerArtifactTools(server: McpServer): void {
   // The source subject, past what this file holds: `source_add` stays here with the document
@@ -254,6 +256,7 @@ export function registerArtifactTools(server: McpServer): void {
       // branch that reads one is not the branch that reads a document.
       const p = db();
       const single = !Array.isArray(path);
+      if (!single && !path.length) return text(EMPTY_PATHS("read"));
       const rows: { rel: string; body: string }[] = [];
       // One bad entry does not cost the others: nothing returns from inside this loop, and
       // every outcome, refusal included, becomes a row.
@@ -374,6 +377,7 @@ export function registerArtifactTools(server: McpServer): void {
       const p = db();
       if (!p || !team) return text(NO_TEAM);
       const single = !Array.isArray(path);
+      if (!single && !path.length) return text(EMPTY_PATHS("present"));
       const out: string[] = [];
       // What the document panel draws — every document whole, whatever part the text carries.
       const panel: PanelDocument[] = [];

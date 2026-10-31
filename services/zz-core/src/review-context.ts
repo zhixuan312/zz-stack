@@ -153,6 +153,21 @@ export function coverageOf(pages: Page[]): string[] {
   return done;
 }
 
+/** The ranges of `page`'s target that no page of its kind, baseline and length has shown yet, in
+ *  order: what a presentation not yet covered still owes. */
+export function gapsOf(pages: Page[], page: Page): [number, number][] {
+  const same = pages.filter((x) => x.kind === page.kind && (x.baseline ?? "") === (page.baseline ?? "") &&
+                                   x.target === page.target && x.total === page.total);
+  const gaps: [number, number][] = [];
+  let at = 0;
+  for (const [s, e] of same.map((x): [number, number] => [x.start, x.end]).sort((x, y) => x[0] - y[0])) {
+    if (s > at) gaps.push([at, s]);
+    at = Math.max(at, e);
+  }
+  if (at < page.total) gaps.push([at, page.total]);
+  return gaps;
+}
+
 /** One context as the viewer holds it: whether it is theirs at all, what it covered, its baseline,
  *  and its open presentation — the last page recorded in it. */
 export async function contextState(
@@ -230,7 +245,7 @@ export interface Presented extends Page {
  *  Committed before `compose`'s text is returned, which states whether the target is now covered;
  *  the row records that text's length and the panel payload's beside it. */
 export async function commitPresentation(
-  p: pg.Pool, who: Viewer, rel: string, page: Presented, compose: (covered: boolean) => string,
+  p: pg.Pool, who: Viewer, rel: string, page: Presented, compose: (covered: boolean, gaps: [number, number][]) => string,
 ): Promise<string> {
   const client = await p.connect();
   try {
@@ -251,7 +266,7 @@ export async function commitPresentation(
     }
     const prior = page.context ? await pagesOf(client, who, rel, page.context) : [];
     const covered = !!page.context && !!page.target && coverageOf([...prior, page]).includes(page.target);
-    const said = compose(covered);
+    const said = compose(covered, covered ? [] : gapsOf([...prior, page], page));
     const whole = page.start === 0 && page.end === page.total;
     const recorded = await insertEvent(client, {
       actor: who.email, team: who.team, initiative: splitStorePath(rel).initiative,

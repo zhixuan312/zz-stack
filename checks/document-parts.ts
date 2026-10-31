@@ -12,8 +12,9 @@
  *      cover the body, and the context mid-presentation is told to finish rather than signed; pages
  *      of another snapshot — even one of the same length — and pages in another context never
  *      combine; a change set too long for one result is paged the same way, its continuation joins
- *      the open delta, and covering every delta page counts; a `section` read covers nothing; and
- *      history is a read that records nothing;
+ *      the open delta, and covering every delta page counts; a `section` read covers nothing; a
+ *      presentation that skipped characters names them in its last part and in the approval's
+ *      refusal, with the offset to continue from; and history is a read that records nothing;
  *   4. the real `document_read` and `document_present` schemas accept `section`, `offset` and
  *      `limit`;
  *   5. `replaceSection` — what `document_edit` with `section` writes — replaces one heading's
@@ -270,6 +271,18 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   is(await shown() === false && pages().length === before + 1 && !pages()[before]?.detail.review_context
      && /counts nothing towards approval/.test(section),
      "a section read after a change counts as presenting the whole document, or joins a review context");
+
+  // A presentation that skipped a character is told which characters it never showed, and so is
+  // an approval passing its context: its last part ran to the end and names no next offset.
+  const g1 = await present();
+  const rcG = /^Review context: (rc_[a-z2-7]{26})/m.exec(g1)?.[1];
+  const skip = Number(/Next: offset (\d+)/.exec(g1)?.[1]);
+  const gLast = await pageOn(await present({ review_context: rcG, offset: skip + 1 }), { review_context: rcG });
+  is(gLast.includes(`not yet shown: characters ${skip}–${skip + 1}`),
+     `the last part of a presentation with a gap does not name the gap: ${gLast.slice(0, 600)}`);
+  const gBasis = await basis(rcG);
+  is(gBasis.includes(`characters ${skip}–${skip + 1} were never shown`) && gBasis.includes(`offset: ${skip}`),
+     `an approval passing a context with a gap is not told which characters, and from which offset: ${gBasis}`);
 
   // 3b. History is a read: it records nothing at all. `presented_at` — the pin rule's input — is a
   // column on the row the document points at, and a row for history would pin the CURRENT row,

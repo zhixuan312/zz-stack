@@ -149,8 +149,9 @@ export function registerKnowledgeSearch(server: McpServer): void {
       annotations: READS,
       description:
         "Search your team's knowledge base and get ANSWERS, not just a list of paths. Ranks by " +
-        "relevance — fusing full-text match, tag overlap, and the initiatives a node cites as " +
-        "evidence — and returns a matched excerpt from each result, so a caller can cite it " +
+        "relevance — fusing full-text match and tag overlap, then, after every match, what the " +
+        "hits cite as evidence (`via: [\"evidence\"]`, which need not contain the query) — and " +
+        "returns a matched excerpt from each result, so a caller can cite it " +
         "without opening it. Superseded nodes are surfaced and labelled rather than hidden: " +
         "'we tried this and moved on' is usually the most valuable thing here. Envelope filters " +
         "narrow the pool; provenance (status, approvals, outcome, path) comes back on every row.",
@@ -438,7 +439,13 @@ export function registerKnowledgeSearch(server: McpServer): void {
 
       const byKey = (a: SearchRow, b: SearchRow): number =>
         a.subject < b.subject ? -1 : a.subject > b.subject ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-      const ranked = [...fused.values()].sort((a, b) => b.score - a.score || byKey(a.row, b.row));
+      // A row the question matched — by its words or its tags — comes before any row reached only
+      // through what a hit cites. Fused alone, the citation lane's first row scores as the word
+      // lane's first does, and a document holding none of the words outranked the ones that hold
+      // them while its excerpt said nothing about the question.
+      const matched = (via: Set<string>): number => (via.size === 1 && via.has("evidence") ? 0 : 1);
+      const ranked = [...fused.values()].sort((a, b) =>
+        matched(b.via) - matched(a.via) || b.score - a.score || byKey(a.row, b.row));
 
       /* The excerpts, read for the rows that come back rather than for the pool that was ranked.
        *

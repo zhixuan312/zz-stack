@@ -20,6 +20,8 @@
  *   - ten repeated calls answer the same order;
  *   - rewriting every seeded row in place, which changes nothing they hold but the order PostgreSQL
  *     stores them in, changes no answer: a tie is ordered by the row's key, not by where it sits;
+ *   - every row a question matched by its words or tags comes before any row reached only through
+ *     what a hit cites;
  *   - the lesson on the shared shelf and the team's lesson at the same address both come back;
  *   - the widened question answers its rows as `lexical-broad` with the widening note, and one
  *     call writes one `knowledge.search` event recording `broadened`, not two.
@@ -250,6 +252,19 @@ async function run(c: Core): Promise<void> {
       same(step, (await viaMcp(q, FULL_LIMIT)).lines, answered.get(q) ?? [], `${JSON.stringify(q)}: MCP after the rewrite and before`);
     }
     c.pass("every seeded row rewritten in reverse stored order, nothing it holds changed, and every question answers as before");
+
+    // A row reached only through what a hit cites need not contain a word of the question, so its
+    // excerpt says nothing about it: it follows every row the question matched, never between them.
+    step = "a match outranks a row reached only by citation";
+    for (const { q } of QUESTIONS) {
+      const vias = (answered.get(q) ?? []).map((l) => l.split(" | ")[5]);
+      const firstCited = vias.findIndex((v) => v === "evidence");
+      const lastMatch = vias.map((v) => v !== "evidence").lastIndexOf(true);
+      if (firstCited >= 0 && lastMatch > firstCited) {
+        c.fail(step, `${JSON.stringify(q)} answered ${JSON.stringify(answered.get(q))}`);
+      }
+    }
+    c.pass("every row a question matched by its words or tags comes before any row reached only by citation");
 
     step = "the shared shelf's lesson stands beside the team's";
     const lessons = (answered.get("wombat cache") ?? []).filter((l) => / \| nodes\/\d+-wombat-cache-expiry\.md \| /.test(l));

@@ -2,6 +2,7 @@
 // candidate_validate no longer builds (0.76.0): it asks the local `npm run candidate-build` for
 // the build, and consumes what that CLI records through candidate_build_record. Proven on values
 // and against a stub pool, with no database:
+//   - candidate_build_record refuses a passed build that names no command it ran;
 //   - candidate_build_record's guard refuses another principal,
 //     a candidate not awaiting its build, a second record, an expired lease and another patch;
 //   - a recorded build decides the candidate: ok -> valid, apply/install/build/gate -> invalid
@@ -27,6 +28,14 @@ const row = {
   build_requested_at: minutesAgo(5), build_recorded_at: null,
 };
 const me = "a@x";
+
+// ---- what a record must say: a passed build names the commands that passed — the CLI always
+// sends its build and gate commands — so a bare `{ ok: true }` claims a build nobody can see
+// (runtime pass 2, F5).
+assert.match(rules.buildResultRefusal({ ok: true }) ?? "", /names no command/, "a bare ok is refused");
+assert.match(rules.buildResultRefusal({ ok: true, commands: [" "] }) ?? "", /names no command/, "a blank command names none");
+assert.equal(rules.buildResultRefusal({ ok: true, commands: ["npm run build", "npm run gate"] }), null);
+assert.equal(rules.buildResultRefusal({ ok: false, stage: "gate", log_tail: "boom" }), null, "a failure is recorded as it stopped");
 
 // ---- the record guard, one branch at a time.
 assert.equal(rules.buildRecordRefusal(me, row, "d1", now), null, "the requester records its own build inside the lease");

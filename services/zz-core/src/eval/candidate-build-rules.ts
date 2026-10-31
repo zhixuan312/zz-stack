@@ -49,6 +49,18 @@ interface BuildRow {
   readonly build_recorded_at: Date | null;
 }
 
+/** Null when `result` says what a record must. A passed build names the commands that passed —
+ *  the CLI always sends its build and gate commands — because a bare `{ ok: true }` is a claim
+ *  that a build ran with nothing anybody can check it against, and `candidate_validate` would
+ *  then call the candidate "Built and gated". A failed build names its stage in the schema. */
+export function buildResultRefusal(result: BuildResult): string | null {
+  if (result.ok && !(result.commands ?? []).some((c) => c.trim())) {
+    return "ERROR: a passed build names no command it ran — send result.commands, the build and gate " +
+      "commands that passed, as npm run candidate-build does. Nothing was recorded";
+  }
+  return null;
+}
+
 /** Null when `principal` may record `patchDigest`'s build into `row`; otherwise the refusal. In
  *  order: only while the build is still asked for; only the principal whose `candidate_validate`
  *  asked for it; once; inside the lease; and only for the patch the candidate actually recorded. */

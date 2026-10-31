@@ -10,7 +10,7 @@ import { parseCaller } from "@zz/contracts";
 import { READS, WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { BUILD_LEASE_MS, BUILD_STAGES, buildRecordRefusal } from "./candidate-build-rules.js";
+import { BUILD_LEASE_MS, BUILD_STAGES, buildRecordRefusal, buildResultRefusal } from "./candidate-build-rules.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { platformEvent } from "../indexing.js";
 import { db, teamFor } from "../platform-db.js";
@@ -106,7 +106,8 @@ export function registerCandidateBuildTools(server: McpServer): void {
         "candidate valid there, stage apply/install/build/gate makes it invalid, stage timeout or " +
         "host (a problem on the building host, never the patch's) returns it to recorded. zz-core " +
         "never builds a candidate itself. RETURNS { candidate_id, recorded: " +
-        "true, ok, stage }. REFUSES an unknown candidate_id; any principal but the one whose candidate_validate " +
+        "true, ok, stage }. REFUSES a passed build that names no command it ran (result.commands); " +
+        "an unknown candidate_id; any principal but the one whose candidate_validate " +
         "asked for the build; a candidate not awaiting_build; a build lease (60 minutes from " +
         "that candidate_validate) already expired; a patch_digest that is not the candidate's; a " +
         "build already recorded under another idempotency_key; and a deployment with no platform " +
@@ -127,6 +128,8 @@ export function registerCandidateBuildTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
       if (!UUID_RE.test(candidate_id)) return text(`ERROR: unknown candidate_id ${candidate_id}`);
+      const unsaid = buildResultRefusal(result);
+      if (unsaid) return text(unsaid);
       const principal = parseCaller(requestHeaders()).email;
 
       const outcome: IdempotencyOutcome<{ ok: boolean; stage: string | null }> = await withIdempotency(

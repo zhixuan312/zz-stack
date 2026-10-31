@@ -43,6 +43,8 @@
  *   - `finding_decide` regenerates findings.md in the initiative whose EVALUATE record names the run;
  *   - `release_record` of a rollback reopens the findings its release applied, and only those, and
  *     findings.md says so;
+ *   - `improvement_start` naming a finding already decided, or a strength, is refused and opens no
+ *     improvement run;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
@@ -610,6 +612,26 @@ async function rollbackReopensFindings(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
+async function improvementStartTakesOpenDefects(c: Core, s: Seed): Promise<void> {
+  const step = "improvement_start on a decided finding or a strength";
+  const door = evalDoor(c, c.email);
+  const applied = await finding(c, s, "start: already applied");
+  await c.sql.query(
+    "update zz.eval_finding set decision = 'applied', decided_by = $2, decided_at = now(), decision_note = 'fixed' where id = $1",
+    [applied, s.me]);
+  const strength = (await one<{ id: string }>(c,
+    `insert into zz.eval_finding (pattern, owner_kind, eval_run_id, kind)
+     values ('start: a strength', 'plugin', $1, 'strength') returning id::text as id`, [s.run])).id;
+  const runs = async () => Number((await one<{ n: string }>(c, "select count(*)::text as n from zz.improvement_run")).n);
+  const before = await runs();
+  for (const [id, said] of [[applied, `finding ${applied} is already applied`], [strength, `finding ${strength} is a strength`]]) {
+    const reply = await ask(door, "improvement_start", { eval_run_id: s.run, finding_ids: [id], idempotency_key: `start-${id}` });
+    if (!reply.startsWith("ERROR:") || !reply.includes(said)) c.fail(step, `answered ${reply.slice(0, 300)}`);
+  }
+  if (await runs() !== before) c.fail(step, "an improvement_run was opened");
+  c.pass(step);
+}
+
 async function scoredRunIsNotRescored(c: Core, s: Seed): Promise<void> {
   const step = "evaluation_score on a scored run under a new key";
   const scored = (await one<{ id: string }>(c,
@@ -658,7 +680,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

@@ -80,9 +80,9 @@ interface ImprovementStartResult {
 
 async function loadFindingsForCheck(
   p: pg.Pool, findingIds: readonly string[],
-): Promise<{ id: string; owner_kind: string | null; eval_run_id: string | null }[]> {
-  return (await p.query<{ id: string; owner_kind: string | null; eval_run_id: string | null }>(
-    "select id::text as id, owner_kind, eval_run_id::text as eval_run_id " +
+): Promise<{ id: string; owner_kind: string | null; eval_run_id: string | null; kind: string; decision: string | null }[]> {
+  return (await p.query<{ id: string; owner_kind: string | null; eval_run_id: string | null; kind: string; decision: string | null }>(
+    "select id::text as id, owner_kind, eval_run_id::text as eval_run_id, kind, decision " +
     "from zz.eval_finding where id = any($1::uuid[])", [findingIds])).rows;
 }
 
@@ -100,7 +100,7 @@ export function registerCandidateTools(server: McpServer): void {
         "tool errors, cost/latency and prior rejected hypotheses for this eval_run's plugin, so " +
         "a candidate is proposed against what already failed rather than guessed blind. REFUSES an eval_run_id nothing minted, an empty finding_ids list " +
         "(unless skip: true), a finding_ids entry naming no finding, a finding recorded against " +
-        "a DIFFERENT eval_run, and any finding whose owner_kind is not 'plugin' — " +
+        "a DIFFERENT eval_run, a strength, a finding already applied or rejected, and any finding whose owner_kind is not 'plugin' — " +
         "\"ERROR: finding <id> is owned by <kind>; it is reported to its owner, not optimised\" " +
         "(a dependency/platform/environment/user_input/unknown finding stays an " +
         "owner-facing finding and starts no improvement). Pass `initiative` to record " +
@@ -235,6 +235,14 @@ export function registerCandidateTools(server: McpServer): void {
       if (nonPlugin) {
         return text(`ERROR: finding ${nonPlugin.id} is owned by ${nonPlugin.owner_kind ?? "unknown"}; ` +
           "it is reported to its owner, not optimised");
+      }
+      // Only an open defect or unknown is work: a strength has nothing to improve, and a finding
+      // already applied or rejected was settled — reopened only by its release's rollback.
+      const strength = findings.find((f) => f.kind === "strength");
+      if (strength) return text(`ERROR: finding ${strength.id} is a strength; there is nothing to improve`);
+      const decided = findings.find((f) => f.decision !== "deferred");
+      if (decided) {
+        return text(`ERROR: finding ${decided.id} is already ${decided.decision}; improvement_start takes deferred findings only`);
       }
 
       // FR-58: release when this eval_run's team is one of the scored subject's release owners,

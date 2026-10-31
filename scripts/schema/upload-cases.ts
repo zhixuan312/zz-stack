@@ -27,9 +27,10 @@ import type pg from "pg";
 
 import { root } from "../deployment.ts";
 import { esc, first } from "./normalize-cases.ts";
+import { signIn } from "./status-seed.ts";
 import type { Core } from "./throwaway-core.ts";
 
-const sha = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
+export const sha = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
 /** `text` read as a JSON object, or an empty one when it is not one. */
 function objectOf(text: string): Record<string, unknown> {
   try {
@@ -39,7 +40,7 @@ function objectOf(text: string): Record<string, unknown> {
     return {};
   }
 }
-const utf8 = (s: string): Buffer => Buffer.from(s, "utf8");
+export const utf8 = (s: string): Buffer => Buffer.from(s, "utf8");
 const MIB8 = 8 * 1024 * 1024;
 
 /** An answer from the gateway: its status, its text and, when it is JSON, the object. */
@@ -116,9 +117,7 @@ export async function listenGateway(): Promise<GatewayListener> {
                           [email, sha(utf8(token))]);
         return token;
       };
-      const session = randomBytes(24).toString("hex");
-      await c.sql.query(`insert into zz.console_session (principal_id, token_hash, expires_at)
-                         select id, $2, now() + interval '1 hour' from zz.principal where email = $1`, [c.email, sha(utf8(session))]);
+      const session = await signIn(c.sql, c.email);
       const token = await tokenFor(c.email);
       return {
         url, token, tokenFor, send,
@@ -170,7 +169,7 @@ function routeOf(c: Core, g: Gateway, step: string, s: Started, which: "shell" |
 
 /** A file staged the way an agent with a shell stages one, without the shell: the PUT the line
  *  makes, with a PAT. */
-async function staged(c: Core, g: Gateway, step: string, filename: string, bytes: Buffer, token = g.token,
+export async function staged(c: Core, g: Gateway, step: string, filename: string, bytes: Buffer, token = g.token,
                       via?: Mcp): Promise<{ id: string; sha: string; started: Started }> {
   const s = await start(c, step, filename, via);
   const a = await g.send("PUT", routeOf(c, g, step, s, "shell"), { body: bytes, headers: { authorization: `Bearer ${token}` } });

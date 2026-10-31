@@ -14,7 +14,6 @@
  * that check runs live here, beside the harness they run on.
  */
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:https";
 import { tmpdir } from "node:os";
@@ -22,13 +21,11 @@ import { join } from "node:path";
 
 import { first } from "./normalize-cases.ts";
 import type { Core } from "./throwaway-core.ts";
-import { exact, type Gateway } from "./upload-cases.ts";
+import { exact, type Gateway, sha, utf8 } from "./upload-cases.ts";
 
 const HOST = "files.example.test";
 /** What `lookup` answers for HOST: a documentation address no rule blocks. */
 const CHECKED = "203.0.113.20";
-const utf8 = (s: string): Buffer => Buffer.from(s, "utf8");
-const sha = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
 
 /** The ChatGPT file route, in process, from a local HTTPS server reached through the checked
  *  address. */

@@ -545,9 +545,10 @@ export async function seedNeedsPeople(db: pg.ClientBase | pg.Pool): Promise<void
 /**
  * Seeds the calls, reports, findings and documents above into `db`, after `seedNeedsPeople`, cutting days in
  * `timezone`, the gateway's `ZZ_TZ`; answers the open real report's id, the one a resolve closes. Read it within the
- * same local day: a reader after midnight finds today's calls on yesterday.
+ * same local day: a reader after midnight finds today's calls on yesterday. One client, not a pool: its documents are
+ * written in a transaction, which a pool would split across connections.
  */
-export async function seedNeeds(db: pg.ClientBase | pg.Pool, timezone: string, now = Date.now()): Promise<string> {
+export async function seedNeeds(db: pg.ClientBase, timezone: string, now = Date.now()): Promise<string> {
   const one = async (sql: string, args: unknown[]): Promise<string> => (await db.query<{ id: string }>(sql, args)).rows[0].id;
   const member = await one("select id from zz.principal where email = $1", [NEEDS_MEMBER]);
   const teams: string[] = [];

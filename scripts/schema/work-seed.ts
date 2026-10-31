@@ -38,8 +38,9 @@
 import type { OUTCOMES } from "@zz/contracts";
 import type pg from "pg";
 
+import { weekStart } from "./status-seed.ts";
+
 export const TIMEZONE = "Asia/Singapore";
-const OFFSET_MS = 8 * 3_600_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 export const WEEK = 7 * DAY;
@@ -115,11 +116,7 @@ export const EXPECTED = {
 } as const;
 
 /** The first instant of the running week, Monday 00:00 in the reporting timezone, at `nowMs`. */
-export function runningWeek(nowMs: number): number {
-  const day = Math.floor((nowMs + OFFSET_MS) / DAY);
-  const monday = day - ((day + 3) % 7);  // 1 January 1970 was a Thursday
-  return monday * DAY - OFFSET_MS;
-}
+export const runningWeek = (nowMs: number): number => weekStart(nowMs, 0, TIMEZONE);
 
 /** The instant `hours` into the week `back` weeks before the one starting at `w0`. */
 export const at = (w0: number, [back, hours]: When): number => w0 - back * WEEK + hours * HOUR;

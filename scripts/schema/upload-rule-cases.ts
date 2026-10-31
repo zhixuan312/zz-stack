@@ -10,7 +10,6 @@
  * A helper, not a check: every `.ts` under `checks/` is a check the gate runs, so the case groups
  * that check runs live here, beside the harness they run on.
  */
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,25 +19,13 @@ import type { Mcp } from "@zz/mcp-client";
 import { root } from "../deployment.ts";
 import { esc, first } from "./normalize-cases.ts";
 import type { Core } from "./throwaway-core.ts";
-import { exact, expire, type Gateway, rowOf, start, waiting } from "./upload-cases.ts";
-
-const utf8 = (s: string): Buffer => Buffer.from(s, "utf8");
-const sha = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
-
-/** A file started and staged with the person's PAT: its upload id. */
-async function upload(c: Core, g: Gateway, step: string, filename: string, bytes: Buffer): Promise<string> {
-  const s = await start(c, step, filename);
-  const route = new RegExp(` ${esc(g.url)}(/upload/\\S+)$`).exec(s.shell)?.[1] ?? c.fail(step, s.shell);
-  const a = await g.send("PUT", route, { body: bytes, headers: { authorization: `Bearer ${g.token}` } });
-  if (a.status !== 200 || a.json.sha256 !== sha(bytes)) c.fail(step, `staging answered ${a.status} ${a.text.slice(0, 200)}`);
-  return s.upload;
-}
+import { exact, expire, type Gateway, rowOf, sha, staged, start, utf8, waiting } from "./upload-cases.ts";
 
 /** Two writes after one upload, a keyed write sent again, and a write that fails at its commit. */
 export async function consumers(c: Core, g: Gateway, second: Mcp): Promise<void> {
   const I = await c.open("consumers");
   let step = "two writes consuming one upload, released together on their documents' locks: one lands, the other is UPLOAD_USED";
-  const once = await upload(c, g, step, "once.md", utf8("# Once\n"));
+  const once = (await staged(c, g, step, "once.md", utf8("# Once\n"))).id;
   const [pa, pb] = [`${I}/once-a.md`, `${I}/once-b.md`];
   for (const p of [pa, pb]) await c.hold(c.docKey(p));
   let calls: Promise<string>[];
@@ -57,7 +44,7 @@ export async function consumers(c: Core, g: Gateway, second: Mcp): Promise<void>
   c.pass(step);
 
   step = "a keyed write replays its first receipt once its upload is consumed and its body gone, once it has expired, and once its row is deleted, while an independent write is refused each time";
-  const id = await upload(c, g, step, "keyed.md", utf8("# Keyed\n"));
+  const id = (await staged(c, g, step, "keyed.md", utf8("# Keyed\n"))).id;
   const keyed = { path: `${I}/keyed.md`, upload: id, request_id: "keyed-1" };
   const landed = await c.ok(step, "document_write", keyed);
   const independent = (n: number) => ({ path: `${I}/keyed-${n}.md`, upload: id, request_id: `independent-${n}` });
@@ -77,7 +64,7 @@ export async function consumers(c: Core, g: Gateway, second: Mcp): Promise<void>
   c.pass(step);
 
   step = "a fault at the consumption, or at the write's last statement, leaves the upload unconsumed until it expires, and the sweep then takes its body and keeps the row";
-  const kept = await upload(c, g, step, "kept.md", utf8("# Kept\n"));
+  const kept = (await staged(c, g, step, "kept.md", utf8("# Kept\n"))).id;
   const k = `${I}/kept.md`;
   await c.sql.query(`create function zz.upload_fault() returns trigger language plpgsql as $$
                        begin raise exception 'injected at %', tg_argv[0]; end $$`);
@@ -106,7 +93,7 @@ export async function consumers(c: Core, g: Gateway, second: Mcp): Promise<void>
   c.pass(step);
 
   step = "two identical keyed source_add calls carrying one upload, in flight together, file one source and consume the upload once";
-  const twin = { initiative: I, title: "Twin source", upload: await upload(c, g, step, "twin.txt", utf8("said once\n")), request_id: "twin-1" };
+  const twin = { initiative: I, title: "Twin source", upload: (await staged(c, g, step, "twin.txt", utf8("said once\n"))).id, request_id: "twin-1" };
   const principal = (await c.sql.query<{ id: string }>("select id::text as id from zz.principal where email = $1", [c.email])).rows[0].id;
   // COUPLED: the request's own lock, as saveDocument takes it for a source.
   const key = `req:${c.team}/${principal}/${I}/sources/twin-1`;
@@ -134,8 +121,8 @@ export async function consumers(c: Core, g: Gateway, second: Mcp): Promise<void>
   step = "a keyed upload that changes nothing is consumed and recorded; unkeyed, it consumes nothing";
   const same = utf8("# Same\n\nunchanged\n");
   const s = `${I}/same.md`;
-  await c.ok(step, "document_write", { path: s, upload: await upload(c, g, step, "same.md", same) });
-  const unkeyed = await upload(c, g, step, "same.md", same);
+  await c.ok(step, "document_write", { path: s, upload: (await staged(c, g, step, "same.md", same)).id });
+  const unkeyed = (await staged(c, g, step, "same.md", same)).id;
   let said = await c.ok(step, "document_edit", { path: s, upload: unkeyed });
   if (first(said) !== `edited: ${s} — v1 (no change)`) c.fail(step, said);
   await waiting(c, step, unkeyed);
@@ -160,7 +147,7 @@ export async function families(c: Core, g: Gateway): Promise<void> {
   const panels: Record<string, string> = {};
   for (const [name, bytes] of files) {
     const d = `${I}/${name.replace(".", "-")}.md`;
-    await c.ok(step, "document_write", { path: d, upload: await upload(c, g, step, name, bytes) });
+    await c.ok(step, "document_write", { path: d, upload: (await staged(c, g, step, name, bytes)).id });
     await exact(c, g, step, d, bytes);
     const env = await c.mcp.rpc("tools/call", { name: "document_present", arguments: { path: d } });
     const panel = (env.result?._meta?.["zz-core/documents"] as { body?: string }[] | undefined)?.[0];
@@ -212,7 +199,7 @@ export async function families(c: Core, g: Gateway): Promise<void> {
 
   step = "an envelope-shaped .yaml upload is refused into a document by name with its way out, left unconsumed, and source_add takes it byte for byte";
   const shaped = utf8("---\nkey: value\n---\nrest: here\n");
-  const id = await upload(c, g, step, "config.yaml", shaped);
+  const id = (await staged(c, g, step, "config.yaml", shaped)).id;
   await c.refused(step, "document_write", { path: `${I}/config.md`, upload: id },
     /^ERROR: UNSUPPORTED_METADATA — "config\.yaml" opens with .*source_add with this `upload`.*start the file with another line/s);
   await waiting(c, step, id);
@@ -220,11 +207,11 @@ export async function families(c: Core, g: Gateway): Promise<void> {
   c.pass(step);
 
   step = "the receipt's details name how the file was staged and by whom: token by the person, link by nobody";
-  const tokenSaid = await c.ok(step, "document_write", { path: `${I}/by-token.md`, upload: await upload(c, g, step, "by-token.md", utf8("# Token\n")) });
+  const tokenSaid = await c.ok(step, "document_write", { path: `${I}/by-token.md`, upload: (await staged(c, g, step, "by-token.md", utf8("# Token\n"))).id });
   const s = await start(c, step, "by-link.md");
   const linkBytes = utf8("# Link\n");
-  const staged = await g.send("PUT", new URL(s.link).pathname, { body: linkBytes, headers: { "x-filename": "by-link.md" } });
-  if (staged.status !== 200) c.fail(step, `the link answered ${staged.status}`);
+  const put = await g.send("PUT", new URL(s.link).pathname, { body: linkBytes, headers: { "x-filename": "by-link.md" } });
+  if (put.status !== 200) c.fail(step, `the link answered ${put.status}`);
   const linkSaid = await c.ok(step, "document_write", { path: `${I}/by-link.md`, upload: s.upload });
   const detailsOf = async (said: string, path: string) =>
     c.ok(step, "document_read", { path, details_ref: /details: `(dr_[a-z2-7]{26})`/.exec(said)?.[1] ?? c.fail(step, `no details_ref in: ${said}`) });

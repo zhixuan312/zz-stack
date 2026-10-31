@@ -269,8 +269,8 @@ export function registerKnowledgeTools(server: McpServer): void {
         "`knowledge_add` first, then call this with both four-digit ids as `knowledge_search` " +
         "reports them. The old node stays readable and searchable, labelled superseded and " +
         "pointing at its successor. Both nodes must be on one shelf; pass `shelf` only when an " +
-        "id names a node on each. REFUSES an id no node carries, and a pair that spans the two " +
-        "shelves.",
+        "id names a node on each. REFUSES an id no node carries, a `new_id` that is itself " +
+        "superseded (name its successor instead), and a pair that spans the two shelves.",
       // `{4,}`, not `{4}`: ids are padded to four digits and grow past it, and the allocator
       // counts without a ceiling.
       inputSchema: {
@@ -303,11 +303,12 @@ export function registerKnowledgeTools(server: McpServer): void {
       const resolve = async (id: string, which: "team" | "platform") => {
         const slug = shelfSlug(which);
         if (!slug) return null;
-        const row = (await p.query<{ id: string; slug: string }>(
-          `select k.id::text as id, k.slug from zz.knowledge_node k
+        const row = (await p.query<{ id: string; slug: string; by: string | null }>(
+          `select k.id::text as id, k.slug, s.node_ordinal as by from zz.knowledge_node k
              join zz.team t on t.id = k.team_id
+             left join zz.knowledge_node s on s.id = k.superseded_by_id
             where t.slug = $1 and k.node_ordinal = $2`, [slug, id])).rows[0];
-        return row ? { shelf: which, id: row.id, slug: row.slug } : null;
+        return row ? { shelf: which, id: row.id, slug: row.slug, supersededBy: row.by } : null;
       };
       // Ambiguous is refused, not guessed: an id present on both shelves is an error the
       // caller settles with `shelf`, and the refusal names which two nodes it could mean.
@@ -356,6 +357,13 @@ export function registerKnowledgeTools(server: McpServer): void {
           `the \`${newNode.shelf}\` shelf. A node is superseded by one on the same shelf; ` +
           "promoting a lesson means writing a new platform node, not superseding across shelves."
         );
+      }
+      // Only by a current node. Every replacement being current is what keeps the chain from
+      // closing on itself: the reverse of a supersede already made would leave the topic with
+      // no current node, each of the two pointing at the other.
+      if (newNode.supersededBy) {
+        return text(`ERROR: node ${new_id} is itself superseded by ${newNode.supersededBy} — ` +
+          `supersede with the current node, ${newNode.supersededBy}, or with a new one. Nothing was changed.`);
       }
       await supersedeNode(oldNode.id, newNode.id);
       // The shelf's slug, not the caller's word for it: the event's team is resolved by slug, and

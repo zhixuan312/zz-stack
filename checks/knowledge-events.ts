@@ -14,6 +14,8 @@
  *     a lesson is found from its event by id, without its ordinal;
  *   - `knowledge_supersede` writes exactly one event, under the team of the shelf the superseded node is on:
  *     the caller's team for a team node, the shared shelf's for a platform node;
+ *   - a node is superseded only by a current one, so the reverse of a supersede already made is
+ *     refused and no two nodes name each other;
  *   - both tools answer exactly as before, so the release's chain check, which reads
  *     `journal node NNNN created`, still reads them.
  *
@@ -96,11 +98,12 @@ async function addCases(c: Core, initiative: string): Promise<Record<string, str
   return made;
 }
 
-async function supersedeCases(c: Core, initiative: string, made: Record<string, string[]>): Promise<void> {
+async function supersedeCases(c: Core, initiative: string, made: Record<string, string[]>): Promise<string> {
   const shelves = [
     { shelf: c.team, which: "team", tags: [] as string[] },
     { shelf: PLATFORM_SHELF, which: "platform", tags: ["platform:guardrail"] },
   ];
+  let teamNewer = "";
   for (const s of shelves) {
     const step = `knowledge_supersede on the ${s.which} shelf`;
     const newer = await add(c, step, s.shelf, {
@@ -126,7 +129,25 @@ async function supersedeCases(c: Core, initiative: string, made: Record<string, 
       c.fail(step, `the supersede of ${older} by ${newer} reads ${JSON.stringify(rows)}, not one row on ${s.shelf} by ${c.email}`);
     }
     c.pass(`knowledge_supersede of a ${s.which} node is recorded under ${s.shelf}, the team of the shelf it is on`);
+    if (s.which === "team") teamNewer = newer;
   }
+  return teamNewer;
+}
+
+/** A node is superseded only by a current one: the reverse of a supersede already made would leave
+ *  the topic with no current node, each pointing at the other. */
+async function cycleCase(c: Core, older: string, newer: string): Promise<void> {
+  const step = "knowledge_supersede onto a node that is itself superseded";
+  await c.refused(step, "knowledge_supersede", { old_id: newer, new_id: older, shelf: "team" },
+    new RegExp(`^ERROR: node ${older} is itself superseded by ${newer} — `));
+  const { rows } = await c.sql.query<{ ordinal: string; by: string | null }>(
+    `select k.node_ordinal as ordinal, s.node_ordinal as by from zz.knowledge_node k
+       join zz.team t on t.id = k.team_id left join zz.knowledge_node s on s.id = k.superseded_by_id
+      where t.slug = $1 and k.node_ordinal = any($2) order by k.node_ordinal`, [c.team, [older, newer]]);
+  if (JSON.stringify(rows) !== JSON.stringify([{ ordinal: older, by: newer }, { ordinal: newer, by: null }])) {
+    c.fail(step, `the two nodes read ${JSON.stringify(rows)}, not ${older} superseded by ${newer} and ${newer} current`);
+  }
+  c.pass("knowledge_supersede refuses a node that is itself superseded, so no two nodes name each other");
 }
 
 async function run(c: Core): Promise<void> {
@@ -135,7 +156,8 @@ async function run(c: Core): Promise<void> {
     [c.email, PLATFORM_SHELF]);
   const initiative = await c.open("knowledge-events");
   const made = await addCases(c, initiative);
-  await supersedeCases(c, initiative, made);
+  const teamNewer = await supersedeCases(c, initiative, made);
+  await cycleCase(c, made[c.team][0], teamNewer);
   c.pass("both tools answer in the sentences the release's chain check reads");
 }
 

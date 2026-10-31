@@ -21,7 +21,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Why a token-borne caller is refused Access's two revokes: each acts on what signs a person in. */
 const BROWSER_ONLY = "revoke this from the console, signed in: a token cannot revoke what signs you in";
 
-/** Tells every console tab that a person's own tokens or browsers changed, so their other browsers read Access again.
+/** Tells every console tab that a person's own tokens, browsers or browser's team changed, so their other tabs and
+ *  browsers read Access again.
  *  `settings`, with no team: a token or a session is a person's, not a team's. A call here rather than a trigger, as
  *  migrations/003_console_live.sql has for team rows: `zz.pat` and `zz.console_session` are written as they are used
  *  (`last_used_at`, `last_seen_at`, once a minute), and a trigger would put a hint, or the work of deciding against one, on each.
@@ -95,6 +96,8 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
         actor: id.email, kind: "team.switch", subject: team, teamSlug: team, origin: id.origin,
         detail: { via: "web", from },
       });
+      // Every tab of this browser shares the session, so each is told: what it shows is the old team's.
+      await hintSettings();
       res.json(redact({ ok: true, actingFor: team, from }));
     })().catch((err: unknown) => {
       console.error("settings/me/active-team failed:", err);
@@ -105,8 +108,8 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
   /** Issue a brand new personal access token for the caller.
    *
    * DELIBERATE: `result.token` is returned in plaintext, outside `redact()`. It is shown exactly
-   * once, at the moment of issue, and is useless to the platform afterwards. This is the only
-   * response in settings.ts not passed through `redact()`, and `redact()` itself makes no
+   * once, at the moment of issue, and is useless to the platform afterwards. It is one of the two
+   * settings responses not passed through `redact()` (settings.ts names both), and `redact()` itself makes no
    * exception for a field named `token`, so the exemption can only live here. */
   app.post("/api/console/settings/me/tokens", (req: Request, res: Response) => {
     void (async () => {

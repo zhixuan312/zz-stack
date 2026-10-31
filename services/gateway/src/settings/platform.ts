@@ -41,8 +41,8 @@ export function mountPlatformSettings(app: Express): void {
 
   /** Mint an enrolment link so a principal can register a passkey.
    *
-   * DELIBERATE: not wrapped in `redact()`, the second exemption in this file after
-   * `POST /me/tokens`. The response carries a live one-time credential the person has to be able
+   * DELIBERATE: not wrapped in `redact()`, the settings routes' second exemption beside
+   * `POST /me/tokens` (settings/me.ts). The response carries a live one-time credential the person has to be able
    * to send on; `redact()` would replace it with a marker and report success while handing back
    * nothing usable. The field is named `url` rather than anything the secret-name rule matches.
    */

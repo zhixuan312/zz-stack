@@ -34,6 +34,7 @@
  */
 import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { Mcp, McpError } from "@zz/mcp-client";
 
@@ -293,7 +294,7 @@ async function cliMain(argv: string[]): Promise<number> {
   return outcome.ok ? 0 : 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
     process.exit(await cliMain(process.argv.slice(2)));
   } catch (err) {

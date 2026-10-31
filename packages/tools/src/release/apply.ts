@@ -66,6 +66,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Mcp } from "@zz/mcp-client";
 
@@ -413,7 +414,7 @@ async function cliMain(argv: string[]): Promise<number> {
   return reconcile ? reconcileMain(mcp, args, reconcile) : applyMain(mcp, args);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
     process.exit(await cliMain(process.argv.slice(2)));
   } catch (err) {

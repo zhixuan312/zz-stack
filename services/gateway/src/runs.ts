@@ -90,9 +90,14 @@ export const versionAtEvent = (at: string, skill: string): string =>
  *  that arrives for a run whose counters were already written leaves that run counting one call less
  *  than the trace holds — which is the only thing this pass is for.
  *
+ *  `since` bounds the pass to the runs an event named at or after it; null recounts every run. The
+ *  gateway passes null once at start, to cover whatever was written while it was down, and a bound on
+ *  its timer, because the whole log grows with every call and a run nothing named lately has nothing
+ *  to repair. An event's `ts` is the time it was written, so the bound reads what arrived.
+ *
  *  Returns the runs this pass rewrote and the events standing behind them — the numbers the boot
  *  line reports. */
-export async function reconcileRuns(): Promise<{ runs: number; linked: number }> {
+export async function reconcileRuns(since: string | null): Promise<{ runs: number; linked: number }> {
   if (!platformDbReady()) return { runs: 0, linked: 0 };
   const db = platformDb();
 
@@ -109,7 +114,7 @@ export async function reconcileRuns(): Promise<{ runs: number; linked: number }>
   // forward, the same arithmetic the door's upsert does.
   //
   // RETURNING is where the second number comes from: the events standing behind the runs this pass
-  // rewrote. Not rows touched — what a reader of boot wants from that line is how much trace moved,
+  // rewrote, which is the calls it counted, since a run is counted whole or not at all. Not rows touched — what a reader of boot wants from that line is how much trace moved,
   // not how many of its headings did.
   const repaired = await db.query<{ events: string }>(`
     update zz.skill_run r
@@ -122,9 +127,11 @@ export async function reconcileRuns(): Promise<{ runs: number; linked: number }>
                    max(e.ts) as ended_at
               from zz.event e
              where e.run_id is not null
+               and ($1::timestamptz is null
+                    or e.run_id in (select n.run_id from zz.event n where n.ts >= $1::timestamptz and n.run_id is not null))
              group by e.run_id) c
      where r.id = c.id and ${CHANGED("r", "c")}
-    returning (select count(*) from zz.event x where x.run_id = r.id) as events`);
+    returning c.calls as events`, [since]);
 
   // No document count, because no record can produce one. `zz.doc.produced_by_run_id` was the
   // column that named a run on a document and it is gone: it resolved a document to whichever run

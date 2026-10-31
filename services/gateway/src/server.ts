@@ -315,14 +315,20 @@ initPlatformDb()
     }, 60 * 60_000).unref();
     // zz.skill_run's counters repaired from the event log, on start and every few minutes. The
     // door writes each run with its event (runs.ts); this only recounts what late events moved.
-    // Set-based and idempotent, so re-running it costs little.
-    const runs = () => void reconcileRuns()
-      .then((n) => {
-        if (n.runs || n.linked) {
-          console.log(`runs: ${n.runs} recorded, ${n.linked} event(s) linked`);
-        }
-      })
-      .catch((err: unknown) => console.error("run reconcile failed:", err));
+    // The first pass reads the whole log, which covers what was written while the gateway was down;
+    // each later one only the runs an event named since an hour before the last pass that succeeded.
+    let since: string | null = null;
+    const runs = () => {
+      const bound = new Date(Date.now() - 60 * 60_000).toISOString();
+      void reconcileRuns(since)
+        .then((n) => {
+          since = bound;
+          if (n.runs || n.linked) {
+            console.log(`runs: ${n.runs} recorded, ${n.linked} event(s) linked`);
+          }
+        })
+        .catch((err: unknown) => console.error("run reconcile failed:", err));
+    };
     runs();
     setInterval(runs, 5 * 60_000).unref();
     void recordAccessSurface();

@@ -71,6 +71,7 @@ the caller's own Access, its applications revoked and its other browsers signed 
 the console's change stream (`checks/console-live-greeting.ts`), which opens the gateway's live route
 against one and reads its greeting, the revisions a console read carries and the greeting a first stream asked with them is given (`checks/console-live-since.ts`), which serves the gateway's identity gate, reads and live route over HTTP against one and writes events in two teams, a team's observed agent runs, their coverage, peak overlap and what ran
 lately (`checks/console-runs-observed.ts`), which calls the gateway's own reads over seeded runs,
+the run repair recounting the runs an event named since its bound, and every run without one (`checks/runs-repair.ts`), which calls the gateway's own `reconcileRuns` over the same seeded runs,
 a team's refusals counted once under four owners by week and grouped by owner, tool and normalised message (`checks/console-refusals.ts`), which calls the gateway's own reads over seeded calls,
 the console's Runs, the active team's runs since its first with their observed output, by skill and lately
 (`checks/console-work-runs.ts`), which calls the gateway's own read and route over the same seeded runs,

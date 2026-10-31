@@ -165,10 +165,15 @@ async function lately(team: string, asOf: string): Promise<{ active: Recent[]; l
             where e.run_id = r.id) m
         where t.slug = $1 and r.ended_at >= $2::timestamptz and r.ended_at <= $3::timestamptz and r.calls > m.calls`,
       [team, sinceIso, asOfIso]),
+    // The newest run first, so the join runs until one is real work rather than once for every run the team had:
+    // measured on production, 1,355 runs read 10,066 buffers in 40 ms whole and 55 buffers in 3 ms this way.
     platformDb().query<{ last_ms: number | null }>(
-      `select (extract(epoch from max(r.ended_at)) * 1000)::float8 as last_ms
-         from zz.skill_run r
-         join zz.team t on t.id = r.team_id
+      `select (extract(epoch from r.ended_at) * 1000)::float8 as last_ms
+         from (select r.id, r.ended_at, r.calls
+                 from zz.skill_run r
+                 join zz.team t on t.id = r.team_id
+                where t.slug = $1 and r.ended_at <= $2::timestamptz
+                order by r.ended_at desc) r
          cross join lateral (
            select (count(*) filter (where e.origin = 'platform'))::int as calls,
                   (count(*) filter (where e.origin = 'platform' and e.ok is false))::int as refusals,
@@ -176,7 +181,9 @@ async function lately(team: string, asOf: string): Promise<{ active: Recent[]; l
                   count(e.response_bytes) filter (where e.origin = 'work') as measured
              from zz.event e
             where e.run_id = r.id) m
-        where t.slug = $1 and r.ended_at <= $2::timestamptz and r.calls > m.calls`,
+        where r.calls > m.calls
+        order by r.ended_at desc
+        limit 1`,
       [team, asOfIso]),
   ]);
   return { active: active.rows, last: last.rows[0]?.last_ms ?? null };

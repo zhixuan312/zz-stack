@@ -31,17 +31,14 @@
  * a column list by a statement that names none.
  *
  * EXEMPT: `services/gateway/migrations/` — an applied migration is history, so a file there may
- * still spell a column the phase retired. `checks/dropped-columns.ts` carries this exemption for
- * the same reason.
+ * still spell a column the phase retired — and a mutation spec, whose text plants a defect. Both are
+ * sql-scan.ts's `readsStatements`, which every statement scanner reads its files through.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 
 import { withoutComments } from "../scripts/gate/read.ts";
 
-import { STATEMENT_ROOTS } from "./sql-scan.ts";
-
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+import { STATEMENT_ROOTS, statementSources } from "./sql-scan.ts";
 
 /** The columns each table stops carrying, with what carries the fact now. */
 const RETIRED: Record<string, [column: string, instead: string][]> = {
@@ -69,19 +66,6 @@ const MUST_NAME: Record<string, string[]> = {
 /** A word that never appears between a table and its column list, so an alias group does not
  *  swallow the keyword that comes next. */
 const NOT_AN_ALIAS = new Set(["values", "select", "default"]);
-
-interface Source { path: string; src: string }
-
-function sources(dir: string, out: Source[] = []): Source[] {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) { sources(p, out); continue; }
-    if (!/\.(ts|sh)$/.test(name) || p.includes("services/gateway/migrations/")) continue;
-    out.push({ path: p, src: readFileSync(p, "utf8") });
-  }
-  return out;
-}
 
 interface Insert { table: string; cols: string[]; line: number }
 
@@ -113,7 +97,7 @@ let scanned = 0;
 const present = STATEMENT_ROOTS.filter((r) => existsSync(r));
 const absent = STATEMENT_ROOTS.filter((r) => !existsSync(r));
 
-for (const { path, src } of present.flatMap((r) => sources(r))) {
+for (const { path, src } of statementSources()) {
   const sql = withoutComments(src);
   for (const ins of inserts(sql)) {
     scanned++;

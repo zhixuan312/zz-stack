@@ -1,10 +1,9 @@
 /**
  * client-package — turn the catalog into the installable package a client takes.
  *
- * A client is told where the tools are and what the entry skill is called, and nothing else.
- * No stage, no gate and no document shape is rendered into a file here: the method is fetched
- * at run time with skill_read(), from the same catalog that serves the browser, so a flow
- * fixed on the server is live everywhere on the next message.
+ * A client is given each plugin's MCP servers and its skills as files, read from the same catalog
+ * that serves the browser. A flow travels as files, not as a pointer, so a fix to a skill reaches a
+ * person when they update the plugin (`/zz-access:update`), not on their next message.
  *
  * DELIBERATE: never writes CLAUDE.md, AGENTS.md or SOUL.md. Those are engine-global, so a flow
  * placed there changes the whole engine and two flows collide in one file. Everything below
@@ -15,13 +14,13 @@
  * tool it lists is a door at the gateway, and the door still refuses.
  *
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { catalogEntry, catalogManifest, pluginName } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
+import { SKILLS_DIR, walkTree } from "./package/files.js";
 import { BASELINE, cardDescription, commandFile, declaredCommands, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, SKILL_REPORT_HOOKS, skillReportScript, tokenWriteCommand, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one number
@@ -77,29 +76,10 @@ export interface ShelfFlow {
   command: string | null;
 }
 
-/** The platform's own skills, such as zz-platform. A tree of their own, beside the catalog
- * rather than in it, because they are true wherever this runs and belong to nobody's flow.
- *
- * Overridable for the same reason `CATALOG_DIR` is: the gate builds real packages on a
- * developer's machine where `/skills` does not exist.
- */
-const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
-
+/** The platform's own skills, such as zz-platform. A tree of their own (`SKILLS_DIR`), beside the
+ * catalog rather than in it, because they are true wherever this runs and belong to nobody's flow. */
 function platformOwnSkills(prefix: string): PackageFile[] {
-  if (!existsSync(SKILLS_DIR)) return [];
-  const out: PackageFile[] = [];
-  const walk = (dir: string, rel: string): void => {
-    for (const f of readdirSync(dir, { withFileTypes: true })) {
-      const abs = join(dir, f.name);
-      if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
-      else out.push({ path: `${prefix}/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
-    }
-  };
-  // Directories only, for the reason `residentFiles` states below.
-  for (const e of readdirSync(SKILLS_DIR, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.isDirectory()) walk(join(SKILLS_DIR, e.name), e.name);
-  }
-  return out;
+  return walkTree(SKILLS_DIR, prefix);
 }
 
 
@@ -140,30 +120,11 @@ function baselineCard(target: string): string {
 /** Every file under one of a catalog entry's directories, as package files rooted at the same
  * name.
  *
- * `sub` is parameterised although "skills" is the only value any caller passes.
- *
  * DELIBERATE: source and destination are the same word. A package that renamed the directory on
  * the way out would be a package whose layout the tool reading it cannot predict. */
 function residentFiles(flow: string, sub: string): PackageFile[] {
   const e = catalogEntry(flow, true);
-  if (!e) return [];
-  const root = join(e.dir, sub);
-  if (!existsSync(root)) return [];
-  const prefix = sub;
-  const out: PackageFile[] = [];
-  const walk = (dir: string, rel: string): void => {
-    for (const f of readdirSync(dir, { withFileTypes: true })) {
-      const abs = join(dir, f.name);
-      if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
-      else out.push({ path: `${prefix}/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
-    }
-  };
-  // Directories only: a stray file in skills/ — a README, an editor's leftover — makes
-  // readdirSync throw ENOTDIR and takes down package building for everyone running that flow.
-  for (const e of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.isDirectory()) walk(join(root, e.name), e.name);
-  }
-  return out;
+  return e ? walkTree(join(e.dir, sub), sub) : [];
 }
 
 export interface ClientPackage {
@@ -358,8 +319,7 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       `#       .filter(p=>(p.pluginId||"").includes("${MARKETPLACE}"))`,
       `#       .forEach(p=>console.log(p.name,"—",(p.description||"").slice(0,70))))'`,
       // DELIBERATE: commented out, so this block stays a menu rather than a script that
-      // chooses for you. Live, they install every optional plugin — including zz-admin, which
-      // can create teams.
+      // chooses for you. Live, they would install every optional plugin.
       ``,
       `# Uncomment the ones you want:`,
       ...optional.map((n) => `# ${installLine(n)}`),
@@ -377,10 +337,10 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       `claude plugin update zz-core@${MARKETPLACE} # ...and each plugin you installed`,
     ],
     // Every plugin, not just the baseline: anything left installed points at a marketplace that
-    // has just been removed and a ~/.zz that has just been deleted. Optional ones first — the
-    // baseline is what they were installed on top of.
+    // has just been removed and a ~/.zz that has just been deleted. Every other plugin first,
+    // required ones included (zz-access) — the baseline is what they were installed on top of.
     remove: [
-      ...optional.map((n) => `claude plugin uninstall ${n}`),
+      ...plugins.filter((pl) => pl.name !== BASELINE).map((pl) => `claude plugin uninstall ${pl.name}`),
       // COUPLED: the baseline's own name, which the install and update lines above both spell
       // `zz-core`. This said `zz`, which is no plugin on this shelf — so the teardown failed on
       // that line and left the baseline installed against a marketplace that had just been

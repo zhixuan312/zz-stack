@@ -6,9 +6,8 @@
  * V" cannot say what V contained. `skills.lock.json` is the same argument one level down.
  *
  * DELIBERATE: no request, no caller. This is called by the release script and by the gate,
- * both of which run on a laptop with no gateway, no identity and no database — which is why
- * the two directory constants live here rather than in client-package.ts, which needs a
- * caller to do anything.
+ * both of which run on a laptop with no gateway, no identity and no database. The files it digests
+ * come from the walk the package ships (`files.ts`).
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -17,13 +16,10 @@ import { catalogEntries, pluginName } from "@zz/catalog";
 
 import { PLATFORM_VERSION } from "../client-package.js";
 
-import type { PackageFile } from "../client-package.js";
 import { digestOfPlugin } from "./describe.js";
+import { SKILLS_DIR, walkTree } from "./files.js";
 import { BASELINE } from "./skills.js";
 
-/** The platform's own skills — the `zz` plugin's content. Overridable because the gate builds
- *  real packages on a machine where /skills does not exist. */
-const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
 
 /** Where a skill's declared version and content hash are recorded. */
 const SKILLS_LOCK = "skills.lock.json";
@@ -39,26 +35,6 @@ interface PluginLockEntry {
   skills: PluginSkill[];
 }
 
-/** Every file under one directory, as package files rooted at `prefix`.
- *
- * COUPLED: directories only at the top level, the same rule client-package.ts keeps. A stray
- * file there throws ENOTDIR and takes package building down.
- */
-function walkTree(root: string, prefix: string): PackageFile[] {
-  if (!existsSync(root)) return [];
-  const out: PackageFile[] = [];
-  const walk = (dir: string, rel: string): void => {
-    for (const f of readdirSync(dir, { withFileTypes: true })) {
-      const abs = join(dir, f.name);
-      if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
-      else out.push({ path: `${prefix}/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
-    }
-  };
-  for (const e of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.isDirectory()) walk(join(root, e.name), e.name);
-  }
-  return out;
-}
 
 
 /** The top-level directory names under a tree — one per skill. */

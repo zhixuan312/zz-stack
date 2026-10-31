@@ -137,12 +137,12 @@ for (const s of ["zz-doctor", "zz-update", "zz-migrate"]) {
 }
 
 // The directory both halves of the platform resolve skills from is spelled twice — `plugin-eval.ts`
-// (zz-core) and `plugin-lock.ts` (the gateway) — because the only module they share is
+// (zz-core) and `package/files.ts` (the gateway) — because the only module they share is
 // `@zz/contracts`, which holds no environment read at all, so there is nowhere else for it to live.
 // The duplication is deliberate and stated in both; what was not stated anywhere was that they must
 // AGREE, and two copies of one expression drift by ordinary editing. Asserted on the expressions,
 // so a copy that gained an override in one half is red rather than silently reading another path.
-const spellings = ["services/zz-core/src/eval/plugin-eval.ts", "services/gateway/src/package/plugin-lock.ts"]
+const spellings = ["services/zz-core/src/eval/plugin-eval.ts", "services/gateway/src/package/files.ts"]
   .map((p) => readFileSync(p, "utf8").split("\n").find((l) => l.includes("SKILLS_DIR = process.env")) ?? "");
 for (const s of spellings) {
   if (!/SKILLS_DIR = process\.env\.ZZ_SKILLS_DIR \|\| "\/skills"/.test(s)) {

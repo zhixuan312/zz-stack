@@ -35,7 +35,7 @@ export function entryOf(plugin: string): ReturnType<typeof catalogEntries>[numbe
 
 /** The platform's own skills — the `zz-core` plugin's content.
  *
- *  COUPLED: the gateway's plugin-lock.ts keeps the same constant and the same override.
+ *  COUPLED: the gateway's package/files.ts keeps the same constant and the same override.
  *  zz-core does not depend on the gateway, so it is spelled twice. The override exists because
  *  the gate runs where /skills does not. */
 const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";

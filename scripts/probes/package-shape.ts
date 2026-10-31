@@ -129,4 +129,13 @@ if (wrong.length) {
 // Windows person in PowerShell is offered the node line beside them, as a menu entry.
 if (!pkg.install.includes(`# ${tokenWriteCommand}`)) bad.push("the install block offers no node line for writing the token");
 
+// The teardown removes the marketplace and ~/.zz, so it uninstalls every plugin the install block offers, live or
+// commented, first: one left installed points at both after they are gone (zz-access was, until 2026-10-31).
+const offered = new Set([...pkg.install.join("\n").matchAll(/claude plugin install ([A-Za-z0-9._-]+)@/g)].map((m) => m[1]));
+const removed = new Set([...pkg.remove.join("\n").matchAll(/claude plugin uninstall ([A-Za-z0-9._-]+)/g)].map((m) => m[1]));
+const kept = [...offered].filter((n) => !removed.has(n));
+if (kept.length) bad.push(`the teardown leaves installed: ${kept.join(", ")}`);
+const marketplaceGone = pkg.remove.findIndex((l) => l.includes("plugin marketplace remove"));
+if (pkg.remove.some((l, i) => l.includes("plugin uninstall") && i > marketplaceGone)) bad.push("the teardown uninstalls a plugin after removing its marketplace");
+
 process.stdout.write(bad.join("; "));

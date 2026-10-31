@@ -61,6 +61,7 @@ import {
   evaluateGuardrails, guardrailsOfMeasures, reduceMeasureAnswers, type MeasureAnswer,
 } from "./evaluate-measures.js";
 import { loadDimensions, STORED_ANSWERS_SQL } from "./evaluate-run.js";
+import { refreshFindingsDocs } from "./findings-doc.js";
 import { writeImprovementDoc, type BaseScore } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { improvementRunOf, releasableCandidateOf } from "./initiative-run.js";
@@ -458,7 +459,8 @@ export function registerReleaseTools(server: McpServer): void {
         "current, so the prior subject is current again — and candidate_record refuses " +
         "its hypothesis from then on. " +
         "RETURNS { status, release_attempt_id, " + RELEASED_SUBJECT_VERSION + ", release_ref, " +
-        "findings_decided, findings_left_alone }. " +
+        "findings_decided, findings_left_alone }, and regenerates findings.md for the run wherever " +
+        "your team holds one (findings_md_refused names a rewrite that was refused). " +
         "A release that lands closes the findings its candidate's own improvement run " +
         "targeted — each applied, decided_by this call's actor, its note naming the version " +
         "that shipped — while a failed record and a rollback close nothing, and a finding " +
@@ -517,7 +519,15 @@ export function registerReleaseTools(server: McpServer): void {
         actor: principal, kind: "release_record", release_attempt_id: result.release_attempt_id,
         status: result.status, replayed: outcome.replayed,
       });
-      return json(result);
+      // A release that decided findings changed what findings.md says about its run.
+      if (!result.findings_decided.length) return json(result);
+      const run = (await p.query<{ run: string }>(`
+        select ir.eval_run_id::text as run from zz.release_attempt ra
+          join zz.candidate c on c.id = ra.candidate_id
+          join zz.improvement_run ir on ir.id = c.improvement_run_id
+         where ra.id = $1::uuid`, [result.release_attempt_id])).rows.map((r) => r.run);
+      const docRefused = await refreshFindingsDocs(p, run);
+      return json(docRefused.length ? { ...result, findings_md_refused: docRefused } : result);
     },
   );
 

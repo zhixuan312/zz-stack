@@ -37,7 +37,7 @@ import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { writeFindingsDoc } from "./findings-doc.js";
+import { refreshFindingsDocs, writeFindingsDoc } from "./findings-doc.js";
 import { ledgerStamp, UUID_RE, withIdempotency, type IdempotencyOutcome, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
 import { measureByKey } from "./qualify.js";
 import { inCallerTeam } from "./team-scope.js";
@@ -351,7 +351,9 @@ export function registerPluginRecordTools(server: McpServer): void {
         "would be a decision that changes nothing while looking like one that did. A note is " +
         "required for both real decisions, because `applied` with no change named and `rejected` " +
         "with no reason are the two ways this ledger stops being readable. A mutator: writes " +
-        "through the idempotency ledger.",
+        "through the idempotency ledger. Regenerates findings.md in every initiative of yours whose " +
+        "EVALUATE record names a decided finding's run and already holds one; a refused rewrite is " +
+        "answered as findings_md_refused.",
       inputSchema: {
         decisions: z.array(z.object({
           finding_id: z.string().describe("from finding_record"),
@@ -407,9 +409,14 @@ export function registerPluginRecordTools(server: McpServer): void {
         : outcome.result;
 
       platformEvent({ actor: who, kind: "finding_decide", decided: result.done.length, refused: result.refused.length, replayed: outcome.replayed });
+      const runs = (await p.query<{ run: string }>(
+        "select distinct eval_run_id::text as run from zz.eval_finding where id = any($1::uuid[])",
+        [result.done.map((f) => f.id)])).rows.map((r) => r.run);
+      const docRefused = await refreshFindingsDocs(p, runs);
       return json({
         decided: result.done.length, findings: result.done,
         refused: result.refused.length ? result.refused : undefined,
+        findings_md_refused: docRefused.length ? docRefused : undefined,
         next: result.done.length
           ? "These no longer count against the plugin's headroom. The next round will read the " +
             "remaining open ones and say what is still available to do."

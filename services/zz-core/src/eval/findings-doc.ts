@@ -14,6 +14,8 @@
  * `chain.documents` is empty, and every guard above no-ops.
  */
 
+import { parseCaller } from "@zz/contracts";
+import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
 import {
@@ -22,6 +24,7 @@ import {
 } from "./evaluate-measures.js";
 import { loadDimensions, STORED_ANSWERS_SQL } from "./evaluate-run.js";
 import { safeName } from "../paths.js";
+import { teamFor } from "../platform-db.js";
 import { writeGeneratedDoc } from "./generated-doc.js";
 import { loadSubjectForEvalRun } from "./proposal-doc.js";
 
@@ -307,4 +310,29 @@ export async function writeFindingsDoc(
     title: `Findings — ${subject.plugin} ${subject.declared_version}`,
     fields: { eval_run_id: evalRunId },
   });
+}
+
+/** Regenerates findings.md wherever the caller's team already holds one for these runs: the
+ *  initiatives whose EVALUATE record names the run. `finding_decide` and `release_record` name no
+ *  initiative, and without this the document a reader opens kept saying `deferred` about a finding
+ *  the database held as applied. An initiative with no findings.md is left without one — only
+ *  `finding_record` starts the document. Answers each refusal; never throws. */
+export async function refreshFindingsDocs(p: pg.Pool, evalRunIds: readonly string[]): Promise<string[]> {
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  if (!team || !evalRunIds.length) return [];
+  const { rows } = await p.query<{ slug: string; run: string }>(`
+    select distinct i.slug, r.value as run
+      from zz.initiative i
+      join zz.team t on t.id = i.team_id
+      join zz.initiative_record r on r.initiative_id = i.id and r.id_name = 'eval_run_id'
+     where t.slug = $1 and r.value = any($2::text[])
+       and exists (select 1 from zz.doc d where d.initiative_id = i.id and d.path = 'findings.md')
+     order by i.slug`, [team, evalRunIds]);
+  const refused: string[] = [];
+  // One at a time: each write takes the document's own guards and revision.
+  for (const { slug, run } of rows) {
+    const written = await writeFindingsDoc(p, slug, run);
+    if (typeof written === "string") refused.push(`${slug}/findings.md: ${written}`);
+  }
+  return refused;
 }

@@ -40,6 +40,7 @@
  *   - a yes/no answer in the unclear band is excluded with a reason naming it and its probability;
  *   - `finding_record` with `supersedes` closes the old finding as rejected and superseded by the new
  *     one, and a second correction of it is refused with nothing written;
+ *   - `finding_decide` regenerates findings.md in the initiative whose EVALUATE record names the run;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
@@ -525,6 +526,36 @@ async function supersedeClosesTheOld(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
+/** findings.md is regenerated when a finding is decided, not only when one is recorded: finding_decide
+ *  names no initiative, and the document a reader opens kept saying `deferred` about a finding the
+ *  database held as applied (runtime pass 2, F9). */
+async function decideRefreshesFindingsDoc(c: Core, s: Seed): Promise<void> {
+  const step = "finding_decide regenerates findings.md";
+  const door = evalDoor(c, c.email);
+  const recorded = await ask(door, "finding_record", {
+    eval_run_id: s.run, initiative: SLUG, idempotency_key: "refresh-record-1",
+    finding: { kind: "defect", pattern: "refresh: the refusal names no next call", owner_kind: "plugin" } });
+  const id = (JSON.parse(recorded.startsWith("{") ? recorded : "{}") as { finding?: { id?: string } }).finding?.id;
+  const doc = async () => (await one<{ body: string | null }>(c,
+    `select r.body from zz.doc d join zz.initiative i on i.id = d.initiative_id
+       join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+      where i.slug = $1 and d.path = 'findings.md'`, [SLUG]))?.body ?? null;
+  const line = (body: string | null) => body?.split("\n").find((l) => l.includes(String(id))) ?? null;
+  if (!id || !line(await doc())?.includes("decision: deferred")) {
+    c.fail(step, `findings.md was not written with the deferred finding: ${recorded.slice(0, 300)}`);
+  }
+  // What EVALUATE records on the initiative, which is how a decision finds the document.
+  await c.sql.query(
+    `insert into zz.initiative_record (initiative_id, stage, id_name, value)
+     select id, 'zz-plugin-evaluate', 'eval_run_id', $2 from zz.initiative where slug = $1
+     on conflict do nothing`, [SLUG, s.run]);
+  const decided = await ask(door, "finding_decide", {
+    decisions: [{ finding_id: id, decision: "applied", note: "fixed in 9.9.9" }], idempotency_key: "refresh-decide-1" });
+  const after = line(await doc());
+  if (!after?.includes("decision: applied")) c.fail(step, `findings.md reads ${JSON.stringify(after)} after ${decided.slice(0, 300)}`);
+  c.pass(step);
+}
+
 async function scoredRunIsNotRescored(c: Core, s: Seed): Promise<void> {
   const step = "evaluation_score on a scored run under a new key";
   const scored = (await one<{ id: string }>(c,
@@ -573,7 +604,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

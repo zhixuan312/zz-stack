@@ -215,7 +215,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "its own credential. RETURNS the token plaintext EXACTLY ONCE: it cannot be read back, so " +
       "it has to be stored now. The token carries whatever its holder may do — there is no lesser kind. REPLACES any " +
       "earlier one with the same label, because a purpose has one current credential. REFUSES " +
-      "issuing for anybody but yourself without superadmin or team-admin authority, and " +
+      "issuing for anybody but yourself without superadmin or team-admin authority; a team " +
+      "admin issuing for a superadmin, or reusing the label of a token the person holds outside " +
+      "the team; and " +
       "refuses to bind a token to a team its holder is not in — that token would " +
       "authenticate nowhere.",
     inputSchema: {
@@ -265,6 +267,24 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
                     `member_add ${team} ${target} first, or issue the token unbound.`);
       }
     }
+    // A team admin's authority is the team's. It does not reach a superadmin's credentials, and
+    // it does not reach a token the person holds outside the team, which reusing that token's
+    // label would otherwise revoke.
+    if (target !== id.email && !superOnly(id)) {
+      const { rows: [held] } = await db.query<{ role: string; outside: boolean }>(
+        `select p.role, exists (select 1 from pat where pat.principal_id = p.id and pat.label = $2 and $2 <> ''
+                                  and pat.revoked_at is null and pat.team_id is distinct from $3) as outside
+           from principal p where p.id = $1`, [pid, label ?? "", tid]);
+      if (held?.role === "superadmin") {
+        return text(`ERROR: ${target} is a superadmin, and only a superadmin issues a superadmin's ` +
+                    "tokens — a team admin's authority ends at the team.");
+      }
+      if (held?.outside) {
+        return text(`ERROR: ${target} holds a live token labelled '${label}' that is not bound to ` +
+                    `'${team}', and issuing this one would revoke it. Choose another label: only ` +
+                    "its owner or a superadmin replaces a token outside the team.");
+      }
+    }
     // COUPLED: resolvePat refuses a token past `expires_at`. Without this write the column
     // stays null, every token lives for ever, and that check can never fire.
     const expiry = expires_in_days
@@ -284,7 +304,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
                  ...(replaced ? { replaced } : {}) },
                team ?? null);
     return text(
-      `PAT for ${target} (${team ? "team " + team : "all your teams"}` +
+      `PAT for ${target} (${team ? "team " + team : target === id.email ? "all your teams" : `all of ${target}'s teams`}` +
       `${expiry ? `, expires ${expiry.slice(0, 10)}` : ", no expiry"}):\n\n${token}\n\n` +
       "Shown once — store it now. Use as:  Authorization: Bearer <token>" +
       (replaced ? `\n\nThis REPLACED ${replaced} earlier token(s) labelled '${label}' — those no longer work.` : ""),
@@ -298,7 +318,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "somebody says a credential is exposed. RETURNS confirmation; it takes effect " +
       "immediately and is recorded against the team the token was bound to, so a team admin " +
       "sees the withdrawal as well as the issue. REFUSES anyone but the token's own owner or " +
-      "a superadmin, refuses an id no token has, and refuses unless confirm repeats the pat " +
+      "a superadmin, a token bound to a team revoking one not bound to it, an id no token has, " +
+      "and refuses unless confirm repeats the pat " +
       "id exactly. Find the id with pat_list.",
     inputSchema: { pat_id: z.string().uuid(), confirm: z.string() },
   }, async ({ pat_id, confirm }) => {
@@ -317,6 +338,13 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     const owner = r.rows[0]?.email;
     if (!owner) return text("ERROR: no such PAT");
     if (owner !== id.email && !superOnly(id)) return text("ERROR: only the owner or superadmin can revoke");
+    // Owning the token is not enough for a token bound to a team: a binding is only worth
+    // something if it cannot reach past it, and a token a team admin issued in someone's name
+    // would otherwise revoke every credential that person holds.
+    if (id.via === "pat" && id.patTeam && r.rows[0].team !== id.patTeam) {
+      return text(`ERROR: this token is bound to team '${id.patTeam}', so it revokes only tokens bound ` +
+                  "to that team. Revoke this one with an unbound token or from the console.");
+    }
     // revokePat is the one revoke path — teardownReplayTeam (packages/contracts) goes through
     // the same function rather than a second copy of it.
     if (!(await revokePat(db, pat_id))) return text(`PAT ${pat_id} was already revoked — nothing changed`);

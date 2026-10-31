@@ -512,6 +512,62 @@ async function pageViews(c: Core, g: Gateway): Promise<void> {
   c.pass(`a page view lands work whoever sent it, ${CLIENTS.map((f) => shown(f.client)).join(", ")} included`);
 }
 
+/** A team admin's token authority reaches no further than the team: a lead may not mint a token
+ *  for the superadmin, may not replace a member's token outside the team by reusing its label, and
+ *  a token bound to a team revokes only tokens bound to it. */
+async function leadActs(c: Core, g: Gateway): Promise<void> {
+  const step = "a team admin's token acts stay inside the team";
+  const pat = async (email: string, label: string, team: string | null): Promise<{ token: string; id: string }> => {
+    const token = `zzp_${randomBytes(24).toString("hex")}`;
+    const id = String((await c.sql.query(
+      `insert into zz.pat (principal_id, token_hash, label, team_id)
+       select p.id, $2, $3, (select id from zz.team where slug = $4) from zz.principal p where p.email = $1
+       returning id`, [email, createHash("sha256").update(token).digest("hex"), label, team])).rows[0].id);
+    return { token, id };
+  };
+  const ask = async (token: string, name: string, args: Record<string, unknown>): Promise<string> => {
+    const res = await fetch(`${g.url}/manage/mcp`, {
+      method: "POST",
+      headers: { ...headersOf(null, { authorization: `Bearer ${token}` }), accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const env = lastJson(await res.text());
+    return env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? `HTTP ${res.status}`;
+  };
+  await c.sql.query(
+    `with p as (insert into zz.principal (email, display_name) values ('lead@example.test', 'Lead'), ('mate@example.test', 'Mate')
+                returning id, email),
+          t as (insert into zz.team (slug, name, created_by) select 'lead-team', 'Lead team', id from p where email = 'lead@example.test'
+                returning id)
+     insert into zz.membership (team_id, principal_id, role, added_by)
+     select t.id, p.id, case when p.email = 'lead@example.test' then 'admin' else 'member' end, p.id from t, p`);
+  const lead = await pat("lead@example.test", "lead", null);
+  const laptop = await pat("mate@example.test", "laptop", null);
+  const live = async (id: string): Promise<boolean> =>
+    (await c.sql.query("select 1 from zz.pat where id = $1 and revoked_at is null", [id])).rowCount === 1;
+
+  await ask(lead.token, "member_add", { team: "lead-team", email: c.email });
+  const forSuper = await ask(lead.token, "pat_issue", { email: c.email, team: "lead-team", label: "as-super" });
+  if (!/^ERROR: .*superadmin/.test(forSuper)) c.fail(step, `a lead minting the superadmin's token answered: ${forSuper.slice(0, 200)}`);
+
+  const reused = await ask(lead.token, "pat_issue", { email: "mate@example.test", team: "lead-team", label: "laptop" });
+  if (!/^ERROR: .*laptop/.test(reused) || !(await live(laptop.id))) {
+    c.fail(step, `a lead reusing a member's label answered "${reused.slice(0, 200)}", the member's token ${await live(laptop.id) ? "live" : "REVOKED"}`);
+  }
+
+  const bound = await pat("lead@example.test", "bound", "lead-team");
+  const crossed = await ask(bound.token, "pat_revoke", { pat_id: lead.id, confirm: lead.id });
+  if (!/^ERROR: .*bound to team 'lead-team'/.test(crossed) || !(await live(lead.id))) {
+    c.fail(step, `a bound token revoking its owner's unbound token answered "${crossed.slice(0, 200)}"`);
+  }
+  const own = await pat("lead@example.test", "bound-2", "lead-team");
+  if (!/ revoked$/.test(await ask(bound.token, "pat_revoke", { pat_id: own.id, confirm: own.id }))) {
+    c.fail(step, "a bound token could not revoke a token bound to its own team");
+  }
+  c.pass(step);
+}
+
 async function run(c: Core): Promise<void> {
   await seed(c);
   await seedBugs(c);
@@ -523,6 +579,7 @@ async function run(c: Core): Promise<void> {
     await cases(c, g);
     await publicActs(c, g);
     await pageViews(c, g);
+    await leadActs(c, g);
   } finally {
     await g.stop();
   }

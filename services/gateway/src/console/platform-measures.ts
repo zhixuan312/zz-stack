@@ -306,8 +306,10 @@ type SearchDay = {
 /** Searches in `[from, to)`, `from` null for the whole record, as `SearchDay` rows.
  *
  *  DELIBERATE: no team predicate. A team's figure is this statement's rows filtered to its own (work-figures.ts),
- *  and a `(t.slug is null or t.slug = $n)` predicate would make a missing team mean every team — the shape
- *  check:sql refuses in this directory. The rows it leaves in are bounded by the caller's own window, never by
+ *  and a `(t.slug is null or t.slug = $n)` predicate would make a missing team mean every team — the shape the
+ *  gate's console rule (scripts/gate/checks/console.ts) refuses here. That rule reads a slug only: the team_id
+ *  statements below that take null as every team do so for the platform's own figures, and nothing checks them.
+ *  The rows it leaves in are bounded by the caller's own window, never by
  *  the whole record: a team's figure reads one window's searches across every team and keeps its own. */
 export async function searchDays(db: pg.Pool, to: string, from: string | null): Promise<SearchDay[]> {
   return (await db.query<SearchDay>(

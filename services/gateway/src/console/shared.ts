@@ -106,12 +106,12 @@ export function teamless(name: string, fn: (req: Request, res: Response) => Prom
   };
 }
 
-/** Wrap a read that is public by route policy: the platform's own health, answered alike to
- * everybody the console lets in, a person in no team included. No scope is resolved and none is
- * read from the request; the handler is told whether the caller is a superadmin, the one fact an
- * admin extension of a public answer may turn on, and the team the identity resolved as the
- * caller's active one (null for a person in no team), which a read may use for the reader's own
- * part and for nothing else.
+/** Wrap a read that resolves no scope from the request. The route decides what it answers: the
+ * platform's own figures, alike to everybody the console lets in, a person in no team included; or
+ * the active team's, from the team the identity resolved as the caller's active one (null for a
+ * person in no team). The handler is told that team and whether the caller is a superadmin, the one
+ * fact an admin extension of a public answer may turn on. A read that answers the active team's
+ * figures keys any cache on that team.
  *
  * DELIBERATE: the route, not a parameter, is what makes the read platform-wide. A `?scope=` or a
  * missing `?team=` that widened a read would be the "null means every team" wildcard scope.ts rules

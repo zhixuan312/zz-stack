@@ -93,7 +93,7 @@ const STATES: readonly State[] = ["open", "waiting", "quiet", ...OUTCOMES];
 const DAY = 24 * 3_600_000;
 /** Open, and nothing of it written for this long before the cutoff. */
 const QUIET_AFTER = 14 * DAY;
-/** An initiative's state at `asOfMs`, the one rule the list and the initiative's own page answer: its outcome once
+/** An initiative's state at asOfMs, the one rule the list and the initiative's own page answer: its outcome once
  *  closed; open, waiting while a revision of it waits for approval, quiet when it was last touched QUIET_AFTER or more
  *  before, and open otherwise. */
 export function stateOf(a: { outcome: string | null; closed: boolean; touchedMs: number }, waiting: boolean, asOfMs: number): State {
@@ -317,12 +317,12 @@ export function mountInitiativeList(app: Express): void {
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
     // DELIBERATE: kept as one answer per team, role and page until a write moves the marker of what it reads
     // (answer-cache.ts). This is the console's heaviest read — every initiative's documents, its closures and one
-    // relayed `initiative_status` per ten rows — and the list is what a person returns to between destinations
+    // relayed initiative_status per ten rows — and the list is what a person returns to between destinations
     // without anything having happened since.
     //
-    // The caller's EMAIL is not in the key, because the computation never reads it: `initiativeList` takes the
+    // The caller's EMAIL is not in the key, because the computation never reads it: initiativeList takes the
     // team, the page and the cutoff, so two members of one team are one answer and now share it. The superadmin
-    // flag stays, because the relayed `initiative_status` acts as whoever asked: a member and a superadmin read
+    // flag stays, because the relayed initiative_status acts as whoever asked: a member and a superadmin read
     // the same team's list through different authority, and dropping the person without keeping this one
     // distinction would leave nothing to separate them at all.
     res.json(served(await cachedWithHit(

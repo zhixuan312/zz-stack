@@ -27,6 +27,7 @@ import { docFacts, fillStateBodies, sourceReport, sourceRows } from "../initiati
 import { docRows } from "../indexing.js";
 import { planStructure, planStructureNote, type PlanStructure } from "../plan-structure.js";
 import { isHandover, owedActs } from "../stage-records.js";
+import { NO_TEAM } from "../document-change.js";
 import { safeName } from "../paths.js";
 import { Refusal } from "../refusal.js";
 import { platformEvent } from "../indexing.js";
@@ -598,12 +599,9 @@ export function registerInitiativeStatusTools(server: McpServer): void {
       const who = parseCaller(requestHeaders());
       const team = await teamFor(who.email);
       const p = db();
-      if (!p || !team) {
-        return text(
-          "ERROR: no platform database, or a caller this deployment cannot place — an " +
-          "initiative is a row now, so there is nothing to read without one."
-        );
-      }
+      // Two different answers: a deployment fault, and a person with no team yet.
+      if (!p) return text("ERROR: no platform database — an initiative is a row, so there is nothing to read.");
+      if (!team) return text(NO_TEAM);
       // The team's whole roster, the one named, or the list named. A slug the team does not hold
       // is reported per-initiative rather than refused, as the named form does.
       const names = initiatives ?? (initiative

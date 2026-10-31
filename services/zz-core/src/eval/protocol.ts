@@ -49,6 +49,7 @@ import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { affirmProtocolVersion, recordProtocolVersion } from "./protocol-record.js";
 import { recordAffirmed, recordDefineOwes } from "./stage-record.js";
 import { decideBeforeWork, UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { NO_TEAM } from "../document-change.js";
 import { factsFor, initiativeIdFor, lockInitiativeFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { platformEvent } from "../indexing.js";
 import { safeName } from "../paths.js";
@@ -153,10 +154,8 @@ export async function writeBranchFacts(
 
   const team = await teamFor(parseCaller(requestHeaders()).email);
   const p = db();
-  if (!p || !team) {
-    return "ERROR: no platform database, or a caller this deployment cannot place — branch " +
-      "facts are rows, and there is nowhere to record one.";
-  }
+  if (!p) return "ERROR: no platform database — branch facts are rows, and there is nowhere to record one.";
+  if (!team) return NO_TEAM;
   return withInitiativeFactsLock(initiative, async () => {
     const client = await p.connect();
     try {

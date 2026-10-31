@@ -19,6 +19,7 @@
  *   - the single-name form and the listing answer as before: a named initiative whatever its state,
  *     an unknown name `no such initiative`, and the open ones with a count of the closed.
  *   - a document the closed initiative does not hold is refused, as a closed record takes none.
+ *   - a caller in no team is told that, not that the deployment may lack its database.
  *
  * The only database it touches is the one it started.
  *
@@ -141,6 +142,11 @@ async function run(c: Core): Promise<void> {
   await c.refused(step, "initiative_status", { initiatives: [] }, /^ERROR: `initiatives` names no initiative/);
   await c.refused(step, "initiative_status", { initiatives: [open, "a/b"] }, /^ERROR: a name in `initiatives` must be a single name/);
   await c.refused(step, "initiative_status", { initiative: open, initiatives: [open] }, /^ERROR: .*not both/);
+  c.pass(step);
+
+  step = "a caller in no team is told so, not that the database may be missing";
+  await c.sql.query("insert into zz.principal (email, display_name) values ('nobody@example.test', 'Nobody')");
+  await c.refused(step, "initiative_status", {}, /^ERROR: you are not in a team/, c.client({ email: "nobody@example.test" }));
   c.pass(step);
 }
 

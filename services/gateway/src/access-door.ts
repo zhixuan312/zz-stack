@@ -162,15 +162,16 @@ export async function buildAccessServer(
       inputSchema: { team: z.string() },
     },
     async ({ team }) => {
-      const email = caller().email;
-      if (!email) return text("ERROR: no user identity on this request");
+      // `id` is this request's caller: the server is built per request. No second lookup, so the
+      // refusal below cannot be skipped by one that comes back empty.
+      if (!id) return text("ERROR: no user identity on this request");
+      const email = id.email;
       // A bound token cannot move anybody, including itself. `actingTeam` reads a bound token's
       // own team whatever this column says, so the switch would change nothing for it — while
       // `active_team_id` is where every other credential that person holds reads their team
       // from, so a left-running automation could silently move its owner's agents and every
       // unbound agent token to a different team. The console route keeps the same refusal.
-      const me = await callerIdentity();
-      const bound = me?.patTeam;
+      const bound = id.patTeam;
       if (bound) {
         return text(
           `ERROR: this token is bound to team '${bound}', so it cannot switch teams — not its ` +
@@ -186,7 +187,7 @@ export async function buildAccessServer(
         `update zz.principal p
             set active_team_id = t.id
            from zz.team t
-          where lower(p.email) = $1
+          where p.email = $1
             and t.slug = $2 and t.status = 'active'
             and exists (select 1 from zz.membership m
                          where m.team_id = t.id and m.principal_id = p.id)
@@ -196,14 +197,14 @@ export async function buildAccessServer(
           `select t.slug from zz.membership m
              join zz.team t on t.id = m.team_id
              join zz.principal p on p.id = m.principal_id
-            where lower(p.email) = $1 and t.status = 'active'
+            where p.email = $1 and t.status = 'active'
             order by t.slug`, [email])).rows.map((r) => r.slug);
         return text(`ERROR: you are not in an active team called '${slug}'. ` +
                     (mine.length ? `Yours: ${mine.join(", ")}.` : "You are not in any team yet."));
       }
       // Recorded like any other act. For a platform whose whole point is who approved what
       // and when, who was acting for which team and when belongs in the same record.
-      logEvent({ actor: email, kind: "team.switch", subject: slug, teamSlug: slug, origin: me?.origin });
+      logEvent({ actor: email, kind: "team.switch", subject: slug, teamSlug: slug, origin: id.origin });
       return text(
         `you are now acting for ${slug}.\n` +
         `Everything follows this: your documents and your knowledge store, on every client.`);

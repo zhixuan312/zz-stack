@@ -128,8 +128,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "the team a person acts for is stored, not asserted",
     assertion: "changing which team somebody acts for is recorded as an event",
     subject: "services/gateway/src/access-door.ts",
-    find: '      logEvent({ actor: email, kind: "team.switch", subject: slug, teamSlug: slug, origin: me?.origin });',
-    replace: '      logEvent({ actor: email, kind: "team.change", subject: slug, teamSlug: slug, origin: me?.origin });',
+    find: '      logEvent({ actor: email, kind: "team.switch", subject: slug, teamSlug: slug, origin: id.origin });',
+    replace: '      logEvent({ actor: email, kind: "team.change", subject: slug, teamSlug: slug, origin: id.origin });',
     planted: "switching team stops being recorded under the kind anything looks for, so who " +
       "was acting for which team, and when, leaves no readable trace — on a platform whose " +
       "whole point is who approved what and when, that is the one state change nobody can " +

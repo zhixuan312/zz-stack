@@ -35,6 +35,8 @@ const allows = (name: string, got: unknown) => is(name, got, null);
 allows("an ordinary slug is a slug",          R.slugRefusal("sample-intake"));
 refuses("a traversal is refused",             R.slugRefusal("../../etc"));
 refuses("a slash is refused",                 R.slugRefusal("2026-09-11/sample-intake"));
+refuses("a slug past 64 characters is refused", R.slugRefusal("a".repeat(65)));
+allows("a slug of 64 characters is a slug",     R.slugRefusal("a".repeat(64)));
 refuses("an absolute path is refused",        R.slugRefusal("/etc/passwd"));
 refuses("an empty slug is refused",           R.slugRefusal(""));
 refuses("a dot-entry is refused",             R.slugRefusal(".git"));

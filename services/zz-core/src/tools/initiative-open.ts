@@ -57,8 +57,8 @@ export function registerInitiativeOpenTool(server: McpServer): void {
         "so decide here.",
       inputSchema: {
         slug: z.string().describe(
-          "A few of the stakeholder's words in lowercase ASCII letters, digits and hyphens: " +
-          "`payment-retries`. Another script is refused, not cut: transliterate or translate " +
+          "A few of the stakeholder's words in lowercase ASCII letters, digits and hyphens, at most " +
+          "64 characters: `payment-retries`. Another script is refused, not cut: transliterate or translate " +
           "it. NO DATE — the platform prepends today's."),
         flow: z.string().optional().describe(
           "The flow whose gates and document order govern this initiative, e.g. `sdlc-flow`. " +

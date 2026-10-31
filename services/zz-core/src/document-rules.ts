@@ -34,6 +34,8 @@ export const RESERVED_ENVELOPE = new Set<string>(Object.keys(Envelope.shape));
  * initiative — source_add, close, initiative_status — and the existing names that do not match
  * the shape could then never be closed. A name is checked when it is chosen; afterwards it is
  * simply the name. */
+/** The longest slug an initiative is opened under, the date not counted. */
+const SLUG_MAX = 64;
 export function slugRefusal(slug: string): string | null {
   const v = slug.trim();
   if (!v) {
@@ -57,6 +59,11 @@ export function slugRefusal(slug: string): string | null {
       "initiative would carry two. Send the slug alone, in the stakeholder's own words: " +
       "`payment-retries`, not the dated folder name."
     );
+  }
+  // A slug names the initiative in every path, listing and link for good, and nothing renames it.
+  if (v.length > SLUG_MAX) {
+    return `ERROR: a slug is a few words, at most ${SLUG_MAX} characters, and this one is ${v.length}. ` +
+      "It names the initiative in every path and listing for good. Nothing was created.";
   }
   // A letter, digit, mark or symbol outside ASCII is part of a word, and slugify would cut it,
   // leaving only the slug's ASCII words, and a folder name cannot be renamed afterwards. Spaces and punctuation in any script only separate words, so they are

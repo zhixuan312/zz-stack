@@ -541,6 +541,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * counts. A probe that throws leaves `scope` null, which the kernel reads as unknown
        * completeness and undeclared language, and the caller still gets its []. */
       let recall: RecallResult | null = null;
+      // The cause a caller can act on, said ahead of the general verdict: the verdict's language
+      // and "no match" sentences are true of the search and point away from both of these.
+      const causes: string[] = [];
+      // Filters that select nothing leave the verdict nothing to be about: it is left to `recall`.
+      let nothingSelected = false;
       if (results.length === 0) {
         let scope: RecallSignals["scope"] = null;
         try {
@@ -556,6 +561,23 @@ export function registerKnowledgeSearch(server: McpServer): void {
           )).rows[0] as { any_row: boolean; han_row: boolean; latin_row: boolean };
           scope = { rows: probe.any_row, han: probe.han_row, latin: probe.latin_row };
         } catch { scope = null; }
+        const declared = Object.entries({ type, status, initiative, flow, tags })
+          .filter(([, v]) => v !== undefined && !(Array.isArray(v) && !v.length));
+        if (scope?.rows === false && declared.length) {
+          nothingSelected = true;
+          causes.push(`The filters ${declared.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")} select no row ` +
+            "on either shelf, so the query was never compared against anything — check each value.");
+        }
+        if (query && !withHistory) {
+          const all = buildSearchPredicate({ query, team, type, status, initiative, flow, tags });
+          const n = (await p.query<{ n: number }>(
+            `select count(*)::int as n from ${SOURCE} where ${all.sql}
+               and (superseded_by is not null or status = 'superseded')`, all.args)).rows[0]?.n ?? 0;
+          if (n) {
+            causes.push(`${n} superseded row(s) match — what replaced them is the current answer and may use other ` +
+              "words; pass include_superseded: true to read them and follow superseded_by.");
+          }
+        }
         recall = recallResultFrom(recallOutcomeFrom({
           query, unsafe: primary.unsafe, scope,
           // The query's own scripts, tested with the same expression the predicate above splits
@@ -607,7 +629,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
         // agent acts on. The parse complaint leads when there is one: it names the text that
         // could not be read. A broadened answer says so first among the rest.
         note: recall
-          ? [unsafeNote, recall.answer].filter((n): n is string => n !== null).join(" ")
+          ? [unsafeNote, ...causes, nothingSelected ? null : recall.answer].filter((n): n is string => n !== null).join(" ")
           : unsafeNote
             ?? (broadened
               ? "No document contains all of those terms together. These match SOME of them, best first — "

@@ -11,8 +11,10 @@
 //     ever affirmed, revise when one was, with awaiting_affirmation carrying the digest to quote.
 //   - protocol_record's duplicateMeasureKeyRefusal names a key repeated in two dimensions.
 // Driven against a stubbed pg.Pool; the handlers are harvested by handing each registrar a stub
-// server, the same registrars the /eval door mounts.
+// server, the same registrars the /eval door mounts. The caller is one person acting for one team,
+// which owns the run: a tool asks whose a run is before anything about it.
 import assert from "node:assert/strict";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -35,6 +37,9 @@ let latest: Row = {
 let connected = 0;
 
 function answer(sql: string): Row[] {
+  // The caller's teams (platform-db.ts teamsFor), then the run is theirs (eval/team-scope.ts).
+  if (/FROM zz\.membership m JOIN zz\.team t/.test(sql)) return [{ slug: "the-team", role: "admin", active_slug: "the-team" }];
+  if (/and er\.team_id = \(select id from zz\.team where slug = \$2\)/.test(sql)) return [{ one: 1 }];
   // A measure names its own protocol version since the phase-3 reshape (`eval_measure.
   // protocol_version_id`), and the join to its dimension is kept only to name the dimension.
   if (/from zz\.eval_measure m join zz\.eval_dimension d on d\.id = m\.dimension_id where m\.protocol_version_id = \$1::uuid order by d\.key, m\.key/.test(sql)) return measures;
@@ -67,6 +72,12 @@ pg.Pool.prototype.connect = (async function connect() {
   connected++;
   throw new Error("no transaction is expected on a refusal path");
 }) as unknown as typeof pg.Pool.prototype.connect;
+
+// A tool reads its caller from the request's headers (@zz/mcp-http's requestHeaders); there is no
+// request here, so every store answers the one caller's.
+AsyncLocalStorage.prototype.getStore = function getStore() {
+  return { headers: { "x-zz-user-email": "caller@example.test" } };
+} as typeof AsyncLocalStorage.prototype.getStore;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { measureByKey, registerEvaluatorQualifyTools } = await load("services/zz-core/dist/eval/qualify.js");

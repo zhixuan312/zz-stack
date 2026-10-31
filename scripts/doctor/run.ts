@@ -212,9 +212,14 @@ export function report({ json = false }: { json?: boolean } = {}): number {
     }
   }
   log("\n  " + "─".repeat(56));
+  // A `--layer` subset answers for its own layers only: `--layer repo` never looked at a deployment.
+  const notAsked = layerNames().filter((n) => !findings.some((f) => f.layer === n));
+  if (notAsked.length) log(`  ${DIM}not asked: ${notAsked.join(", ")}${OFF}`);
   const real = wrong.filter((f) => !f.downstream);
   if (!wrong.length && !unknown.length) {
-    log(`  ${GREEN}EVERY LAYER AGREES${OFF} — ${findings.length} probes, the deployment is what this checkout declares\n`);
+    log(notAsked.length
+      ? `  ${GREEN}EVERY LAYER ASKED AGREES${OFF} — ${findings.length} probes; the layers not asked say nothing about the deployment\n`
+      : `  ${GREEN}EVERY LAYER AGREES${OFF} — ${findings.length} probes, the deployment is what this checkout declares\n`);
     return 0;
   }
   if (real.length) {

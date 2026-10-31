@@ -1,12 +1,20 @@
 #!/usr/bin/env node
 // The layer is gone from the tree, not renamed to something quieter. Every name below was a table a
 // projection wrote, or the extension its BM25 index needed; a statement or an import naming one is
-// a file that survived the deletion. Comments are not statements, so this reads imports and
-// statement literals — and it says plainly what must stay, so a later reader does not "finish" the
-// job by removing the trigram extension AC-4.2 depends on.
+// a file that survived the deletion. Comments are not statements, so the table names are read in
+// the code with its comments removed — imports, statements and every other string — and it says
+// plainly what must stay, so a later reader does not "finish" the job by removing the trigram
+// extension AC-4.2 depends on.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+
+import { withoutComments } from "../scripts/gate/read.ts";
+
+/** A file's text with its comments blanked, in its own language's comment syntax. */
+const codeOf = (f: string, src: string): string =>
+  f.endsWith(".ts") ? withoutComments(src)
+    : src.replace(f.endsWith(".sql") ? /--[^\n]*/g : /(^|\s)#[^\n]*/g, "$1");
 
 const retiredTables = ["artifact", "artifact_revision", "artifact_event", "artifact_edge", "artifact_passage",
   "artifact_identifier", "artifact_projection_commit", "artifact_projection_watermark",
@@ -17,8 +25,9 @@ const files = execFileSync("git", ["ls-files", "services", "packages", "scripts"
 const hits: string[] = [];
 for (const f of files) {
   const src = readFileSync(f, "utf8");
+  const code = codeOf(f, src);
   for (const t of retiredTables) {
-    if (new RegExp(`(?:import|from|join|into|update|delete\\s+from)\\s+[^\\n]*\\b${t}\\b`, "i").test(src)) {
+    if (new RegExp(`(?:import|from|join|into|update|delete\\s+from)\\s+[^\\n]*\\b${t}\\b`, "i").test(code)) {
       hits.push(`${f} still names ${t}`);
     }
   }

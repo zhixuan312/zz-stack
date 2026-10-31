@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-observe
-version: 0.7
+version: 0.8
 description: Stage 2 of zz-plugin-eval (OBSERVE). Compute the pre-protocol observation snapshot — production facts from this subject's real runs, in one resolved window — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after IDENTIFY has settled subject_version_id. Also the stage that decides whether there is enough evidence for DISCOVER and EVALUATE to work from. No shell required."
 ---
@@ -97,11 +97,11 @@ new observation.
 
 ## Conformance, for a plugin with no history of its own
 
-`plugin_conform` reports R1-R14 as `true`, `false` or **`not_measured`**. Five are always
-`not_measured` because the contract itself refuses to score them — a battery that guessed would
-hand out passes this standard never granted. Clauses that do not apply to a flow plugin come
-back `not_measured` too, never `true`. Use it when a plugin is somebody else's and has no runs
-here — a starting point DEFINE can read.
+`plugin_conform` reports R1-R14 as `true`, `false` or **`not_measured`**. Only R5 (honest tool
+names) is ever settled, and only for a plugin that serves its own door; every other clause comes
+back `not_measured` — for a flow plugin and for a registered plugin with no manifest, R5 too.
+Read its `settled` count before treating the call as a ruler: most often it is 0, at most 1. Use
+it when a plugin is somebody else's and has no runs here — a starting point DEFINE can read.
 
 ## Pitfalls
 

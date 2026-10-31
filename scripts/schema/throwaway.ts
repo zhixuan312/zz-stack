@@ -164,3 +164,37 @@ export async function withThrowawayDb<T>(
     try { run("docker", ["rm", "-f", "-v", container]); } catch { /* nothing left to remove */ }
   }
 }
+
+/** A check's failed case, already worded as it is printed. */
+export class CaseFailure extends Error {}
+
+/** A check's `fail(step, detail)`. Declared with this type at the call site (`const fail: Fail = failing(NAME)`), or
+ *  TypeScript does not narrow after a call to it. */
+export type Fail = (step: string, detail: string) => never;
+
+/** A check's `fail(step, detail)`: throws the case's line, `<name>: FAILED at "<step>": <detail>`. */
+export const failing = (name: string): Fail => (step, detail) => {
+  throw new CaseFailure(`${name}: FAILED at "${step}": ${detail}`);
+};
+
+/**
+ * Runs `run` as a gate check on a throwaway database and answers the check's exit code: 0 when it returned (and `done`
+ * was printed), 1 when it threw — a CaseFailure's own line, anything else's stack — and 2 when Docker is not available,
+ * which is not a pass.
+ */
+export async function withThrowawayDbCheck(
+  name: string, done: string, run: (client: pg.Client, url: string) => Promise<void>,
+): Promise<number> {
+  try {
+    await withThrowawayDb(run);
+  } catch (err) {
+    if (err instanceof Error && /Docker is not running/.test(err.message)) {
+      console.error(`${name}: Docker is not available — the check could not run, which is not a pass`);
+      return 2;
+    }
+    console.error(err instanceof CaseFailure ? err.message : `${name}: ${String((err as Error)?.stack ?? err)}`);
+    return 1;
+  }
+  console.log(done);
+  return 0;
+}

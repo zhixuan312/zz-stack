@@ -91,17 +91,6 @@ const OTHER_KINDS: readonly { kind: string; client: string | null; origin: Origi
 
 const shown = (client: string | null): string => (client === null ? "no client" : JSON.stringify(client));
 
-/** Rows matching `sql`, waited on until there are `n` of them: an event is written after the
- *  answer it describes, so it is polled for, briefly. */
-async function rowsOnce<T extends pg.QueryResultRow>(c: Core, sql: string, params: unknown[], n: number): Promise<T[]> {
-  const until = Date.now() + 5000;
-  for (;;) {
-    const { rows } = await c.sql.query<T>(sql, params);
-    if (rows.length >= n || Date.now() > until) return rows;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-}
-
 /** The migration's backfill: its one statement that changes rows of `zz.event`, comments left out. */
 function backfillOf(c: Core, step: string): string {
   const code = readFileSync(join(root, MIGRATION), "utf8").split("\n")
@@ -223,15 +212,13 @@ async function liveCases(c: Core, g: Gateway): Promise<void> {
     if (sent.status !== 200 || !sent.reply || sent.reply.startsWith("ERROR")) {
       c.fail(step, `knowledge_search as ${shown(f.client)} answered ${sent.status}: ${sent.reply.slice(0, 300)}`);
     }
-    const calls = await rowsOnce<{ origin: string }>(c,
-      `select origin from zz.event
+    const calls = await c.rowsOnce<{ origin: string }>(`select origin from zz.event
         where kind = 'tool_call' and subject = 'core:knowledge_search' and detail->>'client' is not distinct from $1::text`,
       [f.client], 1);
     if (calls.length !== 1 || calls[0].origin !== f.origin) {
       c.fail(step, `the gateway's tool_call for ${shown(f.client)} reads ${JSON.stringify(calls.map((r) => r.origin))}, not one row of ${f.origin}`);
     }
-    const acts = await rowsOnce<{ origin: string }>(c,
-      "select origin from zz.event where kind = 'knowledge.search' and subject = $1", [query], 1);
+    const acts = await c.rowsOnce<{ origin: string }>("select origin from zz.event where kind = 'knowledge.search' and subject = $1", [query], 1);
     if (acts.length !== 1 || acts[0].origin !== f.origin) {
       c.fail(step, `zz-core's knowledge.search for ${shown(f.client)} reads ${JSON.stringify(acts.map((r) => r.origin))}, not one row of ${f.origin}`);
     }
@@ -247,8 +234,7 @@ async function transactionCase(c: Core): Promise<void> {
   await c.ok(step, "document_write", { path, title: "Notes", content: "# Notes\n\nThe wombat cache expires nightly.\n" });
   await c.ok(step, "document_present", { path }, c.client({ client: "zz-doctor" }));
   await c.ok(step, "document_present", { path });
-  const rows = await rowsOnce<{ client: string | null; origin: string }>(c,
-    `select detail->>'client' as client, origin from zz.event
+  const rows = await c.rowsOnce<{ client: string | null; origin: string }>(`select detail->>'client' as client, origin from zz.event
       where kind in ('document.shown', 'document.shown_part') and subject = $1 order by id`, [path], 2);
   const read = rows.map((r) => `${r.client}:${r.origin}`).join(", ");
   if (read !== `zz-doctor:platform, ${NAME}:work`) {

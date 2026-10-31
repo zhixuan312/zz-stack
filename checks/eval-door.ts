@@ -23,7 +23,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { errMessage } from "../scripts/gate/read.ts";
+import { errMessage, withoutComments } from "../scripts/gate/read.ts";
 
 // Before any dynamic import in this file. @zz/catalog reads ZZ_CATALOG_DIR once, at module load,
 // and defaults to `/catalog` — a path that exists in the container and not in a checkout. Half the
@@ -40,31 +40,9 @@ const blind: string[] = [];
 const read = (p: string) => { try { return readFileSync(p, "utf8"); } catch { blind.push(p); return null; } };
 const listDir = (d: string) => { try { return readdirSync(d); } catch { blind.push(d); return []; } };
 
-/** Source with its comments taken out, tracking strings so a quoted `/*` cannot open one.
- *
- * A character scanner, not a line-wise stripper: a line comment ending "…/auth/*" opens a block
- * comment a line-wise stripper never closes, blanking the rest of the file — and a stripper that
- * silently empties the region it is asked about turns every assertion over that region green. */
-const stripComments = (src: string) => {
-  let out = "";
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i], d = src[i + 1];
-    if (c === "/" && d === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
-    if (c === "/" && d === "*") {
-      i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) { if (src[i] === "\n") out += "\n"; i++; }
-      i += 2; continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      out += c; i++;
-      while (i < src.length && src[i] !== c) { if (src[i] === "\\") { out += src[i]; i++; } out += src[i]; i++; }
-      out += src[i] ?? ""; i++; continue;
-    }
-    out += c; i++;
-  }
-  return out;
-};
+/** Source with its comments blanked — `withoutComments`, which reads strings and regex literals, so a
+ *  quoted `/*` or one inside a regex cannot open a comment and blank the region an assertion is about. */
+const stripComments = withoutComments;
 
 /** A real client, connected to a real server over a linked in-memory transport pair. */
 async function connectTo(server: McpServer) {

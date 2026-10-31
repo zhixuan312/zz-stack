@@ -138,7 +138,7 @@ async function main(): Promise<number> {
     // ── (2) the ratio, under the stated load.
     //
     // The daemon is switched off for the measurement and only for it. Arm 1 has already read the
-    // settings the migration wrote, and 10,000 updates on a table with a tight scale factor is
+    // settings the migration wrote, and CHURN_UPDATED updates on a table with a tight scale factor is
     // exactly what autovacuum would wake for — a `before` measured after it had fired would already
     // be clean, and `after < before` would then fail on a busy machine for no reason but timing.
     // The key is removed again at the end, so what the catalog holds is what the migration wrote.

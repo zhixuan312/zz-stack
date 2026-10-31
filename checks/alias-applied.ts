@@ -25,7 +25,7 @@ if (resolveToolKey("manage:issue_my_access_token") === resolveToolKey("manage:pa
 }
 
 // 2. No per-tool grouper reads `subject` raw. Any file that groups by subject must import
-//    the resolver, so a grouper added later is caught too. Read as code: a grouper is code, and a
+//    the resolver and call it, so a grouper added later is caught too. Read as code: a grouper is code, and a
 //    file that only names a `byTool` key in a string (chain-reads.ts asks a read for it) groups
 //    nothing.
 const dir = "packages/tools/src/testing";
@@ -37,7 +37,7 @@ for (const f of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
   const src = readFileSync(join(dir, f), "utf8");
   const groups = /perTool|byTool|group.*subject|subject.*group/i.test(codeOf(src));
   if (groups) groupers++;
-  if (groups && !/resolveToolKey/.test(src)) {
+  if (groups && !/\bresolveToolKey\s*\(/.test(codeOf(src))) {
     fail.push(`${f} groups by tool without resolving through the alias`);
   }
 }

@@ -183,12 +183,6 @@ function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
 const BODY = "# Notes\n\n## Alpha\n\nalpha line one\n\nalpha line two\n\n## Beta\n\nbeta line one\n\nbeta line two\n";
 const CONTEXT = /^rc_[a-z2-7]{26}$/;
 
-/** The content revision zz-core's own read of the current document states. */
-async function tokenOf(c: Core, step: string, path: string): Promise<string> {
-  const read = await c.ok(step, "document_read", { path });
-  return /^content_revision: (cr_[a-z2-7]{26})$/m.exec(read)?.[1] ?? c.fail(step, `no content_revision in: ${read}`);
-}
-
 /** The `zz.event` rows of one kind about one document, oldest first. The gateway's own rows are
  *  written fire-and-forget after it answers, so a row looked for is waited on, briefly. */
 async function events(c: Core, kind: string, subject: string, want = 1): Promise<Record<string, unknown>[]> {
@@ -228,7 +222,7 @@ async function presentation(c: Core, routes: { detail: Route; shown: Route; appr
 
   let step = "the document read names its snapshot";
   const cr1 = (await detail(step)).content_revision;
-  const stated = await tokenOf(c, step, path);
+  const stated = await c.token(step, path);
   if (cr1 !== stated) c.fail(step, `content_revision was ${JSON.stringify(cr1)}, zz-core's read states ${stated}`);
   c.pass("the document read names the displayed snapshot's content_revision, the token zz-core states");
 

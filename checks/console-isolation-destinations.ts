@@ -53,6 +53,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { seedIsolation, seedWork, type Isolation } from "../scripts/schema/isolation-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
+import { said } from "../scripts/schema/shape-diffs.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 import { dimensions, routesOf, send, tally, wide, type Answer, type Query } from "./console-isolation-work.ts";
@@ -221,18 +222,11 @@ function phantoms(s: Isolation, x: Record<Field, string>, p: Planted): [string, 
     [x.skill, `skill-${hex()}`], [s.one.slug, `slug-${hex()}`]];
 }
 
-/** An answer with every instant masked, the given names masked, and the fields that describe the REQUEST removed:
- *  what is left is what it says.
- *
- *  `observedAt` is when this request obtained its answer, `cacheHit` is what the cache decided for it and `revision`
- *  is the marker it could hear. Two reads of the same rows legitimately differ in all three, and none of them says
- *  anything about whose rows an answer holds — which is what this check is about, so leaving them in would report an
- *  isolation break that is only the clock. */
+/** An answer with the given names masked, then what it says (`said`). The fields that describe the request say nothing
+ *  about whose rows an answer holds, which is what this check is about, so leaving them in would report an isolation
+ *  break that is only the clock. */
 function masked(a: Answer, names: string[] = []): string {
-  const text = names.reduce((t, n) => t.replaceAll(n, "[name]"), a.text)
-    .replace(/"(observedAt|cacheHit)":(?:"[^"]*"|true|false|null)/g, "")
-    .replace(/"revision":"(?:[^"\\]|\\.)*"/g, "");
-  return `${a.status} ${text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>")}`;
+  return `${a.status} ${said(names.reduce((t, n) => t.replaceAll(n, "[name]"), a.text))}`;
 }
 
 async function run(sql: pg.Client, url: string): Promise<void> {

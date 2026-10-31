@@ -198,12 +198,19 @@ for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r,
       // question is what it resolves to now and whether that table still has it. A name none of
       // the bound tables carries is not a column reference at all; one two of them carry is one
       // this check cannot read — reported, never passed.
-      const post = [...new Set(bound)];
+      // A statement with a CTE can name a retired column bare as the CTE's own output column, which
+      // this check cannot tell from the table's: such a mention is reported as unreadable.
       const ctes: Set<string> = cteNames(sql);
-      for (const column of ctes.size ? [] : new Set(post.flatMap((t) => RETIRED[t] ?? []))) {
+      for (const column of new Set(bound.flatMap((t) => RETIRED[t] ?? []))) {
         if (!bareMention(sql, column)) continue;
+        const post = bound.filter((t) => !ctes.has(t));
         const before = post.filter((t) => carried(t, column));
         if (before.length === 0) continue;
+        if (ctes.size) {
+          found.add(`this check cannot read whether a bare \`${column}\` is ${before.join(" or ")}'s ` +
+                    `or a column of the CTE ${[...ctes].join(", ")} — qualify it`);
+          continue;
+        }
         if (before.length > 1) {
           found.add(`this check cannot read which table's \`${column}\` is meant: this statement ` +
                     `binds ${post.join(", ")}, and ${before.join(" and ")} carried it before this phase`);

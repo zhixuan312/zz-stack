@@ -2,20 +2,23 @@
 //
 // The reader pinned is skills.ts, by name: a check that names one file protects one file.
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { root } from "../scripts/deployment.ts";
 
 const fail = [];
 const f = "services/gateway/src/console/skills.ts";
-const src = readFileSync(f, "utf8");
+const src = readFileSync(join(root, f), "utf8");
 
-// The fields that come from `avg`/`sum`/`round` and can therefore be SQL null. A unary plus
-// on any of them turns null into 0.
+// The fields that come from `avg`/`sum`/`round` and can therefore be SQL null. Each must pass
+// through num(): a unary plus, `Number(…)` or `Math.round(…)` on any of them turns null into 0.
 const FIELDS = ["durationAvg", "durationMedian", "durationMax", "kbPerRun", "kbTotal"];
 for (const field of FIELDS) {
   const m = new RegExp(`${field}\\s*:\\s*([^,\\n}]+)`).exec(src);
   if (!m) { fail.push(`${f} no longer emits ${field}`); continue; }
-  if (/^\s*\+/.test(m[1])) {
-    fail.push(`${field} is coerced with a unary plus — \`+null\` is 0, so a group nothing ` +
-              `measured reports as instant and free`);
+  if (!/^\s*num\(/.test(m[1])) {
+    fail.push(`${field} is \`${m[1].trim()}\`, not num(…) — \`+null\` and \`Number(null)\` are 0, so a ` +
+              `group nothing measured reports as instant and free`);
   }
 }
 

@@ -28,7 +28,40 @@ const reaches = (path: string, names: readonly string[] | undefined): boolean =>
 
 /** The fields `console/read-envelope.ts` stamps on every console GET answer, which describe the request that asked and
  *  never the figures: no fixture can state them, because a fixture has no request. */
-export const REQUEST_SCOPED: ReadonlySet<string> = new Set(["observedAt", "revision", "cacheHit", "builtAt", "sourceRevision"]);
+const REQUEST_SCOPED: ReadonlySet<string> = new Set(["observedAt", "revision", "cacheHit", "builtAt", "sourceRevision"]);
+
+/** Every instant a console answer states. */
+const INSTANT = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g;
+
+/**
+ * A value with the request-scoped fields removed from every `meta` object it holds, and from nowhere else.
+ *
+ * DELIBERATE: removed by walking the parsed value, keyed on `meta`, never by a pattern over the text or by the name
+ * at any depth. A data field can share one of the five names — a document's `versions[]` each hold a `revision` — and
+ * a mask on the name alone would erase a leak or a wrong value of that field before a comparison could see it.
+ */
+function withoutRequestFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutRequestFields);
+  if (!isObj(value)) return value;
+  const out: Obj = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (k === "meta" && isObj(v)) out[k] = Object.fromEntries(Object.entries(v).filter(([f]) => !REQUEST_SCOPED.has(f)));
+    else out[k] = withoutRequestFields(v);
+  }
+  return out;
+}
+
+/** What an answer says: its JSON with the request-scoped fields removed and every instant masked. Text that is not
+ *  JSON carries no `meta` to walk, so only its instants are masked. */
+export function said(text: string): string {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return text.replace(INSTANT, "<instant>");
+  }
+  return JSON.stringify(withoutRequestFields(body)).replace(INSTANT, "<instant>");
+}
 
 /** Every difference, appended to `out` (which is also answered), each naming its path. */
 export function shapeDiffs(a: unknown, b: unknown, path: string, out: string[], rules: ShapeRules = {}): string[] {

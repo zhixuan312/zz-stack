@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// A recorded finding can be corrected. The live zz-core evaluation recorded 7.5 where the score
-// said 7.7 and had no way to fix it. finding_record(supersedes) closes the wrong one in the same
+// A recorded finding can be corrected: finding_record(supersedes) closes the wrong one in the same
 // write, and findings.md renders only the current one, noting what it corrected.
-// The render is pure; the write is read from source, since no database is available here.
+// The render is driven. The write is matched as text in its source and never run, so a statement
+// that keeps this shape and fails against the schema passes here.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";

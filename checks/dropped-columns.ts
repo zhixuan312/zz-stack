@@ -61,6 +61,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { SCHEMA_TARGET } from "../schema-target.ts";
+import { PHASE3_RETIRED_COLUMNS } from "../scripts/schema/retired-columns.ts";
 
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its own
 // copy of it, byte for byte with four others.
@@ -92,7 +93,7 @@ const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/
  * name survives, and what the writer has to change is the value it hands over, which no reading
  * of the statement can see.
  */
-const RETIRED: Record<string, string[]> = {
+const RETIRED: Record<string, readonly string[]> = {
   // Phase 2's migration.
   event: ["actor", "team_slug", "initiative", "flow", "step", "step_version"],
   skill_run: ["turns", "caller_session"],
@@ -100,41 +101,8 @@ const RETIRED: Record<string, string[]> = {
   assessment: ["requested_model", "initiative"],
   initiative_fact: ["id", "team", "initiative"],
   bug: ["team_slug", "initiative"],
-  // Phase 3's migration. This is that migration's NET effect, read
-  // off the target against the folded baseline — not off its `drop column` statements, which is a
-  // list that lies: `observable_surfaces` is dropped, re-added as `observable_surfaces_text` and
-  // renamed back, so a list built from the drops alone reports a live column as retired.
-  // `polarity` is the mirror case, retired by a rename the drops never name.
-  //
-  // Why this list exists at all: the plan gave this phase a check for the names its own statements
-  // had to stop using (`catalog-eval-columns.ts`, I-20) and no check for the rest of its drops, so
-  // every other retired column was silent until a path happened to exercise it —
-  // `zz.eval_run.guardrails` reached a live 500 exactly that way, and widening this list to the
-  // rest of phase 3's drops found `protocol-record.ts` and `protocol-triggers.ts` naming a
-  // `zz.eval_protocol_version` column the migration had retired.
-  eval_run: ["coverage", "dimension_scores", "evidence_snapshot_id", "guardrails", "run_status",
-             "score_interval", "subject_version_id"],
-  eval_assessment: ["answer", "evaluator_version_id", "evidence_ref", "policy_version",
-                    "resulting_action", "subject_ref"],
-  eval_dimension: ["name"],
-  eval_evaluator_qualification: ["evaluator_version_id", "protocol_version_id", "subject_scope"],
-  eval_evaluator_version: ["evaluator_id", "model_policy", "polarity"],
-  eval_idempotency: ["principal"],
-  eval_measure: ["suite"],
-  eval_observation_snapshot: ["coverage", "environment_digest", "production_window",
-                              "runtime_identity", "subject_version_id"],
-  eval_protocol_version: ["approved_document_path", "failure_taxonomy", "protocol_id",
-                          "subject_compatibility", "suites",
-                          // COUPLED: the comment above explains this one and stopped one name
-                          // short of it — dropped, re-added under `_text` and renamed back, so the
-                          // net effect is that this name is GONE and the target carries
-                          // `observable_surfaces`. Leaving it out made a bare mention of it the one
-                          // retired name this check did not report, which is the gap
-                          // `checks/eval-family-readers.ts` had for the same column.
-                          "observable_surfaces_text"],
-  plugin: ["evolvable", "owner_team", "release_owners"],
-  plugin_version: ["rubric_id"],
-  skill: ["kind", "ordinal"],
+  // Phase 3's migration: the one record checks/eval-family-readers.ts reads too.
+  ...PHASE3_RETIRED_COLUMNS,
   // Phase 4's migration, read off the target against the folded baseline the same way. It folded
   // back into `001_init.sql` once release 0.85.0 was verified in production, and this is the set it
   // retired: `improve-control-shape.ts` asserts the target, and this is what asks whether a

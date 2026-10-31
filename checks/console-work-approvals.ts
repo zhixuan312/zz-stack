@@ -51,6 +51,7 @@ import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { WEEK, runningWeek } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
 
 const NAME = "console-work-approvals";
 const DONE = "console-work-approvals: Waiting is the team's queue and History the caller's own approvals with their " +
@@ -61,12 +62,6 @@ const HOUR = 3_600_000;
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "work-approvals.ts");
 const BODY = "# Notes\n\n## Alpha\n\nalpha line one\n\n## Beta\n\nbeta line one\n";
-const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
-const SPEC = "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n" +
-  "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-  "## Stakeholders & Work\nx\n\n## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-  "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-  "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
 
 type Obj = Record<string, unknown>;
 type Route = (req: unknown, res: unknown) => void;
@@ -197,8 +192,8 @@ async function run(c: Core): Promise<void> {
     const queue: { path: string; token: string }[] = [];
     for (const slug of ["waits-long", "waits-short"]) {
       const initiative = await c.open(slug, "sdlc-flow");
-      await c.ok(step, "document_write", { path: `${initiative}/explore.md`, content: EXPLORE });
-      await c.ok(step, "document_write", { path: `${initiative}/spec.md`, content: SPEC });
+      await c.ok(step, "document_write", { path: `${initiative}/explore.md`, content: EXPLORE_BODY });
+      await c.ok(step, "document_write", { path: `${initiative}/spec.md`, content: SPEC_BODY });
       await c.ok(step, "document_present", { path: `${initiative}/spec.md` });
       queue.push({ path: `${initiative}/spec.md`, token: await tokenOf(`${initiative}/spec.md`) });
     }

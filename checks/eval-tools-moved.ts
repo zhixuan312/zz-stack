@@ -20,7 +20,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 
-import { errMessage } from "../scripts/gate/read.ts";
+import { errMessage, withoutComments } from "../scripts/gate/read.ts";
 
 function errCode(err: unknown): string | undefined {
   if (err && typeof err === "object" && "code" in err) {
@@ -48,32 +48,10 @@ const MOVED = [...SUPPORT, ...REGISTRATIONS];
  *  path: "nothing found" and "nothing to find" are the same answer unless one of them says so. */
 const read = (p: string) => { try { return readFileSync(p, "utf8"); } catch { blind.push(p); return null; } };
 
-/** Source with its comments taken out, tracking strings so a quoted `/*` cannot open one.
- *
- * DELIBERATE: a character scanner, not the line-wise stripper core-surface.ts carries. A line
- * comment ending "…/auth/*" opens a block comment a line-wise stripper never closes, blanking the
- * rest of the file and turning every assertion over that region green. Every file this walks
- * carries prose naming these modules by path, and an import in a comment is not an import. */
-const stripComments = (src: string) => {
-  let out = "";
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i], d = src[i + 1];
-    if (c === "/" && d === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
-    if (c === "/" && d === "*") {
-      i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) { if (src[i] === "\n") out += "\n"; i++; }
-      i += 2; continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      out += c; i++;
-      while (i < src.length && src[i] !== c) { if (src[i] === "\\") { out += src[i]; i++; } out += src[i]; i++; }
-      out += src[i] ?? ""; i++; continue;
-    }
-    out += c; i++;
-  }
-  return out;
-};
+/** Source with its comments blanked — `withoutComments`, which reads strings and regex literals, so a
+ *  quoted `/*` or one inside a regex cannot open a comment. Every file this walks carries prose naming
+ *  these modules by path, and an import in a comment is not an import. */
+const stripComments = withoutComments;
 
 /** Every .ts file under zz-core's source, as paths relative to it. */
 const walk = (dir: string, base = "", out: string[] = []) => {
@@ -95,13 +73,14 @@ if (files.length < 15) {
             "examined almost nothing. Point the walk at where the source went.");
 }
 
-/** Who imports what, resolved. `{ from, to }` in paths relative to SRC, comments stripped and
- *  relative specifiers only — a package name is not a file in this tree. */
+/** Who imports what, resolved — a static `from` and a dynamic `import()` alike. `{ from, to }` in
+ *  paths relative to SRC, comments stripped and relative specifiers only — a package name is not a
+ *  file in this tree. */
 const edges: { from: string; to: string }[] = [];
 for (const f of files) {
   const src = stripComments(read(join(SRC, f)) ?? "");
-  for (const m of src.matchAll(/from\s+"(\.[^"]*)"/g)) {
-    const spec = m[1].replace(/\.js$/, ".ts");
+  for (const m of src.matchAll(/from\s+"(\.[^"]*)"|import\(\s*"(\.[^"]*)"\s*\)/g)) {
+    const spec = (m[1] ?? m[2]).replace(/\.js$/, ".ts");
     edges.push({ from: f, to: posix.normalize(posix.join(posix.dirname(f), spec)) });
   }
 }
@@ -219,7 +198,7 @@ if (!imported.length) {
 // And nothing still answers at the old address. `tsc -b` deletes nothing, so a compiled copy of a
 // moved file survives in place and every caller of the old path stays green against code no source
 // produces. That is a second implementation answering to the name, not a stale artifact.
-const ABANDONED = [...SUPPORT.map((m) => m), ...REGISTRATIONS.map((m) => `tools/${m}`)]
+const ABANDONED = [...SUPPORT, ...REGISTRATIONS.map((m) => `tools/${m}`)]
   .map((m) => m.replace(/\.ts$/, ".js"));
 for (const old of ABANDONED) {
   const at = `../${DIST}/${old}`;

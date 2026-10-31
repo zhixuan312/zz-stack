@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 /**
- * A document body is stored whole, or refused — never stored shortened.
- *
- * `saveDocument` cut every body at 200,000 characters (`.slice(0, 200_000)`, a search-index cap
- * from the file store that became the stored bytes when documents moved into rows). The write
- * answered success, `content_hash` hashed the whole text, and the rows held a prefix: 37 revisions
- * on the deployment end at exactly 200,000 characters, and two reports (bugs 6a05dd64 and 560b5e26)
- * found plans missing their last phases and their `## Full-suite gate` only by comparing lengths.
+ * A document body is stored whole, or refused — never stored shortened. A write that answers
+ * success while the rows hold a prefix loses a plan's last phases with nothing to say so but the
+ * lengths.
  *
  * Driven through the real `saveDocument` over a stubbed `pg.Pool` that records every statement:
  *

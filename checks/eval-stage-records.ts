@@ -21,69 +21,15 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import pg from "pg";
-
-process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+import { installWorld, type World } from "../scripts/schema/initiative-world.ts";
 
 const TEAM = "t1";
 const I = "2026-09-25-records";
 const ID = "11111111-1111-4111-8111-111111111111";
-interface W { id: string; flow: string | null; docs: Record<string, unknown>[]; facts: Record<string, string>;
-             records: Record<string, Record<string, string>> }
-const world = new Map<string, W>();
-const w: W = { id: ID, flow: null, docs: [], facts: {}, records: {} };
+const world = new Map<string, World>();
+const w: World = { id: ID, flow: null, docs: [], facts: {}, records: {} };
 world.set(I, w);
-
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
-  const sql = String(text).replace(/\s+/g, " ").trim();
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  const bySlug = world.get(String(values[1] ?? ""));
-  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
-    const names = (values[1] as string[]) ?? [];
-    return one(names.filter((n) => world.has(n)).map((n) => ({
-      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
-  }
-  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
-    return one(bySlug ? [{ id: bySlug.id, flow: bySlug.flow, opened_at: "2026-09-25",
-                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
-  }
-  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
-    return one(world.get(String(values[0]))?.docs ?? []);
-  }
-  if (/from zz\.doc d\b/.test(sql)) {
-    const hit = (bySlug?.docs ?? []).filter((d) => d.path === values[2]);
-    return one(hit.length ? [hit[hit.length - 1]] : []);
-  }
-  if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    const d = [...world.values()].flatMap((x) => x.docs).find((x) => x.id === String(values[0]));
-    return one(d ? [{ revision: 1, version: 1, content_state: "retained", title: d.title, body: d.body,
-                      tags: [], content_hash: "h", fields: d.fields, revision_note: null,
-                      written_by: "ada@zz.test", written_at: d.updated_at,
-                      approved_by: d.approved_by, approved_at: d.approved_at }] : []);
-  }
-  if (/from zz\.initiative_fact f\b/.test(sql)) {
-    return one(Object.entries(bySlug?.facts ?? {}).map(([fact, value]) => ({ fact, value })));
-  }
-  if (/from zz\.initiative_record r\b/.test(sql)) {
-    return one(Object.entries(bySlug?.records ?? {}).flatMap(([stage, ids]) =>
-      Object.entries(ids).map(([id_name, value]) => ({ stage, id_name, value }))));
-  }
-  // `writeStageRecord` keys on the initiative's ID, so the write finds its world by id.
-  if (/insert into zz\.initiative_record\b/.test(sql)) {
-    const target = [...world.values()].find((x) => x.id === String(values[0]));
-    if (target) {
-      const stage = String(values[1]);
-      target.records[stage] = { ...(target.records[stage] ?? {}), [String(values[2])]: String(values[3]) };
-    }
-    return { rows: [], rowCount: 1 };
-  }
-  if (/delete from zz\.initiative_record\b/.test(sql)) {
-    const target = [...world.values()].find((x) => x.id === String(values[0]));
-    if (target) delete target.records[String(values[1])];
-    return { rows: [], rowCount: 1 };
-  }
-  return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+installWorld(world, "2026-09-25");
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");

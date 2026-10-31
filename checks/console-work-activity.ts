@@ -38,8 +38,9 @@
  *   - the key sets match the console's fake answers.
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, eight hours ahead of UTC, and the weeks are counted
- * from the running week the check began in, so a run that crosses midnight into a Monday in that timezone
- * fails on dates; run it again.
+ * from the running week the cases began in. A route read after the next local Monday would count every seeded
+ * row a week older than it was written, so cases that would begin in a week's last `MARGIN_MS` wait for the
+ * Monday first.
  *
  * The only database it touches is the one it started.
  *
@@ -257,8 +258,13 @@ async function run(c: Core): Promise<void> {
   }
 }
 
+/** Longer than the cases take: no running week ends while they run. */
+const MARGIN_MS = 10 * 60_000;
+
 async function cases(c: Core, g: Gateway): Promise<void> {
   const d = door(c, g);
+  const left = runningWeek(Date.now()) + WEEK - Date.now();
+  if (left < MARGIN_MS) await new Promise((r) => setTimeout(r, left + 1000));
   const w0 = runningWeek(Date.now());
   const when = (w: When): number => at(w0, w);
   const mine = (step: string, client: string, name: string, args: Obj, refused = false) => d.send(step, g.mine, client, name, args, refused);

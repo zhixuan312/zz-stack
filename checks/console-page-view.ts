@@ -52,7 +52,7 @@ import { pathToFileURL } from "node:url";
 import pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-page-view";
 const DONE = "console-page-view: a page view of each of the nineteen destinations is one console.page_view event naming its " +
@@ -81,8 +81,7 @@ const MEMBER = "reader@example.test";
 const LONER = "loner@example.test";
 const ADMIN = "admin@example.test";
 
-class CaseFailure extends Error {}
-const fail = (step: string, detail: string): never => { throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`); };
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`ok ${line}`);
 const load = (p: string) => import(pathToFileURL(join(root, p)).href);
 
@@ -326,11 +325,4 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     delete process.env.ZZ_CATALOG_DIR;
   }
 }
-try {
-  await withThrowawayDb(run);
-  console.log(DONE);
-} catch (err) {
-  if (err instanceof CaseFailure) { console.error(err.message); process.exitCode = 1; }
-  else if (/Docker is not running/.test(String(err))) { console.error(`${NAME}: SKIPPED — ${String(err)}`); process.exitCode = 2; }
-  else { console.error(`${NAME}: FAILED — ${err instanceof Error ? err.stack : String(err)}`); process.exitCode = 1; }
-}
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

@@ -40,6 +40,7 @@ import { join } from "node:path";
 
 import { root } from "../scripts/deployment.ts";
 import { SCHEMA_TARGET } from "../schema-target.ts";
+import { BUDGET, sectionOf } from "../scripts/schema/event-work-week-fixture.ts";
 
 const TABLE = "event_work_week";
 /** The three names this model must not carry, and why each is out of its reach — see the module doc. */
@@ -68,9 +69,6 @@ const METRICS: Array<[string, RegExp]> = [
   ["calls by local weekday and hour", /hour|weekday/i],
 ];
 
-/** One line, two numbers: `rows ≤ 1200, ms ≤ 40`. `≤` or `<=`, either spelling. */
-const BUDGET = /rows\s*(?:≤|<=)\s*([\d,]+)\s*,\s*ms\s*(?:≤|<=)\s*([\d,]+)/i;
-
 /** A `function`, not a `const` arrow: TypeScript narrows after a call only when the callee's own
  *  declaration says it never returns. */
 function fail(step: string, detail: string): never {
@@ -78,20 +76,6 @@ function fail(step: string, detail: string): never {
   process.exit(1);
 }
 const pass = (line: string): void => console.log(`ok ${line}`);
-
-/** The body of `### <heading>`, down to the next heading of any level. */
-function sectionOf(md: string, heading: string): string | null {
-  const lines = md.split("\n");
-  const start = lines.findIndex((l) => /^#{2,4}\s/.test(l) && l.replace(/^#{2,4}\s+/, "").trim() === heading);
-  if (start < 0) return null;
-  const level = (lines[start].match(/^#+/) ?? [""])[0].length;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    const m = lines[i].match(/^(#+)\s/);
-    if (m && m[1].length <= level) { end = i; break; }
-  }
-  return lines.slice(start + 1, end).join("\n");
-}
 
 // 1 — the column arm. The model is a projection of `zz.event` and holds only what that rebuilds.
 const table = SCHEMA_TARGET.tables[TABLE];

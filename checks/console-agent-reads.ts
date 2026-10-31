@@ -58,6 +58,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { seedIsolation, seedWork, seedWorkRecord, type Isolation, type WorkRecord } from "../scripts/schema/isolation-seed.ts";
+import { said } from "../scripts/schema/shape-diffs.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 import { send } from "./console-isolation-work.ts";
@@ -92,28 +93,9 @@ const UNREAD = { state: "unavailable", reason: "query_failed" };
 let fail: Core["fail"] = (step, detail) => { throw new Error(`${step}: ${detail}`); };
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
-/** The fields that describe the REQUEST rather than the figures: `observedAt` is when this request obtained its
- *  answer, `cacheHit` is what the cache decided for it, `revision` is the marker it could hear, and `builtAt` and
- *  `sourceRevision` describe persisted derived data this route computes from rows. A route and the function it
- *  reuses legitimately differ in all five and still say the same thing. */
-const REQUEST_SCOPED = ["observedAt", "cacheHit", "revision", "builtAt", "sourceRevision"] as const;
-
-/** An answer with every instant masked and the request-scoped fields removed: what is left is what it says. */
-const masked = (v: unknown): string => {
-  const strip = (o: unknown): unknown => {
-    if (Array.isArray(o)) return o.map(strip);
-    if (o && typeof o === "object") {
-      const out: Record<string, unknown> = {};
-      for (const [k, x] of Object.entries(o as Record<string, unknown>)) {
-        if ((REQUEST_SCOPED as readonly string[]).includes(k)) continue;
-        out[k] = strip(x);
-      }
-      return out;
-    }
-    return o;
-  };
-  return JSON.stringify(strip(v)).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>");
-};
+/** What an answer says (`said`): a route and the function it reuses legitimately differ in the request-scoped fields
+ *  of `meta` and in their instants, and in nothing else. */
+const masked = (v: unknown): string => said(JSON.stringify(v));
 /** A part's data, or the case fails. */
 function data<T>(step: string, part: unknown): T {
   const p = part as Part;

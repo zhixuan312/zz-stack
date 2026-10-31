@@ -42,18 +42,9 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash, randomBytes } from "node:crypto";
-import type { Server } from "node:http";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-
-import { lastJson } from "@zz/mcp-client";
-import type { Request, RequestHandler } from "express";
-import type pg from "pg";
-
-import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { TIMEZONE, WEEK, at, runningWeek } from "../scripts/schema/work-seed.ts";
+import { door, phase, serveDoor, text } from "./console-work-query-harness.ts";
 
 const NAME = "console-writing";
 const DONE = "console-writing: words added are dated by the content of each retained revision, sealed or not, imports " +
@@ -80,13 +71,6 @@ const MAINTENANCE = "zz-migrate";
 const WORK = "zz-plugin";
 const HOUR = 3_600_000;
 
-/** `n` words: a heading of two, then words of `tag`, the first of them `<tag>-start`, twenty to a line. */
-function text(n: number, tag: string): string {
-  const words = Array.from({ length: n - 2 }, (_, i) => (i === 0 ? `${tag}-start` : tag));
-  const lines: string[] = [];
-  for (let i = 0; i < words.length; i += 20) lines.push(words.slice(i, i + 20).join(" "));
-  return `# ${tag}\n\n${lines.join("\n")}\n`;
-}
 /** A block of `n` words, its first word the marker that makes it unique, twenty to a line. */
 function block(marker: string, n: number): string {
   const words = [marker, ...Array.from({ length: n - 1 }, () => "lorem")];
@@ -104,100 +88,9 @@ const MORE = block("MARKY", 1000);
 interface Gateway { url: string; token: string; writing: Writing; stop(): Promise<void> }
 
 async function listen(c: Core): Promise<Gateway> {
-  process.env.TEAM_DB_URL = c.url;
-  process.env.ZZ_TZ = TIMEZONE;
-  process.env.ZZ_CATALOG_DIR = join(root, "catalog");
-  const load = (p: string) => import(pathToFileURL(join(root, p)).href);
-  const express = (await import("express")).default;
-  const db = (await load("services/gateway/dist/db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
-  await db.initPlatformDb();
-  const { identityMiddleware } = (await load("services/gateway/dist/identity.js")) as { identityMiddleware: () => RequestHandler };
-  const { toolCallTelemetry, doorSurface } = (await load("services/gateway/dist/tool-telemetry.js")) as
-    { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
-  const { passThrough } = (await load("services/gateway/dist/relay.js")) as
-    { passThrough: (url: string, what: string, refusal: string) => RequestHandler };
-  const writing = (await load("services/gateway/dist/console/writing.js")) as Writing;
-
-  const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the telemetry on
-  // the door and then the door's relay to zz-core, in the order server.ts mounts them.
-  app.use(identityMiddleware());
-  app.use(express.json({ limit: "20mb" }));
-  app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
-  app.all("/core/mcp", passThrough(c.mcp.url, "core proxy", "zz-core is not reachable"));
-  const server: Server = app.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
-  await c.sql.query(
-    `insert into zz.pat (principal_id, token_hash, team_id) select p.id, $2, null from zz.principal p where p.email = $1`,
-    [c.email, createHash("sha256").update(token, "utf8").digest("hex")]);
-  return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, token, writing,
-    stop: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await db.platformDb().end().catch(() => undefined);
-      delete process.env.TEAM_DB_URL;
-      delete process.env.ZZ_TZ;
-      delete process.env.ZZ_CATALOG_DIR;
-    },
-  };
-}
-
-/** Tool calls through the gateway as a client, counted so the rows they leave can be waited for. */
-function door(c: Core, g: Gateway) {
-  let sent = 0;
-  const call = async (step: string, client: string, name: string, args: Record<string, unknown>): Promise<string> => {
-    const res = await fetch(`${g.url}/core/mcp`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${g.token}`, "content-type": "application/json",
-                 accept: "application/json, text/event-stream", "x-zz-client": client },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const raw = await res.text();
-    sent++;
-    const env = lastJson(raw);
-    const reply = env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? raw.slice(0, 300);
-    if (res.status !== 200 || reply.startsWith("ERROR")) c.fail(step, `${name} as ${client} answered ${res.status}: ${reply.slice(0, 300)}`);
-    return reply;
-  };
-  return { call, sent: () => sent };
-}
-
-const count = async (c: Core, where: string): Promise<number> =>
-  (await c.sql.query<{ n: number }>(`select count(*)::int as n from zz.event where ${where}`)).rows[0].n;
-
-/**
- * Runs `make`, waits until every row it leaves has landed (the gateway writes a tool call after its
- * answer, and zz-core most acts after its commit), then moves every timestamp the phase wrote by one
- * interval, so its first instant lands at `target`: the events, the revisions' written and presented
- * times, the documents', the initiatives' and the lessons'. Each move keeps a seal's written_at equal to
- * its act's ts and to its initiative's closed_at.
- */
-async function phase(c: Core, d: ReturnType<typeof door>, target: number, make: () => Promise<void>): Promise<void> {
-  const start = (await c.sql.query<{ t: string }>("select clock_timestamp()::text as t")).rows[0].t;
-  const base = await count(c, "kind = 'tool_call'") - d.sent();
-  await make();
-  const until = Date.now() + 15_000;
-  let seen = -1;
-  for (;;) {
-    await new Promise((r) => setTimeout(r, 400));
-    const calls = await count(c, "kind = 'tool_call'");
-    const all = await count(c, "true");
-    if (calls >= base + d.sent() && all === seen) break;
-    if (Date.now() > until) c.fail("a phase settles", `${calls} tool calls of ${base + d.sent()}, events still moving`);
-    seen = all;
-  }
-  const to = new Date(target).toISOString();
-  const move = (table: string, columns: string[]) => c.sql.query(
-    `update ${table} set ${columns.map((k) => `${k} = case when ${k} >= $1::timestamptz then ${k} + ($2::timestamptz - $1::timestamptz) else ${k} end`).join(", ")}
-      where ${columns.map((k) => `${k} >= $1::timestamptz`).join(" or ")}`, [start, to]);
-  await move("zz.event", ["ts"]);
-  await move("zz.doc_revision", ["written_at", "presented_at"]);
-  await move("zz.doc", ["created_at", "updated_at"]);
-  await move("zz.initiative", ["opened_at", "closed_at"]);
-  await move("zz.knowledge_node", ["created_at", "updated_at"]);
+  const g = await serveDoor(c);
+  const writing = (await g.load("console/writing.js")) as unknown as Writing;
+  return { url: g.url, token: await g.pat(c.email), writing, stop: g.stop };
 }
 
 /** Equal when both spell the same JSON, which a failure prints. */

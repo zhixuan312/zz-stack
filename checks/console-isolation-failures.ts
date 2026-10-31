@@ -17,6 +17,7 @@
 import type pg from "pg";
 
 import type { Isolation, SharedCitations } from "../scripts/schema/isolation-seed.ts";
+import { said } from "../scripts/schema/shape-diffs.ts";
 
 import { send, type Answer, type Route } from "./console-isolation-work.ts";
 
@@ -82,8 +83,8 @@ interface FailureContext {
   found: string[]; pass: (line: string) => void;
 }
 
-/** An answer with every instant masked. */
-const masked = (a: Answer): string => `${a.status} ${a.text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<instant>")}`;
+/** What an answer says (`said`), behind its status. */
+const masked = (a: Answer): string => `${a.status} ${said(a.text)}`;
 
 /** The failure round's part at the member's own addresses. */
 export async function ownFailures(c: FailureContext): Promise<void> {

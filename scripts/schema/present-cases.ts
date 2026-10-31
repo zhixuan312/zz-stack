@@ -61,10 +61,7 @@ function nextOffset(c: Core, step: string, reply: string): number {
 }
 
 /** The content revision a read of the current document states. */
-async function tokenOf(c: Core, path: string): Promise<string> {
-  const read = await c.ok(`read ${path}`, "document_read", { path });
-  return new RegExp(`^content_revision: (${CR})$`, "m").exec(read)?.[1] ?? c.fail(`read ${path}`, `no content_revision in: ${read}`);
-}
+const tokenOf = (c: Core, path: string): Promise<string> => c.token(`read ${path}`, path);
 
 /** Every stored row of a document, oldest first: its revision, public version and own generation. */
 async function revisions(c: Core, path: string): Promise<{ revision: number; version: number; generation: string | null }[]> {

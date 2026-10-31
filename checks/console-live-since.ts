@@ -48,7 +48,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-live-since";
 const DONE = "console-live-since: every console read carries its collection's revision as the caller's stream counts it, " +
@@ -68,8 +68,7 @@ const ADMIN = "admin@since.example.test";
 /** How long a committed change is given to reach the listener, and a lost connection to be made again. */
 const SETTLES_MS = 15_000;
 
-class CaseFailure extends Error {}
-const fail = (step: string, detail: string): never => { throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`); };
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`ok ${line}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -264,20 +263,4 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof CaseFailure) { console.error(err.message); return 1; }
-    if (/Docker is not running/.test(String(err))) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(`${NAME}: FAILED — ${err instanceof Error ? err.stack : String(err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

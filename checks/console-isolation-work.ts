@@ -48,6 +48,7 @@ import type { Express } from "express";
 import type pg from "pg";
 
 import type { Isolation, SharedCitations, WorkRecord } from "../scripts/schema/isolation-seed.ts";
+import { said } from "../scripts/schema/shape-diffs.ts";
 
 export type Answer = { status: number; text: string };
 export interface Route { method: string; path: string }
@@ -396,8 +397,9 @@ async function closes(c: Context, who: string, cookie: string, mine: string): Pr
   const { rows: [left] } = await c.sql.query<{ closed: boolean; acts: number }>(
     `select i.closed_at is not null as closed,
             (select count(*)::int from zz.event e where e.initiative_id = i.id and e.kind like '%close%') as acts
-       from zz.initiative i where i.slug = $1`, [s.two.initiative]);
-  if (left.closed || left.acts) bad.push(`${s.two.initiative} reads closed ${left.closed} with ${left.acts} close act(s)`);
+       from zz.initiative i join zz.team t on t.id = i.team_id where t.slug = $1 and i.slug = $2`, [s.two.slug, s.two.initiative]);
+  if (!left) bad.push(`${s.two.slug} holds no initiative ${s.two.initiative} to read back`);
+  else if (left.closed || left.acts) bad.push(`${s.two.initiative} reads closed ${left.closed} with ${left.acts} close act(s)`);
   const req: Sent = { method: "post", url: `/api/console/initiatives/${s.one.slug}/${mine}/close`, body };
   const a = await send(c.base, cookie, req);
   if (a.status !== 200) bad.push(`${req.url} answered ${a.status}, not their own close: ${a.text.slice(0, 200)}`);
@@ -428,12 +430,8 @@ async function detailRounds(c: Context): Promise<void> {
       const req: Sent = { method: "get", url: `${url}${q}`, body: null };
       const a = await send(c.base, cited.cookie, req);
       const g = await send(c.base, cited.cookie, { ...req, url: req.url.replace(s.one.initiative, nobody) });
-      // The five fields `read-envelope.ts` stamps describe the request that asked, so two requests legitimately differ
-      // in them however identical the rest is: an existence oracle is compared on what the answers SAY, not on when
-      // each was served. Their values are proven by checks/console-read-envelope.ts and console-read-contract.ts.
-      const mask = (x: Answer) => `${x.status} ${x.text.replaceAll(s.one.initiative, "[initiative]").replaceAll(nobody, "[initiative]")
-        .replace(/"(?:observedAt|revision|cacheHit|builtAt|sourceRevision)":(?:"(?:[^"\\]|\\.)*"|true|false|null)/g, "")
-        .replace(/"\d{4}-\d{2}-\d{2}T[\d:.]+Z"/g, "[instant]")}`;
+      // An existence oracle is compared on what the answers say (`said`), not on when each was served.
+      const mask = (x: Answer) => `${x.status} ${said(x.text.replaceAll(s.one.initiative, "[initiative]").replaceAll(nobody, "[initiative]"))}`;
       if (a.status !== 404) bad.push(`the second team's superadmin's ${req.url} answered ${a.status}, not 404: ${a.text.slice(0, 200)}`);
       for (const word of firstWords) if (a.text.includes(word)) bad.push(`the second team's superadmin's ${req.url} holds "${word}"`);
       const shown = mask(a), nobodyShown = mask(g);

@@ -28,6 +28,7 @@ import pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { failing, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-cache-scope";
 const DONE = "console-cache-scope: a kept answer is reachable exactly when what it read has not moved, " +
@@ -53,8 +54,7 @@ const SUPER = "cache-scope-super@example.test";
 const OTHER_TEAM = "cache-scope-other";
 const OTHER_MEMBER = "cache-scope-other@example.test";
 
-class CaseFailure extends Error {}
-const fail = (step: string, detail: string): never => { throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`); };
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`ok ${line}`);
 
 const load = (f: string) => import(pathToFileURL(join(root, "services/gateway/dist", f)).href);
@@ -238,7 +238,7 @@ async function run(core: Core): Promise<void> {
     const first = await hit(stepH, `${RECORD}?period=all&limit=1&offset=0`, member, false);
     const next = await hit(stepH, `${RECORD}?period=all&limit=1&offset=1`, member, true);
     const rowsOf = (a: Answer) => ((a.body.record as { data?: { rows?: { slug: string }[] } }).data?.rows ?? []).map((r) => r.slug);
-    if (rowsOf(first).length !== 1 || rowsOf(next).length > 1 || rowsOf(next)[0] === rowsOf(first)[0]) {
+    if (rowsOf(first).length !== 1 || rowsOf(next).length !== 1 || rowsOf(next)[0] === rowsOf(first)[0]) {
       fail(stepH, `page one read ${JSON.stringify(rowsOf(first))} and page two ${JSON.stringify(rowsOf(next))}`);
     }
     pass("page two of Record's table ran none of the route's statements and answered its own row");

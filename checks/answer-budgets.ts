@@ -118,6 +118,26 @@ function complete(what: string, row: string[], at: Record<string, number>): void
   if (row[0]?.trim() === "") failAt("every class states its range, its grain and a budget", `${what}: the row names no class`);
 }
 
+/** One row's verdict on arm 2: a figure measured at today's data and one at ten times it. A row
+ *  whose today cell says it issues no statement is exempt, and then may not project a figure. */
+function evidenced(what: string, runs: string, ten: string): void {
+  if (/no statement|issues none/i.test(runs)) {
+    if (/\d/.test(ten)) {
+      failAt("every budget is evidenced twice",
+        `${what}: it issues no statement today and its ten-times cell claims a figure ` +
+        `("${ten}") — a read that runs nothing has no cost to project`);
+    }
+    return;
+  }
+  for (const [cell, when] of [[runs, "today"], [ten, "at ten times"]] as const) {
+    if (!FIGURE.test(cell)) {
+      failAt("every budget is evidenced twice",
+        `${what}: its ${when} cell reads "${cell}" and carries no figure a reader can check — ` +
+        `the budget is stated and nothing measured it`);
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // (1) — the register. Six metrics, each with a range, a grain and two numbers.
 const register = tablesIn(sectionOf(md, REGISTER) as string);
@@ -135,8 +155,18 @@ if (!reg) {
   const at = { Range: reg.header.findIndex((h) => /^Range$/i.test(h)),
     Grain: reg.header.findIndex((h) => /^Grain$/i.test(h)),
     Budget: reg.header.findIndex((h) => /^Budget$/i.test(h)) };
-  for (const row of reg.rows) complete(`the register's \`${row[0]}\``, row, at);
-  console.log(`ok  the register states a range, a grain and a budget for all ${reg.rows.length} metrics`);
+  for (const row of reg.rows) {
+    complete(`the register's \`${row[0]}\``, row, at);
+    // The register states both figures in the Budget cell, after the two numbers: today's, and the
+    // phrase "ten times" beside the projection (or beside a figure that holds at both).
+    const evidence = ((row[at.Budget] ?? "").split(BUDGET).pop() ?? "").replace(/^`/, "");
+    if (!FIGURE.test(evidence) || !/ten times/i.test(evidence)) {
+      failAt("every budget is evidenced twice",
+        `the register's \`${row[0]}\`: its Budget cell carries no measured figure and ten-times ` +
+        `projection after \`rows ≤ N, ms ≤ M\` (it reads "${evidence.trim()}")`);
+    }
+  }
+  console.log(`ok  the register states a range, a grain and a budget for all ${reg.rows.length} metrics, each evidenced at today's data and at ten times`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -163,25 +193,7 @@ if (!cls) {
       `\`### ${STRANDED}\` carries no ${today < 0 ? "measured-today" : "ten-times"} column — a ` +
       `class with one figure is a class nobody has looked at beyond today's rows`);
   } else {
-    for (const row of cls.rows) {
-      const what = `the class \`${row[0]}\``;
-      const runs = row[today] ?? "";
-      if (/no statement|issues none/i.test(runs)) {
-        if (/\d/.test(row[ten] ?? "")) {
-          failAt("every budget is evidenced twice",
-            `${what}: it issues no statement today and its ten-times cell claims a figure ` +
-            `("${row[ten]}") — a read that runs nothing has no cost to project`);
-        }
-        continue;
-      }
-      for (const [cell, what2] of [[runs, "today"], [row[ten] ?? "", "at ten times"]] as const) {
-        if (!FIGURE.test(cell)) {
-          failAt("every budget is evidenced twice",
-            `${what}: its ${what2} cell reads "${cell}" and carries no figure a reader can check — ` +
-            `the budget is stated and nothing measured it`);
-        }
-      }
-    }
+    for (const row of cls.rows) evidenced(`the class \`${row[0]}\``, row[today] ?? "", row[ten] ?? "");
     if (cls.rows.length < 4) {
       failAt("every class states its range, its grain and a budget",
         `\`### ${STRANDED}\` carries ${cls.rows.length} class(es); the register does not reach Home, ` +
@@ -203,8 +215,13 @@ if (!settings) {
   const at = { Range: settings.header.findIndex((h) => /range/i.test(h)),
     Grain: settings.header.findIndex((h) => /range/i.test(h)),
     Budget: settings.header.findIndex((h) => /^Budget$/i.test(h)) };
-  for (const row of settings.rows) complete(`the settings read \`${row[0]}\``, row, at);
-  console.log(`ok  all ${settings.rows.length} settings reads carry a range, a grain and a budget`);
+  const today = settings.header.findIndex((h) => /^Today$/i.test(h));
+  const ten = settings.header.findIndex((h) => /ten times/i.test(h));
+  for (const row of settings.rows) {
+    complete(`the settings read \`${row[0]}\``, row, at);
+    evidenced(`the settings read \`${row[0]}\``, row[today] ?? "", row[ten] ?? "");
+  }
+  console.log(`ok  all ${settings.rows.length} settings reads carry a range, a grain, a budget, a measured figure and a ten-times projection`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────

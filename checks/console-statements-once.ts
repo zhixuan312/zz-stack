@@ -46,6 +46,7 @@ import pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { failing, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-statements-once";
 const DONE = "console-statements-once: Home, Record, Initiatives and Status each issue no statement twice " +
@@ -64,10 +65,7 @@ const ROUTES: [string, string][] = [
 
 type Issued = { key: string; text: string; values: string; concurrent: boolean };
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 /** A statement's text with its whitespace collapsed: the same statement written across two template
@@ -167,7 +165,7 @@ async function run(core: Core): Promise<void> {
     proto.query = original;
     server.close();
   }
-  console.log(`${DONE.replace(/\.$/, "")} — ${totals.map(([w, n]) => `${w} ${n}`).join(", ")}`);
+  pass(`statements issued: ${totals.map(([w, n]) => `${w} ${n}`).join(", ")}`);
 }
 
 process.exit(await withThrowawayCore(NAME, DONE, run));

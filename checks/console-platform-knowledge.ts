@@ -44,8 +44,9 @@ import {
   MEMBER, SUPERADMIN, TIMEZONE, seedAddedImport, seedKnowledgeHealth, type KnowledgeSeeded,
 } from "../scripts/schema/knowledge-health-seed.ts";
 import { signIn, weekStart } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { canonical } from "./console-work-query-harness.ts";
 
 const NAME = "console-platform-knowledge";
 const DONE = "console-platform-knowledge: the superadmin reads every shelf, the imports labelled and the questions with no " +
@@ -55,21 +56,13 @@ const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-function sortDeep(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(sortDeep);
-  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]));
-  return v;
-}
-const text = (v: unknown): string => JSON.stringify(sortDeep(v));
+const text = (v: unknown): string => JSON.stringify(canonical(v));
 function expectSame(step: string, what: string, found: unknown, want: unknown): void {
   if (text(found) !== text(want)) fail(step, `${what} reads\n${text(found)}\nnot\n${text(want)}`);
 }
@@ -351,19 +344,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

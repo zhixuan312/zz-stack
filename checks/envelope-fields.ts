@@ -16,17 +16,7 @@ assert.ok(f, "doc_revision.fields is declared");
 assert.equal(f?.[1], "jsonb", "and is an open payload, not a text column");
 assert.equal(f?.[2], true, "and is nullable: a revision with no extra field carries none");
 
-// 2. the migration adds it, and one migration owns it
-// DELIBERATE: the folded file, and the property rather than the statement. 004_envelope_fields.sql
-// was folded into 001 once its release was verified, and a re-dump emits the column in the
-// table's own CREATE rather than as an `add column` — so asking for the ALTER asks a question the
-// fold made meaningless. The claim is that `zz.doc_revision` has the column.
-const dir = "services/gateway/migrations";
-const one = readFileSync(join(dir, "001_init.sql"), "utf8");
-const rev = one.slice(one.indexOf("CREATE TABLE zz.doc_revision ("), one.indexOf(");", one.indexOf("CREATE TABLE zz.doc_revision (")));
-assert.ok(/^\s*fields\s+jsonb,\s*$/m.test(rev), "zz.doc_revision declares fields jsonb");
-assert.ok(/-- absorbs: 004_envelope_fields\.sql/.test(one),
-  "and the folded file names the envelope-fields migration it absorbed");
+// 2. that the migrated catalog carries it as the target declares is checks/schema-inventory.ts's.
 
 // 3. the writer computes the residual against the columns, and the reader prefers them. Two
 // files since the write path left the readers: `document-save.ts` writes, `versions.ts` reads.

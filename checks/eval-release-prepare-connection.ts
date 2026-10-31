@@ -96,54 +96,54 @@ const prepare = (initiative: string, key: string) => prepareWithBranchFact(
   { team: "xuan", initiative }, "promotable", insertAttempt);
 const facts = (initiative: string) => factsBySlug[initiative] ?? {};
 
-  // One prepare: one connection, the lock and the mirror on it, nothing on the pool meanwhile.
-  reset();
-  const one = await prepare("init-a", "k1");
-  assert.equal(connects, 1, "a prepare takes exactly one connection");
-  assert.equal(maxOutstanding, 1);
-  assert.equal(poolQueriesWhileHeld, 0, "no query on the pool while the ledger's client is held");
-  assert.equal(outstanding, 0, "the connection is released");
-  const sqls = statements.map((s) => s.sql);
-  assert.ok(statements.every((s) => s.on === 1), "every statement runs on the ledger transaction's client");
-  const at = (re: RegExp) => sqls.findIndex((s) => re.test(s));
-  assert.ok(at(/^BEGIN$/) < at(/pg_advisory_xact_lock/), "the advisory lock is transaction-level, inside BEGIN");
-  assert.ok(at(/insert into zz\.initiative_fact/) > at(/pg_advisory_xact_lock/), "the mirror is written under the lock");
-  assert.ok(at(/insert into zz\.eval_idempotency/) < at(/^COMMIT$/));
-  assert.ok(!sqls.some((s) => /pg_advisory_lock\(|pg_advisory_unlock/.test(s)), "no session-level advisory lock");
-  // The mirror is keyed by the initiative's own id: the row is written with the id the resolver
-  // read back, and the columns are the id, the fact and its value — no team or initiative slug.
-  const mirror = statements.find((s) => /insert into zz\.initiative_fact/.test(s.sql));
-  assert.ok(mirror, "the fact is mirrored");
-  assert.match(mirror.sql, /insert into zz\.initiative_fact \(initiative_id, fact, value\)/,
-    `the mirror writes by id: ${mirror.sql}`);
-  assert.deepEqual(mirror.values, [IDS["init-a"], "release_mode", "promotable"],
-    "the mirrored row carries the resolved id, the fact and its value");
-  assert.equal(one.outcome.replayed, false);
-  assert.deepEqual(one.facts, { release_mode: "promotable" });
-  assert.deepEqual(facts("init-a"), { release_mode: "promotable" });
+// One prepare: one connection, the lock and the mirror on it, nothing on the pool meanwhile.
+reset();
+const one = await prepare("init-a", "k1");
+assert.equal(connects, 1, "a prepare takes exactly one connection");
+assert.equal(maxOutstanding, 1);
+assert.equal(poolQueriesWhileHeld, 0, "no query on the pool while the ledger's client is held");
+assert.equal(outstanding, 0, "the connection is released");
+const sqls = statements.map((s) => s.sql);
+assert.ok(statements.every((s) => s.on === 1), "every statement runs on the ledger transaction's client");
+const at = (re: RegExp) => sqls.findIndex((s) => re.test(s));
+assert.ok(at(/^BEGIN$/) < at(/pg_advisory_xact_lock/), "the advisory lock is transaction-level, inside BEGIN");
+assert.ok(at(/insert into zz\.initiative_fact/) > at(/pg_advisory_xact_lock/), "the mirror is written under the lock");
+assert.ok(at(/insert into zz\.eval_idempotency/) < at(/^COMMIT$/));
+assert.ok(!sqls.some((s) => /pg_advisory_lock\(|pg_advisory_unlock/.test(s)), "no session-level advisory lock");
+// The mirror is keyed by the initiative's own id: the row is written with the id the resolver
+// read back, and the columns are the id, the fact and its value — no team or initiative slug.
+const mirror = statements.find((s) => /insert into zz\.initiative_fact/.test(s.sql));
+assert.ok(mirror, "the fact is mirrored");
+assert.match(mirror.sql, /insert into zz\.initiative_fact \(initiative_id, fact, value\)/,
+  `the mirror writes by id: ${mirror.sql}`);
+assert.deepEqual(mirror.values, [IDS["init-a"], "release_mode", "promotable"],
+  "the mirrored row carries the resolved id, the fact and its value");
+assert.equal(one.outcome.replayed, false);
+assert.deepEqual(one.facts, { release_mode: "promotable" });
+assert.deepEqual(facts("init-a"), { release_mode: "promotable" });
 
-  // Five concurrent prepares on one initiative: the in-process queue means they never hold two
-  // connections between them, so they cannot starve the pool waiting on each other's lock.
-  reset();
-  await Promise.all(["k2", "k3", "k4", "k5", "k6"].map((k) => prepare("init-a", k)));
-  assert.equal(connects, 5);
-  assert.equal(maxOutstanding, 1, "concurrent prepares on one initiative hold one connection at a time");
-  assert.equal(poolQueriesWhileHeld, 0);
+// Five concurrent prepares on one initiative: the in-process queue means they never hold two
+// connections between them, so they cannot starve the pool waiting on each other's lock.
+reset();
+await Promise.all(["k2", "k3", "k4", "k5", "k6"].map((k) => prepare("init-a", k)));
+assert.equal(connects, 5);
+assert.equal(maxOutstanding, 1, "concurrent prepares on one initiative hold one connection at a time");
+assert.equal(poolQueriesWhileHeld, 0);
 
-  // A conflicting fact: refused, rolled back, nothing committed and the file untouched.
-  factsBySlug["init-b"] = { release_mode: "proposal_only" };
-  reset();
-  await assert.rejects(prepare("init-b", "k7"), /release_mode is already proposal_only/);
-  const conflictSqls = statements.map((s) => s.sql);
-  assert.ok(conflictSqls.includes("ROLLBACK") && !conflictSqls.includes("COMMIT"), "the refusal rolls the attempt row back");
-  assert.ok(!conflictSqls.some((s) => /insert into zz\.eval_idempotency/.test(s)), "no ledger row");
-  assert.deepEqual(facts("init-b"), { release_mode: "proposal_only" });
-  assert.equal(outstanding, 0);
+// A conflicting fact: refused, rolled back, nothing committed and the fact rows untouched.
+factsBySlug["init-b"] = { release_mode: "proposal_only" };
+reset();
+await assert.rejects(prepare("init-b", "k7"), /release_mode is already proposal_only/);
+const conflictSqls = statements.map((s) => s.sql);
+assert.ok(conflictSqls.includes("ROLLBACK") && !conflictSqls.includes("COMMIT"), "the refusal rolls the attempt row back");
+assert.ok(!conflictSqls.some((s) => /insert into zz\.eval_idempotency/.test(s)), "no ledger row");
+assert.deepEqual(facts("init-b"), { release_mode: "proposal_only" });
+assert.equal(outstanding, 0);
 
-  // An unopened initiative: refused inside the transaction, rolled back the same way.
-  reset();
-  await assert.rejects(prepare("init-missing", "k8"), /no initiative named "init-missing"/);
-  assert.ok(!statements.some((s) => s.sql === "COMMIT"));
+// An unopened initiative: refused inside the transaction, rolled back the same way.
+reset();
+await assert.rejects(prepare("init-missing", "k8"), /no initiative named "init-missing"/);
+assert.ok(!statements.some((s) => s.sql === "COMMIT"));
 
 console.log("ok eval-release-prepare-connection");
 process.exit(0);

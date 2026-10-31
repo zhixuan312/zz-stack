@@ -1,19 +1,42 @@
 // Break-test for the two plugin-lock gate checks.
 //
-// Plants each defect the checks exist to catch, asserts red, restores, asserts green. A check
-// that has only ever been observed passing is a check nobody has evidence for.
+// Plants each defect the checks exist to catch, asserts the check that guards it goes red by name,
+// restores, asserts both are green. A check that has only ever been observed passing is a check
+// nobody has evidence for.
+//
+// DELIBERATE: it reads check names, not the exit status, as checks/gate-plugin-declaration.ts does.
+// A planted SKILL.md edit also turns "a skill that changed says so in its version" red, so a red
+// gate says nothing about whether the lock check fired.
 import { readFileSync, writeFileSync, existsSync, cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { gate, restoreOnInterrupt } from "../testing/gate-plant.ts";
+import { restoreOnInterrupt, run } from "../testing/gate-plant.ts";
 
 interface LockEntry { version: string; digest: string; skills: Record<string, string> }
 type Lock = Record<string, LockEntry>;
 
-/** Whether one quiet gate run passed. */
-const green = async (): Promise<boolean> => (await gate(["--quiet"])).status === 0;
+// COUPLED: the two check names in scripts/gate/checks/catalog-manifest.ts.
+const DIGEST = "plugins.lock.json says what the catalog ships, on both version and digest";
+const MEMBERSHIP = "a plugin's recorded membership is the one it ships";
+
 function fail(m: string): never { console.error("FAIL: " + m); process.exit(1); }
+/** One gate run's failing checks. Both lock checks must have run: one that never ran is a failure of
+ *  this break-test, not an answer. */
+const failing = async (): Promise<Map<string, string>> => {
+  const { ran, failed } = await run();
+  for (const name of [DIGEST, MEMBERSHIP]) {
+    if (!ran.has(name)) fail(`"${name}" never ran — the gate did not reach it, so nothing here was measured`);
+  }
+  return failed;
+};
+/** Whether, in one gate run, `name` went red. */
+const red = async (name: string): Promise<boolean> => (await failing()).has(name);
+/** Whether, in one gate run, both lock checks passed. */
+const green = async (): Promise<boolean> => {
+  const failed = await failing();
+  return !failed.has(DIGEST) && !failed.has(MEMBERSHIP);
+};
 const LOCK = "plugins.lock.json";
 if (!existsSync(LOCK)) fail(`${LOCK} does not exist — run plugin-versions.ts --write first`);
 
@@ -35,7 +58,7 @@ restoreOnInterrupt(() => {
   if (snapshot !== null && existsSync(snapshot)) { restoreDerived(snapshot); rmSync(snapshot, { recursive: true, force: true }); }
 });
 
-if (!(await green())) fail("the gate is already red before planting anything");
+if (!(await green())) fail("a lock check is already red before planting anything");
 
 // Every `gate()` below regenerates `marketplace/` out of `catalog/`, and the planted cases write
 // the lock files directly, so a run against a planted defect leaves those three carrying it.
@@ -54,10 +77,10 @@ snapshot = taken;
 
 // 1 — content moves, the declared version does not.
 writeFileSync(VICTIM, body + "\n<!-- planted by checks/gate-plugin-lock.ts -->\n");
-const redContent = !(await green());
+const redContent = await red(DIGEST);
 writeFileSync(VICTIM, body);
 if (!redContent) {
-  fail("the gate stayed GREEN when a plugin's content changed under a frozen version — the " +
+  fail(`"${DIGEST}" stayed GREEN when a plugin's content changed under a frozen version — the ` +
        "digest check does not work, and a plugin version vouches for nothing");
 }
 
@@ -67,19 +90,19 @@ const victimPlugin = Object.keys(parsed).find((k) => Object.keys(parsed[k].skill
 if (!victimPlugin) fail("no plugin in the lock records any skills — nothing to perturb");
 parsed[victimPlugin].skills["a-skill-that-does-not-exist"] = "000000000000";
 writeFileSync(LOCK, JSON.stringify(parsed, null, 2) + "\n");
-const redExtra = !(await green());
+const redExtra = await red(MEMBERSHIP);
 writeFileSync(LOCK, lock);
-if (!redExtra) fail("the gate stayed GREEN when the lock claimed a skill the plugin does not ship");
+if (!redExtra) fail(`"${MEMBERSHIP}" stayed GREEN when the lock claimed a skill the plugin does not ship`);
 
 // 3 — the lock omits a member the plugin does ship.
 const parsed2: Lock = JSON.parse(lock);
 const dropped = Object.keys(parsed2[victimPlugin].skills)[0];
 delete parsed2[victimPlugin].skills[dropped];
 writeFileSync(LOCK, JSON.stringify(parsed2, null, 2) + "\n");
-const redMissing = !(await green());
+const redMissing = await red(MEMBERSHIP);
 writeFileSync(LOCK, lock);
 if (!redMissing) {
-  fail(`the gate stayed GREEN when the lock omitted ${dropped}, which ${victimPlugin} ships — ` +
+  fail(`"${MEMBERSHIP}" stayed GREEN when the lock omitted ${dropped}, which ${victimPlugin} ships — ` +
        "a membership that is silently short is one the profile resolves events through anyway");
 }
 
@@ -91,10 +114,10 @@ if (!redMissing) {
 const parsed3: Lock = JSON.parse(lock);
 parsed3["a-plugin-the-catalog-does-not-ship"] = { version: "9.9.9", digest: "deadbeef", skills: {} };
 writeFileSync(LOCK, JSON.stringify(parsed3, null, 2) + "\n");
-const redGhost = !(await green());
+const redGhost = await red(DIGEST);
 writeFileSync(LOCK, lock);
 if (!redGhost) {
-  fail("the gate stayed GREEN with a plugin in the lock that the catalog does not ship — so a " +
+  fail(`"${DIGEST}" stayed GREEN with a plugin in the lock that the catalog does not ship — so a ` +
        "plugin that vanished from the enumeration would pass unnoticed, which is the whole " +
        "failure mode the omit-rather-than-hash-empty rule exists to make loud");
 }
@@ -112,17 +135,17 @@ const victim4 = Object.keys(parsed4)[0];
 const realVersion = parsed4[victim4].version;
 parsed4[victim4].version = "0.0.1-stale";
 writeFileSync(LOCK, JSON.stringify(parsed4, null, 2) + "\n");
-const redStale = !(await green());
+const redStale = await red(DIGEST);
 writeFileSync(LOCK, lock);
 if (!redStale) {
-  fail(`the gate stayed GREEN with ${victim4} locked at 0.0.1-stale while the catalog declares ` +
+  fail(`"${DIGEST}" stayed GREEN with ${victim4} locked at 0.0.1-stale while the catalog declares ` +
        `${realVersion} — so a release would register the PREVIOUS release's plugin versions, ` +
        "and nothing anywhere would say so");
 }
 
 restoreDerived(taken);
 rmSync(taken, { recursive: true, force: true });
-if (!(await green())) fail("the gate did not return to GREEN after restoring everything");
+if (!(await green())) fail("a lock check did not return to GREEN after restoring everything");
 console.log("PASS: red on a frozen-version content change, red on an extra member, red on a " +
             "missing member, red on a plugin the catalog does not ship, red on a lock a " +
             "release behind the catalog, green otherwise.");

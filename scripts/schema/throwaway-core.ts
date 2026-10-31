@@ -28,11 +28,12 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { documentBody } from "@zz/contracts";
 import { Mcp } from "@zz/mcp-client";
 import pg from "pg";
 
 import { root } from "../deployment.ts";
-import { withThrowawayDb } from "./throwaway.ts";
+import { CaseFailure, withThrowawayDb } from "./throwaway.ts";
 
 const EMAIL = "skeleton@example.test";
 const TEAM = "skeleton-team";
@@ -43,8 +44,6 @@ const START_TIMEOUT_MS = 30_000;
 const WAIT_TIMEOUT_MS = 20_000;
 /** How much of zz-core's own output a failure prints after its line. */
 const TAIL = 3000;
-
-class CaseFailure extends Error {}
 
 /** The built zz-core modules a check calls in this process, against the throwaway database. */
 interface InProcess {
@@ -134,6 +133,17 @@ export interface Core {
   /** Give `key` up, and — with `again` — ask for it again in the same statement, so the holder
    *  queues behind whoever was waiting and has it back the moment they let go. */
   release(key: string, again?: boolean): Promise<void>;
+  /** Two calls on one document, granted its lock in the order they are started: the first queues
+   *  behind the harness's hold, the second — computed before it queued — behind the first. */
+  staged(step: string, path: string, one: () => Promise<string>, two: () => Promise<string>): Promise<[string, string]>;
+  /** The content revision a read of the current document states. */
+  token(step: string, path: string): Promise<string>;
+  /** The body a read of the current document returns, every byte of it from its first character:
+   *  `documentBody` returns what the author wrote, without the envelope's separator. */
+  body(step: string, path: string): Promise<string>;
+  /** Rows matching `sql`, waited on until there are `n` of them, for at most five seconds: an event
+   *  is written after the answer it describes. */
+  rowsOnce<T extends pg.QueryResultRow>(sql: string, params: unknown[], n: number): Promise<T[]>;
   inProcess(): Promise<InProcess>;
 }
 
@@ -384,6 +394,34 @@ export async function withThrowawayCore(
           await holder.query(again
             ? "select pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)), pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))"
             : "select pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))", [key]);
+        },
+        staged: async (step, path, one, two) => {
+          const key = core.docKey(path);
+          await core.hold(key);
+          let a: Promise<string>;
+          let b: Promise<string>;
+          try {
+            a = one();
+            await core.waiters(step, key, 1);
+            b = two();
+            await core.waiters(step, key, 2);
+          } finally {
+            await core.release(key);
+          }
+          return Promise.all([a, b]);
+        },
+        token: async (step, path) => {
+          const read = await core.ok(step, "document_read", { path });
+          return /^content_revision: (cr_[a-z2-7]{26})$/m.exec(read)?.[1] ?? fail(step, `no content_revision in: ${read}`);
+        },
+        body: async (step, path) => documentBody(await core.ok(step, "document_read", { path })),
+        rowsOnce: async <T extends pg.QueryResultRow>(text: string, params: unknown[], n: number): Promise<T[]> => {
+          const until = Date.now() + 5000;
+          for (;;) {
+            const { rows } = await sql.query<T>(text, params);
+            if (rows.length >= n || Date.now() > until) return rows;
+            await new Promise((r) => setTimeout(r, 100));
+          }
         },
         inProcess: async () => {
           if (inProc) return inProc;

@@ -180,9 +180,9 @@ if (!RULE.test(src(RULER))) {
   fail.push(`prose: ${RULER} is the ruler and still states the replaced rule`);
 }
 
-// zz-access has no stages, and nothing may quietly require one back. The packager reads
-// `entry`, and the console's stepper walks an empty list. Proven by building the
-// package the gateway serves for zz-access and checking it still carries its entry skill.
+// zz-access has no stages, and nothing may quietly require one back. Proven by resolving
+// zz-access through the catalog reader and checking it still has no stages and still names its
+// entry skill. What the packager does with `entry` is not proven here.
 try {
   // A separate process, because CATALOG_DIR is read once when @zz/catalog loads and this file
   // has already loaded it. The child gets the working tree's catalog/ instead of the image's

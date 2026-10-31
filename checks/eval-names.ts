@@ -5,41 +5,20 @@ import { join } from "node:path";
 import { EVAL_ALIAS } from "../packages/contracts/dist/index.js";
 const fail = [];
 
-// `subject.ts` holds `plugin_locate` — moved out of `plugin-eval.ts` when it became a mutator
-// (FR-1/FR-59) and had to go through `registerSubjectTools`, its own registration module.
-// `observe.ts` holds `plugin_profile` for the same reason (Task I-7): it too became a mutator,
-// writing `zz.eval_observation_snapshot` through the FR-59 ledger, and moved out on its own.
-// `discover.ts` holds `failure_discover` (Task I-9) — a mutator writing
-// `zz.eval_failure_mode` plus `zz.eval_failure_mode_sighting` (Task I-24) through the FR-59
-// ledger, the same reason `subject.ts` and `observe.ts` above are their own registration modules
-// rather than living inside plugin-eval.ts.
-// `protocol.ts` (Task I-10) holds `protocol_read`/`protocol_record`/`protocol_affirm` for the
-// same reason: each is a mutator (or, for `protocol_read`, reads live state no other module
-// computes) writing `zz.eval_protocol_version` through the same ledger.
-// `qualify.ts` (Task I-11) holds `evaluator_qualify` for the same reason again: a mutator writing
-// `zz.eval_evaluator_qualification` through the same ledger.
-// `evaluate.ts` (Task I-13) holds `evaluation_start`/`evaluation_assess`/`evaluation_score` for
-// the same reason once more: three mutators writing `zz.eval_evidence_snapshot`/`zz.eval_run`/
-// `zz.eval_assessment` through the same ledger.
-// `candidates.ts` (Task I-18/I-19) holds `improvement_start`/`candidate_record`/`candidate_validate`
-// for the same reason again: mutators writing `zz.improvement_run`/`zz.candidate` through the
-// same ledger. `candidate-build.ts` (0.76.0) holds `candidate_read`/`candidate_build_record`, the
-// two doors the local `npm run candidate-build` goes through now that zz-core never builds a
-// candidate itself.
-// `release.ts` (Task I-22) holds `release_prepare` for the same reason again: a mutator writing
-// `zz.release_attempt` through the same ledger, plus `improvement.md`. Task I-23 adds
-// `release_apply`/`release_record` to the same file: two more mutators through the same ledger,
-// on the same `zz.release_attempt` row. Task I-24 adds `release_verify` to the same file again:
-// the post-release check on real use, writing `zz.release_attempt.verification` through the
-// same ledger. Task I-25 adds `proposal_prepare`
-// to the same file once more: the non-owned-subject path release_prepare's own no_release_owners
-// refusal points callers toward, writing `proposal.md` (proposal-doc.ts) through the same ledger,
-// anchored on `zz.improvement_run`'s own already-existing row rather than a new one.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "plugin-eval", "plugin-record", "candidates", "candidate-build", "release"];
+// The registration modules, read off the evaluation door's own imports rather than listed here, so a
+// module the door gains is held to every rule below the moment it is imported. COUPLED: the same
+// regex as checks/eval-door.ts, which proves the door registers what these modules declare.
+const DOOR_SRC = "services/zz-core/src/eval-door.ts";
+const REGISTRATION_MODULES = [...readFileSync(DOOR_SRC, "utf8")
+  .matchAll(/import \{ register\w+ \} from "(\.\/[\w/-]+)\.js"/g)].map((m) => m[1].replace(/^\.\//, ""));
+if (REGISTRATION_MODULES.length < 5) {
+  fail.push(`${DOOR_SRC} imports ${REGISTRATION_MODULES.length} registration module(s) this check can read — every ` +
+            "rule below iterates that list, so this run examined almost nothing");
+}
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
-  const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
+  const src = readFileSync(`services/zz-core/src/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
 }
 for (const want of ["protocol_read", "protocol_record", "protocol_affirm", "finding_record"]) {
@@ -96,7 +75,7 @@ for (const got of registered) {
 // compared with the number of registrations found.
 const described = new Set();
 for (const f of REGISTRATION_MODULES) {
-  const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
+  const src = readFileSync(`services/zz-core/src/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"[\s\S]{0,80}?description:\s*([\s\S]{0,4000}?)inputSchema/g)) {
     const [, tool, desc] = m;
     described.add(tool);

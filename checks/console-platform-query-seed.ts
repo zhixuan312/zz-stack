@@ -38,7 +38,7 @@ const HOUR = 3_600_000;
  *  its measures' keys, and the questions searches asked. */
 export const SENTINEL = "SENTINEL-PLATFORM-QUERY";
 
-export interface Seeded { now: number; starts: Map<number, number>; member: string; owner: string; one: string }
+export interface Seeded { starts: Map<number, number>; one: string }
 
 type Owner = "guardrail" | "ours" | "theirs" | "other" | null;
 
@@ -57,7 +57,7 @@ export async function seedPlatformQuery(c: Core, timezone: string): Promise<Seed
     filed.push(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.exec(reply)?.[0] ?? c.fail("bug_report", reply));
   }
 
-  const member = await c.member();
+  await c.member();
   const person = (email: string, role: string, back: number): Promise<string> => one(
     "insert into zz.principal (email, display_name, role, created_at) values ($1, $2, $3, $4) returning id::text as id",
     [email, email.split("@")[0], role, at(back, 9)]);
@@ -150,15 +150,14 @@ export async function seedPlatformQuery(c: Core, timezone: string): Promise<Seed
     [1, 16, "none", "console", "wrong_result", "open", null],
   ];
   // A duplicate's target is a report of its own team's, the first one filed through zz-core.
-  const ids: string[] = [];
   for (const [i, [back, hours, team, surface, impact, status, after]] of reports.entries()) {
-    ids.push(await one(
+    await sql.query(
       `insert into zz.bug (reported_at, title, detail, surface, platform_version, impact, status, resolution, resolved_at, team_id,
                            reported_by, duplicate_of)
-       values ($1, $2, $2, $3, '0.91.0', $4, $5, $6, $7, $8, $9, $10) returning id::text as id`,
+       values ($1, $2, $2, $3, '0.91.0', $4, $5, $6, $7, $8, $9, $10)`,
       [at(back, hours), `${SENTINEL} report ${i}`, surface, impact, status, after === null ? null : "Seeded.",
        after === null ? null : new Date(Date.parse(at(back, hours)) + after * HOUR).toISOString(), teams[team], owner,
-       status === "duplicate" ? filed[0] : null]));
+       status === "duplicate" ? filed[0] : null]);
   }
   await sql.query("update zz.bug set reported_at = $2 where id = $1", [filed[0], at(2, 15)]);
   await sql.query("update zz.bug set reported_at = $2, status = 'fixed', resolution = 'Seeded.', resolved_at = $3 where id = $1",
@@ -201,7 +200,7 @@ export async function seedPlatformQuery(c: Core, timezone: string): Promise<Seed
   }
   await sql.query("insert into zz.event (ts, kind, subject, detail, origin, team_id, actor_id) values ($1, 'console.page_view', 'platform', '{}'::jsonb, 'work', $2, $3)",
     [at(1, 30), teamOne, owner]);
-  return { now, starts, member, owner, one: teamOne };
+  return { starts, one: teamOne };
 }
 
 /** Two plugins of team two's, `alpha` scored established and then established again, `beta` established and then

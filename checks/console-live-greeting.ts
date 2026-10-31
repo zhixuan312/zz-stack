@@ -25,7 +25,7 @@ import { pathToFileURL } from "node:url";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-live-greeting";
 const ASKED = ["initiatives", "activity"];
@@ -60,7 +60,7 @@ async function run(url: string): Promise<string | null> {
   const ask = (collections: string) => Object.assign(new EventEmitter(), {
     query: { collections },
     headers: {},
-    zzIdentity: { email: "greeting@example.com", displayName: "Greeting", platformRole: "user", via: "session",
+    zzIdentity: { email: "greeting@example.com", displayName: "Greeting", platformRole: "member", via: "session",
                   teams: [{ slug: "greeting", role: "admin" }], activeTeam: "greeting", patTeam: null, sessionTeam: "greeting" },
   });
 
@@ -87,21 +87,9 @@ async function run(url: string): Promise<string | null> {
   }
 }
 
-async function main(): Promise<number> {
-  let problem: string | null = null;
-  try {
-    await withThrowawayDb(async (_sql, url) => { problem = await run(url); });
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(`${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  if (problem) { console.error(`${NAME}: FAILED: ${problem}`); return 1; }
-  console.log(`${NAME}: a tab's stream opens with one resync naming the collections it asked for, and a tab naming ${REMOVED} is refused: ok`);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME,
+  `${NAME}: a tab's stream opens with one resync naming the collections it asked for, and a tab naming ${REMOVED} is refused: ok`,
+  async (_sql, url) => {
+    const problem = await run(url);
+    if (problem) failing(NAME)("the live stream's greeting", problem);
+  });

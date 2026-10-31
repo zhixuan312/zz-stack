@@ -63,6 +63,7 @@ import {
   type When,
 } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
 
 const NAME = "console-work-initiatives";
 const DONE = "console-work-initiatives: the active team's initiatives are filtered and paged on the server with " +
@@ -78,16 +79,6 @@ const NOT_FOUND = {
   document: "No document of the team you act for is at that address.",
   revision: "No snapshot of a document of the team you act for has that number.",
 };
-
-const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
-/** A spec the spec gate approves: every declared section, one phase, one core statement. */
-const SPEC =
-  "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n" +
-  "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-  "## Stakeholders & Work\nx\n\n" +
-  "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-  "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-  "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
 
 type Obj = Record<string, unknown>;
 type Answer = { status: number; body: Obj };
@@ -163,9 +154,9 @@ async function make(c: Core, w0: number): Promise<Map<string, string>> {
     const slug = await c.open(m.key, m.flow ?? undefined);
     slugs.set(m.key, slug);
     if (m.docs === "notes") await c.ok(step, "document_write", { path: `${slug}/notes.md`, content: "# Notes\n\nwritten\n" });
-    if (m.docs !== "none" && m.docs !== "notes") await c.ok(step, "document_write", { path: `${slug}/explore.md`, content: EXPLORE });
+    if (m.docs !== "none" && m.docs !== "notes") await c.ok(step, "document_write", { path: `${slug}/explore.md`, content: EXPLORE_BODY });
     if (m.docs === "spec-presented" || m.docs === "spec-signed") {
-      await c.ok(step, "document_write", { path: `${slug}/spec.md`, content: SPEC });
+      await c.ok(step, "document_write", { path: `${slug}/spec.md`, content: SPEC_BODY });
       if (m.docs === "spec-presented") await c.ok(step, "document_present", { path: `${slug}/spec.md` });
       else await c.sign(`${slug}/spec.md`);
     }

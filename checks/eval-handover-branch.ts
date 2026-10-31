@@ -15,59 +15,13 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import pg from "pg";
+import { docRow, installWorld, type World } from "../scripts/schema/initiative-world.ts";
 
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
-process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 
 const TEAM = "t1";
-interface W {
-  flow: string | null;
-  docs: Record<string, unknown>[];
-  facts: Record<string, string>;
-  records: Record<string, Record<string, string>>;
-}
-const world = new Map<string, W>();
-
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
-  const sql = String(text).replace(/\s+/g, " ").trim();
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  // The initiative-row readers take the team first and the slug second; `docRows` takes the
-  // initiative first. One lookup each, so a route cannot read the wrong one.
-  const bySlug = world.get(String(values[1] ?? ""));
-  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
-    const names = (values[1] as string[]) ?? [];
-    return one(names.filter((n) => world.has(n)).map((n) => ({
-      slug: n, flow: world.get(n)!.flow, closed_at: null,
-      closed_by: world.get(n)!.facts.closed_by ?? null, outcome: world.get(n)!.facts.outcome ?? null })));
-  }
-  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
-    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-26",
-                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
-  }
-  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
-    return one(world.get(String(values[0]))?.docs ?? []);
-  }
-  if (/from zz\.doc d\b/.test(sql)) {
-    const hit = (bySlug?.docs ?? []).filter((d) => d.path === values[2]);
-    return one(hit.length ? [hit[hit.length - 1]] : []);
-  }
-  if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    const d = [...world.values()].flatMap((w) => w.docs).find((x) => x.id === String(values[0]));
-    return one(d ? [{ revision: 1, version: 1, content_state: "retained", title: d.title, body: d.body,
-                      tags: [], content_hash: "h", fields: d.fields, revision_note: null,
-                      written_by: "ada@zz.test", written_at: d.updated_at,
-                      approved_by: d.approved_by, approved_at: d.approved_at }] : []);
-  }
-  if (/from zz\.initiative_fact f\b/.test(sql)) {
-    return one(Object.entries(bySlug?.facts ?? {}).map(([fact, value]) => ({ fact, value })));
-  }
-  if (/from zz\.initiative_record r\b/.test(sql)) {
-    return one(Object.entries(bySlug?.records ?? {}).flatMap(([stage, ids]) =>
-      Object.entries(ids).map(([id_name, value]) => ({ stage, id_name, value }))));
-  }
-  return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+const world = new Map<string, World>();
+installWorld(world, "2026-09-26");
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { chainFor } = await load("services/zz-core/dist/chain.js");
@@ -81,19 +35,8 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 interface Doc { name: string; sections?: string[]; gate?: boolean }
 const APPROVED = { status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-26" };
 const CLOSED = { outcome: "delivered", closed_by: "ada@zz.test", no_signoff_reason: "nobody signed" };
-/** The columns a doc row carries; every other key is the revision's own envelope payload. */
-const COLUMNS = new Set(["status", "outcome", "approved_by", "approved_at", "closed_by", "title", "flow", "version"]);
-
-let seq = 0;
-const row = (initiative: string, path: string, fields: Record<string, string>, body: string) => ({
-  id: `d${++seq}`, path, initiative, flow: "", type: "",
-  status: fields.status ?? "", outcome: fields.outcome ?? null,
-  approved_by: fields.approved_by ?? null, approved_at: fields.approved_at ?? null,
-  closed_by: fields.closed_by ?? null, updated_at: "2026-09-26T00:00:00.000Z",
-  title: fields.title ?? path, body, tags: [], current_revision: Number(fields.version) || 1,
-  current_version: Number(fields.version) || 1, content_generation: "0", approved_revision: null,
-  fields: Object.fromEntries(Object.entries(fields).filter(([k]) => !COLUMNS.has(k))),
-});
+const row = (initiative: string, path: string, fields: Record<string, string>, body: string) =>
+  docRow(initiative, path, fields, body, "2026-09-26");
 
 const branches: [string, Record<string, string>, string[], string][] = [
   ["skip", { improvement_mode: "skip", release_mode: "not_applicable" }, ["findings.md"], "findings.md"],
@@ -104,7 +47,7 @@ const branches: [string, Record<string, string>, string[], string][] = [
 let n = 0;
 for (const [label, facts, written, closing] of branches) {
   const name = `2026-09-26-handover-${++n}`;
-  const w: W = { flow: "zz-plugin-eval", docs: [], facts: { protocol_action: "reuse", ...facts }, records: {} };
+  const w: World = { flow: "zz-plugin-eval", docs: [], facts: { protocol_action: "reuse", ...facts }, records: {} };
   world.set(name, w);
   for (const stage of ["zz-plugin-identify", "zz-plugin-observe", "zz-plugin-discover", "zz-plugin-evaluate"]) {
     w.records[stage] = { id: "x" };

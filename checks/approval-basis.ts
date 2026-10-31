@@ -100,12 +100,6 @@ async function written(c: Core, initiative: string): Promise<string> {
   return JSON.stringify({ doc: doc.rows, revisions: revisions.rows, acts: acts.rows[0] });
 }
 
-/** The content revision zz-core's own read of the current document states. */
-async function tokenOf(c: Core, step: string, path: string): Promise<string> {
-  const read = await c.ok(step, "document_read", { path });
-  return /^content_revision: (cr_[a-z2-7]{26})$/m.exec(read)?.[1] ?? c.fail(step, `no content_revision in: ${read}`);
-}
-
 /** A reply with what differs between two approvals of the same kind of document put aside: the
  *  initiative it is in, read as the reference approval's, and the snapshot it signs and the review
  *  context it rests on. */
@@ -173,7 +167,7 @@ async function run(c: Core): Promise<void> {
     const consoleInitiative = await c.open("basis-console");
     const consolePath = `${consoleInitiative}/${DOC}`;
     await c.ok(step, "document_write", { path: consolePath, content: BODY });
-    const cr = await tokenOf(c, step, consolePath);
+    const cr = await c.token(step, consolePath);
     const s = await answer(shown, request(c, { initiative: consoleInitiative, path: DOC, content_revision: cr }));
     const rc = s.body.review_context;
     if (s.status !== 200 || typeof rc !== "string") c.fail(step, `POST /documents/shown answered ${s.status}: ${JSON.stringify(s.body)}`);

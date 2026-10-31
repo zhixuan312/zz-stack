@@ -21,10 +21,10 @@
  *
  * Read, not run. The table shapes are read from `SCHEMA_TARGET` — the target is what the migration
  * must produce, and `checks/schema-inventory.ts` is what holds the migration to it — and the
- * statements are read from the four trees that write to a database, with the text after a `--` on
- * each of their lines stripped and each `${callee(…)}` replaced by the literals that callee
- * returns, the way `checks/catalog-eval-columns.ts`'s `withoutSqlComments` and `checks/skill-row-shape.ts`'s
- * `sources`/`inserts` do it. The shapes below are the criterion's own clauses, not a restatement of the migration.
+ * statements are read from the four trees that write to a database by `sql-statements.js`'s reader,
+ * one per literal, with the text after a `--` on each of their lines stripped. Each insert is judged
+ * by the clauses of its own statement. The shapes below are the criterion's own clauses, not a
+ * restatement of the migration.
  *
  * DELIBERATE: the roots are relative to `process.cwd()`, not to this file's own location, and the
  * schema target is imported from there too, so the check can be pointed at a scratch tree that
@@ -45,15 +45,18 @@
  *   `status` and `merged_into_id` to explain the rule it applies, and read as a call site every
  *   one of those is a finding that reads nothing.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { withoutComments } from "../scripts/gate/read.ts";
-import { pathToFileURL } from "node:url";
+
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`, as checks/catalog-eval-columns.ts reads it.
+const { sourceFiles, statementsOf } =
+  await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
 
 /** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 
 const fail: string[] = [];
 
@@ -63,18 +66,7 @@ const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/
 /** A mutation spec quotes a statement to plant a defect in it — see the module doc. */
 const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
 
-interface Source { path: string; src: string }
-
-function sources(dir: string, out: Source[] = []): Source[] {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) { sources(p, out); continue; }
-    if (!/\.(ts|sh)$/.test(name) || isMutationSpec(p) || isAppliedMigration(p)) continue;
-    out.push({ path: p, src: readFileSync(p, "utf8") });
-  }
-  return out;
-}
+const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
 
 interface Insert { table: string; cols: string[]; line: number }
 
@@ -94,18 +86,13 @@ function inserts(src: string): Insert[] {
   return out;
 }
 
-/** The SQL of every template literal or string in a file that opens as a statement, with the
- *  `${…}` a template interpolates left as written — a statement this cannot fold is still read for
- *  the tables and columns it names with its own keys. */
-function statements(src: string): string[] {
-  const out: string[] = [];
-  for (const m of src.matchAll(/[`"']([^`"']*)[`"']/g)) {
-    const text = m[1].replace(/--[^\n]*/g, " ");
-    if (/^\s*(select|insert|update|delete|with)\b/i.test(text)) out.push(text);
-    else if (/\b(select|insert|update|delete)\b/i.test(text) &&
-             /\b(from|into|set|join)\b/i.test(text)) out.push(text);
-  }
-  return out;
+/** Every statement in a file, one per literal (adjacent literals a `+` joins read as one), with the
+ *  text after a `--` on each line stripped. */
+function statements(path: string, src: string): { line: number; sql: string }[] {
+  return (statementsOf(path, src, true) as { line: number; sql: string }[])
+    .map((st) => ({ line: st.line, sql: st.sql.replace(/--[^\n]*/g, " ") }))
+    .filter(({ sql }) => /^\s*(select|insert|update|delete|with)\b/i.test(sql) ||
+      (/\b(select|insert|update|delete)\b/i.test(sql) && /\b(from|into|set|join)\b/i.test(sql)));
 }
 
 /** The failure-mode family's own names, before and after the split. */
@@ -264,11 +251,11 @@ const IDENTITY_MUST_NAME = ["plugin_id", "stable_key"];
 
 let scanned = 0;
 const files = new Set<string>();
-const writeTrees = ROOTS.flatMap((r) => (existsSync(r) ? sources(r) : []));
+const writeTrees: { path: string; src: string }[] = ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, KEEP) : []));
 
 for (const { path, src } of writeTrees) {
-  const sql = withoutComments(src);
-  for (const st of statements(sql)) {
+  const code = withoutComments(src);
+  for (const { line: at, sql: st } of statements(path, src)) {
     scanned++;
     files.add(path);
     if (new RegExp(`\\bzz\\.${DROPPED_TABLE}\\b`, "i").test(st)) {
@@ -290,56 +277,55 @@ for (const { path, src } of writeTrees) {
       fail.push(`FAIL: ${path} — a statement rewrites the key of a zz.${IDENTITY}, which is the pair ` +
                 "everything else resolves through");
     }
-  }
 
-  for (const ins of inserts(sql)) {
-    if (ins.table === DROPPED_TABLE) {
-      fail.push(`FAIL: ${path}:${ins.line} — inserts zz.${DROPPED_TABLE}, which this phase drops whole`);
-      continue;
-    }
-    if (ins.table === IDENTITY) {
-      for (const name of IDENTITY_MUST_NAME) {
-        if (!ins.cols.includes(name)) {
-          fail.push(`FAIL: ${path}:${ins.line} — inserts zz.${IDENTITY} without ${name}, so the identity is ` +
-                    "not (plugin_id, stable_key) and a mode found twice is two modes");
+    // Each insert is judged by its own statement's clauses, never by another insert's in the same file.
+    for (const ins of inserts(st)) {
+      if (ins.table === DROPPED_TABLE) {
+        fail.push(`FAIL: ${path}:${at + ins.line - 1} — inserts zz.${DROPPED_TABLE}, which this phase drops whole`);
+        continue;
+      }
+      if (ins.table === IDENTITY) {
+        for (const name of IDENTITY_MUST_NAME) {
+          if (!ins.cols.includes(name)) {
+            fail.push(`FAIL: ${path}:${at + ins.line - 1} — inserts zz.${IDENTITY} without ${name}, so the identity is ` +
+                      "not (plugin_id, stable_key) and a mode found twice is two modes");
+          }
+        }
+        // Resolved by the pair rather than minted blind: without this, a second DISCOVER over a
+        // plugin that already has the mode raises a unique violation instead of re-sighting it.
+        const bound = new RegExp(`insert\\s+into\\s+(?:zz\\.)?${IDENTITY}\\s*\\([^)]*\\)[^;]*?on\\s+conflict\\s*\\(([^)]*)\\)`, "i").exec(st);
+        const conflict = bound?.[1].split(",").map((c) => c.trim().toLowerCase()) ?? [];
+        if (!(conflict.length === 2 && conflict[0] === "plugin_id" && conflict[1] === "stable_key")) {
+          fail.push(`FAIL: ${path}:${at + ins.line - 1} — this insert into zz.${IDENTITY} does not resolve through ` +
+                    "`on conflict (plugin_id, stable_key)`, so it neither mints nor finds the mode's one row");
         }
       }
-      // Resolved by the pair rather than minted blind: without this, a second DISCOVER over a
-      // plugin that already has the mode raises a unique violation instead of re-sighting it.
-      const bound = new RegExp(`insert\\s+into\\s+(?:zz\\.)?${IDENTITY}\\s*\\([^)]*\\)[^` + "`" +
-                               `]*?on\\s+conflict\\s*\\(([^)]*)\\)`, "i").exec(sql);
-      const conflict = bound?.[1].split(",").map((c) => c.trim().toLowerCase()) ?? [];
-      if (!(conflict.length === 2 && conflict[0] === "plugin_id" && conflict[1] === "stable_key")) {
-        fail.push(`FAIL: ${path}:${ins.line} — this insert into zz.${IDENTITY} does not resolve through ` +
-                  "`on conflict (plugin_id, stable_key)`, so it neither mints nor finds the mode's one row");
-      }
-    }
-    if (ins.table === SIGHTING) {
-      for (const name of RETIRED_ON_SIGHTING) {
-        if (ins.cols.includes(name)) {
-          fail.push(`FAIL: ${path}:${ins.line} — inserts zz.${SIGHTING}.${name}, which the split retires; ` +
-                    `the key is zz.${IDENTITY}'s, and this sighting's own provenance is what it names`);
+      if (ins.table === SIGHTING) {
+        for (const name of RETIRED_ON_SIGHTING) {
+          if (ins.cols.includes(name)) {
+            fail.push(`FAIL: ${path}:${at + ins.line - 1} — inserts zz.${SIGHTING}.${name}, which the split retires; ` +
+                      `the key is zz.${IDENTITY}'s, and this sighting's own provenance is what it names`);
+          }
         }
-      }
-      for (const name of SIGHTING_MUST_NAME) {
-        if (!ins.cols.includes(name)) {
-          fail.push(`FAIL: ${path}:${ins.line} — inserts zz.${SIGHTING} without ${name}, so the sighting ` +
-                    "carries no evidence of its own or resolves to no failure mode");
+        for (const name of SIGHTING_MUST_NAME) {
+          if (!ins.cols.includes(name)) {
+            fail.push(`FAIL: ${path}:${at + ins.line - 1} — inserts zz.${SIGHTING} without ${name}, so the sighting ` +
+                      "carries no evidence of its own or resolves to no failure mode");
+          }
         }
-      }
-      // A sighting's identity is resolved, never invented: the file that writes one names the
-      // identity table, and the value it binds came from there (a parameter, not a literal uuid).
-      if (!new RegExp(`\\b${IDENTITY}\\b`).test(sql)) {
-        fail.push(`FAIL: ${path}:${ins.line} — writes a zz.${SIGHTING} in a file that never names ` +
-                  `zz.${IDENTITY}, so nothing there resolves the identity the sighting points at`);
-      }
-      const values = new RegExp(`insert\\s+into\\s+(?:zz\\.)?${SIGHTING}\\s*\\([^)]*\\)[^` + "`" +
-                                "`]*?values\\s*\\(\\s*([^,)]*)", "i").exec(sql);
-      const first = (values?.[1] ?? "").trim();
-      if (!/^\$\d+/.test(first)) {
-        fail.push(`FAIL: ${path}:${ins.line} — binds zz.${SIGHTING}.failure_mode_id to \`${first || "nothing"}\`, ` +
-                  `which is no parameter of this statement; a sighting's identity is a zz.${IDENTITY}.id ` +
-                  "resolved in the same transaction");
+        // A sighting's identity is resolved, never invented: the file that writes one names the
+        // identity table, and the value it binds came from there (a parameter, not a literal uuid).
+        if (!new RegExp(`\\b${IDENTITY}\\b`).test(code)) {
+          fail.push(`FAIL: ${path}:${at + ins.line - 1} — writes a zz.${SIGHTING} in a file that never names ` +
+                    `zz.${IDENTITY}, so nothing there resolves the identity the sighting points at`);
+        }
+        const values = new RegExp(`insert\\s+into\\s+(?:zz\\.)?${SIGHTING}\\s*\\([^)]*\\)[^;]*?values\\s*\\(\\s*([^,)]*)`, "i").exec(st);
+        const first = (values?.[1] ?? "").trim();
+        if (!/^\$\d+/.test(first)) {
+          fail.push(`FAIL: ${path}:${at + ins.line - 1} — binds zz.${SIGHTING}.failure_mode_id to \`${first || "nothing"}\`, ` +
+                    `which is no parameter of this statement; a sighting's identity is a zz.${IDENTITY}.id ` +
+                    "resolved in the same transaction");
+        }
       }
     }
   }

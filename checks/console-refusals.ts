@@ -48,7 +48,7 @@ import { root } from "../scripts/deployment.ts";
 import {
   AS_OF, EXPECTED, MANY, MANY_RULES, OTHER, SENTINEL, TEAM, TIMEZONE, WINDOW, seedRefusals,
 } from "../scripts/schema/refusals-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-refusals";
 const DONE = "console-refusals: a team's real-work refusals are counted once under one of four owners by week, summing to " +
@@ -66,10 +66,7 @@ type Reads = {
   refusalGroups: (team: string, window: Span, asOf: string, limit?: number) => Promise<Groups>;
 };
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 900);
 const same = (step: string, found: unknown, want: unknown): void => {
@@ -162,19 +159,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

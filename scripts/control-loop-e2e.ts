@@ -38,6 +38,7 @@ import pg from "pg";
 
 import { owned, sweepOrphans } from "./owned-containers.ts";
 import { postgresService } from "./release/postgres-service.ts";
+import { EXPLORE_BODY, specBody } from "./schema/spec-fixture.ts";
 
 /** The tree the deployment serves. The containers mount it and run the compiled services out of
  *  it, so what is walked is this checkout rather than an image built from it at some other time. */
@@ -323,17 +324,10 @@ async function main(): Promise<void> {
       return callDoor("document_approve", { path: `${name}/${p}` });
     };
 
-    await doc("explore.md", "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n");
+    await doc("explore.md", EXPLORE_BODY);
 
     // The body is written twice: the same sections, with one line changed, because a change to an
     // approved body takes its cause and the record has to say what moved.
-    const specBody = (line: string) =>
-      `## Context\n${line}\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n` +
-      "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-      "## Stakeholders & Work\nx\n\n" +
-      "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-      "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-      "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
     await doc("spec.md", specBody("x"));
     await sign("spec.md");
     const spec = `${name}/spec.md`;

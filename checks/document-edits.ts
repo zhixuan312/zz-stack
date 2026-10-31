@@ -63,14 +63,17 @@ is(two === "ERROR: MULTIPLE_MATCHES — edit 1 (0-based): `find` occurs 2 times 
           "Send a longer `find` that includes enough surrounding text to occur exactly once.",
    `an uncut refusal prints its whole list and no details line: ${two}`);
 
-// A short repeated `find` in a long body numbers its occurrences in one forward pass. Counting
-// each line from offset 0 again is quadratic: 14.7 s here, on the one event loop every team shares.
-// The count stays exact; only the first 1,000 occurrences keep a line.
+// A short repeated `find` in a long body numbers its occurrences in one forward pass; counting each
+// line from offset 0 again is quadratic, at about 15 s. The count stays exact; only the first 1,000
+// occurrences keep a line.
+//
+// DELIBERATE: each time bound below is about half what the quadratic path takes and far above what the
+// linear one does, so a slow or loaded machine does not turn it red and the regression it is for still does.
 const big = Array.from({ length: 40_000 }, (_, i) => `line ${i} the quick brown fox`).join("\n");
 const t0 = performance.now();
 const slow = applyEdits(big, [{ find: "the", replace: "a" }]);
 const took = performance.now() - t0;
-is(took < 1500 && "refusals" in slow && slow.refusals[0].match_count === 40_000
+is(took < 7000 && "refusals" in slow && slow.refusals[0].match_count === 40_000
    && slow.refusals[0].lines.length === 1000 && slow.refusals[0].lines[999] === 1000,
    `40,000 occurrences are counted, and the first 1,000 numbered, in linear time: ${Math.round(took)} ms, ` +
    `${"refusals" in slow ? `${slow.refusals[0].match_count} counted, ${slow.refusals[0].lines.length} lines kept` : "applied"}`);
@@ -92,15 +95,15 @@ for (let n = 0; n < 20_000; n++) {
 }
 
 // The most one call can ask: 128 edits of a self-overlapping `find` on a 1.2 MB run of one
-// character. Each occurrence counted and none stored past the cap: holding every line ran zz-core
-// out of heap for every team (64 such edits passed 1.5 GB) and stored a 79 MB detail row. The
-// refusal's detail, as `settleRefusal` writes it, is bounded and says what it omitted.
+// character. Each occurrence counted and none stored past the cap, since holding every line exhausts
+// zz-core's heap, which every team shares. The refusal's detail, as `settleRefusal` writes it, is
+// bounded and says what it omitted.
 const run = "a".repeat(1_200_000);
 const t1 = performance.now();
 const flood = applyEdits(run, Array.from({ length: 128 }, () => ({ find: "aa", replace: "b" })));
 const floodTook = performance.now() - t1;
 const refusals = "refusals" in flood ? flood.refusals : [];
-is(floodTook < 3000 && refusals.length === 128
+is(floodTook < 10_000 && refusals.length === 128
    && refusals.every((r: { match_count: number; lines: number[] }) => r.match_count === 1_199_999 && r.lines.length === 1000),
    `128 edits of "aa" on 1.2 MB are counted exactly and keep at most 1,000 lines each: ${Math.round(floodTook)} ms, ` +
    `${JSON.stringify(refusals.slice(0, 1).map((r: { match_count: number; lines: number[] }) => [r.match_count, r.lines.length]))}`);
@@ -116,22 +119,22 @@ is(Buffer.byteLength(told, "utf8") <= 16 * 1024 && Buffer.byteLength(detail, "ut
    `${JSON.stringify({ details_complete: stored.details_complete, details_omitted: stored.details_omitted })}, ${detail.slice(0, 300)}`);
 
 // A long self-overlapping `find` costs one pass, not one comparison of the whole `find` per
-// position: 4.3 s an edit here before.
+// position, which takes about 4 s an edit.
 const t2 = performance.now();
 const long = applyEdits(run, Array.from({ length: 16 }, () => ({ find: "a".repeat(10_000), replace: "" })));
 const longTook = performance.now() - t2;
-is(longTook < 1500 && "refusals" in long && long.refusals.every((r: { match_count: number }) => r.match_count === 1_190_001),
+is(longTook < 30_000 && "refusals" in long && long.refusals.every((r: { match_count: number }) => r.match_count === 1_190_001),
    `16 edits of a 10,000-character self-overlapping find take one pass each: ${Math.round(longTook)} ms`);
 
 // A `find` the batch repeats is counted once: every edit sharing it scans the body once between
-// them. 128 edits of "aa" on 8 MiB took 6.2 s when each counted again, on the one event loop
-// every team shares; each refusal still carries its exact count and its own index.
+// them, where counting it per edit takes about 6 s for this batch on the one event loop every team
+// shares. Each refusal still carries its exact count and its own index.
 const huge = "a".repeat(8 * 1024 * 1024);
 const t3 = performance.now();
 const shared = applyEdits(huge, Array.from({ length: 128 }, (_, i) => ({ find: i % 2 ? "aaa" : "aa", replace: "" })));
 const sharedTook = performance.now() - t3;
 const sharedRefusals = "refusals" in shared ? shared.refusals : [];
-is(sharedTook < 1500 && sharedRefusals.length === 128
+is(sharedTook < 3000 && sharedRefusals.length === 128
    && sharedRefusals.every((r: { edit_index: number; match_count: number; lines: number[] }, i: number) =>
      r.edit_index === i && r.match_count === huge.length - (i % 2 ? 2 : 1) && r.lines.length === 1000),
    `128 edits sharing two finds on 8 MiB do not scan the body once per find: ${Math.round(sharedTook)} ms, ` +

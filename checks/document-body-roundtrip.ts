@@ -4,12 +4,10 @@
  * wrote, without the blank lines that separate it from the envelope.
  *
  * The envelope and the body are joined by a blank line when a document is stamped and again when
- * a stored revision is recomposed for a reader. Left on the body, that separator came back on
- * every read and went into the store on every write that started from one, so each patch or
- * revise grew the body's leading blank lines by one — every current body in production started
- * with one, 135 revisions with three or more — and an edit's line numbers were off by as many
- * (the Phase 0 skeleton of 2026-10-06-doc-write-and-update-paradigm read lines 6 and 8 for text
- * on lines 3 and 5).
+ * a stored revision is recomposed for a reader. Left on the body, that separator would come back on
+ * every read and go into the store on every write that started from one, so each patch or revise
+ * would grow the body's leading blank lines by one, and an edit's line numbers would be off by as
+ * many.
  *
  * Run: node checks/document-body-roundtrip.ts   (after npm run build; also run by scripts/gate.ts)
  */

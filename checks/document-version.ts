@@ -48,11 +48,11 @@
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
 import { type Core, withThrowawayCore } from "../scripts/schema/throwaway-core.ts";
+import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
+import { esc, first } from "../scripts/schema/normalize-cases.ts";
 
 const NAME = "document-version";
 
-const first = (reply: string): string => reply.split("\n")[0];
-const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 interface Row {
   id: string; version: number; revision: number; status: string; approved_revision: number | null;
@@ -79,10 +79,7 @@ async function snapshot(c: Core, path: string, revision: number): Promise<string
 }
 
 /** The content revision a read of the current document states. */
-async function tokenOf(c: Core, path: string): Promise<string> {
-  const read = await c.ok(`read ${path}`, "document_read", { path });
-  return /^content_revision: (cr_[a-z2-7]{26})$/m.exec(read)?.[1] ?? c.fail(`read ${path}`, `no content_revision in: ${read}`);
-}
+const tokenOf = (c: Core, path: string): Promise<string> => c.token(`read ${path}`, path);
 
 /** The citations one stored snapshot carries. */
 async function citesOfRevision(c: Core, path: string, revision: number): Promise<string[]> {
@@ -128,17 +125,6 @@ async function quietClose(c: Core, initiative: string): Promise<string> {
   }
   return last;
 }
-
-/** A spec the spec gate approves: every declared section, one phase, one core statement with its
- *  evidence (scripts/control-loop-e2e.ts). */
-const SPEC_BODY =
-  "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n" +
-  "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-  "## Stakeholders & Work\nx\n\n" +
-  "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-  "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-  "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
-const EXPLORE_BODY = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
 
 async function versionTable(c: Core): Promise<void> {
   const V = await c.open("version-table");

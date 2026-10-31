@@ -22,8 +22,9 @@
  *   - the same rows at month grain are one period of the window's own searches.
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, eight hours ahead of UTC. The searches at 00:30
- * and 00:10 on a Monday locally are 16:30 and 16:10 on the Sunday before in UTC, and the ones at 23:30
- * and 23:59 on a Sunday locally are the same week's: a week cut on UTC's calendar moves four of the ten.
+ * and 00:10 on a Monday locally are 16:30 and 16:10 on the Sunday before in UTC: a week cut on UTC's
+ * calendar moves those two of the eleven into the week before. A late local Sunday cannot tell the two
+ * calendars apart in a zone ahead of UTC, so no row here is asked to.
  *
  * The only database it touches is the one it started.
  *
@@ -38,7 +39,7 @@ import { isDeepStrictEqual } from "node:util";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-searches-agree";
 const DONE = "console-searches-agree: searches with results and the searches measure reduce one statement, answering " +
@@ -95,10 +96,7 @@ const TEAM_WEEKS: [number, number][] = [[2, 3], [1, 4], [2, 2]];
 /** The same weeks as Status counts them, the search with no team adding one of each to the second. */
 const PLATFORM_WEEKS: [number, number][] = [[2, 3], [2, 5], [2, 2]];
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 900);
 const same = (step: string, found: unknown, want: unknown): void => {
@@ -136,7 +134,7 @@ async function cases(db: pg.Client, read: Reads, status: pg.Pool): Promise<void>
     same(step, [p.window.complete, p.figure.why, p.figure.value], [i < 2, null, (100 * n) / d]);
   }
   pass("3 of 3 weeks: 2 of 3 found, 1 of 4, 2 of 2 — each cut on the local Monday to Monday, the running week not complete, " +
-    "the 00:30 and 00:10 Monday searches and the 23:30 and 23:59 Sunday ones each in their own local week");
+    "the 00:30 and 00:10 Monday searches, which are Sunday in UTC, each in their own local week");
 
   step = "the searches measure, the statement both callers reduce, answers the same weeks";
   const measure = await read.searchesMeasure(status, GRID);
@@ -200,19 +198,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

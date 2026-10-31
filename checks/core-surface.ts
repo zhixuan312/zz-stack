@@ -21,24 +21,17 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { withoutComments } from "../scripts/gate/read.ts";
+
 const fail: string[] = [];
 
-/** A source file with its comments taken out.
+/** A source file's lines with its comments blanked (`withoutComments`, which reads strings and
+ * regex literals, so a `/*` or `//` inside one opens nothing).
  *
  * A comment recording what a tool used to be is history, and every file this check reads
  * carries some. Markdown is never stripped: prose in a skill is the instruction, and a sentence
  * telling a model to call a tool that no door registers is the failure this check is about. */
-const stripComments = (src: string) => {
-  const out: string[] = [];
-  let inBlock = false;
-  for (let code of src.split("\n")) {
-    if (inBlock) { const e = code.indexOf("*/"); if (e < 0) { out.push(""); continue; } code = code.slice(e + 2); inBlock = false; }
-    const o = code.indexOf("/*");
-    if (o >= 0) { const c = code.indexOf("*/", o); if (c < 0) { inBlock = true; code = code.slice(0, o); } }
-    out.push(code.replace(/\/\/.*$/, ""));
-  }
-  return out;
-};
+const stripComments = (src: string): string[] => withoutComments(src).split("\n");
 
 /** Read a path, or say so: a check that throws has no failure path.
  *

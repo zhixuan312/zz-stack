@@ -115,13 +115,13 @@ taken("the same read-back with the same named arguments agrees", readBack,
   { title: "Spec", tags: ["beta", "alpha"], stakeholder: "Ana", fields: { component: "billing" } }, 12);
 
 /* Conflicts and unknown keys: refused, every one of them at once, never lost. */
-let r = refused("a title that differs from the named one is METADATA_CONFLICT naming both values",
+refused("a title that differs from the named one is METADATA_CONFLICT naming both values",
   "---\ntitle: Alpha\n---\n# T\n", { title: "Beta" }, [/^ERROR: METADATA_CONFLICT — .*"Alpha".*"Beta"/]);
 refused("tags, stakeholder and a flow field that differ are three conflicts, reported together",
   "---\ntags: a, b\nstakeholder: Ana\ncomponent: billing\n---\n# T\n",
   { tags: ["c"], stakeholder: "Bo", fields: { component: "ledger" } },
   [/^ERROR: METADATA_CONFLICT — .*tags/, /^ERROR: METADATA_CONFLICT — .*stakeholder/, /^ERROR: METADATA_CONFLICT — .*component/]);
-r = refused("unknown keys are UNSUPPORTED_METADATA, every one named in one refusal",
+const r = refused("unknown keys are UNSUPPORTED_METADATA, every one named in one refusal",
   "---\ndueDate: x\nDue-Date: y\ntitle: ok\n---\n# T\n", {}, [/^ERROR: UNSUPPORTED_METADATA — /]);
 holds("the refusal names both unknown keys", r.length === 1 && r[0].includes("dueDate") && r[0].includes("Due-Date"), r);
 refused("a conflict and an unknown key are both reported", "---\ntitle: A\nWeird: 1\n---\n# T\n", { title: "B" },

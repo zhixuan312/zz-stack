@@ -50,8 +50,9 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { EXPECTED, INITIATIVES, REPORTS, seedBugs } from "../scripts/schema/bugs-seed.ts";
 import { MEMBER, NO_TEAM, SUPERADMIN, TEAM_TWO, signIn, type Seeded } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { canonical } from "./console-work-query-harness.ts";
 
 const NAME = "console-platform-bugs";
 const DONE = "console-platform-bugs: the bug queue's figures and rows are answered over real reports, a member's in the " +
@@ -71,10 +72,7 @@ const REPORT_KEYS = ["detail", "duplicateOf", "id", "impact", "platformVersion",
   "resolvedAt", "status", "surface", "team", "title"];
 const REAL_KEYS = ["id", "impact", "platformVersion", "reportedMs", "resolvedMs", "status", "surface", "teamId"];
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 type Obj = Record<string, unknown>;
@@ -114,7 +112,7 @@ function figureCases(seeded: Seeded, a: Answer): void {
   let step = "the counts, the oldest open report and the median";
   const counts = a.body.counts as Obj;
   const want = { state: "ok", data: { open: EXPECTED.open, resolved: EXPECTED.resolved, byImpact: EXPECTED.byImpact, byStatus: EXPECTED.byStatus } };
-  if (!same(sortDeep(counts), sortDeep(want))) {
+  if (!same(canonical(counts), canonical(want))) {
     fail(step, `counts read ${JSON.stringify(counts)}, not ${JSON.stringify(want)}`);
   }
   const oldest = publicRow(seeded, EXPECTED.oldestOpen).filedAt;
@@ -136,7 +134,7 @@ function figureCases(seeded: Seeded, a: Answer): void {
       week: iso(seeded.starts.get(c.back)!), filed: fig(c.filed, null), resolved: fig(c.resolved, null),
       stillOpen: fig(c.stillOpen, null), filedPer1000: fig(c.per1000, c.per1000Why), medianResolveHours: fig(c.median, c.medianWhy),
     };
-    if (!same(sortDeep(cohorts[i]), sortDeep(wantCohort))) fail(step, `back ${c.back} reads ${JSON.stringify(cohorts[i])}, not ${JSON.stringify(wantCohort)}`);
+    if (!same(canonical(cohorts[i]), canonical(wantCohort))) fail(step, `back ${c.back} reads ${JSON.stringify(cohorts[i])}, not ${JSON.stringify(wantCohort)}`);
   }
   pass("each week from L-4 to the running one: filed, resolved and still open, reports per 1,000 real-work calls of the " +
        "same week (no data with none, insufficient under 30) and the median of its resolved");
@@ -151,12 +149,6 @@ function figureCases(seeded: Seeded, a: Answer): void {
   pass(`meta reads platform-public in ${TIMEZONE}, real bug reports, coverage from the first real-work call`);
 }
 
-/** A value with every object's keys in order, so two answers compare by content alone. */
-function sortDeep(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(sortDeep);
-  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]));
-  return v;
-}
 
 /** Every row of the queue the reader is answered, ten to a page as the console asks for them. */
 async function allRows(as: (email: string, query?: string) => Promise<Answer>, email: string): Promise<Obj[]> {
@@ -194,7 +186,7 @@ async function queueCases(seeded: Seeded, as: (email: string, query?: string) =>
   for (const [i, r] of rows.entries()) {
     if (keys(r) !== PUBLIC_ROW.join()) fail(step, `${keyOf(r.id)} has keys ${keys(r)}, not ${PUBLIC_ROW.join(",")}`);
     const want = publicRow(seeded, EXPECTED.real[i]);
-    if (!same(sortDeep(r), sortDeep(want))) fail(step, `${EXPECTED.real[i]} reads ${JSON.stringify(r)}, not ${JSON.stringify(want)}`);
+    if (!same(canonical(r), canonical(want))) fail(step, `${EXPECTED.real[i]} reads ${JSON.stringify(r)}, not ${JSON.stringify(want)}`);
   }
   if (rows[1].title !== rows[2].title) fail(step, `R9 and R8 are titled ${String(rows[1].title)} and ${String(rows[2].title)}`);
   pass("each row is its spec title and typed metadata only; `Bug_Report` and `bug_report` read one title, and a surface in no " +
@@ -225,7 +217,7 @@ async function queueCases(seeded: Seeded, as: (email: string, query?: string) =>
   }
   const page = await as(MEMBER, "?limit=3&offset=2");
   if ((page.body.queue as { data: Obj }).data.total !== 10) fail(step, `a page reads total ${JSON.stringify(page.body.queue)}, not 10`);
-  if (!same(sortDeep({ ...page.body, queue: null, meta: null }), sortDeep({ ...member.body, queue: null, meta: null }))) {
+  if (!same(canonical({ ...page.body, queue: null, meta: null }), canonical({ ...member.body, queue: null, meta: null }))) {
     fail(step, "a filter or a page moved a figure, which only the queue may");
   }
   for (const bad of ["state=closed", "impact=severe", "surface=team_switch", "surface=Bug_Report", "surface=core:bug_report",
@@ -247,7 +239,7 @@ async function adminCases(as: (email: string, query?: string) => Promise<Answer>
     const team = seeded.team === "one" ? "kestrel-works" : seeded.team === "two" ? TEAM_TWO : null;
     if (r.internalTitle !== seeded.title || r.team !== team) fail(step, `${keyOf(r.id)} reads ${String(r.internalTitle)} of ${String(r.team)}`);
   }
-  const strip = (b: Obj) => sortDeep({ ...b, meta: { ...(b.meta as Obj), asOf: null, period: null, scope: null },
+  const strip = (b: Obj) => canonical({ ...b, meta: { ...(b.meta as Obj), asOf: null, period: null, scope: null },
     queue: { ...(b.queue as Obj), data: { ...((b.queue as { data: Obj }).data), rows: rowsOf(step, { status: 200, body: b, text: "" })
       .map(({ internalTitle: _t, team: _team, ...rest }) => rest) } } });
   if ((admin.body.meta as Obj).scope !== "platform-admin" || !same(strip(admin.body), strip(member.body))) {
@@ -275,7 +267,7 @@ async function reportCases(seeded: Seeded, get: (path: string, email: string) =>
     resolution: r2.resolution, duplicateOf: REPORTS.R1.id, team: "kestrel-works",
   };
   const a = await get(`/${r2.id}`, SUPERADMIN);
-  if (a.status !== 200 || keys(a.body) !== REPORT_KEYS.join() || !same(sortDeep(a.body), sortDeep(want))) {
+  if (a.status !== 200 || keys(a.body) !== REPORT_KEYS.join() || !same(canonical(a.body), canonical(want))) {
     fail(step, `R2 answered ${a.status}: ${a.text.slice(0, 400)}`);
   }
   pass("the superadmin reads R2's title, detail, raw surface, resolution, duplicate target and team");
@@ -412,19 +404,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

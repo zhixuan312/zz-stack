@@ -30,60 +30,14 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import pg from "pg";
-
-process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+import { docRow, installWorld, type World } from "../scripts/schema/initiative-world.ts";
 
 const TEAM = "t1";
-interface W { flow: string | null; docs: Record<string, unknown>[]; facts: Record<string, string>;
-             records: Record<string, Record<string, string>> }
-const world = new Map<string, W>();
-let seq = 0;
-const COLUMNS = new Set(["status", "outcome", "approved_by", "approved_at", "closed_by", "title", "flow", "version"]);
-const row = (initiative: string, path: string, fields: Record<string, string>, text: string) => ({
-  id: `d${++seq}`, path, initiative, flow: "", type: "",
-  status: fields.status ?? "", outcome: fields.outcome ?? null,
-  approved_by: fields.approved_by ?? null, approved_at: fields.approved_at ?? null,
-  closed_by: fields.closed_by ?? null, updated_at: "2026-09-25T00:00:00.000Z",
-  title: fields.title ?? path, body: text.split("\n---\n\n")[1] ?? text, tags: [],
-  current_revision: Number(fields.version) || 1, approved_revision: null,
-  current_version: Number(fields.version) || 1, content_generation: "0",
-  fields: Object.fromEntries(Object.entries(fields).filter(([k]) => !COLUMNS.has(k))),
-});
-
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
-  const sql = String(text).replace(/\s+/g, " ").trim();
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  const bySlug = world.get(String(values[1] ?? ""));
-  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
-    const names = (values[1] as string[]) ?? [];
-    return one(names.filter((n) => world.has(n)).map((n) => ({
-      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
-  }
-  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
-    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-25",
-                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
-  }
-  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
-    return one(world.get(String(values[0]))?.docs ?? []);
-  }
-  if (/from zz\.doc d\b/.test(sql)) {
-    const hit = (bySlug?.docs ?? []).filter((d) => d.path === values[2]);
-    return one(hit.length ? [hit[hit.length - 1]] : []);
-  }
-  if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    const d = [...world.values()].flatMap((x) => x.docs).find((x) => x.id === String(values[0]));
-    return one(d ? [{ revision: 1, version: 1, content_state: "retained", title: d.title, body: d.body,
-                      tags: [], content_hash: "h", fields: d.fields, revision_note: null,
-                      written_by: "ada@zz.test", written_at: d.updated_at,
-                      approved_by: d.approved_by, approved_at: d.approved_at }] : []);
-  }
-  if (/from zz\.initiative_fact f\b/.test(sql)) {
-    return one(Object.entries(bySlug?.facts ?? {}).map(([fact, value]) => ({ fact, value })));
-  }
-  if (/from zz\.initiative_record r\b/.test(sql)) return one([]);
-  return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+const world = new Map<string, World>();
+installWorld(world, "2026-09-25");
+/** A document row whose body is the bytes after the envelope. */
+const row = (initiative: string, path: string, fields: Record<string, string>, text: string) =>
+  docRow(initiative, path, fields, text.split("\n---\n\n")[1] ?? text, "2026-09-25");
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");
@@ -194,14 +148,14 @@ st = await initiativeState(db()!, TEAM, C, CHAIN, CHAIN.documents);
 is(st.next_move?.action === "close",
    `with improvement.md written and approved the next move is ${JSON.stringify(st.next_move)}`);
 
-// 4. no _facts.json at all: protocol.md is undetermined
+// 4. no branch fact recorded at all: protocol.md is undetermined
 const E = init("2026-09-25-undetermined");
 st = await initiativeState(db()!, TEAM, E, CHAIN, CHAIN.documents);
 const protocolE = st.documents.find((d: { name: string }) => d.name === "protocol.md");
 is(protocolE?.applies === "undetermined",
-   `protocol.md with no _facts.json reports applies=${JSON.stringify(protocolE?.applies)}`);
+   `protocol.md with no branch fact recorded reports applies=${JSON.stringify(protocolE?.applies)}`);
 is(st.next_move?.action === "resolve_branch" && st.next_move?.document === "protocol.md",
-   `with no _facts.json at all the next move is ${JSON.stringify(st.next_move)}, not resolve_branch`);
+   `with no branch fact recorded the next move is ${JSON.stringify(st.next_move)}, not resolve_branch`);
 const refusedProtocolE = await documentGuards(CHAIN, `${E}/protocol.md`, doc({ title: "P" }, "# P"), TEAM, "fixture");
 is(typeof refusedProtocolE === "string" && /not writable yet/.test(refusedProtocolE),
    `writing an undetermined document was not refused as not writable yet: ${JSON.stringify(refusedProtocolE)}`);
@@ -227,11 +181,13 @@ is(abandonedAttempt === null,
    `an ABANDONED close was refused despite an undetermined branch, which the contract exempts: ` +
    `${JSON.stringify(abandonedAttempt)}`);
 
-// 6. a document with no `when` carries no `applies` at all — today's behaviour, unchanged
-const findingsE = st.documents?.find?.((d: { name: string }) => d.name === "findings.md");
-is(findingsE === undefined || findingsE.applies === undefined,
+// 6. a document with no `when` carries no `applies` at all
+const findingsE = st.documents.find((d: { name: string }) => d.name === "findings.md");
+is(findingsE !== undefined, `findings.md is missing from the status's documents: ${JSON.stringify(st.documents)}`);
+// `applies: undefined` is silent on the wire, which is what a reader sees.
+is(findingsE !== undefined && findingsE.applies === undefined,
    `findings.md, which declares no when, reports applies=${JSON.stringify(findingsE?.applies)} ` +
-   "— a document with no when must be silent about applicability, exactly as before this task");
+   "— a document with no when must be silent about applicability");
 
 
 if (fail.length) {

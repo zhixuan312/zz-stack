@@ -43,7 +43,7 @@ import { isDeepStrictEqual } from "node:util";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-record-coverage";
 const DONE = "console-record-coverage: Record's runs and searches are counted from the later of the period's start and the " +
@@ -90,10 +90,7 @@ type Knowledge = {
 type Read = { meta: { period: Win; coverageFrom: string | null }; cumulative: PF[]; knowledge: Part; agents: Part };
 type RecordOf = (team: string, caller: string, period: Period, page: { limit: number; offset: number }, asOf: string) => Promise<Read>;
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
 
@@ -243,19 +240,4 @@ async function run(url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(async (db, url) => { await seed(db); await run(url); });
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, async (db, url) => { await seed(db); await run(url); });

@@ -47,17 +47,13 @@ function faults(what: string, comment: string | null | undefined, allow: readonl
 }
 
 const missing: string[] = [];
-let columns = 0, comments = 0;
+let comments = 0;
 
 for (const name of Object.keys(tables).sort()) {
   const t = tables[name];
   const c = t.comment;
-  // The whole shape, not its first token: a table comment that stops at `class=` names no
-  // authority and asks no question, which is the standard's first requirement.
-  if (!c || !/class=/.test(c) || !/authority=/.test(c) || !/question=/.test(c)) {
-    missing.push(`${name}: table comment is absent or incomplete`);
-  }
-  const tableClass = fields(c ?? "").class;
+  const tableFields = fields(c ?? "");
+  const tableClass = tableFields.class;
   // A table's allowed tails follow from its own class. `retention` is allowed on every class:
   // one class makes it MANDATORY (ephemeral) and rule 9 makes it mandatory for an unbounded
   // table, which is `immutable_history`'s own shape — `zz.event` is the case the rule exists for.
@@ -65,7 +61,6 @@ for (const name of Object.keys(tables).sort()) {
     ...(tableClass === "state_machine" ? ["transitions"] : []),
     ...(tableClass === "projection" ? ["rebuilt_from"] : [])];
   missing.push(...faults(`table ${name}`, c, allow));
-  const tableFields = fields(c ?? "");
   if (tableFields.authority !== "this") {
     missing.push(`table ${name} does not name itself as its authority — the table template fixes authority=this`);
   }
@@ -85,16 +80,13 @@ for (const name of Object.keys(tables).sort()) {
   }
 
   for (const [col] of t.columns ?? []) {
-    columns++;
     const cc = t.columnComments?.[col];
-    if (!cc || !/class=/.test(cc) || !/authority=/.test(cc) || !/question=/.test(cc)) {
-      missing.push(`${name}.${col}: column comment is absent or incomplete`);
-    } else { comments++; }
     const colFields = fields(cc ?? "");
     const colClass = colFields.class;
     const auth = colFields.authority;
-    missing.push(...faults(`column ${name}.${col}`, cc,
-      colClass === "projection" ? ["rebuilt_from"] : []));
+    const bad = faults(`column ${name}.${col}`, cc, colClass === "projection" ? ["rebuilt_from"] : []);
+    if (bad.length === 0) comments++;
+    missing.push(...bad);
     if (colClass === "projection" && !/rebuilt_from=/.test(cc ?? "")) missing.push(`${name}.${col}: projection names no rebuild source`);
     // Authority on a column is itself the projection marker: a projection points at the table it
     // is rebuilt from, and every other column is its own authority. Saying `authority=this` on a
@@ -109,7 +101,6 @@ for (const name of Object.keys(tables).sort()) {
 }
 
 assert.deepEqual(missing.slice(0, 20), [], `${missing.length} table(s) or column(s) carry no usable comment`);
-assert.equal(comments, columns, "every column carries a comment");
 assert.ok(comments > 400, "and there are columns to comment, so this is not vacuously true");
 
 console.log(`ok comment-completeness (${comments} columns commented)`);

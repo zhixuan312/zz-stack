@@ -86,17 +86,6 @@ const shown = (client: string | null): string => (client === null ? "no client" 
 const b64 = (b: Buffer): string => b.toString("base64url");
 const hash = (s: string | Buffer): Buffer => createHash("sha256").update(s).digest();
 
-/** Rows matching `sql`, waited on until there are `n` of them: the gateway writes an event after
- *  the answer it describes, so it is polled for, briefly. */
-async function rowsOnce<T extends pg.QueryResultRow>(c: Core, sql: string, params: unknown[], n: number): Promise<T[]> {
-  const until = Date.now() + 5000;
-  for (;;) {
-    const { rows } = await c.sql.query<T>(sql, params);
-    if (rows.length >= n || Date.now() > until) return rows;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-}
-
 /** The gateway as server.ts mounts the parts this check drives, and the seeded person's
  *  credentials: a PAT for /manage, a console session's cookie secret, and a second session that
  *  stays on the seeded team. */
@@ -229,7 +218,7 @@ async function consoleCall(g: Gateway, client: string | null, method: string, pa
 /** The origin of the one row `where` finds in `zz.event e`, named `about` in a failure. */
 async function originWhere(c: Core, step: string, about: string, client: string | null,
                            where: string, params: unknown[]): Promise<string> {
-  const rows = await rowsOnce<{ origin: string }>(c, `select e.origin from zz.event e where ${where}`, params, 1);
+  const rows = await c.rowsOnce<{ origin: string }>(`select e.origin from zz.event e where ${where}`, params, 1);
   if (rows.length !== 1) c.fail(step, `${about}, made by ${shown(client)}, left ${rows.length} rows, not one`);
   return rows[0].origin;
 }
@@ -288,7 +277,7 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     if (!patId) c.fail(step, "pat_issue left no token labelled revoke-twice");
     const first = await tool(c, g, step, null, "pat_revoke", { pat_id: patId, confirm: patId });
     const second = await tool(c, g, step, null, "pat_revoke", { pat_id: patId, confirm: patId });
-    const acts = await rowsOnce(c, "select 1 from zz.event where kind = 'admin.revoke_pat' and subject = $1", [patId], 2);
+    const acts = await c.rowsOnce("select 1 from zz.event where kind = 'admin.revoke_pat' and subject = $1", [patId], 2);
     if (!/ revoked$/.test(first) || !/already revoked/.test(second) || acts.length !== 1) {
       c.fail(step, `answered "${first}" then "${second}", with ${acts.length} revoke events`);
     }

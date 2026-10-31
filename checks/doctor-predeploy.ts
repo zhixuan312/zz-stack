@@ -4,7 +4,7 @@
  *
  * Registers the real layers (registration only; no probe runs and no host is reached) and reads
  * the subset back through `probeNames`:
- *   1. it holds the status-gate probe, whose disagreement rolled 0.76.0 back after a deploy;
+ *   1. it holds the status-gate probe, whose disagreement after a deploy forces a rollback;
  *   2. it holds nothing whose answer the deploy changes — migrations applied, the skill registry,
  *      and nothing from the host, doors or contract layers;
  *   3. the release runs it before the deploy: release.ts calls verifyPredeploy before step 4.
@@ -25,7 +25,7 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 const pre = probeNames({ predeploy: true });
 const all = probeNames();
 is(pre.includes("data/no document carries a status its flow does not gate"),
-   "the status-gate probe is not in the pre-deploy subset — the 0.76.0 rollback can happen again");
+   "the status-gate probe is not in the pre-deploy subset — a document whose status its flow does not gate is found only after the deploy, by a rollback");
 is(all.includes("data/every migration is applied, and every applied migration still exists"),
    "the migration probe is no longer registered under its name — this check is reading nothing");
 is(!pre.includes("data/every migration is applied, and every applied migration still exists"),

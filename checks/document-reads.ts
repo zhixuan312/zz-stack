@@ -20,7 +20,7 @@
  *   - `document_present`'s handler refusing `review_context` with `version`, `section` or an array
  *     `path`, and `full` with `version` or `section` (`INVALID_MODE`), before anything is read.
  *
- * Two assertions stay source-level and are named as such below, with what each catches.
+ * Four assertions stay source-level and are named as such in section 5, with what each catches.
  *
  * Run: node checks/document-reads.ts   (also run by scripts/gate.ts)
  */
@@ -181,11 +181,10 @@ is(tools.get("document_read")?.inputSchema?.scope?.safeParse("platform").success
    "document_read lost `scope` — the platform journal became unreadable again");
 
 // 2. The history, read from the rows
-const history = (await loadDocument(TEAM, `${INIT}/spec.md`)).ok;
-if (!history) { fail.push("spec.md does not resolve to the revisions the fixture holds"); }
+const loaded = await loadDocument(TEAM, `${INIT}/spec.md`);
+if (!loaded.ok) { fail.push("spec.md does not resolve to the revisions the fixture holds"); }
 else {
-  const loaded = await loadDocument(TEAM, `${INIT}/spec.md`);
-  const versions = loaded.ok ? (loaded.history as Array<{ revision: number }>).map((r) => r.revision) : [];
+  const versions = (loaded.history as Array<{ revision: number }>).map((r) => r.revision);
   is(versions.join(",") === "1,2,10",
      `the version list is ${JSON.stringify(versions)}, expected [1,2,10] — the reader reordered what ` +
      "the database gave it");
@@ -350,7 +349,7 @@ let traversalRefused = false;
 try { await safePath(`${INIT}/x/../spec.md`); } catch { traversalRefused = true; }
 is(traversalRefused, "safePath no longer refuses a path that walks out of the store");
 
-// 5. Two source-level assertions, and what each catches
+// 5. Four source-level assertions, and what each catches
 //
 // Neither can be run: both handlers resolve through `db()` and the session. The loops are read
 // rather than executed, and each assertion fails on the specific defect the contract names rather
@@ -399,9 +398,8 @@ else {
   }
 }
 
-// A path that does not exist says what to call next, not only that it is missing: the eval of
-// 2026-09-26 found one caller who, told only "review.md does not exist", went on to present a
-// different initiative's document.
+// The third and fourth: a path that does not exist says what to call next, not only that it is
+// missing — document_list for the initiative, and initiative_status for a missing initiative.
 is(/document_list\(prefix: "\$\{initiative\}"\)/.test(src),
    "document_read's does-not-exist refusal no longer names document_list for the initiative");
 is(/initiative_status\(\) lists the open ones/.test(src),

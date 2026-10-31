@@ -58,25 +58,16 @@ import { documentBody } from "@zz/contracts";
 import type { Mcp } from "@zz/mcp-client";
 
 import { type Core, withThrowawayCore } from "../scripts/schema/throwaway-core.ts";
+import { EXPLORE_BODY } from "../scripts/schema/spec-fixture.ts";
+import { esc, first } from "../scripts/schema/normalize-cases.ts";
 
 const NAME = "document-edit-races";
 // `upload_start` builds its routes on the address a client dials; the child inherits it.
 process.env.GATEWAY_PUBLIC_URL ??= "https://api.example.test";
 
-const first = (reply: string): string => reply.split("\n")[0];
-const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A receipt's own lines — the first line, content revision, status, sections and causes. */
 const receipt = (reply: string): string[] => reply.split("\n").slice(0, 5);
 const CONFLICT = /^ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request/;
-
-async function tokenOf(c: Core, step: string, path: string): Promise<string> {
-  const read = await c.ok(step, "document_read", { path });
-  return /^content_revision: (cr_[a-z2-7]{26})$/m.exec(read)?.[1] ?? c.fail(step, `no content_revision in: ${read}`);
-}
-
-async function bodyOf(c: Core, step: string, path: string): Promise<string> {
-  return documentBody(await c.ok(step, "document_read", { path }));
-}
 
 /** Everything a write could leave in one initiative, and every request row: what "wrote nothing"
  *  is compared on. */
@@ -104,28 +95,6 @@ async function generationOf(c: Core, path: string): Promise<number> {
   return Number(rows[0]?.g ?? c.fail(`generation of ${path}`, "no such document"));
 }
 
-/**
- * Two calls on one document, granted its lock in the order they are started: the first queues
- * behind the check's hold, the second behind the first, and both are let go together. Each has
- * read the document before it queued.
- */
-async function staged(c: Core, step: string, path: string, one: () => Promise<string>,
-                      two: () => Promise<string>): Promise<[string, string]> {
-  const key = c.docKey(path);
-  await c.hold(key);
-  let a: Promise<string>;
-  let b: Promise<string>;
-  try {
-    a = one();
-    await c.waiters(step, key, 1);
-    b = two();
-    await c.waiters(step, key, 2);
-  } finally {
-    await c.release(key);
-  }
-  return Promise.all([a, b]);
-}
-
 async function races(c: Core, second: Mcp): Promise<void> {
   const R = await c.open("races");
   const body = "# Race\n\nalpha\n\nbeta\n";
@@ -133,28 +102,28 @@ async function races(c: Core, second: Mcp): Promise<void> {
   let step = "two edits sending one `base`: one lands, the other is BASE_CONFLICT naming the token it left";
   const s = `${R}/same-base.md`;
   await c.ok(step, "document_write", { path: s, content: body });
-  const base = await tokenOf(c, step, s);
-  let [a, b] = await staged(c, step, s,
+  const base = await c.token(step, s);
+  let [a, b] = await c.staged(step, s,
     () => c.call(step, "document_edit", { path: s, base, edits: [{ find: "alpha", replace: "ALPHA" }] }),
     () => c.call(step, "document_edit", { path: s, base, edits: [{ find: "beta", replace: "BETA" }] }, second));
-  let now = await tokenOf(c, step, s);
+  let now = await c.token(step, s);
   if (first(a) !== `edited: ${s} — v1` || !a.includes(`content revision: ${now}`)) c.fail(step, `first: ${a}`);
   if (!new RegExp(`^ERROR: BASE_CONFLICT — ${esc(s)} is at content revision ${now} now`).test(b)) c.fail(step, `second: ${b}`);
-  if ((await bodyOf(c, step, s)) !== "# Race\n\nALPHA\n\nbeta\n") c.fail(step, "the conflicting edit landed");
+  if ((await c.body(step, s)) !== "# Race\n\nALPHA\n\nbeta\n") c.fail(step, "the conflicting edit landed");
   c.pass(step);
 
   step = "two edits sending no `base`: both land, in the order the lock granted them";
   const n = `${R}/no-base.md`;
   await c.ok(step, "document_write", { path: n, content: body });
   const g = await generationOf(c, n);
-  [a, b] = await staged(c, step, n,
+  [a, b] = await c.staged(step, n,
     () => c.call(step, "document_edit", { path: n, edits: [{ find: "alpha", replace: "ALPHA" }] }),
     () => c.call(step, "document_edit", { path: n, edits: [{ find: "beta", replace: "BETA" }] }, second));
   if (a.startsWith("ERROR") || b.startsWith("ERROR")) c.fail(step, `${a}\n---\n${b}`);
-  if ((await bodyOf(c, step, n)) !== "# Race\n\nALPHA\n\nBETA\n") c.fail(step, "an edit was lost");
+  if ((await c.body(step, n)) !== "# Race\n\nALPHA\n\nBETA\n") c.fail(step, "an edit was lost");
   const [ta, tb] = [/^content revision: (\S+)$/m.exec(a)?.[1], /^content revision: (\S+)$/m.exec(b)?.[1]];
   // The first commits generation g+1; the second, computed again on top of it, g+2 — the token now.
-  if ((await generationOf(c, n)) !== g + 2 || tb !== (await tokenOf(c, step, n)) || ta === tb) {
+  if ((await generationOf(c, n)) !== g + 2 || tb !== (await c.token(step, n)) || ta === tb) {
     c.fail(step, `generation ${await generationOf(c, n)} from ${g}; tokens ${ta}, ${tb}`);
   }
   c.pass(step);
@@ -163,12 +132,12 @@ async function races(c: Core, second: Mcp): Promise<void> {
   const p = `${R}/approve-first.md`;
   await c.ok(step, "document_write", { path: p, content: body });
   await c.ok(step, "document_present", { path: p });
-  [a, b] = await staged(c, step, p,
+  [a, b] = await c.staged(step, p,
     () => c.call(step, "document_approve", { path: p }),
     () => c.call(step, "document_edit", { path: p, edits: [{ find: "alpha", replace: "ALPHA" }] }, second));
   if (a.startsWith("ERROR")) c.fail(step, `approve: ${a}`);
   if (!new RegExp(`^ERROR: CAUSE_REQUIRED — ${esc(p)} is approved`).test(b)) c.fail(step, `edit: ${b}`);
-  if ((await bodyOf(c, step, p)) !== body || !/^status: approved$/m.test(await c.ok(step, "document_read", { path: p }))) {
+  if ((await c.body(step, p)) !== body || !/^status: approved$/m.test(await c.ok(step, "document_read", { path: p }))) {
     c.fail(step, "the edit landed, or the approval was lost");
   }
   c.pass(step);
@@ -177,12 +146,12 @@ async function races(c: Core, second: Mcp): Promise<void> {
   const e = `${R}/edit-first.md`;
   await c.ok(step, "document_write", { path: e, content: body });
   await c.ok(step, "document_present", { path: e });
-  const read = await tokenOf(c, step, e);
-  [a, b] = await staged(c, step, e,
+  const read = await c.token(step, e);
+  [a, b] = await c.staged(step, e,
     () => c.call(step, "document_edit", { path: e, edits: [{ find: "alpha", replace: "ALPHA" }] }),
     () => c.call(step, "document_approve", { path: e }, second));
   if (first(a) !== `edited: ${e} — v1`) c.fail(step, `edit: ${a}`);
-  if (!new RegExp(`^ERROR: APPROVAL_CONFLICT — ${esc(e)} is at content revision ${esc(await tokenOf(c, step, e))} now, ` +
+  if (!new RegExp(`^ERROR: APPROVAL_CONFLICT — ${esc(e)} is at content revision ${esc(await c.token(step, e))} now, ` +
                   `not ${read}, the snapshot this approval was for; nothing was approved`).test(b)) {
     c.fail(step, `approve: ${b}`);
   }
@@ -194,7 +163,7 @@ async function races(c: Core, second: Mcp): Promise<void> {
   const C = await c.open("close-meets-edit");
   const cn = `${C}/notes.md`;
   await c.ok(step, "document_write", { path: cn, content: body });
-  [a, b] = await staged(c, step, cn,
+  [a, b] = await c.staged(step, cn,
     () => c.call(step, "document_edit", { path: cn, edits: [{ find: "alpha", replace: "ALPHA" }] }),
     () => c.call(step, "initiative_close", { initiative: C, disposition: "finished", document: "notes.md" }, second));
   if (first(a) !== `edited: ${cn} — v1`) c.fail(step, `edit: ${a}`);
@@ -210,7 +179,7 @@ async function races(c: Core, second: Mcp): Promise<void> {
 
   step = "two creates of one path released together: one document, and the other is TARGET_EXISTS";
   const t = `${R}/created-twice.md`;
-  [a, b] = await staged(c, step, t,
+  [a, b] = await c.staged(step, t,
     () => c.call(step, "document_write", { path: t, content: "# First\n" }),
     () => c.call(step, "document_write", { path: t, content: "# Second\n" }, second));
   if (!first(a).startsWith(`written: ${t}`)) c.fail(step, `first: ${a}`);
@@ -218,17 +187,17 @@ async function races(c: Core, second: Mcp): Promise<void> {
   const docs = (await c.sql.query<{ n: number }>(
     `select count(*)::int as n from zz.doc d join zz.initiative i on i.id = d.initiative_id
       where i.slug = $1 and d.path = 'created-twice.md'`, [R])).rows[0].n;
-  if (docs !== 1 || (await bodyOf(c, step, t)) !== "# First\n") c.fail(step, `${docs} documents`);
+  if (docs !== 1 || (await c.body(step, t)) !== "# First\n") c.fail(step, `${docs} documents`);
   c.pass(step);
 
   step = "an A→B→A change does not revive A's content revision";
   const x = `${R}/aba.md`;
   await c.ok(step, "document_write", { path: x, content: "# A\n" });
-  const tA = await tokenOf(c, step, x);
+  const tA = await c.token(step, x);
   await c.ok(step, "document_edit", { path: x, content: "# B\n" });
-  const tB = await tokenOf(c, step, x);
+  const tB = await c.token(step, x);
   await c.ok(step, "document_edit", { path: x, base: tB, content: "# A\n" });
-  now = await tokenOf(c, step, x);
+  now = await c.token(step, x);
   if (now === tA || now === tB || tA === tB) c.fail(step, `tokens ${tA}, ${tB}, ${now}`);
   await c.refused(step, "document_edit", { path: x, base: tA, content: "# C\n" },
     new RegExp(`^ERROR: BASE_CONFLICT — ${esc(x)} is at content revision ${now} now`));
@@ -254,7 +223,7 @@ async function requests(c: Core, second: Mcp): Promise<string> {
   step = "two identical keyed edits released together commit once";
   const twin = { path: q, edits: [{ find: "two", replace: "TWO" }], request_id: "twin-1" };
   const g = await generationOf(c, q);
-  const [a, b] = await staged(c, step, q, () => c.call(step, "document_edit", twin),
+  const [a, b] = await c.staged(step, q, () => c.call(step, "document_edit", twin),
                               () => c.call(step, "document_edit", twin, second));
   if (first(a) !== `edited: ${q} — v1` || first(b) !== `edited: ${q} — v1 (replayed)`) c.fail(step, `${a}\n---\n${b}`);
   if (receipt(b).slice(1).join("\n") !== receipt(a).slice(1).join("\n")) c.fail(step, `receipts differ:\n${a}\n---\n${b}`);
@@ -263,7 +232,7 @@ async function requests(c: Core, second: Mcp): Promise<string> {
   c.pass(step);
 
   step = "a keyed edit replayed after a later edit answers its first receipt, not BASE_CONFLICT";
-  const based = { path: q, base: await tokenOf(c, step, q), edits: [{ find: "three", replace: "THREE" }], request_id: "based-1" };
+  const based = { path: q, base: await c.token(step, q), edits: [{ find: "three", replace: "THREE" }], request_id: "based-1" };
   const landed = await c.ok(step, "document_edit", based);
   await c.ok(step, "document_edit", { path: q, edits: [{ find: "# Notes", replace: "# Notes, later" }] });
   again = await c.ok(step, "document_edit", based);
@@ -271,7 +240,7 @@ async function requests(c: Core, second: Mcp): Promise<string> {
   c.pass(step);
 
   step = "a keyed no_change is recorded and replays";
-  const current = await bodyOf(c, step, q);
+  const current = await c.body(step, q);
   const same = { path: q, content: current, request_id: "same-1" };
   const gNow = await generationOf(c, q);
   const noChange = await c.ok(step, "document_edit", same);
@@ -316,8 +285,8 @@ async function requests(c: Core, second: Mcp): Promise<string> {
   if (first(again) !== `edited: ${q} — v1 (no change)` || (await facts(c, Q)) !== before) c.fail(step, again);
   c.pass(step);
 
-  // Carried into Phase 2's wave 3: the stored receipt was built before the write reserved the
-  // captured source's name, so a replay named the name asked for, not the one filed.
+  // The stored receipt names the captured source's name as filed, so a replay names it too rather
+  // than the name asked for.
   step = "a keyed change whose captured source took a suffixed name replays the name it was filed under";
   const taken = await c.source(step, { initiative: Q, title: "Taken words", content: "already here" });
   const filed = taken.replace(/\.md$/, "-2.md");
@@ -335,7 +304,7 @@ async function requests(c: Core, second: Mcp): Promise<string> {
   step = "a replay prints the next move as of the first call, then the one there is now";
   const F = await c.open("requests-flow", "sdlc-flow");
   const e = `${F}/explore.md`;
-  const body = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
+  const body = EXPLORE_BODY;
   await c.ok(step, "document_write", { path: e, content: body });
   const keyedFlow = { path: e, edits: [{ find: "## Background\nx", replace: "## Background\ny" }], request_id: "flow-1" };
   const flowReply = await c.ok(step, "document_edit", keyedFlow);
@@ -385,7 +354,7 @@ async function injected(c: Core): Promise<void> {
         await c.sql.query(`drop trigger inject_failure on ${f.table}`);
       }
       if ((await facts(c, J)) !== before) c.fail(step, `committed:\n${before}\n${await facts(c, J)}`);
-      if ((await bodyOf(c, step, j)) !== "# Notes\n\nalpha\n") c.fail(step, "the body moved");
+      if ((await c.body(step, j)) !== "# Notes\n\nalpha\n") c.fail(step, "the body moved");
       // No edit of this initiative has committed yet, so any act row of one is the failed change's.
       const acts = (await c.sql.query<{ n: number }>(
         `select count(*)::int as n from zz.event e join zz.initiative i on i.id = e.initiative_id
@@ -398,7 +367,7 @@ async function injected(c: Core): Promise<void> {
   }
   const step = "the same keyed change lands once the failure is gone";
   const landed = await c.ok(step, "document_edit", change);
-  if (first(landed) !== `edited: ${j} — v2 (new version)` || (await bodyOf(c, step, j)) !== "# Notes\n\nALPHA\n") c.fail(step, landed);
+  if (first(landed) !== `edited: ${j} — v2 (new version)` || (await c.body(step, j)) !== "# Notes\n\nALPHA\n") c.fail(step, landed);
   c.pass(step);
 }
 
@@ -469,7 +438,7 @@ async function uploads(c: Core, second: Mcp): Promise<void> {
   const md = await upload(c, step, "notes.md", "---\ntitle: From a file\n---\n# Uploaded\n\nbody line\n");
   const d = `${U}/from-file.md`;
   said = await c.ok(step, "document_write", { path: d, upload: md.id });
-  if ((await bodyOf(c, step, d)) !== "# Uploaded\n\nbody line\n") c.fail(step, await bodyOf(c, step, d));
+  if ((await c.body(step, d)) !== "# Uploaded\n\nbody line\n") c.fail(step, await c.body(step, d));
   for (const want of [`upload: ${md.id} — "notes.md", 49 bytes, sha256 ${md.sha}, staged via token by ${c.email}`, "took title"]) {
     if (!said.includes(want)) c.fail(step, `no "${want}" in: ${said}`);
   }
@@ -484,13 +453,13 @@ async function uploads(c: Core, second: Mcp): Promise<void> {
   const csv = await upload(c, step, "scores.csv", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(csvText)]));
   const t = `${U}/scores.md`;
   said = await c.ok(step, "document_write", { path: t, upload: csv.id });
-  if ((await bodyOf(c, step, t)) !== csvText || !said.includes('removed the byte-order mark "scores.csv" opened with')) c.fail(step, said);
+  if ((await c.body(step, t)) !== csvText || !said.includes('removed the byte-order mark "scores.csv" opened with')) c.fail(step, said);
   const yamlText = "---\n- one\n- two\n";
   const yaml = await upload(c, step, "list.yaml", yamlText);
   await c.ok(step, "document_write", { path: `${U}/list.md`, upload: yaml.id });
-  if ((await bodyOf(c, step, `${U}/list.md`)) !== yamlText) c.fail(step, await bodyOf(c, step, `${U}/list.md`));
+  if ((await c.body(step, `${U}/list.md`)) !== yamlText) c.fail(step, await c.body(step, `${U}/list.md`));
   await c.ok(step, "document_edit", { path: t, edits: [{ find: "ada,3", replace: "ada,4" }] });
-  if ((await bodyOf(c, step, t)) !== csvText.replace("ada,3", "ada,4")) c.fail(step, await bodyOf(c, step, t));
+  if ((await c.body(step, t)) !== csvText.replace("ada,3", "ada,4")) c.fail(step, await c.body(step, t));
   c.pass(step);
 
   step = "an envelope-shaped non-Markdown upload is refused into a document by name, with its way out, and taken as a source";
@@ -505,7 +474,7 @@ async function uploads(c: Core, second: Mcp): Promise<void> {
   step = "document_edit takes a staged upload as the whole body, beside metadata";
   const next = await upload(c, step, "notes.md", "# Replaced\n\nfrom a file\n");
   said = await c.ok(step, "document_edit", { path: d, upload: next.id, title: "Replaced by upload" });
-  if (first(said) !== `edited: ${d} — v1` || (await bodyOf(c, step, d)) !== "# Replaced\n\nfrom a file\n"
+  if (first(said) !== `edited: ${d} — v1` || (await c.body(step, d)) !== "# Replaced\n\nfrom a file\n"
       || !(await usedOf(c, next.id)).consumed) c.fail(step, said);
   c.pass(step);
 
@@ -587,7 +556,7 @@ async function uploads(c: Core, second: Mcp): Promise<void> {
   c.pass(step);
 
   step = "an upload that changes nothing consumes nothing unkeyed, and is consumed and recorded keyed";
-  const same = await upload(c, step, "same.md", await bodyOf(c, step, d));
+  const same = await upload(c, step, "same.md", await c.body(step, d));
   said = await c.ok(step, "document_edit", { path: d, upload: same.id });
   if (first(said) !== `edited: ${d} — v1 (no change)`) c.fail(step, said);
   await unconsumed(c, step, same.id);

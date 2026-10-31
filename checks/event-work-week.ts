@@ -27,7 +27,8 @@ import { pathToFileURL } from "node:url";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { appender, mondayInZone, type Call } from "../scripts/schema/event-work-week-fixture.ts";
+import { failing, withThrowawayDbCheck } from "../scripts/schema/throwaway.ts";
 
 /** The gateway's own built module, loaded the way every route check loads it: the artifact the gateway
  *  serves, not a second copy of the source. */
@@ -36,12 +37,7 @@ const load = (rel: string): Promise<unknown> => import(pathToFileURL(join(root, 
 type Model = {
   WEEK_BACKFILL: string;
   WEEK_RECORD: string;
-  weekBuckets: (db: pg.Client, zone: string) => Promise<Bucket[]>;
-};
-
-type Bucket = {
-  team_slug: string; week_start: string; tool_key: string; refusal_owner: string;
-  calls: number; refusals: number; failed: number; ms: number[];
+  weekBuckets: (db: pg.Client, zone: string) => Promise<Grain[]>;
 };
 
 /** One row of the model's grain, as either statement renders it. `ms` is ascending on both sides, so
@@ -54,24 +50,7 @@ type Grain = {
 const ALPHA = "00000000-0000-0000-0000-0000000000b1";
 const AUTHOR = "00000000-0000-0000-0000-0000000000a1";
 
-/** A call the model should hold: `origin` and `kind` are parameters so the two events it must IGNORE
- *  are spelled the same way the ones it must count are. */
-type Call = {
-  readonly ts: string; readonly ok?: boolean; readonly team?: string | null; readonly tool?: string;
-  readonly ms?: number | null; readonly batched?: boolean; readonly owner?: string;
-  readonly kind?: string; readonly origin?: string;
-};
-
-async function append(client: pg.Client, c: Call): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    `insert into zz.event (ts, kind, origin, ok, team_id, tool_key, duration_ms, batched, refusal_owner, subject)
-     values ($1::timestamptz, $2::text, $3::text, $4::boolean, $5::uuid, $6::text, $7::integer, $8::boolean,
-             $9::text, '')
-     returning id::text`,
-    [c.ts, c.kind ?? "tool_call", c.origin ?? "work", c.ok ?? true, c.team === undefined ? ALPHA : c.team,
-      c.tool ?? "core:a", c.ms ?? null, c.batched ?? false, c.owner ?? null]);
-  return rows[0]!.id;
-}
+const append: (client: pg.Client, c: Call) => Promise<string> = appender(ALPHA);
 
 /** The raw statement the model replaces, at the model's grain. DELIBERATE: one statement rather than
  *  three, because the three roll-ups are consequences of this one and a wrong key hides behind a right
@@ -107,18 +86,6 @@ async function model(client: pg.Client): Promise<Grain[]> {
 }
 
 const keyOf = (g: Grain): string => `${g.week_start}/${g.team_slug}/${g.tool_key}/${g.refusal_owner}`;
-
-/** A Monday in `zone`, from an instant — what the week cut SHOULD say, computed outside PostgreSQL so
- *  the check does not agree with a wrong zone by using the same expression twice. */
-function mondayInZone(instant: string, zone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(new Date(instant));
-  const at = (type: string): string => parts.find((p) => p.type === type)!.value;
-  const local = new Date(`${at("year")}-${at("month")}-${at("day")}T00:00:00Z`);
-  local.setUTCDate(local.getUTCDate() - ((local.getUTCDay() + 6) % 7));
-  return local.toISOString().slice(0, 10);
-}
 
 /** `percentile_cont(0.5)` over an ascending array, interpolated exactly as PostgreSQL interpolates it,
  *  rounded the same way — so a median computed from merged model arrays is comparable with a median
@@ -276,35 +243,10 @@ async function run(client: pg.Client): Promise<string[]> {
   return problems;
 }
 
-function dockerUnavailable(err: unknown): boolean {
-  return err instanceof Error && /Docker is not running/.test(err.message);
-}
-
-async function main(): Promise<void> {
-  let problems: string[];
-  try {
-    problems = await withThrowawayDb(run);
-  } catch (err) {
-    if (dockerUnavailable(err)) {
-      console.error("event work week: Docker is not available — the gate requires Docker to run this check");
-      process.exit(2);
-    }
-    throw err;
-  }
-
-  if (problems.length === 0) {
-    console.log("event work week: the model equals the raw statement at its own grain, and the two halves "
-      + "compose without a gap or an overlap");
-    process.exit(0);
-  }
-
-  for (const line of problems) console.error(line);
-  process.exit(1);
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((err) => {
-    console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
-    process.exit(1);
+const NAME = "event work week";
+process.exitCode = await withThrowawayDbCheck(NAME,
+  "event work week: the model equals the raw statement at its own grain, and the two halves compose without a gap or an overlap",
+  async (client) => {
+    const problems = await run(client);
+    if (problems.length) failing(NAME)("the model equals the raw statement", `\n${problems.join("\n")}`);
   });
-}

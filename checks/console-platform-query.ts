@@ -45,6 +45,7 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 import { LONER, SENTINEL, SHARED, SUPERADMIN, TWO, TWO_ADMIN, seedPlatformQuery, type Seeded } from "./console-platform-query-seed.ts";
+import { answer, canonical, request, show, type Obj, type Query, type Route, type Who } from "./console-work-query-harness.ts";
 
 const NAME = "console-platform-query";
 const DONE = "console-platform-query: every measure by every dimension it allows answers the figure its page draws for the " +
@@ -53,9 +54,6 @@ const DONE = "console-platform-query: every measure by every dimension it allows
 const TIMEZONE = "Asia/Singapore";
 const ALL = "0001-01-01";
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
-type Who = { email: string; role: "member" | "superadmin"; team: string | null };
 type Figure = { value: number | null; why: string | null };
 type Group = { key: string | null; label: string; value: Figure; share: number | null; previous: Figure | null };
 type PQ = {
@@ -69,13 +67,7 @@ interface Weekly {
   readGrid: (db: pg.Pool) => Promise<{ weeks: { fromMs: number }[] }>;
   callWeeks: (db: pg.Pool, grid: unknown, team: string | null) => Promise<(fromMs: number, column: "calls" | "malformed" | "refusals") => number>;
 }
-/** A query as Express hands it on: a where repeated is an array. */
-type Query = Record<string, string | string[]>;
 
-const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
-const canonical = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(canonical)
-    : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
 const dayOf = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(ms));
 const data = (a: Answer, part: string): Obj => ((a.body[part] as Obj).data as Obj);
 /** Rows with what moves between two reads a second apart left out: the cutoff, and a running window's observed end;
@@ -83,29 +75,6 @@ const data = (a: Answer, part: string): Obj => ((a.body[part] as Obj).data as Ob
 const settled = (rows: Obj[] | undefined, own = true): unknown => JSON.parse(JSON.stringify(
   (rows ?? []).map((r) => (own ? Object.fromEntries(Object.entries(r).filter(([k]) => k !== "at" && k !== "address")) : r)),
   function (this: Obj, k: string, x: unknown) { return k === "asOf" || (k === "observedThrough" && this.complete === false) ? undefined : x; }));
-
-/** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
-function request(who: Who, query: Query): Obj {
-  return {
-    params: {}, query, body: {},
-    zzIdentity: { email: who.email, displayName: "Query", platformRole: who.role, via: "session",
-                  teams: who.team ? [{ slug: who.team, role: "admin" }] : [], activeTeam: who.team, patTeam: null, sessionTeam: who.team },
-    headers: {},
-  };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: {} }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
-}
 
 async function run(c: Core): Promise<void> {
   process.env.TEAM_DB_URL = c.url;

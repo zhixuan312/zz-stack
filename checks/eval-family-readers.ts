@@ -65,6 +65,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { PHASE3_RETIRED_COLUMNS } from "../scripts/schema/retired-columns.ts";
+
 /** The trees that write to a database — the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its own
@@ -131,23 +133,8 @@ const RETIRED_TABLES = new Set<string>([
   "rubric_dimension", "skill_asset",
 ]);
 
-/** The columns the phase retired, keyed by the table they were retired from — the name a
- *  statement binds, which for a renamed column is the NEW name. Read off the same file, frozen for
- *  the same reason, scoped and extended the same way as the tables above. */
-const RETIRED_COLUMNS = new Map<string, string[]>([
-  ["eval_assessment", ["evaluator_version_id", "subject_ref", "evidence_ref", "answer", "policy_version", "resulting_action"]],
-  ["eval_dimension", ["name"]],
-  ["eval_evaluator_qualification", ["evaluator_version_id", "protocol_version_id", "subject_scope"]],
-  ["eval_evaluator_version", ["evaluator_id", "model_policy", "polarity"]],
-  ["eval_idempotency", ["principal"]],
-  ["eval_measure", ["suite"]],
-  ["eval_observation_snapshot", ["production_window", "coverage", "runtime_identity", "environment_digest", "subject_version_id"]],
-  ["eval_protocol_version", ["protocol_id", "subject_compatibility", "suites", "approved_document_path", "failure_taxonomy", "observable_surfaces_text"]],
-  ["eval_run", ["subject_version_id", "evidence_snapshot_id", "run_status", "score_interval", "guardrails", "coverage", "dimension_scores"]],
-  ["plugin", ["owner_team", "evolvable", "release_owners"]],
-  ["plugin_version", ["rubric_id"]],
-  ["skill", ["kind", "ordinal"]],
-]);
+/** The columns the phase retired: the one record checks/dropped-columns.ts reads too. */
+const RETIRED_COLUMNS = new Map<string, readonly string[]>(Object.entries(PHASE3_RETIRED_COLUMNS));
 
 /** Every pre-phase table that carried one of the retired column names, keyed by the column.
  *

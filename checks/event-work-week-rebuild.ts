@@ -43,7 +43,8 @@ import { pathToFileURL } from "node:url";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { appender, mondayInZone, type Call } from "../scripts/schema/event-work-week-fixture.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 /** The gateway's own built module, loaded the way every route check loads it: the artifact the
  *  gateway serves, not a second copy of the source. */
@@ -73,29 +74,11 @@ const ALPHA = "00000000-0000-0000-0000-0000000000b1";
 /** The grain, as a predicate: the key an operator names a bucket by. */
 const KEY = "team_slug = $1 and week_start = $2::date and tool_key = $3 and refusal_owner = $4";
 
-function fail(step: string, detail: string): never {
-  throw new Error(`event-work-week-rebuild: FAILED at "${step}": ${detail}`);
-}
+const NAME = "event-work-week-rebuild";
+const fail: Fail = failing(NAME);
 const ok = (step: string): void => console.log(`  ${step}: ok`);
 
-/** A call the model should hold: `origin` and `kind` are parameters so the two events it must
- *  IGNORE are spelled the same way the ones it must count are. */
-type Call = {
-  readonly ts: string; readonly ok?: boolean; readonly team?: string | null; readonly tool?: string;
-  readonly ms?: number | null; readonly batched?: boolean; readonly owner?: string;
-  readonly kind?: string; readonly origin?: string;
-};
-
-async function append(client: pg.Client, c: Call): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    `insert into zz.event (ts, kind, origin, ok, team_id, tool_key, duration_ms, batched, refusal_owner, subject)
-     values ($1::timestamptz, $2::text, $3::text, $4::boolean, $5::uuid, $6::text, $7::integer, $8::boolean,
-             $9::text, '')
-     returning id::text`,
-    [c.ts, c.kind ?? "tool_call", c.origin ?? "work", c.ok ?? true, c.team === undefined ? ALPHA : c.team,
-      c.tool ?? "core:a", c.ms ?? null, c.batched ?? false, c.owner ?? null]);
-  return rows[0]!.id;
-}
+const append: (client: pg.Client, c: Call) => Promise<string> = appender(ALPHA);
 
 /** Every row the model holds: the grain, the values, and the build metadata a `--check` comparison
  *  deliberately leaves out. `week_start` is formatted in SQL, because a `date` arrives from the
@@ -129,18 +112,6 @@ function diff(want: readonly Stored[], have: readonly Stored[]): string[] {
   }
   for (const [k, row] of held) if (!said.has(k)) lines.push(`${label(row)} is in the model and not in the source`);
   return lines;
-}
-
-/** A Monday in `zone`, from an instant — what the week cut SHOULD say, computed outside PostgreSQL
- *  so the check does not agree with a wrong zone by using the same expression twice. */
-function mondayInZone(instant: Date, zone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(instant);
-  const at = (type: string): string => parts.find((p) => p.type === type)!.value;
-  const local = new Date(`${at("year")}-${at("month")}-${at("day")}T00:00:00Z`);
-  local.setUTCDate(local.getUTCDate() - ((local.getUTCDay() + 6) % 7));
-  return local.toISOString().slice(0, 10);
 }
 
 type Ran = { status: number | null; out: string };
@@ -346,25 +317,7 @@ async function buildMetadata(client: pg.Client, rows: readonly Stored[], started
   return problems;
 }
 
-function dockerUnavailable(err: unknown): boolean {
-  return err instanceof Error && /Docker is not running/.test(err.message);
-}
-
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (dockerUnavailable(err)) {
-      console.error("event-work-week-rebuild: Docker is not available — the check could not run, and that is not a pass");
-      return 2;
-    }
-    console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
-    return 1;
-  }
-  console.log("event-work-week-rebuild: the rebuild puts every business key and value back from the source, "
-    + "leaves built_at to move and source_revision naming the event it counted, and --check sees each of the "
-    + "three damages without writing anything");
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME,
+  "event-work-week-rebuild: the rebuild puts every business key and value back from the source, leaves built_at to move " +
+  "and source_revision naming the event it counted, and --check sees each of the three damages without writing anything",
+  run);

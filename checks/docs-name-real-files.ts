@@ -38,3 +38,4 @@ if (!/\.mjs/.test(readFileSync("CHANGELOG.md", "utf8"))) {
   fail.push("CHANGELOG.md no longer mentions .mjs — its history was rewritten, which this task forbids");
 }
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
+console.log(`docs name real files: ok — every scripts/, checks/, testing/ and migration path in ${DOCS.length} documents exists, and no runtime string names a retired .mjs script`);

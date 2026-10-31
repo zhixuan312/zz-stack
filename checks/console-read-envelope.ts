@@ -38,7 +38,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { CaseFailure, failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "console-read-envelope";
 const DONE = "console-read-envelope: every console GET resolves to a declared entry, and one middleware stamps " +
@@ -56,8 +56,7 @@ const MEMBER = "member@read-envelope.example.test";
 const BARE = "/api/console/home";
 const KEPT = "/api/console/record";
 
-class CaseFailure extends Error {}
-const fail = (step: string, detail: string): never => { throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`); };
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`ok ${line}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -253,27 +252,23 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     if (ended.rowCount !== 1) fail(step, `found ${ended.rowCount} listening connections to end, not one`);
     await sleep(200);
 
-    console.log(DONE);
   } finally {
     for (const s of servers) s.close();
   }
 }
-try {
-  if (!built()) throw new Error("the tree is not built — run npm run build");
-  await staticArm();
-  await withThrowawayDb(run);
-} catch (err) {
-  if (err instanceof CaseFailure) {
-    console.error(err.message);
-    process.exit(1);
-  }
-  if (String(err).includes("the tree is not built") || String(err).includes("Docker is not running")) {
-    console.error(`${NAME}: the check could not run — ${String(err)}`);
-    process.exit(2);
-  }
-  throw err;
+if (!built()) {
+  console.error(`${NAME}: the check could not run — the tree is not built — run npm run build`);
+  process.exit(2);
 }
+try {
+  await staticArm();
+} catch (err) {
+  if (!(err instanceof CaseFailure)) throw err;
+  console.error(err.message);
+  process.exit(1);
+}
+const code = await withThrowawayDbCheck(NAME, DONE, run);
 // Every case has been decided by the time this resolves, and the throwaway database is dropped. The
 // process's LISTEN connection is the one thing still alive, and its reconnect timer would otherwise keep
 // the process up and turn a green run red — so the run ends here, with the exit code its cases earned.
-process.exit(0);
+process.exit(code);

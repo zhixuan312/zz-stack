@@ -82,7 +82,7 @@ import {
   CALLS, EXPECTED, MEASURES, MEMBER, NO_TEAM, SUPERADMIN, TEAM_TWO, seedMeasures, seedNoise, seedStatus, signIn, weekStart,
   type Seeded,
 } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-status";
@@ -93,10 +93,7 @@ const TIMEZONE = "Pacific/Auckland";
 /** COUPLED: the fake answer in the console's checkout, `../zz-stack-dashboard` here and in CI. */
 const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "platform-status.ts");
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 type Obj = Record<string, unknown>;
@@ -312,7 +309,7 @@ function heldToSeed(step: string, seeded: Seeded, a: Answer): void {
 async function seedClosesNotWork(db: pg.Client, seeded: Seeded): Promise<void> {
   const { rows: [who] } = await db.query<{ member: string; team: string }>(
     "select id::text as member, active_team_id::text as team from zz.principal where email = $1", [MEMBER]);
-  for (const [back, slug, outcome, maintenance] of [[4, "2026-09-08-chain-check-0908-a1b2c3", "accepted", false],
+  for (const [back, slug, outcome, maintenance] of [[4, "2026-09-08-chain-check-0908-a1b2", "accepted", false],
                                                      [1, "2026-09-09-carried-in", "delivered", true]] as const) {
     const closed = iso(seeded.starts.get(back)! + 2 * 86_400_000);
     const { rows: [i] } = await db.query<{ id: string }>(
@@ -558,19 +555,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

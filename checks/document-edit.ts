@@ -57,29 +57,16 @@
 import { documentBody } from "@zz/contracts";
 
 import { type Core, withThrowawayCore } from "../scripts/schema/throwaway-core.ts";
+import { EXPLORE_BODY } from "../scripts/schema/spec-fixture.ts";
+import { esc, first } from "../scripts/schema/normalize-cases.ts";
 
 const NAME = "document-edit";
 // `upload_start` builds its routes on the address a client dials; the child inherits it.
 process.env.GATEWAY_PUBLIC_URL ??= "https://api.example.test";
 
-const first = (reply: string): string => reply.split("\n")[0];
-const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** The body a read returns, every byte of it from its first character: `documentBody` returns
- *  what the author wrote, without the separator (checks/document-body-roundtrip.ts). */
-async function bodyOf(c: Core, step: string, path: string): Promise<string> {
-  return documentBody(await c.ok(step, "document_read", { path }));
-}
-
-/** The content revision a read of the current document states. */
-async function tokenOf(c: Core, step: string, path: string): Promise<string> {
-  const read = await c.ok(step, "document_read", { path });
-  return /^content_revision: (cr_[a-z2-7]{26})$/m.exec(read)?.[1] ?? c.fail(step, `no content_revision in: ${read}`);
-}
-
 /** Body and content revision, as one comparable fact. */
 async function stateOf(c: Core, step: string, path: string): Promise<{ body: string; token: string }> {
-  return { body: await bodyOf(c, step, path), token: await tokenOf(c, step, path) };
+  return { body: await c.body(step, path), token: await c.token(step, path) };
 }
 
 /** A refusal that leaves the document exactly as it was: its body and its content revision. */
@@ -95,26 +82,8 @@ async function refusedUnchanged(c: Core, step: string, path: string, args: Recor
 
 /** The body as read equals `want`, byte for byte. */
 async function bodyIs(c: Core, step: string, path: string, want: string): Promise<void> {
-  const got = await bodyOf(c, step, path);
+  const got = await c.body(step, path);
   if (got !== want) c.fail(step, `expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
-}
-
-/** Two calls on one document, granted its lock in the order they are started: the first queues
- *  behind the check's hold, the second — computed before it queued — behind the first. */
-async function staged(c: Core, step: string, path: string, one: () => Promise<string>,
-                      two: () => Promise<string>): Promise<[string, string]> {
-  const key = c.docKey(path);
-  await c.hold(key);
-  let a: Promise<string>, b: Promise<string>;
-  try {
-    a = one();
-    await c.waiters(step, key, 1);
-    b = two();
-    await c.waiters(step, key, 2);
-  } finally {
-    await c.release(key);
-  }
-  return Promise.all([a, b]);
 }
 
 async function skeleton(c: Core): Promise<void> {
@@ -135,8 +104,8 @@ async function skeleton(c: Core): Promise<void> {
   await bodyIs(c, "document_read (edited)", path, edited);
   c.pass(step);
 
-  // Lines 3 and 5 are where `LINE` sits in what the author wrote. Before documentBody dropped the
-  // envelope separator the tool answered 6 and 8 (checks/document-body-roundtrip.ts).
+  // Lines 3 and 5 are where `LINE` sits in what the author wrote, not counting the envelope's
+  // separator (checks/document-body-roundtrip.ts).
   step = "document_edit repeated find";
   await refusedUnchanged(c, step, path, { edits: [{ find: "LINE", replace: "x" }] },
     /^ERROR: MULTIPLE_MATCHES — edit 0 \(0-based\): `find` occurs 2 times in the body, on lines \(2\): 3, 5\. /);
@@ -228,7 +197,7 @@ async function modes(c: Core): Promise<void> {
     if (!new RegExp(`^${esc(line)}$`, "m").test(read)) c.fail(step, `no \`${line}\` in: ${read}`);
   }
   if (documentBody(read) !== before.body) c.fail(step, `the body moved: ${JSON.stringify(documentBody(read))}`);
-  if ((await tokenOf(c, step, w)) === before.token) c.fail(step, "editable metadata changed and the content revision did not");
+  if ((await c.token(step, w)) === before.token) c.fail(step, "editable metadata changed and the content revision did not");
   c.pass(step);
 }
 
@@ -324,9 +293,9 @@ async function precedence(c: Core): Promise<void> {
   c.pass(step);
 
   step = "(7) a stale `base` is BASE_CONFLICT naming the current content revision, before the batch is tried";
-  const stale = await tokenOf(c, step, p);
+  const stale = await c.token(step, p);
   await c.ok(step, "document_edit", { path: p, edits: [{ find: "beta\n\nalpha", replace: "beta\n\nALPHA" }] });
-  const current = await tokenOf(c, step, p);
+  const current = await c.token(step, p);
   const conflict = new RegExp(`^ERROR: BASE_CONFLICT — ${esc(p)} is at content revision ${current} now, not the one \`base\` names`);
   await refusedUnchanged(c, step, p, { base: stale, edits: [{ find: "gamma", replace: "x" }] }, conflict);
   // (6) before (7): a count refusal is answered whatever the base says.
@@ -409,7 +378,7 @@ async function precedence(c: Core): Promise<void> {
   const after = (await c.sql.query<{ r: number; at: string }>(
     `select d.current_revision as r, r.written_at::text as at from zz.doc d join zz.initiative i on i.id = d.initiative_id
        join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision where i.slug = $1 and d.path = 'notes.md'`, [I])).rows[0];
-  if (after.r !== rev.r || after.at !== rev.at || (await tokenOf(c, step, p)) !== now.token) c.fail(step, "a no_change wrote");
+  if (after.r !== rev.r || after.at !== rev.at || (await c.token(step, p)) !== now.token) c.fail(step, "a no_change wrote");
   c.pass(step);
 
   step = "(10) an approved body changed with no cause named or owed is CAUSE_REQUIRED";
@@ -423,7 +392,7 @@ async function precedence(c: Core): Promise<void> {
   step = "(11) the guards judge the candidate: a flow's declared section removed is refused";
   const X = await c.open("edit-guards", "sdlc-flow");
   const e = `${X}/explore.md`;
-  await c.ok(step, "document_write", { path: e, content: "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n" });
+  await c.ok(step, "document_write", { path: e, content: EXPLORE_BODY });
   await refusedUnchanged(c, step, e, { edits: [{ find: "## Current state\nx\n\n", replace: "" }] },
     /^ERROR: explore\.md is missing the section `## Current state`\. This flow's manifest declares/);
   c.pass(step);
@@ -496,8 +465,8 @@ async function normalisation(c: Core): Promise<void> {
   if ((await c.cites(n)).filter((x) => x.startsWith(third)).length !== 1) c.fail(step, `the cause is not linked to ${third}: ${(await c.cites(n)).join(" | ")}`);
   c.pass(step);
 
-  // Carried into Phase 2's wave 3: the write repointed EVERY cause naming the asked name to the
-  // captured source it suffixed, so a named source of exactly that name was linked as the capture.
+  // A captured source filed under a suffixed name repoints only its own cause, never a named
+  // source that asked for the unsuffixed name.
   step = "a named source and a captured one asking for the same name are both linked, each as itself";
   const twin = await c.source(step, { initiative: I, title: "Twin notes", content: "the named one" });
   const twin2 = twin.replace(/\.md$/, "-2.md");
@@ -510,7 +479,7 @@ async function normalisation(c: Core): Promise<void> {
   }
   c.pass(step);
 
-  // Decided in Phase 2's wave 3: whole content that is only an envelope would store an empty body.
+  // Whole content that is only an envelope would store an empty body.
   step = "content that is only an envelope is refused on both tools, saying what to send";
   await refusedUnchanged(c, step, n, { content: "---\ntitle: Retitled\n---\n" },
     /^ERROR: INVALID_MODE — the content held only an envelope.*send them as named arguments with no `content`/);
@@ -630,10 +599,10 @@ async function staleBase(c: Core): Promise<void> {
                                                    : "says its snapshot was not retained"}`;
     let p = `${I}/planned-${presented}.md`;
     await c.ok(step, "document_write", { path: p, content: planned });
-    let base = await tokenOf(c, step, p);
+    let base = await c.token(step, p);
     if (presented) await c.ok(step, "document_present", { path: p });
     await c.ok(step, "document_edit", { path: p, ...replanned });
-    let now = await tokenOf(c, step, p);
+    let now = await c.token(step, p);
     await refusedUnchanged(c, step, p, { base, edits: [{ find: "## Gone", replace: "## Went" }] },
       presented ? listed(p, now) : unretained(p, now, base));
     c.pass(step);
@@ -642,12 +611,12 @@ async function staleBase(c: Core): Promise<void> {
       ? "names the records of what the other changed" : "says its base snapshot was not retained"}`;
     p = `${I}/raced-${presented}.md`;
     await c.ok(step, "document_write", { path: p, content: planned });
-    base = await tokenOf(c, step, p);
+    base = await c.token(step, p);
     if (presented) await c.ok(step, "document_present", { path: p });
-    const [a, b] = await staged(c, step, p,
+    const [a, b] = await c.staged(step, p,
       () => c.call(step, "document_edit", { path: p, ...replanned }),
       () => c.call(step, "document_edit", { path: p, base, edits: [{ find: "## Gone", replace: "## Went" }] }, second));
-    now = await tokenOf(c, step, p);
+    now = await c.token(step, p);
     if (first(a) !== `edited: ${p} — v1`) c.fail(step, `the first change did not land: ${a}`);
     if (!(presented ? listed(p, now) : unretained(p, now, base)).test(b)) c.fail(step, `the queued change: ${b}`);
     c.pass(step);
@@ -669,7 +638,7 @@ async function legacyRows(c: Core): Promise<void> {
     const p = `${I}/${route.startsWith("a new version") ? "versioned" : "pinned"}.md`;
     await c.ok(step, "document_write", { path: p, content: planned });
     await legacy(c, p);
-    const old = await tokenOf(c, step, p);
+    const old = await c.token(step, p);
     const cause = route.startsWith("a new version") ? { source_content: "Why the plan changed." } : {};
     if (!route.startsWith("a new version")) await c.ok(step, "document_present", { path: p });
     const edited = await c.ok(step, "document_edit", { path: p, ...replanned, ...cause });
@@ -677,7 +646,7 @@ async function legacyRows(c: Core): Promise<void> {
     const read = await c.call(step, "document_read", { path: p, content_revision: old });
     if (documentBody(read) !== planned) c.fail(step, `the old token reads: ${read}`);
     await refusedUnchanged(c, step, p, { base: old, edits: [{ find: "## Gone", replace: "## Went" }] },
-      listed(p, await tokenOf(c, step, p)));
+      listed(p, await c.token(step, p)));
     c.pass(step);
   }
 }

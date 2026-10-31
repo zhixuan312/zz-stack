@@ -54,6 +54,7 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { answer, canonical, count, iso, request, show, type Obj, type Route, type Who } from "./console-work-query-harness.ts";
 
 const NAME = "console-work-knowledge";
 const DONE = "console-work-knowledge: Knowledge reads the active team's shelf, its own questions that found nothing and its " +
@@ -67,9 +68,6 @@ const NOT_FOUND = "No lesson on the team's shelf or the shared one is at that ad
 const SHARED = "zz-platform";
 const MAINTENANCE = "zz-migrate";
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
-type Who = { email: string; team: string | null; role?: "member" | "superadmin" };
 type Win = { from: string; to: string; observedFrom: string | null; observedThrough: string | null; complete: boolean };
 type PF = { window: Win; figure: { value: number | null; why: string | null }; numerator: number | null; denominator: number | null };
 type Part = { state: string; data?: unknown; reason?: string };
@@ -104,39 +102,6 @@ const OLD = "ancient zorkmid";
 /** Questions that find something on the team's shelf. */
 const FOUND = ["quokka ledgers", "wombat", "nightly reconcile"];
 
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-/** Its value with every object's keys in order: an answer's key order is no part of its contract. */
-const canonical = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(canonical)
-    : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
-const show = (v: unknown): string => JSON.stringify(v).slice(0, 700);
-
-/** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
-function request(who: Who, query: Obj = {}, params: Obj = {}): Obj {
-  const role = who.role ?? "member";
-  return {
-    params, query, body: {},
-    zzIdentity: { email: who.email, displayName: "Knowledge", platformRole: role, via: "session",
-                  teams: who.team ? [{ slug: who.team, role: "admin" }] : [], activeTeam: who.team, patTeam: null, sessionTeam: who.team },
-    headers: {
-      "x-zz-user-email": who.email, "x-zz-user-name": "Knowledge", "x-zz-user-id": "", "x-zz-user-role": role === "superadmin" ? "admin" : "user",
-      "x-zz-via": "session", "x-zz-pat-team": "", "x-zz-session-team": who.team ?? "",
-    },
-  };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
-}
-
 type Weekly = (team: string, window: { from: string; to: string }, asOf: string, grain: "week") => Promise<PF[]>;
 interface Gateway { summary: Route; list: Route; node: Route; log: Route; weekly: Weekly; stop(): Promise<void> }
 
@@ -166,9 +131,6 @@ async function listen(c: Core): Promise<Gateway> {
     },
   };
 }
-
-const count = async (c: Core, where: string): Promise<number> =>
-  (await c.sql.query<{ n: number }>(`select count(*)::int as n from zz.event where ${where}`)).rows[0].n;
 
 /**
  * Runs `make` and waits until every row it leaves has landed (zz-core writes a search's row after it answers); then,

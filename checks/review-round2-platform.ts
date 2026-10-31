@@ -34,6 +34,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
 
 const NAME = "review-round2-platform";
 const DONE = "review-round2-platform: an assessment the platform cannot keep fails the call that asked, a token " +
@@ -44,17 +45,6 @@ const DONE = "review-round2-platform: an assessment the platform cannot keep fai
 const FAMILY = "changes_commitment";
 /** COUPLED: the route's sentence for a token that is not the caller's (services/gateway/src/settings/me.ts). */
 const NO_TOKEN = "no such active token of yours";
-
-const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
-/** A spec the spec gate approves with no reading asked: every declared section, one phase, one core
- *  statement that fails, so no `evidence_relation` question is due. */
-const SPEC =
-  "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n" +
-  "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-  "## Stakeholders & Work\nx\n\n" +
-  "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-  "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-  "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
 
 type Obj = Record<string, unknown>;
 type Answer = { status: number; body: Obj };
@@ -93,8 +83,8 @@ async function tokens(c: Core): Promise<string> {
 /** R2-C134: the assessment row refused by a trigger, then allowed again. */
 async function assessments(c: Core, found: string[]): Promise<void> {
   const slug = await c.open("round2-audit", "sdlc-flow");
-  await c.ok("make the audit", "document_write", { path: `${slug}/explore.md`, content: EXPLORE });
-  await c.ok("make the audit", "document_write", { path: `${slug}/spec.md`, content: SPEC });
+  await c.ok("make the audit", "document_write", { path: `${slug}/explore.md`, content: EXPLORE_BODY });
+  await c.ok("make the audit", "document_write", { path: `${slug}/spec.md`, content: SPEC_BODY });
   await c.sign(`${slug}/spec.md`);
 
   await c.sql.query(

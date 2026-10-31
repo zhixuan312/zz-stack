@@ -53,6 +53,7 @@ import type pg from "pg";
 
 import { root } from "./deployment.ts";
 import { signIn } from "./schema/status-seed.ts";
+import { EXPLORE_BODY, SPEC_BODY } from "./schema/spec-fixture.ts";
 
 /** How long zz-core has to say it is listening. */
 const CORE_START_MS = 30_000;
@@ -60,17 +61,8 @@ const CORE_START_MS = 30_000;
 const SETTLE_MS = 15_000;
 const ACTING = "acting-superadmin@status.example.test";
 
-const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
-/** A spec the spec gate takes: every declared section, one phase, one core statement. */
-const SPEC =
-  "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n" +
-  "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-  "## Stakeholders & Work\nx\n\n" +
-  "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-  "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-  "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
 const NOTES = "# Notes\n\nwritten for the skeleton\n";
-/** The words of EXPLORE, SPEC and NOTES as the contracts count them, and the team's: one explore, one spec
+/** The words of EXPLORE_BODY, SPEC_BODY and NOTES as the contracts count them, and the team's: one explore, one spec
  *  and four notes. */
 const WORDS = 11 + 91 + 4 * 6;
 const DOCUMENTS = 6;
@@ -198,8 +190,8 @@ export async function workCases(ctx: WorkContext): Promise<WorkReaders> {
 
   const base = await count();
   const waiting = await open(member, "skeleton-waiting", "sdlc-flow");
-  await call("write the explore", member, "document_write", { path: `${waiting}/explore.md`, content: EXPLORE });
-  await call("write the spec", member, "document_write", { path: `${waiting}/spec.md`, content: SPEC });
+  await call("write the explore", member, "document_write", { path: `${waiting}/explore.md`, content: EXPLORE_BODY });
+  await call("write the spec", member, "document_write", { path: `${waiting}/spec.md`, content: SPEC_BODY });
   await call("present the spec", member, "document_present", { path: `${waiting}/spec.md` });
   const signed = await open(member, "skeleton-signed");
   await sign(member, signed);

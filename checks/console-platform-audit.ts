@@ -53,8 +53,9 @@ import {
   BULK, EVENTS, MEMBER, SENTINEL, SUPERADMIN, TEAM_ONE, TEAM_TWO, seedAudit, type SeededAudit,
 } from "../scripts/schema/audit-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { canonical } from "./console-work-query-harness.ts";
 
 const NAME = "console-platform-audit";
 const DONE = "console-platform-audit: recorded administration is answered as sentences and the latest 500 events as " +
@@ -80,24 +81,15 @@ const FILED_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "n
 /** Words that would name the door an act came through; only `in the console` may. */
 const CHANNEL = /mcp-oauth|\bMCP\b|OAuth|\bvia\b|\bweb\b|script/;
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const keys = (v: unknown): string => (isObj(v) ? Object.keys(v).sort().join(",") : `not an object: ${JSON.stringify(v)}`);
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b));
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
-/** A value with every object's keys in order, so two answers compare by content alone. */
-function sortDeep(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(sortDeep);
-  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]));
-  return v;
-}
 
 interface Answer { status: number; body: Obj; text: string }
 
@@ -442,19 +434,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

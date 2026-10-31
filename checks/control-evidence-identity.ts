@@ -77,6 +77,6 @@ const ids = run.rows.map((e) => e.entry_id);
 assert.equal(ids.length, 7, `every recorder call wrote one row: ${JSON.stringify(run.rows)}`);
 assert.equal(new Set(ids).size, ids.length, "every fact in one run has its own id");
 assert.ok(!run.rows.some((e) => e.supersedes === approval(P, 2, 3)),
-  "and nothing withdraws the approval that came after it — the bug was that this one did not count");
+  "and nothing withdraws the approval that came after it");
 
 console.log("ok control-evidence-identity");

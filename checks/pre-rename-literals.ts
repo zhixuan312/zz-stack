@@ -18,6 +18,8 @@ import { join } from "node:path";
 import { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS }
   from "../packages/contracts/dist/index.js";
 
+import { withoutComments } from "../scripts/gate/read.ts";
+
 const fail = [];
 const OLD = new Set([...Object.keys(TOOL_ALIAS), ...Object.keys(MANAGE_ALIAS),
                      ...Object.keys(EVAL_ALIAS), ...Object.keys(SKILL_ALIAS)]);
@@ -41,16 +43,12 @@ for (const f of [...walk("packages"), ...walk("services")]) {
   if (!/\bresolveToolKey\b|\bresolveStep\b/.test(src)) continue;   // not a resolving file
 
   const lines = src.split("\n");
-  let inBlock = false;
+  // Comments are blanked before looking for a literal: prose recording an old name is history,
+  // not a comparison, and every one of these files legitimately carries some.
+  const codeLines = withoutComments(src).split("\n");
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
-    // Strip comments before looking for a literal: prose recording an old name is history,
-    // not a comparison, and every one of these files legitimately carries some.
-    let code = raw;
-    if (inBlock) { const end = code.indexOf("*/"); if (end < 0) continue; code = code.slice(end + 2); inBlock = false; }
-    const open = code.indexOf("/*");
-    if (open >= 0) { const close = code.indexOf("*/", open); if (close < 0) { inBlock = true; code = code.slice(0, open); } }
-    code = code.replace(/\/\/.*$/, "");
+    const code = codeLines[i];
     if (!code.trim()) continue;
 
     // An event name is categorically not a tool name. `res.on("close", …)` is an HTTP response

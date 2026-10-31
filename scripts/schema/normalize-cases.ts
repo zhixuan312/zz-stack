@@ -21,24 +21,13 @@ const PLATFORM_KEYS = ["flow", "type", "status", "version", "updated_at", "appro
   "contributed_by", "supports", "stage", "audits_version", "cause_of", "evidence", "supersededBy", "verified_against",
   "eval_run_id"];
 
-/** The body a read returns, every byte of it. */
-async function bodyOf(c: Core, step: string, path: string): Promise<string> {
-  return documentBody(await c.ok(step, "document_read", { path }));
-}
-
-/** The content revision a read of the current document states. */
-async function tokenOf(c: Core, step: string, path: string): Promise<string> {
-  const read = await c.ok(step, "document_read", { path });
-  return /^content_revision: (cr_[a-z2-7]{26})$/m.exec(read)?.[1] ?? c.fail(step, `no content_revision in: ${read}`);
-}
-
 /** A `document_edit` refusal that leaves the document exactly as it was: body and content revision. */
 export async function refusedUnchanged(c: Core, step: string, path: string, args: Record<string, unknown>,
                                        expect: RegExp): Promise<string> {
-  const before = { body: await bodyOf(c, step, path), token: await tokenOf(c, step, path) };
+  const before = { body: await c.body(step, path), token: await c.token(step, path) };
   const reply = await c.refused(step, "document_edit", { path, ...args }, expect);
-  if (await bodyOf(c, step, path) !== before.body) c.fail(step, `the refused call changed the body: ${reply}`);
-  if (await tokenOf(c, step, path) !== before.token) c.fail(step, `the refused call moved the content revision: ${reply}`);
+  if (await c.body(step, path) !== before.body) c.fail(step, `the refused call changed the body: ${reply}`);
+  if (await c.token(step, path) !== before.token) c.fail(step, `the refused call moved the content revision: ${reply}`);
   return reply;
 }
 
@@ -148,14 +137,14 @@ export async function normalisationCases(c: Core): Promise<void> {
   for (const [i, body] of literal.entries()) {
     const w = `${I}/literal-${i}.md`;
     reply = await c.ok(step, "document_write", { path: w, content: body });
-    if (!/^normalised \(0\): none$/m.test(reply) || await bodyOf(c, step, w) !== body) c.fail(step, `document_write ${JSON.stringify(body)}: ${reply}`);
+    if (!/^normalised \(0\): none$/m.test(reply) || await c.body(step, w) !== body) c.fail(step, `document_write ${JSON.stringify(body)}: ${reply}`);
     reply = await c.ok(step, "document_edit", { path: l, content: body });
-    if (!/^normalised \(0\): none$/m.test(reply) || await bodyOf(c, step, l) !== body) c.fail(step, `document_edit ${JSON.stringify(body)}: ${reply}`);
+    if (!/^normalised \(0\): none$/m.test(reply) || await c.body(step, l) !== body) c.fail(step, `document_edit ${JSON.stringify(body)}: ${reply}`);
   }
   // An edit batch making a body open with YAML that is not a key block keeps it as written too.
   await c.ok(step, "document_edit", { path: l, content: "# Literal\n" });
   await c.ok(step, "document_edit", { path: l, edits: [{ find: "# Literal\n", replace: `${literal[1]}# Literal\n` }] });
-  if (await bodyOf(c, step, l) !== `${literal[1]}# Literal\n`) c.fail(step, `the batch's body: ${await bodyOf(c, step, l)}`);
+  if (await c.body(step, l) !== `${literal[1]}# Literal\n`) c.fail(step, `the batch's body: ${await c.body(step, l)}`);
   c.pass(step);
 
   step = "tags in another case are lower-cased and reported on both tools; a tag lower-casing cannot fix is refused by name";
@@ -191,7 +180,7 @@ export async function normalisationCases(c: Core): Promise<void> {
   c.pass(step);
 
   step = "normalisation never manufactures a version: the body sent again under an envelope repeating its metadata, or its tags in another case, is no_change";
-  const token = await tokenOf(c, step, `${I}/tagged.md`);
+  const token = await c.token(step, `${I}/tagged.md`);
   for (const args of [{ content: "---\ntitle: Tagged\ntags: DELTA\n---\n# Tagged\n" }, { tags: ["DELTA"] }]) {
     reply = await c.ok(step, "document_edit", { path: `${I}/tagged.md`, ...args });
     if (first(reply) !== `edited: ${I}/tagged.md — v1 (no change)` || !reply.includes(`content revision: ${token}`)) c.fail(step, reply);
@@ -216,7 +205,7 @@ export async function normalisationCases(c: Core): Promise<void> {
   for (const k of ["revision_note", "sources", "content_revision", "version", "title", "tags", "stakeholder", "component"]) {
     if (!keys.includes(k)) c.fail(step, `the read rendered no \`${k}\`, so the round trip proves less than it says: ${whole}`);
   }
-  const before = await tokenOf(c, step, r);
+  const before = await c.token(step, r);
   reply = await c.ok(step, "document_edit", { path: r, content: whole });
   if (first(reply) !== `edited: ${r} — v2 (no change)` || !reply.includes(`content revision: ${before}`)) c.fail(step, reply);
   list = listed(reply, "normalised", "; ") ?? c.fail(step, reply);

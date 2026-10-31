@@ -30,7 +30,8 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
+import { canonical } from "./console-work-query-harness.ts";
 
 const NAME = "console-settings-envelope";
 const DONE = "console-settings-envelope: a team's roster answers its rows under rows with the observed instant, the " +
@@ -41,10 +42,7 @@ const SUPERADMIN = "root@settings-envelope.example.test";
 const MEMBER = "member@settings-envelope.example.test";
 const MEMBERS = `/api/console/settings/team/members?team=${TEAM}`;
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -52,12 +50,7 @@ type Obj = Record<string, unknown>;
 type Answer = { status: number; body: unknown; text: string };
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const keys = (v: unknown): string => (isObj(v) ? Object.keys(v).sort().join(",") : `not an object: ${JSON.stringify(v)}`);
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b));
-function sortDeep(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(sortDeep);
-  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]));
-  return v;
-}
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 const load = (f: string) => import(pathToFileURL(join(root, "services/gateway/dist", f)).href);
 
@@ -196,26 +189,16 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     if (ended.rowCount !== 1) fail(step, `found ${ended.rowCount} listening connections to end, not one`);
     await sleep(200);
 
-    console.log(DONE);
   } finally {
     for (const s of servers) s.close();
   }
 }
-try {
-  if (!built()) throw new Error("the tree is not built — run npm run build");
-  await withThrowawayDb(run);
-} catch (err) {
-  if (err instanceof CaseFailure) {
-    console.error(err.message);
-    process.exit(1);
-  }
-  if (String(err).includes("the tree is not built") || String(err).includes("Docker is not running")) {
-    console.error(`${NAME}: the check could not run — ${String(err)}`);
-    process.exit(2);
-  }
-  throw err;
+if (!built()) {
+  console.error(`${NAME}: the check could not run — the tree is not built — run npm run build`);
+  process.exit(2);
 }
+const code = await withThrowawayDbCheck(NAME, DONE, run);
 // Every case has been decided by the time this resolves, and the throwaway database is dropped. The process's
 // LISTEN connection is the one thing still alive, and its reconnect timer would otherwise keep the process up
 // and turn a green run red — so the run ends here, with the exit code its cases earned.
-process.exit(0);
+process.exit(code);

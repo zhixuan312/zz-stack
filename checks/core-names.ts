@@ -8,6 +8,8 @@
 // this file's.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+
+import { withoutComments } from "../scripts/gate/read.ts";
 import { TOOL_ALIAS } from "../packages/contracts/dist/index.js";
 
 const fail: string[] = [];
@@ -102,19 +104,16 @@ const YAML = /\.ya?ml$/;
 
 for (const p of TREES.flatMap((t) => walk(t))) {
   if (!/\.(ts|tsx|mjs|js|json|md|ya?ml|sh)$/.test(p) || EXEMPT.has(p) || FROZEN_WITHOUT_MARKERS.has(p)) continue;
-  const lines = readFileSync(p, "utf8").split("\n");
-  let inBlock = false;
+  const text = readFileSync(p, "utf8");
+  const lines = text.split("\n");
+  // Prose in a markdown file is the instruction, so nothing is stripped there. In a source
+  // file a comment recording what a name used to be is history. COUPLED: the same stripper as
+  // checks/core-surface.ts and checks/pre-rename-literals.ts, scripts/gate/read.ts's.
+  const codeLines = CODE.test(p) ? withoutComments(text).split("\n") : null;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
-    let code = raw;
-    // Prose in a markdown file is the instruction, so nothing is stripped there. In a source
-    // file a comment recording what a name used to be is history.
-    if (CODE.test(p)) {
-      if (inBlock) { const e = code.indexOf("*/"); if (e < 0) continue; code = code.slice(e + 2); inBlock = false; }
-      const o = code.indexOf("/*");
-      if (o >= 0) { const c = code.indexOf("*/", o); if (c < 0) { inBlock = true; code = code.slice(0, o); } }
-      code = code.replace(/\/\/.*$/, "");
-    } else if (YAML.test(p)) {
+    let code = codeLines ? codeLines[i] : raw;
+    if (YAML.test(p)) {
       code = code.replace(/(^|\s)#.*$/, "$1");
     }
     if (!code.trim()) continue;

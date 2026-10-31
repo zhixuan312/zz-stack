@@ -158,12 +158,16 @@ function statementOf(f: Filter): string | null {
   return found.sort((a, b) => b.length - a.length)[0]!;
 }
 
-/** Every comment line under the migrations, so a retired index can be looked for in prose. */
-const migrationComments = (): { file: string; line: string }[] =>
-  readdirSync(join(root, MIGRATIONS)).filter((n) => n.endsWith(".sql")).sort()
-    .flatMap((name) => readFileSync(join(root, MIGRATIONS, name), "utf8").split("\n")
-      .filter((line) => line.trimStart().startsWith("--"))
-      .map((line) => ({ file: `${MIGRATIONS}/${name}`, line })));
+/** Whether a migration that drops `index` also says why in a comment line of its own. pg_dump's
+ *  `-- Name: <index>; Type: INDEX` header sits above the statement that CREATES it, so it is not
+ *  a reason, and a comment in a file that does not drop the index is not one either. */
+const dropExplained = (index: string): boolean =>
+  readdirSync(join(root, MIGRATIONS)).filter((n) => n.endsWith(".sql")).some((name) => {
+    const sql = readFileSync(join(root, MIGRATIONS, name), "utf8");
+    if (!new RegExp(`^\\s*DROP INDEX[^;]*\\b${index}\\b`, "im").test(sql)) return false;
+    return sql.split("\n").some((line) => line.trimStart().startsWith("--") &&
+      !/^\s*-- Name: /.test(line) && line.includes(index));
+  });
 
 /** The top-level `Buffers:` figure of an EXPLAIN text plan, hit and read summed. */
 function buffersOf(plan: string[]): number | null {
@@ -350,8 +354,8 @@ async function main(): Promise<void> {
             "this decision was to retire it, and an index retired in the target but left in the " +
             "migration (or the reverse) is the schema gate's other half");
         }
-        if (!migrationComments().some(({ line }) => line.includes(retired))) {
-          fail.push(`FAIL: no comment line under ${MIGRATIONS}/ names ${retired} — an index dropped ` +
+        if (!dropExplained(retired)) {
+          fail.push(`FAIL: no migration under ${MIGRATIONS}/ both drops ${retired} and names it in a comment — an index dropped ` +
             "with no line leaves the next reader no way to know it was a decision rather than a loss");
         }
       }

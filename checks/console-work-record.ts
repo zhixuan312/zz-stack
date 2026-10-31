@@ -63,19 +63,18 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash, randomBytes } from "node:crypto";
-import type { Server } from "node:http";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { lastJson } from "@zz/mcp-client";
-import type { Request, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
+import { answer, canonical, count, door, iso, phase, request, serveDoor, show, text, type Obj, type Route, type Who } from "./console-work-query-harness.ts";
 
 const NAME = "console-work-record";
 const DONE = "console-work-record: Record reads the retained text as of the cutoff, the same in every period, beside the period's " +
@@ -86,22 +85,10 @@ const FAKE = join(root, "..", "zz-stack-dashboard", "scripts", "fake-gateway", "
 const MAINTENANCE = "zz-migrate";
 const WORK = "zz-plugin";
 const HOUR = 3_600_000;
-const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
-/** A spec the spec gate takes: every declared section, one phase, one core statement. */
-const SPEC =
-  "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n" +
-  "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-  "## Stakeholders & Work\nx\n\n" +
-  "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-  "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-  "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
-/** The words of EXPLORE, SPEC and LESSON, as the contracts count them. */
+/** The words of EXPLORE_BODY, SPEC_BODY and LESSON, as the contracts count them. */
 const FLOW_WORDS = 11 + 91, LESSON_WORDS = 21;
 const LESSON = "Close a piece of work only after the person who asked for it has read what the agents wrote for them.";
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
-type Who = { email: string; team: string | null };
 type Span = { from: string; to: string };
 type Win = { from: string; to: string; observedFrom: string | null; observedThrough: string | null; complete: boolean };
 type Fig = { value: number | null; why: string | null };
@@ -139,150 +126,31 @@ const RETAINED = 100 + FLOW_WORDS + FLOW_WORDS + LESSON_WORDS + 350;
 /** What the retained text was counted over: eight flow documents of nine revisions, one import-made, one unrecorded. */
 const COVERAGE = { documents: 8, revisions: 9, importMade: 1, unrecorded: 1, mixed: 0, datedByLastWrite: 0, undated: 0, missingLegacy: 0 };
 
-const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-const show = (v: unknown): string => JSON.stringify(v).slice(0, 900);
-/** Its value with every object's keys in order: an answer's key order is no part of its contract. */
-const canonical = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(canonical)
-    : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Obj)[k])])) : v;
 /** A local date, YYYY-MM-DD; and a local instant as "Mon, YYYY-MM-DD, HH:MM". */
 const dateOf = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(ms));
 const stamp = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, hourCycle: "h23",
   year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" }).format(new Date(ms));
 const counted = (value: number) => ({ value, why: null });
-/** `n` words: a heading of two, then `tag` words, twenty to a line. */
-function text(n: number, tag: string): string {
-  const words = Array.from({ length: n - 2 }, (_, i) => (i === 0 ? `${tag}-start` : tag));
-  const lines: string[] = [];
-  for (let i = 0; i < words.length; i += 20) lines.push(words.slice(i, i + 20).join(" "));
-  return `# ${tag}\n\n${lines.join("\n")}\n`;
-}
 function median(values: number[]): number | null {
   if (!values.length) return null;
   const s = [...values].sort((a, b) => a - b), mid = s.length >> 1;
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-/** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
-function request(who: Who, query: Obj): Obj {
-  return {
-    params: {}, query, body: {},
-    zzIdentity: { email: who.email, displayName: "Record", platformRole: "member", via: "session",
-                  teams: who.team ? [{ slug: who.team, role: "admin" }] : [], activeTeam: who.team, patTeam: null, sessionTeam: who.team },
-    headers: { "x-zz-user-email": who.email, "x-zz-via": "session", "x-zz-session-team": who.team ?? "" },
-  };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: {} }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
-}
-
 /** The gateway's door to zz-core as server.ts mounts it, a PAT of the seeded person's, Record's route and the
  *  functions it reads, loaded once the reporting timezone is set. */
 async function listen(c: Core): Promise<Gateway> {
-  process.env.TEAM_DB_URL = c.url;
-  process.env.ZZ_TZ = TIMEZONE;
-  process.env.ZZ_CATALOG_DIR = join(root, "catalog");
-  const load = (p: string) => import(pathToFileURL(join(root, "services/gateway/dist", p)).href);
-  const express = (await import("express")).default;
-  const db = (await load("db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
-  await db.initPlatformDb();
-  const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
-  const { toolCallTelemetry, doorSurface } = (await load("tool-telemetry.js")) as
-    { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
-  const { passThrough } = (await load("relay.js")) as { passThrough: (url: string, what: string, refusal: string) => RequestHandler };
+  const g = await serveDoor(c);
   const routes = new Map<string, Route>();
-  ((await load("console/record.js")) as { mountRecord: (app: unknown) => void }).mountRecord({ get: (p: string, h: Route) => routes.set(p, h) });
-
-  const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the telemetry on the door and
-  // then the door's relay to zz-core, in the order server.ts mounts them.
-  app.use(identityMiddleware());
-  app.use(express.json({ limit: "20mb" }));
-  app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
-  app.all("/core/mcp", passThrough(c.mcp.url, "core proxy", "zz-core is not reachable"));
-  const server: Server = app.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
-  await c.sql.query(
-    `insert into zz.pat (principal_id, token_hash, team_id) select p.id, $2, null from zz.principal p where p.email = $1`,
-    [c.email, createHash("sha256").update(token, "utf8").digest("hex")]);
+  ((await g.load("console/record.js")) as { mountRecord: (app: unknown) => void }).mountRecord({ get: (p: string, h: Route) => routes.set(p, h) });
   return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, token,
+    url: g.url, token: await g.pat(c.email),
     record: routes.get("/api/console/record") ?? c.fail("mount", "no route GET /api/console/record"),
-    pool: db.platformDb(),
-    slices: (await load("console/record-slices.js")) as Gateway["slices"],
-    mostOpenAtOnce: ((await load("console/work-figures.js")) as Pick<Gateway, "mostOpenAtOnce">).mostOpenAtOnce,
-    stop: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await db.platformDb().end().catch(() => undefined);
-      for (const k of ["TEAM_DB_URL", "ZZ_TZ", "ZZ_CATALOG_DIR"]) delete process.env[k];
-    },
+    pool: g.pool,
+    slices: (await g.load("console/record-slices.js")) as Gateway["slices"],
+    mostOpenAtOnce: ((await g.load("console/work-figures.js")) as Pick<Gateway, "mostOpenAtOnce">).mostOpenAtOnce,
+    stop: g.stop,
   };
-}
-
-/** Tool calls through the gateway's door as a client, counted so the rows they leave can be waited for. */
-function door(c: Core, g: Gateway) {
-  let sent = 0;
-  const call = async (step: string, client: string, name: string, args: Obj): Promise<string> => {
-    const res = await fetch(`${g.url}/core/mcp`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${g.token}`, "content-type": "application/json",
-                 accept: "application/json, text/event-stream", "x-zz-client": client },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const raw = await res.text();
-    sent++;
-    const env = lastJson(raw);
-    const reply = env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? raw.slice(0, 300);
-    if (res.status !== 200 || reply.startsWith("ERROR")) c.fail(step, `${name} as ${client} answered ${res.status}: ${reply.slice(0, 300)}`);
-    return reply;
-  };
-  return { call, sent: () => sent };
-}
-
-const count = async (c: Core, where: string): Promise<number> =>
-  (await c.sql.query<{ n: number }>(`select count(*)::int as n from zz.event where ${where}`)).rows[0].n;
-
-/**
- * Runs `make`, waits until every row it leaves has landed, then moves every timestamp the phase wrote by one
- * interval, so its first instant lands at `target`: the events, the revisions' written and presented times, the
- * documents', the initiatives' and the lessons'. One interval keeps a seal's written_at equal to its act's ts.
- */
-async function phase(c: Core, d: ReturnType<typeof door>, target: number, make: () => Promise<void>): Promise<void> {
-  const start = (await c.sql.query<{ t: string }>("select clock_timestamp()::text as t")).rows[0].t;
-  const base = await count(c, "kind = 'tool_call'") - d.sent();
-  await make();
-  const until = Date.now() + 15_000;
-  let seen = -1;
-  for (;;) {
-    await new Promise((r) => setTimeout(r, 400));
-    const calls = await count(c, "kind = 'tool_call'");
-    const all = await count(c, "true");
-    if (calls >= base + d.sent() && all === seen) break;
-    if (Date.now() > until) c.fail("a phase settles", `${calls} tool calls of ${base + d.sent()}, events still moving`);
-    seen = all;
-  }
-  const to = new Date(target).toISOString();
-  const move = (table: string, columns: string[]) => c.sql.query(
-    `update ${table} set ${columns.map((k) => `${k} = case when ${k} >= $1::timestamptz then ${k} + ($2::timestamptz - $1::timestamptz) else ${k} end`).join(", ")}
-      where ${columns.map((k) => `${k} >= $1::timestamptz`).join(" or ")}`, [start, to]);
-  await move("zz.event", ["ts"]);
-  await move("zz.doc_revision", ["written_at", "presented_at"]);
-  await move("zz.doc", ["created_at", "updated_at"]);
-  await move("zz.initiative", ["opened_at", "closed_at"]);
-  await move("zz.knowledge_node", ["created_at", "updated_at"]);
 }
 
 async function run(c: Core): Promise<void> {
@@ -301,7 +169,7 @@ async function make(c: Core, g: Gateway, w0: number): Promise<Record<string, str
   const s: Record<string, string> = {};
   const step = "the record made";
   const write = (client: string, path: string, content: string) => d.call(step, client, "document_write", { path, content });
-  const flowDocs = async (key: string) => { await write(WORK, `${s[key]}/explore.md`, EXPLORE); await write(WORK, `${s[key]}/spec.md`, SPEC); };
+  const flowDocs = async (key: string) => { await write(WORK, `${s[key]}/explore.md`, EXPLORE_BODY); await write(WORK, `${s[key]}/spec.md`, SPEC_BODY); };
   await phase(c, d, when([50, 10]), async () => { s.old = await c.open("old"); await write(WORK, `${s.old}/notes.md`, text(100, "old")); });
   await phase(c, d, when([49, 10]), async () => {
     await c.sign(`${s.old}/notes.md`);
@@ -400,10 +268,9 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   step = "weeks up to 26 of them and months beyond, so a year answers months";
   for (const p of ["quarter", "year", "all"] as const) {
     const windows = (R[p].cumulative as PF[]).map((x) => x.window);
-    // Each answer against its OWN cutoff. The three are three requests, and the cutoff is the instant
+    // Each answer against its own cutoff. The three are three requests, and the cutoff is the instant
     // each read began rounded up to the second, so two reads a moment apart legitimately carry cutoffs
-    // a second apart — comparing one answer's last window against another's cutoff is a race, not a
-    // property, and it failed a release gate on a loaded machine and nowhere else.
+    // a second apart.
     const cutoff = String((R[p].meta as Obj).asOf);
     const months = Date.parse(cutoff) - Date.parse(starts[p]) > 26 * WEEK;
     // Every period begins on a local Monday, or on the 1st, at midnight, where the one before it ends.
@@ -475,8 +342,8 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     c.pass(step);
 
     step = `Knowledge, Your agents, and Firsts and bests are the slices' own over the period from its first record (${p})`;
-    // Record counts runs and searches from the later of the period's start and its first record (Task I-131): in a run
-    // from about 17 December the seeded first initiative falls after 1 January, and the year counts from the initiative.
+    // Record counts runs and searches from the later of the period's start and its first record: in a run from about
+    // 17 December the seeded first initiative falls after 1 January, and the year counts from the initiative.
     const since: Span = { from: starts[p] < starts.all ? starts.all : starts[p], to: window.to };
     same(`${step}: Knowledge`, ok(step, r.knowledge), await g.slices.knowledgeSlice(c.team, window, String(meta.asOf), since.from));
     same(`${step}: Your agents`, ok(step, r.agents), await g.slices.agentsSlice(c.team, since, String(meta.asOf)));

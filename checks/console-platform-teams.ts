@@ -46,8 +46,9 @@ import {
   DEACTIVATED, EXPECTED, MEMBER, NEWCOMER, SUPERADMIN, TEAMS, seedFleet, seedFleetPeople, type Slug,
 } from "../scripts/schema/fleet-seed.ts";
 import { signIn, weekStart, type Seeded } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { canonical } from "./console-work-query-harness.ts";
 
 const NAME = "console-platform-teams";
 const DONE = "console-platform-teams: the superadmin reads every team's counts against its own past and each team's page, " +
@@ -63,22 +64,14 @@ const DETAIL_KEYS = ["calls", "members", "meta", "team", "tiles"];
 /** The seed's written values a row reads; the seed writes more, which no page reads and the read no longer answers. */
 const SEEDED = ["name", "status", "created", "people", "openWork", "waiting", "lessons"] as const;
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const iso = (ms: number): string => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 const keys = (v: unknown): string => (isObj(v) ? Object.keys(v).sort().join(",") : `not an object: ${JSON.stringify(v)}`);
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b));
-function sortDeep(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(sortDeep);
-  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]));
-  return v;
-}
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 interface Answer { status: number; body: Obj; text: string }
 type Get = (path: string, email: string) => Promise<Answer>;
@@ -175,7 +168,7 @@ async function listCases(s: Seeded, get: Get, pending: (asOf: string) => Promise
   for (const r of rows) {
     if (keys(r) !== ROW_KEYS.join()) fail(step, `${String(r.slug)} has keys ${keys(r)}`);
     const want = wantRow(s, r.slug as Slug, asOf);
-    if (!same(r, want)) fail(step, `${String(r.slug)} reads\n${JSON.stringify(sortDeep(r))}\nnot\n${JSON.stringify(sortDeep(want))}`);
+    if (!same(r, want)) fail(step, `${String(r.slug)} reads\n${JSON.stringify(canonical(r))}\nnot\n${JSON.stringify(canonical(want))}`);
   }
   pass("six teams, latest real-work call first and dune before fir with none, each with its team, memberships, open " +
        "work, waiting, standing lessons, 26 weeks of sessions from back 25 (the running one not complete), its calls in " +
@@ -240,7 +233,7 @@ async function detailCases(s: Seeded, get: Get, list: Answer): Promise<Answer> {
       calls: series(s, team, 1, asOf),
     };
     if (!same({ ...a.body, meta: null }, { ...want, meta: null })) {
-      fail(step, `${team} reads\n${JSON.stringify(sortDeep({ ...a.body, meta: null }))}\nnot\n${JSON.stringify(sortDeep(want))}`);
+      fail(step, `${team} reads\n${JSON.stringify(canonical({ ...a.body, meta: null }))}\nnot\n${JSON.stringify(canonical(want))}`);
     }
     const r = listed.get(team)!;
     if (!same(a.body.tiles, { people: r.people, openWork: r.openWork, waiting: r.waiting, lessons: r.lessons })) {
@@ -272,7 +265,7 @@ async function noiseCases(db: pg.Client, get: Get, list: Answer): Promise<void> 
     "insert into zz.event (ts, kind, subject, ok, tool_key, origin, session) values ($1, 'tool_call', 'core:whoami', true, 'core:whoami', 'work', 'late')",
     [ts]);
   const again = await get("/teams", SUPERADMIN);
-  const running = (b: Obj) => sortDeep({ ...b, meta: null, teams: (b.teams as Obj[]).map((r) => ({
+  const running = (b: Obj) => canonical({ ...b, meta: null, teams: (b.teams as Obj[]).map((r) => ({
     ...r, sessions: (r.sessions as Obj[]).map((w) => ({ ...w, window: { ...(w.window as Obj), observedThrough: null } })),
   })) });
   if (!same(running(again.body), running(list.body))) fail(step, `the list moved: ${again.text.slice(0, 400)}`);
@@ -432,19 +425,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

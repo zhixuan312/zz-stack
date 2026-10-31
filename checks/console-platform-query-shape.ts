@@ -40,6 +40,7 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 
 import { SUPERADMIN, seedPlatformQuery } from "./console-platform-query-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { answer, request, show, type Obj, type Query, type Route, type Who } from "./console-work-query-harness.ts";
 
 const NAME = "console-platform-query-shape";
 const DONE = "console-platform-query-shape: every measure, grouped and drilled, is answered by the console's fake in the " +
@@ -59,41 +60,12 @@ const MEASURES: Record<string, { stock?: string; drilled: boolean; superadmin?: 
   audit: { drilled: true, superadmin: true },
 };
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
-type Who = { email: string; role: "member" | "superadmin"; team: string | null };
 /** One of the fake's two people, as its route reads a caller. */
 type FakeWho = { email: string; superadmin: boolean; activeTeam: string | null };
 type Answer = { status: number; body: Obj };
-/** A query as Express hands it on: a where repeated is an array. */
-type Query = Record<string, string | string[]>;
 
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
-const show = (v: unknown): string => JSON.stringify(v).slice(0, 500);
 const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
-
-/** The request a console session's read arrives as, past the gateway's middleware (COUPLED: identity.ts). */
-function request(who: Who, query: Query): Obj {
-  return {
-    params: {}, query, body: {},
-    zzIdentity: { email: who.email, displayName: "Query", platformRole: who.role, via: "session",
-                  teams: who.team ? [{ slug: who.team, role: "admin" }] : [], activeTeam: who.team, patTeam: null, sessionTeam: who.team },
-    headers: {},
-  };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: {} }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
-}
 
 /** The same query as the fake's URL reads it. */
 function params(query: Query): URLSearchParams {

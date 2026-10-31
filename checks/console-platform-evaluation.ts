@@ -54,7 +54,7 @@ import {
   EXPECTED, FINDING_NAMES, KEYS, MEMBER, NOBODY_READS, SUPERADMIN, patternOf, seedEvaluation,
 } from "../scripts/schema/evaluation-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 
 const NAME = "console-platform-evaluation";
@@ -71,10 +71,7 @@ const READ_TABLES = ["eval_run", "eval_finding", "eval_protocol_version", "eval_
 const NEVER_KEYS = ["decision_note", "decisionNote", "owner_ref", "ownerRef", "evidence_refs", "evidenceRefs",
   "team", "team_id", "teamId", "initiative", "initiative_id", "initiativeId"];
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 type Obj = Record<string, unknown>;
@@ -305,19 +302,4 @@ async function run(db: pg.Client, url: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error(`${NAME}: Docker is not available — the check could not run, which is not a pass`);
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `${NAME}: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log(DONE);
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

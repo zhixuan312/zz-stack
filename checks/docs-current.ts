@@ -12,7 +12,8 @@ for (const rule of ["produces", "documents", "libraries", "commands", "purpose"]
   if (!new RegExp(`\\b${rule}\\b`).test(standard)) fail.push(`the standard does not state ${rule}`);
 }
 
-// The 700-line ceiling, on the root documents, the skills and the checks.
+// The 700-line ceiling on documents: the root documents and the skills. A source file's ceiling is
+// `scripts/gate/checks/hygiene.ts`'s, which leaves documents to this one.
 const walk = (d: string): string[] => readdirSync(d).flatMap((f) => {
   const p = join(d, f);
   return statSync(p).isDirectory() ? (["node_modules", "dist", "_versions"].includes(f) ? [] : walk(p)) : [p];
@@ -31,14 +32,14 @@ const carried = trackedFiles();
 const rootDocs = readdirSync(".")
   .filter((f) => f.endsWith(".md") && f !== "CHANGELOG.md" && (!carried || carried.has(f)))
   .sort();
-const touched = [...rootDocs, ...walk("skills"), ...walk("scripts/gate/checks"), ...walk("checks")];
+const touched = [...rootDocs, ...walk("skills")];
 // A discovery that finds nothing passes for the wrong reason, so it is asserted against the
 // two root documents that must always be there.
 if (!rootDocs.includes("README.md") || !rootDocs.includes("ARCHITECTURE.md")) {
   fail.push("the root document discovery found neither README.md nor ARCHITECTURE.md — it is broken");
 }
 for (const p of touched) {
-  if (!/\.(md|mjs|ts)$/.test(p)) continue;
+  if (!p.endsWith(".md")) continue;
   const n = readFileSync(p, "utf8").split("\n").length;
   if (n > 700) fail.push(`${p} is ${n} lines, over the 700 ceiling`);
 }

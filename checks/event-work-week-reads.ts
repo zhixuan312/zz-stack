@@ -49,7 +49,8 @@ import { pathToFileURL } from "node:url";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { BUDGET, appender, sectionOf, type Call } from "../scripts/schema/event-work-week-fixture.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const NAME = "event-work-week-reads";
 const ZONE = "Pacific/Auckland";
@@ -86,32 +87,12 @@ type Measures = { readGrid: (db: pg.Pool, asOfMs?: number) => Promise<Grid> };
 /** What the register declares for Usage's calls-by-week class, and the traffic it is declared at. */
 type Budget = { rows: number; ms: number; calls: number };
 
-/** A work call of the frozen input; `kind` and `origin` are parameters so the two events the model must
- *  IGNORE are spelled the same way the ones it must count are. */
-type Call = {
-  readonly ts: string; readonly ok?: boolean; readonly team?: string | null; readonly tool?: string;
-  readonly ms?: number | null; readonly batched?: boolean; readonly owner?: string;
-  readonly kind?: string; readonly origin?: string;
-};
-
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`${NAME}: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`  ok  ${line}`);
 
 const load = (rel: string): Promise<unknown> => import(pathToFileURL(join(root, rel)).href);
 
-async function append(client: pg.Client, c: Call): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    `insert into zz.event (ts, kind, origin, ok, team_id, tool_key, duration_ms, batched, refusal_owner, subject)
-     values ($1::timestamptz, $2::text, $3::text, $4::boolean, $5::uuid, $6::text, $7::integer, $8::boolean,
-             $9::text, '')
-     returning id::text`,
-    [c.ts, c.kind ?? "tool_call", c.origin ?? "work", c.ok ?? true, c.team === undefined ? ALPHA : c.team,
-      c.tool ?? "core:a", c.ms ?? null, c.batched ?? false, c.owner ?? null]);
-  return rows[0]!.id;
-}
+const append: (client: pg.Client, c: Call) => Promise<string> = appender(ALPHA);
 
 /** Rows keyed, and one line for every key the two sides disagree on, naming each field that differs —
  *  so a failure says which figure is wrong, never only that the answers are not equal. */
@@ -172,20 +153,6 @@ async function measure(client: pg.Client, text: string, values: unknown[]): Prom
   };
 }
 
-/** The body of `### <heading>`, down to the next heading of any level. */
-function sectionOf(md: string, heading: string): string | null {
-  const lines = md.split("\n");
-  const start = lines.findIndex((l) => /^#{2,4}\s/.test(l) && l.replace(/^#{2,4}\s+/, "").trim() === heading);
-  if (start < 0) return null;
-  const level = (lines[start].match(/^#+/) ?? [""])[0].length;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    const m = lines[i].match(/^(#+)\s/);
-    if (m && m[1]!.length <= level) { end = i; break; }
-  }
-  return lines.slice(start + 1, end).join("\n");
-}
-
 /** What `ARCHITECTURE.md` declares: Usage's two budget numbers, and the real-work call count the
  *  ten-times population is seeded to. Both are parsed, never hard-coded — the register is the document
  *  that decided, and a stale number in it is the defect this arm exists for. */
@@ -195,7 +162,7 @@ function budgetOf(md: string): Budget | string {
   const line = section.split("\n").find((l) => /Usage's calls by week/i.test(l));
   if (line === undefined) return "no line in that section names Usage's calls by week and team";
   if (/unmeasured/i.test(line)) return "the register states Usage's calls-by-week budget as unmeasured";
-  const m = line.match(/rows\s*(?:≤|<=)\s*([\d,]+)\s*,\s*ms\s*(?:≤|<=)\s*([\d,]+)/i);
+  const m = line.match(BUDGET);
   if (!m) return `the register's Usage line carries no \`rows ≤ N, ms ≤ M\` — it reads: ${line.trim()}`;
   const calls = md.match(/([\d,]+)\s+real-work calls/);
   if (!calls) return "`ARCHITECTURE.md` records no real-work call count to seed ten times";
@@ -568,27 +535,7 @@ async function run(client: pg.Client): Promise<void> {
     `${ten.rows}/${budget.rows} rows, ${ten.ms.toFixed(1)}/${budget.ms} ms`);
 }
 
-function dockerUnavailable(err: unknown): boolean {
-  return err instanceof Error && /Docker is not running/.test(err.message);
-}
-
-async function main(): Promise<void> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (dockerUnavailable(err)) {
-      console.error(`${NAME}: Docker is not available — the gate requires Docker to run this check`);
-      process.exit(2);
-    }
-    throw err;
-  }
-  console.log(`${NAME}: the two week-grain reductions read zz.event_work_week, answer the whole-history statement ` +
-    "field for field, and stay inside the budget the register declared: ok");
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((err) => {
-    console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
-    process.exit(1);
-  });
-}
+process.exitCode = await withThrowawayDbCheck(NAME,
+  `${NAME}: the two week-grain reductions read zz.event_work_week, answer the whole-history statement ` +
+  "field for field, and stay inside the budget the register declared: ok",
+  run);

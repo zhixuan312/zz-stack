@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-// A scored eval_run's score is published and is never scored again. The live door let a scored
-// run be scored a second time under a new idempotency key, overwriting the published result (2
-// of 15 production runs were). A re-score is a new eval_run; a retry under the key that scored
-// the run still replays through the FR-59 ledger.
+// A scored eval_run's score is published and is never scored again, under any idempotency key. A
+// re-score is a new eval_run; a retry under the key that scored the run still replays through the
+// FR-59 ledger.
 //
-// `scored_at` is the terminal marker now — the phase-3 reshape replaced `run_status` with it, so
-// a run is finished exactly when it has one. The write is read from source, since no database is
-// available here; `checks/scored-run-terminal.ts` is the other half, which proves by exact text
-// that no statement anywhere rewrites a scored run's columns.
+// `scored_at` is the terminal marker: a run is finished exactly when it has one. The write is
+// matched as text in its source and never run, so a statement that keeps this shape and fails
+// against the schema passes here; `checks/scored-run-terminal.ts` is the other half, which proves
+// by exact text that no statement anywhere rewrites a scored run's columns.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 

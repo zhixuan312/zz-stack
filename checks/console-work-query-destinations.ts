@@ -48,22 +48,20 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash, randomBytes } from "node:crypto";
-import type { Server } from "node:http";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { lastJson } from "@zz/mcp-client";
-import type { Request, RequestHandler } from "express";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
-import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
+import { OTHER_EMAIL, OTHER_TEAM, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import {
-  FIRST, answer, bucketCases, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request, show,
-  spelled, whereCases, type Days, type Obj, type Query, type Route, type Who,
+  FIRST, answer, bucketCases, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request,
+  serveDoor, show, spelled, whereCases, type Days, type Obj, type Query, type Route, type Who,
 } from "./console-work-query-harness.ts";
 
 const NAME = "console-work-query-destinations";
@@ -91,15 +89,6 @@ type WQ = {
   rest: { groups: number; value: number } | null; total: Counted; rows: { state: string; data?: { rows: Obj[]; total: number } } | null;
 };
 
-/** A PAT of the person's, acting for their active team. */
-async function patOf(c: Core, email: string): Promise<string> {
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
-  await c.sql.query(
-    "insert into zz.pat (principal_id, token_hash, team_id) select p.id, $2, null from zz.principal p where p.email = $1",
-    [email, createHash("sha256").update(token, "utf8").digest("hex")]);
-  return token;
-}
-
 interface Gateway {
   url: string; mine: string; theirs: string; routes: Map<string, Route>; pool: pg.Pool;
   refusalWeeks: (team: string, w: { from: string; to: string }, asOf: string, grain: string) => Promise<{ periods: Obj[] }>;
@@ -109,45 +98,17 @@ interface Gateway {
 /** The gateway's door to zz-core as server.ts mounts it, a PAT for each team's person, and the routes read here, loaded
  *  once the reporting timezone, the catalog and the skills are set. */
 async function listen(c: Core): Promise<Gateway> {
-  process.env.TEAM_DB_URL = c.url;
-  process.env.ZZ_TZ = TIMEZONE;
-  process.env.ZZ_CATALOG_DIR = join(root, "catalog");
-  process.env.ZZ_SKILLS_DIR = join(root, "skills");
-  process.env.CORE_MCP_URL = c.mcp.url;
-  const load = (p: string) => import(pathToFileURL(join(root, "services/gateway/dist", p)).href);
-  const express = (await import("express")).default;
-  const db = (await load("db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
-  await db.initPlatformDb();
-  const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
-  const { toolCallTelemetry, doorSurface } = (await load("tool-telemetry.js")) as
-    { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
-  const { passThrough } = (await load("relay.js")) as { passThrough: (url: string, what: string, refusal: string) => RequestHandler };
+  const g = await serveDoor(c, { skills: true });
   const routes = new Map<string, Route>();
   const fake = { get: (p: string, h: Route) => routes.set(p, h), post: () => undefined, delete: () => undefined };
   for (const [file, mount] of [["work-query", "mountWorkQuery"], ["activity", "mountActivity"], ["knowledge-summary", "mountKnowledgeSummary"],
     ["knowledge", "mountKnowledge"], ["runs", "mountRuns"], ["catalog", "mountCatalog"]]) {
-    ((await load(`console/${file}.js`)) as Record<string, (app: unknown) => void>)[mount](fake);
+    ((await g.load(`console/${file}.js`)) as Record<string, (app: unknown) => void>)[mount](fake);
   }
-
-  const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the telemetry on the door and
-  // then the door's relay to zz-core, in the order server.ts mounts them.
-  app.use(identityMiddleware());
-  app.use(express.json({ limit: "20mb" }));
-  app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
-  app.all("/core/mcp", passThrough(c.mcp.url, "core proxy", "zz-core is not reachable"));
-  const server: Server = app.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
-    mine: await patOf(c, c.email), theirs: await patOf(c, OTHER_EMAIL), routes, pool: db.platformDb(),
-    refusalWeeks: ((await load("console/refusals.js")) as Pick<Gateway, "refusalWeeks">).refusalWeeks,
-    stop: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await db.platformDb().end().catch(() => undefined);
-      for (const k of ["TEAM_DB_URL", "ZZ_TZ", "ZZ_CATALOG_DIR", "ZZ_SKILLS_DIR", "CORE_MCP_URL"]) delete process.env[k];
-    },
+    url: g.url, mine: await g.pat(c.email), theirs: await g.pat(OTHER_EMAIL), routes, pool: g.pool,
+    refusalWeeks: ((await g.load("console/refusals.js")) as unknown as Pick<Gateway, "refusalWeeks">).refusalWeeks,
+    stop: g.stop,
   };
 }
 
@@ -555,7 +516,7 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const ava = { activeTeam: "atlas", email: "ava.lindqvist@example.com" };
   const year = { from: new Date(Date.now() - 365 * 24 * 3_600_000).toISOString(), to: new Date().toISOString() };
   for (const [measure, by] of [...Object.entries(MEASURES).map(([m, dims]) => [m, dims[0]]), ["searches", "found"]]) {
-    const drill = measure === "skill_calls" ? null : measure === "searches" ? "none" : null;
+    const drill = measure === "searches" ? "none" : null;
     const ours = await ask(step, { measure, by, compare: "previous", ...RECORD });
     const group = measure === "skill_calls" ? null : drill ?? ours.groups[0].key;
     const [, broad] = fake.workQuery(ava, new URLSearchParams({ measure, by, ...year, compare: "previous" })) as [number, WQ];

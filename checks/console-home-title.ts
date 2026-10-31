@@ -38,6 +38,8 @@ const F = await load("services/gateway/dist/console/figures.js");
 
 const problems: string[] = [];
 const expect = (what: string, ok: boolean, got: unknown) => { if (!ok) problems.push(`${what}: got ${JSON.stringify(got)}`); };
+/** `expect` over one value, so a failure prints what came back rather than the test's outcome. */
+const is = <T>(what: string, got: T, ok: (v: T) => boolean) => expect(what, ok(got), got);
 
 const DAY = 86_400_000;
 type Week = {
@@ -89,8 +91,8 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   title("50th closure", H.homeTitle(facts(plain(), { closed: 51 })), 2, "Your 50th piece of work closed");
   title("a crossing in an earlier week does not fire", H.homeTitle(facts(plain(), { closed: 56 })), 8,
     "5 pieces of work closed; 2,000 words added to your documents; 7 approvals recorded in your name; 3 lessons made last week");
-  expect("a crossing in the running week does not fire", H.homeTitle(facts(plain({}, { closed: 3 }), { closed: 51 })).rule === 8, null);
-  expect("the running week's count unknown loses the rule", H.homeTitle(facts(plain({}, { closed: null }), { closed: 51 })).rule === 8, null);
+  is("a crossing in the running week does not fire", H.homeTitle(facts(plain({}, { closed: 3 }), { closed: 51 })), (t) => t.rule === 8);
+  is("the running week's count unknown loses the rule", H.homeTitle(facts(plain({}, { closed: null }), { closed: 51 })), (t) => t.rule === 8);
   title("one million words", H.homeTitle(facts(plain(), { words: 1_000_500 })), 2, "One million words added to your documents in all");
   title("one and a half million words", H.homeTitle(facts(plain(), { words: 1_501_000 })), 2, "1.5 million words added to your documents in all");
   title("25th lesson", H.homeTitle(facts(plain(), { lessons: 26 })), 2, "Your 25th lesson made");
@@ -103,7 +105,7 @@ const plain = (last: Partial<Week> = {}, running: Partial<Week> = {}, prior: Wee
   title("counted, an import would fire", H.homeTitle(facts(plain({ lessons: 833 }), { lessons: 853 })), 2,
     "Your 800th lesson made, in a week of 833 lessons made, the most yet");
   expect("an import cohort fires no milestone", H.homeTitle(facts(plain(), { lessons: 23 })).rule === 8, H.homeTitle(facts(plain(), { lessons: 23 })));
-  expect("a missing total fires nothing", H.homeTitle(facts(plain(), { closed: null })).rule === 8, null);
+  is("a missing total fires nothing", H.homeTitle(facts(plain(), { closed: null })), (t) => t.rule === 8);
 }
 
 // Rule 3: a recorded high, with at least two comparable weeks before it, every tied week named; joined with rule 2.
@@ -158,15 +160,15 @@ const days = (from: string, through: string, inactive: string[] = []) => {
   title("7 days in a row, reached midweek", H.homeTitle(facts(plain(), {}, days("2026-09-20", "2026-10-13", ["2026-10-01", "2026-10-09"]))), 4,
     "Your agents ran 7 days in a row");
   title("30 days in a row", H.homeTitle(facts(plain(), {}, days("2026-09-01", "2026-10-13", ["2026-09-11"]))), 4, "Your agents ran 30 days in a row");
-  expect("a run already past its threshold is not new", H.homeTitle(facts(plain(), {}, days("2026-09-01", "2026-10-13", ["2026-09-20"]))).rule === 8, null);
-  expect("a run reached after the week is not this week's", H.homeTitle(facts(plain(), {}, days("2026-10-01", "2026-10-13", ["2026-10-05"]))).rule === 8, null);
-  expect("a run of unknown length never fires", H.homeTitle(facts(plain(), {}, days("2026-09-12", "2026-10-13"))).rule === 8, null);
+  is("a run already past its threshold is not new", H.homeTitle(facts(plain(), {}, days("2026-09-01", "2026-10-13", ["2026-09-20"]))), (t) => t.rule === 8);
+  is("a run reached after the week is not this week's", H.homeTitle(facts(plain(), {}, days("2026-10-01", "2026-10-13", ["2026-10-05"]))), (t) => t.rule === 8);
+  is("a run of unknown length never fires", H.homeTitle(facts(plain(), {}, days("2026-09-12", "2026-10-13"))), (t) => t.rule === 8);
   // Singapore: the week is Monday 5 Oct to Sunday 11 Oct local, its instants eight hours earlier.
   const sg = [0, 1, 2, 3, 4].map((i) => ({ ...PRIOR[i], window: wk(i, {}, true, 8).window }));
   const sgWeeks = [...sg, wk(5, LAST, true, 8), wk(6, RUNNING, false, 8)];
   title("the week is the reporting timezone's", H.homeTitle(facts(sgWeeks, {}, days("2026-10-04", "2026-10-11", ["2026-10-04"]), "Asia/Singapore")), 4,
     "Your agents ran 7 days in a row");
-  expect("a local Monday after the week is not in it", H.homeTitle(facts(sgWeeks, {}, days("2026-10-05", "2026-10-12", ["2026-10-05"]), "Asia/Singapore")).rule === 8, null);
+  is("a local Monday after the week is not in it", H.homeTitle(facts(sgWeeks, {}, days("2026-10-05", "2026-10-12", ["2026-10-05"]), "Asia/Singapore")), (t) => t.rule === 8);
   title("rule 3 before rule 4, not joined", H.homeTitle(facts(plain({ closed: 7 }), {}, days("2026-09-27", "2026-10-13", ["2026-09-27"]))), 3,
     "7 pieces of work closed last week, the most in a week yet");
 }
@@ -174,7 +176,7 @@ const days = (from: string, through: string, inactive: string[] = []) => {
 // Rule 5: a clear rise over the median of four prior weeks, nonzero.
 {
   title("25% above the median", H.homeTitle(facts(plain({ words: 2500 }))), 5, "25% more words added to your documents than your recent weekly median");
-  expect("under 25% is no rise", H.homeTitle(facts(plain({ words: 2499 }))).rule === 8, null);
+  is("under 25% is no rise", H.homeTitle(facts(plain({ words: 2499 }))), (t) => t.rule === 8);
   const approvals = PRIOR.map((w, i) => ({ ...w, approvals: [5, 30, 5, 9, 5][i] }));
   title("times the median", H.homeTitle(facts(plain({ approvals: 15 }, {}, approvals))), 5,
     "2.1 times as many approvals recorded in your name as your recent weekly median");
@@ -196,9 +198,9 @@ const days = (from: string, through: string, inactive: string[] = []) => {
     "The shortest median time to close yet: 6 hours, over 5 pieces of work");
   title("a tie is named", H.homeTitle(facts(plain({ medianHoursToClose: { hours: 8, cohort: 4 } }, {}, timed))), 6,
     "The shortest median time to close yet: 8 hours, over 4 pieces of work, tied with the week of 7 Sept");
-  expect("not the shortest", H.homeTitle(facts(plain({ medianHoursToClose: { hours: 8.5, cohort: 4 } }, {}, timed))).rule === 8, null);
-  expect("no week's median is no rule", H.homeTitle(facts(plain({ medianHoursToClose: null }, {}, timed))).rule === 8, null);
-  expect("rule 5 before rule 6", H.homeTitle(facts(plain({ words: 2500, medianHoursToClose: { hours: 6, cohort: 5 } }, {}, timed))).rule === 5, null);
+  is("not the shortest", H.homeTitle(facts(plain({ medianHoursToClose: { hours: 8.5, cohort: 4 } }, {}, timed))), (t) => t.rule === 8);
+  is("no week's median is no rule", H.homeTitle(facts(plain({ medianHoursToClose: null }, {}, timed))), (t) => t.rule === 8);
+  is("rule 5 before rule 6", H.homeTitle(facts(plain({ words: 2500, medianHoursToClose: { hours: 6, cohort: 5 } }, {}, timed))), (t) => t.rule === 5);
 }
 
 // Rules 7 and 8: a quieter week, a plain week.
@@ -226,9 +228,9 @@ const days = (from: string, through: string, inactive: string[] = []) => {
   expect("nothing reached yet", JSON.stringify(at("closed", 0)) === JSON.stringify({ count: "closed", next: 10, last: 0, value: 0 }), at("closed", 0));
   expect("past the listed ladder", JSON.stringify(at("closed", 1499)) === JSON.stringify({ count: "closed", next: 1500, last: 1000, value: 1499 }), at("closed", 1499));
   expect("exactly on a threshold", JSON.stringify(at("closed", 500)) === JSON.stringify({ count: "closed", next: 1000, last: 500, value: 500 }), at("closed", 500));
-  expect("documents' ladder", at("documents", 99).next === 100 && at("documents", 500).next === 1000 && at("documents", 3000).next === 4000, null);
-  expect("lessons' ladder", at("lessons", 24).next === 25 && at("lessons", 24).last === 10 && at("lessons", 450).next === 500, null);
-  expect("words' ladder", at("words", 999_999).next === 1_000_000 && at("words", 999_999).last === 0 && at("words", 2_400_000).last === 2_000_000, null);
+  is("documents' ladder", [at("documents", 99), at("documents", 500), at("documents", 3000)], ([a, b, c]) => a.next === 100 && b.next === 1000 && c.next === 4000);
+  is("lessons' ladder", [at("lessons", 24), at("lessons", 450)], ([a, b]) => a.next === 25 && a.last === 10 && b.next === 500);
+  is("words' ladder", [at("words", 999_999), at("words", 2_400_000)], ([a, b]) => a.next === 1_000_000 && a.last === 0 && b.last === 2_000_000);
   expect("a count with no total is not listed", H.nextMilestones({ ...NONE, lessons: 3 }).length === 1, H.nextMilestones({ ...NONE, lessons: 3 }));
 }
 
@@ -236,11 +238,11 @@ const days = (from: string, through: string, inactive: string[] = []) => {
 {
   const run = N.agentsRunFinding(days("2026-09-27", "2026-10-11", ["2026-09-27"]));
   expect("the run sentence", run?.kind === "run" && run.text === "Your agents ran 14 days in a row" && run.dates[0] === "2026-10-11" && run.tie === false, run);
-  expect("under seven days is no finding", N.agentsRunFinding(days("2026-10-04", "2026-10-11", ["2026-10-05"])) === null, null);
-  expect("a last day with no call ends it", N.agentsRunFinding(days("2026-09-27", "2026-10-11", ["2026-10-11"])) === null, null);
+  is("under seven days is no finding", N.agentsRunFinding(days("2026-10-04", "2026-10-11", ["2026-10-05"])), (v) => v === null);
+  is("a last day with no call ends it", N.agentsRunFinding(days("2026-09-27", "2026-10-11", ["2026-10-11"])), (v) => v === null);
   const all = N.agentsRunFinding(days("2026-10-03", "2026-10-11"));
   expect("reaching the first day given is at least", all?.text === "Your agents ran at least 9 days in a row", all);
-  expect("no days, no finding", N.agentsRunFinding([]) === null, null);
+  is("no days, no finding", N.agentsRunFinding([]), (v) => v === null);
 }
 
 // periodFinding: the dated high and low with no measure key; weekFinding answers through it.
@@ -259,8 +261,8 @@ const days = (from: string, through: string, inactive: string[] = []) => {
     && low.text === "Fewest recorded words added in a week since 14 Sept, tied with that first week" && low.dates.join() === "2026-09-28,2026-09-14", low);
   const best = N.periodFinding([p(2, 9), p(3, 8), p(4, 6)], { ...o, label: "median hours to close", better: "down", precision: 1 });
   expect("a best", best?.kind === "best_week" && best.text === "Lowest observed median hours to close in a complete week, 28 Sept", best);
-  expect("a gap leaves too few", N.periodFinding([p(2, 40), p(3, null), p(4, 90)], o)?.kind === "incomplete", null);
-  expect("no rule and no counts", N.periodFinding([p(2, 40), p(3, 90), p(4, 60)], o) === null, null);
+  is("a gap leaves too few", N.periodFinding([p(2, 40), p(3, null), p(4, 90)], o), (v) => v?.kind === "incomplete");
+  is("no rule and no counts", N.periodFinding([p(2, 40), p(3, 90), p(4, 60)], o), (v) => v === null);
   const counted = N.periodFinding([{ ...p(2, 3), numerator: 3, denominator: 100 }, { ...p(3, 4), numerator: 4, denominator: 100 }, { ...p(4, 5), numerator: 5, denominator: 100 }],
     { ...o, better: "down", countLabel: "calls refused" });
   expect("the last period's counts", counted?.kind === "count" && counted.text === "5 of 100 calls refused", counted);

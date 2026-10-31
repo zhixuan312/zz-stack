@@ -137,6 +137,12 @@ const { contentRevision } = await import("@zz/contracts");
 const { approvalBasis } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 
+/** The artifact tools' input schemas, as zz-core registers them. */
+interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
+const tools = new Map<string, { inputSchema?: Record<string, ZodLike> }>();
+const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
+registerArtifactTools({ registerTool: (name: string, def: { inputSchema?: Record<string, ZodLike> }) => tools.set(name, def) });
+
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
@@ -278,10 +284,6 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
 // 4. The real schemas take the part arguments
 {
-  interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
-  const tools = new Map<string, { inputSchema?: Record<string, ZodLike> }>();
-  const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
-  registerArtifactTools({ registerTool: (name: string, def: { inputSchema?: Record<string, ZodLike> }) => tools.set(name, def) });
   for (const name of ["document_read", "document_present"]) {
     const shape = tools.get(name)?.inputSchema ?? {};
     is(shape.section?.safeParse("Findings").success, `${name} takes no \`section\``);
@@ -348,10 +350,6 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   is("body" in swapped && swapped.body === "# A\n\nx\n\n## A\n\ny\n\n## A\n\nZ\n",
      `replacing level 2, occurrence 2 touched more than that section: ${JSON.stringify(swapped)}`);
 
-  interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
-  const tools = new Map<string, { inputSchema?: Record<string, ZodLike> }>();
-  const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
-  registerArtifactTools({ registerTool: (name: string, def: { inputSchema?: Record<string, ZodLike> }) => tools.set(name, def) });
   const edit = tools.get("document_edit")?.inputSchema ?? {};
   is(edit.section?.safeParse("Phase 5").success && edit.section_level?.safeParse(2).success
      && edit.section_occurrence?.safeParse(1).success,

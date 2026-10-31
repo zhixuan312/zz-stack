@@ -45,6 +45,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
 
 const NAME = "console-close";
 const DONE = "console-close: the console and the MCP tool close an initiative to the same outcome, closer, acceptor " +
@@ -59,16 +60,6 @@ const OTHER_EMAIL = "other@example.test";
 const OTHER_TEAM = "other-team";
 /** COUPLED: NO_INITIATIVE in services/gateway/src/console/initiatives.ts, which the close's 404 answers. */
 const NOT_FOUND = "No initiative of the team you act for has that name.";
-
-const EXPLORE = "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n";
-/** A spec the spec gate approves: every declared section, one phase, one core statement. */
-const SPEC =
-  "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n" +
-  "## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n" +
-  "## Stakeholders & Work\nx\n\n" +
-  "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
-  "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
-  "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n";
 
 type Obj = Record<string, unknown>;
 type Answer = { status: number; body: Obj };
@@ -168,8 +159,8 @@ async function make(c: Core, key: string, shape: Shape): Promise<string> {
   }
   if (shape === "closed") await c.ok(step, "initiative_close", { initiative: slug, disposition: "finished", document: "notes.md" });
   if (shape !== "partial" && shape !== "reviewed" && shape !== "walked") return slug;
-  await c.ok(step, "document_write", { path: `${slug}/explore.md`, content: EXPLORE });
-  await c.ok(step, "document_write", { path: `${slug}/spec.md`, content: SPEC });
+  await c.ok(step, "document_write", { path: `${slug}/explore.md`, content: EXPLORE_BODY });
+  await c.ok(step, "document_write", { path: `${slug}/spec.md`, content: SPEC_BODY });
   if (shape === "partial") return slug;
   await c.sign(`${slug}/spec.md`);
   await c.source(step, { initiative: slug, title: "spec audit", content: "no blocking findings", supports: ["spec.md"], stage: "sdlc-spec-audit" });

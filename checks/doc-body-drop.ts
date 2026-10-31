@@ -38,21 +38,17 @@
  *   the ones it finds.
  *
  *   (5) THE STATEMENTS THE CHANGE TOUCHED STILL ANSWER — the protocol door's body read, the
- *   console's claims read and its document read, each executed over the seeded platform. A
- *   statement is not compiled and a grep is not proof. The writer's in-place rewrite branch is run
+ *   console's claims read and its document read, each read out of its source at run time and
+ *   executed over the seeded platform. A statement is not compiled and a grep is not proof. The
+ *   writer's in-place rewrite branch is run
  *   too: it is the statement the create and append paths never reach.
  *
  *   (6) THE INDEX IS CHOSEN, not merely present: `EXPLAIN` of the SHIPPED search statement — its
  *   union and its predicate read out of `knowledge-search.ts` at run time, so the plan explained
  *   cannot drift from the one that ships — names `doc_revision_body_trgm`.
  *
- * RECORDED, not asserted: at the deployment's own TOAST-heavy shape the trigram index is not chosen
- * — and the one on `zz.doc` was not chosen there either; the task measured 862 ms before the move
- * and 935 ms after on the same plan, a sequential scan of a TOAST-dominated heap, which is machine
- * noise rather than a regression. Where the planner can price the heap it is decisive: the task
- * measured 59.5 ms without it and 0.23 ms with it, and arm 6's seed is that shape. So what the move
- * buys is availability at the right table plus that win where it applies, never a production
- * speed-up that was measured. Saying otherwise would be the defect this phase exists to prevent.
+ * Not asserted: at a TOAST-heavy shape the planner seq-scans the heap and does not choose the trigram
+ * index. Arm 6's seed is the shape where the planner can price the heap and chooses it.
  *
  * Exit 0: every arm held — one line per case, then the final line.
  * Exit 1: an arm failed, quoting what it read. Exit 2: Docker is not available.
@@ -221,41 +217,40 @@ async function run(c: Core): Promise<void> {
   }
   c.pass("a document with no current_revision answers its own state rather than failing");
 
-  const protocol = (await c.sql.query(`
-      select d.id::text as id, d.current_revision, d.status, a.email as approved_by, r.body as body
-        from zz.doc d
-        join zz.initiative i on i.id = d.initiative_id
-        join zz.team t on t.id = i.team_id
-        left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-        left join zz.principal a on a.id = r.approved_by
-       where i.slug = $1 and d.path = 'protocol.md' and ($2::text is null or t.slug = $2)
-       order by d.updated_at desc limit 1`, [engInit, c.team])).rows[0];
+  // The three statements read out of their sources at run time, as arm 6 reads its own: a copy written here would
+  // prove a statement nobody issues.
+  const statementIn = (file: string, opening: string): string => {
+    const src = readFileSync(join(process.cwd(), file), "utf8");
+    const at = src.indexOf(opening);
+    const from = at < 0 ? -1 : src.lastIndexOf("`", at);
+    const to = at < 0 ? -1 : src.indexOf("`", at);
+    if (at < 0 || from < 0 || to < 0 || src.slice(from, to).includes("${")) {
+      c.fail("the shipped statement is readable", `${file} holds no whole statement opening with "${opening}"`);
+    }
+    return src.slice(from + 1, to);
+  };
+  const protocol = (await c.sql.query(
+    statementIn("services/zz-core/src/eval/protocol.ts", "select d.id::text as id, d.current_revision, d.status, a.email as approved_by,"),
+    [engInit, c.team])).rows[0];
   if (!protocol || typeof protocol.body !== "string" || !protocol.body.includes("0123456789abcdef")) {
     c.fail("the protocol door's body read answers", JSON.stringify(protocol));
   }
   c.pass("the protocol door's body read answered a row with its bytes");
 
+  // The claims read reads only the types that state claims, so the English document is made one.
+  await c.sql.query("update zz.doc set type = 'plan' where path = $1", [ENG]);
   const claims = (await c.sql.query(
-    `select d.path, d.type, r.body as body
-       from zz.doc d
-       join zz.initiative i on i.id = d.initiative_id
-       join zz.team t on t.id = i.team_id
-       left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-      where t.slug = $1 and i.slug = $2 order by d.path`, [c.team, engInit])).rows as Row[];
-  if (claims.length < 3 || !claims.some((r) => r.path === ENG)) {
+    statementIn("services/gateway/src/console/initiatives.ts", "select d.path, d.type, r.body as body"),
+    [c.team, engInit])).rows as (Row & { body?: string })[];
+  if (!claims.some((r) => r.path === ENG && r.body === "# English\n\nThe plan holds a keystone.\n")) {
     c.fail("the console's claims read answers", JSON.stringify(paths(claims)));
   }
-  c.pass(`the console's claims read answered ${claims.length} rows, ${ENG} among them`);
+  c.pass(`the console's claims read answered ${claims.length} row(s), ${ENG} among them with its bytes`);
 
   const docRead = (await c.sql.query(
-    `select d.id, coalesce(r.content_generation, d.content_generation) as content_generation,
-            d.type, d.status, d.title, d.tags, r.body as body,
-            length(coalesce(r.body, '')) as bytes
-       from zz.doc d
-       join zz.initiative i on i.id = d.initiative_id
-       join zz.team t on t.id = i.team_id
-       left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-      where t.slug = $1 and i.slug = $2 and d.path = $3`, [c.team, engInit, ENG])).rows[0];
+    statementIn("services/gateway/src/console/initiatives.ts",
+      "select d.id, coalesce(r.content_generation, d.content_generation) as content_generation,"),
+    [c.team, engInit, ENG])).rows[0];
   if (!docRead || docRead.body !== "# English\n\nThe plan holds a keystone.\n") {
     c.fail("the console's document read answers", JSON.stringify(docRead));
   }

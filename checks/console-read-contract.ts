@@ -405,10 +405,15 @@ async function run(c: Core): Promise<void> {
     if (metaOf(first).cacheHit !== false) c.fail(step, `the first listening read reported cacheHit ${metaOf(first).cacheHit}, not false`);
     if (metaOf(second).cacheHit !== true) c.fail(step, `an unchanged second read reported cacheHit ${metaOf(second).cacheHit}, not true`);
     const { rows: [{ id: teamId }] } = await c.sql.query<{ id: string }>("select id from zz.team where slug = $1", [c.team]);
+    const heard = live.dataVersion();
     await c.sql.query(
       "insert into zz.event (kind, origin, subject, ok, tool_key, team_id) values ('tool_call', 'work', 'work', true, 'document_read', $1)",
       [teamId]);
-    await new Promise((r) => setTimeout(r, 50));
+    // The write's notification reaches this process's listener asynchronously: the read waits until it was counted.
+    for (let waited = 0; live.dataVersion() === heard; waited += 50) {
+      if (waited > 15_000) c.fail(step, "the write's notification never reached the listener within 15s");
+      await new Promise((r) => setTimeout(r, 50));
+    }
     const after = await record();
     if (after.status !== 200) c.fail(step, `/api/console/record answered ${after.status} after the write`);
     if (metaOf(after).cacheHit !== false) {

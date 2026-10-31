@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
- * The evaluator registry (Task I-8): what is true with no database at all, which is everything
- * offline can prove.
+ * The evaluator registry: what is true with no database at all.
  *
  *   1. `evaluatorQuestionDigest` is the plan header's exact formula: the first 16 hex characters
  *      of sha256 over `stable_key + "\n" + version + "\n" + question`.
@@ -10,11 +9,10 @@
  *   3. With no `TEAM_DB_URL`, `registerEvaluator`, `askEvaluator` and `recordEvaluatorAssessment`
  *      all refuse — "no platform database" — rather than silently doing nothing.
  *
- * What this cannot prove offline — an evaluator resolving to its registered
- * `zz.eval_evaluator_version`, one noul/choice/score assessment row satisfying 001's
- * checks, an unregistered `evaluator_version_id` refused, an insert failure propagating — needs a
- * real database and is established by agent-review of a live run instead (see `checks/insert-arity.ts`
- * for the one part of that — column/value parity — this repository can still check statically).
+ * Not proven here: an evaluator resolving to its registered `zz.eval_evaluator_version`, one
+ * noul/choice/score assessment row satisfying 001's checks, an unregistered `evaluator_version_id`
+ * refused, an insert failure propagating. Each needs the writes run against a database, which this
+ * check does not start; `checks/insert-arity.ts` checks their column/value parity statically.
  *
  * Run: node checks/eval-evaluators.ts   (also run by scripts/gate.ts)
  */

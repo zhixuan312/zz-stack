@@ -159,6 +159,7 @@ async function stateOf(name: string, planText: string | null, status: string, au
   const built = await stateOf("2026-09-26-built", planBodyBuilt(task(1, "none", "`packages/a/**`")), "approved", true);
   is(built.plan?.current_phase === null,
      `a plan whose phase carries ### As built answered current_phase ${built.plan?.current_phase}, not null`);
+  // NOT A TOOL: `add_source` is next_move's own vocabulary (services/zz-core/src/audit-rounds.ts).
   is(built.next_move?.action === "add_source" && built.next_move?.document === "review.md",
      `a plan with every phase built was not offered the review round: ${JSON.stringify(built.next_move)}`);
 

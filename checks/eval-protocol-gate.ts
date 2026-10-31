@@ -44,26 +44,17 @@ function answer(sql: string): Row[] {
   // right shape.
   if (/\bpv\.approved_doc_id is not null as affirmed/.test(sql)) return [protocol];
   if (/from zz\.eval_run where id = \$1::uuid/.test(sql)) return [{ id: RUN, protocol_version_id: PV }];
-  // The observation snapshot read, in the shape this phase gives it: the release it observed is
-  // `plugin_version_id` (`subject_version_id` is retired), and the surface it covered is three
-  // columns rather than the `coverage` jsonb. BOTH names are carried while the phase lands, the
-  // way the subject-resolution stub below carries both of its spellings: the statement that reads
-  // this row is Task I-25's (`evaluate.ts`), this file's own protocol reads are Task I-23's, and a
-  // row naming only one of the two would answer one wave and fail the other for a reason that is
-  // not about what the check is proving. What it proves is the subject comparison: the row must
-  // name the subject the call passed, or the assertion below fails on a mismatch instead.
+  // The observation snapshot read: the release it observed is `plugin_version_id`, and the surface
+  // it covered is three columns. What it proves is the subject comparison: the row must name the
+  // subject the call passed, or the assertion below fails on a mismatch instead.
   if (/from zz\.eval_observation_snapshot where id = \$1::uuid/.test(sql)) return [{
-    id: SNAP, plugin_version_id: SV, subject_version_id: SV,
+    id: SNAP, plugin_version_id: SV,
     usable_run_count: 0, total_run_count: 0, surface_observed: 0, surface_total: 0, facts: null,
   }];
-  // The subject-resolution statement, in the shape this phase gives it: a subject version IS a
-  // `plugin_version` row (FR-24), so the plugin's name is reached through that row's own
-  // `plugin_id`. Both spellings are accepted while the phase is landing — this check is
-  // re-pointed by Task I-22 and `protocol.ts`'s own copy of the statement is Task I-23's, so a
-  // pattern that knew only one of them would be matching nothing for one of the two waves. The
-  // alternative that matters is the new one: the moment neither text is in the statement, the
-  // stub stops answering and every assertion below fails, which is what makes it test something.
-  if (/from zz\.(?:eval_subject_version sv|plugin_version pv) join zz\.plugin pl on pl\.id = (?:sv|pv)\.plugin_id where (?:sv|pv)\.id/.test(sql)) return [{ plugin_id: "p1", plugin: "acme-not-in-catalog" }];
+  // The subject-resolution statement: a subject version IS a `plugin_version` row, so the plugin's
+  // name is reached through that row's own `plugin_id`. The moment the statement no longer reads
+  // it that way, the stub stops answering and every assertion below fails.
+  if (/from zz\.plugin_version pv join zz\.plugin pl on pl\.id = pv\.plugin_id where pv\.id/.test(sql)) return [{ plugin_id: "p1", plugin: "acme-not-in-catalog" }];
   if (/as any_affirmed/.test(sql)) return [latest];
   if (/select count\(\*\)::text as n/.test(sql)) return [{ n: "0" }];
   return [];

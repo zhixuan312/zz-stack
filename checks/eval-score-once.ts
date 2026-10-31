@@ -3,10 +3,10 @@
 // re-score is a new eval_run; a retry under the key that scored the run still replays through the
 // FR-59 ledger.
 //
-// `scored_at` is the terminal marker: a run is finished exactly when it has one. The write is
-// matched as text in its source and never run, so a statement that keeps this shape and fails
-// against the schema passes here; `checks/scored-run-terminal.ts` is the other half, which proves
-// by exact text that no statement anywhere rewrites a scored run's columns.
+// `scored_at` is the terminal marker: a run is finished exactly when it has one. The refusal and the
+// guarded write are matched as text here; `checks/eval-door-replays.ts` drives the refusal against a
+// throwaway database, and `checks/scored-run-terminal.ts` proves by exact text that no statement
+// anywhere rewrites a scored run's columns.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 

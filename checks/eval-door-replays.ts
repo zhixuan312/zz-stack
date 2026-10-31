@@ -36,7 +36,12 @@
  *   - a `wholeDocument` measure asks every part of a long document of a stub typed service on a
  *     local port, several at a time and never more than eight — and two such measures sharing one
  *     set of slots, as `evaluation_assess` answers its plan, still no more than eight together.
- *   - a yes/no answer in the unclear band is excluded with a reason naming it and its probability.
+ *   - a yes/no answer in the unclear band is excluded with a reason naming it and its probability;
+ *   - `finding_record` with `supersedes` closes the old finding as rejected and superseded by the new
+ *     one, and a second correction of it is refused with nothing written;
+ *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
+ *     stands;
+ *   - `protocol_record` writes each model-backed measure against the evaluator version it registered.
  *
  * The only database it touches is the one it started.
  *
@@ -521,6 +526,72 @@ async function unclearIsNamed(c: Core): Promise<void> {
   c.pass(step);
 }
 
+async function supersedeClosesTheOld(c: Core, s: Seed): Promise<void> {
+  const step = "finding_record with supersedes";
+  const door = evalDoor(c, c.email);
+  const wrong = await finding(c, s, "reliability scored 7.5");
+  const record = (key: string) => ask(door, "finding_record", {
+    eval_run_id: s.run, supersedes: wrong, idempotency_key: key,
+    finding: { kind: "defect", pattern: "reliability scored 7.7", owner_kind: "plugin" } });
+  const first = await record("supersede-1");
+  const made = (JSON.parse(first.startsWith("{") ? first : "{}") as { finding?: { id?: string } }).finding?.id;
+  if (!made) c.fail(step, `the correction was not recorded: ${first.slice(0, 300)}`);
+  const old = await one<{ decision: string; superseded_by: string | null }>(c,
+    "select decision, superseded_by::text as superseded_by from zz.eval_finding where id = $1", [wrong]);
+  if (old.decision !== "rejected" || old.superseded_by !== made) {
+    c.fail(step, `the corrected finding reads ${JSON.stringify(old)}, not rejected and superseded by ${made}`);
+  }
+  // A second correction of the same finding is refused, and nothing is written for it.
+  const before = (await one<{ n: number }>(c, "select count(*)::int as n from zz.eval_finding where eval_run_id = $1", [s.run])).n;
+  const again = await record("supersede-2");
+  const after = (await one<{ n: number }>(c, "select count(*)::int as n from zz.eval_finding where eval_run_id = $1", [s.run])).n;
+  if (!again.includes(`was already superseded by ${made}`) || after !== before) {
+    c.fail(step, `a second correction of ${wrong} answered ${again.slice(0, 300)} and the run went from ${before} findings to ${after}`);
+  }
+  c.pass(step);
+}
+
+async function scoredRunIsNotRescored(c: Core, s: Seed): Promise<void> {
+  const step = "evaluation_score on a scored run under a new key";
+  const scored = (await one<{ id: string }>(c,
+    `insert into zz.eval_run (protocol_version_id, created_at, team_id, observation_snapshot_id, started_by,
+                              score_status, overall_score, scored_at)
+     values ($1, now(), $2, $3, $4, 'provisional', 6.5, now()) returning id::text as id`,
+    [s.protocols.replayed, s.team, s.snapshot, s.me])).id;
+  const reply = await ask(evalDoor(c, c.email), "evaluation_score", { eval_run_id: scored, idempotency_key: "rescore-1" });
+  const row = await one<{ overall_score: string; score_status: string }>(c,
+    "select overall_score::text as overall_score, score_status from zz.eval_run where id = $1", [scored]);
+  if (!reply.includes("is already scored") || row.overall_score !== "6.5" || row.score_status !== "provisional") {
+    c.fail(step, `answered ${reply.slice(0, 300)}, and the run reads ${JSON.stringify(row)}`);
+  }
+  c.pass(step);
+}
+
+/** `protocol_record` writes every model-backed measure against the evaluator version it registered
+ *  for it, so each one resolves to a `zz.eval_evaluator_version` row under its own stable key. */
+async function recordRegistersEvaluators(c: Core, s: Seed): Promise<void> {
+  const step = "protocol_record registers every model-backed measure's evaluator";
+  type Measure = { key: string; evaluatorType: string; evaluator?: { stable_key: string } };
+  const body = JSON.parse(readFileSync(join(root, "catalog/zz/zz-plugin-eval/protocols/zz-core.json"), "utf8"));
+  body.version = 3;
+  const reply = await ask(evalDoor(c, c.email), "protocol_record",
+    { subject_version_id: s.versionId, protocol_body: body, idempotency_key: "record-3" });
+  const id = (JSON.parse(reply.startsWith("{") ? reply : "{}") as { protocol_version_id?: string }).protocol_version_id;
+  if (!id) c.fail(step, `version 3 was not recorded: ${reply.slice(0, 300)}`);
+  const want = (body.dimensions as { measures: Measure[] }[]).flatMap((d) => d.measures)
+    .filter((m) => m.evaluatorType === "bounded_semantic" || m.evaluatorType === "generative_critic")
+    .map((m) => `${m.key} ${m.evaluator?.stable_key}`).sort();
+  const got = (await c.sql.query<{ key: string; stable_key: string | null }>(
+    `select m.key, v.stable_key from zz.eval_measure m
+       left join zz.eval_evaluator_version v on v.id = m.evaluator_version_id
+      where m.protocol_version_id = $1 and m.evaluator_type in ('bounded_semantic', 'generative_critic')`, [id])).rows
+    .map((r) => `${r.key} ${r.stable_key}`).sort();
+  if (!want.length || JSON.stringify(got) !== JSON.stringify(want)) {
+    c.fail(step, `the measures resolve to ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
+  }
+  c.pass(step);
+}
+
 // Every case runs, and the failures are reported together.
 process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   const s = await seed(c);
@@ -528,7 +599,8 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed]) {
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, scoredRunIsNotRescored,
+                     recordRegistersEvaluators]) {
     try {
       await run(c, s);
     } catch (err) {

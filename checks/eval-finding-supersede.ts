@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // A recorded finding can be corrected: finding_record(supersedes) closes the wrong one in the same
 // write, and findings.md renders only the current one, noting what it corrected.
-// The render is driven. The write is matched as text in its source and never run, so a statement
-// that keeps this shape and fails against the schema passes here.
+// The render is driven. The write is matched as text in its source; checks/eval-door-replays.ts
+// runs it against a throwaway database, closing the old finding and refusing a second correction.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";

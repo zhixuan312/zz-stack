@@ -9,10 +9,9 @@
  *   3. With no `TEAM_DB_URL`, `registerEvaluator` and `askEvaluatorQuestion` both refuse — "no
  *      platform database" — rather than silently doing nothing.
  *
- * Not proven here: an evaluator resolving to its registered `zz.eval_evaluator_version`, one
- * noul/choice/score assessment row satisfying 001's checks, an unregistered `evaluator_version_id`
- * refused, an insert failure propagating. Each needs the writes run against a database, which this
- * check does not start; `checks/insert-arity.ts` checks their column/value parity statically.
+ * Not proven here: what needs the writes run against a database. `checks/eval-door-replays.ts`
+ * records a protocol on a throwaway one and resolves every model-backed measure to the evaluator
+ * version it registered; `checks/insert-arity.ts` checks the inserts' column/value parity.
  *
  * Run: node checks/eval-evaluators.ts   (also run by scripts/gate.ts)
  */

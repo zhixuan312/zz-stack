@@ -13,7 +13,8 @@
  *   - `protocol_affirm` by a person in no team binds nothing, even when another team's approved
  *     `protocol.md` under that initiative quotes the version's digest;
  *   - `protocol_affirm` retried with the same key after it bound answers the binding again, not a
- *     refusal that the version is already affirmed;
+ *     refusal that the version is already affirmed, while another key is told it is already
+ *     affirmed; one naming an initiative with no protocol.md is told the document does not exist;
  *   - a malformed id handed to `protocol_affirm`, `improvement_start`, `candidate_record`,
  *     `candidate_validate`, `finding_record`, `finding_decide` or `evaluation_start` is refused in
  *     the tool's own words, never with PostgreSQL's `invalid input syntax for type uuid`, and
@@ -124,6 +125,36 @@ async function affirmReplays(c: Core, s: Seed): Promise<void> {
   if (first.startsWith("ERROR") || first.startsWith("THROWN")) c.fail(step, `the first call did not bind: ${first}`);
   const again = await ask(door, "protocol_affirm", args);
   if (again !== first) c.fail(step, `the retry answered ${again.slice(0, 300)}, not the first call's answer`);
+  const other = await ask(door, "protocol_affirm", { ...args, idempotency_key: "affirm-2" });
+  if (!other.includes("is already affirmed")) c.fail(step, `another key on the bound version answered ${other.slice(0, 300)}`);
+  c.pass(step);
+}
+
+async function affirmWithNoDocument(c: Core, s: Seed): Promise<void> {
+  const step = "protocol_affirm where no protocol.md was written";
+  await c.sql.query("insert into zz.initiative (team_id, slug, flow) values ($1, '2026-10-31-no-protocol', '')", [s.team]);
+  const reply = await ask(evalDoor(c, c.email), "protocol_affirm",
+    { protocol_version_id: s.protocols.bound, initiative: "2026-10-31-no-protocol", idempotency_key: "affirm-nodoc" });
+  if (!reply.includes("does not exist") || reply.includes("Call document_approve")) c.fail(step, `answered ${reply.slice(0, 300)}`);
+  // A bound version named under an approved protocol.md written for a later version is told it is
+  // already affirmed, not that the document fails to quote it.
+  const later = (await one<{ id: string }>(c,
+    "insert into zz.initiative (team_id, slug, flow) values ($1, '2026-10-31-later-protocol', '') returning id::text as id", [s.team])).id;
+  await c.sql.query("BEGIN");
+  await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
+  const doc = (await one<{ id: string }>(c,
+    `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
+     values ($1, 'protocol.md', 'draft', now(), 1, 1) returning id::text as id`, [later])).id;
+  await c.sql.query(
+    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
+                                  written_by, written_at, fields, approved_by, approved_at)
+     values ($1, 1, 1, 'retained', 'Protocol', '# Protocol v3\n\ndigest-later-0003\n', '{}', 'h3', $2, now(), '{}', $2, now())`,
+    [doc, s.me]);
+  await c.sql.query("update zz.doc set status = 'approved', approved_revision = 1 where id = $1", [doc]);
+  await c.sql.query("COMMIT");
+  const bound = await ask(evalDoor(c, c.email), "protocol_affirm",
+    { protocol_version_id: s.protocols.replayed, initiative: "2026-10-31-later-protocol", idempotency_key: "affirm-later" });
+  if (!bound.includes("is already affirmed")) c.fail(step, `a bound version under a later document answered ${bound.slice(0, 300)}`);
   c.pass(step);
 }
 
@@ -774,7 +805,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, replayIntoAnotherInitiative, registerNamesAreReal, conformNamesARealVersion, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, replayIntoAnotherInitiative, registerNamesAreReal, conformNamesARealVersion, affirmWithNoDocument, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

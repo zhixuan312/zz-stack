@@ -415,6 +415,15 @@ export function registerProtocolTools(server: McpServer): void {
         return text(`ERROR: ${principal || "this caller"} acts for no team, so ${path} names no team's ` +
           "document and nothing can be affirmed. Join or switch to the team that wrote it, then call this again.");
       }
+      // A retry of the call that bound it replays; only another call is refused — before the
+      // document is read, which may since have moved on to a later version.
+      const args = { protocol_version_id, initiative };
+      const prior = await decideBeforeWork(principal, "protocol_affirm", idempotency_key, args);
+      if (row.affirmed && !prior.replayed) {
+        return text(`ERROR: protocol version ${protocol_version_id} is already affirmed — a ` +
+          "protocol version's payload and its affirmation are written once, and there is no path " +
+          "that moves either again. Record the next version instead.");
+      }
       // The document is read from the rows a document IS — `zz.doc` and the revision it points
       // at — never from a file. The affirmation names the document, not its path: `approved_doc_id`
       // is the row in `zz.doc` this pair names, and the digest the version quotes is a claim about
@@ -433,9 +442,9 @@ export function registerProtocolTools(server: McpServer): void {
           left join zz.principal a on a.id = r.approved_by
          where i.slug = $1 and d.path = 'protocol.md' and t.slug = $2`, [initiative, team])).rows[0];
       if (!docRow) {
-        return text(`ERROR: no approved ${path} is recorded for ${team}'s team — ` +
-          "the document's own row has not reached the platform's index yet. Call document_approve " +
-          "and then this again.");
+        return text(`ERROR: ${path} does not exist in ${team}'s team. Write it with document_write, put it ` +
+          `to a person, and call document_approve the moment they agree — quoting this version's content_digest ` +
+          `(${row.content_digest}) in its body — then call this again.`);
       }
       if (docRow.status !== "approved") return text(NOT_APPROVED);
       // A document whose `current_revision` is null resolves to no revision row and holds no bytes,
@@ -452,14 +461,6 @@ export function registerProtocolTools(server: McpServer): void {
           `ERROR: ${path} is approved, and its exact revision cannot be resolved — the document's ` +
           "row carries no current revision, so this affirmation would pin nothing and read back " +
           "as a revision nobody recorded. Nothing was written.");
-      }
-      // A retry of the call that bound it replays; only another call is refused.
-      const args = { protocol_version_id, initiative };
-      const prior = await decideBeforeWork(principal, "protocol_affirm", idempotency_key, args);
-      if (row.affirmed && !prior.replayed) {
-        return text(`ERROR: protocol version ${protocol_version_id} is already affirmed — a ` +
-          "protocol version's payload and its affirmation are written once, and there is no path " +
-          "that moves either again. Record the next version instead.");
       }
       const who = (await p.query<{ id: string }>(
         "select id::text as id from zz.principal where lower(email) = lower($1) limit 1",

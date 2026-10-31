@@ -384,9 +384,8 @@ check("the answer that names an initiative is actually captured, and an error na
   // arguments never carry the initiative and it has to be read from the answer — which means
   // the response body must be captured on requests that load no skill.
   //
-  // The argument scan is the other half: `initiative_status` on a slug nobody opened answers
-  // `{"error": "no such initiative"}`, which is not an MCP error, so the row is recorded `ok`
-  // and the scan would teach the trace a name that was never created.
+  // The argument scan is the other half: `initiative_status` on a slug nobody opened is refused,
+  // and its argument would teach the trace a name that was never created.
   const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
   const attr = readFileSync(join(root, "services/gateway/src/call-attribution.ts"), "utf8");
   if (/let served = loading\.length \? "" : null;/.test(tel)) {

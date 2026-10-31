@@ -18,7 +18,7 @@ function call(name: string, args: Record<string, unknown>) {
 
 /** A streamed answer whose one text part is `body`, framed as the door frames it. */
 function answer(body: unknown): string {
-  return `data: ${JSON.stringify({ result: { content: [{ type: "text", text: JSON.stringify(body) }] } })}\n`;
+  return `data: ${JSON.stringify({ result: { content: [{ type: "text", text: typeof body === "string" ? body : JSON.stringify(body) }] } })}\n`;
 }
 
 const A = "2026-10-01-alpha";
@@ -141,9 +141,9 @@ const CASES: Case[] = [
   {
     name: "a status call on a slug nobody opened",
     wanted: [call("initiative_status", { initiative: B })],
-    served: answer({ initiative: B, error: "no such initiative" }),
+    served: answer(`ERROR: no initiative named '${B}' in team-a — initiative_status with no argument lists the open ones.`),
     expect: null,
-    why: "an answer carrying an error names nothing, although it echoes the slug",
+    why: "a refusal names nothing, although it echoes the slug",
   },
   {
     name: "a status call that found the initiative",

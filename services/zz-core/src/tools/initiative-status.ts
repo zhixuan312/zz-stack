@@ -502,8 +502,21 @@ type State = Awaited<ReturnType<typeof initiativeState>>;
 /** What stands in for one initiative's state: a name the team does not hold, or a `Refusal`'s text. */
 type StateError = { initiative: string; error: string };
 
+/** What a name the team holds no initiative under is told: the dated initiative it is the slug
+ *  of, when one exists — `initiative_open` takes a slug and answers `<date>-<slug>`, and the slug
+ *  is what a caller remembers — or where the open ones are listed. */
+async function unknownInitiative(p: pg.Pool, team: string, name: string): Promise<string> {
+  const { rows } = await p.query<{ slug: string }>(
+    `select i.slug from zz.initiative i join zz.team t on t.id = i.team_id
+      where t.slug = $1 and substr(i.slug, 12) = $2 order by i.slug desc limit 3`, [team, name]);
+  return `no initiative named '${name}' in ${team} — ` + (rows.length
+    ? `did you mean ${rows.map((r) => r.slug).join(" or ")}? An initiative is named by the date ` +
+      "initiative_open put before its slug."
+    : "initiative_status with no argument lists the open ones.");
+}
+
 /** Each named initiative's state, in the order asked, from the one `anchorsFor` read the caller
- *  made: a name with no anchor is `no such initiative`, and a `Refusal` from one initiative is its
+ *  made: a name with no anchor is `unknownInitiative`'s sentence, and a `Refusal` from one initiative is its
  *  text against that one, so one initiative never takes down the others. Anything else still
  *  throws: an error nobody named is not a fact about one initiative.
  *
@@ -517,7 +530,7 @@ export async function statesFor(
 ): Promise<(State | StateError)[]> {
   const read = async (name: string): Promise<State | StateError> => {
     const anchor = anchors.get(name);
-    if (!anchor) return { initiative: name, error: "no such initiative" };
+    if (!anchor) return { initiative: name, error: await unknownInitiative(p, team, name) };
     try {
       return await initiativeState(p, team, name, ...await chainArgs(p, team, name), anchor);
     } catch (err) {
@@ -531,21 +544,23 @@ export async function statesFor(
   return out;
 }
 
-/** The no-argument `initiative_status`: every OPEN initiative, and a count of the closed ones.
- *  Closed ones are counted rather than dropped, so a filtered answer is not mistaken for an
- *  empty one. */
+/** The no-argument `initiative_status`: every OPEN initiative; the closed ones that still owe a
+ *  move, such as the handover a finished close is followed by; and a count of the rest. Closed
+ *  ones are counted rather than dropped, so a filtered answer is not mistaken for an empty one,
+ *  and a closed one is never listed as open because a move is still owed on it. */
 async function initiativeListing(
   p: pg.Pool, team: string, names: readonly string[], anchors: Map<string, InitiativeAnchor>,
 ) {
   const open: (State | StateError)[] = [];
+  const owing: State[] = [];
   let closedCount = 0;
   for (const value of await statesFor(p, team, names, anchors)) {
-    // optional-chained: `next_move` is null for a freeform initiative, and one such folder would
-    // otherwise take down the listing of every initiative beside it.
-    if (!("error" in value) && value.next_move?.action === "closed") { closedCount++; continue; }
-    open.push(value);
+    if ("error" in value || !value.outcome) { open.push(value); continue; }
+    // optional-chained: `next_move` is null for a freeform initiative.
+    if (value.next_move && value.next_move.action !== "closed") owing.push(value);
+    else closedCount++;
   }
-  return { open, closed_not_listed: closedCount };
+  return { open, closed_owing: owing, closed_not_listed: closedCount };
 }
 
 /** The next move, as one line appended to the result of a tool that just changed an
@@ -575,10 +590,13 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         "and the documents' frontmatter — not from memory or from this conversation. Call it " +
         "before continuing any existing work, especially work someone started elsewhere (another " +
         "chat, another client): the initiative is the unit of work, and this is the " +
-        "one answer every harness shares. Omit `initiative` to get every OPEN initiative, with " +
-        "a count of the closed ones it did not list; name one to get it whatever its state. " +
-        "`initiatives` names one to ten instead and answers `{ initiatives: [...] }`, each entry " +
-        "what naming that one alone answers, in the order asked; it is never given with `initiative`.",
+        "one answer every harness shares. Omit `initiative` to get every OPEN initiative, the " +
+        "closed ones still owing a move (`closed_owing`, such as a handover), and a count of the " +
+        "other closed ones; name one to get it whatever its state, by the dated name " +
+        "initiative_open answered — a name nobody opened is refused, naming the dated one when " +
+        "it is a slug. `initiatives` names one to ten instead and answers `{ initiatives: [...] }`, " +
+        "each entry what naming that one alone answers, in the order asked, an unknown one as " +
+        "`{initiative, error}`; it is never given with `initiative`.",
       inputSchema: {
         initiative: z.string().optional(),
         initiatives: z.array(z.string()).optional(),
@@ -617,8 +635,11 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         : initiative
           ? (anchors.has(initiative)
             ? await initiativeState(p, team, initiative, ...await chainArgs(p, team, initiative), anchors.get(initiative))
-            : { initiative, error: "no such initiative" })
+            : null)
           : await initiativeListing(p, team, names, anchors);
+      // Named and not there: a refusal, so a client telling success from failure by `ERROR` does
+      // not read a missing initiative as a status.
+      if (base === null) return text(`ERROR: ${await unknownInitiative(p, team, initiative as string)}`);
       // A console page's read records nothing: only the console's relay sends `x-zz-via: session`
       // (the gateway overwrites what a client sends), and viewing a page is not an act (FR-34).
       const via = requestHeaders()["x-zz-via"];

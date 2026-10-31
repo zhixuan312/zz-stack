@@ -10,14 +10,19 @@
  * opened. What it establishes:
  *
  *   - `initiatives` naming the three answers three entries in the order asked, each equal to what
- *     naming that one alone answers, the unknown one `no such initiative`;
+ *     naming that one alone answers, the unknown one `{initiative, error}` carrying the sentence its
+ *     refusal says alone;
  *   - that call records one `initiative_status` event naming the three, for an agent's credential;
  *   - the same call under a console session's credential (`x-zz-via: session`) answers the same and
  *     records none, while an agent's call made after it records its own;
  *   - eleven names, an empty list, a path among the names, and `initiative` with `initiatives` are
  *     each refused in the tool's `ERROR:` form;
- *   - the single-name form and the listing answer as before: a named initiative whatever its state,
- *     an unknown name `no such initiative`, and the open ones with a count of the closed.
+ *   - the single-name form answers a named initiative whatever its state, and refuses a name nobody
+ *     opened in the `ERROR:` form;
+ *   - the bare slug `initiative_open` was given is refused in the `ERROR:` form, naming the dated
+ *     initiative it opened;
+ *   - a closed initiative still owing a move (its handover) is listed under `closed_owing`, never
+ *     under `open`.
  *   - a document the closed initiative does not hold is refused, as a closed record takes none.
  *   - a caller in no team is told that, not that the deployment may lack its database.
  *
@@ -83,27 +88,52 @@ async function run(c: Core): Promise<void> {
 
   step = "each name alone answers as before";
   const alone: Record<string, string> = {};
-  for (const name of asked) {
+  for (const name of [open, closed]) {
     alone[name] = JSON.stringify(parsed(c, step, await c.ok(step, "initiative_status", { initiative: name })));
   }
   const one = (name: string): Entry => JSON.parse(alone[name]) as Entry;
   if (one(open).initiative !== open || !one(open).next_move || one(open).next_move?.action === "closed") c.fail(step, alone[open]);
   if (one(closed).initiative !== closed || one(closed).next_move?.action !== "closed") c.fail(step, alone[closed]);
-  if (alone[UNKNOWN] !== JSON.stringify({ initiative: UNKNOWN, error: "no such initiative" })) c.fail(step, alone[UNKNOWN]);
   c.pass(step);
 
+  // A name nobody opened is a refusal, not a success-shaped answer a client reads as a status; on
+  // a page its entry carries the same sentence as its `error`.
+  step = "a name nobody opened";
+  const unknown = await c.refused(step, "initiative_status", { initiative: UNKNOWN },
+    new RegExp(`^ERROR: no initiative named '${UNKNOWN}' in ${c.team} — initiative_status with no argument lists the open ones`));
+  alone[UNKNOWN] = JSON.stringify({ initiative: UNKNOWN, error: unknown.replace(/^ERROR: /, "") });
+  c.pass("initiative_status on a name nobody opened is refused in the ERROR form");
+
+  // The name initiative_open was given is not the initiative's name: the answer names the dated one.
+  step = "the slug initiative_open was given";
+  await c.refused(step, "initiative_status", { initiative: "names-open" },
+    new RegExp(`^ERROR: no initiative named 'names-open' in ${c.team} — did you mean ${open}\\?`));
+  c.pass("initiative_status on the bare slug is refused in the ERROR form, naming the dated initiative");
+
+  // A flow's initiative closed with its handover still to write: closed, so not under `open`, and
+  // listed with what it still owes rather than counted away.
+  const owing = await c.open("names-owing", "sdlc-flow");
+  await c.sql.query(
+    `update zz.initiative set outcome = 'delivered', closed_at = now(),
+            closed_by = (select id from zz.principal where email = $2) where slug = $1`, [owing, c.email]);
   step = "the listing answers the open ones and counts the closed";
-  const listing = parsed<{ open: Entry[]; closed_not_listed: number }>(c, step, await c.ok(step, "initiative_status", {}));
-  if (JSON.stringify(listing.open.map((e) => e.initiative)) !== JSON.stringify([open]) || listing.closed_not_listed !== 1) {
-    c.fail(step, JSON.stringify({ open: listing.open.map((e) => e.initiative), closed_not_listed: listing.closed_not_listed }));
+  const listing = parsed<{ open: Entry[]; closed_owing?: Entry[]; closed_not_listed: number }>(c, step,
+    await c.ok(step, "initiative_status", {}));
+  const owed = (listing.closed_owing ?? []).map((e) => `${e.initiative} ${e.outcome} ${e.next_move?.action}`);
+  if (JSON.stringify(listing.open.map((e) => e.initiative)) !== JSON.stringify([open]) || listing.closed_not_listed !== 1
+      || JSON.stringify(owed) !== JSON.stringify([`${owing} delivered write_document`])) {
+    c.fail(step, JSON.stringify({ open: listing.open.map((e) => e.initiative), closed_owing: owed,
+                                  closed_not_listed: listing.closed_not_listed }));
   }
   if (JSON.stringify(listing.open[0]) !== alone[open]) c.fail(step, "the listing's entry is not what naming it answers");
-  c.pass(step);
+  c.pass("the listing answers the open ones under `open`, a closed one still owing a move under `closed_owing`, " +
+         "and counts the rest");
 
   step = "a page of three answers three entries in the order asked, each what naming it alone answers";
-  // Every call so far was an agent's: three named ones and the listing, an event each.
-  const before = (await settled(c, step, 4)).length;
-  if (before !== 4) c.fail(step, `the four agent calls before the page recorded ${before} initiative_status events`);
+  // Every answered call so far was an agent's: two named ones and the listing, an event each. The
+  // two refusals record none.
+  const before = (await settled(c, step, 3)).length;
+  if (before !== 3) c.fail(step, `the three agent calls before the page recorded ${before} initiative_status events`);
   const page = parsed<{ initiatives: Entry[] }>(c, step, await c.ok(step, "initiative_status", { initiatives: asked }));
   if (Object.keys(page).join() !== "initiatives" || page.initiatives.length !== 3) c.fail(step, JSON.stringify(page));
   page.initiatives.forEach((entry, i) => {

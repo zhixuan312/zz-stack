@@ -66,9 +66,9 @@ export function stageOwing(
 /** The set of calls whose answer, not whose arguments, says which initiative is meant.
  *
  *  `initiative_open` takes a `slug` and composes `<YYYY-MM-DD>-<slug>` from the platform's own
- *  clock, so its argument is not the name. `initiative_status` takes the name but answers
- *  `{"error": "no such initiative"}` for one nobody opened, which is not an MCP error, so the
- *  row is recorded `ok` and the argument names something that does not exist. */
+ *  clock, so its argument is not the name. `initiative_status` takes the name but refuses one
+ *  nobody opened, so its argument may name something that does not exist; its answer names the
+ *  initiative only when it is one. */
 export const ANSWER_NAMES_INITIATIVE = /^initiative_(open|status)$/;
 
 /** One MCP call as it arrived, narrowed to what this file reads. */

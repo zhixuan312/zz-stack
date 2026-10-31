@@ -82,7 +82,9 @@ interface NextMove { action?: string; document?: string; why?: string }
 
 /** Who a client calls as: the principal's address, the credential kind the gateway stamps, and the
  *  client it says it is (`x-zz-client`, asserted by the client and never trusted). */
-interface Caller { email?: string; via?: string; client?: string }
+/** Who a client is: the seeded person unless `email` names another, `role` "admin" for the
+ *  operator's door (the superadmin's tools), and the credential kind `via` and client it presents. */
+interface Caller { email?: string; via?: string; client?: string; role?: "admin" | "user" }
 
 /** What a check is handed. */
 export interface Core {
@@ -258,7 +260,7 @@ function mcpFor(port: number, name: string, as: Caller = {}): Mcp {
     timeoutMs: 60_000,
     headers: {
       "x-zz-user-email": as.email ?? EMAIL, "x-zz-user-name": as.email ? "Member" : "Skeleton", "x-zz-user-id": "",
-      "x-zz-user-role": "user", "x-zz-via": as.via ?? "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "",
+      "x-zz-user-role": as.role ?? "user", "x-zz-via": as.via ?? "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "",
     },
   });
 }

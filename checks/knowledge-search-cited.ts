@@ -27,8 +27,6 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { Mcp } from "@zz/mcp-client";
-
 import { seedIsolation, seedSharedCitations } from "../scripts/schema/isolation-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
@@ -43,9 +41,7 @@ async function run(c: Core): Promise<void> {
   const cited = await seedSharedCitations(c.sql, s);
   // The rows indexed as zz-core indexes them, so the lexical lane can find the shared lesson: the reindex is the
   // superadmin's, through the door's own admin headers.
-  const admin = new Mcp(c.mcp.url, { client: NAME, timeoutMs: 60_000, headers: {
-    "x-zz-user-email": s.superadmin, "x-zz-user-name": "Isolation superadmin", "x-zz-user-id": "",
-    "x-zz-user-role": "admin", "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
+  const admin = c.client({ email: s.superadmin, role: "admin" });
   await c.ok("reindex", "knowledge_reindex", { force: true }, admin);
 
   for (const [mine, theirs] of [[s.one, s.two], [s.two, s.one]] as const) {

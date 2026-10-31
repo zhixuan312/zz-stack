@@ -36,8 +36,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { Mcp } from "@zz/mcp-client";
-
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
@@ -81,9 +79,7 @@ async function unknownNamesAreRefused(c: Core): Promise<void> {
   }
   await c.refused(`${step}: assess undated`, "assess", { family: "needs_fact", subject: "x", initiative: undated },
                   new RegExp(`did you mean ${dated}\\?`));
-  const operator = new Mcp(c.mcp.url, { client: NAME, timeoutMs: 60_000, headers: {
-    "x-zz-user-email": c.email, "x-zz-user-name": "Skeleton", "x-zz-user-id": "", "x-zz-user-role": "admin",
-    "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
+  const operator = c.client({ role: "admin" });
   await c.refused(`${step}: bug_list reported_by`, "bug_list", { reported_by: "Skeleton" },
                   /^ERROR: nobody on this platform has the address "Skeleton"/, operator);
   await c.ok(`${step}: bug_list by a known address`, "bug_list", { reported_by: c.email.toUpperCase() }, operator);
@@ -112,9 +108,7 @@ async function reconcileNamesUnreadVerdicts(c: Core): Promise<void> {
  *  to be current, never "0 row(s) scanned" over a corpus that holds rows. */
 async function reindexSaysWhatItWalked(c: Core): Promise<void> {
   const step = "knowledge_reindex says what it walked";
-  const operator = new Mcp(c.mcp.url, { client: NAME, timeoutMs: 60_000, headers: {
-    "x-zz-user-email": c.email, "x-zz-user-name": "Skeleton", "x-zz-user-id": "", "x-zz-user-role": "admin",
-    "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
+  const operator = c.client({ role: "admin" });
   const forced = await c.ok(step, "knowledge_reindex", { team: c.team, force: true }, operator);
   // Documents are written by the cases before this one, so a forced walk that reached none is the defect.
   const walked = new RegExp(`^knowledge index: ${c.team}: (\\d+) of \\1 row\\(s\\) re-derived \\(force: every row\\)$`).exec(forced);
@@ -154,9 +148,7 @@ async function bugTallyFollowsFilters(c: Core): Promise<void> {
             (values ('one', 'wrong_result'), ('two', 'wrong_result'), ('three', 'blocks_work')) x(title, impact)
       where p.email = $1`, [c.email]);
   // `bug_list` is on the core door only for the operator's role.
-  const operator = new Mcp(c.mcp.url, { client: NAME, timeoutMs: 60_000, headers: {
-    "x-zz-user-email": c.email, "x-zz-user-name": "Skeleton", "x-zz-user-id": "", "x-zz-user-role": "admin",
-    "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
+  const operator = c.client({ role: "admin" });
   const reply = JSON.parse(await c.ok(step, "bug_list", { impact: "blocks_work" }, operator)) as
     { showing: number; by_status: Record<string, number> };
   if (reply.showing !== 1 || reply.by_status.open !== 1) {

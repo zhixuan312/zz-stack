@@ -87,7 +87,6 @@ import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { Mcp } from "@zz/mcp-client";
 import type { Express, RequestHandler } from "express";
 import type pg from "pg";
 
@@ -335,9 +334,7 @@ async function run(c: Core): Promise<void> {
   };
   // The documents and nodes indexed as zz-core indexes them, so a search can find them: the reindex is the
   // superadmin's, through the door's own admin headers.
-  const admin = new Mcp(c.mcp.url, { client: NAME, timeoutMs: 60_000, headers: {
-    "x-zz-user-email": s.superadmin, "x-zz-user-name": "Isolation superadmin", "x-zz-user-id": "",
-    "x-zz-user-role": "admin", "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
+  const admin = c.client({ email: s.superadmin, role: "admin" });
   await c.ok("reindex", "knowledge_reindex", { force: true }, admin);
 
   process.env.TEAM_DB_URL = c.url;

@@ -89,13 +89,7 @@ function request(c: Core, who: { email: string; role: "superadmin" | "member" },
 /** A superadmin's MCP client: the harness's own carry `x-zz-user-role: user`, and zz-core offers
  *  `bug_resolve` only behind `if (sup)`. */
 function adminClient(c: Core): Mcp {
-  return new Mcp(c.mcp.url, {
-    client: NAME, timeoutMs: 60_000,
-    headers: {
-      "x-zz-user-email": c.email, "x-zz-user-name": "Skeleton", "x-zz-user-id": "",
-      "x-zz-user-role": "admin", "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "",
-    },
-  });
+  return c.client({ role: "admin" });
 }
 
 /** The tool's success reply, or null for anything else. */

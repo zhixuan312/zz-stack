@@ -57,8 +57,11 @@ export function registerSkillTools(server: McpServer): void {
       const { active, all } = await teamsFor(who.email);
       const others = all.filter((t) => t !== active);
       const today = isoToday();
+      // The person, not the forwarded headers: `x-zz-user-id` is always empty, and the role header
+      // says admin/user, which is not the platform's superadmin/member — whoami on /manage is.
       return text(JSON.stringify({
-        ...who,
+        email: who.email,
+        name: who.name,
         team: active,
         // Where the rules are, said to everybody, because nothing else says it. A flow's entry
         // skill tells you to read zz-platform first; an agent that connected this server

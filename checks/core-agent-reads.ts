@@ -361,6 +361,9 @@ async function cases(s: Isolation, seeded: Awaited<ReturnType<typeof seedReads>>
   const status = async (superadmin: boolean) => masked(await expected("platform_status", { ...people.acting.caller, superadmin }, {}));
   if (await status(true) === await status(false)) fail(step, "the superadmin's status reads as a member's here, so the bound token's case asks nothing");
   const whoami = JSON.parse(await (mcpOf(people.both)).call("session_whoami", {})) as { team?: string };
+  // Not the forwarded headers: an `id` that is always "" and a `role` of admin/user that is not the
+  // platform's superadmin/member — whoami on /manage answers the role.
+  if ("id" in whoami || "role" in whoami) fail(step, `session_whoami answers header fields: ${show(Object.keys(whoami))}`);
   if (whoami.team !== s.one.slug || !(s.two.slug < s.one.slug)) fail(step, `session_whoami tells the member of both teams it acts for ${show(whoami.team)}, the teams sorting ${show([s.two.slug, s.one.slug].sort())}`);
   const otherTeam = await expected("activity_refusals", { ...people.both.caller, activeTeam: s.two.slug }, {});
   if (masked(otherTeam) === masked(await expected("activity_refusals", people.both.caller, {}))) fail(step, "both teams' refusals read alike, so the stored team's case asks nothing");

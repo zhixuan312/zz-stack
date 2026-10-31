@@ -54,7 +54,7 @@ export async function listenGateway(c: Core): Promise<Gateway> {
   const { mountMcpOauth } = (await load("services/gateway/dist/mcp-oauth.js")) as
     { mountMcpOauth: (app: Express, doors: readonly string[]) => void };
   const passkey = (await load("services/gateway/dist/passkey.js")) as
-    { mountPasskey: (app: Express) => void; issueEnrolment: (principalId: string) => Promise<{ url: string }> };
+    { mountPasskey: (app: Express) => void; issueEnrolment: (principalId: string) => Promise<{ url: string } | null> };
   const { mountSettings } = (await load("services/gateway/dist/settings.js")) as
     { mountSettings: (app: Express, deps: Record<string, unknown>) => void };
   const credentials = (await load("services/gateway/dist/credentials.js")) as Record<string, unknown>;
@@ -107,7 +107,8 @@ export async function listenGateway(c: Core): Promise<Gateway> {
   return {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     token, session, teamSession,
-    enrol: passkey.issueEnrolment,
+    // Never null here: CONSOLE_PUBLIC_URL is set above, before the module loads.
+    enrol: async (principalId: string) => (await passkey.issueEnrolment(principalId)) as { url: string },
     stop: async () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

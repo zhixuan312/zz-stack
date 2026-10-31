@@ -147,9 +147,14 @@ export async function issueEnrolmentLink(
     return { ok: false, status: 400, error: `principal ${email} is ${r.rows[0].status}` };
   }
   const link = await issueEnrolment(r.rows[0].id);
-  auditAdmin(id, "issue_enrolment", email, { ...extraDetail });
+  if (!link) {
+    return { ok: false, status: 400, error: "this gateway has no CONSOLE_PUBLIC_URL, so it cannot register a " +
+      "passkey and a link would lead nowhere — set it on the gateway first" };
+  }
+  auditAdmin(id, "issue_enrolment", email, { ...extraDetail, ...(link.replaced ? { replaced: link.replaced } : {}) });
   return { ok: true, url: link.url, expiresAt: link.expiresAt, message:
     `Enrolment link for ${email}, good until ${link.expiresAt.toISOString()} and usable once. ` +
     "Send it to them and have them open it on the device whose passkey they want to use. " +
-    "Shown once — only its hash is kept." };
+    "Shown once — only its hash is kept." +
+    (link.replaced ? ` The ${link.replaced} earlier unused link(s) for them no longer work.` : "") };
 }

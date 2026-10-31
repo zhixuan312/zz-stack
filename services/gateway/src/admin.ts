@@ -91,8 +91,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "WHEN an existing principal needs to sign in to the console for the first time. " +
       "RETURNS a one-time link letting them register a passkey — returned ONCE and never " +
       "readable again, because only its hash is stored. REFUSES anyone but a superadmin, " +
-      "and refuses an address with no principal behind it: a passkey attaches to an " +
-      "account, it cannot create one, so person_add comes first.",
+      "refuses an address with no principal behind it — a passkey attaches to an " +
+      "account, it cannot create one, so person_add comes first — and refuses on a gateway " +
+      "with no public address to send anybody to. A new link spends their earlier unused ones.",
     inputSchema: { email: z.string().email() },
   }, async ({ email }) => {
     const id = await caller();

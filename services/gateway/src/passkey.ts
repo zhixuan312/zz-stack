@@ -142,18 +142,28 @@ async function takeChallenge(
  * to the browser's history, and to the `Referer` of anything the page loads. A fragment never
  * leaves the browser, and the enrolment page reads it with script and POSTs it.
  *
+ * One live link per person: issuing another spends every earlier unused one in the same
+ * statement, so a link sent again does not leave the first one good for a week in somebody's
+ * inbox. `replaced` counts them.
+ *
+ * Null when this gateway has no CONSOLE_PUBLIC_URL: the link would be a bare path, and the
+ * ceremony it leads to refuses on such a gateway anyway.
+ *
  * The issuer is not a column: the gateway path records it as an `admin.issue_enrolment` event,
  * and the host path has no signed-in person to name. */
 export async function issueEnrolment(
   principalId: string,
-): Promise<{ url: string; expiresAt: Date }> {
+): Promise<{ url: string; expiresAt: Date; replaced: number } | null> {
+  if (!configured()) return null;
   const token = `zze_${b64(randomBytes(32))}`;
-  const r = await platformDb().query<{ expires_at: Date }>(
-    `insert into zz.passkey_enrolment (token_hash, principal_id, expires_at)
+  const r = await platformDb().query<{ expires_at: Date; replaced: number }>(
+    `with spent as (update zz.passkey_enrolment set used_at = now()
+                     where principal_id = $2 and used_at is null and expires_at > now() returning 1)
+     insert into zz.passkey_enrolment (token_hash, principal_id, expires_at)
      values ($1, $2, now() + ($3 || ' milliseconds')::interval)
-     returning expires_at`,
+     returning expires_at, (select count(*)::int from spent) as replaced`,
     [sha256(token), principalId, String(ENROLMENT_TTL_MS)]);
-  return { url: `${PUBLIC_URL}/enrol#t=${token}`, expiresAt: r.rows[0].expires_at };
+  return { url: `${PUBLIC_URL}/enrol#t=${token}`, expiresAt: r.rows[0].expires_at, replaced: r.rows[0].replaced };
 }
 
 /** The principal an unused, unexpired enrolment token names — and it is spent by asking.

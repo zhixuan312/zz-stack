@@ -230,7 +230,7 @@ async function writeCases(db: pg.Client, as: (email: string, query?: string) => 
 
   step = "an enrolment link is issued";
   w = await send("POST", "/api/console/settings/platform/enrolments", { email: NEW_LOWER });
-  if (w.status !== 200 || typeof w.body.url !== "string" || !/\/enrol#t=zze_/.test(w.body.url)) fail(step, `answered ${w.status}: ${w.text.slice(0, 300)}`);
+  if (w.status !== 200 || typeof w.body.url !== "string" || !w.body.url.startsWith("https://console.example.test/enrol#t=zze_")) fail(step, `answered ${w.status}: ${w.text.slice(0, 300)}`);
   const links = await db.query<{ open: string }>(
     `select count(*) filter (where e.used_at is null) as open from zz.passkey_enrolment e
        join zz.principal p on p.id = e.principal_id where p.email = $1`, [NEW_LOWER]);
@@ -239,6 +239,16 @@ async function writeCases(db: pg.Client, as: (email: string, query?: string) => 
     fail(step, `${links.rows[0].open} open link(s), and the read lists ${JSON.stringify(row)}`);
   }
   pass("an enrolment link is issued once, open, and is neither a passkey nor a sign-in in the read");
+
+  step = "a second link spends the first";
+  w = await send("POST", "/api/console/settings/platform/enrolments", { email: NEW_LOWER });
+  const again = await db.query<{ open: string }>(
+    `select count(*) filter (where e.used_at is null) as open from zz.passkey_enrolment e
+       join zz.principal p on p.id = e.principal_id where p.email = $1`, [NEW_LOWER]);
+  if (w.status !== 200 || again.rows[0].open !== "1" || !/1 earlier unused link\(s\) for them no longer work/.test(String(w.body.result))) {
+    fail(step, `answered ${w.status}: ${w.text.slice(0, 300)}, ${again.rows[0].open} link(s) open`);
+  }
+  pass("a link issued again leaves only itself open, and says the earlier one no longer works");
 
   step = "the person is deactivated";
   w = await send("DELETE", "/api/console/settings/platform/people", { email: NEW_LOWER, confirm: NEW_LOWER });
@@ -310,6 +320,8 @@ async function run(db: pg.Client, url: string): Promise<void> {
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_TZ = TIMEZONE;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
+  // An enrolment link names the console it opens on, and a gateway without one issues none.
+  process.env.CONSOLE_PUBLIC_URL = "https://console.example.test";
   const load = (p: string) => import(pathToFileURL(join(root, p)).href);
   const express = (await import("express")).default;
   const dbModule = (await load("services/gateway/dist/db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
@@ -378,6 +390,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     delete process.env.TEAM_DB_URL;
     delete process.env.ZZ_TZ;
     delete process.env.ZZ_CATALOG_DIR;
+    delete process.env.CONSOLE_PUBLIC_URL;
   }
 }
 

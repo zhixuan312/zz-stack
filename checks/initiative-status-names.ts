@@ -24,7 +24,9 @@
  *   - a closed initiative still owing a move (its handover) is listed under `closed_owing`, never
  *     under `open`.
  *   - a document the closed initiative does not hold is refused, as a closed record takes none;
- *   - a document name that does not end in `.md` is refused, as initiative_status would never list it.
+ *   - a document name that does not end in `.md` is refused, as initiative_status would never list it;
+ *   - a gated draft missing the sections its flow declares is routed back to the agent naming every
+ *     one, not to the stakeholder's approval, and an approval asked anyway names them all at once.
  *   - a caller in no team is told that, not that the deployment may lack its database.
  *
  * The only database it touches is the one it started.
@@ -33,6 +35,7 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
+import { EXPLORE_BODY } from "../scripts/schema/spec-fixture.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 const NAME = "initiative-status-names";
@@ -182,6 +185,27 @@ async function run(c: Core): Promise<void> {
   await c.refused(step, "initiative_status", { initiatives: [open, "a/b"] }, /^ERROR: a name in `initiatives` must be a single name/);
   await c.refused(step, "initiative_status", { initiative: open, initiatives: [open] }, /^ERROR: .*not both/);
   c.pass(step);
+
+  // A gated draft without the sections its flow declares cannot be approved, so it is not sent to the
+  // stakeholder: the next move goes back to the agent naming every missing section, and the approval,
+  // if asked anyway, names all of them at once.
+  step = "a gated draft missing sections";
+  const half = await c.open("names-half", "sdlc-flow");
+  await c.ok(step, "document_write", { path: `${half}/explore.md`, content: EXPLORE_BODY });
+  const written = await c.ok(step, "document_write", { path: `${half}/spec.md`, content: "# Spec\n\n## Context\n\nctx\n\n## Problem\n\np\n" });
+  const missing = ["Goals & Requirements", "Alternatives", "Approach, Method & Structure", "Verification Plan",
+                   "Risks & Mitigations", "Stakeholders & Work", "Phase outline", "Core statements"];
+  const move = (await c.status(half)).next_move as { action?: string; waiting_on?: string; why?: string } | null | undefined;
+  if (move?.action === "await_approval" || move?.waiting_on !== "agent" || /await_approval/.test(written)
+      || !missing.every((m) => move?.why?.includes(`\`## ${m}\``))) {
+    c.fail(step, `the write answered ${JSON.stringify(written)} and the next move is ${JSON.stringify(move)}`);
+  }
+  await c.ok(step, "document_present", { path: `${half}/spec.md` });
+  const approval = await c.refused(step, "document_approve", { path: `${half}/spec.md` }, /^ERROR: spec\.md is missing sections /);
+  const unnamed = missing.filter((m) => !approval.includes(`\`## ${m}\``));
+  if (unnamed.length) c.fail(step, `the approval's refusal does not name ${unnamed.join(", ")}: ${approval}`);
+  c.pass("a gated draft missing its sections is routed back to the agent naming all eight, not to the stakeholder, " +
+         "and its approval names all eight at once");
 
   step = "a caller in no team is told so, not that the database may be missing";
   await c.sql.query("insert into zz.principal (email, display_name) values ('nobody@example.test', 'Nobody')");

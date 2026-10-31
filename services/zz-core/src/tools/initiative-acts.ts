@@ -37,7 +37,7 @@ import { specApprovalRefusal } from "../spec-gate.js";
 import { viewerOf } from "../review-context.js";
 import { dayOf, loadDocument, NO_DB, principalId } from "../versions.js";
 import { documentState, saveDocument, STATE_CHANGED } from "../document-save.js";
-import { normalizeSections } from "../write-guards.js";
+import { normalizeSections, sectionCheck } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
 import { registerInitiativeOpenTool } from "./initiative-open.js";
@@ -188,6 +188,12 @@ export function registerInitiativeActTools(server: McpServer): void {
       const answers = await assessmentsFor(p, team, parts[0]);
       // A refusal whose list was cut names its complete detail, recorded here before it is answered.
       const settle = (reply: string) => settleRefusal(p, { who: who.email, team, path: relPath }, reply);
+      // The flow's declared sections first, all of them named at once: a spec missing six of them
+      // was otherwise refused for the two the spec gate reads, and asked again for the rest. A
+      // heading the flow would rename counts as there: the rename refusal below names it exactly.
+      const sectionsMissing = sectionCheck(chain, relPath,
+        normalizeSections(chain, relPath, putEnvelopeField(doc, "status", "approved")).content);
+      if (sectionsMissing) return text(await settle(sectionsMissing));
       const acceptance = await acceptanceApprovalRefusal(p, team, chain, relPath, doc, who.email,
                                                           sources, answers);
       if (acceptance.refusal) return text(await settle(acceptance.refusal));

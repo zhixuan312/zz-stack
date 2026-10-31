@@ -32,7 +32,7 @@ import { safeName } from "../paths.js";
 import { Refusal } from "../refusal.js";
 import { platformEvent } from "../indexing.js";
 import { db, teamFor } from "../platform-db.js";
-import { type Chain } from "../write-guards.js";
+import { missingSections, type Chain } from "../write-guards.js";
 
 import { closedMove, correctionsOf, type Move } from "./initiative-closed.js";
 import { initiativesNamed, namesRefusal } from "./initiative-status-names.js";
@@ -165,7 +165,9 @@ export async function initiativeState(
     // The bodies this answer reads, and no others; see `fillStateBodies`, which holds the rule.
     const owing = new Set((chain.stages ?? []).filter((st) => records[st.name]?.owes).map((st) => st.produces));
     const verified = new Set(docs.filter((d) => d.verifies?.length).map((d) => d.name));
-    await fillStateBodies(p, team, name, rows, rowList, docs.find((d) => d.role === "plan")?.name ?? null, owing, verified);
+    const sectioned = new Set(docs.filter((d) => d.gate && d.sections?.length).map((d) => d.name));
+    await fillStateBodies(p, team, name, rows, rowList, docs.find((d) => d.role === "plan")?.name ?? null, owing, verified,
+                          sectioned);
   }
   const appliesOf = (docName: string): Applicability => {
     const spec = docs.find((d) => d.name === docName);
@@ -340,11 +342,19 @@ export async function initiativeState(
       ? reviewMove(name, docs.find((x) => x.name === verifying.name)?.stage ?? "", verifying.name,
                    sources, answers)
       : null;
-    const awaitApproval = (d: DocState) => ({
-      action: "await_approval", document: d.name, waiting_on: "stakeholder",
-      why: `${d.name} is ${d.status ?? "unwritten"}; call document_approve("${name}/${d.name}") ` +
-           "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
-    });
+    // A draft still missing the sections its flow declares cannot be approved, so it goes back to
+    // the agent, every missing section named, rather than to a stakeholder whose yes would be refused.
+    const awaitApproval = (d: DocState) => {
+      const missing = d.sections ? missingSections(d.sections, rows.get(d.name)?.body ?? "") : [];
+      return missing.length
+        ? { action: "write_document", document: d.name, waiting_on: "agent",
+            why: `${d.name} is missing ${missing.map((m) => `\`## ${m}\``).join(", ")} — write ` +
+                 `${missing.length === 1 ? "it" : "them"} with document_edit before the stakeholder is asked; ` +
+                 "document_approve refuses it until then" }
+        : { action: "await_approval", document: d.name, waiting_on: "stakeholder",
+            why: `${d.name} is ${d.status ?? "unwritten"}; call document_approve("${name}/${d.name}") ` +
+                 "once the stakeholder agrees — nothing downstream may be written until that gate is recorded" };
+    };
     // A draft plan whose audit is owed goes to the audit, not to its approval (see `auditedWhile`).
     if (awaiting && awaiting.name !== owedReview?.document && awaiting.name !== owedAudit?.document) {
       next = awaitApproval(awaiting);

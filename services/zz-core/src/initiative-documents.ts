@@ -87,16 +87,17 @@ export function sourceReport(rows: Map<string, DocRow>): {
  *
  *  `plan` is the document the flow declares with `role: "plan"`; `owing` the documents whose stage
  *  record owes an act, whose text `owedActs` searches for the record's affirmed digest; `verified`
- *  the documents some flow document verifies, whose sources a review consults. Everything else is
- *  decided from metadata and is left without its text. */
+ *  the documents some flow document verifies, whose sources a review consults; `drafts` the gated
+ *  documents not yet approved whose flow declares sections, read for the ones they still lack.
+ *  Everything else is decided from metadata and is left without its text. */
 export async function fillStateBodies(
   p: pg.Pool, team: string, name: string, rows: Map<string, DocRow>, rowList: readonly DocRow[],
-  plan: string | null, owing: ReadonlySet<string>, verified: ReadonlySet<string>,
+  plan: string | null, owing: ReadonlySet<string>, verified: ReadonlySet<string>, drafts: ReadonlySet<string>,
 ): Promise<void> {
   const wanted: string[] = [];
   for (const d of rowList) {
     if (!d.path.startsWith("sources/")) {
-      if (d.path === plan || owing.has(d.path)) wanted.push(d.path);
+      if (d.path === plan || owing.has(d.path) || (drafts.has(d.path) && d.status !== "approved")) wanted.push(d.path);
       // A source no link names is still a round when its envelope carries a stage: review round 1
       // is filed before the document it reviews exists.
     } else if (d.fields?.stage || d.supports.some((s) => verified.has(s))) wanted.push(d.path);

@@ -143,6 +143,14 @@ export function attributionCheck(chain: Chain, relPath: string, content: string,
   return said.length ? said.join("\n") : null;
 }
 
+/** The declared headings `content` does not carry as a `## ` heading, in declared order. */
+export function missingSections(want: readonly string[], content: string): string[] {
+  const have = new Set(
+    (content.match(/^##[ \t]+.*$/gm) ?? []).map((h) => h.replace(/^##[ \t]+/, "").trim())
+  );
+  return want.filter((w) => !have.has(w));
+}
+
 /** The `## ` headings the manifest says this document must carry.
  *
  * Which headings stays in flow.json: each flow's components are its own, and a list hard-coded
@@ -158,11 +166,11 @@ export function sectionCheck(chain: Chain, relPath: string, content: string): st
   // being written at all.
   const gated = chain.documents.some((d) => d.name === parts[1] && d.gate);
   if (gated && parseEnvelope(content).status !== "approved") return null;
+  const missing = missingSections(want, content);
+  if (!missing.length) return null;
   const have = new Set(
     (content.match(/^##[ \t]+.*$/gm) ?? []).map((h) => h.replace(/^##[ \t]+/, "").trim())
   );
-  const missing = want.filter((w) => !have.has(w));
-  if (!missing.length) return null;
   // Name the near miss. A section written under a different wording reads as "you forgot it"
   // if the refusal says only "missing", so hand the rename back rather than cost a round trip.
   const words = (h: string) => new Set(h.toLowerCase().match(/[a-z0-9]+/g) ?? []);

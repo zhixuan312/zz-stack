@@ -41,6 +41,8 @@ import { pathToFileURL } from "node:url";
 
 import pg from "pg";
 
+import { SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
+
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 delete process.env.TYPESAFE_API_KEY;
@@ -281,7 +283,7 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
     const w = world.get(p.name)!;
     w.docs = w.docs.filter((x) => x.path !== "plan.md");
     w.docs.push(docRow(p.name, "plan.md", { title: "Plan", flow: "sdlc-flow", status: "draft",
-      current_revision: version + 5, current_version: version, body: "# Plan\n\n## Phase 1 — skeleton\n" }));
+      current_revision: version + 5, current_version: version, body: "# Plan\n\n## Phase 1 — skeleton\n\n## Full-suite gate\n" }));
   };
   plan(1);
   let pm = await move(p);
@@ -304,7 +306,8 @@ is(m?.action === "add_source" && /Round 3 checks the new version/.test(m?.why ??
   const q = await fresh(1);
   const w = world.get(q.name)!;
   const sp = w.docs.find((x) => x.path === "spec.md")!;
-  Object.assign(sp, { status: "draft", approved_by: null, approved_at: null });
+  // Every section the flow declares, so the draft is one a stakeholder could approve.
+  Object.assign(sp, { status: "draft", approved_by: null, approved_at: null, body: SPEC_BODY });
   const qm = await move(q);
   is(qm?.action === "await_approval" && qm?.document === "spec.md",
      `a draft spec was sent to its audit before its approval: ${JSON.stringify(qm)}`);

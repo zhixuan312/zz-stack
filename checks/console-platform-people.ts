@@ -348,14 +348,14 @@ async function run(db: pg.Client, url: string): Promise<void> {
     await failureCases(seeded, as, whole, failing);
 
     const step = "the shapes the console's fake answers";
-    let fake: { people: (who: Obj, q: URLSearchParams, page: { limit: number; offset: number } | null) => [number, unknown] | null };
+    let fake: { people: (who: Obj, q: URLSearchParams) => [number, unknown] };
     try {
       fake = (await import(pathToFileURL(FAKE).href)) as typeof fake;
     } catch (err) {
       fail(step, `could not read the console's fake answer at ${FAKE}: ${(err as Error).message}`);
     }
-    const answered = fake.people({ superadmin: true, activeTeam: null }, new URLSearchParams(), { limit: 10, offset: 0 });
-    if (!answered || answered[0] !== 200) fail(step, `the fake answered the superadmin ${JSON.stringify(answered).slice(0, 200)}`);
+    const answered = fake.people({ superadmin: true, activeTeam: null }, new URLSearchParams());
+    if (answered[0] !== 200) fail(step, `the fake answered the superadmin ${JSON.stringify(answered).slice(0, 200)}`);
     const diffs = shapeDiffs(whole.body, answered[1], "superadmin", []);
     if (diffs.length) fail(step, diffs.join("; "));
     pass("the superadmin's answer agrees in shape with the fake's, key set by key set");

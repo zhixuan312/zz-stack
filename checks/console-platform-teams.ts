@@ -393,7 +393,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     await noiseCases(db, get, list);
 
     let step = "the shapes the console's fake answers";
-    let fake: { teams: (who: Obj, q: URLSearchParams, page: { limit: number; offset: number }) => [number, unknown] | null;
+    let fake: { teams: (who: Obj, q: URLSearchParams) => [number, unknown];
                 team: (who: Obj, slug: string) => [number, unknown] };
     try {
       fake = (await import(pathToFileURL(FAKE).href)) as typeof fake;
@@ -402,7 +402,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
     }
     const who = { email: SUPERADMIN, name: "root", role: "superadmin", mayRead: true, superadmin: true, via: "session", teams: [], activeTeam: null };
     const diffs = [
-      ...shapeDiffs(list.body, fake.teams(who, new URLSearchParams(), { limit: 10, offset: 0 })![1], "list", []),
+      ...shapeDiffs(list.body, fake.teams(who, new URLSearchParams())[1], "list", []),
       ...shapeDiffs(alder.body, fake.team(who, "atlas")[1], "team", []),
     ];
     if (diffs.length) fail(step, diffs.join("; "));

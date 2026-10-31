@@ -12,7 +12,7 @@
     "build": "tsc -b && node services/zz-core/app/build.ts",
     "typecheck:tooling": "tsc --noEmit -p tsconfig.tooling.json",
     "build:marketplace": "node scripts/build-marketplace.ts",
-    "clean": "tsc -b --clean",
+    "clean": "node scripts/clean.ts",
     "gate": "node scripts/gate.ts",
     "eval-flow-e2e": "node scripts/eval-flow-e2e.ts",
     "skeleton": "node scripts/skeleton.ts",

@@ -18,6 +18,9 @@ check("an unsupported Node fails naming both versions and why, as a runtime prob
 check("the node floor check fails, and fails informatively, when the floor is not met",
       runsCheck("node-floor-breaks.ts"));
 
+check("npm run clean removes every workspace's dist and build info, the output of a deleted source included",
+      runsCheck("clean.ts"));
+
 check("the tooling project runs standalone through typecheck:tooling, is deliberately absent from tsc -b's reference graph, and inherits its strictness rather than softening it locally",
       runsCheck("tooling-project.ts"));
 

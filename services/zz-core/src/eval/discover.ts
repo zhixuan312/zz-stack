@@ -587,7 +587,7 @@ export function registerFailureDiscoverTools(server: McpServer): void {
       if (!pool) return noDb();
 
       const snapshot = await resolveSnapshot(pool, observation_snapshot_id);
-      if (!snapshot) throw new Refusal("ERROR: unknown observation_snapshot_id");
+      if (!snapshot) throw new Refusal(`ERROR: unknown observation_snapshot_id ${observation_snapshot_id}`);
 
       // Content-idempotent and ahead of the ledger: a refused registration (this file's own
       // kind/schema mismatch, were one ever introduced) writes no idempotency row, and

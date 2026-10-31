@@ -70,18 +70,25 @@ export async function seed(c: Core): Promise<Seed> {
   // The seeded team's approved protocol.md under SLUG, quoting both versions' digests.
   const initiative = (await one<{ id: string }>(c,
     "insert into zz.initiative (team_id, slug, flow) values ($1, $2, '') returning id::text as id", [team, SLUG])).id;
+  // On the shared client: a failure rolls back, or the check's every later query meets an aborted
+  // transaction and the first error is buried under theirs.
   await c.sql.query("BEGIN");
-  await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
-  const doc = (await one<{ id: string }>(c,
-    `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
-     values ($1, 'protocol.md', 'draft', now(), 1, 1) returning id::text as id`, [initiative])).id;
-  await c.sql.query(
-    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
-                                  written_by, written_at, fields, approved_by, approved_at)
-     values ($1, 1, 1, 'retained', 'Protocol', $2, '{}', 'h1', $3, now(), '{}', $3, now())`,
-    [doc, "# Protocol\n\ndigest-bound-0001 and digest-replay-0002\n", me]);
-  await c.sql.query("update zz.doc set status = 'approved', approved_revision = 1 where id = $1", [doc]);
-  await c.sql.query("COMMIT");
+  try {
+    await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
+    const doc = (await one<{ id: string }>(c,
+      `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
+       values ($1, 'protocol.md', 'draft', now(), 1, 1) returning id::text as id`, [initiative])).id;
+    await c.sql.query(
+      `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
+                                    written_by, written_at, fields, approved_by, approved_at)
+       values ($1, 1, 1, 'retained', 'Protocol', $2, '{}', 'h1', $3, now(), '{}', $3, now())`,
+      [doc, "# Protocol\n\ndigest-bound-0001 and digest-replay-0002\n", me]);
+    await c.sql.query("update zz.doc set status = 'approved', approved_revision = 1 where id = $1", [doc]);
+    await c.sql.query("COMMIT");
+  } catch (err) {
+    await c.sql.query("ROLLBACK");
+    throw err;
+  }
   return { pluginId, versionId, team, me, other, protocols, snapshot, run };
 }
 

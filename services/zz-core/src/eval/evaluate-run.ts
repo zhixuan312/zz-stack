@@ -270,15 +270,14 @@ export async function startEvaluation(
 ): Promise<{ eval_run_id: string; observation_snapshot_id: string; replayed: boolean }
   | { readonly error: string }> {
   const { subject_version_id, protocol_version_id, observation_snapshot_id, idempotency_key, initiative } = args;
-  if (!UUID_RE.test(subject_version_id)) return { error: "ERROR: unknown subject_version_id" };
-  if (!UUID_RE.test(observation_snapshot_id)) {
-    return { error: "ERROR: unknown observation_snapshot_id — call plugin_profile first" };
-  }
+  const unknownSnapshot = { error: `ERROR: unknown observation_snapshot_id ${observation_snapshot_id} — call plugin_profile first` };
+  if (!UUID_RE.test(subject_version_id)) return { error: `ERROR: unknown subject_version_id ${subject_version_id}` };
+  if (!UUID_RE.test(observation_snapshot_id)) return unknownSnapshot;
 
   const snapshot = (await p.query<{ id: string; plugin_version_id: string }>(`
     select id::text as id, plugin_version_id::text as plugin_version_id from zz.eval_observation_snapshot where id = $1::uuid`,
     [observation_snapshot_id])).rows[0];
-  if (!snapshot) return { error: "ERROR: unknown observation_snapshot_id — call plugin_profile first" };
+  if (!snapshot) return unknownSnapshot;
   // The run's subject release IS the snapshot's observed release (FR-29): a call naming a
   // different one would open a run whose two halves disagree about what is being evaluated.
   if (snapshot.plugin_version_id !== subject_version_id) {
@@ -290,7 +289,7 @@ export async function startEvaluation(
     };
   }
   const protocol = await resolveProtocol(p, protocol_version_id);
-  if (!protocol) return { error: "ERROR: unknown protocol_version_id" };
+  if (!protocol) return { error: `ERROR: unknown protocol_version_id ${protocol_version_id}` };
   const unaffirmed = unaffirmedRefusal(protocol_version_id, protocol);
   if (unaffirmed) return { error: unaffirmed };
 
@@ -357,7 +356,7 @@ export async function assessEvaluation(
 } | { readonly error: string }> {
   const { eval_run_id, subject_refs, idempotency_key } = args;
   const run = await loadRunContext(p, eval_run_id);
-  if (!run || !(await inCallerTeam(p, "eval_run", eval_run_id))) return { error: "ERROR: unknown eval_run_id" };
+  if (!run || !(await inCallerTeam(p, "eval_run", eval_run_id))) return { error: `ERROR: unknown eval_run_id ${eval_run_id}` };
   // `scored_at` is the terminal marker: a scored run's assessments are the evidence behind a
   // published result, so no later call may add to them. A re-assessment is a new eval_run.
   if (run.scored_at !== null) {

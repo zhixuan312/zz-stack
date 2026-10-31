@@ -285,7 +285,7 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
       if (!p) return noDb();
 
       const protocol = await resolveProtocol(p, protocol_version_id);
-      if (!protocol) return text("ERROR: unknown protocol_version_id");
+      if (!protocol) return text(`ERROR: unknown protocol_version_id ${protocol_version_id}`);
       const unaffirmed = unaffirmedRefusal(protocol_version_id, protocol);
       if (unaffirmed) return text(unaffirmed);
       const measure = await measureByKey(p, protocol_version_id, measure_key);

@@ -62,18 +62,25 @@ async function affirmWithNoDocument(c: Core, s: Seed): Promise<void> {
   if (first.startsWith("ERROR")) c.fail(step, `binding the version answered ${first.slice(0, 300)}`);
   const later = (await one<{ id: string }>(c,
     "insert into zz.initiative (team_id, slug, flow) values ($1, '2026-10-31-later-protocol', '') returning id::text as id", [s.team])).id;
+  // On the shared client: a statement that fails rolls back, or every later case meets an aborted
+  // transaction and the first error is buried under theirs.
   await c.sql.query("BEGIN");
-  await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
-  const doc = (await one<{ id: string }>(c,
-    `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
-     values ($1, 'protocol.md', 'draft', now(), 1, 1) returning id::text as id`, [later])).id;
-  await c.sql.query(
-    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
-                                  written_by, written_at, fields, approved_by, approved_at)
-     values ($1, 1, 1, 'retained', 'Protocol', '# Protocol v3\n\ndigest-later-0003\n', '{}', 'h3', $2, now(), '{}', $2, now())`,
-    [doc, s.me]);
-  await c.sql.query("update zz.doc set status = 'approved', approved_revision = 1 where id = $1", [doc]);
-  await c.sql.query("COMMIT");
+  try {
+    await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
+    const doc = (await one<{ id: string }>(c,
+      `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
+       values ($1, 'protocol.md', 'draft', now(), 1, 1) returning id::text as id`, [later])).id;
+    await c.sql.query(
+      `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
+                                    written_by, written_at, fields, approved_by, approved_at)
+       values ($1, 1, 1, 'retained', 'Protocol', '# Protocol v3\n\ndigest-later-0003\n', '{}', 'h3', $2, now(), '{}', $2, now())`,
+      [doc, s.me]);
+    await c.sql.query("update zz.doc set status = 'approved', approved_revision = 1 where id = $1", [doc]);
+    await c.sql.query("COMMIT");
+  } catch (err) {
+    await c.sql.query("ROLLBACK");
+    throw err;
+  }
   const bound = await ask(evalDoor(c, c.email), "protocol_affirm",
     { protocol_version_id: s.protocols.replayed, initiative: "2026-10-31-later-protocol", idempotency_key: "affirm-later" });
   if (!bound.includes("is already affirmed")) c.fail(step, `a bound version under a later document answered ${bound.slice(0, 300)}`);
@@ -108,11 +115,15 @@ async function malformedIdsAreNamed(c: Core, s: Seed): Promise<void> {
     const reply = await ask(door, tool, args);
     // A refusal opens with ERROR: — what the gateway counts as one — except finding_decide's, which
     // decides the well-formed finding beside the malformed one.
-    if (/invalid input syntax|THROWN/.test(reply) || (tool !== "finding_decide" && !reply.startsWith("ERROR:"))) {
+    // And it is about the malformed id: it names the value, so an earlier argument's refusal, or a
+    // malformed id skipped in silence, does not pass for this one.
+    const bad = ["abc", "zzz", "nope", "zz"].find((v) => JSON.stringify(args).includes(`"${v}"`))!;
+    if (/invalid input syntax|THROWN/.test(reply) || (tool !== "finding_decide" && !reply.startsWith("ERROR:"))
+        || !reply.includes(bad)) {
       raw.push(`${tool}: ${reply.slice(0, 160)}`);
     }
   }
-  if (raw.length) c.fail(step, `answered with the database's words:\n    ${raw.join("\n    ")}`);
+  if (raw.length) c.fail(step, `answered with the database's words, or without naming the malformed id:\n    ${raw.join("\n    ")}`);
   const decided = (await one<{ decision: string | null }>(c, "select decision from zz.eval_finding where id = $1", [good])).decision;
   if (decided !== "applied") c.fail(step, `the well-formed finding beside the malformed one is ${decided}, not applied`);
   c.pass(step);

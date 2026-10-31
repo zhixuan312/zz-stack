@@ -403,7 +403,7 @@ export function registerObserveTools(server: McpServer): void {
       if (!pool) return noDb();
 
       const subject = await resolveSubject(pool, subject_version_id);
-      if (!subject) throw new Refusal("ERROR: unknown subject_version_id");
+      if (!subject) throw new Refusal(`ERROR: unknown subject_version_id ${subject_version_id}`);
       const { plugin, declaredVersion } = subject;
       const badWindow = windowRefusal(evidence_window);
       if (badWindow) throw new Refusal(badWindow);

@@ -282,9 +282,9 @@ export function registerDocumentPanel(server: McpServer): void {
           return text(`ERROR: ${path} is at content revision ${target} now, not ${content_revision ?? "(none named)"} ` +
                       "— open it again to show what it says now");
         }
-        const known = review_context !== undefined && (await contextState(p, who, path, review_context)).known;
-        const context = known ? review_context! : mintContext();
-        const state = await contextState(p, who, path, context);
+        const asked = review_context !== undefined ? await contextState(p, who, path, review_context) : null;
+        const context = asked?.known ? review_context! : mintContext();
+        const state = asked?.known ? asked : await contextState(p, who, path, context);
         const shownAs = `${path} v${loaded.rev.version} at ${target}. Review context: ${context}.`;
         if (state.covered.includes(target)) return text(`Already recorded: ${shownAs}`);
         return text(await record(context, state.baseline, "console", `Shown in full in the console: ${shownAs}`));

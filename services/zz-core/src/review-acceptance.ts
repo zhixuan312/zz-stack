@@ -277,13 +277,15 @@ export async function readAcceptanceCache(
 }
 
 /** Ask `evidence_relation` of every established row whose current evidence nobody asked about
- *  yet, a few at a time, and cache the answers. Returns one line for the caller, or "". */
+ *  yet, a few at a time, and cache the answers. Returns one line for the caller, or "".
+ *  `declared` is the criteria the documents it verifies declare, when the caller has read them
+ *  already: each read loads those documents whole. */
 export async function assessAcceptance(p: pg.Pool, team: string, initiative: string,
                                        doc: { name: string; verifies: string[] },
-                                       body: string, by: string): Promise<string> {
+                                       body: string, by: string, declared?: readonly Criterion[]): Promise<string> {
   const table = acceptanceTable(body)?.rows;
   if (!table) return "";
-  const criteria = new Map((await declaredCriteriaOf(team, initiative, doc.verifies))
+  const criteria = new Map((declared ?? await declaredCriteriaOf(team, initiative, doc.verifies))
     .map((c) => [c.id, c]));
   const cache = await readAcceptanceCache(p, team, initiative, doc.name);
   const due = table.filter((r) => r.status === "established" && criteria.has(r.id) && QUOTED.test(r.evidence))
@@ -395,7 +397,7 @@ export async function acceptanceApprovalRefusal(
   if (bad.length) return { refusal: refuse(bad), note: "" };
 
   // Only rows that passed every deterministic rule are read; a row nobody asked about yet is asked now.
-  await assessAcceptance(p, team, initiative, doc, body, by);
+  await assessAcceptance(p, team, initiative, doc, body, by, criteria);
   const cache = await readAcceptanceCache(p, team, initiative, doc.name);
   const byCriterion = new Map(criteria.map((c) => [c.id, c]));
   const unavailable: string[] = [];

@@ -187,9 +187,13 @@ export async function resolvePresentation(
   const continuing = (a.offset ?? 0) > 0 && !a.full;
   let context: string | null = null;
   let note: string | null = null;
+  // The asked context's state, read once: it says whether the context is the viewer's and, when it is, what it holds.
+  let state: Awaited<ReturnType<typeof contextState>> | null = null;
   if (a.review_context !== undefined) {
-    if (/^rc_[a-z2-7]{26}$/.test(a.review_context) && (await contextState(c, who, rel, a.review_context)).known) {
+    const asked = /^rc_[a-z2-7]{26}$/.test(a.review_context) ? await contextState(c, who, rel, a.review_context) : null;
+    if (asked?.known) {
       context = a.review_context;
+      state = asked;
     } else {
       note = `The review context ${a.review_context} is not one of yours for ${rel}, so a new one was started`;
     }
@@ -199,7 +203,7 @@ export async function resolvePresentation(
     context = [...last].filter(([, pg]) => pg.target === current).pop()?.[0] ?? null;
   }
   if (!context) return { context: mintContext(), note, kind: "full", target: current, baseline: null, continuing: false };
-  const state = await contextState(c, who, rel, context);
+  state ??= await contextState(c, who, rel, context);
   if (continuing && state.open?.target) {
     return { context, note, kind: state.open.kind, target: state.open.target, baseline: state.open.baseline, continuing: true };
   }

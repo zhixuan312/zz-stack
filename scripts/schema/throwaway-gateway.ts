@@ -5,7 +5,7 @@
  *
  * Needs a built tree (`npm run build`) and a `withThrowawayCore` run to stand on.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -18,9 +18,10 @@ import { root } from "../deployment.ts";
 import type { Core } from "./throwaway-core.ts";
 
 const hash = (s: string | Buffer): Buffer => createHash("sha256").update(s).digest();
+const b64 = (b: Buffer): string => b.toString("base64url");
 
 /** The console's own origin, which the passkey ceremony is bound to. Any https origin will do. */
-export const CONSOLE_URL = "https://console.example.test";
+const CONSOLE_URL = "https://console.example.test";
 
 /** The gateway as server.ts mounts the parts this check drives, and the seeded person's
  *  credentials: a PAT for /manage, a console session's cookie secret, and a second session that
@@ -153,4 +154,60 @@ export async function insertPat(c: Core, email: string, label: string, team: str
      values ((select id from zz.principal where email = $1), $2, $3, (select id from zz.team where slug = $4), $5, $6)
      returning id`, [email, hash(token).toString("hex"), label, team, extra.door ?? null, extra.oauthClientId ?? null])).rows[0].id);
   return { token, id };
+}
+
+/** Minimal CBOR: the unsigned and negative integers, byte and text strings, and maps a WebAuthn
+ *  attestation and a COSE key are made of. */
+function cbor(v: number | string | Buffer | Map<number | string, unknown>): Buffer {
+  const head = (major: number, n: number): Buffer =>
+    n < 24 ? Buffer.from([(major << 5) | n]) : n < 256 ? Buffer.from([(major << 5) | 24, n])
+      : Buffer.from([(major << 5) | 25, n >> 8, n & 255]);
+  if (typeof v === "number") return v >= 0 ? head(0, v) : head(1, -1 - v);
+  if (typeof v === "string") return Buffer.concat([head(3, Buffer.byteLength(v)), Buffer.from(v)]);
+  if (Buffer.isBuffer(v)) return Buffer.concat([head(2, v.length), v]);
+  return Buffer.concat([head(5, v.size), ...[...v].flatMap(([k, x]) => [cbor(k), cbor(x as never)])]);
+}
+
+/** A software authenticator holding one P-256 credential for the console's relying party: the
+ *  browser's half of a ceremony, everything `navigator.credentials` would answer. */
+export function authenticator(): {
+  id: string;
+  create(challenge: string): Record<string, unknown>;
+  get(challenge: string, userHandle: string): Record<string, unknown>;
+} {
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" }) as
+    { publicKey: KeyObject; privateKey: KeyObject };
+  const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
+  const raw = randomBytes(16);
+  const id = b64(raw);
+  const rpIdHash = hash(new URL(CONSOLE_URL).hostname);
+  const clientData = (type: string, challenge: string): Buffer =>
+    Buffer.from(JSON.stringify({ type, challenge, origin: CONSOLE_URL, crossOrigin: false }));
+  // Flags: user present (0x01) and verified (0x04), and credential data attached (0x40) at creation.
+  // The signature counter stays 0, as a synced platform authenticator's does.
+  const authData = (flags: number, attested?: Buffer): Buffer =>
+    Buffer.concat([rpIdHash, Buffer.from([flags, 0, 0, 0, 0]), ...(attested ? [attested] : [])]);
+  return {
+    id,
+    create(challenge) {
+      // COSE_Key: EC2 (1: 2), ES256 (3: -7), P-256 (-1: 1), and the point's two coordinates.
+      const cose = cbor(new Map<number, unknown>([[1, 2], [3, -7], [-1, 1],
+        [-2, Buffer.from(jwk.x, "base64url")], [-3, Buffer.from(jwk.y, "base64url")]]));
+      const len = Buffer.from([raw.length >> 8, raw.length & 255]);
+      const attested = Buffer.concat([Buffer.alloc(16), len, raw, cose]);
+      const attestation = cbor(new Map<string, unknown>([["fmt", "none"], ["attStmt", new Map()],
+        ["authData", authData(0x45, attested)]]));
+      return { id, rawId: id, type: "public-key", clientExtensionResults: {},
+               response: { clientDataJSON: b64(clientData("webauthn.create", challenge)),
+                           attestationObject: b64(attestation), transports: ["internal"] } };
+    },
+    get(challenge, userHandle) {
+      const data = clientData("webauthn.get", challenge);
+      const auth = authData(0x05);
+      const signature = sign("sha256", Buffer.concat([auth, hash(data)]), privateKey);
+      return { id, rawId: id, type: "public-key", clientExtensionResults: {},
+               response: { clientDataJSON: b64(data), authenticatorData: b64(auth), signature: b64(signature),
+                           userHandle: b64(Buffer.from(userHandle, "utf8")) } };
+    },
+  };
 }

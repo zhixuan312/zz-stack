@@ -261,28 +261,37 @@ export function mountPasskey(app: Express): void {
     });
   });
 
-  /** Finish a registration: store the credential and sign them in with it. */
+  /** Finish a registration: store the credential and sign them in with it.
+   *
+   *  The enrolment link was spent by `register/options` and this takes the ceremony whatever it
+   *  answers, so every refusal here leaves the person needing a new link, and says so: the console's
+   *  /enrol page shows the sentence as it is. COUPLED: checks/passkey-refusals.ts. */
   app.post("/auth/passkey/register/verify", (req, res) => {
+    const spent = (why: string) => fail(res, 400, `${why} This enrolment link is used up: ask an administrator for a new one.`);
     void (async () => {
       if (!configured() || !platformDbReady()) { fail(res, 503, "Sign-in is unavailable right now."); return; }
       const pending = await takeChallenge(req, "register");
       clearCeremonyCookie(res);
-      if (!pending || !pending.principalId) { fail(res, 400, "That registration expired. Open your enrolment link again."); return; }
+      if (!pending || !pending.principalId) { spent("That registration expired before it finished."); return; }
+      const credential = (req.body ?? {}).credential;
+      if (typeof credential?.id !== "string" || !credential.response) { spent("The browser sent no credential."); return; }
 
       let verified;
       try {
         verified = await verifyRegistrationResponse({
-          response: (req.body ?? {}).credential,
+          response: credential,
           expectedChallenge: pending.challenge,
           expectedOrigin: rp().origin,
           expectedRPID: rp().id,
           requireUserVerification: true,
         });
       } catch (err) {
-        fail(res, 400, `The authenticator's answer was refused: ${err instanceof Error ? err.message : "unknown"}`);
+        // The verifier's own words name challenges and fields, which help an operator, not the person.
+        console.error("passkey register verify refused:", err instanceof Error ? err.message : err);
+        spent("The authenticator's answer was refused.");
         return;
       }
-      if (!verified.verified || !verified.registrationInfo) { fail(res, 400, "The authenticator's answer did not verify."); return; }
+      if (!verified.verified || !verified.registrationInfo) { spent("The authenticator's answer did not verify."); return; }
 
       const cred = verified.registrationInfo.credential;
       const label = deviceLabel(req.headers["user-agent"]);
@@ -391,7 +400,9 @@ export function mountPasskey(app: Express): void {
           },
         });
       } catch (err) {
-        fail(res, 401, `That passkey was refused: ${err instanceof Error ? err.message : "unknown"}`);
+        // As at registration: the verifier's own words are for an operator, not the person.
+        console.error("passkey login verify refused:", err instanceof Error ? err.message : err);
+        fail(res, 401, "That passkey was refused. Try again.");
         return;
       }
       if (!verified.verified) { fail(res, 401, "That passkey did not verify."); return; }

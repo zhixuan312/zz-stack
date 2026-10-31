@@ -27,7 +27,7 @@
  *     `/oauth/token`, form-encoded as the MCP SDK sends it;
  *   - a passkey registered and signed in with (`console.passkey_registered`, `console.sign_in`), by
  *     a person of its own, enrolled through `issueEnrolment`. The browser's half of the ceremony is
- *     a software authenticator here: a P-256 key, `none` attestation, and an assertion signed over
+ *     throwaway-gateway's software authenticator: a P-256 key, `none` attestation, and an assertion signed over
  *     the challenge the route issued. Everything the gateway does — the challenge, the ceremony
  *     cookie, `@simplewebauthn/server`'s verification, the row — is the real route's;
  *
@@ -45,12 +45,12 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { lastJson } from "@zz/mcp-client";
 
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
-import { CONSOLE_URL, headersOf, listenGateway, type Gateway } from "../scripts/schema/throwaway-gateway.ts";
+import { authenticator, headersOf, listenGateway, type Gateway } from "../scripts/schema/throwaway-gateway.ts";
 
 const NAME = "event-origin-gateway";
 const DONE = "event-origin-gateway: an administration act, a team switch, a console write — a token, a bug, a document " +
@@ -265,62 +265,6 @@ async function consoleActs(c: Core, g: Gateway): Promise<void> {
   if (wrong.length) c.fail("each console act lands its client's origin", wrong.join("; "));
   c.pass("a console write — a document shown, a document approved, an initiative closed, a browser signed out — " +
     "lands the same origins");
-}
-
-/** Minimal CBOR: the unsigned and negative integers, byte and text strings, and maps a WebAuthn
- *  attestation and a COSE key are made of. */
-function cbor(v: number | string | Buffer | Map<number | string, unknown>): Buffer {
-  const head = (major: number, n: number): Buffer =>
-    n < 24 ? Buffer.from([(major << 5) | n]) : n < 256 ? Buffer.from([(major << 5) | 24, n])
-      : Buffer.from([(major << 5) | 25, n >> 8, n & 255]);
-  if (typeof v === "number") return v >= 0 ? head(0, v) : head(1, -1 - v);
-  if (typeof v === "string") return Buffer.concat([head(3, Buffer.byteLength(v)), Buffer.from(v)]);
-  if (Buffer.isBuffer(v)) return Buffer.concat([head(2, v.length), v]);
-  return Buffer.concat([head(5, v.size), ...[...v].flatMap(([k, x]) => [cbor(k), cbor(x as never)])]);
-}
-
-/** A software authenticator holding one P-256 credential for the console's relying party: the
- *  browser's half of a ceremony, everything `navigator.credentials` would answer. */
-function authenticator(): {
-  id: string;
-  create(challenge: string): Record<string, unknown>;
-  get(challenge: string, userHandle: string): Record<string, unknown>;
-} {
-  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" }) as
-    { publicKey: KeyObject; privateKey: KeyObject };
-  const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
-  const raw = randomBytes(16);
-  const id = b64(raw);
-  const rpIdHash = hash(new URL(CONSOLE_URL).hostname);
-  const clientData = (type: string, challenge: string): Buffer =>
-    Buffer.from(JSON.stringify({ type, challenge, origin: CONSOLE_URL, crossOrigin: false }));
-  // Flags: user present (0x01) and verified (0x04), and credential data attached (0x40) at creation.
-  // The signature counter stays 0, as a synced platform authenticator's does.
-  const authData = (flags: number, attested?: Buffer): Buffer =>
-    Buffer.concat([rpIdHash, Buffer.from([flags, 0, 0, 0, 0]), ...(attested ? [attested] : [])]);
-  return {
-    id,
-    create(challenge) {
-      // COSE_Key: EC2 (1: 2), ES256 (3: -7), P-256 (-1: 1), and the point's two coordinates.
-      const cose = cbor(new Map<number, unknown>([[1, 2], [3, -7], [-1, 1],
-        [-2, Buffer.from(jwk.x, "base64url")], [-3, Buffer.from(jwk.y, "base64url")]]));
-      const len = Buffer.from([raw.length >> 8, raw.length & 255]);
-      const attested = Buffer.concat([Buffer.alloc(16), len, raw, cose]);
-      const attestation = cbor(new Map<string, unknown>([["fmt", "none"], ["attStmt", new Map()],
-        ["authData", authData(0x45, attested)]]));
-      return { id, rawId: id, type: "public-key", clientExtensionResults: {},
-               response: { clientDataJSON: b64(clientData("webauthn.create", challenge)),
-                           attestationObject: b64(attestation), transports: ["internal"] } };
-    },
-    get(challenge, userHandle) {
-      const data = clientData("webauthn.get", challenge);
-      const auth = authData(0x05);
-      const signature = sign("sha256", Buffer.concat([auth, hash(data)]), privateKey);
-      return { id, rawId: id, type: "public-key", clientExtensionResults: {},
-               response: { clientDataJSON: b64(data), authenticatorData: b64(auth), signature: b64(signature),
-                           userHandle: b64(Buffer.from(userHandle, "utf8")) } };
-    },
-  };
 }
 
 /** One step of a public route as `client`, carrying `cookie` if given: the status, the body read

@@ -5,7 +5,7 @@
  *
  *   1. local_dir: a directory under the catalog root is read, with the `tree_digest` of every file
  *      it ships recorded; one outside it (`/etc`, a `..`
- *      escape) is refused, and so is one whose top-level `skills` or `flow.json` is a symlink —
+ *      escape) is refused in the same words as a path that does not exist, and so is one whose top-level `skills` or `flow.json` is a symlink —
  *      the shape a cloned repository or extracted tarball would use to walk the host — or that
  *      carries a symlink or a FIFO anywhere. So is a source the replay launcher would always
  *      refuse (`gitInstruction`, @zz/catalog, shared with it): a `.git` at any depth, or a
@@ -15,7 +15,8 @@
  *      loopback, private, link-local or IPv4-mapped host — `localhost` by name included. A public
  *      host's clone is pinned to the addresses that were checked (`http.curloptResolve`), so a
  *      rebinding second lookup never happens — asserted against a stand-in `git` that records its
- *      argv, and only where this machine can resolve a public name at all.
+ *      argv, and only where this machine can resolve a public name at all. A repository git can
+ *      only ask a username for is refused as no public repository, not as an authentication error.
  *   3. package: a path, a URL, `git+…`, `github:…`, `user/repo` or `file:` spec is refused as
  *      not a registry spec, and a pack whose own report unpacks past the size limit is refused
  *      before tar extracts it — asserted against a stand-in `npm` and `tar`.
@@ -55,6 +56,14 @@ if ("error" in inside || !inside.components.length) {
   fail.push(`a local_dir capture records no tree_digest for the replay launcher to check: ${JSON.stringify(inside.identityExtra)}`);
 }
 await refused("local_dir", "/etc", /only under the catalog root/);
+// A path that does not exist is answered exactly as one outside the root, so the refusal tells a
+// caller nothing about which host directories exist.
+{
+  const [there, missing] = await Promise.all(["/etc", "/etc/nope-plugin-register-source"].map((l) => resolveSource("local_dir", l)));
+  if (JSON.stringify(there) !== JSON.stringify(missing)) {
+    fail.push(`an existing and a missing path outside the root are told apart: ${JSON.stringify(there)} / ${JSON.stringify(missing)}`);
+  }
+}
 await refused("local_dir", join(catalogRoot, "zz/zz-plugin-eval/../../.."), /only under the catalog root/);
 // A directory under the catalog root, so confinement passes and the symlink rule is what answers.
 const linked = join(catalogRoot, "fixtures");
@@ -111,6 +120,28 @@ for (const url of ["https://127.0.0.1/x.git", "https://[::1]/x.git", "https://16
       if (!/^http\.curloptResolve=example\.com:443:\S+$/m.test(seen)) {
         fail.push(`a public clone was not pinned to its checked addresses: ${JSON.stringify(seen.slice(0, 400))}`);
       }
+    }
+  } finally {
+    process.env.PATH = path;
+    rmSync(bin, { recursive: true, force: true });
+  }
+}
+
+// A repository the host cannot read anonymously makes git ask for a username, which reads as an
+// authentication problem; the refusal says plainly that no public repository answered.
+{
+  const bin = mkdtempSync(join(tmpdir(), "plugin-register-source-git-"));
+  writeFileSync(join(bin, "git"),
+    "#!/bin/sh\necho \"fatal: could not read Username for 'https://example.com': terminal prompts disabled\" >&2\nexit 128\n");
+  chmodSync(join(bin, "git"), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const got = await resolveSource("git", "https://example.com/missing.git");
+    if ("error" in got && /does not resolve/.test(got.error)) {
+      console.log("plugin-register-source: no DNS here, so the missing-repository wording was not exercised");
+    } else if (!("error" in got) || /Username/.test(got.error) || !/no public repository/.test(got.error)) {
+      fail.push(`a missing repository is answered ${JSON.stringify(got).slice(0, 300)}`);
     }
   } finally {
     process.env.PATH = path;

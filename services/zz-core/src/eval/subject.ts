@@ -28,7 +28,7 @@
  * earlier evaluation of that version was judged against must not move under it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type PluginComponent, pluginContentDigest } from "@zz/catalog";
+import { catalogEntries, type PluginComponent, pluginContentDigest, pluginName } from "@zz/catalog";
 import { parseCaller, sha256 } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
@@ -342,8 +342,8 @@ export function registerSubjectTools(server: McpServer): void {
         "The captured row IS that subject's whole identity: unlike plugin_locate, a later call " +
         "for the same plugin/version reads this capture back rather than recomputing it, " +
         "because a third party has no release moment to recompute against. A mutator, through " +
-        "the same idempotency ledger plugin_locate uses. REFUSES a name the catalog " +
-        "already owns — that plugin is registered by release, never by this tool — REFUSES a " +
+        "the same idempotency ledger plugin_locate uses. REFUSES a blank name or version, and a name the catalog " +
+        "already owns, in any letter case — that plugin is registered by release, never by this tool — REFUSES a " +
         "payload naming origin, owner_team, evolvable or release_owners, since the platform " +
         "derives every authority field itself and never takes one as input, REFUSES a " +
         "source_locator it cannot read or may not reach, and REFUSES re-registering a version " +
@@ -372,7 +372,10 @@ export function registerSubjectTools(server: McpServer): void {
           || release_owners !== undefined) {
         return text("ERROR: origin/owner/evolvable/release_owners are derived by the platform, not supplied");
       }
-      if (entryOf(name)) {
+      if (!name.trim() || !version.trim()) return text("ERROR: name and version must not be blank");
+      // Compared without case: ZZ-CORE beside zz-core is a look-alike of a catalog plugin, not
+      // another plugin.
+      if (catalogEntries().some((e) => pluginName(e.flow).toLowerCase() === name.toLowerCase())) {
         return text(`ERROR: ${name} is a catalog plugin; it is registered by release`);
       }
 
@@ -381,10 +384,10 @@ export function registerSubjectTools(server: McpServer): void {
 
       // A name this platform once released and the catalog no longer carries is still the
       // catalog's to speak for — never flipped to third_party by a call that merely found the
-      // entry gone, which `entryOf` above cannot see for a removed flow.
+      // entry gone, which the catalog read above cannot see for a removed flow.
       const existing = (await pool.query<{ origin: string }>(
-        `select origin from zz.plugin where name = $1`, [name])).rows[0];
-      if (existing?.origin === "platform") {
+        `select origin from zz.plugin where lower(name) = lower($1) and origin = 'platform'`, [name])).rows[0];
+      if (existing) {
         return text(`ERROR: ${name} is a catalog plugin; it is registered by release`);
       }
 

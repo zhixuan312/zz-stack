@@ -53,17 +53,18 @@ function resolveLocalDir(
  *  DELIBERATE: realpath on both sides, so `..` and a symlinked prefix are judged by where they
  *  land, not by how they are spelled. */
 function confinedLocalDir(locator: string): string | { error: string } {
+  // One answer for a path outside the root and a path that does not exist, so the refusal says
+  // nothing about which host directories exist.
+  const outside = { error: `local_dir is read only under the catalog root (${catalogDir()}); this path is not a directory there` };
   let root: string;
   let real: string;
   try {
     root = realpathSync(catalogDir());
     real = realpathSync(locator);
   } catch {
-    return { error: "the path does not exist" };
+    return outside;
   }
-  if (real !== root && !real.startsWith(root + sep)) {
-    return { error: `local_dir is read only under the catalog root (${catalogDir()}); this path is outside it` };
-  }
+  if (real !== root && !real.startsWith(root + sep)) return outside;
   return real;
 }
 
@@ -169,6 +170,15 @@ type SourceResolution =
  *  actually landed on recorded as `resolved_commit` — the immutable half of FR-1's release
  *  identity for a source that itself is not immutable (a branch moves; the commit it named at
  *  capture time does not). */
+/** git asks for a username when a host answers an anonymous clone with 401 — which GitHub does for
+ *  a repository that does not exist as well as for a private one. Read as git words it, that is an
+ *  authentication problem the caller cannot act on; it is said as what it is. */
+function cloneError(url: string, error: string): string {
+  return /could not read (Username|Password)|terminal prompts disabled|Authentication failed/.test(error)
+    ? `no public repository answered at ${url} — it does not exist, or it is private, and the platform clones anonymously`
+    : error;
+}
+
 async function resolveGit(locator: string): Promise<SourceResolution> {
   const hashAt = locator.lastIndexOf("#");
   const url = hashAt === -1 ? locator : locator.slice(0, hashAt);
@@ -186,12 +196,12 @@ async function resolveGit(locator: string): Promise<SourceResolution> {
       ? await git(pin, ["clone", "--quiet", "--depth", "1", "--branch", ref, "--", url, dir])
       : await git(pin, ["clone", "--quiet", "--depth", "1", "--", url, dir]);
     if (!shallow.ok) {
-      if (!ref) return { error: shallow.error };
+      if (!ref) return { error: cloneError(url, shallow.error) };
       // `--branch` only resolves refs the remote advertises (branches and tags), so a commit SHA
       // falls through to a full clone plus an explicit fetch of that one commit — still shallow
       // at the object it lands on, just not at the clone step.
       const full = await git(pin, ["clone", "--quiet", "--", url, dir]);
-      if (!full.ok) return { error: full.error };
+      if (!full.ok) return { error: cloneError(url, full.error) };
       const fetch = await git(pin, ["fetch", "--quiet", "--depth", "1", "--", "origin", ref], dir);
       if (!fetch.ok) return { error: `ref ${ref} could not be fetched: ${fetch.error}` };
       const checkout = await git([], ["checkout", "--quiet", "FETCH_HEAD"], dir);

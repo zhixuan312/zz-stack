@@ -206,7 +206,7 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       const entryCmd = entryCommand(f.flow, f.entry || f.flow);
       return {
         name: pluginName(f.flow),
-        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`.slice(0, 180)),
+        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`),
         // A flow's servers arrive with the flow, or not at all: this is what my skills call.
         servers: f.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
         files: promoteCommands(f.flow, skills, entryCmd === undefined ? undefined : {

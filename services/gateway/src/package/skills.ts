@@ -36,13 +36,14 @@ export function shelfFlows(): ShelfFlow[] {
     .sort((a, b) => a.flow.localeCompare(b.flow));
 }
 
-/** The entry skill's own `when_to_use`, so the router describes each flow in
- * the flow's words rather than ours. Falls back to `description`. */
+/** The entry skill's own `when_to_use`, whole, so the router describes each flow in
+ * the flow's words rather than ours. Falls back to `description`. A card that shows it
+ * trims it through trimTo; the router is a skill body, and gets every trigger. */
 export function whenToUse(flow: string, entry: string): string {
   const md = skillText(flow, entry);
   // Through fmField, so there is one frontmatter parser in this file.
   const v = md ? fmField(md, "when_to_use") || fmField(md, "description") : undefined;
-  if (v) return v.length > 300 ? v.slice(0, 297) + "..." : v;
+  if (v) return v;
   return `work that belongs to the ${flow} flow`;
 }
 /** One field out of a skill's own frontmatter, from markdown already in hand.

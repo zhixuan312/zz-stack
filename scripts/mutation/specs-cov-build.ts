@@ -183,8 +183,8 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/hygiene.ts",
     target: "a plugin is named the same way wherever it is named",
     subject: "services/gateway/src/client-package.ts",
-    find: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`.slice(0, 180)),",
-    replace: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse} (update: ${f.flow}@${MARKETPLACE})`.slice(0, 180)),",
+    find: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`),",
+    replace: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse} (update: ${f.flow}@${MARKETPLACE})`),",
     planted: "a flow's marketplace card tells a person to update a plugin by its FLOW name, which " +
       "is not what the plugin is called — install and update, in one file, naming one thing two " +
       "ways",

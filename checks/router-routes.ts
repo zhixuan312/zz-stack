@@ -10,7 +10,8 @@
  * Driven over the real catalog:
  *   1. sdlc-flow, routed, is loaded: `skill_read` passing its entry;
  *   2. zz-plugin-eval, `routed: false`, is not: its section names `/zz-plugin-eval:eval` for
- *      Claude Code and `$zz-plugin-eval:eval` for Codex, and asks for no `skill_read` of its entry.
+ *      Claude Code and `$zz-plugin-eval:eval` for Codex, and asks for no `skill_read` of its entry;
+ *   3. each flow's **When:** is its entry skill's whole `when_to_use`, every trigger in it, never cut.
  *
  * Run: node checks/router-routes.ts   (also run by scripts/gate.ts)
  */
@@ -24,7 +25,7 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
 const { routerSkill, shelfFlows } = await import(
   pathToFileURL(join(process.cwd(), "services/gateway/dist/package/skills.js")).href);
-const flows = shelfFlows() as { flow: string; routed: boolean; command: string | null }[];
+const flows = shelfFlows() as { flow: string; entry: string; routed: boolean; command: string | null }[];
 const md: string = routerSkill(flows);
 /** One flow's section of the router, from its heading to the next. */
 const section = (flow: string): string => {
@@ -48,6 +49,15 @@ is(evalFlow?.routed === false && evalFlow?.command === "eval",
 is(ev.includes("`/zz-plugin-eval:eval` in Claude Code") && ev.includes("`$zz-plugin-eval:eval` in Codex")
    && !/passing `zz-plugin-eval`/.test(ev),
    `the router loads zz-plugin-eval instead of naming how to open it: ${JSON.stringify(ev.slice(0, 400))}`);
+
+// Against the field as the frontmatter parser reads it, not whenToUse, which is what would cut it.
+const { fmField } = await import(pathToFileURL(join(process.cwd(), "services/gateway/dist/package/skills.js")).href);
+const { skillText } = await import(pathToFileURL(join(process.cwd(), "packages/catalog/dist/index.js")).href);
+for (const f of flows) {
+  const when: string = fmField(skillText(f.flow, f.entry), "when_to_use") ?? "";
+  is(when !== "" && section(f.flow).includes(`**When:** ${when}\n`),
+     `${f.flow}'s **When:** is not its whole when_to_use: ${JSON.stringify(section(f.flow).slice(0, 400))}`);
+}
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log("ok router-routes");

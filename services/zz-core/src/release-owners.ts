@@ -1,6 +1,7 @@
 /**
  * Who speaks for a release's owners (FR-48, FR-49): the answer `document_approve` (for
- * `improvement.md`) and `release_apply` check against. `release_prepare` asks a narrower question —
+ * `improvement.md`), `release_apply`, and `release_record` and `release_verify` (through
+ * `releaseActorRefusal`) check against. `release_prepare` asks a narrower question —
  * whether the evaluation run's own team is an owner (`loadSubjectForEvalRun(...).promotable`) — since
  * a promotion acts for that team.
  *

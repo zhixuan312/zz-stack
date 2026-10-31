@@ -212,7 +212,8 @@ export async function deferred<T>(db: { query(text: string): Promise<unknown> },
     await db.query("commit");
     return out;
   } catch (err) {
-    await db.query("rollback");
+    // A rollback that fails too (the connection gone) must not replace the first error either.
+    await db.query("rollback").catch(() => undefined);
     throw err;
   }
 }

@@ -46,8 +46,9 @@ for (const m of semantic) {
 // registers, less the modules eval-door.ts imports: the same process serves the /eval door, whose
 // tools are zz-plugin-eval's (pluginForDoor), as checks/eval-door.ts derives them.
 {
+  // checks/eval-door.ts's selector: a `register…` import from any relative path is a tool module.
   const evalModules = new Set([...readFileSync("services/zz-core/src/eval-door.ts", "utf8")
-    .matchAll(/from "\.\/(eval\/[\w-]+)\.js"/g)].map((m) => join("services/zz-core/src", `${m[1]}.ts`)));
+    .matchAll(/import \{ register\w+ \} from "\.\/([\w/-]+)\.js"/g)].map((m) => join("services/zz-core/src", `${m[1]}.ts`)));
   assert.ok(evalModules.size > 0, "eval-door.ts imports no evaluation module — the /eval door's tools are not known");
   const registered = new Set(sourceFiles("services/zz-core/src", (p) => p.endsWith(".ts") && !evalModules.has(p))
     .flatMap(({ src }) => [...src.matchAll(/registerTool\(\s*"([a-z0-9_]+)"/g)].map((m) => m[1])));

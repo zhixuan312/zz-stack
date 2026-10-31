@@ -7,7 +7,7 @@
  */
 import { platformDb } from "../db.js";
 import { PLATFORM_TEAM, auditAdmin, type Identity } from "../identity.js";
-import { principalId, superOnly, teamAuthority, teamId } from "./authority.js";
+import { isDeactivated, principalId, superOnly, teamAuthority, teamId } from "./authority.js";
 import { type PlatformWriteOutcome } from "./people.js";
 
 // ---------------------------------------------------------------- shared team-write logic
@@ -51,8 +51,7 @@ export async function addMember(
   }
   const pid = await principalId(db, email);
   if (!pid) return { ok: false, status: 400, error: `no principal '${email}' — person_add first` };
-  const status = (await db.query<{ status: string }>("select status from principal where id = $1", [pid])).rows[0]?.status;
-  if (status === "deactivated") {
+  if (await isDeactivated(db, pid)) {
     return { ok: false, status: 400, error: `principal ${email} is deactivated — person_add restores them before a team can take them` };
   }
   const actorId = await principalId(db, id.email);

@@ -1,6 +1,6 @@
 /** Who may administer what.
  *
- *  Two predicates and two lookups. The predicates are the whole authorisation model for
+ *  Two predicates and three lookups. The predicates are the whole authorisation model for
  *  administration: `superOnly` is the platform, `teamAuthority` is one team. "Administers some
  *  team" is not "administers this team" — a team admin asking about another team's people is
  *  answered no. */
@@ -21,6 +21,13 @@ export const teamAuthority = (id: Identity | null, slug: string): id is Identity
 export async function principalId(db: pg.Pool, email: string): Promise<string | null> {
   const r = await db.query<{ id: string }>("select id from principal where email = $1", [email.toLowerCase()]);
   return r.rows[0]?.id ?? null;
+}
+/** Whether a principal is deactivated. Nothing is given to such a person — a membership, a token —
+ *  because `person_add` restores the principal, and whatever was given meanwhile would come back
+ *  with them, past the deactivation that promised nothing would. */
+export async function isDeactivated(db: pg.Pool, pid: string): Promise<boolean> {
+  const r = await db.query<{ status: string }>("select status from principal where id = $1", [pid]);
+  return r.rows[0]?.status === "deactivated";
 }
 /** The id of an active team, or null. Returning an archived team lets member_add and pat_issue
  *  write rows that resolve to nothing, because every identity query filters on status — the tool

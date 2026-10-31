@@ -61,14 +61,19 @@ export async function addPerson(
   auditAdmin(id, "add_person", email, { ...extraDetail });
   return { ok: true, message: `principal ${email} active` };
 }
-/** Deactivate a principal. `confirm` must repeat the email exactly, and an email no principal has
- *  is refused rather than reported as done. */
+/** Deactivate a principal. `confirm` must repeat the email exactly, an email no principal has is
+ *  refused rather than reported as done, and nobody deactivates themselves: the last superadmin
+ *  doing so would leave nobody able to run `person_add` again. */
 export async function deactivatePerson(
   id: Identity | null, email: string, confirm: string,
   extraDetail: Record<string, unknown> = {},
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
   if (confirm !== email) return { ok: false, status: 400, error: `confirm must repeat the email exactly ('${email}')` };
+  if (email.toLowerCase() === id.email) {
+    return { ok: false, status: 400, error: "you cannot deactivate yourself — another superadmin does, so the " +
+      "platform always keeps somebody who can add people back" };
+  }
   // And everything they could still get in with is ended, not merely made unusable by a status
   // this act can undo: `addPerson` is an upsert that sets `status='active'`, so re-adding
   // somebody who had left would otherwise bring back every token, console session and unused
@@ -76,16 +81,18 @@ export async function deactivatePerson(
   // of it commits with the status change or none of it does.
   const client = await platformDb().connect();
   let revoked: { pats: number; sessions: number; links: number };
+  let already: boolean;
   try {
     await client.query("begin");
-    const who = await client.query<{ id: string }>(
-      "update principal set status='deactivated' where email=$1 returning id",
-      [email.toLowerCase()]);
+    const who = await client.query<{ id: string; status: string }>(
+      "select id, status from principal where email=$1 for update", [email.toLowerCase()]);
     const principal = who.rows[0]?.id ?? null;
     if (principal === null) {
       await client.query("rollback");
       return { ok: false, status: 400, error: `no principal for ${email} — nothing was deactivated` };
     }
+    already = who.rows[0].status === "deactivated";
+    await client.query("update principal set status='deactivated' where id=$1", [principal]);
     const pats = await client.query(
       "update pat set revoked_at = now() where revoked_at is null and principal_id = $1", [principal]);
     const sessions = await client.query(
@@ -99,6 +106,11 @@ export async function deactivatePerson(
     throw err;
   } finally {
     client.release();
+  }
+  // Deactivating somebody again still ends anything they were given meanwhile; only when there was
+  // nothing to end is it not an act.
+  if (already && revoked.pats + revoked.sessions + revoked.links === 0) {
+    return { ok: true, message: `${email} is already deactivated — nothing changed` };
   }
   auditAdmin(id, "deactivate_person", email, {
     ...extraDetail, patsRevoked: revoked.pats, sessionsRevoked: revoked.sessions, enrolmentsSpent: revoked.links });

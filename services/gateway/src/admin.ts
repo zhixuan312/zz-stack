@@ -15,7 +15,7 @@ import { issuePat, revokePat } from "@zz/contracts";
 import { DESTROYS, READS, WRITES, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority.js";
+import { isDeactivated, principalId, superOnly, teamAuthority, teamId } from "./admin/authority.js";
 import { listOauthClients, revokeOauthClient } from "./admin/oauth-clients.js";
 import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "./admin/people.js";
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
@@ -106,7 +106,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "WHEN somebody leaves, or their access must stop. RETURNS confirmation that they can " +
       "no longer authenticate, with their live tokens and console sessions revoked and their " +
       "unused enrolment links spent. " +
-      "REFUSES anyone but a superadmin, and refuses unless confirm repeats the same email.",
+      "Deactivating somebody already deactivated says so and changes nothing. REFUSES anyone " +
+      "but a superadmin, your own email — another superadmin retires you — and refuses unless " +
+      "confirm repeats the same email.",
     inputSchema: { email: z.string().email(), confirm: z.string() },
   }, async ({ email, confirm }) => {
     const id = await caller();
@@ -218,8 +220,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "issuing for anybody but yourself without superadmin or team-admin authority; a team " +
       "admin issuing for a superadmin, or reusing the label of a token the person holds outside " +
       "the team; a token an application obtained through OAuth, which answers on its own door " +
-      "alone and issues none; and " +
-      "refuses to bind a token to a team its holder is not in — that token would " +
+      "alone and issues none; a person who is deactivated; and " +
+      "refuses to bind a token to a team its holder is not in — either token would " +
       "authenticate nowhere.",
     inputSchema: {
       email: z.string().email().optional(),
@@ -261,6 +263,10 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     }
     const pid = await principalId(db, target);
     if (!pid) return text(`ERROR: no principal '${target}'`);
+    if (await isDeactivated(db, pid)) {
+      return text(`ERROR: ${target} is deactivated, so a token for them would authenticate nowhere — ` +
+                  "person_add restores them first.");
+    }
     const tid = team ? await teamId(db, team) : null;
     if (team && !tid) return text(`ERROR: no active team '${team}' — team_create on the same slug restores an archived one`);
     // And the holder has to be in it. Identity refuses a bound token whose holder is not a

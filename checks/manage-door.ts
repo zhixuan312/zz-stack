@@ -15,7 +15,9 @@
  *     for the superadmin, may not replace a member's token outside the team by reusing its label,
  *     and a token bound to a team revokes only tokens bound to it; one who names a team they do not
  *     administer is refused alike whether it exists, the refusal naming the teams they do;
- *   - member_add and member_remove say what changed and keep a team's last admin.
+ *   - member_add and member_remove say what changed and keep a team's last admin;
+ *   - a deactivated person is issued no token, deactivating them again says nothing changed and
+ *     records nothing, and a superadmin cannot deactivate themselves.
  *
  * The only database this touches is the one it started.
  *
@@ -30,7 +32,7 @@ import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from ".
 
 const NAME = "manage-door";
 const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
-  "and membership changes say what changed: ok";
+  "membership changes say what changed, and a deactivated person stays out: ok";
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
@@ -145,6 +147,39 @@ async function leadActs(c: Core, g: Gateway): Promise<void> {
   c.pass(roles);
 }
 
+/** A deactivated person stays out: no token is minted for them, a second deactivation is not
+ *  reported as a fresh one, and nobody retires themselves — on the last superadmin that would
+ *  leave nobody able to bring anyone back. */
+async function retireActs(c: Core, g: Gateway): Promise<void> {
+  const step = "a deactivated person is issued nothing, twice is once, and nobody deactivates themselves";
+  const ask = (name: string, args: Record<string, unknown>) => manageCall(g, g.token, name, args);
+  const gone = "gone@example.test";
+  await c.sql.query("insert into zz.principal (email, display_name) values ($1, 'Gone')", [gone]);
+  const acts = async (): Promise<number> => Number((await c.sql.query<{ n: string }>(
+    "select count(*) as n from zz.event where kind = 'admin.deactivate_person' and subject = $1", [gone])).rows[0].n);
+  const first = await ask("person_deactivate", { email: gone, confirm: gone });
+  if (!first.startsWith(`principal ${gone} deactivated`)) c.fail(step, `the first deactivation answered: ${first.slice(0, 200)}`);
+  // The audit row is written after the answer; wait for the first one before counting.
+  for (const until = Date.now() + 5000; (await acts()) < 1;) {
+    if (Date.now() > until) c.fail(step, "the first deactivation recorded no event");
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const second = await ask("person_deactivate", { email: gone, confirm: gone });
+  if (second !== `${gone} is already deactivated — nothing changed`) c.fail(step, `the second deactivation answered: ${second.slice(0, 200)}`);
+  const minted = await ask("pat_issue", { email: gone, label: "after" });
+  const live = (await c.sql.query("select 1 from zz.pat p join zz.principal w on w.id = p.principal_id where w.email = $1",
+    [gone])).rowCount;
+  if (!/^ERROR: gone@example\.test is deactivated/.test(minted) || live) {
+    c.fail(step, `pat_issue for a deactivated person answered "${minted.slice(0, 200)}", ${live} token row(s)`);
+  }
+  const self = await ask("person_deactivate", { email: c.email, confirm: c.email });
+  const status = (await c.sql.query<{ status: string }>("select status from zz.principal where email = $1", [c.email])).rows[0].status;
+  if (!/^ERROR: .*yourself/.test(self) || status !== "active") c.fail(step, `deactivating oneself answered "${self.slice(0, 200)}", now ${status}`);
+  await new Promise((r) => setTimeout(r, 500));
+  if ((await acts()) !== 1) c.fail(step, `${await acts()} deactivation events for ${gone}, where one deactivation happened`);
+  c.pass(step);
+}
+
 async function run(c: Core): Promise<void> {
   // A superadmin, so every tier of /manage is registered.
   await c.sql.query("update zz.principal set role = 'superadmin' where email = $1", [c.email]);
@@ -152,6 +187,7 @@ async function run(c: Core): Promise<void> {
   try {
     await applicationActs(c, g);
     await leadActs(c, g);
+    await retireActs(c, g);
   } finally {
     await g.stop();
   }

@@ -151,14 +151,15 @@ check("a platform token is one shape, whoever writes or reads it", () => {
              `says a token is ${minted.src} — the first token on a fresh host would not be one`);
   }
 
-  // And nobody else may spell it. Both shapes: building one from the prefix, and reading one
-  // back with a length written out rather than derived.
+  // And nobody else may spell it. Both shapes: building one from the prefix, by concatenation or
+  // in a template literal, and reading one back with a length written out rather than derived.
+  // checks/ too: a check that seeds a token of its own shape passes on a shape nothing mints.
   const OWNER = join("packages", "contracts", "src", "identity.ts");
-  for (const rel of sourceFiles(["services", "packages", "scripts"], [".ts"])) {
+  for (const rel of sourceFiles(["services", "packages", "scripts", "checks"], [".ts"])) {
     if (rel === OWNER || gateOwnSource(rel)) continue;
     readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
       if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
-      if (/"zzp_"\s*\+/.test(ln)) {
+      if (/"zzp_"\s*\+|`zzp_\$\{/.test(ln)) {
         bad.push(`${rel}:${i + 1} builds a token from the prefix — call mintPat()`);
       }
       if (/zzp_\[[^\]]+\]\{\d+\}/.test(ln)) {

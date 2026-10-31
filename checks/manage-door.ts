@@ -24,7 +24,10 @@
  *   - a token that does not authenticate is told why — unknown, revoked, expired, its owner
  *     deactivated, its team archived — and pat_list shows an expired token as expired;
  *   - team_list counts the people who can still act, and client_setup renders no setup for an
- *     address nobody has or a person who is deactivated.
+ *     address nobody has or a person who is deactivated;
+ *   - team_create names the slug rule it refuses by and refuses a blank or overlong name,
+ *     pat_issue an overlong label, and team_switch takes a slug in any case and answers a switch
+ *     to the current team as no change, recording none.
  *
  * The only database this touches is the one it started.
  *
@@ -39,7 +42,7 @@ import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from ".
 
 const NAME = "manage-door";
 const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
-  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, an unreadable body in JSON, a dead token says why, and a roster counts who can act: ok";
+  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, an unreadable body in JSON, a dead token says why, a roster counts who can act, and names are bounded: ok";
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
@@ -283,6 +286,37 @@ async function rosterActs(c: Core, g: Gateway): Promise<void> {
   c.pass(step);
 }
 
+/** What a team or token is called is bounded and its rules are said; a switch to where you are is no act. */
+async function namingActs(c: Core, g: Gateway): Promise<void> {
+  const step = "a slug's rule is named, a name and a label are bounded, and a switch to your own team is no act";
+  const ask = (name: string, args: Record<string, unknown>) => manageCall(g, g.token, name, args);
+  const said: [string, RegExp][] = [
+    [await ask("team_create", { slug: "MG-Upper", name: "Upper" }),
+     /^ERROR: 'MG-Upper' is not a team slug — a slug is 2 to 64 characters of lowercase letters, digits/],
+    [await ask("team_create", { slug: "blank-name", name: "   " }), /^ERROR: a team's name cannot be blank/],
+    [await ask("team_create", { slug: "long-name", name: "N".repeat(1000) }), /^ERROR: a team's name is at most 120 characters; this one is 1000$/],
+    [await ask("pat_issue", { label: "L".repeat(20_000) }), /100/],
+  ];
+  for (const [reply, want] of said) if (!want.test(reply)) c.fail(step, `answered "${reply.slice(0, 200)}", expected ${want}`);
+  const made = (await c.sql.query(
+    "select 1 from zz.team where slug in ('mg-upper', 'blank-name', 'long-name') union all select 1 from zz.pat where length(label) > 100")).rowCount;
+  if (made) c.fail(step, `${made} team or token row(s) written by refused calls`);
+
+  const switches = async (): Promise<number> => Number((await c.sql.query<{ n: string }>(
+    "select count(*) as n from zz.event where kind = 'team.switch' and subject = 'lead-team'")).rows[0].n);
+  const moved = await ask("team_switch", { team: " LEAD-TEAM " });
+  if (!moved.startsWith("you are now acting for lead-team")) c.fail(step, `team_switch " LEAD-TEAM " answered: ${moved.slice(0, 200)}`);
+  for (const until = Date.now() + 5000; (await switches()) < 1;) {
+    if (Date.now() > until) c.fail(step, "the switch recorded no event");
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const again = await ask("team_switch", { team: "lead-team" });
+  if (again !== "you are already acting for lead-team — nothing changed.") c.fail(step, `the second switch answered: ${again.slice(0, 200)}`);
+  await new Promise((r) => setTimeout(r, 500));
+  if ((await switches()) !== 1) c.fail(step, `${await switches()} team.switch events, where one switch happened`);
+  c.pass(step);
+}
+
 async function run(c: Core): Promise<void> {
   // A superadmin, so every tier of /manage is registered.
   await c.sql.query("update zz.principal set role = 'superadmin' where email = $1", [c.email]);
@@ -295,6 +329,7 @@ async function run(c: Core): Promise<void> {
     await bodyActs(c, g);
     await tokenStateActs(c, g);
     await rosterActs(c, g);
+    await namingActs(c, g);
   } finally {
     await g.stop();
   }

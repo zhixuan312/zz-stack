@@ -27,6 +27,10 @@ interface DbConnection {
   release(): void;
 }
 
+/** The longest label a person may give a token: a name for its purpose, listed by pat_list and the
+ *  console's Access page. The OAuth path writes its own labels and is not held to it. */
+export const PAT_LABEL_MAX = 100;
+
 /** Mint a token, hash it, and write the one row that makes it live — revoking any live token
  *  with the same label first, because a label names one purpose and a purpose has one current
  *  credential. Returns the plaintext (shown once, never stored again), the new row's id, and

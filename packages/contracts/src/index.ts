@@ -26,7 +26,7 @@ import { OUTCOMES } from "./outcomes.js";
 // The one write path a platform access token goes through — pat_issue and pat_revoke call
 // these. Declared here rather than depending on the `pg` package: `Db` is the minimal shape
 // both services' pg.Pool satisfies.
-export { issuePat, revokePat, type Db } from "./pat.js";
+export { PAT_LABEL_MAX, issuePat, revokePat, type Db } from "./pat.js";
 
 export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS,
          FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,

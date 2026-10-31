@@ -7,7 +7,6 @@
 import type { Express, Request, Response } from "express";
 
 import { redact } from "../redact.js";
-import { TEAM_SLUG } from "../identity.js";
 import { platformDbReady } from "../db.js";
 import { archiveTeam, createTeam } from "../admin/teams.js";
 import { addPerson, deactivatePerson, issueEnrolmentLink } from "../admin/people.js";
@@ -93,13 +92,8 @@ export function mountPlatformSettings(app: Express): void {
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
       const body = (req.body ?? {}) as Record<string, unknown>;
       const slug = typeof body.slug === "string" ? body.slug.trim() : "";
-      const name = typeof body.name === "string" ? body.name.trim() : "";
-      if (!slug) { res.status(400).json({ error: "slug is required" }); return; }
-      // `team_create`'s own MCP schema rejects a malformed slug before the handler runs
-      // (zod's `.regex(TEAM_SLUG)`); this route has no zod in front of it, so the same rule
-      // is checked here instead of relying on the query below to fail some other way.
-      if (!TEAM_SLUG.test(slug)) { res.status(400).json({ error: "slug must be lowercase letters, digits, - or _" }); return; }
-      if (!name) { res.status(400).json({ error: "name is required" }); return; }
+      const name = typeof body.name === "string" ? body.name : "";
+      // The slug and name rules are `createTeam`'s, the same for this route and team_create.
       const r = await createTeam(id, slug, name, { via: "web" });
       if (!r.ok) { res.status(r.status).json({ error: r.error }); return; }
       res.json(redact({ ok: true, result: r.message }));

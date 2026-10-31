@@ -542,6 +542,8 @@ export function auditAdmin(
  * COUPLED: a slug names a row in `team` and a directory under the artifact store, so
  * team_create's validation and `scope.ts`'s slug guard both derive from this one regex. */
 export const TEAM_SLUG = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+/** TEAM_SLUG in words, for a refusal to name rather than leave the caller guessing. */
+export const TEAM_SLUG_RULE = "2 to 64 characters of lowercase letters, digits, '-' or '_', starting with a letter or digit";
 
 /** The platform's own team — a tenant like any other, holding what the platform learns
  * about its own registry entries rather than about anybody's delivery.

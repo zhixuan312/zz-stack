@@ -6,9 +6,12 @@
  * way. A write that throws would make those two disagree about what a refusal looks like.
  */
 import { platformDb } from "../db.js";
-import { PLATFORM_TEAM, auditAdmin, type Identity } from "../identity.js";
+import { PLATFORM_TEAM, TEAM_SLUG, TEAM_SLUG_RULE, auditAdmin, type Identity } from "../identity.js";
 import { isDeactivated, principalId, superOnly, teamAuthority, teamId } from "./authority.js";
 import { type PlatformWriteOutcome } from "./people.js";
+
+/** The longest team name: a display label, not a description. */
+const TEAM_NAME_MAX = 120;
 
 // ---------------------------------------------------------------- shared team-write logic
 //
@@ -116,10 +119,21 @@ export async function removeMember(
 }
 /** Create a team (slug is the stable identity used everywhere). */
 export async function createTeam(
-  id: Identity | null, slug: string, name: string,
+  id: Identity | null, slug: string, rawName: string,
   extraDetail: Record<string, unknown> = {},
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
+  // The rules for both doors, here rather than in either: the tool's schema and the console route
+  // each refused differently, and neither said what a slug may be.
+  if (!TEAM_SLUG.test(slug)) {
+    return { ok: false, status: 400, error: `'${slug.slice(0, 80)}' is not a team slug — a slug is ${TEAM_SLUG_RULE}` };
+  }
+  // A name is shown wherever the team is named, and team_list hands every one to a model.
+  const name = rawName.trim();
+  if (!name) return { ok: false, status: 400, error: "a team's name cannot be blank — it is how every page names the team" };
+  if (name.length > TEAM_NAME_MAX) {
+    return { ok: false, status: 400, error: `a team's name is at most ${TEAM_NAME_MAX} characters; this one is ${name.length}` };
+  }
   const db = platformDb();
   const pid = await principalId(db, id.email);
   // The platform's own team is not a tenant's to take: its store holds what we have

@@ -3,7 +3,7 @@
  *
  * The tokens a person uses to reach this platform, and nothing else.
  */
-import { type EventOrigin, issuePat, parseCaller } from "@zz/contracts";
+import { type EventOrigin, PAT_LABEL_MAX, issuePat, parseCaller } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { platformDb } from "./db.js";
@@ -31,6 +31,9 @@ export async function issueMyAccessTokenFor(
       "(person_add, then member_add for your team) — a token can only carry access you have." };
   }
   if (r.rows[0].status !== "active") return { ok: false, error: `${email} is deactivated` };
+  if (label && label.length > PAT_LABEL_MAX) {
+    return { ok: false, error: `a token's label is at most ${PAT_LABEL_MAX} characters; this one is ${label.length}` };
+  }
   // No scope column: a token carries whatever its holder may do, read from the principal. A
   // token a person issues for themselves carries no expiry and no OAuth client — those are the
   // two things only the other two writers know.

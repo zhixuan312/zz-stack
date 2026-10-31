@@ -11,7 +11,7 @@
  * here writes into a front end's own tables: the registry is the truth and clients read it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { issuePat, revokePat } from "@zz/contracts";
+import { PAT_LABEL_MAX, issuePat, revokePat } from "@zz/contracts";
 import { DESTROYS, READS, WRITES, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -20,7 +20,7 @@ import { listOauthClients, revokeOauthClient } from "./admin/oauth-clients.js";
 import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "./admin/people.js";
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
 import { platformDb } from "./db.js";
-import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, type Identity, TEAM_SLUG } from "./identity.js";
+import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, type Identity } from "./identity.js";
 /** The administrative tools, registered onto /manage/mcp according to what the caller's role
  *  can execute.
  *
@@ -158,9 +158,10 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "WHEN a new tenant needs somewhere for its work to live, or an archived team is being " +
       "brought back — the same slug restores it with its memberships. RETURNS the " +
       "team, its slug being the stable identity used everywhere this platform names a team. " +
-      "REFUSES anyone but a superadmin, a slug the platform's own rule " +
-      "rejects, and the platform's reserved slug, which no tenant may claim.",
-    inputSchema: { slug: z.string().regex(TEAM_SLUG), name: z.string().min(1) },
+      "REFUSES anyone but a superadmin, a slug that is not 2 to 64 lowercase letters, digits, " +
+      "'-' or '_', a blank name or one over 120 characters, and the platform's reserved slug, " +
+      "which no tenant may claim.",
+    inputSchema: { slug: z.string(), name: z.string() },
   }, async ({ slug, name }) => {
     const id = await caller();
     const r = await createTeam(id, slug, name);
@@ -231,7 +232,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
         "not for a person who works in several. A person needs ONE token: they pick the " +
         "team with team_switch, and a bound token would take that choice away " +
         "and refuse every other team they are in."),
-      label: z.string().optional(),
+      label: z.string().max(PAT_LABEL_MAX).optional().describe(
+        `What the token is for, at most ${PAT_LABEL_MAX} characters; a new token with a label replaces the earlier one.`),
       expires_in_days: z.number().int().positive().max(3650).optional().describe(
         "Let this token stop working on its own. Worth using for automation and for anything " +
         "issued to somebody else; a person's everyday token is usually left open-ended and " +

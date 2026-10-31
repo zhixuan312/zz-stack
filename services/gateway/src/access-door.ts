@@ -159,7 +159,8 @@ export async function buildAccessServer(
         "your principal, which every credential of yours reads; a signed-in console browser " +
         "carries a team of its own and switches that in Access. REFUSES any team " +
         "you are not a member of and any archived team, and names the ones you do have " +
-        "instead — call team_mine first if you are not sure.",
+        "instead — call team_mine first if you are not sure. Switching to the team you already " +
+        "act for changes nothing.",
       inputSchema: { team: z.string() },
     },
     async ({ team }) => {
@@ -180,20 +181,25 @@ export async function buildAccessServer(
           "change: `active_team_id` is read by every other credential you hold. Switch from an " +
           "unbound session.");
       }
-      const slug = team.trim();
+      // A slug is lowercase, so a team typed in capitals is still that team.
+      const slug = team.trim().toLowerCase();
       const db = platformDb();
       // Only a team they are actually in, and only a live one. Checked in the same statement
-      // that writes, so there is no window between deciding and doing.
+      // that writes, so there is no window between deciding and doing. A switch to the team
+      // already chosen writes nothing, and is answered as nothing below rather than as a move.
+      const live = `t.slug = $2 and t.status = 'active'
+            and exists (select 1 from zz.membership m where m.team_id = t.id and m.principal_id = p.id)`;
       const done = await db.query<{ slug: string }>(
         `update zz.principal p
             set active_team_id = t.id
            from zz.team t
-          where p.email = $1
-            and t.slug = $2 and t.status = 'active'
-            and exists (select 1 from zz.membership m
-                         where m.team_id = t.id and m.principal_id = p.id)
+          where p.email = $1 and ${live} and p.active_team_id is distinct from t.id
           returning t.slug`, [email, slug]);
       if (!done.rowCount) {
+        const already = await db.query(
+          `select 1 from zz.principal p join zz.team t on t.id = p.active_team_id where p.email = $1 and ${live}`,
+          [email, slug]);
+        if (already.rowCount) return text(`you are already acting for ${slug} — nothing changed.`);
         const mine = (await db.query<{ slug: string }>(
           `select t.slug from zz.membership m
              join zz.team t on t.id = m.team_id

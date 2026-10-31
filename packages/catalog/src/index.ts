@@ -403,7 +403,7 @@ export function pluginDirComponents(dir: string, unshipped?: string): { componen
       if (f.isSymbolicLink()) continue;
       const abs = join(d, f.name);
       if (f.isDirectory()) {
-        if (f.name !== unshipped) walk(abs);
+        if (f.name !== ".git" && f.name !== unshipped) walk(abs);
         continue;
       }
       if (f.name !== "SKILL.md") continue;
@@ -489,8 +489,15 @@ export function pluginTreeDigest(dir: string, unshipped?: string): { digest: str
  *  `scripts/gate/checks/image.ts` requires. */
 export const IMAGE_UNSHIPPED = "tests";
 
-/** A `.gitattributes` line that sets, unsets or defines a macro over the `filter` attribute. */
-const FILTER_ATTRIBUTE = /(^|\s)[-!]?filter(=|\s|$)/m;
+/** Whether a `.gitattributes` sets, unsets or defines a macro over the `filter` attribute, read
+ *  as git reads it: a line whose first non-blank character is `#` is a comment, and the first
+ *  field is the pattern, so only a later field names an attribute. */
+function assignsFilter(attributes: string): boolean {
+  return attributes.split("\n").some((line) => {
+    const fields = line.trim().split(/\s+/);
+    return !fields[0].startsWith("#") && fields.slice(1).some((f) => /^[-!]?filter(=|$)/.test(f));
+  });
+}
 
 /** The first entry under `dir` git would take as an instruction rather than content, named, or
  *  null: a `.git` of any kind at any depth (a repository whose `config` names a filter driver, an
@@ -511,7 +518,7 @@ export function gitInstruction(dir: string, opts: { ownGit?: boolean } = {}, rel
       if (opts.ownGit && !rel && f.name === ".git") continue;
       return `${path} is git metadata`;
     }
-    if (name === ".gitattributes" && f.isFile() && FILTER_ATTRIBUTE.test(readFileSync(join(dir, f.name), "utf8"))) {
+    if (name === ".gitattributes" && f.isFile() && assignsFilter(readFileSync(join(dir, f.name), "utf8"))) {
       return `${path} assigns a git filter`;
     }
     if (f.isDirectory()) {

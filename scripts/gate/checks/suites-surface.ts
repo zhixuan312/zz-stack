@@ -141,6 +141,8 @@ check("the candidate build's git reads only its own repository outside the tree,
       runsCheck("candidate-git-fsmonitor.ts"));
 check("a fetched third-party tree carrying a .git or a filter attribute is refused before any git command runs, and every file of it is digested",
       runsCheck("candidate-fetched-tree.ts"));
+check("a .gitattributes comment or pattern is not a filter, and a clone's own .git holds no plugin component",
+      runsCheck("catalog-git-instruction.ts"));
 check("every sandboxed build process runs in its own process group, killed when it returns, so a background command that stays in the group is gone when the step ends",
       runsCheck("candidate-process-group.ts"));
 check("the candidate build renames the tree out of every sandbox's writable path before reading it, so a command that outlived its step (setsid) cannot change any path the build reads",

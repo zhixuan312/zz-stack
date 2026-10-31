@@ -44,7 +44,7 @@ import type {
   AnswerOption, AnswerSpec, AskedQuestion, AssessmentCall, AssessmentStatus,
   IdentityAssurance, SemanticAssessment,
 } from "../assessment.js";
-import { interpret } from "../assessment.js";
+import { asRecord, has, interpret } from "../assessment.js";
 import { stableDigest } from "../canonical.js";
 
 // The supplier's three primitives, and what each one answers here
@@ -84,14 +84,6 @@ const EXACT_VERSION = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*-\d+\.\d+\.\d+$/;
 const LEVEL_INDEX = /^\d+$/;
 
 // Reading an untrusted reply
-
-export function asRecord(raw: unknown): Readonly<Record<string, unknown>> | null {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  return raw as Readonly<Record<string, unknown>>;
-}
-
-export const present = (rec: Readonly<Record<string, unknown>>, key: string): boolean =>
-  Object.prototype.hasOwnProperty.call(rec, key);
 
 /** A field as a message can name it. `JSON.stringify(undefined)` is `undefined` rather than a
  *  string, so the one value most likely to be in a broken field is the one a template would
@@ -300,7 +292,7 @@ function translate(
   // The supplier computes it from its distribution, so this understates where the number came
   // from — the port has one channel for it, and overstating would make a derived scalar read as
   // a measured one.
-  if (present(rec, "confidence") && rec.confidence !== null) payload.confidence = rec.confidence;
+  if (has(rec, "confidence") && rec.confidence !== null) payload.confidence = rec.confidence;
 
   if (primitive === "choice") {
     const key = rec.choice;
@@ -313,7 +305,7 @@ function translate(
     // is right — a distribution over options the question never offered describes a different
     // question. A choice names one of a declared set, so its keys are those names and the port
     // can read them; only the ordinal scale is numbered, and only that one is read below.
-    if (present(rec, "probabilities") && rec.probabilities !== null) {
+    if (has(rec, "probabilities") && rec.probabilities !== null) {
       payload.native = { distribution: rec.probabilities };
     }
     return { payload, distribution: null, legend: null };
@@ -326,13 +318,13 @@ function translate(
     }
     const declared = levelCount(question.answer_spec);
     let legend: Readonly<Record<string, string>> | null = null;
-    if (present(rec, "legend") && rec.legend !== null) {
+    if (has(rec, "legend") && rec.legend !== null) {
       const echoed = echoedLegend(rec.legend, declared);
       if ("reason" in echoed) return echoed;
       legend = echoed.values;
     }
     let distribution: Readonly<Record<string, number>> | null = null;
-    if (present(rec, "probabilities") && rec.probabilities !== null) {
+    if (has(rec, "probabilities") && rec.probabilities !== null) {
       const read = levelDistribution(rec.probabilities, declared);
       if ("reason" in read) return read;
       distribution = read.values;
@@ -404,7 +396,7 @@ export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
   }
   const assurance: IdentityAssurance = pinned ? "provider_reported" : "unverified";
 
-  const found = ORDER.filter((p) => present(rec, p));
+  const found = ORDER.filter((p) => has(rec, p));
   if (found.length === 0) {
     return refuse("invalid_response", "the reply carries none of the answer primitives this adapter reads",
       reported, assurance);
@@ -415,7 +407,7 @@ export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
       reported, assurance);
   }
   const primitive = found[0];
-  if (present(rec, "type") && rec.type !== primitive) {
+  if (has(rec, "type") && rec.type !== primitive) {
     return refuse("invalid_response",
       `the reply is labelled ${describe(rec.type)} and carries a ${primitive} answer`, reported, assurance);
   }

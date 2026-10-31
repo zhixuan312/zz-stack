@@ -16,8 +16,9 @@
  * the count of questions asked, so no caller can read a short map as agreement. This is the only
  * place that rule is written.
  */
+import { asRecord, has } from "../assessment.js";
 import {
-  asRecord, describe, identityOf, parse, present, rejected,
+  describe, identityOf, parse, rejected,
   type JevParseOptions, type JevParseResult,
 } from "./jev-reply.js";
 
@@ -65,7 +66,7 @@ export function parseBatch(raw: unknown, opts: JevBatchOptions): JevBatchResult 
     interpretation_profile_ref: opts.interpretation_profile_ref,
   };
   const body = asRecord(raw);
-  const answers = body !== null && present(body, "answers") ? asRecord(body.answers) : null;
+  const answers = body !== null && has(body, "answers") ? asRecord(body.answers) : null;
   const failure_reason = body === null
     ? (raw === undefined || raw === null
       ? "the adapter was handed no response body"
@@ -75,14 +76,14 @@ export function parseBatch(raw: unknown, opts: JevBatchOptions): JevBatchResult 
       : null;
 
   const model = body === null ? null : identityOf(body);
-  const usageRec = body !== null && present(body, "usage") ? asRecord(body.usage) : null;
+  const usageRec = body !== null && has(body, "usage") ? asRecord(body.usage) : null;
   const out: Record<string, JevParseResult> = {};
   const missing: string[] = [];
 
   for (const key of keys) {
     const per = opts.answers[key];
     const one: JevParseOptions = { ...envelope, ...per, expect: opts.expect, question_id: key };
-    if (answers === null || !present(answers, key)) {
+    if (answers === null || !has(answers, key)) {
       if (answers !== null) missing.push(key);
       // `undefined` reaches `parse` as "no reply and no recorded failure", which is
       // `unavailable` — transport, not a judgement. That is exactly what a missing answer is.
@@ -93,7 +94,7 @@ export function parseBatch(raw: unknown, opts: JevBatchOptions): JevBatchResult 
     }
     const answer = asRecord(answers[key]);
     // The envelope's identity, attached to the answer it describes. See the header.
-    const identified = answer !== null && model !== null && !present(answer, "model")
+    const identified = answer !== null && model !== null && !has(answer, "model")
       ? { ...answer, model }
       : answers[key];
     out[key] = parse(identified, one);

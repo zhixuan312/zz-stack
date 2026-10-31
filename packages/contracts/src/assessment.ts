@@ -209,12 +209,12 @@ export interface AssessmentCall {
  *  confidence with `Number` alone invents a zero for any reply that left the field blank. */
 const DECIMAL = /^[+-]?\d+(?:\.\d+)?$/;
 
-function asRecord(raw: unknown): Readonly<Record<string, unknown>> | null {
+export function asRecord(raw: unknown): Readonly<Record<string, unknown>> | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   return raw as Readonly<Record<string, unknown>>;
 }
 
-function has(rec: Readonly<Record<string, unknown>>, key: string): boolean {
+export function has(rec: Readonly<Record<string, unknown>>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(rec, key);
 }
 

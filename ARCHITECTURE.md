@@ -560,6 +560,8 @@ The measurements below are `EXPLAIN (ANALYZE, BUFFERS)` on this deployment, read
 **41,772 real-work calls** (`zz.event` where `kind = 'tool_call'` and `origin = 'work'`), the ten-times seed;
 a projection at ten times is that figure at ten times the row count, labelled as one. The rows and shared
 buffers were read again at **41,891 real-work calls**; the milliseconds are recorded, and the two evidence each budget.
+Every statement that reads `zz.event` from its first row was measured again on 2026-11-01, read only, at **47,698 real-work calls** (82,701 events), each as the built gateway issues it: the two register rows that name a raw query, the Usage and Status rows and `### What stays a raw query` carry those figures, and the other rows keep 2026-10-24's.
+At that traffic both pages' ten-times projections are past their budgets; which statements move onto a read model is an open decision, recorded beside them.
 
 ### The metric register
 
@@ -568,9 +570,9 @@ buffers were read again at **41,891 real-work calls**; the milliseconds are reco
 | Calls by week and team | `zz.event`, real-work tool calls, joined to `zz.team` for the slug | the seven weeks the page draws, the running one last | team · local week | any real-work call | the read model, `teamWeeks` | `rows ≤ 1000, ms ≤ 50` — 720 rows, 1.0 ms at today's traffic and at ten times it |
 | Calls by tool and week, with the median | `zz.event`, real-work tool calls, the tool named through `zz.plugin_tool` | the seven weeks the page draws, the running one last | tool · local week | any real-work call, or a tool the doors stop registering | the read model, `toolWeeks`, its median the merge of the buckets' `ms` arrays | `rows ≤ 1000, ms ≤ 50` — 720 rows, 1.0 ms at today's traffic and at ten times it |
 | Calls by refusal owner | `zz.event`, real-work tool calls carrying a `refusal_owner` | the seven weeks the page draws, the running one last | refusal owner · team · local week | any refused call | the read model, `refusal_owner` being part of its grain | `rows ≤ 1000, ms ≤ 50` — 720 rows, 1.0 ms at today's traffic and at ten times it |
-| Refusals put right — `matched`, `median_ms` | `zz.event`, a refusal and the first real-work call of the same team, session and tool inside the 120 seconds after it | every refusal in the record, and the 120 seconds after each | refusal · local week | a refusal, or the call that puts it right | a raw query, `followupWeeks` | `rows ≤ 850000, ms ≤ 1800` — 80,966 rows read in 148 ms, about 810,000 in about 1.5 s at ten times |
-| Refusals put right — `continued_sessions` | `zz.event`, a refused session's own later calls | every refused session, through the record's newest call | refused session · local week | a call of that session after a refusal | a raw query, `followupWeeks`, the same statement | the same statement, so the same two numbers: `rows ≤ 850000, ms ≤ 1800` — 80,966 rows in 148 ms, about 810,000 in about 1.5 s at ten times |
-| Calls by local weekday and hour | `zz.event`, real-work tool calls | the whole record, by local day | local day and hour | any real-work call | a raw query, `readDays` | `rows ≤ 450000, ms ≤ 1300` — 41,891 rows in 122 ms, about 419,000 in about 1.2 s at ten times |
+| Refusals put right — `matched`, `median_ms` | `zz.event`, a refusal and the first real-work call of the same team, session and tool inside the 120 seconds after it | every refusal in the record, and the 120 seconds after each | refusal · local week | a refusal, or the call that puts it right | a raw query, `followupWeeks` | `rows ≤ 850000, ms ≤ 1800` — 30,925 buffers in 168–246 ms at 47,698 calls, about 1.7–2.5 s at ten times, past the budget |
+| Refusals put right — `continued_sessions` | `zz.event`, a refused session's own later calls | every refused session, through the record's newest call | refused session · local week | a call of that session after a refusal | a raw query, `followupWeeks`, the same statement | the same statement, so the same two numbers: `rows ≤ 850000, ms ≤ 1800` — 30,925 buffers in 168–246 ms, about 1.7–2.5 s at ten times, past the budget |
+| Calls by local weekday and hour | `zz.event`, real-work tool calls | the whole record, by local day | local day and hour | any real-work call | a raw query, `readDays` | `rows ≤ 450000, ms ≤ 1300` — 47,698 rows and 5,028 buffers in 163 ms, about 1.6 s at ten times, past the budget |
 
 The two `followupWeeks` rows are the ones the model may not answer. A refusal is put right by the two minutes
 after it, and a session continued is a fact about every later call of that session: a rebuild of `zz.event`
@@ -613,12 +615,13 @@ so an event is exactly what moves it (FR-11b), and none may be kept across a wri
 |---|---|---|---|---|---|---|
 | Home | the whole record reduced to a week: two core MCP reads and the events behind them | the last 24 whole weeks, and the whole record where the weeks do not reach its start · local week, and local day for the agents' days | `rows ≤ 600, ms ≤ 1200` computed, `ms ≤ 190` served | 0.6–1.2 s computed, 0.19 s served (recorded in `answer-cache.ts`; not re-measured here, because its read goes through the core MCP door and timing it against production would need a session that writes) | about 6–12 s computed, about 1.9 s served: the whole-record legs grow tenfold where the 24 drawn weeks do not, which is what the cache holds | zero: an event write moves the answer, so `answer-cache.ts` strands the entry on that write |
 | Record | five statements over the document and event tables, one read per period and page | the period asked for — a quarter, a year or the whole record — and one page of the table · local week or month, initiative · page | `rows ≤ 2400, ms ≤ 1200` computed, `ms ≤ 190` served | 0.6–1.2 s computed, 0.19 s served (the same recorded measurement, on the same page class) | about 6–12 s computed, about 1.9 s served, for the same reason | zero, for the same write |
-| Usage | `teamWeeks`, `toolWeeks`, `followupWeeks` | the seven weeks the page draws, and every refusal in the record · team, tool and refusal owner · local week | `rows ≤ 1000, ms ≤ 50` on the model, `rows ≤ 850000, ms ≤ 1800` on the raw tail | 559 ms before Task I-19 (133 + 278 + 148), the 278 being `callDays`, which only `toolWeeks` read on this page and which the page no longer reads at all; the two week-grain reductions now read the model, and their composed statement measures 1.0 ms at 41,772 real-work calls and 1.0 ms at ten times them, inside the budget declared above, so the class is `followupWeeks`' 148 ms and the model read beside it | about 1.5 s, the raw tail's projection, with the model still at 1.0 ms | zero: the model absorbs the call in the transaction that writes it and the raw tail is read at request time, so a served answer is never behind `zz.event` |
-| Status | `readDays`, `latencyMeasures`, `sessionsMeasure` | the whole record by local day and by local week, and the doors' last 365 days · local day, local week | `rows ≤ 450000, ms ≤ 5000` | 500 ms (122 + 109 + 269); all three scan the same 41,891 rows and about 6,480 shared buffers, `readDays` to return 65 day rows and the other two seven week rows | about 5.0 s (1.2 + 1.1 + 2.7), the projections in `### What stays a raw query` | zero, for the same write |
+| Usage | twelve statements: the model's `weekBuckets` for calls by week, team and tool, and over `zz.event` from its first row `callWeeks`, `followupWeeks`, `latencyMeasures` and `sessionsMeasure`, with `rhythmCells` over the 26 weeks it draws and five small reads beside them | the seven weeks the page draws, and every refusal and session in the record · team, tool and refusal owner · local week | `rows ≤ 1000, ms ≤ 50` on the model, `rows ≤ 850000, ms ≤ 1800` on the raw tail | 1.16 s summed at 47,698 real-work calls (2026-11-01): `sessionsMeasure` 375 ms, `latencyMeasures` 208 ms, `callWeeks` 186 ms, `followupWeeks` 168 ms, `rhythmCells` 162 ms, the model's read 12 ms; each whole-record statement reads every one of about 5,030 buffers, `followupWeeks` 30,925 | about 11 s, past the raw tail's budget; the model's read stays near 12 ms | zero: the model absorbs the call in the transaction that writes it and the raw tail is read at request time, so a served answer is never behind `zz.event` |
+| Status | eighteen statements: over `zz.event` from its first row `sessionsMeasure`, `followupWeeks`, `latencyMeasures`, `readDays`, `callWeeks`, `searchDays` and `searchesMeasure`'s refused searches, and eleven small reads beside them | the whole record by local day and by local week, and the doors' last 365 days · local day, local week | `rows ≤ 450000, ms ≤ 5000` | 1.30 s summed at 47,698 real-work calls (2026-11-01): `sessionsMeasure` 392 ms, `followupWeeks` 246 ms, `latencyMeasures` 199 ms, `readDays` 163 ms, `callWeeks` 160 ms, the two search statements 61 and 62 ms; each reads the whole table's 5,030 buffers or more to return a few week rows | about 12.6 s, past the budget, the projections in `### What stays a raw query` | zero, for the same write |
 
 The `rows` half of Home's and Record's budget is the answer's own rows — the weeks the period draws times the
 reductions drawn — because both are the record reduced to a week, so their row bound is the grain's, not the
-table's; Status's buffers figure is the whole-table evidence beside it.
+table's; Status's buffers figure is the whole-table evidence beside it. Usage and Status repeat four statements —
+`callWeeks`, `followupWeeks`, `latencyMeasures` and `sessionsMeasure` — because each page computes its own answer.
 
 Task I-19's first shipped union was unusable on real traffic. Its `weekBuckets` read the raw half as a range
 inside each bucket's own week, assuming the row had absorbed that week: **470 of the 645 buckets end an
@@ -635,17 +638,20 @@ from the whole history; `checks/event-work-week-reads.ts` holds all of it, buffe
 
 ### What stays a raw query
 
-These seven read `zz.event` from its first row on every request, each for a reason the model cannot fix, with the cost measured today and its projection at ten times the calls.
+These ten read `zz.event` from its first row on every request, each for a reason the model cannot fix, with the cost measured on 2026-11-01 at 47,698 real-work calls and its projection at ten times them. Summed, they put Usage and Status past their budgets at ten times; moving `callWeeks` and the refused searches onto the model, and the rest onto models of their own, is an open decision for the spec's owner, because the metric table this phase agreed moves exactly `teamWeeks` and `toolWeeks`.
 
 | Reduction | Why its grain cannot be held | Today | At ten times |
 |---|---|---|---|
-| `followupWeeks` | a refusal and the 120 seconds after it; a session's whole later history | 148 ms platform-wide, 3.0 ms for one team (1,388 refusals) | about 1.5 s |
-| `latencyMeasures` | a per-week malformed split by side | 109 ms | about 1.1 s |
-| `searchDays(from = null)` | a null `from` asks for the first search ever made, so the window is the whole history | 50 ms | about 0.5 s |
-| `sessionsMeasure` | a session's whole later history, not a bucket's | 269 ms platform-wide, 1.9 ms for one team | about 2.7 s |
-| `readDays` | the local day and hour, finer than the model's week | 122 ms | about 1.2 s |
-| `callWeeks` | it would answer from the model; it is left raw because the metric table this phase agreed to ship moves exactly `teamWeeks` and `toolWeeks`, and moving more is a change to what the spec agreed | 133 ms platform-wide, 1.9 ms for one team | about 1.3 s |
-| `callDays` | the local day, and a `batched` dimension the model's `ms` array deliberately excludes | 278 ms | about 2.8 s |
+| `followupWeeks` | a refusal and the 120 seconds after it; a session's whole later history | 168–246 ms platform-wide, 30,925 buffers | about 1.7–2.5 s |
+| `latencyMeasures` | a per-week malformed split by side | 199–208 ms | about 2.0 s |
+| `searchDays(from = null)` | a null `from` asks for the first search ever made, so the window is the whole history | 61 ms | about 0.6 s |
+| `searchesMeasure`, refused searches by week | it would answer from the model, whose grain carries the tool and the refusal owner; it is left raw for the reason `callWeeks` is | 40–62 ms, 5,031 buffers | about 0.6 s |
+| `sessionsMeasure` | a session's whole later history, not a bucket's | 375–392 ms platform-wide | about 3.9 s |
+| `readDays` | the local day and hour, finer than the model's week | 163 ms | about 1.6 s |
+| `callWeeks` | it would answer from the model; it is left raw because the metric table this phase agreed to ship moves exactly `teamWeeks` and `toolWeeks`, and moving more is a change to what the spec agreed | 160–186 ms platform-wide | about 1.9 s |
+| `callDays` | the local day, and a `batched` dimension the model's `ms` array deliberately excludes; only the Platform prepared query reads it | 378 ms, 5,092 buffers | about 3.8 s |
+| Activity's log head (`logOf`) | where the team's record begins and every kind of event it holds, most of them not calls, so the whole of the team's record | 120–134 ms for the team with the most work, 4,896 buffers | about 1.3 s |
+| Plugins' calls by skill (`catalog.ts`) | the skill version a call ran under and the instant of its last call, neither of which the model's grain carries | 64–70 ms for the team with the most work, 4,904 buffers | about 0.7 s |
 
 ### Which read models exist, and why each one does
 

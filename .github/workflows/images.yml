@@ -90,14 +90,6 @@ jobs:
         with:
           node-version: 24
 
-      # The dry run migrates a throwaway PostgreSQL built from this image, so it has to exist
-      # before the run starts — the same reason gate.yml builds it, with the tag read from
-      # `deploy/docker-compose.yml` the same way.
-      - name: Build the pinned PostgreSQL the dry run migrates
-        run: |
-          image=$(node --input-type=module -e "import('./scripts/release/postgres-service.ts').then((m) => process.stdout.write(m.postgresService('.').image))")
-          docker build -f deploy/postgres/Dockerfile -t "$image" .
-
       - run: npm ci
 
       # The release's first act is the gate, and the gate's checks import the workspace packages'

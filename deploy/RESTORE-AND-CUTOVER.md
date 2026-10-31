@@ -89,27 +89,23 @@ reads it.
 
 ```bash
 cd <checkout>/zz-stack
-docker build -f deploy/postgres/Dockerfile -t zz-postgres-rehearsal:17 .
+IMAGE=$(node --input-type=module -e "import('./scripts/release/postgres-service.ts').then((m) => process.stdout.write(m.postgresService('.').image))")
 
 docker network create zz-rehearsal
 docker run -d --name zz-rehearsal-db --network zz-rehearsal \
   -e POSTGRES_PASSWORD="$(openssl rand -hex 24)" \
   -e POSTGRES_USER=zz -e POSTGRES_DB=zz_rehearsal \
   -p 127.0.0.1:55432:5432 \
-  zz-postgres-rehearsal:17 \
-  postgres -c config_file=/etc/postgresql/postgresql.conf \
-           -c shared_buffers=512MB -c maintenance_work_mem=128MB
+  "$IMAGE" \
+  postgres -c shared_buffers=512MB -c maintenance_work_mem=128MB -c work_mem=16MB
 ```
 
 `-p 127.0.0.1:55432` binds to loopback only. A rehearsal database that anything else on the
 network can reach is not isolated.
 
-The command line is the one `deploy/docker-compose.yml` gives the platform's database: the
-image's own configuration sets `shared_buffers = 8GB`, which stops PostgreSQL starting at all on a
-small machine.
-
-`deploy/postgres/versions.lock.json` carries the pins for this image; read the lock file rather
-than any prose about it if the two ever disagree.
+The image and the command line are the ones `deploy/docker-compose.yml` gives the platform's
+database: the official PostgreSQL 17 image, pinned by digest. Read compose rather than any prose
+about it if the two ever disagree.
 
 ---
 

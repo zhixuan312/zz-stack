@@ -167,7 +167,7 @@ check("one image, one recipe", () => {
     }
     for (const m of src.matchAll(/docker build\b[^\n]*?-f\s+(\S+)/g)) named.set(m[1], f);
   }
-  // CI builds the database image itself, with a literal `docker build -f`.
+  // A workflow that builds an image does it with a literal `docker build -f`.
   for (const f of repositoryFiles().filter((x) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(x))) {
     for (const m of readFileSync(join(root, f), "utf8").matchAll(/docker build\b[^\n]*?-f\s+(\S+)/g)) {
       named.set(m[1], f);
@@ -184,29 +184,12 @@ check("one image, one recipe", () => {
   }
   if (!named.size) return "nothing in this repo names a Dockerfile — this check reads nothing";
 
-  // One recipe per image, and this repository ships two images: the application, and a PostgreSQL
-  // image pinned to an exact base digest and an exact search-extension source, built in isolation to
-  // prove a dependency before anything is deployed on it. They are different things, on different
-  // schedules, for different readers — so the rule is per class: each class has one recipe, a
-  // Dockerfile belongs to a class, and a class nothing builds from is still the other half of the
-  // defect. A Dockerfile is classed by its path; which recipes exist is detected above.
-  const CLASSES: readonly { name: string; is: (p: string) => boolean }[] = [
-    { name: "database (dependency-proof)", is: (p) => p === "deploy/postgres/Dockerfile" },
-    { name: "application", is: () => true },
-  ];
-  const classOf = (p: string) => CLASSES.find((c) => c.is(p))!.name;
-
+  // One recipe: this repository builds one image, the application. The database runs the official
+  // PostgreSQL image, pinned in compose, and nothing builds it.
   const bad = [];
-  const byClass = new Map<string, [string, string][]>();
-  for (const [d, by] of named) {
-    const k = classOf(d);
-    byClass.set(k, [...(byClass.get(k) ?? []), [d, by]]);
-  }
-  for (const [k, recipes] of byClass) {
-    if (recipes.length > 1) {
-      bad.push(`${recipes.length} recipes for the ${k} image: ` +
-               recipes.map(([d, by]) => `${d} (${by})`).join(", "));
-    }
+  if (named.size > 1) {
+    bad.push(`${named.size} recipes for the application image: ` +
+             [...named].map(([d, by]) => `${d} (${by})`).join(", "));
   }
   // A Dockerfile nobody builds from is the other half of the same defect: it is what the
   // next person edits, and what this gate's image checks would go on reading.

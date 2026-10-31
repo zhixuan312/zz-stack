@@ -35,24 +35,14 @@ for (const f of files) {
   if (/(?:^|\/)(?:tenant-projections|tenant-rebuild|search-plan|tenant-information)\.ts$/.test(f)) {
     hits.push(`${f} is a layer file that survived`);
   }
-  // No `\b` before it: `_` is a word character, so `\bpg_textsearch\b` cannot see
-  // `pg_textsearch_tag` — and that is where the extension actually lives, in the deploy
-  // lock, the Dockerfile, the cluster conf and the two checks that pin them. The exemption
-  // is per LINE too, because a whole-file one skipped the baseline on the word "deleted"
-  // in an absorbs line while it still declared the extension.
-  // The DATABASE's extension is dropped; the IMAGE's build and preload are not. `deploy/postgres`
-  // compiles it and `shared_preload_libraries` loads it, and `checks/postgres-image-pinned.ts`
-  // asserts the lock's tag reaches the image tag — so those mentions must stay, and a scan that
-  // flagged them would demand deleting the pinned image build.
-  // Five exemptions, each a file that must name the extension to say what it says:
-  // `deploy/postgres/` compiles and preloads it; `checks/postgres-image-pinned.ts` and
-  // `scripts/gate/checks/deploy-compose.ts` are the two checks that pin the tag that reaches the
-  // image; `checks/artifact-layer-deleted.ts` — this file — states the rule, and a scan that flagged
-  // any of them would demand deleting the pinned image build or its own explanation. The fifth is
-  // `services/gateway/migrations/`, exempted as a whole directory rather than only the file that
-  // existed when this was written, because the migration that drops the extension is exactly the
-  // file that has to spell it.
-  const namesItOnPurpose = /^(deploy\/postgres\/|checks\/postgres-image-pinned\.ts$|scripts\/gate\/checks\/deploy-compose\.ts$|checks\/artifact-layer-deleted\.ts$|services\/gateway\/migrations\/)/;
+  // No `\b` before it: `_` is a word character, so `\bpg_textsearch\b` would miss
+  // `pg_textsearch_tag`, which is how a pinned build would spell it. The exemption is per LINE,
+  // because a whole-file one skipped the baseline on the word "deleted" in an absorbs line while
+  // it still declared the extension.
+  // Two exemptions, each a file that must name the extension to say what it says: this file states
+  // the rule, and `services/gateway/migrations/` — the whole directory, not only the file that
+  // existed when this was written — holds the migration that drops it.
+  const namesItOnPurpose = /^(checks\/artifact-layer-deleted\.ts$|services\/gateway\/migrations\/)/;
   if (namesItOnPurpose.test(f)) continue;
   src.split("\n").forEach((line, n) => {
     if (!/pg_textsearch/.test(line)) return;

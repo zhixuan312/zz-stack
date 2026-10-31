@@ -17,10 +17,8 @@
  * written down a second time. A tag in two files drifts silently until a release rehearses
  * against a database the deployment stopped using.
  *
- * The command comes with it. The image ships the specification's reference settings, including
- * `shared_buffers = 8GB`, and compose overrides that to a value the host can map; a plain
- * `docker run` of the image would take the 8 GB and fail to start with "could not map anonymous
- * shared memory" on any machine smaller than the reference.
+ * The command comes with it: compose sizes the memory settings to the host, and a rehearsal on
+ * the image's defaults would measure a different database.
  *
  * DELIBERATE: a targeted reader rather than a YAML library. `yaml` resolves in this tree only
  * as somebody else's transitive dependency and is not in `package.json`. This wants two fields

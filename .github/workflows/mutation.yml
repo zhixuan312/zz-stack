@@ -74,14 +74,6 @@ jobs:
         with:
           node-version: 24
 
-      # The gate's inventory and evaluation-reader checks migrate a throwaway PostgreSQL built from
-      # this image, so it has to exist before the baseline runs — the same reason gate.yml and
-      # images.yml build it, with the tag read from `deploy/docker-compose.yml` the same way.
-      - name: Build the pinned PostgreSQL the gate's Docker checks migrate
-        run: |
-          image=$(node --input-type=module -e "import('./scripts/release/postgres-service.ts').then((m) => process.stdout.write(m.postgresService('.').image))")
-          docker build -f deploy/postgres/Dockerfile -t "$image" .
-
       - run: npm ci
 
       - name: Build the workspace the gate reads

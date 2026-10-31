@@ -353,35 +353,16 @@ check("every path the Dockerfile copies is a path that exists", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("the postgres image compose runs is the one the lock file pins", () => {
+check("the postgres image compose runs is pinned by digest", () => {
   // One source for the database image, because two release steps start it from here.
   // `scripts/release/postgres-service.ts` reads the `postgres` service out of compose so the
   // release rehearses against the image the deployment runs: the SQL check migrates an empty one
   // and PREPAREs every query in the tree against the schema it leaves behind, and the tool-chain
-  // walk stands the whole platform on it. A hardcoded `postgres:16-alpine` cannot carry
-  // pg_textsearch, which defers the schema on every release.
-  //
-  // COUPLED: compose and `deploy/postgres/versions.lock.json` are both descriptions of that
-  // image, and the lock is what `checks/postgres-image-pinned.ts` validates the Dockerfile
-  // against. Nothing else in this repository compares them.
-  //
-  // The tag is asserted to contain both versions rather than to equal a reconstructed string: a
-  // registry path and a naming convention are not this check's business.
+  // walk stands the whole platform on it. A tag alone moves when the registry republishes it, so the
+  // rehearsal and the deployment could run different bytes under one name.
   const { image } = postgresService(root);
-  const rel = "deploy/postgres/versions.lock.json";
-  const lock = asRecord(readJson(rel), rel);
-  const pg = String(lock.postgres_version ?? "");
-  const pgts = String(lock.pg_textsearch_tag ?? "").replace(/^v/, "");
-  if (!pg || !pgts) return `${rel} names no postgres_version or pg_textsearch_tag`;
-  const tag = image.slice(image.lastIndexOf(":") + 1);
-  if (tag === image) {
-    return `compose runs \`${image}\`, which carries no tag — the release would rehearse against whatever :latest is that day`;
-  }
-  const wrong: string[] = [];
-  if (!tag.includes(pg)) wrong.push(`the lock pins PostgreSQL ${pg}`);
-  if (!tag.includes(pgts)) wrong.push(`the lock pins pg_textsearch v${pgts}`);
-  if (wrong.length) {
-    return `compose runs \`${image}\` but ${wrong.join(" and ")} — the release rehearses on one image `
-      + "and the Dockerfile is validated against the other";
+  if (!/^postgres:17\.\d+-\S*@sha256:[0-9a-f]{64}$/.test(image)) {
+    return `compose runs \`${image}\` — expected the official PostgreSQL 17 image as \`postgres:<17.x tag>@sha256:<digest>\`, ` +
+      "so the release rehearses on exactly the bytes the deployment pulls";
   }
 });

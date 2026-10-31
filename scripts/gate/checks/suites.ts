@@ -162,8 +162,6 @@ check("the gate loads nothing built before its own build has run", () => {
   return firstOf(problems, 6);
 });
 
-check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, search-extension release and actual preload membership",
-      runsCheck("postgres-image-pinned.ts"));
 check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
       runsCheck("tenant-checks-registered.ts"));
 check("a migration needing an extension declares it, and the runner still defers rather than taking the database down",

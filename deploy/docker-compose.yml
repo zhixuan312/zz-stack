@@ -167,15 +167,14 @@ services:
   # The platform's database. Not optional and behind no profile: every service above defaults
   # to it, and the gateway keeps teams, people, tokens, grants and the document index in it.
   postgres:
-    image: ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0
+    # The official image, pinned by the digest of its multi-architecture index: it carries pg_trgm,
+    # the one extension the schema creates, and nothing is built for it. Every throwaway database
+    # the gate and the release start reads this line (scripts/release/postgres-service.ts).
+    image: postgres:17.11-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652
     restart: unless-stopped
-    # Sized to the host. The image's own configuration sets `shared_buffers = 8GB`, which stops
-    # PostgreSQL 17 starting at all on a small machine.
-    #
-    # DELIBERATE: overridden here, not in the conf the image ships, so a larger host has one line
-    # to delete.
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf",
-              "-c", "shared_buffers=512MB", "-c", "maintenance_work_mem=128MB"]
+    # Sized to the host; everything else is the data directory's own postgresql.conf.
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "maintenance_work_mem=128MB",
+              "-c", "work_mem=16MB"]
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-zz}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD — openssl rand -hex 16}

@@ -265,13 +265,13 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
     // attributed to a step carries the hash of the bytes the model was handed. Every other
     // call pays nothing.
     //
-    // `skill_read(name, file: …)` serves a supporting file beside the SKILL.md, whose
-    // frontmatter is not the skill's version — see stepLoaded.
+    // `skill_read(name, file: …)` serves a supporting file beside the SKILL.md, whose bytes
+    // are not the skill's — see stepLoaded.
     //
     // RAW NAME: the name the CLIENT sent, so this is the REGISTERED spelling.
     // COUPLED: this literal and the tool's registration must be renamed in the same commit.
-    // Nothing goes red if they diverge — every call silently loses `step_version` and
-    // `step_sha`, which is attribution, not display.
+    // Nothing goes red if they diverge — every call silently loses `step_sha`, which is
+    // attribution, not display.
     const loading = wanted.filter((m) => m.params?.name === "skill_read")
       .map((m) => {
         const a = m.params?.arguments as Record<string, unknown> | undefined;

@@ -11,11 +11,9 @@
  *
  * DELIBERATE: this module does not identify people. Identity is used to correlate a skill
  * load with the calls that follow it and is never stored; what lands on the row is a flow, a
- * step and a version.
+ * step and a hash.
  */
 import { createHash } from "node:crypto";
-
-import { parseEnvelope } from "@zz/contracts";
 
 import { platformDb, platformDbReady } from "./db.js";
 
@@ -46,22 +44,12 @@ interface Trace {
    * DELIBERATE: withheld on a mismatch, not forgotten — switching away and back is what an
    * evaluation run does, and the initiative is still theirs when they return. */
   team?: string;
-  /** Absent where nothing established them: a skill served whole carries its declared version
-   *  and the hash of the bytes, a supporting file or a trace with no step carries neither. */
-  stepVersion?: string;
+  /** The hash of the bytes a skill served whole was handed over as. Absent for a supporting file
+   *  or a trace with no step: neither established it. */
   stepSha?: string;
   run: string;
   at: number;
 }
-
-/** The version a skill declares, read out of the frontmatter that `skill_read` serves. It is
- * a claim, orderable and citable; the hash recorded beside it is what makes the claim
- * checkable. */
-const declaredVersion = (body: string): string =>
-  // COUPLED: frontmatter is parsed by @zz/contracts' parseEnvelope, never by a regex here —
-  // a second spelling of the fence disagrees with the first. It also takes the last value of
-  // a repeated key and ignores a `version:` line in a document's prose.
-  (parseEnvelope(body).version ?? "").replace(/^["']|["']$/g, "").trim();
 
 /** Keyed by caller, held in memory, never written down. A restart loses the correlation for
  * conversations in flight, which costs the step on a few rows and nothing else.
@@ -93,18 +81,17 @@ export const callerKey = (headers: Record<string, unknown>): string =>
  *
  * `whole` says whether the bytes are the skill, or a supporting file beside it —
  * `skill_read(name, file: "references/<file>.md")`. Both are the same step; only the first carries the
- * skill's version.
+ * skill's hash.
  *
  * A file inside the step already in progress changes nothing but the clock. A file for some
- * other skill sets the step with no version: nothing served that skill, so nothing told us
- * its version, and a supporting file's own frontmatter declares something else's version. */
+ * other skill sets the step with no hash: nothing served that skill's own bytes. */
 export function stepLoaded(caller: string, skill: string, servedBody: string, whole: boolean): void {
   const now = Date.now();
   sweep(now);
   const prior = traces.get(caller);
   const run = prior && now - prior.at <= RUN_IDLE_MS ? prior.run : mint(caller, now);
   // Reading a supporting file of the step you are already following is not a load. Refresh the
-  // clock and keep the version and the hash that the load itself established.
+  // clock and keep the hash that the load itself established.
   if (!whole && prior && prior.step === skill && now - prior.at <= FOLLOWS_FOR_MS) {
     prior.at = now;
     return;
@@ -117,8 +104,6 @@ export function stepLoaded(caller: string, skill: string, servedBody: string, wh
     // The team travels with it: carrying the initiative forward without the team it was named
     // under is what lets it cross a team switch.
     team: prior && now - prior.at <= FOLLOWS_FOR_MS ? prior.team : undefined,
-    // Only from the skill itself — a supporting file's frontmatter declares its own version.
-    stepVersion: whole ? declaredVersion(servedBody) : undefined,
     // The bytes the model was handed, hashed. Twelve hex tells two versions of one skill
     // apart and is short enough to read in a table.
     stepSha: whole ? createHash("sha256").update(servedBody).digest("hex").slice(0, 12) : undefined,
@@ -142,7 +127,7 @@ export function initiativeSeen(caller: string, initiative: string, team?: string
 
 /** The step this caller is following, or nothing if none is or the last one has expired. */
 export function currentStep(caller: string, team?: string):
-  { step?: string; step_version?: string; step_sha?: string; initiative?: string; run: string } | undefined {
+  { step?: string; step_sha?: string; initiative?: string; run: string } | undefined {
   const t = traces.get(caller);
   if (!t) return undefined;
   const now = Date.now();
@@ -152,7 +137,7 @@ export function currentStep(caller: string, team?: string):
   // DELIBERATE: the step crosses a team switch and the initiative does not. Which skill
   // someone is following is a fact about them; a slug means something different, or nothing,
   // in the next team.
-  return { step: t.step, step_version: t.stepVersion, step_sha: t.stepSha,
+  return { step: t.step, step_sha: t.stepSha,
            initiative: t.team === team ? t.initiative : undefined, run: t.run };
 }
 

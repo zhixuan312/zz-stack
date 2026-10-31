@@ -27,8 +27,6 @@ import type { NextFunction, Request, Response } from "express";
 import { pluginForDoor } from "@zz/catalog";
 import { eventOrigin, refusalClass, refusalOwner, type RefusalOwner } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
-// COUPLED: `tool_key` must fold onto the same series a reader building one from historical
-// `subject` values would, so nothing but this resolver may produce it.
 
 import { logEvent } from "./events.js";
 import { ANSWER_NAMES_INITIATIVE, initiativeFrom, stageOwing } from "./call-attribution.js";

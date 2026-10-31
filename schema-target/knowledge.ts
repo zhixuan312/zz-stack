@@ -156,7 +156,7 @@ export const KNOWLEDGE: Record<string, TableTarget> = {
       body: "class=current_state; authority=this; question=what does this lesson say?",
       body_tsv: "class=projection; authority=zz.knowledge_node.body; question=what does this node's body look like as the search vector a full-text query matches?; rebuilt_from=body",
       tags: "class=current_state; authority=this; question=which subjects is this node tagged under?",
-      content_hash: "class=current_state; authority=this; question=what hash of this node's derived fields lets a reindex skip it because nothing it derives has changed?",
+      content_hash: "class=current_state; authority=this; question=what sha256 prefix of the node's kind, lifecycle, successor ordinal, title, body, tags and cited initiatives did indexNode compute when it wrote the row, a value nothing reads — a reindex is decided by analyzer_version — and that supersedeNode does not recompute, so a superseded node's hash still covers the lifecycle it was written with?",
       created_at: "class=current_state; authority=this; question=when was this node minted?",
       updated_at: "class=current_state; authority=this; question=when did this node last change?",
       analyzer_version: "class=projection; authority=zz.knowledge_node.body; question=which analyzer generation produced this node's search vector, so a vector from another generation can be rederived?; rebuilt_from=body",

@@ -108,9 +108,11 @@ function publicTitle(surface: string | null): string {
  * DELIBERATE: rows, not a SQL fragment. Every console query is one literal statement check:sql can
  * PREPARE, so a predicate interpolated into another read's SQL would fail the gate; a read that
  * counts real reports counts these rows.
+ *
+ * `words` is the surfaces' vocabulary when the request has read it already, so it is read once.
  */
-export async function realReports(asOf: string): Promise<RealReport[]> {
-  const words = await vocabulary();
+export async function realReports(asOf: string, words?: Set<string>): Promise<RealReport[]> {
+  const surfaces = words ?? await vocabulary();
   const { rows } = await platformDb().query<{
     id: string; team_id: string | null; impact: Impact; status: Status; surface: string | null;
     platform_version: string | null; reported_ms: number; resolved_ms: number | null;
@@ -124,7 +126,7 @@ export async function realReports(asOf: string): Promise<RealReport[]> {
         and not exists (select 1 from zz.initiative i where i.id = b.initiative_id and i.slug ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-chain-check-[0-9]{4}-[0-9a-f]{4}$')
       order by b.reported_at desc, b.id`, [asOf]);
   return rows.map((r) => ({
-    id: r.id, teamId: r.team_id, impact: r.impact, status: r.status, surface: canonicalSurface(r.surface, words),
+    id: r.id, teamId: r.team_id, impact: r.impact, status: r.status, surface: canonicalSurface(r.surface, surfaces),
     platformVersion: r.platform_version, reportedMs: r.reported_ms, resolvedMs: r.resolved_ms,
   }));
 }
@@ -198,7 +200,8 @@ function parse(req: Request, words: Set<string>): { filter: Filter; limit: numbe
 export function mountPlatformBugs(app: Express): void {
   app.get("/api/console/platform/bugs", platformPublic("the platform's bugs", async (req, res, caller) => {
     const db = platformDb();
-    const asked = parse(req, await vocabulary());
+    const words = await vocabulary();
+    const asked = parse(req, words);
     if (typeof asked === "string") {
       res.status(400).json({ error: asked });
       return;
@@ -208,7 +211,7 @@ export function mountPlatformBugs(app: Express): void {
     const asOf = new Date(asOfMs).toISOString();
     // The record begins with the first real-work call, the cohorts' denominator, or with the first
     // real report if one came before it: the two are read together.
-    const [reports, grid] = await Promise.all([realReports(asOf), readGrid(db, asOfMs)]);
+    const [reports, grid] = await Promise.all([realReports(asOf, words), readGrid(db, asOfMs)]);
     const coverageMs = bugsCoverage(grid.coverageMs, reports);
 
     // Every week of the shared calendar from the one coverage begins in through the running one,
@@ -296,7 +299,8 @@ export function mountPlatformBugs(app: Express): void {
   }));
 
   // The targets `bug_resolve` would accept for this report: every other report of its team, a
-  // report in no team matching another in none, whatever their status.
+  // report in no team matching another in none, open or resolved, but never one itself closed as a
+  // duplicate, which bug_resolve refuses as a target.
   // COUPLED: the duplicate checks in services/zz-core/src/tools/bugs.ts.
   app.get("/api/console/platform/bugs/:id/duplicates", platformPublic("a bug report's duplicate targets", async (req, res, caller) => {
     if (!caller.superadmin) {
@@ -318,7 +322,7 @@ export function mountPlatformBugs(app: Express): void {
       `select o.id::text as id, o.title, o.status, (extract(epoch from o.reported_at) * 1000)::float8 as reported_ms
          from zz.bug s
          join zz.bug o on o.id <> s.id and o.team_id is not distinct from s.team_id
-        where s.id = $1::uuid
+        where s.id = $1::uuid and o.status <> 'duplicate'
         order by o.reported_at desc, o.id`, [id]);
     res.json({ rows: rows.map((r) => ({ id: r.id, title: r.title, status: r.status, reportedAt: iso(r.reported_ms) })) });
   }));

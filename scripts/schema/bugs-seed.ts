@@ -125,11 +125,11 @@ export const EXPECTED = {
     "limit=3&offset=2": ["R8", "R7", "R6"],
   } as Record<string, Real[]>,
   /** The targets `bug_resolve` would accept, newest first: its team's other reports, the release
-   *  check's own included, and no team matching no team. */
+   *  check's own included, and no team matching no team — never one closed as a duplicate. */
   duplicates: {
-    R1: ["R10", "P1", "R7", "R6", "R2"],
+    R1: ["R10", "P1", "R7", "R6"],
     R3: ["R9", "R8"],
-    R4: ["P2", "R5"],
+    R4: ["P2"],
   } as Partial<Record<Real, Key[]>>,
 } as const;
 

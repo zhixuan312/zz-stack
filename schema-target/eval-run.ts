@@ -648,7 +648,7 @@ export const EVAL_RUN: Record<string, TableTarget> = {
       request_digest: "class=ephemeral; authority=this; question=what digest of the canonical arguments this call was made with, so a same-key call with different arguments is refused?",
       result_table: "class=ephemeral; authority=this; question=which table the first write landed in, naming a parent table where the call produced no single result row?",
       result_id: "class=ephemeral; authority=this; question=which row the first write produced, a polymorphic pointer with no foreign key because it may name any result table?",
-      created_at: "class=ephemeral; authority=this; question=when the first write was recorded, the instant the 30-day sweep measures from?",
+      created_at: "class=ephemeral; authority=this; question=when the first write was recorded, the instant the declared 30-day retention measures from, though no sweep deletes a row yet?",
       principal_id: "class=relation; authority=this; question=which principal made the call, the first component of the key rather than an address that can change?",
     },
   },

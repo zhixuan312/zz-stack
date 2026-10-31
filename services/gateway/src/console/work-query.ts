@@ -255,10 +255,13 @@ function whereOf(measure: Measure, raw: unknown): [string, string][] | string {
   return out;
 }
 
+/** The weekday and hour on the reporting timezone's clock, built once: a formatter is costly to make and local runs
+ *  once per run. */
+const WEEKDAY_HOUR = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, weekday: "long", hour: "2-digit", hourCycle: "h23" });
+
 /** An instant on the reporting timezone's calendar: its local date, weekday and hour. */
 function local(ms: number): { weekday: string; hour: string } {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: ZZ_TZ, weekday: "long", hour: "2-digit", hourCycle: "h23" })
-    .formatToParts(new Date(ms));
+  const parts = WEEKDAY_HOUR.formatToParts(new Date(ms));
   const of = (t: string): string => parts.find((p) => p.type === t)?.value ?? "";
   return { weekday: of("weekday"), hour: of("hour") };
 }

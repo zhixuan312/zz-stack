@@ -400,7 +400,7 @@ export const EVAL_OBSERVE: Record<string, TableTarget> = {
       description_model_call_id: "class=relation; authority=this; question=which generative-critic model call wrote this description?",
       evidence_refs: "class=immutable_history; authority=this; question=which representative events and initiatives are the evidence for this sighting?",
       discovered_by: "class=immutable_history; authority=this; question=which principal's DISCOVER call found this sighting?",
-      discovery_key: "class=immutable_history; authority=this; question=under which idempotency key was this sighting written, so a replayed DISCOVER call recovers its own rows?",
+      discovery_key: "class=immutable_history; authority=this; question=under which failure mode's stable key was this sighting grouped when DISCOVER found it?",
       created_at: "class=immutable_history; authority=this; question=when was this sighting recorded?",
     },
   },

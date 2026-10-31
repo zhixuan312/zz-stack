@@ -43,7 +43,7 @@ import type { Express, Request, Response } from "express";
 import pg from "pg";
 
 import { platformDbReady, platformDbUrl } from "../db.js";
-import { browserSession } from "../identity.js";
+import { browserSession, isSuper } from "../identity.js";
 import { COLLECTIONS, count, heardBy, listening, movedSince, notListening, type Change } from "./live-revision.js";
 import { mayReadConsole } from "./shared.js";
 
@@ -107,12 +107,14 @@ function parseChange(payload: string | undefined): Change | null {
  * May this caller still be told? Asked immediately before each frame goes out, never at open time.
  *
  * The session first, so a revoked one ends the stream; then the same console-wide admission the route made; then the
- * team, because what a person may see can narrow — leaving a team is a change to what they may be told, not only to
- * what they may read.
+ * reach, because what a person may see can narrow — leaving a team is a change to what they may be told, not only to
+ * what they may read, and so is a superadmin's demotion: a stream opened to hear every team (`teams` null) ends once
+ * its caller is no longer a superadmin, as a stream whose session was revoked does.
  */
 async function stillAllowed(s: Subscriber, change: Change): Promise<boolean> {
   const now = await browserSession(s.req).catch(() => null);
   if (!now || !mayReadConsole(now)) return false;
+  if (s.teams === null && !isSuper(now)) return false;
   if (change.t === "") return true;
   return s.teams === null || now.teams.some((t) => t.slug === change.t);
 }

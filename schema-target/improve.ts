@@ -166,7 +166,7 @@ export const IMPROVE: Record<string, TableTarget> = {
     indexes: [
       "CREATE INDEX eval_finding_eval_run_id_idx ON zz.eval_finding USING btree (eval_run_id)",
     ],
-    comment: "class=state_machine; authority=this; question=what conclusion did one evaluation run reach about a plugin, whose problem it names, and whether that owner has since applied or rejected the fix?; transitions=deferred->applied,deferred->rejected",
+    comment: "class=state_machine; authority=this; question=what conclusion did one evaluation run reach about a plugin, whose problem it names, and whether that owner has since applied or rejected the fix?; transitions=deferred->applied,deferred->rejected,applied->deferred",
     columnComments: {
       id: "class=state_machine; authority=this; question=what is this finding's stable identity, the row a correction and every decision hang from?",
       pattern: "class=state_machine; authority=this; question=what did the run find, in the one sentence findings.md and the proposal document print?",
@@ -434,7 +434,7 @@ export const IMPROVE: Record<string, TableTarget> = {
       "CHECK ((status = ANY (ARRAY['recorded'::text, 'awaiting_build'::text, 'valid'::text, 'invalid'::text])))",
     ],
     indexes: [],
-    comment: "class=state_machine; authority=this; question=which patch was proposed against which exact base plugin version, with what hypothesis and expected effect, and what did its local build and gate say?; transitions=recorded->awaiting_build,awaiting_build->valid,awaiting_build->invalid",
+    comment: "class=state_machine; authority=this; question=which patch was proposed against which exact base plugin version, with what hypothesis and expected effect, and what did its local build and gate say?; transitions=recorded->awaiting_build,awaiting_build->valid,awaiting_build->invalid,awaiting_build->recorded",
     columnComments: {
       id: "class=state_machine; authority=this; question=what is this candidate's stable identity, the row its release attempts bind to?",
       improvement_run_id: "class=relation; authority=this; question=which improvement attempt proposed it?",
@@ -605,7 +605,7 @@ export const IMPROVE: Record<string, TableTarget> = {
       release_ref: "class=state_machine; authority=this; question=which 40-hex commit the release tag names, null until a release lands?",
       verification: "class=state_machine; authority=this; question=what evidence does the verdict rest on — {post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, base_overall, delta, regression_band, guardrail_status} — null until the released subject has enough real runs and an evaluation to judge, the verdict itself being the verdict column and when it landed being verified_at?",
       created_at: "class=state_machine; authority=this; question=when was it prepared, the order the console prints attempts in?",
-      reason: "class=state_machine; authority=this; question=why did this attempt end as it did — releaseDecision's own reason on a refusal, the failing command's output tail (release_record) on a failure, the operator's reason on a rollback, or the accepted override (--reconcile --accept-tag-without-candidate-commit) on a reconciled release — null for prepared and applying, and for a release proved without an override?",
+      reason: "class=state_machine; authority=this; question=why did this attempt end as it did — releaseDecision's own reason on a refusal, the failing command's output tail (release_record) on a failure, on a rollback the reason release_record was sent, which the rollback CLI takes from release_verify's own reason and regression_established when it gave none, or the accepted override (--reconcile --accept-tag-without-candidate-commit) on a reconciled release — null for prepared and applying, and for a release proved without an override?",
       plugin_id: "class=relation; authority=this; question=which plugin this attempt releases — the base subject's own plugin, written by release_prepare — the column keying the index that allows at most one applying attempt per plugin?",
       applying_at: "class=state_machine; authority=this; question=when did release_apply move it to applying, an attempt still applying long after the CLI's own gate and release timeouts being stale and named by release_apply for reconciliation?",
       verdict: "class=state_machine; authority=this; question=what did the post-release check decide — established, rolled_back or not_established — null until real use of the released version has been judged?",

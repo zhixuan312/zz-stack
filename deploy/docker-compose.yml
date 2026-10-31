@@ -89,8 +89,9 @@ services:
       - TYPESAFE_BUDGET_MS=${TYPESAFE_BUDGET_MS:-}
       - TYPESAFE_ATTEMPTS=${TYPESAFE_ATTEMPTS:-}
       # The team that owns every catalog plugin (FR-2, FR-47). Not read by this service at
-      # request time — zz.plugin.owner_team, written once by register-plugins, is what
-      # plugin_locate answers from — but register-plugins runs inside this same image, through
+      # request time — register-plugins writes it, on every release, as zz.plugin.owner_team_id
+      # (the maintainer plugin_locate shows) and as the plugin's zz.plugin_release_owner row (who
+      # may release it) — but register-plugins runs inside this same image, through
       # `./deploy/zz-tool register-plugins`, and this is how that run reaches it. Empty by
       # default: only register-plugins refuses on an unset value, so an install that never
       # registers a plugin is unaffected.

@@ -19,7 +19,9 @@
  *   - the link then really is spent: register/options refuses it;
  *   - a fresh link still registers;
  *   - a sign-in answering another challenge is refused in a sentence of the gateway's own, as the
- *     registration's is, and the same key then signs in.
+ *     registration's is, and the same key then signs in;
+ *   - a `next` that would leave the site — another origin, or `/` then a tab or a newline the URL
+ *     parser strips — is stored as `/`, and the sign-in answers `/`; a path on the site is kept.
  */
 import { randomBytes } from "node:crypto";
 
@@ -28,7 +30,12 @@ import { authenticator, headersOf, listenGateway, type Gateway } from "../script
 
 const NAME = "passkey-refusals";
 const DONE = "passkey-refusals: every failed registration says its enrolment link is used up and to ask for " +
-  "a new one, the link is then refused, a fresh link registers, and a failed sign-in quotes no verifier internals: ok";
+  "a new one, the link is then refused, a fresh link registers, a failed sign-in quotes no verifier internals, " +
+  "and a next that leaves the site is kept as /: ok";
+
+/** `next` values that resolve to another host, and one on the site that must be kept as it was sent. */
+const OFF_SITE = ["/\t/evil.example", "/\n/evil.example", "https://evil.example/x"];
+const ON_SITE = "/console/home?tab=a#b";
 
 /** The words every failed verify must carry, and the ones none may. */
 const SPENT = /enrolment link is used up: ask an administrator for a new one\.$/;
@@ -40,7 +47,7 @@ async function post(g: Gateway, path: string, body: unknown, cookie?: string) {
     signal: AbortSignal.timeout(60_000),
   });
   const ceremony = res.headers.getSetCookie().map((s) => s.split(";")[0]).find((s) => /^zz_ceremony=./.test(s));
-  return { status: res.status, body: (await res.json()) as { error?: string; challenge?: string }, ceremony };
+  return { status: res.status, body: (await res.json()) as { error?: string; challenge?: string; next?: string }, ceremony };
 }
 
 async function run(c: Core): Promise<void> {
@@ -92,10 +99,26 @@ async function run(c: Core): Promise<void> {
     if (wrong.status !== 401 || !/^[A-Z].*\.( Try again\.)?$/.test(wrong.body.error ?? "") || WRONG_WAY.test(wrong.body.error ?? "")) {
       c.fail(step, `answered ${wrong.status}: ${JSON.stringify(wrong.body)}`);
     }
-    const again = await post(g, "/auth/passkey/login/options", {});
+    const again = await post(g, "/auth/passkey/login/options", { next: OFF_SITE[0] });
     const signedIn = await post(g, "/auth/passkey/login/verify", { credential: key.get(again.body.challenge!, person) }, again.ceremony);
     if (signedIn.status !== 200) c.fail(step, `the same key then answered ${signedIn.status}: ${JSON.stringify(signedIn.body)}`);
-    c.pass(`${step}: "${wrong.body.error}", and the same key then signs in`);
+    if (signedIn.body.next !== "/") c.fail(step, `a sign-in begun with next ${JSON.stringify(OFF_SITE[0])} answered next ${JSON.stringify(signedIn.body.next)}`);
+    c.pass(`${step}: "${wrong.body.error}", and the same key then signs in, sent to / rather than off the site`);
+
+    step = "a next that leaves the site is stored as /";
+    const stored = async (next: string): Promise<string | null> => {
+      const asked = await post(g, "/auth/passkey/login/options", { next });
+      if (asked.status !== 200 || !asked.body.challenge) c.fail(step, `login/options with next ${JSON.stringify(next)} answered ${asked.status}`);
+      return (await c.sql.query<{ redirect_to: string | null }>(
+        "select redirect_to from zz.passkey_challenge where challenge = $1", [asked.body.challenge])).rows[0]?.redirect_to ?? null;
+    };
+    for (const next of OFF_SITE) {
+      const kept = await stored(next);
+      if (kept !== "/") c.fail(step, `next ${JSON.stringify(next)} was stored as ${JSON.stringify(kept)}`);
+    }
+    const onSite = await stored(ON_SITE);
+    if (onSite !== ON_SITE) c.fail(step, `next ${JSON.stringify(ON_SITE)} on the site was stored as ${JSON.stringify(onSite)}`);
+    c.pass(`${step}: ${OFF_SITE.map((n) => JSON.stringify(n)).join(", ")} each, while ${ON_SITE} is kept`);
   } finally {
     await g.stop();
   }

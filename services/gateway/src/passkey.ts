@@ -92,13 +92,20 @@ function clearCeremonyCookie(res: Response): void {
 }
 
 /** Where to send somebody after a successful sign-in: a path on this site or nothing.
- * `next=//evil` is an absolute URL spelled to survive a naive "starts with /" check, which is
- * why the second character is tested too. Backslash because some browsers normalise it to a
- * slash before following. */
+ * The value is resolved the way a browser resolves it, against an origin of our own, and kept only
+ * when it stays on that origin. A test of its first characters is not enough: `//evil`, `/\evil`,
+ * and `/<tab>/evil` or `/<newline>/evil`, whose tab or newline the URL parser strips, each resolve
+ * to another host. What is returned is the parsed path, query and fragment, so a character the
+ * parser dropped cannot come back when the browser follows it. */
 function safeNext(value: unknown): string {
   if (typeof value !== "string" || !value.startsWith("/")) return "/";
-  if (value.startsWith("//") || value.startsWith("/\\")) return "/";
-  return value;
+  const base = "https://next.invalid";
+  try {
+    const url = new URL(value, base);
+    return url.origin === base ? `${url.pathname}${url.search}${url.hash}` : "/";
+  } catch {
+    return "/";
+  }
 }
 
 /** Compare two secrets without leaking their contents through timing. */

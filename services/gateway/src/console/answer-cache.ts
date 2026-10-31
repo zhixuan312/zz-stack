@@ -49,10 +49,11 @@ import { routeFor } from "./read-envelope.js";
 
 /** How long an answer may be served, whatever the listener heard. A backstop, not the policy: the marker
  *  moved by a write is what makes an answer unreachable, and every table the six kept reads touch that a
- *  person can change is watched by a trigger (`003_console_live.sql`, `005_page_view_no_hint.sql`).
+ *  person can change is watched by a trigger (`003_console_live.sql`, `005_page_view_no_hint.sql`,
+ *  `018_change_hints.sql`), except those named below.
  *
- *  DELIBERATE: the minute is for the answer classes whose tables no trigger watches — `zz.release`,
- *  `zz.schema_migration`, `zz.bug`, `zz.model_call` and the `zz.eval_*` family. Nothing raises a hint for
+ *  DELIBERATE: the minute is for the tables no trigger watches — `zz.release`, `zz.schema_migration`,
+ *  `zz.bug`, `zz.model_call` and the `zz.eval_*` family. Nothing raises a hint for
  *  any of them, so no marker can move when one is written and the clock is the only thing that can strand
  *  those answers; the visible cost is a release list or a bug list up to a minute old. A minute, not twenty
  *  seconds, because twenty was shorter than a person spends on a page: a reader who went to another
@@ -75,8 +76,8 @@ const answers = new Map<string, Entry>();
 /** An answer, and whether this caller was served one that was already computed.
  *
  *  DELIBERATE: the hit is stated by the party that knows. `asOf` is rounded up to a whole second
- *  (`record.ts:403`) and the two instants are sampled at different points on every miss, so comparing
- *  them tells a caller nothing: it is true on almost every miss and false on some hits. */
+ *  (the Record route's cutoff in `record.ts`) and the two instants are sampled at different points on every
+ *  miss, so comparing them tells a caller nothing: it is true on almost every miss and false on some hits. */
 export type Served<T> = { value: T; hit: boolean };
 
 /** When an answer changes with the clock alone: given the answer's own value, the earliest instant at

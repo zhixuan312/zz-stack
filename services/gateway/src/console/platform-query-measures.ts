@@ -126,9 +126,17 @@ function shelfOf(slug: string, who: Who): string | null {
   return who.activeTeam !== null && who.activeTeam !== PLATFORM_TEAM && slug === who.activeTeam ? "own" : null;
 }
 
+/** The bug surfaces' vocabulary, read once per request: a surface filter is held to it and the reports are spelt by it. */
+const surfaceWords = new WeakMap<Ctx, Promise<Set<string>>>();
+function surfacesOf(c: Ctx): Promise<Set<string>> {
+  let words = surfaceWords.get(c);
+  if (!words) surfaceWords.set(c, words = vocabulary());
+  return words;
+}
+
 /** Reports as facts, each one counted on the local day it was filed. */
 async function reportFacts(c: Ctx, s: Span, keep: (r: RealReport) => boolean, keys: (r: RealReport) => Keys): Promise<Fact[]> {
-  return (await realReports(c.asOf)).filter(keep).map((r) => ({ day: localDay(r.reportedMs), keys: keys(r), n: 1, lastMs: r.reportedMs, ref: r }))
+  return (await realReports(c.asOf, await surfacesOf(c))).filter(keep).map((r) => ({ day: localDay(r.reportedMs), keys: keys(r), n: 1, lastMs: r.reportedMs, ref: r }))
     .filter((f) => inSpan(f.day, s));
 }
 
@@ -246,7 +254,7 @@ export const MEASURES: Record<string, Measure> = {
   bugs_filed: {
     dims: {
       impact: vocabularyOf("impact", IMPACTS), state: vocabularyOf("state", STATES),
-      surface: { has: async (_c, v) => (await vocabulary()).has(v), refuse: () => "surface must be a tool, a door or console", none: "No surface named" },
+      surface: { has: async (c, v) => (await surfacesOf(c)).has(v), refuse: () => "surface must be a tool, a door or console", none: "No surface named" },
     },
     buckets: true, population: "real bug reports, by the day each was filed",
     facts: (c, s) => reportFacts(c, s, () => true, (r) => ({ impact: r.impact, surface: r.surface, state: r.status === "open" ? "open" : "resolved" })),

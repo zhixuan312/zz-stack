@@ -14,10 +14,10 @@
  * it acts for, as platformPublic gives them. No function takes a team; the three Work reads are the active
  * team's and answer a caller in none the route's own no-team sentence.
  *
- * An argument outside its vocabulary or bounds, a malformed or future date and a version no release
- * records are an input error naming the argument, before anything is read; an initiative the active team
- * does not hold is one too, in the initiative route's own not-found sentence, whether another team holds
- * that slug or nobody does. A read that fails keeps the page's own unavailable parts, and one the page
+ * An argument outside its vocabulary or bounds, a malformed or future date, a skill the catalog never
+ * shipped and a version no release records are an input error naming the argument, before anything is
+ * read; an initiative the active team does not hold is one too, in the initiative route's own not-found
+ * sentence, whether another team holds that slug or nobody does. A read that fails keeps the page's own unavailable parts, and one the page
  * answers 500 throws.
  *
  * Absent, an argument means what the route means without it: since on Activity and Runs is the route's
@@ -130,6 +130,11 @@ export async function runSummary(caller: Caller, args: { since?: string; skill?:
   if (caller.activeTeam === null) return { inputError: NO_TEAM };
   if (!dateOk(args.since, asOf)) return { inputError: SINCE };
   if (args.skill !== undefined && !text(args.skill)) return { inputError: "skill must be a skill's name" };
+  // A name the catalog never shipped is refused, not answered as a skill nobody ran: a misspelt
+  // skill would otherwise read as a measured zero. A real skill the team never ran still answers nothing.
+  if (args.skill !== undefined && !(await platformDb().query("select 1 from zz.skill where name = $1", [args.skill])).rows.length) {
+    return { inputError: `skill names no skill the catalog has shipped: "${args.skill}" — skill_list names the installed ones` };
+  }
   const page = pageOf(args, { default: 10, max: 100 }, BAD_PAGE);
   if (typeof page === "string") return { inputError: page };
   return runsAt(caller.activeTeam, { skill: args.skill ?? null, ...page, since: args.since ?? null }, asOf);

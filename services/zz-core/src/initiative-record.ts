@@ -117,6 +117,19 @@ export async function initiativeIdFor(
   return rows[0]?.id ?? null;
 }
 
+/** What a name the team holds no initiative under is told: the dated initiative it is the slug
+ *  of, when one exists — `initiative_open` takes a slug and answers `<date>-<slug>`, and the slug
+ *  is what a caller remembers — or where the open ones are listed. */
+export async function unknownInitiative(client: RecordClient, team: string, name: string): Promise<string> {
+  const { rows } = await client.query<{ slug: string }>(
+    `select i.slug from zz.initiative i join zz.team t on t.id = i.team_id
+      where t.slug = $1 and substr(i.slug, 12) = $2 order by i.slug desc limit 3`, [team, name]);
+  return `no initiative named '${name}' in ${team} — ` + (rows.length
+    ? `did you mean ${rows.map((r) => r.slug).join(" or ")}? An initiative is named by the date ` +
+      "initiative_open put before its slug."
+    : "initiative_status with no argument lists the open ones.");
+}
+
 /* An initiative's durable state, in two tables, because the two shapes are opposite:
  *
  *   `zz.initiative_fact`    a BRANCH FACT — `protocol_action`, `improvement_mode`, `release_mode`

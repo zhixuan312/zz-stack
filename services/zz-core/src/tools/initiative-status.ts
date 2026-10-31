@@ -21,7 +21,7 @@ import { z } from "zod";
 
 import { auditMove, auditPolicyOf, auditSettledNote } from "../audit-rounds.js";
 import { assessmentsFor, reviewMove } from "../review-rounds.js";
-import { factsFor, recordsFor } from "../initiative-record.js";
+import { factsFor, recordsFor, unknownInitiative } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { docFacts, fillStateBodies, sourceReport, sourceRows } from "../initiative-documents.js";
 import { docRows } from "../indexing.js";
@@ -511,19 +511,6 @@ export async function anchorsFor(
 type State = Awaited<ReturnType<typeof initiativeState>>;
 /** What stands in for one initiative's state: a name the team does not hold, or a `Refusal`'s text. */
 type StateError = { initiative: string; error: string };
-
-/** What a name the team holds no initiative under is told: the dated initiative it is the slug
- *  of, when one exists — `initiative_open` takes a slug and answers `<date>-<slug>`, and the slug
- *  is what a caller remembers — or where the open ones are listed. */
-async function unknownInitiative(p: pg.Pool, team: string, name: string): Promise<string> {
-  const { rows } = await p.query<{ slug: string }>(
-    `select i.slug from zz.initiative i join zz.team t on t.id = i.team_id
-      where t.slug = $1 and substr(i.slug, 12) = $2 order by i.slug desc limit 3`, [team, name]);
-  return `no initiative named '${name}' in ${team} — ` + (rows.length
-    ? `did you mean ${rows.map((r) => r.slug).join(" or ")}? An initiative is named by the date ` +
-      "initiative_open put before its slug."
-    : "initiative_status with no argument lists the open ones.");
-}
 
 /** Each named initiative's state, in the order asked, from the one `anchorsFor` read the caller
  *  made: a name with no anchor is `unknownInitiative`'s sentence, and a `Refusal` from one initiative is its

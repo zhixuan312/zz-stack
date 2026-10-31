@@ -8,8 +8,11 @@
  * It starts a throwaway PostgreSQL and a real zz-core on it (`withThrowawayCore`), with no
  * typed-service key, and drives the core door. What it establishes:
  *
- *   - `assess` naming an initiative slug only another team holds records the reading on the
- *     caller's own team and on no initiative;
+ *   - `assess` naming an initiative slug only another team holds is refused before the model is
+ *     asked, and records nothing;
+ *   - `source_list`, `knowledge_reconcile` and `assess` refuse a name the team holds no initiative
+ *     under, naming the dated initiative an undated slug is short for; `bug_list` refuses a
+ *     `reported_by` no principal carries, and still takes a known address in any case;
  *   - `document_present` with an array whose later path is refused still answers the earlier
  *     document it recorded as presented;
  *   - `bug_list`'s `by_status` counts the reports its filters match, not every report;
@@ -35,7 +38,7 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 const NAME = "core-scoped-answers";
-const DONE = "core-scoped-answers: a reading stays on the asker's team, a present answers what it recorded, " +
+const DONE = "core-scoped-answers: a reading names an initiative of the asker's team, an unknown name is refused, a present answers what it recorded, " +
   "bug_list counts what it filtered, and a person is resolved by an address in any case or by a name only one carries: ok";
 
 // The child inherits this environment: with no key every reading is `unavailable` and still recorded.
@@ -54,15 +57,32 @@ async function assessStaysOnTeam(c: Core): Promise<void> {
   const step = "assess under a slug only another team holds";
   const slug = "2026-10-30-theirs";
   const other = await otherTeamInitiative(c, slug);
-  await c.ok(step, "assess", { family: "repeats_finding", subject: "F3 [S2] x: y", initiative: slug,
-                               about: "sources/r2.md#F3" });
-  const { rows } = await c.sql.query<{ team: string; initiative: string | null }>(
-    `select t.slug as team, a.initiative_id::text as initiative from zz.assessment a
-       join zz.team t on t.id = a.team_id where a.about = 'sources/r2.md#F3'`);
-  if (rows.length !== 1 || rows[0].team !== c.team || rows[0].initiative !== null) {
-    c.fail(step, `the reading was recorded as ${JSON.stringify(rows)}, not on ${c.team} with no initiative ` +
-                 `(the other team is ${other})`);
+  await c.refused(step, "assess", { family: "repeats_finding", subject: "F3 [S2] x: y", initiative: slug,
+                                    about: "sources/r2.md#F3" }, /^ERROR: no initiative named '2026-10-30-theirs' in .*Nothing was asked\.$/s);
+  const { rows } = await c.sql.query(`select 1 from zz.assessment where about = 'sources/r2.md#F3'`);
+  if (rows.length) c.fail(step, `the refused reading was recorded anyway (the other team is ${other})`);
+  c.pass(step);
+}
+
+/** A name the team holds no initiative under is refused by every read that takes one, naming the
+ *  dated initiative an undated slug is short for, rather than answered as an initiative with nothing in it. */
+async function unknownNamesAreRefused(c: Core): Promise<void> {
+  const step = "an unknown name is refused, not answered empty";
+  const dated = await c.open("named-right");
+  const undated = dated.slice(11);
+  for (const tool of ["source_list", "knowledge_reconcile"]) {
+    await c.refused(`${step}: ${tool} undated`, tool, { initiative: undated },
+                    new RegExp(`^ERROR: no initiative named '${undated}' .*did you mean ${dated}\\?`, "s"));
+    await c.refused(`${step}: ${tool} theirs`, tool, { initiative: "2026-10-30-theirs" }, /^ERROR: no initiative named/);
   }
+  await c.refused(`${step}: assess undated`, "assess", { family: "needs_fact", subject: "x", initiative: undated },
+                  new RegExp(`did you mean ${dated}\\?`));
+  const operator = new Mcp(c.mcp.url, { client: NAME, timeoutMs: 60_000, headers: {
+    "x-zz-user-email": c.email, "x-zz-user-name": "Skeleton", "x-zz-user-id": "", "x-zz-user-role": "admin",
+    "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
+  await c.refused(`${step}: bug_list reported_by`, "bug_list", { reported_by: "Skeleton" },
+                  /^ERROR: nobody on this platform has the address "Skeleton"/, operator);
+  await c.ok(`${step}: bug_list by a known address`, "bug_list", { reported_by: c.email.toUpperCase() }, operator);
   c.pass(step);
 }
 
@@ -142,7 +162,7 @@ async function emailLookupsAreCaseless(c: Core): Promise<void> {
 // Every case runs, and the failures are reported together: the cases share nothing but the database.
 process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   const failed: string[] = [];
-  for (const run of [assessStaysOnTeam, presentAnswersWhatItRecorded, bugTallyFollowsFilters, principalByName,
+  for (const run of [assessStaysOnTeam, unknownNamesAreRefused, presentAnswersWhatItRecorded, bugTallyFollowsFilters, principalByName,
                      emailLookupsAreCaseless]) {
     try {
       await run(c);

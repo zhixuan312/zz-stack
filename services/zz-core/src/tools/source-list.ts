@@ -10,6 +10,7 @@ import { parseCaller } from "@zz/contracts";
 import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { initiativeIdFor, unknownInitiative } from "../initiative-record.js";
 import { safeName } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { dayOf } from "../versions.js";
@@ -31,6 +32,9 @@ export function registerSourceListTool(server: McpServer): void {
       const p = db();
       const team = await teamFor(parseCaller(requestHeaders()).email);
       if (!p || !team) return text(JSON.stringify({ initiative, sources: [] }));
+      // A name the team holds no initiative under is refused, not answered with no sources: an
+      // agent that dropped the date or acts for another team would conclude there is no evidence.
+      if (!await initiativeIdFor(p, team, initiative)) return text(`ERROR: ${await unknownInitiative(p, team, initiative)}`);
       // ONE statement, not four per source. This was `documentPaths` then `documentAt`,
       // `revisionsOf` and `supportsOf` for each one — roughly 120 sequential round trips on an
       // initiative with forty sources, on the read a caller runs just before judging a document —

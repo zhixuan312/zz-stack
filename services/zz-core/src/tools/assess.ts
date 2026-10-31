@@ -12,7 +12,9 @@ import { parseCaller, QUESTION_FAMILIES } from "@zz/contracts";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { initiativeIdFor, unknownInitiative } from "../initiative-record.js";
 import { safeName } from "../paths.js";
+import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 import { assessFamily, READING_BANDS } from "../semantic.js";
 
@@ -42,10 +44,21 @@ export function registerAssessTool(server: McpServer): void {
         const bad = safeName(initiative, "initiative");
         if (bad) return text(bad);
       }
+      // Who would hold the reading, settled before the model is asked: a caller with no team gets
+      // a paid answer nothing can record, and an initiative the team does not hold would be
+      // recorded against nothing, where a stage reading its checkpoints back never finds it.
+      const askedBy = parseCaller(requestHeaders()).email;
+      const team = await teamFor(askedBy);
+      if (!team) return text(`ERROR: no team — ${askedBy} acts for no live team, so a reading has nowhere to be recorded. Nothing was asked.`);
+      const p = db();
+      const named = initiative?.trim();
+      if (p && named && !await initiativeIdFor(p, team, named)) {
+        return text(`ERROR: ${await unknownInitiative(p, team, named)} Nothing was asked.`);
+      }
       try {
-        const a = await assessFamily({ family, subject, context, initiative: initiative ?? null,
+        const a = await assessFamily({ family, subject, context, initiative: named || null,
                                        about: about ?? null,
-                                       askedBy: parseCaller(requestHeaders()).email,
+                                       askedBy,
                                        recover: "Call `assess` again with the same arguments to record it." });
         return text(JSON.stringify({
           family: a.family, reading: a.reading, probability: a.probability,

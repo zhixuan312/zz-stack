@@ -17,6 +17,7 @@ import { decisionRows, type DecisionRow } from "@zz/indexing";
 import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { initiativeIdFor, unknownInitiative } from "../initiative-record.js";
 import { safeName } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 
@@ -43,6 +44,8 @@ export function registerKnowledgeReconcileTool(server: McpServer): void {
       if (!team) return text("ERROR: no team — reconciliation is scoped to the team that made the predictions");
       const bad = safeName(initiative, "initiative");
       if (bad) return text(bad);
+      // A name the team holds no initiative under is refused, not read as one with no claims.
+      if (!await initiativeIdFor(p, team, initiative)) return text(`ERROR: ${await unknownInitiative(p, team, initiative)}`);
       // What was claimed, computed from the documents' own bodies: a stage states them in the
       // text it writes for a reader, and `decisionRows` parses that text back out.
       //

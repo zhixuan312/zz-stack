@@ -34,7 +34,8 @@
  *     refused most stands, and with last week's refusals by tool failing, the tool refused most is
  *     unavailable and the rest stands;
  *   - `run_summary` with `since` counts only the runs from that date; the tools' own `since` is seven local
- *     days before the cutoff; a malformed or future date is an input error;
+ *     days before the cutoff; a malformed or future date is an input error, and so is a skill the catalog
+ *     never shipped;
  *   - the superadmin in no team is answered the route's own no-team sentence by the three Work reads;
  *   - no answer the first team's member is given holds any of the second team's sentinels.
  *
@@ -426,7 +427,9 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
   }
   await refused(step, member, "recordRead", { period: "week" }, "period");
   await refused(step, member, "runSummary", { limit: 101 }, "limit");
-  pass(`2026-02-30, yesterday, 2026-1-5, ${tomorrow} and a number are input errors naming since on both; period week and limit 101 too`);
+  await refused(step, member, "runSummary", { skill: "no-such-skill" }, "skill");
+  pass(`2026-02-30, yesterday, 2026-1-5, ${tomorrow} and a number are input errors naming since on both; period week, ` +
+    "limit 101 and a skill the catalog never shipped too");
 
   step = "the first team's member reads none of the second team's sentinels";
   const words = [...Object.values(s.sentinels), theirs];

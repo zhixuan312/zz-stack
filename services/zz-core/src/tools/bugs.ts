@@ -207,7 +207,16 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       // Through the principal, because the column is an id and nobody searches for one. COUPLED:
       // the same join below hands the address back, so what is filtered on and what is shown are
       // one thing.
-      if (reported_by) where.push(`lower(rp.email) = ${put(reported_by.toLowerCase())}`);
+      if (reported_by) {
+        // An address nobody carries is refused rather than answered with no reports: a display
+        // name or a typo would otherwise read as "this person reported nothing".
+        const known = await db.query(`select 1 from zz.principal where lower(email) = lower($1)`, [reported_by]);
+        if (!known.rows.length) {
+          return text(`ERROR: nobody on this platform has the address "${reported_by}" — reported_by takes ` +
+                      "an email address, as each report's reported_by shows it.");
+        }
+        where.push(`lower(rp.email) = ${put(reported_by.toLowerCase())}`);
+      }
       // Both halves: somebody searching for "approve" means the thing they were doing, and
       // which field that word landed in is an accident of how the reporter wrote it.
       if (query?.trim()) {

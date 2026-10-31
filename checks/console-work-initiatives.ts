@@ -30,7 +30,7 @@
  *     (an abandon, console-close.ts) is drawn; its answer has the key sets of the console's fake's empty initiative;
  *   - an initiative with no flow answers its flow as null and no steps, gates or position, so the page draws no stepper
  *     and a finished close names the document it lands on, with the key sets of the fake's no-flow initiative; a flow
- *     the catalog cannot resolve keeps the ops-flow fallback's steps;
+ *     the catalog cannot resolve keeps the ops-flow fallback's steps, its close drawn once;
  *   - every not-found answer of an initiative, a document or a snapshot, for another team's, under its own team or the
  *     caller's, and for one no team holds, is one fixed message naming none of the team, slug or path asked for;
  *   - the key sets match the console's fake answer;
@@ -486,14 +486,16 @@ async function opened(c: Core, built: Built, people: Who[], empty: string, freef
   await c.sql.query("update zz.initiative set flow = 'a-flow-the-catalog-retired' where slug = $1", [freeform]);
   try {
     const kept = (await open(people[0], c.team, freeform)).body;
-    if (kept.flow !== "a-flow-the-catalog-retired" || (kept.steps as Obj[]).length !== 9 || kept.of !== 7) {
-      c.fail(step, `a flow the catalog cannot resolve answered its flow ${show(kept.flow)}, ${(kept.steps as Obj[]).length} steps of ${String(kept.of)}`);
+    const names = (kept.steps as Obj[]).map((st) => String(st.name));
+    if (kept.flow !== "a-flow-the-catalog-retired" || names.length !== 8 || kept.of !== 6
+        || names.filter((n) => /^close/.test(n)).length !== 1) {
+      c.fail(step, `a flow the catalog cannot resolve answered its flow ${show(kept.flow)}, steps ${names.join(" ")} of ${String(kept.of)}`);
     }
   } finally {
     await c.sql.query("update zz.initiative set flow = null where slug = $1", [freeform]);
   }
   c.pass(`${step}: ${freeform} answers no flow and no steps to both people, with the key sets of the fake's ${fakeFree.slug}; ` +
-    "a flow the catalog cannot resolve keeps the fallback's nine");
+    "a flow the catalog cannot resolve keeps the fallback's eight, closed drawn once");
 
   step = "every not-found answer is one fixed message naming nothing that was asked for";
   const asked: [string, () => Promise<Answer>, string, string[]][] = [];

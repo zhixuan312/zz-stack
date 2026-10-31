@@ -25,12 +25,9 @@ import { zone } from "../zone.js";
 export type ResolvedScope = Exclude<Scope, { kind: "refused" }>;
 
 /** The ops-flow shape, stated once. The console draws a stepper from it and the
- * API decides `stage` with it.
- *
- * NOT A TOOL: the last member is the flow's closing stage, not the `initiative_close`
- * tool. Renaming it to match would make the stepper render "initiative_close" as a step
- * no flow declares. */
-const STAGES = ["intent", "spec", "select", "plan", "build", "verify", "close"] as const;
+ * API decides `stage` with it. The close is not a stage: the `closed` bookend draws it, as in
+ * the manifest branch. */
+const STAGES = ["intent", "spec", "select", "plan", "build", "verify"] as const;
 
 /** May this caller read the console at all? Every handler calls it.
  */
@@ -495,7 +492,6 @@ export function stageOf(
     plan: plan ? (g3 ? "done" : "partial") : "empty",
     build: ver || closed ? "done" : "empty",   // writes nothing; a later stage is the evidence
     verify: ver ? "done" : "empty",
-    close: closed ? "done" : "empty",
   };
   const fallbackSteps = STAGES.map((n) => ({
     name: n, what: "", produces: "", state: stateOf[n] ?? "empty", current: false,

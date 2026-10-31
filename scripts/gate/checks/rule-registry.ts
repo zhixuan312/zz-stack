@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { root } from "../read.ts";
+import { firstOf, root } from "../read.ts";
 import { check } from "../run.ts";
 
 const CLASSES = new Set(["platform", "flow_controller", "convention", "analytical_review"]);
@@ -24,5 +24,5 @@ check("every enforcement claim in the rule registry names a handler and a behavi
   if (nodes && nodes.enforcement_class !== "convention") {
     bad.push("handover.proposed_team_nodes is classed as enforced, but nothing reads the field back");
   }
-  return bad.length ? bad.slice(0, 10).join("; ") : undefined;
+  return firstOf(bad, 10);
 });

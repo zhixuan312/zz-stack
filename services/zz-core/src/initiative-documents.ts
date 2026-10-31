@@ -52,8 +52,8 @@ export function sourceRows(rows: Map<string, DocRow>): DocRow[] {
  *
  * Compares two instants the platform wrote: a source's `updated_at`, stamped when it filed the
  * row, and the seal's `approved_at`, the instant `document_approve` was given (`approvalStamp`).
- * A row sealed before 0.97.0 holds the UTC midnight of its approval day and is kept as it was, so
- * on such a document a source filed earlier that day still lists. */
+ * A row whose seal holds the UTC midnight of its approval day rather than the instant is kept as
+ * it is, so on such a document a source filed earlier that day still lists. */
 export function sourceReport(rows: Map<string, DocRow>): {
   sourceFiles: string[];
   needsRefinement: Array<{ document: string; source: string; title: string }>;
@@ -98,7 +98,7 @@ export async function fillStateBodies(
     if (!d.path.startsWith("sources/")) {
       if (d.path === plan || owing.has(d.path)) wanted.push(d.path);
       // A source no link names is still a round when its envelope carries a stage: review round 1
-      // is filed before the document it reviews exists (bug c92d1bb1).
+      // is filed before the document it reviews exists.
     } else if (d.fields?.stage || d.supports.some((s) => verified.has(s))) wanted.push(d.path);
   }
   for (const [path, body] of await docBodies(p, team, name, wanted)) {

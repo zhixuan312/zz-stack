@@ -1,10 +1,7 @@
 /**
- * Resolving a `subject_ref` (Task I-20, the defect found ahead of this task: `evaluation_assess`
- * asked a model-backed measure about the templated sentence `Measure "<key>" against subject_ref
- * "<id>"` — a sentence with no content in it at all. The replay machinery closed it once with a
- * `producedSubjectText` of its own, and that machinery is gone; `resolveSubjectRef` closes the
- * path that remains, `evaluation_assess`'s own `eval_run`, the same way: what a model-backed measure is
- * actually asked to judge, resolved from the ref alone, never a sentence naming it.
+ * Resolving a `subject_ref` for `evaluation_assess`'s own `eval_run`: what a model-backed measure
+ * is actually asked to judge, resolved from the ref alone, never a templated sentence naming it
+ * (`Measure "<key>" against subject_ref "<id>"` has no content in it at all).
  *
  * Three shapes an `eval_run`'s own `subject_ref` can take:
  *   - `<initiative>/<doc>.md` — a governed document, read from `zz.doc`/`zz.doc_revision` the
@@ -16,9 +13,8 @@
  *     never a second renderer invented here.
  *
  * A `subject_ref` that resolves to neither — no such document row, no `zz.event` row for
- * that `run_id` — REFUSES BY NAME (this task's own contract clause): a model asked to judge
- * nothing silently invents the templated sentence instead, which is exactly the defect this file
- * exists to close, so resolving to nothing is never treated as "score it excluded" the way an
+ * that `run_id` — REFUSES BY NAME: a model asked to judge nothing silently judges the templated
+ * sentence instead, which is exactly what this file exists to prevent, so resolving to nothing is never treated as "score it excluded" the way an
  * unqualified evaluator's answer is.
  */
 import type pg from "pg";

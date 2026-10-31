@@ -1,5 +1,5 @@
 /**
- * The proposer's input bundle (Task I-18, AC-37.1, FR-37): "actionable side information" —
+ * The proposer's input bundle (AC-37.1, FR-37): "actionable side information" —
  * failing traces, evaluator critiques, refusal text, user corrections, dependency/tool errors
  * and prior rejected hypotheses — assembled for one `improvement_run`, so whatever proposes a
  * candidate's hypothesis reads what already failed instead of guessing blind.
@@ -16,7 +16,7 @@ import { STORED_ANSWERS_SQL } from "./evaluate-run.js";
 
 /** The attempt state a rollback leaves behind — taken from the shared vocabulary every writer
  *  takes its state values from (`EVAL_STATE_ENUMS`), sixth of six, rather than spelled: it is
- *  also the name of the boolean column group G drops, and `checks/release-relations.ts` reads
+ *  also the name of a retired boolean column, and `checks/release-relations.ts` reads
  *  this file's text for that spelling. */
 const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
@@ -24,8 +24,8 @@ const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
  *  and for the bundle's `prior_rejected_hypotheses` alike — when its own status is `invalid`
  *  (it failed its build or gate) or when the release attempt it was carried into ended in the
  *  rollback state (it was released and measured worse on real use). Both read as "this idea did
- *  not work," which FR-38 says is not proposed again. The two values are read from two columns
- *  since group G gave the attempt the second one: `zz.candidate.status` is only ever
+ *  not work," which FR-38 says is not proposed again. The two values are read from two columns:
+ *  `zz.candidate.status` is only ever
  *  recorded/awaiting_build/valid/invalid, and a rolled-back candidate is recognised through the
  *  `zz.release_attempt` row that names it. */
 export const REJECTED_CANDIDATE_STATUSES = ["invalid", ROLLBACK_STATE] as const;
@@ -71,13 +71,13 @@ export interface ProposerBundle {
   readonly errors: readonly string[];
   readonly prior_rejected_hypotheses: readonly { candidate_id: string; hypothesis: string; status: string }[];
   /** False only when every section above is empty — a proposer reading a trivial bundle is
-   *  reading nothing this run learned, which the plan's own live-verification step checks for
-   *  directly rather than trusting a non-empty top-level object. */
+   *  reading nothing this run learned, and this says so directly rather than leaving a reader to
+   *  trust a non-empty top-level object. */
   readonly non_trivial: boolean;
 }
 
 // The pass/fail line a guardrail uses is `evaluate-measures.ts`'s `evaluateGuardrails`, and it
-// compares against each MEASURE's own `guardrail_threshold` — the fact moved to where it is
+// compares against each MEASURE's own `guardrail_threshold` — the fact lives where it is
 // measured against, so there is no single line to mirror. The constant below answers a different
 // question (is this proposal trivial), and keeping one number for it is this file's own choice.
 const FAILING_THRESHOLD = 0.5;
@@ -130,10 +130,9 @@ export function buildProposerBundle(raw: ProposerBundleRaw): ProposerBundle {
 
 interface ImprovementRunRef { readonly eval_run_id: string; readonly finding_ids: readonly string[] }
 
-/** The findings a run targets, read through the relation that holds them (group G):
- *  `improvement_run_finding`, one row per finding, rather than the jsonb array that could not be
- *  enforced. The array shape is what the rest of this file already works with, so the aggregate
- *  hands back exactly that. */
+/** The findings a run targets, read through the relation that holds them:
+ *  `improvement_run_finding`, one row per finding. The array shape is what the rest of this file
+ *  works with, so the aggregate hands back exactly that. */
 async function loadRunRef(p: pg.Pool, improvementRunId: string): Promise<ImprovementRunRef | null> {
   const row = (await p.query<{ eval_run_id: string; finding_ids: string[] }>(`
     select ir.eval_run_id::text as eval_run_id,
@@ -173,9 +172,8 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
   // The ref label and the four figures come from the one projection `evaluation_score` reads the
   // run's stored answers through (`evaluate-run.ts`'s `STORED_ANSWERS_SQL`), so a subject is
   // spelled the same way here as it is in the score this bundle is proposed against. The detail
-  // bag is rebuilt from what the row still holds — the model answer itself moved to the
-  // assessment the value came from, and `reading` is read there rather than off a jsonb the
-  // assessment no longer carries.
+  // bag is rebuilt from what the row holds — the model answer itself lives on the assessment the
+  // value came from, and `reading` is read there.
   const assessments = (await p.query<{
     measure_key: string; subject_ref: string; value: string | null; excluded_reason: string | null;
     detail: Record<string, unknown> | null;
@@ -197,8 +195,8 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
       detail: r.detail ?? {},
     }));
 
-  // The rejection is read from wherever it now lives: the candidate's own status for a failed
-  // build or gate, and the release attempt it was carried into for a rollback (group G).
+  // The rejection is read from where it lives: the candidate's own status for a failed build or
+  // gate, and the release attempt it was carried into for a rollback.
   const rejected = pluginRow
     ? (await p.query<{ candidate_id: string; hypothesis: string; status: string }>(`
         select c.id::text as candidate_id, c.hypothesis,

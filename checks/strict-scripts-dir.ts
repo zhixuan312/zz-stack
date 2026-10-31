@@ -1,4 +1,5 @@
-import { spawnSync } from "node:child_process";
+// No file in scripts/ (outside scripts/gate/) or testing/ reaches the compiler's zero by widening
+// to `any`. COUPLED: strict-tooling-zero.ts runs the compiler; this reads what it accepts.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 const walk = (dir: string, out: string[] = []): string[] => {
@@ -10,11 +11,6 @@ const walk = (dir: string, out: string[] = []): string[] => {
   return out;
 };
 const fail: string[] = [];
-const r = spawnSync("npx", ["tsc", "--noEmit", "-p", "tsconfig.tooling.json"], { encoding: "utf8" });
-const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-const mine = out.split("\n").filter((l) =>
-  /^(scripts|testing)\/[^(]*\(\d+,\d+\): error TS/.test(l) && !l.startsWith("scripts/gate/"));
-if (mine.length) fail.push(`${mine.length} strict error(s) remain:\n` + mine.slice(0, 20).join("\n"));
 
 for (const f of [...walk("scripts"), ...walk("testing")].filter((x) => x.endsWith(".ts"))) {
   const src = readFileSync(f, "utf8");

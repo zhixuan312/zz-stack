@@ -34,7 +34,8 @@ function rowsFrom(json: string): RunRow[] {
     if (typeof o.url !== "string" || typeof o.headSha !== "string") return [];
     return [{
       url: o.url, headSha: o.headSha,
-      conclusion: typeof o.conclusion === "string" ? o.conclusion : null,
+      // `gh` prints a run that has not finished with an empty conclusion, not a null one.
+      conclusion: typeof o.conclusion === "string" && o.conclusion ? o.conclusion : null,
       status: typeof o.status === "string" ? o.status : "",
     }];
   });

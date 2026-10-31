@@ -54,9 +54,10 @@ import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, WEEK, at, runningWeek, seedSearches, type When } from "../scripts/schema/work-seed.ts";
 import {
-  FIRST, answer, bucketCases, bucketsOf, canonical, count, datesCases, door, firstDayCases, iso, localDay, midnightOf, phase, request,
-  serveDoor, show, spelled, text, whereCases, type Days, type Obj, type Query, type Route, type Who,
+  FIRST, bucketCases, bucketsOf, canonical, count, datesCases, door, firstDayCases, iso, localDay, midnightOf, phase, request,
+  serveDoor, show, spelled, text, whereCases, type Days, type Query, type Who,
 } from "./console-work-query-harness.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-query";
 const DONE = "console-work-query: each measure by each dimension and bucket it allows answers the figures the pages draw, " +

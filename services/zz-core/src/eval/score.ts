@@ -1,5 +1,5 @@
 /**
- * `scoreRun` (Task I-12, AC-19.1–AC-23.1): the pure arithmetic that turns one run's per-measure
+ * `scoreRun` (AC-19.1–AC-23.1): the pure arithmetic that turns one run's per-measure
  * evidence into a run score. No database, no model call, no clock — the same input always
  * produces the same output, so every caller (round scoring, a replay, a check) gets an answer it
  * can recompute rather than one it has to trust.

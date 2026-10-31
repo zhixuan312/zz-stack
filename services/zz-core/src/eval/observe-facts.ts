@@ -1,13 +1,13 @@
 /**
- * The facts `plugin_profile` (observe.ts, Task I-7) adds beyond what `pluginTraces` already
+ * The facts `plugin_profile` (observe.ts) adds beyond what `pluginTraces` already
  * counts: outcomes, document approvals, latency, request/response bytes, and refusal text/owner
  * detail. Kept out of observe.ts to stay under this repository's 700-line
  * ceiling, and out of plugin-profile.ts because these queries have no reader outside OBSERVE.
  *
  * DELIBERATE: every exported function returns `ObservedFact` values — `{numerator, denominator,
  * value, coverage}` for a non-empty population, `{value: null, reason}` for an empty one — and
- * never a bare `0` standing in for "nothing to measure". That is this task's own rule (the plan's
- * "missing inputs are null with a reason, never 0"), so it is enforced once, in `rate()` and
+ * never a bare `0` standing in for "nothing to measure": missing inputs are null with a reason,
+ * never 0, enforced once, in `rate()` and
  * `measured()` below, rather than at each call site.
  */
 import { normalizedRefusalSql } from "@zz/contracts";
@@ -16,7 +16,7 @@ import type pg from "pg";
 import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
 
 /** Every fact key `plugin_profile` (observe.ts) writes into `zz.eval_observation_snapshot.facts`
- *  (001, fix dispatch on I-29's own follow-on) — the canonical list `protocol-record.ts`
+ *  (001) — the canonical list `protocol-record.ts`
  *  refuses a deterministic/outcome measure's `definition.factPath` against (its first dotted
  *  segment must name one of these) and `evaluate-measures.ts` reads one entry of by that same
  *  path. `usable_run_coverage`/`tool_coverage` are computed directly in observe.ts's own
@@ -178,10 +178,8 @@ export async function outcomeAndApprovalFacts(
     -- flow's runs — the same population every other fact here is drawn from (toolCallEvents).
     --
     -- The slugs are resolved from the event's own ids, not read off it: zz.event carries
-    -- initiative_id since 002 and no longer carries team_slug or initiative. The inner join
-    -- is the whole of the old "is not null and <> ''" guard — an event whose initiative does not
-    -- resolve touches no initiative, and the two readers below (live, closes) join on the pair,
-    -- so the counts this produces are the ones it produced before.
+    -- initiative_id and no slug. The inner join is the guard — an event whose initiative does not
+    -- resolve touches no initiative, and the two readers below (live, closes) join on the pair.
     with touched as (
       select distinct et.slug as team_slug, ii.slug as initiative
         from (select e.initiative_id ${toolCallEvents(servesOwnDoor)}) t

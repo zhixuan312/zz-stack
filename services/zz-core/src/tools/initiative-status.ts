@@ -59,20 +59,18 @@ interface DocState {
    *
    * COUPLED: chain.ts appends the handover's sections outside any flow manifest. */
   sections?: string[];
-  /** FR-58 (Task I-26): set only for a document that declares `when` — a reader asking "where
-   *  is protocol.md" deserves an answer, and a document with no `when` needs none: it always
-   *  applies, which is exactly today's behaviour. */
+  /** FR-58: set only for a document that declares `when` — a reader asking "where is
+   *  protocol.md" deserves an answer, and a document with no `when` needs none: it always
+   *  applies. */
   applies?: Applicability;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────────────────────
- * The document facts every computation below reads, taken from a `DocRow` map.
+/* The document facts every computation below reads, taken from a `DocRow` map.
  *
- * DELIBERATE: one shape, one place. `envelopeOf` used to parse a file; the same seven keys —
- * status, outcome, closed_by, approved_by, approved_at, version and the open payload — are
- * columns of `zz.doc` and of the revision it points at, so `docFacts` names them ONCE and every
- * reader below is written against it rather than against a parse.
- * ────────────────────────────────────────────────────────────────────────────────────────── */
+ * DELIBERATE: one shape, one place. Status, outcome, closed_by, approved_by, approved_at,
+ * version and the open payload are columns of `zz.doc` and of the revision it points at, so
+ * `docFacts` names them ONCE and every reader below is written against it rather than against
+ * a parse. */
 
 /** What state an initiative is in, and what the next move is — the one computation both
  * `initiative_status` and `initiative_open` answer from.
@@ -157,7 +155,7 @@ export async function initiativeState(
         "want its order and its gates enforced.",
     };
   }
-  // FR-58 (Task I-26): read once, against every document's own `when` — an initiative's branch
+  // FR-58: read once, against every document's own `when` — an initiative's branch
   // facts are per-initiative, never per-flow, so they cannot live on the cached `chain` the way
   // `docs` does.
   const facts = await factsFor(p, team, name);
@@ -243,7 +241,7 @@ export async function initiativeState(
     // `draft` for the life of the initiative — so a gated target must be approved and an
     // ungated one need only exist.
     //
-    // FR-58 (Task I-26): a requirement ruled out by the branch (`not_applicable`) is met without
+    // FR-58: a requirement ruled out by the branch (`not_applicable`) is met without
     // existing at all — it was excluded, not merely unwritten. A requirement whose own branch is
     // `undetermined` is the opposite: NOT met, because the platform has not yet decided whether
     // it is required — a different wait from "unapproved", which `pending` below tells apart.
@@ -369,9 +367,9 @@ export async function initiativeState(
     } else if (executingPhase !== null) {
       // NOT A TOOL: `run_stage` is `next_move.action`'s own vocabulary, like `resolve_branch`.
       //
-      // This is the branch 0.83.2 adds. Without it the plan being approved was read as the plan
-      // being built, so a seven-phase plan answered with a review round from its third phase on —
-      // a full-scope sweep of a change that is a fraction written.
+      // Without this branch the plan being approved would read as the plan being built, so a
+      // multi-phase plan would answer with a review round from its third phase on — a full-scope
+      // sweep of a change that is a fraction written.
       const waves = (plan?.waves ?? []).map((w) => w.join(" + ")).join("; ");
       next = {
         action: "run_stage", stage: "sdlc-execute", waiting_on: "agent",
@@ -399,7 +397,7 @@ export async function initiativeState(
     } else if (awaiting) {
       next = awaitApproval(awaiting);
     } else if (pending && appliesOf(pending.name) === "undetermined") {
-      // FR-58 (Task I-26): `pending` is the next document in the flow's order, but its OWN
+      // FR-58: `pending` is the next document in the flow's order, but its OWN
       // branch has not resolved — not a fact about approval or about a stage owing evidence,
       // so neither `write_document` nor `await_approval` fits. `resolve_branch` is the fourth
       // agent-facing verb, beside `write_document`, `add_source` and `decide`.
@@ -430,7 +428,7 @@ export async function initiativeState(
         // tool to call. The handover owed after a finished close is a write_document and then an
         // await_approval of handover.md, not an action of its own.
         //
-        // FR-58 (Task I-28): a `when`-conditional closing document is `not_applicable` on every
+        // FR-58: a `when`-conditional closing document is `not_applicable` on every
         // other branch, so this names `branchClosing` — where `initiative_close` and `closeCheck`
         // land a close too. Every document that applies exists in this arm, so it IS the furthest
         // document this branch wrote.
@@ -509,9 +507,8 @@ type StateError = { initiative: string; error: string };
  *  throws: an error nobody named is not a fact about one initiative.
  *
  *  Overlapped, a pool's width at a time. Each initiative is one round of reads — its documents,
- *  facts, records, assessments and chain — and run strictly one after another a team paid the
- *  whole sequence once per initiative: 1.4–2.3 s on the busiest team here, against 51–68 ms for a
- *  team with one. The width is the pool's own, so the reads overlap without pretending to more
+ *  facts, records, assessments and chain — and run strictly one after another a team would pay
+ *  the whole sequence once per initiative. The width is the pool's own, so the reads overlap without pretending to more
  *  connections than the service holds, and the chunks taken in order keep the answer in the
  *  order it was asked for. */
 export async function statesFor(
@@ -608,7 +605,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         );
       }
       // The team's whole roster, the one named, or the list named. A slug the team does not hold
-      // is reported per-initiative rather than refused, which is what the named form has always done.
+      // is reported per-initiative rather than refused, as the named form does.
       const names = initiatives ?? (initiative
         ? [initiative]
         : (await p.query<{ slug: string }>(

@@ -39,7 +39,6 @@
  * here too), the failure's message in `error`, and the id `ask` hands back being the row's own.
  */
 import { existsSync } from "node:fs";
-import { pathToFileURL } from "node:url";
 
 const dist = new URL("../services/zz-core/dist/eval/judge.js", import.meta.url);
 const typedDist = new URL("../services/zz-core/dist/typed-service.js", import.meta.url);
@@ -63,10 +62,10 @@ process.env.TYPESAFE_API_KEY = "not-a-key";
 process.env.TYPESAFE_MODEL = "jev-latest";
 process.env.TYPESAFE_ATTEMPTS = "3";
 
-const { ask } = await import(pathToFileURL(dist.pathname).href);
-const typed = (await import(pathToFileURL(typedDist.pathname).href)) as
+const { ask } = await import(dist.href);
+const typed = (await import(typedDist.href)) as
   typeof import("../services/zz-core/dist/typed-service.js");
-const { Refusal } = (await import(pathToFileURL(refusalDist.pathname).href)) as
+const { Refusal } = (await import(refusalDist.href)) as
   typeof import("../services/zz-core/dist/refusal.js");
 
 const fail: string[] = [];

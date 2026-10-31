@@ -58,9 +58,8 @@ export function slugRefusal(slug: string): string | null {
       "`payment-retries`, not the dated folder name."
     );
   }
-  // A letter, digit, mark or symbol outside ASCII is part of a word, and slugify would cut it:
-  // `女主与猫-api视频生成` opened as `<date>-api` (bug 6608d943), and a folder name cannot be
-  // renamed afterwards. Spaces and punctuation in any script only separate words, so they are
+  // A letter, digit, mark or symbol outside ASCII is part of a word, and slugify would cut it,
+  // leaving only the slug's ASCII words, and a folder name cannot be renamed afterwards. Spaces and punctuation in any script only separate words, so they are
   // shaped into hyphens like their ASCII kin.
   const cut = [...new Set(v.match(/(?![\x00-\x7f])[\p{L}\p{N}\p{M}\p{S}]/gu) ?? [])];
   if (cut.length) {

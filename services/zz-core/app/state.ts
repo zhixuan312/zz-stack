@@ -77,8 +77,8 @@ export const state = {
   paneHeight: 600,
   /** The passage the reader last selected, held until they act on it, close it or select another.
    *  Held rather than read live: on a touchscreen, tapping a button clears the selection before the
-   *  tap lands, and a host redraw clears it too — a bar that followed the live selection vanished
-   *  under the reader's finger (0.92.3, on a phone). */
+   *  tap lands, and a host redraw clears it too, so a bar that followed the live selection would
+   *  vanish under the reader's finger. */
   pick: null as { text: string; section: string | null } | null,
 };
 export const current = (): Slot | undefined => state.slots[state.active];

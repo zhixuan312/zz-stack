@@ -24,7 +24,7 @@ import { Refusal } from "./refusal.js";
 
 /** The attempt state a rollback leaves behind — what `retractedVersions` filters on. Taken from
  *  the shared vocabulary every writer takes its state values from (`EVAL_STATE_ENUMS`), sixth of
- *  six, rather than spelled: it is also the name of the boolean column group G drops, and
+ *  six, rather than spelled: it is also the name of a retired boolean column, and
  *  `checks/release-relations.ts` reads this file's text for that spelling. The statement below
  *  still renders it — `checks/eval-release-head.ts` matches the SQL by its exact text. */
 const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];

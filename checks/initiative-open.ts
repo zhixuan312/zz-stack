@@ -3,8 +3,8 @@
  * Opening is explicit and dated by the platform, and freeform is a first-class answer.
  *
  * This check runs the code rather than grepping its source:
- *   - `initiativeState`, exported from initiative-status.ts and taking `root` explicitly, is
- *     driven over a fixture store, in both directions: a freeform initiative must answer null,
+ *   - `initiativeState`, exported from initiative-status.ts and taking its pool explicitly, is
+ *     driven over a fixture world, in both directions: a freeform initiative must answer null,
  *     and a flow-driven one must still answer its real next document.
  *   - the real zod schemas, harvested by handing `registerInitiativeOpenTool` a stub server.
  *   - `initiativeNameFor` against `isoToday`, both loaded from dist, so "the date is the
@@ -13,9 +13,9 @@
  *     called directly, each asserted to fire and not to fire; the door's own handler is driven
  *     with a slug it cannot keep, which it refuses before reaching anything that writes.
  *
- * The write path is not driven: the handler resolves through `userRoot()`, rooted at the
- * hard-coded `/artifacts`. Its two assertions are source-level over comment-stripped text,
- * labelled as such in section 7.
+ * The write, approve and close handlers are not driven: each issues writes this stub does not
+ * model, which it would answer as no rows. Their assertions are source-level over
+ * comment-stripped text, labelled as such in sections 7 and 8b.
  *
  * Run: node checks/initiative-open.ts   (also run by scripts/gate.ts)
  */
@@ -23,7 +23,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import pg from "pg";
+import { rowsOf, stubInitiativePool, type StubInitiative } from "./in-process.ts";
 
 // The catalog is set before any import: @zz/catalog reads CATALOG_DIR into a module-level
 // const at load time, defaulting to the deployment's `/catalog` mount, which does not exist
@@ -34,9 +34,8 @@ process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 
 const TEAM = "t1";
 /** One initiative's world: its own row, its documents, its branch facts and its stage records.
- *  A document is a `zz.doc` row plus the revision it points at — the store's files, as rows. */
-interface W { flow: string | null; docs: Record<string, unknown>[]; facts: Record<string, string>;
-             records: Record<string, Record<string, string>> }
+ *  A document is a `zz.doc` row plus the revision it points at. */
+type W = Required<StubInitiative>;
 const world = new Map<string, W>();
 let seq = 0;
 const ensure = (name: string): W => {
@@ -78,43 +77,26 @@ const wrote = (initiative: string, path: string, text: string): void => {
  * only by this check's `wrote()` helper and so was empty whatever the open did. */
 const statements: string[] = [];
 
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
-  const sql = String(text).replace(/\s+/g, " ").trim();
-  if (/^(insert|update|delete)\b/i.test(sql)) statements.push(sql);
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  const bySlug = world.get(String(values[1] ?? ""));
-  // `recordOpen` resolves the team id before it writes the row.
-  if (/select id::text as id from zz\.team where slug = \$1/.test(sql)) return one([{ id: "t-1" }]);
-  // `takenRefusal` asks the roster for the slugs that match a prefix.
-  if (/i\.slug ~ \('\^\\d\{4\}-/.test(sql)) {
-    return one([...world.keys()].filter((k) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${values[1]}$`).test(k))
-      .sort().map((slug) => ({ slug })));
-  }
-  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
-    const names = (values[1] as string[]) ?? [];
-    return one(names.filter((n) => world.has(n)).map((n) => ({
-      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
-  }
-  if (/select i\.slug from zz\.initiative i join zz\.team t on t\.id = i\.team_id where t\.slug = \$1 order by i\.slug/.test(sql)) {
-    return one([...world.keys()].sort().map((slug) => ({ slug })));
-  }
-  // `recordOpen` writes the initiative's own row, and that row IS the record.
-  if (/insert into zz\.initiative\b/.test(sql)) {
-    const w = ensure(String(values[1]));
-    w.flow = values[2] === null || values[2] === undefined ? null : String(values[2]);
-    return one([{ flow: w.flow, opened_at: isoToday(), opened_by: String(values[3]) }]);
-  }
-  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
-    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-14",
-                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
-  }
-  if (/from zz\.initiative_fact f\b/.test(sql)) {
-    return one(Object.entries(bySlug?.facts ?? {}).map(([fact, value]) => ({ fact, value })));
-  }
-  if (/from zz\.initiative_record r\b/.test(sql)) return one([]);
-  if (/from zz\.doc d\b/.test(sql)) return one(world.get(String(values[0]))?.docs ?? []);
-  return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+stubInitiativePool(() => world, {
+  openedAt: "2026-09-14",
+  own: (sql, values) => {
+    if (/^(insert|update|delete)\b/i.test(sql)) statements.push(sql);
+    // `recordOpen` resolves the team id before it writes the row.
+    if (/select id::text as id from zz\.team where slug = \$1/.test(sql)) return rowsOf([{ id: "t-1" }]);
+    // `takenRefusal` asks the roster for the slugs that match a prefix.
+    if (/i\.slug ~ \('\^\\d\{4\}-/.test(sql)) {
+      return rowsOf([...world.keys()].filter((k) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${values[1]}$`).test(k))
+        .sort().map((slug) => ({ slug })));
+    }
+    // `recordOpen` writes the initiative's own row, and that row IS the record.
+    if (/insert into zz\.initiative\b/.test(sql)) {
+      const w = ensure(String(values[1]));
+      w.flow = values[2] === null || values[2] === undefined ? null : String(values[2]);
+      return rowsOf([{ flow: w.flow, opened_at: isoToday(), opened_by: String(values[3]) }]);
+    }
+    return undefined;
+  },
+});
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");
@@ -224,7 +206,7 @@ const door = await doors.get("initiative_open")?.({ slug: "女主与猫-api视�
 is(door?.content[0]?.text === lost,
    `initiative_open does not refuse the reporter's own slug: ${door?.content[0]?.text}`);
 
-// 3. The store, and the two directions of next_move
+// 3. The fixture, and the two directions of next_move
 
 /** The shape chain.ts derives. Built inline because EMPTY_CHAIN is not exported and
  * `deriveChain([], null)` is deterministic — a flow that declares nothing. */
@@ -454,8 +436,7 @@ is(await openRecord(db()!, TEAM, `${isoToday()}-never-opened`) === null,
 
 // The record must not be mistaken for a document. Opening writes the initiative's OWN ROW and no
 // document, so a record can never appear in a listing with no status, no gate and no place in any
-// chain. Asked of what recordOpen actually wrote, not of a constant: the store's `_open.json` was
-// a file in the folder, and the row is not a file at all.
+// chain. Asked of what recordOpen actually wrote, not of a constant.
 {
   const docWrites = statements.filter((sql) => /\bzz\.doc\b/.test(sql));
   is(docWrites.length === 0,
@@ -489,11 +470,11 @@ is((await chainFor(db()!, TEAM, `${FREEFORM_NAME}/x.md`)).name === null,
    "an initiative opened freeform resolves to a named chain — the record is being read as a " +
    "declaration where it declares nothing, which is the platform choosing a flow for somebody");
 
-// 4c. A declared freeform outranks every fallback.
+// 4c. A declared freeform outranks every other document.
 //
-// `flow: null` in the record is a person saying nothing governs this work. chainFor's last
-// resort does not know that on its own: the oldest-document walk takes whatever `flow:` it
-// finds in an envelope. A stray envelope inside a declared-freeform initiative must not win.
+// `flow: null` in the record is a person saying nothing governs this work. chainFor reads the
+// envelope of the content being written, then the record, and nothing else: a `flow:` in another
+// document's envelope inside a declared-freeform initiative must not win.
 const STRAY = `${isoToday()}-freeform-with-a-stray-envelope`;
 
 await recordOpen(db()!, TEAM, STRAY, null, "cy@zz.test");
@@ -503,27 +484,17 @@ is((await chainFor(db()!, TEAM, `${STRAY}/other.md`)).name === null,
    "an initiative opened deliberately freeform picked up a flow from a fallback further down " +
    "chainFor — a `flow: null` record is a person declining a flow, and anything that overrules " +
    "it adopts one on their behalf at open time, which is adopting a flow after the fact");
-// And the control for that: without a record, the envelope must still answer, or this
-// short-circuit has broken resolution for every initiative written before the record existed.
-const LEGACY = `${isoToday()}-no-record-at-all`;
-// The flow a legacy initiative declares lives on its own row: the carry moved the file-only
-// facts onto the anchor, so nothing walks the documents for one any more.
-ensure(LEGACY).flow = "sdlc-flow";
-
-wrote(LEGACY, "spec.md", doc({ title: "S", flow: "sdlc-flow" }, "# S"));
-is((await chainFor(db()!, TEAM, `${LEGACY}/other.md`)).name === "sdlc-flow",
-   "an initiative with NO open record no longer resolves its flow from its own documents — " +
-   "every initiative written before the record existed just became ungoverned");
-
-// 4d. The declaration survives a lost log line.
-//
-// The declaration is the initiative's own ROW, and nothing reads it out of telemetry: the store's
-// per-initiative `activity.jsonl` is gone with the store, so there is no best-effort log whose
-// append could have failed and left an initiative somebody governed reporting as freeform.
-is((await chainFor(db()!, TEAM, `${GOVERNED_NAME}/x.md`)).name === "sdlc-flow",
-   "the flow cannot be resolved from the initiative's own record — the declaration is being " +
-   "read out of best-effort telemetry, so an append that silently failed left an initiative " +
-   "somebody governed reporting as freeform for the rest of its life");
+// 4d. No record at all is not a flow either. An initiative this deployment has no row for — no
+// `ensure`, so the stub answers no row — resolves to no chain; and the control, that the content
+// being written still answers with its own declaration, so the record did not displace it.
+const UNRECORDED = `${isoToday()}-no-record-at-all`;
+is((await chainFor(db()!, TEAM, `${UNRECORDED}/spec.md`)).name === null,
+   "an initiative with no record resolves to a named chain — a flow is being adopted for work " +
+   "nobody opened");
+is((await chainFor(db()!, TEAM, `${UNRECORDED}/spec.md`,
+                   doc({ title: "S", flow: "sdlc-flow" }, "# S"))).name === "sdlc-flow",
+   "the content being written declares `flow: sdlc-flow` and chainFor does not answer it — " +
+   "a document's own declaration, the one thing more specific than the record, went unread");
 
 // 5. The slug is what is taken
 is(await takenRefusal(db()!, TEAM, "hand-assembled") !== null,
@@ -553,9 +524,8 @@ is(await unopenedRefusal(db()!, TEAM, "README.md") === null,
 
 // 7. Two source-level assertions, and what each catches
 //
-// Neither can be run: `document_write` resolves through `safePath`, which resolves through
-// `userRoot`, which is rooted at the hard-coded `/artifacts`. Comments are stripped first, so
-// neither is satisfiable by an explanation of the change.
+// Neither is run: `document_write` issues writes this stub does not model. Comments are stripped
+// first, so neither is satisfiable by an explanation of the change.
 const stripped = (p: string) => readSrc(p)
   .split("\n").filter((l) => !l.trim().startsWith("//")).join("\n")
   .replace(/\/\*[\s\S]*?\*\//g, "");
@@ -639,9 +609,9 @@ is(wg.statusCheck(GOVERNED, `${GOV}/stray.md`, "---\nstatus: nearly\n---\n") ===
    "statusCheck now judges a document the flow never declared — the declaration must narrow " +
    "the guard, and its absence must not switch it off; those are different rules");
 
-// 8b. The three membership tests, source-level and labelled. Each handler resolves through
-// `userRoot()`, so the condition is read rather than run — after comments are stripped, and
-// asserted on its exact shape rather than on a word.
+// 8b. The three membership tests, source-level and labelled. Each handler issues writes this
+// stub does not model, so the condition is read rather than run — after comments are stripped,
+// and asserted on its exact shape rather than on a word.
 // Every file a handler of the three lives in: document_approve's, document_edit's (its tool and
 // the plan it computes) and initiative_close's.
 const acts = stripped("services/zz-core/src/tools/initiative-acts.ts");
@@ -677,13 +647,6 @@ is(closeDef.document?.safeParse("notes.md").success
    "initiative_close takes no OPTIONAL `document` — a freeform close has no manifest to read " +
    "a closing document off, and the alternatives are all the platform guessing which file the " +
    "team's ledger row should sit on");
-
-// 8c. DELIBERATE: the file version's two assertions here read `services/zz-core/src/persist.ts`
-// — `snapshotOnApproval`'s membership test and `ledgerOnClose`'s closing-document skip — and
-// neither subject survives. The frozen copy an approval filed is a `doc_revision` row now, so
-// there is no directory walk to widen or narrow; and the ledger is no longer a file the close
-// appends a row to. Both modules were deleted with the store, and a check that read them would
-// report a blind scan rather than a pass.
 
 // First, ahead of everything else: if a path could not be read, every assertion over it passed
 // on the empty string.

@@ -22,7 +22,7 @@
  * something else. Only reciprocity fails there, and `catalog-stages.ts`'s "a document's
  * declared stage is a stage its flow has" stays quiet, because the stage it names is real.
  */
-import { cpSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import { restoreOnInterrupt, run } from "../testing/gate-plant.ts";
 
@@ -34,28 +34,21 @@ const EVAL = "catalog/zz/zz-plugin-eval/flow.json";
 const SDLC = "catalog/sdlc/sdlc-flow/flow.json";
 const ACCESS = "catalog/zz/zz-access/flow.json";
 
-// Exact paths, one file each, outside the repository: a directory copy into a stale path can
-// overwrite a source tree.
-const KEEP = {
-  [EVAL]: "/tmp/zz-plugin-eval-flow.stage-produces.keep",
-  [SDLC]: "/tmp/sdlc-flow-flow.stage-produces.keep",
-  [ACCESS]: "/tmp/zz-access-flow.stage-produces.keep",
-};
 
 const MINE = "every stage says what it leaves behind, and the document it names names it back";
 const SDLC_DOCS = "sdlc closes on its review, gates it, and leaves its audits ungated";
 const CONFORM = "every plugin declares what it is, what it ships, and what each stage leaves behind";
 const DOC_STAGE = "a document's declared stage is a stage its flow has";
 
+// The originals are held in memory and written back from there: every mutation is built from them,
+// so a copy on disk would only add a path another checkout's run could overwrite.
 const original: Record<string, string> = {};
-for (const [path, keep] of Object.entries(KEEP)) {
+for (const path of [EVAL, SDLC, ACCESS]) {
   original[path] = readFileSync(path, "utf8");
   if (!original[path].trim()) { console.error(`${path} is empty — refusing to plant into it`); process.exit(1); }
-  cpSync(path, keep);
-  if (!statSync(keep).size) { console.error(`${keep} is empty — refusing to plant`); process.exit(1); }
 }
 
-const restore = () => { for (const [path, keep] of Object.entries(KEEP)) cpSync(keep, path); };
+const restore = () => { for (const [path, text] of Object.entries(original)) writeFileSync(path, text); };
 restoreOnInterrupt(restore);
 /** Mutate one manifest through a function of its parsed self. One file at a time. */
 const mutate = (path: string, fn: (m: Manifest) => void) => {

@@ -1,13 +1,13 @@
 /**
- * Defects planted for the third batch of `scripts/gate/checks/suites.ts`'s registered checks.
+ * Defects planted for the third batch of the checks the `scripts/gate/checks/suites*.ts`
+ * modules register.
  *
- * Every row names `suites.ts` as its `check` because that is the file registering the check,
- * but the rule being measured lives in a standalone script under `checks/`, which `runsCheck`
+ * Every row names the module registering its check as its `check`, but the rule being measured lives in a standalone script under `checks/`, which `runsCheck`
  * spawns and fails on a non-zero exit. So each spec's real subject is whatever that script
  * reads: a source module, a lock file, a manifest, a skill's frontmatter, a tsconfig.
  *
- * Every row carries an `assertion`, because a table of ninety-odd rows all reading
- * `scripts/gate/checks/suites.ts` tells a reader nothing about what was broken.
+ * Every row carries an `assertion`, because a row naming only the registering module tells a
+ * reader nothing about what was broken.
  *
  * DELIBERATE: the defect goes in the data, not in the judge. `checks/*.ts` is not frozen the
  * way `scripts/gate/` is, so a spec could break the script rather than the thing it judges.
@@ -81,8 +81,8 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   },
   {
     check: SUITES_TOOLING,
-    target: "the six shipped skill scripts carry zero strict errors, every construct in them " +
-      "is erasable, and none was reached by widening to any",
+    target: "the six shipped skill scripts are type-checked, every construct in them is " +
+      "erasable, and none is typed by widening to any",
     assertion: "a shipped skill script may not reach zero errors by widening to any",
     subject: "catalog/zz/zz-access/skills/zz-doctor/doctor.ts",
     find: "const readable = (p: string): string | null => {",
@@ -143,10 +143,9 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     subject: "services/gateway/src/runs.ts",
     find: "sum(e.response_bytes)",
     replace: "coalesce(sum(e.response_bytes), 0)",
-    all: true,
-    planted: "both run rollups coalesce an unmeasured byte total back to 0, so a run whose " +
+    planted: "the run rollup coalesces an unmeasured byte total back to 0, so a run whose " +
       "calls were never measured is indistinguishable from a run that transferred nothing — " +
-      "the confident zero the schema exists to prevent, back in both directions",
+      "the confident zero the schema exists to prevent",
   },
   {
     check: SUITES_SURFACE,
@@ -223,8 +222,10 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   },
   {
     check: SUITES_SURFACE,
-    target: "every skill path a script or a check names is a skill on disk, and the shelf builds",
+    target: "every skill path a script or a check names is a skill on disk",
     assertion: "a skill path naming no file on disk fails unless its line is marked SYNTHETIC",
+    // The one row planted under `checks/`: this file is what the target reads, not the script
+    // that judges it.
     subject: "checks/eval-candidates-pure.ts",
     find: '  ["skills/foo/SKILL.md", "modified"], // SYNTHETIC: fixture path, not a real file',
     replace: '  ["skills/foo/SKILL.md", "modified"],',

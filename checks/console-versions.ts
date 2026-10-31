@@ -53,6 +53,7 @@ import pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { answer, type Answered, type Route } from "./in-process.ts";
 
 const EMAIL = "console@example.test";
 const TEAM = "console-team";
@@ -143,9 +144,6 @@ async function closedFlow(db: pg.Client, principal: string, initiativeId: string
   await document(db, principal, initiativeId, "review.md", "verification", review);
 }
 
-type Answer = { status: number; body: Record<string, unknown> };
-type Route = (req: unknown, res: unknown) => void;
-
 /** Who a request is from: the identity the gateway's middleware resolved for a console session. */
 interface Who { email: string; name: string; role: "superadmin" | "member"; team: string }
 
@@ -165,18 +163,6 @@ function request(who: Who, params: Record<string, string>, query: Record<string,
       "x-zz-pat-team": "", "x-zz-session-team": who.team,
     },
   };
-}
-
-/** Calls one mounted route as Express would, and waits for the answer it sends. */
-function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Record<string, unknown>) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** The body an agent writes for the console to show: two sections, so an edit leaves records. */
@@ -217,7 +203,7 @@ async function presentation(c: Core, routes: { detail: Route; shown: Route; appr
     if (d.status !== 200) c.fail(step, `the document read answered ${d.status}: ${JSON.stringify(d.body)}`);
     return d.body;
   };
-  const post = (r: Route, body: Record<string, unknown>, doc = name): Promise<Answer> =>
+  const post = (r: Route, body: Record<string, unknown>, doc = name): Promise<Answered> =>
     answer(r, request(who, {}, { team: c.team }, { initiative, path: doc, ...body }));
 
   let step = "the document read names its snapshot";
@@ -361,7 +347,7 @@ async function run(c: Core): Promise<void> {
   const documentRoute = route("GET /api/console/document/:team/:initiative/*");
   const initiativeRoute = route("GET /api/console/initiatives/:team/:slug");
   const listRoute = route("GET /api/console/initiatives");
-  const call = (r: Route, params: Record<string, string>, query: Record<string, string> = {}): Promise<Answer> =>
+  const call = (r: Route, params: Record<string, string>, query: Record<string, string> = {}): Promise<Answered> =>
     answer(r, request(CONSOLE, params, query));
 
   try {

@@ -7,8 +7,7 @@
  * When TEAM_DB_URL is set (the platform database), a team's documents and knowledge are ROWS in
  * that database — there is no store on a disk beside it — and membership is read live from
  * `zz.membership`. Unset there is no store at all: a tool that needs one refuses by name rather
- * than falling back to a per-user directory, which is what a checkout without a database used to
- * get.
+ * than falling back to a per-user directory.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

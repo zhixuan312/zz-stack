@@ -54,7 +54,7 @@ else's hostname, which is a certificate that resolves and a platform that does n
 ## Installing a release
 
 The release bundle carries the compose file, `.env.example`, `zz-tool`, `issue-first-pat.sh`,
-`issue-enrolment.sh`, `backup.sh`, `backup-manifest.sh` and `install-backup-cron.sh` — every
+`issue-enrolment.sh`, `backup.sh` and `install-backup-cron.sh` — every
 script below an operator runs by hand. The compose file names the exact images of that release,
 so the bundle is self-describing: reading it tells you which version you are about to run.
 
@@ -324,10 +324,8 @@ nothing else. A run that fails deletes what it had written, so a partial set nev
 directory looking like the newest backup. `--verify` also restores into a throwaway database and
 counts principals.
 
-`deploy/backup-manifest.sh <dir> <stamp>` writes a JSON listing of one dated set — the three
-files and the SHA-256 of each — for comparing an off-host copy with its source by hand. It refuses
-a set missing any of the three. Nothing in this repository reads the manifest, and no restore
-checks it.
+To compare an off-host copy with its source, list one dated set's three files with their SHA-256
+on both hosts and compare the two listings: `shasum -a 256 <dir>/*<stamp>*`.
 
 `deploy/install-backup-cron.sh` installs a nightly run and a weekly verify. It replaces its own
 tagged lines and touches nothing else, so re-running it is how you pick up a change — including

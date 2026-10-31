@@ -136,6 +136,7 @@ const removed = new Set([...pkg.remove.join("\n").matchAll(/claude plugin uninst
 const kept = [...offered].filter((n) => !removed.has(n));
 if (kept.length) bad.push(`the teardown leaves installed: ${kept.join(", ")}`);
 const marketplaceGone = pkg.remove.findIndex((l) => l.includes("plugin marketplace remove"));
-if (pkg.remove.some((l, i) => l.includes("plugin uninstall") && i > marketplaceGone)) bad.push("the teardown uninstalls a plugin after removing its marketplace");
+if (marketplaceGone < 0) bad.push("the teardown never removes the marketplace");
+else if (pkg.remove.some((l, i) => l.includes("plugin uninstall") && i > marketplaceGone)) bad.push("the teardown uninstalls a plugin after removing its marketplace");
 
 process.stdout.write(bad.join("; "));

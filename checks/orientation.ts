@@ -22,12 +22,11 @@
 // door" is asserted as the structural marker `NOT FOR:` and nothing more.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
 import { errMessage } from "../scripts/gate/read.ts";
 
+import { connectTo, coreDoor } from "./in-process.ts";
 
 /** The SDK types a tool result's `content` as `unknown` — narrow to the one field this check
  *  reads, the first block's `text`, rather than assume the shape. */
@@ -78,40 +77,17 @@ const stripComments = (src: string) => {
   return out;
 };
 
-/** A real client, connected to a real server over a linked in-memory transport pair. What it
- *  reports is what the `initialize` result carried — not what the source says it should. */
-async function connectTo(server: McpServer) {
-  const [forServer, forClient] = InMemoryTransport.createLinkedPair();
-  await server.connect(forServer);
-  const client = new Client({ name: "checks/orientation.ts", version: "0" });
-  await client.connect(forClient);
-  return client;
-}
-
 // The core door, built the way the service builds it
 //
 // The register* functions are read out of server.ts rather than listed here, so a door that
-// grows another tool module is opened by this check with that module on it.
+// grows another tool module is opened by this check with that module on it. COUPLED: the builder
+// is checks/in-process.ts's `coreDoor`, which checks/tool-annotations.ts builds the same door with.
 let coreClient: Client | null = null;
 const coreSrc = read("services/zz-core/src/server.ts");
 try {
-  const { coreServer } = await import("../services/zz-core/dist/orientation.js");
-  const server = coreServer("0.0.0-orientation-check");
-  // Every name in the import, not the first: a tool module that exports two registrars would
-  // otherwise be skipped whole, and the door under test would silently lose its tools.
-  const mods = [...(coreSrc ?? "").matchAll(/import \{ ([^}]+) \} from "(\.\/tools\/[\w-]+)\.js"/g)];
-  if (!mods.length) blind.push("no tool modules found imported by services/zz-core/src/server.ts");
-  for (const [, names, rel] of mods) {
-    const mod = await import(`../services/zz-core/dist/${rel.replace(/^\.\//, "")}.js`);
-    for (const raw of names.split(",")) {
-      const fn = raw.trim();
-      if (!/^register\w+$/.test(fn)) continue;      // a type import is not a registrar
-      // `true` where a registrar takes a role: the door under test is the whole surface, so a
-      // paragraph is checked against everything it can serve, not what one caller sees.
-      (mod[fn] as (s: unknown, sup?: boolean) => void)(server, true);
-    }
-  }
-  coreClient = await connectTo(server);
+  const { server, registrars } = await coreDoor("0.0.0-orientation-check");
+  if (!registrars.length) blind.push("no tool modules found imported by services/zz-core/src/server.ts");
+  coreClient = await connectTo(server, "checks/orientation.ts");
 } catch (err) {
   fail.push(`the core door could not be built or connected: ${errMessage(err)}`);
 }
@@ -124,7 +100,7 @@ try {
 let evalClient: Client | null = null;
 try {
   const { buildEvalServer } = await import("../services/zz-core/dist/eval-door.js");
-  evalClient = await connectTo(buildEvalServer());
+  evalClient = await connectTo(buildEvalServer(), "checks/orientation.ts");
 } catch (err) {
   fail.push(`the evaluation door could not be built or connected: ${errMessage(err)}`);
 }
@@ -133,7 +109,7 @@ try {
 let manageClient: Client | null = null;
 try {
   const { buildAccessServer } = await import("../services/gateway/dist/access-door.js");
-  manageClient = await connectTo(await buildAccessServer());
+  manageClient = await connectTo(await buildAccessServer(), "checks/orientation.ts");
 } catch (err) {
   fail.push(`the access door could not be built or connected: ${errMessage(err)}`);
 }

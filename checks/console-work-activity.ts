@@ -62,6 +62,7 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-activity";
 const DONE = "console-work-activity: Activity reads the active team's real work, its refusals under four owners by week " +
@@ -83,8 +84,6 @@ const NONE_NAMED = /^ERROR: `…` names no initiative/;
 const NOT_SINGLE = /^ERROR: a name in `…` must be a single name/;
 const MALFORMED = /Input validation error|Invalid arguments|validation error/i;
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
 type Who = { email: string; role: "member" | "superadmin"; team: string | null };
 type Row = { id: string; ts: string; kind: string; tool: string | null; initiative: string | null; owner: string | null; message: string | null };
 type Group = { owner: string; tool: string; message: string | null; count: number; lastSeen: string };
@@ -101,20 +100,6 @@ function request(who: Who, query: Record<string, string | string[]> = {}): Obj {
                   activeTeam: who.team, patTeam: null, sessionTeam: who.team },
     headers: {},
   };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: {} }); },
-      sendStatus(code: number) { this.statusCode = code; this.end(); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 interface Gateway {

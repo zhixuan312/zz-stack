@@ -21,10 +21,10 @@
  * produce no document, and sdlc-execute's output is the repository. An optional field answers "the
  * author forgot" and "this stage genuinely produces nothing" with the same absence.
  *
- * The schema cannot do this. `FlowStage.produces` is
- * `z.union([z.string().min(1), z.literal("record"), z.literal("nothing")])`, so every non-empty
- * string validates and `"invented.md"` is as good as `"spec.md"` to zod. Presence is the only half
- * the contract can enforce.
+ * The schema cannot do this. `FlowStage` is a `SourceStage` (`produces: "source"` with `supports`)
+ * or an `ArtifactStage` whose `produces` is a `<name>.md` document name, `"record"` or `"nothing"`,
+ * so `"invented.md"` is as good as `"spec.md"` to zod. Shape is the only half the contract can
+ * enforce.
  *
  * Every offence in one run: a manifest is edited by hand and its errors arrive in bunches.
  */
@@ -32,12 +32,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { flows } from "../facts.ts";
+import { errMessage } from "../read.ts";
 import { check, note } from "../run.ts";
 
-/** The two values that are a stage saying what it leaves behind without naming a document. COUPLED:
- *  the union in @zz/contracts is `z.string() | "record" | "nothing"`, and a third literal added
- *  there must arrive here or this check reports it as an undeclared document. */
-const NOT_A_DOCUMENT = new Set(["source", "record", "nothing"]);
+/** The two values that are an `ArtifactStage` saying what it leaves behind without naming a
+ *  document. COUPLED: `ArtifactStage.produces` in @zz/contracts is a document name | "record" |
+ *  "nothing", and a literal added there must arrive here or this check reports it as an
+ *  undeclared document. A source stage is handled before this is consulted. */
+const NOT_A_DOCUMENT = new Set(["record", "nothing"]);
 
 check("every stage says what it leaves behind, and the document it names names it back", () => {
   const bad = [];
@@ -54,7 +56,7 @@ check("every stage says what it leaves behind, and the document it names names i
     } catch (err) {
       // Another check owns "every flow.json parses"; this one says which question it could
       // not ask, rather than taking the whole gate down from inside a walk.
-      bad.push(`${where}: flow.json does not parse, so nothing here could be read — ${err instanceof Error ? err.message : String(err)}`);
+      bad.push(`${where}: flow.json does not parse, so nothing here could be read — ${errMessage(err)}`);
       continue;
     }
     const docs = m.documents ?? [];

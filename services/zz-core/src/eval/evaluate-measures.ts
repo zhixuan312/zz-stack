@@ -1,13 +1,10 @@
 /**
  * `evaluation_assess`'s own per-measure execution, and `evaluation_score`'s own reduction of the
- * rows it wrote into `scoreRun`'s input shape (Task I-13, AC-8.1, AC-9.1).
+ * rows it wrote into `scoreRun`'s input shape (AC-8.1, AC-9.1).
  *
- * FIXED (fix dispatch on initiative 2026-09-24-plugin-eval-next-version, task I-29's own two
- * follow-on seams): `deterministic`/`outcome` used to read only two hard-coded facts off
- * `zz.eval_observation_snapshot`'s own raw columns, because OBSERVE (Task I-7) stored only their
- * digest and never the ~18 facts it actually computes. Migration 001 gives the snapshot a `facts`
- * column carrying the whole map (observe-facts.ts's `OBSERVATION_FACT_KEYS`), so a measure now
- * names ANY of them by a dotted `definition.factPath`, normalised to `[0,1]` by a rule the measure
+ * The snapshot's `facts` column carries the whole map OBSERVE computes (observe-facts.ts's
+ * `OBSERVATION_FACT_KEYS`), so a `deterministic`/`outcome` measure names ANY of them by a dotted
+ * `definition.factPath`, normalised to `[0,1]` by a rule the measure
  * itself declares — see `deterministicAnswer`/`normalizeFactValue` below. `outcome` reads the same
  * way, and is scored identically to `deterministic`.
  *
@@ -24,9 +21,8 @@
  *   - `human` has no label-ingestion pipeline yet; its measures are recorded as `null`, excluded
  *     the same way an unqualified evaluator's answer is.
  *
- * `definition` is a protocol measure's freeform jsonb (spec v8 fixes no shape for it — this
- * task's own plan boundary, "final deliverable content is not in this plan", is what leaves the
- * shape below to this file rather than to the contract): for `deterministic`/`outcome`,
+ * `definition` is a protocol measure's freeform jsonb (spec v8 fixes no shape for it, so the
+ * shape below is this file's rather than the contract's): for `deterministic`/`outcome`,
  * `{ factPath: string, normalize?: "rate" | "inverted_rate" | "threshold", max?: number, min?:
  * number }` — `normalize` defaults to `"rate"` when omitted, so the two original facts
  * (`usable_run_coverage`, `tool_coverage`, already rates in `[0,1]`) need not declare one.
@@ -47,7 +43,7 @@ export interface SnapshotFacts {
   readonly usable_run_count: number;
   readonly total_run_count: number;
   readonly coverage: { surface?: { observed?: number; total?: number } } | null;
-  /** The full map migration 001 stores — `null` for a snapshot that carries none,
+  /** The full map the snapshot's `facts` column stores — `null` for a snapshot that carries none,
    *  which excludes every deterministic/outcome measure with a named
    *  reason rather than guessing at a value. Loosely typed (`unknown` per entry): this file
    *  narrows each entry it actually reads through `asFactLike`, rather than importing
@@ -64,12 +60,12 @@ export interface MeasureRow {
   readonly definition: Record<string, unknown>;
   readonly evaluator_version_id: string | null;
   /** The kind a model-backed measure judges, as its own column (`eval_measure.subject_kind`,
-  *  written by `protocol_record` from the same `definition.subjectKind` it used to live in) —
+  *  written by `protocol_record` from `definition.subjectKind`) —
   *  what `subjectKindOf` reads first. Optional because a `MeasureRow` is also built by hand in a
   *  check, and a row that names no column falls back to the definition. */
   readonly subject_kind?: string | null;
   /** The bar this measure's already-reduced `[0,1]` value must meet to pass, when the protocol
-   *  names one — `eval_measure.guardrail_threshold`, the column that replaced the
+   *  names one — `eval_measure.guardrail_threshold`, written from the
    *  `improvement.criticalGuardrails` entry naming this measure by key. `null` for every measure
    *  that is not a guardrail. */
   readonly guardrail_threshold?: number | null;
@@ -104,9 +100,8 @@ export interface MeasureAnswer {
   readonly detail: Record<string, unknown>;
 }
 
-/** Walks a dot-separated path over a plain object — the same "reach a figure on the sheet" idea
- *  the removed legacy ruler applied, rewritten here against OBSERVE's own facts map rather than
- *  the whole legacy profile sheet. `undefined` the moment the
+/** Walks a dot-separated path over a plain object — OBSERVE's own facts map. `undefined` the
+ *  moment the
  *  path runs off the object (a non-object node, or a missing key) — never a thrown error, since a
  *  bad path is this function's caller's business to report, not this function's to crash over. */
 function getByPath(obj: unknown, path: string): unknown {
@@ -136,9 +131,8 @@ function asFactLike(node: unknown): FactLike | null {
   return node as FactLike;
 }
 
-/** deterministic/outcome measures declare one of these three (Task I-29's own fix dispatch,
- *  replacing the single implicit "read this fact as a rate" rule the two original facts got away
- *  with). `rate`/`inverted_rate` both need the raw fact value to already BE a rate in `[0,1]` —
+/** deterministic/outcome measures declare one of these three rather than an implicit "read this
+ *  fact as a rate" rule. `rate`/`inverted_rate` both need the raw fact value to already BE a rate in `[0,1]` —
  *  `usable_run_coverage`/`tool_coverage`/`tool_refusal_rate` and friends qualify; `latency_p50_ms`
  *  or `request_bytes_avg` do not, and normalising one of those as a rate is refused rather
  *  than silently producing a number `scoreRun`'s own `[0,1]` guard would otherwise throw on later.
@@ -230,7 +224,7 @@ function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): Meas
  *  one — the probability mass on that answer IS the value. With no
  *  named vocabulary, the distribution's keys are read as an ordered scale (first = worst, last =
  *  best) and reduced to a probability-weighted position — a reasonable default for an
- *  unconfigured `score`/`choice` measure, not a fixed contract (this task's own plan boundary). */
+ *  unconfigured `score`/`choice` measure, not a fixed contract. */
 function valueFromAnswer(r: Omit<EvaluatorAssessmentResult, "assessment_id">, definition: Record<string, unknown>): number | null {
   if (r.answer_kind === "noul") {
     return r.reading === "unavailable" || r.reading === "unclear" || r.probability === null
@@ -359,17 +353,16 @@ export async function recordMeasureAnswer(runner: pg.PoolClient, answered: Answe
 }
 
 /** One measure, one subject_ref, one answer — dispatched by `evaluator_type`. `human` measures
- *  have no ingestion pipeline yet (this task's own plan boundary): recorded as excluded, never
+ *  have no ingestion pipeline: recorded as excluded, never
  *  asked, never guessed at. */
 export async function answerMeasure(opts: {
   measure: MeasureRow; snapshot: SnapshotFacts; subjectRef: string; principal: string;
   qualificationOf: (evaluatorVersionId: string) => Promise<{ id: string; state: string } | null>;
   /** What a model-backed measure is actually asked to judge. Callers that have real content for
-   *  this subject_ref pass it here; omitted, this falls back to the same templated sentence naming subjectRef this
-   *  function has always asked with (evaluation_assess's own eval_run path: a NAMED fact off an
+   *  this subject_ref pass it here; omitted, this falls back to a templated sentence naming
+   *  subjectRef (evaluation_assess's own eval_run path: a NAMED fact off an
    *  observation snapshot is what deterministic/outcome measures read, and no richer subject
-   *  text exists yet for its model-backed measures either — a pre-existing gap this task does
-   *  not fix, only extends the seam past). */
+   *  text exists for its model-backed measures either). */
   subjectText?: string;
   /** What the subject is judged against, e.g. a case's own evaluation_oracle events — passed to
    *  the evaluator as `context`, never folded into `subjectText` itself, so the SUBJECT/CONTEXT
@@ -580,9 +573,8 @@ export function readingsOf(
 }
 
 // -------------------------------------------------------------------------------------------
-// Guardrails (FR-6, FR-20, FR-23): a guardrail is a MEASURE'S OWN BAR. `improvement_policy` lost
-// `criticalGuardrails` (the payload no longer carries them), and the same figure is now
-// `eval_measure.guardrail_threshold`, written per measure key by `protocol_record` from the
+// Guardrails (FR-6, FR-20, FR-23): a guardrail is a MEASURE'S OWN BAR, carried by
+// `eval_measure.guardrail_threshold` and not by `improvement_policy`, written per measure key by `protocol_record` from the
 // `improvement.criticalGuardrails` entry that named it. `evaluation_score` reads the list off the
 // run's own measures through `guardrailsOfMeasures` and evaluates it with `evaluateGuardrails`,
 // rather than parsing a policy object.
@@ -599,7 +591,7 @@ interface GuardrailResult extends CriticalGuardrail {
 
 /** The run's own measures that carry a bar. A measure is a guardrail exactly when its own
  *  `guardrail_threshold` column is set, so the list is read off the run's measures rather than
- *  parsed out of a policy object — the fact moved to where it is measured against. */
+ *  parsed out of a policy object — the fact lives where it is measured against. */
 export function guardrailsOfMeasures(measures: readonly MeasureRow[]): CriticalGuardrail[] {
   return measures
     .filter((m) => typeof m.guardrail_threshold === "number")

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bodyTsvParams, bodyTsvSql, buildRowVector, TEXT_SEARCH_CONFIG, termsByWeight } from "@zz/indexing";
-import { root } from "../read.ts";
+import { root, sourceFiles, stderrOf, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 
 // One construction (`bodyTsvSql`/`bodyTsvParams`) names both configurations in one place, and
@@ -21,27 +21,25 @@ import { check } from "../run.ts";
 // websearch_to_tsquery('english','migration')` is false. Every English word whose stem differs
 // from its surface form stops being findable, with no error and nothing in the row to see.
 
-// The three files that write or read `zz.doc`/`zz.knowledge_node`'s `body_tsv`. This list is the
-// scope of the agreement, and it is narrow on purpose — the read path is probed separately below.
-const WRITE_FILES = [
-  "packages/indexing/src/index.ts",
-  "packages/indexing/src/rederivation.ts",
-  "services/zz-core/src/tools/knowledge-search.ts",
-];
-
 check("no file names a text-search configuration except the one constant that defines them", () => {
   // A quoted literal as the first argument of any text-search call is a second place a
   // configuration name can live, and therefore a place it can disagree with the other side.
+  // Scoped to every file that names `zz.doc`/`zz.knowledge_node`'s `body_tsv` in code, which is
+  // every writer and reader of it; the read path is also probed separately below.
   const literal = /\b(?:to_tsvector|to_tsquery|plainto_tsquery|phraseto_tsquery|websearch_to_tsquery|ts_headline|ts_rank|ts_rank_cd)\(\s*'/g;
-  for (const rel of WRITE_FILES) {
-    const src = readFileSync(join(root, rel), "utf8");
-    const hits = src.match(literal) ?? [];
-    if (hits.length) {
-      return `${rel} spells a text-search configuration inline ${hits.length} time(s) (${hits.join(", ")}) — `
-           + `it must read TEXT_SEARCH_CONFIG from @zz/indexing instead, because the write path and `
-           + `the read path drifted apart for exactly one task the last time each named its own`;
-    }
+  const files = sourceFiles(["services", "packages"], [".ts"])
+    .map((rel): [string, string] => [rel, withoutComments(readFileSync(join(root, rel), "utf8"))])
+    .filter(([, code]) => /\bbody_tsv\b/.test(code));
+  if (files.length < 3) return `only ${files.length} file(s) name body_tsv in code — this check is reading almost nothing`;
+  const bad: string[] = [];
+  for (const [rel, code] of files) {
+    const hits = code.match(literal) ?? [];
+    if (hits.length) bad.push(`${rel} spells a text-search configuration inline ${hits.length} time(s) (${hits.join(", ")})`);
   }
+  return bad.length
+    ? `${bad.join("; ")} — read TEXT_SEARCH_CONFIG from @zz/indexing instead, or the write path ` +
+      "and the read path can each name their own and drift apart"
+    : null;
 });
 
 check("the analyzer's opaque terms and its stemmable words are stored through different configurations", () => {
@@ -123,8 +121,7 @@ check("the read path queries with the configuration the write path stored a lati
   try {
     out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { encoding: "utf8" });
   } catch (err) {
-    const e = err as { stderr?: Buffer | string; message?: string };
-    return `the read-path probe could not run, so this agreement is unchecked: ${String(e.stderr ?? e.message ?? err)}`;
+    return `the read-path probe could not run, so this agreement is unchecked: ${stderrOf(err)}`;
   }
   const bad = JSON.parse(out.trim()) as string[];
   if (bad.length) return bad.join("; ");
@@ -198,8 +195,7 @@ check("the read path scores a Han clause through the configuration the write pat
   try {
     out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { encoding: "utf8", cwd: root });
   } catch (err) {
-    const e = err as { stderr?: Buffer | string; message?: string };
-    return `the Han read-path probe could not run, so this agreement is unchecked: ${String(e.stderr ?? e.message ?? err)}`;
+    return `the Han read-path probe could not run, so this agreement is unchecked: ${stderrOf(err)}`;
   }
   const bad = JSON.parse(out.trim()) as string[];
   if (bad.length) return bad.join("; ");

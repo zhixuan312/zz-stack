@@ -1,5 +1,3 @@
-
-
 /**
  * Building the images, and proving they answer before anything is pushed.
  *
@@ -14,6 +12,7 @@
  */
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { execFileSync, execSync } from "node:child_process";
+import { constants as osConstants } from "node:os";
 import { join } from "node:path";
 
 import { DASH_IMAGE, DASH_SRC, IMAGE, PLATFORM, die, log, root, run, step } from "../deployment.ts";
@@ -22,6 +21,13 @@ import { dryRun, version } from "./config.ts";
 import { postgresService } from "./postgres-service.ts";
 import type { DashboardResolution } from "./dashboard.ts";
 import { walkToolChain } from "./tool-chain.ts";
+
+// Every cleanup a release registers is an `exit` handler, here and in tool-chain.ts: the console's
+// version put back on a dry run, the throwaway containers. Node runs none of them when a signal it
+// has no listener for ends the process, so an interrupt ends it through `exit` instead.
+for (const s of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(s, () => process.exit(128 + osConstants.signals[s]));
+}
 
 /** Move the console's version to the one this release names, and commit it — or, on a dry run,
  *  write it and put it back at exit. Both release paths call it: the local build does so before
@@ -77,10 +83,9 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
   // Nothing about it changed, and a rebuild would replace the bits behind a number another
   // deployment has already pulled. The dry run still needs the image locally, because the smoke
   // starts every service from what is on this machine.
-  for (const [v, image, pub] of [[dashVersion, DASH_IMAGE, dash.alreadyPublished]]) {
-    if (!v || !pub) continue;
-    run("docker", ["pull", "--platform", PLATFORM, "-q", `${image}:${v}`]);
-    log(`  pulled ${image}:${v} — already published, not rebuilt`);
+  if (dashVersion && dash.alreadyPublished) {
+    run("docker", ["pull", "--platform", PLATFORM, "-q", `${DASH_IMAGE}:${dashVersion}`]);
+    log(`  pulled ${DASH_IMAGE}:${dashVersion} — already published, not rebuilt`);
   }
 
   if (dashVersion && !dash.alreadyPublished) {
@@ -91,19 +96,14 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
 
   // One image, several services, so every service has to start from it — this catches an image
   // whose service switch broke.
-  const serviceSmoke: [string, string, string[]][] = [
-    [`${IMAGE}:${version}`, "SERVICE", ["gateway", "zz-core"]],
-  ];
-  for (const [img, envVar, values] of serviceSmoke) {
-    for (const v of values) {
-      const cid = run("docker", ["run", "-d", ...owned(), "-e", `${envVar}=${v}`, img]);
-      execSync("sleep 4");
-      const logs = run("docker", ["logs", cid], { stdio: ["ignore", "pipe", "pipe"] });
-      const alive = run("docker", ["inspect", "-f", "{{.State.Running}}", cid]);
-      run("docker", ["rm", "-f", cid]);
-      if (alive !== "true") die(`${img} with ${envVar}=${v} exited:\n${logs.slice(-400)}`);
-      log(`  ${envVar}=${v} starts`);
-    }
+  for (const service of ["gateway", "zz-core"]) {
+    const cid = run("docker", ["run", "-d", ...owned(), "-e", `SERVICE=${service}`, `${IMAGE}:${version}`]);
+    execSync("sleep 4");
+    const logs = run("docker", ["logs", cid], { stdio: ["ignore", "pipe", "pipe"] });
+    const alive = run("docker", ["inspect", "-f", "{{.State.Running}}", cid]);
+    run("docker", ["rm", "-f", cid]);
+    if (alive !== "true") die(`${IMAGE}:${version} with SERVICE=${service} exited:\n${logs.slice(-400)}`);
+    log(`  SERVICE=${service} starts`);
   }
 
   // The catalog is inside the image, so a released image that lost it would serve a platform
@@ -240,33 +240,17 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
  * packed. A release whose images were built on a runner (`.github/workflows/images.yml`) still
  * has to hand the host a bundle, and this is what it calls. */
 export function buildBundle(): string {
-  /* The deploy bundle: everything a person needs to run this release and nothing else.
- * The compose file already names this release's images as literals, so the bundle is
- * self-describing — you can tell which version you were handed by reading it. */
-const bundle = `dist/release/zz-stack-deploy-${version}.tgz`;
-
-/* What ships is the compose file, the example environment, and the scripts an operator runs
- * by hand.
- *
- * COUPLED: backup.sh, backup-manifest.sh and install-backup-cron.sh ship too, because
- * deploy/README.md's Backups section tells an operator to run each from the directory this
- * bundle unpacks to. */
-run("bash", ["-c",
-  `mkdir -p dist/release && cd deploy && tar czf ../${bundle} docker-compose.yml .env.example issue-first-pat.sh issue-enrolment.sh zz-tool backup.sh backup-manifest.sh install-backup-cron.sh`],
-  { cwd: root });
-// What the installer's first three commands need, checked in the artifact rather than assumed
-// from the command that made it.
-const packed = run("bash", ["-c", `tar tzf ${bundle}`], { cwd: root }).split("\n");
-for (const need of ["docker-compose.yml", ".env.example",
-                    "issue-first-pat.sh", "zz-tool", "backup.sh", "backup-manifest.sh",
-                    "install-backup-cron.sh"]) {
-  if (!packed.some((f) => f === need || f === `./${need}`)) {
-    die(`the deploy bundle is missing ${need} — the install instructions would fail on it`);
-  }
+  // The compose file already names this release's images as literals, so the bundle is
+  // self-describing — you can tell which version you were handed by reading it.
+  const bundle = `dist/release/zz-stack-deploy-${version}.tgz`;
+  // COUPLED: backup.sh and install-backup-cron.sh ship too, because deploy/README.md's Backups
+  // section tells an operator to run each from the directory this bundle unpacks to. The gate's
+  // bundle check reads the file names off the archive line below, and `tar` exits non-zero on a
+  // name it cannot find, so a missing file stops the release here.
+  run("bash", ["-c",
+    `mkdir -p dist/release && cd deploy && tar czf ../${bundle} docker-compose.yml .env.example issue-first-pat.sh issue-enrolment.sh zz-tool backup.sh install-backup-cron.sh`],
+    { cwd: root });
+  const bundleSize = run("bash", ["-c", `du -h ${bundle} | cut -f1`], { cwd: root });
+  log(`  deploy bundle: ${bundle} (${bundleSize}) — compose + .env.example + every script deploy/README tells an operator to run`);
+  return bundle;
 }
-const bundleSize = run("bash", ["-c", `du -h ${bundle} | cut -f1`], { cwd: root });
-log(`  deploy bundle: ${bundle} (${bundleSize}) — compose + .env.example + every script deploy/README tells an operator to run`);
-
-return bundle;
-}
-

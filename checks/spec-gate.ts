@@ -27,7 +27,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import pg from "pg";
+import { rowsOf, stubInitiativePool, type StubInitiative } from "./in-process.ts";
 
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
@@ -45,8 +45,9 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 // The fixture is rows under a stubbed `pg.Pool`: a document is a `zz.doc` row and a source's own
 // declarations — `supports`, `added_at` — are the revision's envelope payload.
 const TEAM = "t1";
-interface W { flow: string | null; docs: Record<string, unknown>[];
-             answers: { about: string; family: string; reading: string; probability: number | null; asked_at: string }[] }
+interface W extends StubInitiative {
+  answers: { about: string; family: string; reading: string; probability: number | null; asked_at: string }[];
+}
 const world = new Map<string, W>();
 let seq = 0;
 const row = (initiative: string, path: string, payload: Record<string, string> | null, text: string,
@@ -56,36 +57,24 @@ const row = (initiative: string, path: string, payload: Record<string, string> |
   title: "", body: text, tags: [], current_revision: 1, approved_revision: null, fields: payload,
   supports });
 
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
-  const sql = String(text).replace(/\s+/g, " ").trim();
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  const bySlug = world.get(String(values[1] ?? ""));
-  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
-    const names = (values[1] as string[]) ?? [];
-    return one(names.filter((n) => world.has(n)).map((n) => ({
-      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
-  }
-  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
-    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-26",
-                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
-  }
-  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
-    return one(world.get(String(values[0]))?.docs ?? []);
-  }
-  // A reading is kept as the database keeps it, one row with its id, and so is the model call that produced it: an
-  // assessment the platform cannot record fails the call that asked (semantic.ts's persistAssessment), so the stub
-  // writes both as a real database would.
-  if (/insert into zz\.(assessment|model_call)\b/.test(sql)) return one([{ id: `a${++seq}` }]);
-  // The statement memo: the readings already taken, keyed by the `about` they were asked under.
-  if (/select a\.about, a\.reading/.test(sql)) {
-    const prefix = String(values[2]).replace(/%$/, "");
-    return one((bySlug?.answers ?? []).filter((a) => a.about.startsWith(prefix))
-      .map((a) => ({ about: a.about, reading: a.reading,
-                     probability: a.probability === null ? null : String(a.probability),
-                     reason: null, asked_at: a.asked_at })));
-  }
-  return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+stubInitiativePool(() => world, {
+  openedAt: "2026-09-26",
+  own: (sql, values) => {
+    // A reading is kept as the database keeps it, one row with its id, and so is the model call that produced it: an
+    // assessment the platform cannot record fails the call that asked (semantic.ts's persistAssessment), so the stub
+    // writes both as a real database would.
+    if (/insert into zz\.(assessment|model_call)\b/.test(sql)) return rowsOf([{ id: `a${++seq}` }]);
+    // The statement memo: the readings already taken, keyed by the `about` they were asked under.
+    if (/select a\.about, a\.reading/.test(sql)) {
+      const prefix = String(values[2]).replace(/%$/, "");
+      return rowsOf((world.get(String(values[1] ?? ""))?.answers ?? []).filter((a) => a.about.startsWith(prefix))
+        .map((a) => ({ about: a.about, reading: a.reading,
+                       probability: a.probability === null ? null : String(a.probability),
+                       reason: null, asked_at: a.asked_at })));
+    }
+    return undefined;
+  },
+});
 
 const doc = (fields: Record<string, string>, body: string) =>
   `---\n${Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n${body}\n`;

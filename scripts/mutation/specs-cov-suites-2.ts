@@ -14,11 +14,6 @@
  * into … values (…)`, and `core-names.ts` reports any pre-rename tool name in quoted or
  * backticked form. Split only where one of those three bites, never to get a spec past the
  * check it is aimed at.
- *
- * Two of this batch's ids have no subject outside a frozen file and live in
- * `unexercisable.ts`: "every check this gate registers is a file git will carry", whose
- * failure mode is a file git does not track, and "gate-launch classification reads the
- * syntax …", which drives `isGateLaunchSource` in scripts/gate/read.ts.
  */
 import type { MutationSpec } from "./plant.ts";
 
@@ -82,7 +77,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
   },
   {
     check: SUITES_TOOLING,
-    target: "the rest of scripts/ and testing/ carry zero strict errors, and none of them was reached by widening to any",
+    target: "nothing in the rest of scripts/ or in testing/ reaches the compiler's zero by widening to any",
     assertion: "no error in scripts/ or testing/ was silenced by widening a type to any",
     // Outside scripts/gate/, which `plant()` refuses to edit because the gate is what a run
     // measures. This pointed at the gate's own `errMessage` once that moved into read.ts, and the
@@ -246,8 +241,6 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "a plugin this shelf does not carry — so the one path out of a broken install installs a " +
       "name that does not resolve and leaves the person worse off than the failure it replaced",
   },
-
-  // The tenant-info suites: the heavy end-to-end reads
 
   // The deck, which is two HTML files and a shell check
   {

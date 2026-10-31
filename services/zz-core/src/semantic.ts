@@ -20,9 +20,8 @@
  * `zz.model_call` row the same call wrote, and a row that came from a call it cannot name is not
  * written at all — a record claiming an attribution it does not have is worse than no record. A
  * reading whose row is not written fails the call that asked, because every routing reader reads
- * the row and would take its absence for a reading of nothing.
- * The `<initiative>/_assessments/*.json` copy that used to sit beside it is gone with the store,
- * and the row is the only record there is.
+ * the row and would take its absence for a reading of nothing. The row is the only record there
+ * is.
  *
  * The row names a principal and a team, not the text the caller handed over: `asked_by` is the
  * principal whose email was passed, `team_id` the team they act for, and `initiative_id` the
@@ -56,14 +55,14 @@ import { Refusal } from "./refusal.js";
  *  SUBJECT and usually a CONTEXT; the instruction says what "yes" means about the subject. */
 export const FAMILY_INSTRUCTIONS: Readonly<Record<string, string>> = Object.freeze({
   // DELIBERATE: asked about the RESULT the evidence reports, not about whether its text restates
-  // the claim. Evidence is a locator and what it gave — `check:checks/no-store-namers.ts — ok
-  // no-store-namers` — and asked "does this passage support the claim?" a model answered no to a
-  // passing check written for that exact criterion, because the one line cannot restate it (bug
-  // 20d5fd6e). A model returns a conclusion and nothing else, so a conclusion that is not the one
+  // the claim. Evidence is a locator and what it gave — `check:checks/store-retired.ts — ok
+  // store-retired` — and asked "does this passage support the claim?" a model answered no to a
+  // passing check written for that exact criterion, because the one line cannot restate it. A
+  // model returns a conclusion and nothing else, so a conclusion that is not the one
   // wanted means the question was the wrong one.
   //
   // The last sentence is for the narrow subject review-acceptance.ts's `questionOf` sends when
-  // the evidence names a check the approved plan declares for the criterion (bug d5ab33bd): that
+  // the evidence names a check the approved plan declares for the criterion: that
   // the check verifies the criterion was settled at plan approval, so only the run is in question.
   // Changing the wording also retires every reading taken under the old one, which is what keeps
   // an old `unclear` from counting as the first of two.
@@ -219,8 +218,7 @@ export async function assessFamily(opts: {
   return out;
 }
 
-/** One `zz.assessment` row, in the shape the table itself declares (001, reshaped by
- *  the phase-2 migration): a family question xor an evaluator question, and only a
+/** One `zz.assessment` row, in the shape the table itself declares (001): a family question xor an evaluator question, and only a
  *  `choice`/`score` answer ever carries a `distribution`. Building it in one place is what keeps
  *  `assessFamily` and `insertEvaluatorAnswer` writing rows the table's own checks agree on.
  *
@@ -264,8 +262,7 @@ interface AssessmentInsertRow {
 class Unattributable extends Error {}
 
 /** The one insert both callers share. Returns the new row's id — `insertEvaluatorAnswer`
- *  needs it for `assessment_id`; `assessFamily`'s `Assessment` has never carried one and does
- *  not start now. Throws on any failure: whether that is swallowed or not is each caller's own
+ *  needs it for `assessment_id`; `assessFamily`'s `Assessment` carries none. Throws on any failure: whether that is swallowed or not is each caller's own
  *  call, made where it decides what a failure means for it.
  *
  *  DELIBERATE: a row that came from a call and cannot name it is refused rather than written
@@ -282,13 +279,10 @@ class Unattributable extends Error {}
  *  A person who acts for no team at all is refused for the same reason as an address nobody
  *  carries: `team_id` is `not null`, and the platform does not invent an attribution.
  *
- *  DELIBERATE, and where I-19's own rule stops short: that rule named `principal.active_team_id`
- *  as the team to fall back on, and the column is not the answer. `team_switch` is its only writer
- *  on the whole platform, so a person onboarded and never switched holds null there while their
- *  work acts for the team their membership gives them — and an evaluator question carries no
- *  initiative, so nothing else could name a team either. `team_id` is `not null`, so the row was
- *  refused by the database: the eval-flow walk reached it, and `failure_discover` answered with
- *  Postgres's own sentence rather than a refusal of the platform's own. The column the row wants is
+ *  DELIBERATE: `principal.active_team_id` is not the team to fall back on. `team_switch` is its
+ *  only writer on the whole platform, so a person onboarded and never switched holds null there
+ *  while their work acts for the team their membership gives them — and an evaluator question
+ *  carries no initiative, so nothing else could name a team either. The column the row wants is
  *  `teamFor`'s answer — a bound token's team, the console session's team, the team they chose while
  *  it is still a live membership, and otherwise their admin team then the alphabetically first —
  *  which is `actingTeam` in @zz/contracts, the same rule every other caller resolves through. */
@@ -403,8 +397,7 @@ async function persistAssessment(a: Assessment, call: AssessmentCall, recover: s
 
 /** `zz.eval_evaluator_version` as `askEvaluatorQuestion` needs to read it: the exact row
  *  a `bounded_semantic`/`generative_critic` measure resolved to, with its stable identity. The
- *  stable key lives on this row now — `zz.eval_evaluator` was a header carrying nothing but the
- *  key and a `kind` nothing read, and the phase-3 migration folded it onto the version. */
+ *  stable key lives on this row. */
 interface EvaluatorVersionRow {
   id: string;
   version: number;
@@ -444,10 +437,9 @@ async function resolveEvaluatorVersion(evaluatorVersionId: string): Promise<Eval
   return row;
 }
 
-/** What `insertEvaluatorAnswer` hands back: exactly the plan header's response shape, plus
- *  `reason` (Task I-9) — the same "why there is no reading" text `Assessment.reason` already
- *  carries for a family question, previously computed here and dropped on the way out. A caller
- *  that must persist an `unavailable` classification with its own cause (`discover.ts`'s "a
+/** What `insertEvaluatorAnswer` hands back: the recorded answer, plus `reason` — the same "why
+ *  there is no reading" text `Assessment.reason` carries for a family question. A caller that
+ *  must persist an `unavailable` classification with its own cause (`discover.ts`'s "a
  *  model outage stores owner_kind='unknown' with a reason, never dropped") cannot write a reason
  *  it was never handed. A caller that must carry the call forward (`evaluate-measures.ts` puts it
  *  in the measure's own answer) cannot write an id it was never handed either. */
@@ -580,18 +572,8 @@ export async function insertEvaluatorAnswer(
   return { assessment_id, ...asked.result };
 }
 
-// DELIBERATE: the three functions that lived here — `writeRoundAssessments`,
-// `readRoundAssessmentList` and `readRoundAssessments` — are DELETED, not converted.
-//
-// They wrote and read `<initiative>/_assessments/<source>.json`, and `assessFamily` above persists
-// every answer as a `zz.assessment` row the moment it takes it. The file was therefore a SECOND
-// copy of a record that already existed, and the spec's store-migration paragraph names
-// `_assessments/*.json` as one of the four per-initiative JSON state files that "are already in
-// tables and are verified, not copied" — this is the last of the four to become true.
-//
-// Their two callers (`review-rounds.ts`'s `assessReviewRound`, `audit-rounds.ts`'s `assessRound`)
-// already read the rows back through `assessmentsFor`, so nothing calls these any more: converting
-// them would have been writing code with no caller. The carry that read those files is gone with
-// the store it read, and the claim it used to check — every file's `question_digest` has a
-// matching row — is now the only record there is: the rows are what an assessment IS.
+// DELIBERATE: no file copy of a round's assessments is written or read here. `assessFamily` above
+// persists every answer as a `zz.assessment` row the moment it takes it, and the round readers
+// (`review-rounds.ts`'s `assessReviewRound`, `audit-rounds.ts`'s `assessRound`) read the rows back
+// through `assessmentsFor`: the rows are what an assessment IS.
 

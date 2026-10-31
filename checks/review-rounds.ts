@@ -36,7 +36,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import pg from "pg";
+import { rowsOf, stubInitiativePool, type StubInitiative } from "./in-process.ts";
 
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
@@ -57,82 +57,46 @@ process.env.TYPESAFE_BASE_URL = `http://127.0.0.1:${(typedServer.address() as Ad
 
 const TEAM = "t1";
 /** One initiative's world: its own row, its documents, and the answers the assessor recorded. */
-interface W {
-  flow: string | null;
-  docs: Record<string, unknown>[];
+interface W extends StubInitiative {
   answers: { about: string; family: string; reading: string; probability: number | null; asked_at: string;
              question_digest?: string }[];
 }
 let world = new Map<string, W>();
 const blank = (flow: string | null): W => ({ flow, docs: [], answers: [] });
 
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
-  const sql = String(text).replace(/\s+/g, " ").trim();
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  // Two param shapes: the document and answer readers take the TEAM first and the initiative
-  // second, and the one-initiative lookups take the team first and the slug second. One lookup
-  // each, so a route cannot read the wrong one.
-  const bySlug = world.get(String(values[1] ?? ""));
-  if (/select i\.slug from zz\.initiative i join zz\.team t on t\.id = i\.team_id where t\.slug = \$1 order by i\.slug/.test(sql)) {
-    return one([...world.keys()].sort().map((slug) => ({ slug })));
-  }
-  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
-    const names = (values[1] as string[]) ?? [];
-    return one(names.filter((n) => world.has(n)).map((n) => ({
-      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
-  }
-  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
-    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-26",
-                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
-  }
-  // `docRows(p, team, initiative)` binds the INITIATIVE first — the one reader whose params are
-  // the other way round — so its lookup is its own.
-  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
-    return one(world.get(String(values[0]))?.docs ?? []);
-  }
-  if (/from zz\.doc d\b/.test(sql)) {
-    const hit = (bySlug?.docs ?? []).filter((d) => d.path === values[2]);
-    return one(hit.length ? [hit[hit.length - 1]] : []);
-  }
-  // The revision a document currently points at: what its bytes, its title and its seal are.
-  if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    const id = String(values[0]);
-    const d = [...world.values()].flatMap((w) => w.docs).find((x) => x.id === id);
-    return one(d ? [{ revision: d.current_revision, version: d.current_revision, content_state: "retained", title: d.title,
-                      body: d.body, tags: d.tags, content_hash: "h", fields: d.fields,
-                      revision_note: null, written_by: "ada@zz.test", written_at: d.updated_at,
-                      approved_by: d.approved_by, approved_at: d.approved_at }] : []);
-  }
-  if (/from zz\.initiative_fact f\b/.test(sql)) return one([]);
-  if (/from zz\.initiative_record r\b/.test(sql)) return one([]);
-  if (/from zz\.assessment a\b/.test(sql) && /select a\.family/.test(sql)) {
-    return one((bySlug?.answers ?? []).map((a) => ({ ...a, instruction_version: 1, question_digest: "d",
-      requested_model: null, resolved_model: null, identity_assurance: null, reason: null,
-      initiative: String(values[1]), asked_by: "ada@zz.test" })));
-  }
-  // The acceptance memo: the answers already taken, keyed by the `about` they were asked under.
-  if (/select a\.about, a\.reading/.test(sql)) {
-    const prefix = String(values[2]).replace(/%$/, "");
-    // Filtered by the question only when the statement asks for it — the stub answers what the SQL
-    // says, so a statement that stopped filtering is caught rather than covered for here.
-    const byQuestion = /a\.question_digest = \$4/.test(sql);
-    return one((bySlug?.answers ?? []).filter((a) => a.about.startsWith(prefix) &&
-                                                     (!byQuestion || (a.question_digest ?? CURRENT) === values[3]))
-      .map((a) => ({ about: a.about, reading: a.reading,
-                     probability: a.probability === null ? null : String(a.probability),
-                     reason: null, asked_at: a.asked_at })));
-  }
-  if (/insert into zz\.model_call\b/.test(sql)) return one([{ id: "1" }]);
-  if (/FROM zz\.membership m/.test(sql)) return one([{ slug: TEAM, role: "admin", active_slug: TEAM }]);
-  if (/insert into zz\.assessment\b/.test(sql)) {
-    // COUPLED: the insert's own bind order — family `$1`, reading `$5`, about `$13`, slug `$16`.
-    world.get(String(values[15] ?? ""))?.answers.push({
-      family: String(values[0] ?? ""), reading: String(values[4] ?? ""),
-      about: String(values[12] ?? ""), probability: null, asked_at: new Date().toISOString() });
-    return one([{ id: "a1" }]);
-  }
-  return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+stubInitiativePool(() => world, {
+  openedAt: "2026-09-26",
+  own: (sql, values) => {
+    const bySlug = world.get(String(values[1] ?? ""));
+    if (/from zz\.assessment a\b/.test(sql) && /select a\.family/.test(sql)) {
+      return rowsOf((bySlug?.answers ?? []).map((a) => ({ ...a, instruction_version: 1, question_digest: "d",
+        requested_model: null, resolved_model: null, identity_assurance: null, reason: null,
+        initiative: String(values[1]), asked_by: "ada@zz.test" })));
+    }
+    // The acceptance memo: the answers already taken, keyed by the `about` they were asked under.
+    if (/select a\.about, a\.reading/.test(sql)) {
+      const prefix = String(values[2]).replace(/%$/, "");
+      // Filtered by the question only when the statement asks for it — the stub answers what the SQL
+      // says, so a statement that stopped filtering is caught rather than covered for here.
+      const byQuestion = /a\.question_digest = \$4/.test(sql);
+      return rowsOf((bySlug?.answers ?? []).filter((a) => a.about.startsWith(prefix) &&
+                                                         (!byQuestion || (a.question_digest ?? CURRENT) === values[3]))
+        .map((a) => ({ about: a.about, reading: a.reading,
+                       probability: a.probability === null ? null : String(a.probability),
+                       reason: null, asked_at: a.asked_at })));
+    }
+    if (/insert into zz\.model_call\b/.test(sql)) return rowsOf([{ id: "1" }]);
+    if (/FROM zz\.membership m/.test(sql)) return rowsOf([{ slug: TEAM, role: "admin", active_slug: TEAM }]);
+    if (/insert into zz\.assessment\b/.test(sql)) {
+      // COUPLED: the insert's own bind order — family `$1`, reading `$5`, about `$13`, slug `$16`.
+      world.get(String(values[15] ?? ""))?.answers.push({
+        family: String(values[0] ?? ""), reading: String(values[4] ?? ""),
+        about: String(values[12] ?? ""), probability: null, asked_at: new Date().toISOString() });
+      return rowsOf([{ id: "a1" }]);
+    }
+    return undefined;
+  },
+});
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");

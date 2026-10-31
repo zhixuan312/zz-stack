@@ -36,6 +36,9 @@ export async function restoreDump(url: string, dumpPath: string): Promise<void> 
     const gunzip = createGunzip();
     src.on("error", (err) => reject(new Error(`could not read ${dumpPath}: ${err.message}`)));
     gunzip.on("error", (err) => reject(new Error(`could not decompress ${dumpPath}: ${err.message}`)));
+    // psql stops reading at the first failing statement while gunzip is still writing, and the next
+    // write fails with EPIPE. Its exit, above, is the verdict, so the broken pipe is not one.
+    psql.stdin.on("error", () => {});
     src.pipe(gunzip).pipe(psql.stdin);
   });
 }

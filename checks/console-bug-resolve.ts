@@ -42,14 +42,12 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { answer, type Route } from "./in-process.ts";
 
 const NAME = "console-bug-resolve";
 const DONE = "console-bug-resolve: the console and the MCP tool close a report to the same row and refuse " +
   "it with the same sentence, a second or simultaneous close keeps the first decision, a member " +
   "changes nothing, and a blank report is not filed: ok";
-
-type Answer = { status: number; body: unknown };
-type Route = (req: unknown, res: unknown) => void;
 
 /** The reports every case starts from, by fixed id, so both adapters see the same ids and say them
  *  in the same sentences. */
@@ -80,20 +78,6 @@ function request(c: Core, who: { email: string; role: "superadmin" | "member" },
       "x-zz-pat-team": "", "x-zz-session-team": c.team,
     },
   };
-}
-
-/** Calls the mounted route as Express would, and waits for the answer it sends: a JSON body, or
- *  none at all (`end()`), which is how a 204 and a 404 arrive. */
-function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: unknown) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: undefined }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** A superadmin's MCP client: the harness's own carry `x-zz-user-role: user`, and zz-core offers
@@ -223,7 +207,7 @@ async function run(c: Core): Promise<void> {
         const row = (JSON.parse(routeRows) as Record<string, unknown>[]).find((r) => r.id === k.id);
         const resolution = String(k.body.resolution).trim();
         if (!done || done.status !== k.body.status || done.resolution !== resolution || got.status !== 204
-            || got.body !== undefined || !row || row.status !== k.body.status || row.resolution !== resolution
+            || !got.empty || !row || row.status !== k.body.status || row.resolution !== resolution
             || row.resolved_by !== ids.principal || row.duplicate_of !== (k.body.duplicate_of ?? null)
             || row.resolved_at !== "now") {
           c.fail(k.step, `${shown}; the row is ${JSON.stringify(row)}`);
@@ -234,12 +218,12 @@ async function run(c: Core): Promise<void> {
       if (toolRows !== start) c.fail(k.step, `a refusal changed the rows: ${toolRows}`);
       if (closed(said) || !k.says?.test(said)) c.fail(k.step, `${shown}; the tool's refusal should match ${k.says}`);
       if (k.want === "missing") {
-        if (got.status !== 404 || got.body !== undefined) c.fail(k.step, shown);
+        if (got.status !== 404 || !got.empty) c.fail(k.step, shown);
         c.pass(`${k.step}: the route answers 404 with no body before zz-core is asked, the tool refuses, and nothing changes`);
         continue;
       }
       const status = k.want === "conflict" ? 409 : 400;
-      if (got.status !== status || (got.body as { error?: unknown } | undefined)?.error !== said) c.fail(k.step, shown);
+      if (got.status !== status || got.body.error !== said) c.fail(k.step, shown);
       c.pass(`${k.step}: the route answers ${status} with the tool's own sentence, and nothing changes`);
     }
 

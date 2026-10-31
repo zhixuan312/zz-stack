@@ -371,13 +371,15 @@ check("an MCP door is stateless, and never answers with an HTTP error status", (
     bad.push("the door region from mcpRefusal to passThrough's relayBody call cannot be located, " +
              "so no door handler was scanned for an HTTP error status");
   } else {
-    gw.slice(from, to).split("\n").forEach((ln) => {
-      const code = ln.replace(/\/\/.*$/, "");
+    // A 401 carries its challenge where it is answered: on its own line, or set on the line
+    // just before it. Comments are stripped, so a sentence about the header exempts nothing.
+    const lines = withoutComments(gw.slice(from, to)).split("\n");
+    lines.forEach((code, i) => {
       const m = /res\.status\((\d{3})\)/.exec(code);
       if (!m) return;
       const s = Number(m[1]);
       if (s < 400 || s === 405) return;
-      if (s === 401 && /WWW-Authenticate/i.test(gw.slice(from, to))) return;
+      if (s === 401 && /WWW-Authenticate/i.test(`${lines[i - 1] ?? ""}\n${code}`)) return;
       bad.push(`an MCP door answers HTTP ${s}: the client reads that as a dead transport and the message never reaches the agent — use mcpRefusal`);
     });
   }

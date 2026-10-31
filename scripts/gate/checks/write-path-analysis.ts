@@ -12,13 +12,9 @@ check("new writes carry the analyzer's han terms and the row's own latin text, e
   // raw prose columns, where a prose configuration tokenizes on whitespace and punctuation and an
   // unspaced Han run goes in as one opaque word.
   //
-  // Counted per file and compared, rather than pinned to a number: what has to hold is that no
-  // statement assigns the column by any other route, and a count that drifts with the number of
-  // write paths is one somebody updates instead of reading.
-  // Counted against the column's own name: a statement that writes `body_tsv` and does not build
-  // it from `bodyTsvSql` is the failure, and the two counts are equal exactly when there is none.
-  // A count pinned to a number instead would drift with the number of write paths, and somebody
-  // would update it rather than read it.
+  // Counted per file against the column's own name rather than pinned to a number: a statement
+  // that writes `body_tsv` and does not build it from `bodyTsvSql` is the failure, and the two
+  // counts are equal exactly when there is none.
   const WRITERS = ["packages/indexing/src/index.ts", "services/zz-core/src/document-save.ts"];
   for (const rel of WRITERS) {
     const src = withoutComments(readFileSync(join(root, rel), "utf8"));
@@ -27,8 +23,7 @@ check("new writes carry the analyzer's han terms and the row's own latin text, e
     if (names === 0) return `${rel} names body_tsv nowhere — this check reads nothing there`;
     if (wired !== names) {
       return `${rel} builds body_tsv from bodyTsvSql in ${wired} of its ${names} SQL mentions of `
-           + `the column, so a newly written row is indexed by something other than the analyzer — `
-           + `the backfill in I-13 would fix the corpus that exists and nothing written after it`;
+           + `the column, so a newly written row is indexed by something other than the analyzer`;
     }
     if (!/bodyTsvParams\(/.test(src)) {
       return `${rel} binds no bodyTsvParams; a statement whose parameters do not come from the same `

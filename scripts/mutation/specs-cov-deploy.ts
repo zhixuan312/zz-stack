@@ -186,8 +186,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-release.ts",
     target: "the deploy bundle carries everything the install steps use",
     subject: "scripts/release/build.ts",
-    find: "zz-tool backup.sh backup-manifest.sh install-backup-cron.sh`],",
-    replace: "zz-tool backup-manifest.sh install-backup-cron.sh`],",
+    find: "zz-tool backup.sh install-backup-cron.sh`],",
+    replace: "zz-tool install-backup-cron.sh`],",
     planted: "the bundle stops carrying the backup script deploy/README tells an operator to " +
       "run, so a recipient has no way to back the platform up and nothing saying so",
   },

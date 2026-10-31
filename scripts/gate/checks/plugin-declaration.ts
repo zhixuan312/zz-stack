@@ -24,6 +24,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type CatalogPackage, flows, skillsDirOf } from "../facts.ts";
+import { errMessage } from "../read.ts";
 import { check } from "../run.ts";
 
 /** Every manifest, parsed once, carrying its parse failure instead of throwing it.
@@ -35,7 +36,7 @@ function manifests() {
     try {
       return { f, m: JSON.parse(readFileSync(join(f.dir, "flow.json"), "utf8")), err: null };
     } catch (err) {
-      return { f, m: null, err: err instanceof Error ? err.message : String(err) };
+      return { f, m: null, err: errMessage(err) };
     }
   });
 }

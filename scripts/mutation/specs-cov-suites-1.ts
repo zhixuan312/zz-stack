@@ -1,5 +1,6 @@
 /**
- * Defects aimed at the suites registered by `scripts/gate/checks/suites.ts`.
+ * Defects aimed at the suites registered by `scripts/gate/checks/suites-data.ts`,
+ * `suites-surface.ts` and `suites-tooling.ts`.
  *
  * Each check there is one line that spawns `checks/<name>.ts` and fails on a non-zero exit,
  * so a row's subject here is almost never the spawned script: it is whatever that script
@@ -14,17 +15,16 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
-/** Every row in this file is registered by the same module. */
 // COUPLED: `check_sha256` is computed over the module that registers the target, so a row
 // drifts when that module changes.
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
-/* DELIBERATE: the three tokens below are split across a concatenation, and that is not
- * style. This file is under `scripts/` and ends in `.ts`, which is the tree three of the
- * checks it plants for walk, and all three read string literals. Written whole, each token
- * turns its own check red on the unmutated tree, so every row here would read `baseline_red`.
+/* DELIBERATE: the two tokens below are split across a concatenation, and that is not
+ * style. This file is under `scripts/` and ends in `.ts`, which is a tree the checks they are
+ * planted for walk, reading string literals. Written whole, each token turns its own check red
+ * on the unmutated tree, so every row here would read `baseline_red`.
  *
  * Joining them at runtime keeps the planted text byte-identical and the token out of the
  * source. Do not tidy them back into one literal. */
@@ -49,13 +49,13 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
     target: "no discovery site under scripts/ or checks/ filters on .mjs alone, matching " +
       "nothing after the rename",
     assertion: "a discovery site that selects an extension nothing carries is found",
-    subject: "scripts/probes/envelope-shape.ts",
-    find: `  .filter((f) => f.endsWith(".ts"))`,
-    replace: `  .filter((f) => f.endsWith("${MJS}"))`,
-    planted: "the envelope-shape probe looks for files under an extension this repository " +
-      "stopped carrying, so it " +
-      "reads an empty source, finds no stampEnvelope to examine and reports a clean result " +
-      "for a check that examined nothing",
+    subject: "checks/alias-applied.ts",
+    find: `for (const f of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {`,
+    replace: `for (const f of readdirSync(dir).filter((f) => f.endsWith("${MJS}"))) {`,
+    planted: "a check's discovery looks for files under an extension this repository stopped " +
+      "carrying, so it reads none of the files it exists to read; alias-applied's own " +
+      "no-grouper control notices, and a discovery site without one would pass having " +
+      "examined nothing",
   },
   {
     check: SUITES_TOOLING,

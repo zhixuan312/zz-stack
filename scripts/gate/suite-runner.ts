@@ -47,10 +47,10 @@ export const runsCheck = (file: string) => (): string | null => {
  *
  *  DELIBERATE: lines are ordered by what they are, because no order of the two streams keeps the
  *  reason. A check that starts a real zz-core prints its cases on stdout, and its `FAILED at` line
- *  on stderr with zz-core's own tail after it (scripts/schema/throwaway-core.ts): stdout last, gate
- *  4838 reported only passing cases; stderr last, gate 4590 reported only zz-core's warnings. So:
- *  the cases, then zz-core's tail and stack frames, then whatever else stderr said (a thrown
- *  error's message, an `N failure(s)` summary), then every FAILED or FAIL: line.
+ *  on stderr with zz-core's own tail after it (scripts/schema/throwaway-core.ts): stdout last
+ *  keeps only passing cases, stderr last only zz-core's warnings. So: the cases, then zz-core's
+ *  tail and stack frames, then whatever else stderr said (a thrown error's message, an
+ *  `N failure(s)` summary), then every FAILED or FAIL: line.
  *
  *  The 400-character window is a tail, except when the reason alone is longer than it: then it is
  *  the reason's head, which names the check and the case. */
@@ -70,15 +70,11 @@ export function failureDetail(stderr: string, stdout: string): string {
   return reason.length > 400 ? `${reason.slice(0, 400)}…` : tailOf(lines.map((x) => x.l).join("; "));
 }
 
-/** The end of a failure's output, not the beginning, and why this is not a style choice.
+/** The end of a failure's output, not the beginning.
  *
  * A check prints each case as it goes and names the one that failed — or throws — after them, so
- * its reason is the LAST thing it says. A head-slice of a long output therefore keeps a column of
- * case-by-case "ok"s and drops the one line that says what went wrong. That is not hypothetical:
- * two gate runs here failed on checks whose entire reported detail was passing cases, with the
- * cause cut off at 400 characters, and each had to be run by hand to be diagnosed at all. A
- * truncated tail is worth more than a complete-looking head — the leading `…` says the rest is
- * above it, where the cases are. */
+ * its reason is the last thing it says, and a head-slice of a long output keeps a column of
+ * passing cases and drops it. The leading `…` says the rest is above it, where the cases are. */
 const tailOf = (said: string): string => (said.length > 400 ? `…${said.slice(-400)}` : said);
 
 /** The same, for the checks in `checks/` written as bash rather than as a module. Both print
@@ -103,8 +99,7 @@ export const runsShell = (file: string) => (): string | null => {
  * Every gate module, as one text — what the two rules about registration read.
  *
  * DELIBERATE: the whole directory, not the modules whose name looks right. Filtering on
- * `suites-*` depends on a naming convention nothing enforces, and filtering on "calls
- * runsCheck" excludes `suites.ts`, which registers through a bare execFileSync.
+ * `suites-*` depends on a naming convention nothing enforces.
  *
  * DELIBERATE: raw, never stripped. One of the two rules strips comments before matching and
  * the other does not; stripping here takes that choice away from them.

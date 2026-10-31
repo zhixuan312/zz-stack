@@ -375,6 +375,16 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/documents-schema.ts",
+    target: "everything that reads a source reads the fields sourceDocument writes",
+    subject: "services/zz-core/src/document-save.ts",
+    find: "  const supports = (env.supports ?? \"\").split(\",\")",
+    replace: "  const supports = (env.added_by ?? \"\").split(\",\")",
+    planted: "a captured source reads what it supports from a field sourceDocument never " +
+      "writes, so the field is always absent and every captured source is filed supporting " +
+      "nothing — with no refusal to say so",
+  },
+  {
+    check: "scripts/gate/checks/documents-schema.ts",
     target: "the published schema is exactly as strict as the validator",
     assertion: "a minimum the validator enforces is published as that same minimum",
     subject: "packages/contracts/src/index.ts",
@@ -409,11 +419,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
       "the tag lane goes quiet for any query that punctuates, and the lexical lane hides it",
   },
   {
-    // The file this row's target is registered in is not the one the assignment named.
-    // `documents-schema.ts` only quotes this check's title in a comment; the `check(` call itself
-    // is in skill-prose.ts, and the runner matches a row to the file it iterates.
     check: "scripts/gate/checks/skill-prose.ts",
-    target: "a skill citing another document's section cites one that exists",
+    target: "a skill citing another's section cites one that is there",
+    assertion: "a citation whose title no skill's numbered list holds at that number is refused",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-execute/SKILL.md",
     find: "**Degraded behaviour:** a partial run is reported as a partial run",
     replace: "Hand the worker the inputs listed in section 3 (\"the payload\") of sdlc-method.\n\n" +

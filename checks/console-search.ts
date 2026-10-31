@@ -37,13 +37,12 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { answer, type Answered, type Route } from "./in-process.ts";
 
 const NAME = "console-search";
 const DONE = "console-search: the console's search reads documents and nodes by their content, as the " +
   "person signed in, and refuses the scopes it cannot honestly answer: ok";
 
-type Answer = { status: number; body: Record<string, unknown> };
-type Route = (req: unknown, res: unknown) => void;
 type Row = Record<string, unknown>;
 
 /** The request a console session's call arrives as, past the gateway's middleware: its resolved
@@ -61,18 +60,6 @@ function request(c: Core, role: "superadmin" | "member", query: Record<string, s
       "x-zz-pat-team": "", "x-zz-session-team": c.team,
     },
   };
-}
-
-/** Calls the mounted route as Express would, and waits for the answer it sends. */
-function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Record<string, unknown>) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** How many `knowledge.search` rows zz-core recorded for this question under this person. The row
@@ -114,9 +101,9 @@ async function run(c: Core): Promise<void> {
   const routes = new Map<string, Route>();
   mountSearch({ get: (path: string, h: Route) => routes.set(`GET ${path}`, h) });
   const search = routes.get("GET /api/console/search") ?? c.fail("mount", "no route GET /api/console/search");
-  const ask = (query: Record<string, string>, role: "superadmin" | "member" = "member"): Promise<Answer> =>
+  const ask = (query: Record<string, string>, role: "superadmin" | "member" = "member"): Promise<Answered> =>
     answer(search, request(c, role, query));
-  const rowsOf = (a: Answer): Row[] => (Array.isArray(a.body.results) ? a.body.results as Row[] : []);
+  const rowsOf = (a: Answered): Row[] => (Array.isArray(a.body.results) ? a.body.results as Row[] : []);
   /** A row's excerpt without the `**` the tool puts round each matched term. */
   const plain = (r: Row): string => String(r.excerpt).replaceAll("**", "");
 

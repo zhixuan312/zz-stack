@@ -9,14 +9,14 @@ import { join } from "node:path";
 import { everySkill, readLock, readSkill, refusedByWrite, stateOf } from "../../skill-versions.ts";
 import { root, sourceFiles } from "../read.ts";
 import { check } from "../run.ts";
-import { flows, platformSkills, skillsOf } from "../facts.ts";
+import { flows, skillsOf } from "../facts.ts";
 
 check("every SKILL.md has frontmatter whose name matches its directory", () => {
-  // Covers the platform's own skills too, not just the catalog's: walking catalog entries alone
-  // leaves skills/ unchecked. when_to_use is how a model decides to load a skill at all.
+  // Covers the platform's own skills too: the baseline's are skills/, which `skillsOf` reads.
+  // when_to_use is how a model decides to load a skill at all.
   const bad = [];
-  for (const f of [...flows, { dir: null }]) {
-    for (const s of (f.dir === null ? platformSkills() : skillsOf(f))) {
+  for (const f of flows) {
+    for (const s of skillsOf(f)) {
       const txt = readFileSync(s.path, "utf8");
       if (!txt.startsWith("---")) { bad.push(`${s.name}: no frontmatter`); continue; }
       const name = /^name:\s*(\S+)/m.exec(txt)?.[1];
@@ -124,10 +124,9 @@ check("a skill that changed says so in its version", () => {
 
 check("recording the skills' baseline refuses a skill whose text moved while its version did not", () => {
   // The check above compares against skills.lock.json, and `skill-versions.ts --write` is what
-  // writes it. A write that recorded the new hash under the old version laundered the change: the
-  // lock then agreed with the skill, this gate passed, and only the release's register-skills
-  // refused it against the live registry (0.97.1, sdlc-flow 2.17), after the gate, the dry run and
-  // the preflight had all passed.
+  // writes it. A write that recorded the new hash under the old version would launder the change:
+  // the lock would agree with the skill, this gate would pass, and only the release's
+  // register-skills would refuse it against the live registry.
   const prev = { kept: { version: "1.2", sha: "aaaaaaaaaaaa" }, moved: { version: "1.2", sha: "aaaaaaaaaaaa" },
                  bumped: { version: "1.2", sha: "aaaaaaaaaaaa" } };
   const got = refusedByWrite([

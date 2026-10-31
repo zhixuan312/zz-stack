@@ -2,9 +2,7 @@
  * The reading judge, server-side: one call to the model pinned by deployment configuration, with
  * what that call cost recorded on `zz.model_call`.
  *
- * The round loop that used to live here — marking a plugin version's documents against its
- * `zz.rubric` for `round_judge` — is gone with that tool. `ask` stays because
- * `failure_discover`'s generative-critic step (`discover.ts`) reaches the same endpoint through
+ * `ask` exists because `failure_discover`'s generative-critic step (`discover.ts`) reaches the same endpoint through
  * it; the protocol lifecycle's own measures go through the typed service instead.
  */
 import type pg from "pg";

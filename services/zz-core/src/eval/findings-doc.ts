@@ -1,5 +1,5 @@
 /**
- * `findings.md` (Task I-13, AC-22.1): a measurement output, generated from what `evaluation_score`
+ * `findings.md` (AC-22.1): a measurement output, generated from what `evaluation_score`
  * stored and what `finding_record` has recorded against one `eval_run_id`, and written through
  * `generated-doc.ts`'s `writeGeneratedDoc` — the same internals `document_write` calls:
  * `chainFor` resolves the flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames
@@ -11,8 +11,7 @@
  * `documentGuards` reads whatever manifest is live.
  *
  * On a freeform initiative (no flow declared) `chainFor` returns `EMPTY_CHAIN`,
- * `chain.documents` is empty, and every guard above no-ops — which is the shape the live
- * end-to-end check for this task exercises.
+ * `chain.documents` is empty, and every guard above no-ops.
  */
 
 import type pg from "pg";
@@ -29,7 +28,7 @@ import { loadSubjectForEvalRun } from "./proposal-doc.js";
 /** One run, as this document reads it back. Nothing here is a second copy of a fact: the subject
  *  release is reached through the observation snapshot the run is bound to (FR-27), the score is
  *  the run's own published columns, and the per-dimension results come from
- *  `zz.eval_run_dimension` — the jsonb array the run used to carry is gone. */
+ *  `zz.eval_run_dimension`. */
 interface EvalRunRow {
   id: string; plugin_version_id: string; protocol_version_id: string;
   score_status: string | null; overall_score: string | null;
@@ -91,7 +90,7 @@ async function loadProtocol(p: pg.Pool, protocolVersionId: string) {
 /** Every distinct evaluator a model-backed measure of this protocol version names, with its
  *  newest qualification state against THIS protocol version — read live off
  *  `zz.eval_evaluator_qualification`, never off `eval_run`, which stores no evaluator-trust
- *  column of its own. A qualification is a property of a MEASURE now (it is the measure row that
+ *  column of its own. A qualification is a property of a MEASURE (it is the measure row that
  *  names both the evaluator version and the protocol version), so the join is on `measure_id` and
  *  the evaluator version it is about is reached through that row. */
 async function loadEvaluatorTrust(p: pg.Pool, protocolVersionId: string): Promise<EvaluatorTrustRow[]> {
@@ -113,7 +112,7 @@ async function loadFindings(p: pg.Pool, evalRunId: string): Promise<FindingRow[]
       from zz.eval_finding where eval_run_id = $1::uuid order by created_at`, [evalRunId])).rows;
 }
 
-/** The run's per-dimension result, rebuilt from the rows the reshape left. The published
+/** The run's per-dimension result, rebuilt from its rows. The published
  *  `zz.eval_run_dimension` row carries the score and the coverage that were scored; the protocol's
  *  own `eval_dimension`/`eval_measure` rows carry the keys, the weights and the bars; and each
  *  measure's value is reduced from the run's stored answers by the same `reduceMeasureAnswers`
@@ -272,7 +271,7 @@ function renderBody(
     "## Ownership",
     `- Origin: ${subject.origin}`,
     `- Owner team: ${subject.owner_team ?? "none recorded"}`,
-    // `evolvable` is gone with the flag it held: whether this subject can be promoted follows from
+    // Whether this subject can be promoted follows from
     // whose release owners it has (FR-47), which is the same derivation `plugin_locate` answers
     // `release_mode` with one table over. `not_applicable` is not reachable here — it belongs to
     // an initiative that never reached a release stage, which a scored run is not.

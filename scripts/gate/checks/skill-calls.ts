@@ -186,23 +186,25 @@ function judge(text: string, schema: ToolSchema, where: string, tool: string, pa
   return true;
 }
 
-let occurrences = 0, closed = 0, nestedJudged = 0;
-const schemas = new Map<string, ToolSchema>();
-for (const rel of [...sourceFiles(["services/zz-core/src"], [".ts"]), ...sourceFiles(["services/gateway/src"], [".ts"])]) {
-  for (const tool of toolsIn(readFileSync(join(root, rel), "utf8"))) {
-    const at = /inputSchema:\s*/.exec(tool.body);
-    if (!at) { schemas.set(tool.name, { fields: new Map(), open: false }); continue; }
-    occurrences++;
-    const open = at.index + at[0].length;
-    if (tool.body[open] !== "{") { closed++; schemas.set(tool.name, { fields: new Map(), open: true }); continue; }
-    const end = closeOf(tool.body, open, "ts");
-    if (end < 0) continue;   // counted as not closed, reported by the check
-    closed++;
-    schemas.set(tool.name, shapeOf(tool.body.slice(open + 1, end)));
-  }
-}
+let nestedJudged = 0;
 
 check("every tool call a skill writes names only the tool's arguments, and every one it requires", () => {
+  // Read inside the check, so a registration this cannot parse fails this check and not the gate.
+  let occurrences = 0, closed = 0;
+  const schemas = new Map<string, ToolSchema>();
+  for (const rel of [...sourceFiles(["services/zz-core/src"], [".ts"]), ...sourceFiles(["services/gateway/src"], [".ts"])]) {
+    for (const tool of toolsIn(readFileSync(join(root, rel), "utf8"))) {
+      const at = /inputSchema:\s*/.exec(tool.body);
+      if (!at) { schemas.set(tool.name, { fields: new Map(), open: false }); continue; }
+      occurrences++;
+      const open = at.index + at[0].length;
+      if (tool.body[open] !== "{") { closed++; schemas.set(tool.name, { fields: new Map(), open: true }); continue; }
+      const end = closeOf(tool.body, open, "ts");
+      if (end < 0) continue;   // counted as not closed, reported below
+      closed++;
+      schemas.set(tool.name, shapeOf(tool.body.slice(open + 1, end)));
+    }
+  }
   if (schemas.size < 60) return `only ${schemas.size} tool registrations were read — the extraction is broken`;
   if (closed < occurrences) {
     return `${occurrences - closed} of ${occurrences} inputSchema blocks could not be read, so their ` +

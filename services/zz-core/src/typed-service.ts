@@ -1,5 +1,5 @@
 /**
- * TypeSafe System One — typed judgments, for the decisions this flow used to take in prose.
+ * TypeSafe System One — typed judgments, for the decisions that have a shape.
  *
  * A second model service beside the judge this platform pins, for the questions that have a
  * shape: a ruler dimension is an ordered scale between written ends, a recommendation is one
@@ -312,9 +312,8 @@ interface TypedUsage { input_tokens: number | null; output_tokens: number | null
  *  The model column carries what was asked for, not what the supplier says it ran; the resolved
  *  identity lives on each answer's record.
  *
- *  `error` is where a call that did not answer says why: the column's name since
- *  the phase-2 migration, which also dropped the judge's `confidence` mark — what a typed
- *  call spends is what this row records now, and the answer's own shape carries what it was worth.
+ *  `error` is where a call that did not answer says why. What a typed call spends is what this
+ *  row records, and the answer's own shape carries what it was worth.
  *
  *  Never throws: it answers with null instead, and the caller decides what an answer with no
  *  recorded call is worth (see `TypedCall.model_call_id`). */

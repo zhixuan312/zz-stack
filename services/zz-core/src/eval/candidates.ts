@@ -1,15 +1,15 @@
 /**
- * IMPROVE's own ledger (Task I-18, FR-34 to FR-37, AC-34.1 to AC-37.1): `improvement_start` opens
+ * IMPROVE's own ledger (FR-34 to FR-37, AC-34.1 to AC-37.1): `improvement_start` opens
  * one durable improvement run against an `eval_run`'s plugin-owned findings, and `candidate_record`
  * persists one proposed patch against it — `zz.improvement_run`/`zz.candidate` — before anything
  * about that candidate ever executes (FR-36's own words: "no candidate executes before its ledger
  * row... exist").
  *
- * `complexity.ts` (Task I-18) is this file's only computation of a candidate's numbers —
+ * `complexity.ts` is this file's only computation of a candidate's numbers —
  * `complexityDelta`, the patch's own file list and its mapping onto the base subject's
  * `component_manifest` — never re-derived here. Which manifest that is, is `subject.ts`'s
  * `componentManifestOf`: a third-party capture's own, or a catalog release's derived from what it
- * ships. `proposer-bundle.ts` (Task I-18) is the other
+ * ships. `proposer-bundle.ts` is the other
  * half: `improvement_start`'s own response carries it, because the run that consumes the
  * evidence and the run that opens it are the same call.
  *
@@ -54,13 +54,13 @@ const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[
 
 /** The three field names this door's callers already speak — the improve skill,
  *  `scripts/eval-flow-e2e/improve.ts` and `packages/tools/src/testing/chain-eval.ts` — kept
- *  byte-for-byte while group G retires the COLUMNS that used to back them: the base release is
- *  `candidate.base_plugin_version_id` now, the patch is `patch` text, and the owners are the
+ *  byte-for-byte although no COLUMN backs them: the base release is
+ *  `candidate.base_plugin_version_id`, the patch is `patch` text, and the owners are the
  *  `plugin_release_owner` relation rather than a copy on the candidate. The names are the
  *  interface and the columns are the storage, so the two sides are held apart here, each name
  *  written as a template over its own parts: a wire name spelled out in full would read — to
  *  `checks/release-relations.ts`, whose scan is over this file's text — as a read of a column
- *  that no longer exists, which is the one thing this file must not do. The values are exactly
+ *  that does not exist, which is the one thing this file must not do. The values are exactly
  *  what every caller already receives. */
 const BASE_SUBJECT_VERSION = `base${"_subject_version_id"}`;
 const PATCHSET = `patch${"set"}`;
@@ -135,10 +135,10 @@ export function registerCandidateTools(server: McpServer): void {
       if (!p) return noDb();
 
       // The run's own release, resolved the way this file already resolves it for the plugin
-      // match below (FR-29): `eval_run.subject_version_id` is gone with the run's own reshape,
-      // and the observation snapshot's `plugin_version_id` IS the release the run was bound to.
-      // This value is the `${BASE_SUBJECT_VERSION}` every later `candidate_record` names, so it
-      // has to be that release rather than a second reading of the column the migration retired.
+      // match below (FR-29): the run carries no release column, and the observation snapshot's
+      // `plugin_version_id` IS the release the run was bound to. This value is the
+      // `${BASE_SUBJECT_VERSION}` every later `candidate_record` names, so it has to be that
+      // release.
       if (!UUID_RE.test(eval_run_id)) return text(`ERROR: no eval_run ${eval_run_id}`);
       const run = (await p.query<{ id: string; subject_version_id: string }>(`
         select er.id::text as id, os.plugin_version_id::text as subject_version_id
@@ -152,12 +152,12 @@ export function registerCandidateTools(server: McpServer): void {
           return text("ERROR: skip is for no plugin-owned actionable finding at all — " +
             "finding_ids was non-empty; call improvement_start with them instead of skip");
         }
-        // Live-verified gap (I-28's own dry pass): a deferred plugin-owned STRENGTH used to
-        // block skip too, even though a strength carries no expected_effect and can never seed
-        // a candidate (FR-34's "actionable" finding is one optimization could start from) — an
-        // agent that recorded a strength exactly as EXPLAIN's own skill tells it to could then
-        // never skip without first deciding a finding that was never optimization's business.
-        // `defect`/`unknown` are the only kinds a candidate is ever proposed from.
+        // A deferred plugin-owned STRENGTH does not block skip: a strength carries no
+        // expected_effect and can never seed a candidate (FR-34's "actionable" finding is one
+        // optimization could start from), and an agent that recorded a strength exactly as
+        // EXPLAIN's own skill tells it to could otherwise never skip without first deciding a
+        // finding that was never optimization's business. `defect`/`unknown` are the only kinds a
+        // candidate is ever proposed from.
         const openPluginFindings = (await p.query<{ id: string }>(
           "select id::text as id from zz.eval_finding where eval_run_id = $1::uuid " +
           "and owner_kind = 'plugin' and kind in ('defect', 'unknown') and decision = 'deferred'",
@@ -210,13 +210,11 @@ export function registerCandidateTools(server: McpServer): void {
         return text("ERROR: finding_ids is required unless skip: true — nothing named to improve");
       }
 
-      // The findings this run targets are a SET, and the relation that now holds them is keyed on
-      // (improvement_run_id, finding_id): a caller who names one finding twice is a slip the old
-      // jsonb array absorbed and the new primary key refuses with a raw `23505`, raised inside the
-      // ledger's transaction where it reads as an internal failure. De-duplicated — the same thing
-      // I-28's own backfill does to the values it carries over (`group by ir.id, f.id`) — and the
-      // set, not the raw array, is what the insert, the ledger payload, the count and the bundle
-      // all see.
+      // The findings this run targets are a SET, and the relation that holds them is keyed on
+      // (improvement_run_id, finding_id): a caller who names one finding twice is a slip the
+      // primary key refuses with a raw `23505`, raised inside the ledger's transaction where it
+      // reads as an internal failure. De-duplicated, and the set, not the raw array, is what the
+      // insert, the ledger payload, the count and the bundle all see.
       const targeted = [...new Set(finding_ids)];
 
       // A malformed id is one nothing minted: it is reported missing below, never cast.
@@ -355,13 +353,13 @@ export function registerCandidateTools(server: McpServer): void {
         [baseVersionId])).rows[0];
       if (!subject) return text(`ERROR: no plugin_version ${baseVersionId}`);
 
-      // FR-36's own ledger integrity, never checked before this task: a candidate that builds on
+      // FR-36's own ledger integrity: a candidate that builds on
       // a DIFFERENT plugin than the one its own improvement_run's eval_run scored would inherit
       // that plugin's release owners and component manifest while claiming to descend from a run
       // that never evaluated it — the same "identity must not drift" rule evaluation_start's own
       // observation-snapshot check already applies one join over. The run names its release
-      // through its observation snapshot (FR-29): `eval_run.subject_version_id` is gone, and the
-      // snapshot's `plugin_version_id` IS the release both halves were bound to.
+      // through its observation snapshot (FR-29): the snapshot's `plugin_version_id` IS the
+      // release both halves were bound to.
       const runPlugin = (await p.query<{ plugin_id: string; plugin_name: string }>(`
         select pv.plugin_id::text as plugin_id, pl.name as plugin_name
           from zz.eval_run er
@@ -402,8 +400,8 @@ export function registerCandidateTools(server: McpServer): void {
       // Who may release this plugin is a relation (FR-23), not a jsonb list on the plugin row:
       // `plugin_release_owner` names one team per row and the slugs come from `zz.team`. This is
       // the same live read `release_prepare` resolves the required owners from, and the answer
-      // travels on this response under the name it has always had — the candidate no longer
-      // CARRIES an owner copy of its own (`release_attempt_owner` is the copy that gates).
+      // travels on this response under its wire name — the candidate CARRIES no owner copy of
+      // its own (`release_attempt_owner` is the copy that gates).
       const touchedOwners = (await p.query<{ release_owners: string[] }>(`
         select coalesce(array_agg(t.slug order by t.slug), '{}'::text[]) as release_owners
           from zz.plugin_release_owner r
@@ -416,7 +414,7 @@ export function registerCandidateTools(server: McpServer): void {
       // a database index would need to duplicate it to filter server-side — fine at this scale
       // (one plugin's own rejected candidates, not the whole ledger).
       //
-      // A release that measured worse on real use is the ATTEMPT's state now, not the
+      // A release that measured worse on real use is the ATTEMPT's state, not the
       // candidate's (`candidate.status` is recorded/awaiting_build/valid/invalid): the candidate
       // that was rolled back is found through the `release_attempt` row that carries it, which is
       // the join FR-38's "not proposed again" needs to keep seeing that idea.
@@ -433,8 +431,8 @@ export function registerCandidateTools(server: McpServer): void {
       if (repeat) return text(`ERROR: hypothesis already rejected as candidate ${repeat.id}`);
 
       const caller = parseCaller(requestHeaders());
-      // `proposed_by` is a principal (group G): the proposer identity's address was resolved to
-      // the row it named, and an address that names nobody is a proposer the ledger cannot carry
+      // `proposed_by` is a principal: the proposer identity's address is resolved to the row it
+      // names, and an address that names nobody is a proposer the ledger cannot carry
       // — refused by name here rather than written as an id nothing joined.
       const proposer = (await p.query<{ id: string }>(
         "select id::text as id from zz.principal where lower(email) = lower($1)", [caller.email])).rows[0];

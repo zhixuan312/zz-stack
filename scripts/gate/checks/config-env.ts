@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { codeOnly, envNamesIn, firstOf, gateOwnSource, root, sourceFiles, trackedFiles } from "../read.ts";
+import { codeOnly, envNamesIn, firstOf, gateOwnSource, repositoryFiles, root, sourceFiles } from "../read.ts";
 import { check } from "../run.ts";
 
 check("the documented defaults are the actual defaults", () => {
@@ -227,35 +227,40 @@ check("nothing reads the environment by a computed name", () => {
   return bad.join("\n");
 });
 
+/** The tools zz-tool runs, as paths under packages/tools/src without the extension: its alias
+ *  table is the whole of what it can launch. */
+const zzToolAliases = (wrapper: string): string[] =>
+  [...wrapper.matchAll(/\[[a-z-]+\]=([a-z-]+\/[a-z-]+)/g)].map((m) => m[1]);
+
+/** Every environment variable one tool reads, through its import graph: a tool reads the
+ *  variables its helpers read. A read is `process.env.NAME` or `envRequired("NAME")`, as a whole
+ *  name, so `ZZ_JUDGE_MODEL` is never a read of `JUDGE_MODEL`. */
+function envsReadBy(rel: string, seen = new Set<string>()): Set<string> {
+  const f = join(root, "packages/tools/src", `${rel}.ts`);
+  if (seen.has(rel) || !existsSync(f)) return new Set<string>();
+  seen.add(rel);
+  const src = readFileSync(f, "utf8");
+  const out = new Set(envNamesIn(src));
+  for (const m of src.matchAll(/from "(\.[^"]+)\.js"/g)) {
+    const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+    const parts = `${dir}/${m[1]}`.split("/").filter((p) => p && p !== ".");
+    const stack: string[] = [];
+    for (const p of parts) { if (p === "..") stack.pop(); else stack.push(p); }
+    for (const e of envsReadBy(stack.join("/"), seen)) out.add(e);
+  }
+  return out;
+}
+
 check("zz-tool forwards every variable the tools it runs actually read", () => {
   // zz-tool runs a tool inside the published image with `docker compose run -e NAME`, and it
   // forwards a named list — deliberately, so an unset secret arrives unset rather than as an
   // empty string a tool would treat as supplied. The cost is that the list has to keep up.
-  //
-  // Computed through the import graph, because a tool reads the variables its helpers read.
-  const toolSrc = join(root, "packages/tools/src");
   const wrapper = readFileSync(join(root, "deploy/zz-tool"), "utf8");
-  const aliases = [...wrapper.matchAll(/\[[a-z-]+\]=([a-z-]+\/[a-z-]+)/g)].map((m) => m[1]);
   const listed = /for v in ([\s\S]*?); do/.exec(wrapper)?.[1] ?? "";
   const forwarded = new Set(listed.match(/[A-Z][A-Z_0-9]+/g) ?? []);
-  const envsOf = (rel: string, seen: Set<string>): Set<string> => {
-    const f = join(toolSrc, `${rel}.ts`);
-    if (seen.has(rel) || !existsSync(f)) return new Set<string>();
-    seen.add(rel);
-    const src = readFileSync(f, "utf8");
-    const out = new Set(envNamesIn(src));
-    for (const m of src.matchAll(/from "(\.[^"]+)\.js"/g)) {
-      const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-      const parts = `${dir}/${m[1]}`.split("/").filter((p) => p && p !== ".");
-      const stack: string[] = [];
-      for (const p of parts) { if (p === "..") stack.pop(); else stack.push(p); }
-      for (const e of envsOf(stack.join("/"), seen)) out.add(e);
-    }
-    return out;
-  };
   const bad: string[] = [];
-  for (const rel of aliases) {
-    for (const v of [...envsOf(rel, new Set())].sort()) {
+  for (const rel of zzToolAliases(wrapper)) {
+    for (const v of [...envsReadBy(rel)].sort()) {
       if (!forwarded.has(v)) bad.push(`${rel} reads ${v}, which zz-tool does not forward`);
     }
   }
@@ -293,7 +298,7 @@ check("an environment variable's default is one value, wherever it is spelled", 
     /\$\{([A-Z][A-Z0-9_]*):-([^}]*)\}/g,                     // compose, and shell's own form
   ];
   const seen = new Map();     // NAME -> value -> [site]
-  for (const rel of trackedFiles() ?? []) {
+  for (const rel of repositoryFiles()) {
     if (!/\.(ts|mjs|sh|yml|yaml|example)$/.test(rel) && !/(Caddyfile|zz-tool)$/.test(rel)) continue;
     readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
       if (/^\s*(#|\/\/|\*|--)/.test(ln)) return;             // prose about a default is not one
@@ -325,32 +330,26 @@ check("an environment variable's default is one value, wherever it is spelled", 
  * nothing to be wrong — a name for a tool that no longer exists is simply never set — so fossils
  * accumulate, and an operator reading the list cannot tell a live knob from a dead one.
  *
- * Source, not dist, and `process.env.NAME` or `env.NAME` either way — several tools read through
- * a destructured `env`. */
+ * Read by a tool zz-tool can launch, as a whole name: a service reading the variable does not
+ * count, because zz-tool never starts a service. */
 check("every variable zz-tool forwards is read by a tool that exists", () => {
   const tool = readFileSync(join(root, "deploy/zz-tool"), "utf8");
   const block = /for v in ([\s\S]*?); do/.exec(tool);
   if (!block) return "deploy/zz-tool no longer has a passthrough list — this check reads nothing";
   const names = block[1].split(/[\s\\]+/).filter((n) => /^[A-Z][A-Z0-9_]*$/.test(n));
   if (!names.length) return "the passthrough list parsed to no names";
-  // Relative dir names in, relative paths out — sourceFiles joins `root` itself at both ends.
-  const src = sourceFiles(["packages", "services"], [".ts"])
-    .filter((f) => f.includes("/src/"))
-    .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
-  const dead = names.filter((n) => !src.includes(n));
+  const aliases = zzToolAliases(tool);
+  if (!aliases.length) return "deploy/zz-tool's alias table parsed to no tools — this check reads nothing";
+  const read = new Set(aliases.flatMap((rel) => [...envsReadBy(rel)]));
+  const dead = names.filter((n) => !read.has(n));
   return dead.length
-    ? `${dead.join(", ")} — forwarded by deploy/zz-tool and read by no tool in this repository`
+    ? `${dead.join(", ")} — forwarded by deploy/zz-tool and read by no tool it runs`
     : null;
 });
 
-/* The other direction: a key `deploy/.env.example` tells an operator to set, that no container is
- * ever given.
- *
- * TYPESAFE_TIMEOUT_MS, TYPESAFE_BUDGET_MS, TYPESAFE_ATTEMPTS and the three ZZ_DB_* keys were
- * documented there with defaults and reached nothing: compose forwards its own `environment:`
- * names and only those, so setting one in `.env` changed nothing and said nothing about it. A knob
- * that cannot be turned is worse than no knob — the same rule the pass-through list above is
- * written against, in the other file.
+/* The other direction: a key `deploy/.env.example` tells an operator to set, that the container
+ * reading it is never given. Compose forwards each service's own `environment:` names and only
+ * those, so setting such a key in `.env` changes nothing and says nothing about it.
  *
  * Only keys the SERVICE code reads. The rest of `.env.example` is for the host's own scripts, which
  * read `.env` directly through compose's substitution and need no forwarding. */
@@ -358,13 +357,37 @@ check("every key .env.example documents for a service reaches that service", () 
   const example = readFileSync(join(root, "deploy/.env.example"), "utf8");
   const keys = [...new Set([...example.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]))];
   if (keys.length < 10) return `only ${keys.length} keys parsed out of deploy/.env.example — the walk is pointed wrong`;
-  const serviceSrc = sourceFiles(["services", "packages"], [".ts"])
-    .filter((f) => f.includes("/src/"))
-    .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
-  const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
-  const dead = keys.filter((k) => serviceSrc.includes(`process.env.${k}`) && !compose.includes(`\${${k}`));
-  return dead.length
-    ? `${dead.join(", ")} — read by a service, documented in deploy/.env.example, and forwarded by ` +
-      "no container, so setting one in .env changes nothing"
+  // Per container: a key forwarded to one service reaches nothing in another. Each compose
+  // service block is named by the `SERVICE=` its container runs.
+  const lines = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8").split("\n");
+  const starts = lines.flatMap((l, i) => (/^  [a-z][\w-]*:\s*$/.test(l) ? [i] : []));
+  const blocks = new Map<string, string>();
+  for (const [n, at] of starts.entries()) {
+    const next = starts[n + 1] ?? lines.length;
+    const top = lines.slice(at + 1, next).findIndex((l) => /^\S/.test(l));
+    const text = lines.slice(at, top < 0 ? next : at + 1 + top).join("\n");
+    const svc = /\bSERVICE=([a-z][\w-]*)/.exec(text)?.[1];
+    if (svc) blocks.set(svc, text);
+  }
+  if (blocks.size < 2) return `only ${blocks.size} compose service(s) name the SERVICE they run — this check reads almost nothing`;
+  const readsIn = (dirs: string[]): Set<string> => new Set(sourceFiles(dirs, [".ts"])
+    .filter((f) => f.includes("/src/")).flatMap((f) => envNamesIn(readFileSync(join(root, f), "utf8"))));
+  const forwards = (block: string, k: string): boolean => block.includes(`\${${k}`);
+  const bad: string[] = [];
+  for (const [svc, block] of blocks) {
+    const reads = readsIn([`services/${svc}`]);
+    for (const k of keys) {
+      if (reads.has(k) && !forwards(block, k)) bad.push(`${k} is read by ${svc}, and ${svc}'s container is not given it`);
+    }
+  }
+  // A key only a shared package reads may reach whichever container runs that package.
+  const shared = readsIn(["packages"]);
+  for (const k of keys) {
+    if (shared.has(k) && ![...blocks.values()].some((b) => forwards(b, k))) {
+      bad.push(`${k} is read by a package, and no container is given it`);
+    }
+  }
+  return bad.length
+    ? `${bad.join("; ")} — documented in deploy/.env.example, so setting one in .env changes nothing`
     : null;
 });

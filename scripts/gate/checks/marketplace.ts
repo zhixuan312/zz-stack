@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { root } from "../read.ts";
+import { errMessage, root, stderrOf } from "../read.ts";
 import { check } from "../run.ts";
 
 check("the committed marketplace is what the catalog renders", () => {
@@ -22,9 +22,7 @@ check("the committed marketplace is what the catalog renders", () => {
   try {
     execFileSync("node", ["scripts/build-marketplace.ts"], { cwd: root, stdio: "pipe" });
   } catch (err) {
-    const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
-    const stderr = e.stderr !== undefined && e.stderr !== null ? String(e.stderr).trim() : "";
-    return `build-marketplace.ts failed: ${stderr || String(e.message ?? err)}`;
+    return `build-marketplace.ts failed: ${stderrOf(err).trim() || errMessage(err)}`;
   }
 
   // `status --porcelain`, not `diff`: a newly shipped plugin is an untracked directory, and

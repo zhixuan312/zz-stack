@@ -16,8 +16,8 @@
  * every `initiative_close` would be refused. That is why this module is `async`: reading a
  * database is not synchronous, and one `await` at each call site is the whole cost.
  *
- * DELIBERATE: there is no second source. The file store a deployment without a database used to
- * fall back to is retired with the store, so `documents()` has one reading and a deployment that
+ * DELIBERATE: there is no second source and no file fallback, so `documents()` has one reading
+ * and a deployment that
  * cannot reach its rows has nothing for a guard to judge — which is the refusal, not the
  * admission, a guard must fail towards.
  */
@@ -55,8 +55,7 @@ async function documents(p: pg.Pool, team: string | null, initiative: string): P
    *
    * A guard asks five facts about a document and never its text, and `docRows` selects every
    * body the initiative holds — one detoast per document, plus the `supports` link aggregate
-   * nothing here reads: 8.0 ms a call for the largest initiative here, against about one for the
-   * columns below. A guard run reads it once (`readsOf`), however many checks ask.
+   * nothing here reads. A guard run reads it once (`readsOf`), however many checks ask.
    *
    * The joins, the predicate and the `[initiative, team]` order are `docRows`'s, so the two
    * answer the same facts — this one simply does not carry the part the guards never look at. */
@@ -149,7 +148,7 @@ async function closeCheck(r: Reads, chain: Chain, relPath: string, content: stri
     );
   }
   if (!env.outcome) return null;
-  // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer — a `when`-conditional
+  // FR-58: `chain.closingDoc` is a static, per-flow answer — a `when`-conditional
   // closing document (`improvement.md`, promotable only) is `not_applicable` on every other
   // branch, and the branch still has to close somewhere. `closingDocRuledOut` is the same
   // question `initiative_close` asks before picking where to write, so the two never disagree
@@ -197,7 +196,7 @@ async function closeCheck(r: Reads, chain: Chain, relPath: string, content: stri
   // draft today.
   // (`stop` is computed once, above, before the branch-aware `isClosingWrite` check.)
   const self = chain.documents.find((d) => d.name === parts[1]);
-  // FR-58 (Task I-26): a document whose branch has not resolved yet — a named fact `when`
+  // FR-58: a document whose branch has not resolved yet — a named fact `when`
   // depends on is absent from the branch facts — blocks a FINISHED close outright. The platform
   // does not know whether it is required, so it cannot certify that every required gate is
   // recorded; `branch_undetermined` is refused by name, the same way `stale_baseline` names its
@@ -287,7 +286,7 @@ async function closeCheck(r: Reads, chain: Chain, relPath: string, content: stri
   // questions. A `requiredForClose` document written and left in draft satisfies this and is
   // judged — if it is gated — by the gates above.
   //
-  // FR-58 (Task I-26): unlike `written` above — which is filtered to gates that exist, so a
+  // FR-58: unlike `written` above — which is filtered to gates that exist, so a
   // not_applicable one is excluded from the REQUIRED side by construction — `closeRequires` is
   // required by name regardless of whether it was ever written. Without this filter, a
   // requiredForClose document the branch ruled out would be reported missing forever: it never
@@ -372,10 +371,9 @@ async function closedDocumentGuard(r: Reads, relPath: string,
 async function closedOnSomeDocument(r: Reads): Promise<boolean> {
   return [...(await r.documents()).values()].some((d) => !!d.outcome);
 }
-/** May this document be written at all, given the branch the initiative is on (FR-58, Task
- *  I-26) — distinct from `gateCheck` below, which asks whether an EARLIER document's gate has
- *  passed. A document with no `when` is unaffected: this returns null for it, the same silence
- *  it has always gotten.
+/** May this document be written at all, given the branch the initiative is on (FR-58) —
+ *  distinct from `gateCheck` below, which asks whether an EARLIER document's gate has passed. A
+ *  document with no `when` is unaffected: this returns null for it.
  *
  *  `not_applicable`: the branch has ruled this document out, and a document ruled out is never
  *  written — there is nothing to change it into either, so this refuses `document_edit` the
@@ -421,7 +419,7 @@ async function gateCheck(r: Reads, chain: Chain, relPath: string,
   if (parts.length !== 2) return null;
   const dep = chain.requires[parts[1]];
   if (!dep) return null;
-  // FR-58 (Task I-26): a dependency the branch has ruled out is discharged, not missing — the
+  // FR-58: a dependency the branch has ruled out is discharged, not missing — the
   // ground below is what lets a document downstream of a not_applicable one still be written.
   const depDoc = chain.documents.find((d) => d.name === dep);
   const depFacts = depDoc?.when ? await r.facts() : {};
@@ -461,7 +459,7 @@ async function gateCheck(r: Reads, chain: Chain, relPath: string,
       ...(!exists && await closedOnSomeDocument(r)
         ? [{ kind: dep, ground: `this initiative is closed, and the close settled ${dep} by landing its outcome elsewhere` }]
         : []),
-      // FR-58 (Task I-26): a dependency the branch has ruled out is never going to exist, on
+      // FR-58: a dependency the branch has ruled out is never going to exist, on
       // this branch — without this ground every document downstream of it would be
       // permanently unwritable, on the one branch where the contract says it never applied.
       ...(depApplic === "not_applicable"

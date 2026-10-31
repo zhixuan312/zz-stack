@@ -40,7 +40,8 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 
 import { SUPERADMIN, seedPlatformQuery } from "./console-platform-query-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
-import { answer, request, show, type Obj, type Query, type Route, type Who } from "./console-work-query-harness.ts";
+import { request, show, type Query, type Who } from "./console-work-query-harness.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-platform-query-shape";
 const DONE = "console-platform-query-shape: every measure, grouped and drilled, is answered by the console's fake in the " +

@@ -10,9 +10,7 @@
  * COUPLED: the declaration is read from two ROWS and never from a directory. A document's own
  * `flow:` is the most specific answer, and `zz.initiative.flow` — the flow the initiative was
  * OPENED with — is what answers in the window before its first document exists, which is exactly
- * when a resuming agent calls `initiative_status`. The oldest-document walk that used to be the
- * last resort is gone with the store: it read the team's files, and the row it was imitating is
- * the one this reads directly.
+ * when a resuming agent calls `initiative_status`. There is no third answer.
  */
 import { type FlowDoc, parseEnvelope } from "@zz/contracts";
 import { catalogManifest, isFlow, withHandover } from "@zz/catalog";
@@ -144,7 +142,7 @@ export function gateRefusal(chain: Chain, name: string): string | null {
  *
  * COUPLED: `zz.doc.status` is the document's own — a revision sealed at an approval reads
  * `approved` because it was — and this answers for the CURRENT revision alone, which is what
- * every caller of the file reader this replaced asked. */
+ * every caller asks. */
 export async function frontmatterStatus(
   p: RecordClient, team: string | null, initiative: string, name: string,
 ): Promise<string | null> {

@@ -138,13 +138,6 @@ function literalsNameTheGate(literals: readonly string[]): boolean {
  * guard that refuses a nested gate before it writes anything.
  */
 export function isGateLaunchSource(sourceText: string): boolean {
-  // The break-tests no longer spawn the gate themselves: `testing/gate-plant.ts` does it for
-  // them, and they import `run`/`failing` from it. Following only the file's OWN child_process
-  // import would stop recognising them as launchers — which is exactly what happened when they
-  // were converted, and what `working-checks-registered` then reported as four checks that
-  // pass and are registered nowhere. Importing the harness is the same claim as spawning.
-  if (/from\s+"[^"]*gate-plant\.(ts|js)"/.test(sourceText)) return true;
-
   const source = ts.createSourceFile("gate-launch-probe.ts", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 
   // Pass one: what the file's own imports call the launchers, and which `const` names hold
@@ -152,12 +145,19 @@ export function isGateLaunchSource(sourceText: string): boolean {
   const launcherLocals = new Map<string, string>();   // local name → child_process export
   const namespaceLocals = new Set<string>();          // `import * as cp` / default import of the module
   const constStrings = new Map<string, string[]>();
+  // A break-test spawns the gate through `testing/gate-plant.ts` and imports `run`/`failing` from
+  // it, so importing the harness is the same claim as spawning.
+  let importsPlant = false;
 
   const stringOf = (node: ts.Node): string | null =>
     ts.isStringLiteralLike(node) ? node.text
       : ts.isNoSubstitutionTemplateLiteral(node) ? node.text : null;
 
   const collect = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
+        && /(^|\/)gate-plant\.(ts|js)$/.test(node.moduleSpecifier.text)) {
+      importsPlant = true;
+    }
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
         && CHILD_PROCESS_SPECIFIERS.has(node.moduleSpecifier.text)) {
       const clause = node.importClause;
@@ -186,6 +186,7 @@ export function isGateLaunchSource(sourceText: string): boolean {
     ts.forEachChild(node, collect);
   };
   collect(source);
+  if (importsPlant) return true;
 
   // Pass two: every call whose callee is one of those launchers, read for what it actually runs.
   let launches = false;
@@ -261,6 +262,17 @@ export function sourceFiles(dirs: string[], suffixes: string[]): string[] {
   };
   for (const d of dirs) walk(join(root, d));
   return out.sort();
+}
+
+/**
+ * Every file the repository carries, repo-relative: git's inventory where there is one, dot
+ * directories such as `.github/` included, and the `sourceFiles` walk outside a checkout, so a
+ * sweep over the repository never passes on zero files. Present files only: a deletion not yet
+ * staged is still in git's inventory, and reading it would throw.
+ */
+export function repositoryFiles(): string[] {
+  const tracked = trackedFiles();
+  return tracked ? [...tracked].filter((f) => existsSync(join(root, f))).sort() : sourceFiles(["."], [""]);
 }
 
 /** The one sentence every run-something check gives when there is nothing to run. */
@@ -361,8 +373,7 @@ export function functionBody(src: string, name: string): string | null {
 
 /** A `const name = (…) => { … }` body. `functionBody` cannot see one — a nested arrow is not a
  *  function declaration — and a regex reaching for its closing brace overshoots into whatever
- *  follows at the same indentation, which is how a `t.gate ?` test ended up reading 6,503
- *  characters of another function. */
+ *  follows at the same indentation. */
 export function constBody(src: string, name: string): string | null {
   const at = src.indexOf(`const ${name} = `);
   return at < 0 ? null : declBody(src, at);
@@ -456,8 +467,7 @@ export function envNamesIn(text: string): string[] {
 /** A caught value is never typed as an Error — narrow the shape actually being read rather than
  *  assume it. `unknown?.message` narrows to `{}`, which has no properties at all.
  *
- *  One implementation for the gate, the checks and the doctor: fourteen copies of this function
- *  lived across those trees, byte for byte, until they were all pointed here. */
+ *  One implementation for the gate, the checks and the doctor. */
 export function errMessage(err: unknown): string {
   if (err && typeof err === "object" && "message" in err) {
     const m = (err as Record<string, unknown>).message;

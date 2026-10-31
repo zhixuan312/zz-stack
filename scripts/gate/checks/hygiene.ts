@@ -7,10 +7,11 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { asRecord, errMessage, firstOf, functionBody, gateOwnSource, gatewaySource, readJson, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
 import { check, note } from "../run.ts";
+import { execFields, failureDetail } from "../suite-runner.ts";
 import { catalogRoot } from "../facts.ts";
 
 check("an async guard in a ?? chain is awaited", () => {
@@ -23,9 +24,7 @@ check("an async guard in a ?? chain is awaited", () => {
   const bad: string[] = [];
   // Named per service rather than per file: an unawaited guard is a defect wherever in the
   // service it is written, and zz-core is more than one file.
-  for (const [f, src] of [["zz-core", zzCoreSource()],
-                          ["services/gateway/src/server.ts",
-                           gatewaySource()]]) {
+  for (const [f, src] of [["zz-core", zzCoreSource()], ["gateway", gatewaySource()]]) {
     const asyncNames = new Set(
       [...src.matchAll(/^\s*async function ([A-Za-z0-9_]+)\s*\(/gm)].map((m) => m[1]));
     for (const line of src.split("\n")) {
@@ -115,15 +114,29 @@ check("nothing is exported that nobody imports", () => {
          "judged for nothing here.");
   }
   const dashText = new Map(dashFiles.map((p) => [p, withoutComments(readFileSync(p, "utf8"))]));
+  // Which files carry each identifier, built once per tree. `\bname\b` over a name of word
+  // characters matches exactly a whole `\w+` run, so a lookup answers what that regex would.
+  const usedOutside = (texts: Map<string, string>) => {
+    const carriers = new Map<string, Set<string>>();
+    for (const [f, t] of texts) {
+      for (const [w] of t.matchAll(/\w+/g)) {
+        let s = carriers.get(w);
+        if (!s) carriers.set(w, s = new Set());
+        s.add(f);
+      }
+    }
+    return (name: string, file: string): boolean => name.includes("$")
+      ? [...texts].some(([other, t]) => other !== file && new RegExp(`(?<![\\w$])${name.replace(/\$/g, "\\$")}(?![\\w$])`).test(t))
+      : [...(carriers.get(name) ?? [])].some((other) => other !== file);
+  };
   const bad: string[] = [];
   const EXPORTED = /^export\s+(?:declare\s+)?(?:async\s+)?(?:function|const|let|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gm;
+  const usedInRepo = usedOutside(text);
   for (const [file, src] of text) {
     const rel = file.slice(root.length + 1);
     for (const m of src.matchAll(EXPORTED)) {
       const name = m[1];
-      const used = [...text].some(([other, otherSrc]) =>
-        other !== file && new RegExp(`\\b${name}\\b`).test(otherSrc));
-      if (!used) bad.push(`${rel}: exports ${name}, imported by nothing`);
+      if (!usedInRepo(name, file)) bad.push(`${rel}: exports ${name}, imported by nothing`);
     }
   }
   const FRAMEWORK = /^(default|metadata|generateMetadata|generateStaticParams|dynamic|revalidate|viewport)$/;
@@ -137,6 +150,7 @@ check("nothing is exported that nobody imports", () => {
     "proxy.ts": /^(proxy|config)$/,
     "instrumentation.ts": /^(register|onRequestError)$/,
   };
+  const usedInDash = usedOutside(dashText);
   for (const [file, src] of dashText) {
     const rel = file.slice(dash.length + 1);
     if (rel.startsWith("tests/") || rel.startsWith("scripts/") || /(^|\/)index\.tsx?$/.test(rel)) continue;
@@ -151,9 +165,7 @@ check("nothing is exported that nobody imports", () => {
       if (isRoute && FRAMEWORK.test(name)) continue;
       if (NEXT_ENTRY[rel]?.test(name)) continue;
       if (viaBarrel) continue;
-      const used = [...dashText].some(([other, otherSrc]) =>
-        other !== file && new RegExp(`\\b${name}\\b`).test(otherSrc));
-      if (!used) bad.push(`zz-stack-dashboard/${rel}: exports ${name}, imported by nothing`);
+      if (!usedInDash(name, file)) bad.push(`zz-stack-dashboard/${rel}: exports ${name}, imported by nothing`);
     }
   }
   return bad.length ? bad.join("; ") : null;
@@ -181,33 +193,36 @@ check("every module in the services tree is reachable from something", () => {
   // `find` string is an import statement, and reading it as one kept a module "reached" by the
   // spec that cut its only real import, which is how the mutation suite's first full run found
   // this green.
+  //
+  // Matched by resolved path, never by basename: ten basenames recur across services/, so a
+  // module named like a live one would be kept alive by that one's import.
   const modules = sourceFiles(["services"], [".ts"]).filter((f) => !f.endsWith(".d.ts"));
-  const specifiers = new Set<string>();
+  // A path into a service's dist names the source file it was compiled from.
+  const asSource = (p: string): string => p.replace(/\\/g, "/")
+    .replace(/^(services\/[^/]+)\/dist\//, "$1/src/").replace(/\.js$/, ".ts");
+  const reached = new Set<string>();
   for (const f of [...sourceFiles(["services", "packages", "scripts"], [".ts"])
                      .filter((x) => !x.startsWith("scripts/gate/") && !x.startsWith("scripts/mutation/")),
                    "schema-target.ts"]) {
     for (const m of withoutComments(readFileSync(join(root, f), "utf8"))
-      .matchAll(/(?:from|import|require)\s*\(?\s*"([^"]+)"/g)) specifiers.add(m[1].replace(/\.ts$/, ".js"));
+      .matchAll(/(?:from|import|require)\s*\(?\s*"(\.[^"]+)"/g)) reached.add(asSource(join(dirname(f), m[1])));
   }
   for (const f of sourceFiles(["services"], [".ts"])) {
     for (const entry of readFileSync(join(root, f), "utf8").matchAll(/entryPoints:\s*\[([^\]]*)\]/g)) {
-      for (const m of entry[1]!.matchAll(/"([\w./-]+)\.ts"/g)) specifiers.add(`./${basename(m[1]!)}.js`);
+      for (const m of entry[1]!.matchAll(/"([\w./-]+\.ts)"/g)) reached.add(asSource(join(dirname(f), m[1]!)));
     }
   }
-  const named = new Set<string>();
   for (const pkg of ["package.json", "packages/tools/package.json"]) {
     const json: unknown = JSON.parse(readFileSync(join(root, pkg), "utf8"));
     const scripts = (json as { scripts?: Record<string, string> }).scripts ?? {};
     for (const cmd of Object.values(scripts)) {
-      for (const m of cmd.matchAll(/[\w./-]+\.(?:js|ts)\b/g)) named.add(basename(m[0]).replace(/\.(js|ts)$/, ""));
+      for (const m of cmd.matchAll(/[\w./-]+\.(?:js|ts)\b/g)) {
+        reached.add(asSource(join(dirname(pkg), m[0])));
+      }
     }
   }
-  const unreachable = modules.filter((f) => {
-    const stem = basename(f, ".ts");
-    if (stem === "server") return false;                       // a server entry point, run not imported
-    if (named.has(stem)) return false;                         // named by a package.json script
-    return ![...specifiers].some((s) => s.endsWith(`/${stem}.js`) || s === `./${stem}.js`);
-  });
+  // A server entry point is run, not imported: the image starts services/<name>/dist/server.js.
+  const unreachable = modules.filter((f) => !/^services\/[^/]+\/src\/server\.ts$/.test(f) && !reached.has(f));
   return unreachable.length === 0 ? null
     : `nothing reaches ${unreachable.join(", ")} — an import, a package.json script that names it, ` +
       "or a server entry point is what keeps a module alive";
@@ -355,9 +370,7 @@ check("the shared MCP client still behaves", () => {
                  { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     return null;
   } catch (err) {
-    const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
-    const out = `${e.stdout ?? ""}${e.stderr ?? ""}`;
-    return out.split("\n").filter((l) => /FAIL/.test(l)).join("; ") || "mcp client check failed";
+    return failureDetail(execFields(err).stderr, execFields(err).stdout) || "mcp client check failed";
   }
 });
 
@@ -534,7 +547,8 @@ check("no comment repeats a line of itself", () => {
 check("no source file is larger than one subject usually is", () => {
   const LIMIT = 700;
   const over = sourceFiles(["."], [".ts", ".tsx", ".js"])
-    .map((f): [string, number] => [f, readFileSync(join(root, f), "utf8").split("\n").length])
+    // `wc -l`'s count: a final newline ends the last line rather than starting another.
+    .map((f): [string, number] => [f, readFileSync(join(root, f), "utf8").replace(/\n$/, "").split("\n").length])
     .filter(([, n]) => n > LIMIT)
     .sort((a, b) => b[1] - a[1]);
   return over.length

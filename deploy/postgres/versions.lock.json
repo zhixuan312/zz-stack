@@ -23,12 +23,7 @@
   "built_image_digest_verified": true,
   "text_configuration_fingerprint": "sha256:d2768e9fa33b720ef5e834c81434d2b63c0e191894584bdfcb8b8c027eba1ebf",
   "text_configuration_fingerprint_verified": true,
-  "okf_reference_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
-  "okf_reference_digest_verified": false,
   "shared_preload_libraries": [
     "pg_textsearch"
-  ],
-  "unverified_fields": [
-    "okf_reference_digest \u2014 a placeholder: the specification asks for a vendored OKF reference digest, and this repository vendors no OKF reference. Vendor the OKF v0.2 reference and digest it, or strike the field from the specification."
   ]
 }

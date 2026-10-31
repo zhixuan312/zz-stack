@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-// What this asserts is narrower than it looks, deliberately: the files this task owns stop
-// CALLING the store, and the layer itself is gone. So the matcher is on call sites — a
-// declaration such as `export function commitStore(` is not a caller, and a check that matched it
-// could only be satisfied by deleting a module this task does not own. The assertion the AC's
-// first clause really makes is about a write path reaching a document, and the primitive for that
-// is writeFileSync, which is asserted per file with no exemption.
+// The document writers below do not call the store, and none writes a document to disk. The
+// matcher is on call sites — a declaration such as `export function commitStore(` is not a
+// caller. The primitive for a write path reaching a document is writeFileSync, which is asserted
+// per file with no exemption.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -19,7 +17,7 @@ const OWNED = [
 ];
 
 // A check fails on the tree; it does not crash on a path that is not there yet.
-for (const f of OWNED) assert.ok(existsSync(f), `${f} is where the plan says it is`);
+for (const f of OWNED) assert.ok(existsSync(f), `${f} exists`);
 
 // `commitStore(` and `indexDoc(`, as CALLS: not preceded by `function`/`const`/`import`.
 const CALL = (name: string) => new RegExp(`(?<!function\\s{1,4})(?<!const\\s{1,4})\\b${name}\\s*\\(`);
@@ -30,11 +28,9 @@ for (const f of OWNED) {
     if (CALL(name).test(src)) callers.push(`${f} calls ${name}`);
   }
 }
-assert.deepEqual(callers, [], "no file this task owns calls the file store's write path");
+assert.deepEqual(callers, [], "no document writer calls the file store's write path");
 
-// The raw write: a document reaching the disk. No file here has an exemption any more —
-// review-acceptance.ts wrote an acceptance cache under `_assessments/` until the store was
-// retired, and that write is gone with it.
+// The raw write: a document reaching the disk.
 const rawWriters: string[] = [];
 for (const f of OWNED) {
   if (/writeFileSync\s*\(/.test(readFileSync(f, "utf8"))) rawWriters.push(f);
@@ -47,10 +43,7 @@ for (const f of ["services/zz-core/src/tools/artifacts.ts",
   assert.ok(/doc_revision/.test(readFileSync(f, "utf8")), `${f} reads the revision table`);
 }
 
-// And the store layer is GONE, which is the half this task makes true: its six importers have
-// all moved, so there is nothing left for it to be imported by. Asserting that it survives was
-// the earlier task's clause, and it outlived the work it described.
-assert.ok(!existsSync("services/zz-core/src/persist.ts"), "the store layer is deleted");
+// COUPLED: checks/store-retired.ts asserts the store layer itself is gone.
 
 console.log("ok no-file-store");
 

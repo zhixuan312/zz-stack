@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /**
- * An initiative's own "closed", "outcome" and "flow" come from zz.initiative — closed_at,
- * outcome and flow on the row itself — and from nothing else. Before task I-7 (initiative
- * anchor migration) every one of the files below answered that question by reading zz.doc
- * instead: the closing document's `outcome` column, or the first document that happened to
- * carry a `flow`. This check is the regression guard for that fix.
+ * The six readers below take an initiative's "closed", "outcome" and "flow" from zz.initiative —
+ * closed_at, outcome and flow on the row itself — never by scanning, aggregating or defaulting
+ * over its documents.
+ *
+ * DELIBERATE: `initiative_status` (services/zz-core/src/tools/initiative-status.ts) is not one of
+ * them. It reads the row first and falls back to the documents' `outcome` for a close the row
+ * does not carry, and a freeform close names the document its outcome goes on — so extending this
+ * check to that file would break freeform closes, which checks/initiative-open.ts requires.
  *
  * It does not forbid `outcome`/`flow`/`closed_by` appearing in a SELECT from zz.doc outright —
  * those are legitimate per-document metadata the console and knowledge_search still return
  * (a document's own outcome column, stamped only on a closing document, is provenance a reader
- * may want to see). What it forbids is the specific idioms this task removed: deriving the
+ * may want to see). What it forbids is these specific idioms: deriving the
  * initiative-level answer by scanning, aggregating or defaulting over those document columns.
  *
- * Source-level, like checks/attribution.ts: each rule names the exact construct that regressed
- * once, not a general parse of "is this a derivation".
+ * Source-level, like checks/attribution.ts: each rule names one exact construct, not a general
+ * parse of "is this a derivation".
  *
  * Run: node checks/initiative-lifecycle-readers.ts   (also run by scripts/gate.ts)
  */

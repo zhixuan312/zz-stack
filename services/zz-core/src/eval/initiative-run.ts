@@ -10,8 +10,7 @@
  * the initiative), `improvement_start` refuses a finding from any other eval_run, and every
  * `zz.improvement_run` names its eval_run. No new id is persisted anywhere.
  *
- * The document is a ROW — `doc` plus `doc_revision`, the store this used to be a file in is
- * retired (`versions.ts`) — so `evalRunOf` reads it back through `loadDocument`, the same
+ * The document is a ROW — `doc` plus `doc_revision` (`versions.ts`) — so `evalRunOf` reads it back through `loadDocument`, the same
  * composed text `document_read` answers with: the revision's `fields` payload carries the
  * envelope's open keys, `eval_run_id` among them, and `documentText` renders them back.
  */

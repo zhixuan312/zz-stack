@@ -1,5 +1,5 @@
 /**
- * `proposal.md` (Task I-25, FR-51, FR-53, AC-51.1): the ungated, owner-facing document a
+ * `proposal.md` (FR-51, FR-53, AC-51.1): the ungated, owner-facing document a
  * non-owned (`release_mode: proposal_only`, `subject.ts`'s own field) subject's IMPROVE loop
  * ends on instead of `improvement.md`. FR-51's own boundary: "a plugin for which the current
  * principal lacks release authority may still proceed through evaluation, diagnosis and
@@ -78,9 +78,8 @@ async function loadImprovementRun(p: pg.Pool, id: string): Promise<ImprovementRu
 
 /** The subject release a run was taken against, read the way `plugin_locate` reads it back: the
  *  run reaches it through the observation snapshot it is bound to (FR-27), and `plugin_version`
- *  is the one release identity — the second row per released thing this phase folds onto it is
- *  gone with the table that held it. `release_owners` is the RELATION (`plugin_release_owner`)
- *  aggregated to team slugs, which is what replaced the jsonb list nobody could join. A catalog
+ *  is the one release identity. `release_owners` is the RELATION (`plugin_release_owner`)
+ *  aggregated to team slugs. A catalog
  *  release carries no `source_locator` and "no source" is exactly what that null means here. */
 export async function loadSubjectForEvalRun(p: pg.Pool, evalRunId: string): Promise<ProposalSubjectRow | null> {
   return (await p.query<ProposalSubjectRow>(`

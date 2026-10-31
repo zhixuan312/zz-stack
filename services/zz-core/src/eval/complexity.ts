@@ -1,12 +1,11 @@
 /**
- * Candidate complexity (Task I-18, FR-41, FR-57's own frozen formula): everything
+ * Candidate complexity (FR-41, FR-57's own frozen formula): everything
  * `candidate_record` needs to turn a unified-diff patchset into the numbers 001's
  * `zz.candidate` stores — `complexity_delta`, the touched file list and each file's mapping onto
  * the base subject's own `component_manifest` (`subject.ts`'s `Component` shape, mirrored here
  * rather than imported, to keep this module import-free of the mutator that reads it).
  *
- * Pure, no I/O — `candidates.ts` is the only caller, and `checks/eval-complexity.ts` (the plan's
- * own check) imports `complexityDelta` alone, straight off `dist/`.
+ * Pure, no I/O — `candidates.ts` is the only caller, and `checks/eval-complexity.ts` imports `complexityDelta` alone, straight off `dist/`.
  *
  * `complexityDelta` is FR-57's frozen formula for the bootstrap zz-core protocol, applied
  * uniformly rather than read from a protocol column: spec v8 names it as computed by CODE from

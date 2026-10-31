@@ -87,13 +87,6 @@ export const COV_CATALOG: readonly MutationSpec[] = [
       "directory, so every evaluation of an unknown plugin silently reads sdlc's skills and " +
       "reports the result as that plugin's",
   },
-  // REMOVED: the spec for "a team overlay adds and cannot replace". The check is gone, and it
-  // went for a reason that takes the spec with it: its whole subject — a team's own text under a
-  // skill root the platform kept for them — was the store, and the store is retired. The plant
-  // cannot be left behind either. `find` named `text(readFileSync(path, "utf8") + await
-  // teamOverlay(name))`, and `services/zz-core/src/tools/skills.ts` no longer calls `teamOverlay`
-  // at all, so the substitution lands nowhere and the row would report as coverage. A spec whose
-  // subject has gone is deleted, not re-pointed at a spelling.
 
   // catalog-manifest.ts
   {

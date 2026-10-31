@@ -24,9 +24,9 @@ for (const f of js) {
     fail.push(`${f} carries an inline sourceMappingURL — the build is not deterministic`);
   }
 }
-// DELIBERATE: reproducible means the tree matches itself across two builds, not that it
-// matches HEAD, so this hashes the output before and after a rebuild rather than reading
-// `git status`. `git status` is non-empty for any uncommitted change, deterministic or not.
+// DELIBERATE: reproducible means two builds from the same catalog agree, so this builds twice and
+// compares the two. The tree as found is not one of them: a committed shelf that is behind the
+// catalog is stale, not non-deterministic, and that is scripts/gate/checks/marketplace.ts's verdict.
 const digest = (): string => {
   const files: string[] = [];
   const walk = (dir: string): void => {
@@ -42,11 +42,11 @@ const digest = (): string => {
   for (const f of files.sort()) { h.update(f); h.update(readFileSync(f)); }
   return h.digest("hex");
 };
-const before = digest();
-execFileSync("node", ["scripts/build-marketplace.ts"], { stdio: "pipe" });
-const after = digest();
-if (before !== after) {
-  fail.push(`rebuilding marketplace/ changed its contents — the compile is not deterministic ` +
-            `(${before.slice(0, 12)} -> ${after.slice(0, 12)})`);
+const build = (): string => { execFileSync("node", ["scripts/build-marketplace.ts"], { stdio: "pipe" }); return digest(); };
+const first = build();
+const second = build();
+if (first !== second) {
+  fail.push(`two builds of marketplace/ from the same catalog differ — the compile is not deterministic ` +
+            `(${first.slice(0, 12)} -> ${second.slice(0, 12)})`);
 }
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

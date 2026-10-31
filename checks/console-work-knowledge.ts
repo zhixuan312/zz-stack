@@ -54,7 +54,8 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
-import { answer, canonical, count, iso, request, show, type Obj, type Route, type Who } from "./console-work-query-harness.ts";
+import { canonical, count, iso, request, show, type Who } from "./console-work-query-harness.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-knowledge";
 const DONE = "console-work-knowledge: Knowledge reads the active team's shelf, its own questions that found nothing and its " +

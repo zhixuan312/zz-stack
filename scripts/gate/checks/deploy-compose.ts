@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { asRecord, between, gateOwnSource, readJson, root, sourceFiles, trackedFiles, withoutComments } from "../read.ts";
+import { asRecord, between, gateOwnSource, readJson, repositoryFiles, root, sourceFiles, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 import { postgresService } from "../../release/postgres-service.ts";
 import { ourDocs } from "../facts.ts";
@@ -298,7 +298,7 @@ check("a hostname with no dots is a service this compose file defines", () => {
   if (services.size < 3) return "cannot read the service list out of deploy/docker-compose.yml";
   const KNOWN = new Set([...services, "localhost", "host.docker.internal"]);
   const bad: string[] = [];
-  for (const rel of trackedFiles() ?? []) {
+  for (const rel of repositoryFiles()) {
     // The lockfile is npm's, full of registry URLs, and not ours to hold to this.
     if (rel === "package-lock.json") continue;
     // And the changelog, whose entries are the record of what was wrong — the entry for this

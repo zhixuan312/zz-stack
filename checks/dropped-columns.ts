@@ -55,33 +55,23 @@
  *   spells `decision`, `discussion_message` and `caller_session` to explain the rule it applies,
  *   and read as call sites every one of those is a finding that reads nothing.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { pathToFileURL } from "node:url";
 
 import { SCHEMA_TARGET } from "../schema-target.ts";
 import { PHASE3_RETIRED_COLUMNS } from "../scripts/schema/retired-columns.ts";
+import { homeOf, readsStatements, withoutSqlComments } from "./sql-scan.ts";
 
-// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its own
-// copy of it, byte for byte with four others.
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
 const { sourceFiles, regions, statementsOf, opensStatement, bindings, cteNames, bareMention,
         foldInterpolations } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
+const HOME = homeOf(regions);
 
 /** The trees that write to a database. `testing/` holds the mutation report — recorded runs of
  *  planted defects rather than call sites — and `checks/` reads files instead of writing rows. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-/** Which files this check reads — its own policy, which is why the reader takes it as a predicate. */
-const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
-
-/** A mutation spec quotes a statement in order to plant a defect in it. Its `find`/`replace` text
- *  is the subject of the check that owns the spec, and reading it as a call site would report the
- *  defect the spec exists to plant. */
-const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
-
-/** An applied migration is history — see the module doc. */
-const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/migrations/");
 
 /**
  * The columns the phases retired, and the one table renamed. Keyed by the table's name after
@@ -132,11 +122,6 @@ const RENAMED: Record<string, string> = { run: "skill_run" };
 /** The two tables this phase drops, which no statement may name at all. */
 const DROPPED_TABLES = ["decision", "discussion_message"];
 
-
-/** A statement with the text after a `--` on each of its lines removed — an SQL comment inside a
- *  template literal is prose, and prose is not a statement. */
-const withoutSqlComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
-
 const canonical = (table: string): string => table.replace(/^zz\./i, "").toLowerCase();
 
 function carries(table: string, column: string): boolean {
@@ -150,33 +135,11 @@ function carried(table: string, column: string): boolean {
   return carries(table, column) || (RETIRED[table] ?? []).includes(column);
 }
 
-function importsOf(src: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const m of src.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
-    for (const raw of m[1].split(",")) {
-      const name = raw.trim().split(/\s+as\s+/).pop()?.trim();
-      if (name) out.set(name, m[2]);
-    }
-  }
-  return out;
-}
-
-/** Where an interpolated callee is declared: this file, or the module it was imported from. */
-type Region = { kind: "code" | "literal" | "comment"; start: number; end: number };
-const HOME = (callee: string, fromPath: string, fromSrc: string): { src: string; rs: Region[] } | null => {
-  const spec = importsOf(fromSrc).get(callee);
-  if (!spec || !spec.startsWith(".")) return null;
-  const target = join(dirname(fromPath), spec.replace(/\.js$/, ".ts"));
-  if (!existsSync(target)) return null;
-  const home = readFileSync(target, "utf8");
-  return { src: home, rs: regions(home) };
-};
-
 const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => sourceFiles(r, KEEP))) {
+for (const { path, src } of ROOTS.flatMap((r) => sourceFiles(r, readsStatements))) {
   const rs = regions(src);
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(foldInterpolations(statement.sql, src, rs, path, HOME));

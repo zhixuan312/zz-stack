@@ -1,13 +1,12 @@
 /**
  * The structural report of an initiative's current plan, as `initiative_status` returns it.
  *
- * `validatePlan` already computes, from the text alone, whether a plan can be executed from and
- * which tasks may run in parallel. Before this, only the gate called it, so the orchestrator
- * running the plan derived its waves by hand. This reads the plan the flow declares, runs the
+ * `validatePlan` computes, from the text alone, whether a plan can be executed from and which
+ * tasks may run in parallel. This reads the plan the flow declares, runs the
  * same validator over its TEXT, and returns ids rather than bodies so the answer stays small
  * enough to sit in every status call.
  *
- * COUPLED: the text is a parameter, not a path. A document's bytes are a `doc_revision` row now,
+ * COUPLED: the text is a parameter, not a path. A document's bytes are a `doc_revision` row,
  * so the caller holds them and there is no file to open; taking the body also means this function
  * reads nothing and can be driven straight from a fixture.
  *
@@ -40,15 +39,15 @@ const REPORT_CACHE = 32;
 /** Reports by a digest of the plan's own text, oldest first once the bound is reached.
  *
  *  DELIBERATE: memoized, because `validatePlan` is pure over its text and runs an O(tasks²)
- *  ownership sweep: a hundred-task plan took 1.7 s of one `initiative_status`, on every call, for
- *  an answer that cannot have changed while the text has not. The key is a digest and not the body,
+ *  ownership sweep, on every `initiative_status` call, for an answer that cannot have changed
+ *  while the text has not. The key is a digest and not the body,
  *  so the cache holds a few hundred bytes per plan rather than its bytes. Every caller reads the
  *  report and none writes to it, which is what makes one shared object safe. */
 const reports = new Map<string, PlanStructure>();
 
 /** A digest of the text: enough to tell two plans apart, and never read as one. Native, because the
- *  plans it keys are hundreds of kilobytes and a per-character loop over one cost more than the
- *  validation it was there to save. The length is in the key so two plans that differ only in a
+ *  plans it keys are hundreds of kilobytes and a per-character loop over one costs more than the
+ *  validation it is there to save. The length is in the key so two plans that differ only in a
  *  collision are still two keys. */
 function digest(text: string): string {
   return `${text.length.toString(36)}:${createHash("sha1").update(text).digest("base64url")}`;

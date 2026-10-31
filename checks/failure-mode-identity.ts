@@ -50,6 +50,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { withoutComments } from "../scripts/gate/read.ts";
+import { readsStatements } from "./sql-scan.ts";
 
 // The statement reader, once — `packages/tools/src/lib/sql-statements.ts`, as checks/catalog-eval-columns.ts reads it.
 const { sourceFiles, statementsOf } =
@@ -59,14 +60,6 @@ const { sourceFiles, statementsOf } =
 const ROOTS = ["services", "packages", "scripts", "deploy"];
 
 const fail: string[] = [];
-
-/** An applied migration is history — see the module doc. */
-const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/migrations/");
-
-/** A mutation spec quotes a statement to plant a defect in it — see the module doc. */
-const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
-
-const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
 
 interface Insert { table: string; cols: string[]; line: number }
 
@@ -251,7 +244,7 @@ const IDENTITY_MUST_NAME = ["plugin_id", "stable_key"];
 
 let scanned = 0;
 const files = new Set<string>();
-const writeTrees: { path: string; src: string }[] = ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, KEEP) : []));
+const writeTrees: { path: string; src: string }[] = ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []));
 
 for (const { path, src } of writeTrees) {
   const code = withoutComments(src);

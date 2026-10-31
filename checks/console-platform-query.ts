@@ -45,7 +45,8 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 import { LONER, SENTINEL, SHARED, SUPERADMIN, TWO, TWO_ADMIN, seedPlatformQuery, type Seeded } from "./console-platform-query-seed.ts";
-import { answer, canonical, request, show, type Obj, type Query, type Route, type Who } from "./console-work-query-harness.ts";
+import { canonical, request, show, type Query, type Who } from "./console-work-query-harness.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-platform-query";
 const DONE = "console-platform-query: every measure by every dimension it allows answers the figure its page draws for the " +

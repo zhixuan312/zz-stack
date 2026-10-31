@@ -275,13 +275,13 @@ export function registerArtifactTools(server: McpServer): void {
           if (!loaded.ok) {
             if (loaded.why === "no_database") { rows.push({ rel, body: loaded.refusal }); continue; }
             if (loaded.why !== "missing") { rows.push({ rel, body: loaded.refusal }); continue; }
-            // Says what to call next: a refusal that only names the missing file left one caller
-            // presenting another initiative's document instead (eval 2026-09-26, run fc6b98bd).
+            // Says what to call next: a refusal that only names the missing file leaves a caller
+            // presenting another initiative's document instead.
             //
             // DELIBERATE: no arm here for a journal path. Every `_knowledge/nodes/<ordinal>-…md`
             // is answered by the branch above, on the caller's own shelf or on the platform's, and
-            // the arm that used to send the caller to `scope: "platform"` was what turned a
-            // team-shelf node into a loop between two refusals.
+            // an arm sending the caller to `scope: "platform"` would turn a team-shelf node into a
+            // loop between two refusals.
             const initiative = rel.split("/")[0];
             const hint = !initiative || initiative === rel
               ? ""
@@ -380,7 +380,7 @@ export function registerArtifactTools(server: McpServer): void {
       // The model reading on: a section, or a part past the first. The first part of a present — no offset, offset 0,
       // or only a limit — still draws the whole document for the person, whatever length the model is handed: the
       // panel's length and the model's are separate. A part past the first draws nothing, or every paging call would
-      // draw the whole document again, in a new panel, under the last one (0.92.0).
+      // draw the whole document again, in a new panel, under the last one.
       const reading = section !== undefined || (offset ?? 0) > 0;
       // COUPLED: the record of what was shown is written by `present` (document-present.ts), once
       // per document and in that document's own review context, and nothing in this registration

@@ -165,13 +165,15 @@ if (scanned < 50) fail.push(`the deletion scan read only ${scanned} files; it is
 for (const old of Object.keys(MANAGE_ALIAS)) {
   if (registered.has(old)) fail.push(`${old} was not renamed — MANAGE_ALIAS says ${MANAGE_ALIAS[old]}`);
 }
-const NOUNS = ["person", "team", "member", "pat", "flow", "install", "tool",
-               "enrolment", "block", "platform", "credential", "client", "catalog", "knowledge",
-               // `bug` arrived with the tracker: filing is on /core, answering is here.
-               "bug"];
+// The nouns /manage serves. A new tool under any other noun fails here until the noun is added
+// on purpose, which is the point: a door's nouns are its surface.
+const NOUNS = ["person", "team", "member", "pat", "enrolment", "client", "catalog"];
 for (const n of registered.keys()) {
   if (n === "whoami") continue;                       // the one exception, deliberately kept
   if (!NOUNS.some((x) => n.startsWith(`${x}_`))) fail.push(`${n} does not start with a noun`);
+}
+for (const x of NOUNS) {
+  if (![...registered.keys()].some((n) => n.startsWith(`${x}_`))) fail.push(`NOUNS lists ${x}, which no /manage tool starts with`);
 }
 // Control: whoami must still be here. The loop above skips it by name, so a rename would turn
 // the exception into a check that silently covers nothing.

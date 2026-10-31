@@ -1,7 +1,7 @@
 /**
  * Defects planted in the security boundary, in who the caller is, in what holds a credential,
- * and in what the platform records about itself. Six check files, one row per registered
- * check.
+ * and in what the platform records about itself. A registered check may carry several rows,
+ * each naming the assertion it plants.
  *
  * Two rows are disclosed rather than quietly arranged, each in its own comment below:
  * `DROPPED_TABLE` (this file would otherwise fail one of the checks it is measuring) and the
@@ -265,12 +265,26 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     subject: "packages/tools/src/ops/watch-results.ts",
     // COUPLED: the selected columns, so the anchor follows the statement that is actually there.
     find: '    "select t.slug as team_slug, count(*)::int as n" +',
-    replace: '    "docker compose exec -T postgres psql" + ' +
+    // DELIBERATE: the subquery opened here is never closed. The clause reads the line as text, and
+    // what the statement would do at runtime is not what this row measures.
+    replace: '    "select coalesce(json_agg(row_to_json(t)), \'[]\'::json) from (" + ' +
       '"select t.slug as team_slug, count(*)::int as n" +',
     planted: "a caller writes psqlRows' own json_agg envelope by hand, so the rows come back " +
       "wrapped twice and the tool reads nothing — composing that wrapper is the transport's " +
       "job, and a hand-written one is how the rule it carries, statement on stdin and never " +
       "through -c, starts being decided per call site again",
+  },
+  {
+    check: "scripts/gate/checks/data-sql.ts",
+    target: "the platform database is reached one way",
+    assertion: "no caller spells out the deployment's psql command",
+    subject: "packages/tools/src/ops/watch-results.ts",
+    find: '    "select t.slug as team_slug, count(*)::int as n" +',
+    replace: '    "docker compose exec -T postgres psql" + ' +
+      '"select t.slug as team_slug, count(*)::int as n" +',
+    planted: "a caller carries the deployment's compose service, user and database in its own " +
+      "string, so the one transport that records them stops being the only place they are " +
+      "written, and a change to any of them reaches some callers and not others",
   },
   {
     check: "scripts/gate/checks/data-sql.ts",
@@ -462,8 +476,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "a record that is counted is a record that is written once",
     assertion: "the anchor row refuses a second close, however many times it is called",
     subject: "services/zz-core/src/tools/initiative-close.ts",
-    // Both closing updates, so the plant is the property rather than one branch of it.
-    all: true,
+    // The close tool's own update. The document path closes an initiative with an update of its
+    // own (`document-save.ts`, `where id = $1::uuid and closed_at is null`), which no row plants.
     find: "and i.slug = $2 and i.closed_at is null",
     replace: "and i.slug = $2",
     planted: "the update that closes an initiative is no longer guarded on `closed_at is null`, " +

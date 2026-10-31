@@ -3,13 +3,12 @@
  * `zz.eval_idempotency` (001), so a retried mutator call either replays the first
  * attempt's result or is refused as a conflict, and never re-runs a write it already made.
  *
- * KEYED TO THE PRINCIPAL, NOT TO THE ADDRESS: the phase-3 migration replaced the `principal`
- * email text with `principal_id uuid not null` and re-keyed the primary key to
- * `(principal_id, tool, idempotency_key)`. Every caller here still names its caller
- * by the email address the door resolved, so the address is what this module is given and
- * `zz.principal` is what turns it into the key the table now holds. The lookup joins through that
- * table; the insert resolves the id in its own `values`, so a caller the platform has no principal
- * row for cannot be recorded at all — and the migrated table says so by refusing the row rather
+ * KEYED TO THE PRINCIPAL, NOT TO THE ADDRESS: the primary key is
+ * `(principal_id, tool, idempotency_key)` with `principal_id uuid not null`. Every caller here
+ * names its caller by the email address the door resolved, so the address is what this module is
+ * given and `zz.principal` is what turns it into the key the table holds. The lookup joins through
+ * that table; the insert resolves the id in its own `values`, so a caller the platform has no
+ * principal row for cannot be recorded at all — and the table says so by refusing the row rather
  * than by accepting a string no principal answers to. That refusal is turned into the named
  * refusal below (`noPrincipalRefusal`) rather than propagating as a bare constraint error.
  *
@@ -42,12 +41,10 @@ export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 /** Hand-built, not `JSON.stringify` over a key-sorted object: a caller-controlled args object can
  *  carry an integer-looking string key, and V8's own object key iteration would silently reorder
- *  it ahead of this function's sort. The tenant-information layer had a second one beside its own
- *  semantic payload, and this was kept as its own copy rather than a shared import because the two
- *  canonicalized different shapes. That layer is gone, so this is the tree's only `canonicalJson`:
- *  a caller's arbitrary tool-argument object, and nothing else canonicalizes.
+ *  it ahead of this function's sort. This is the tree's only `canonicalJson`: a caller's arbitrary
+ *  tool-argument object, and nothing else canonicalizes.
  *
- *  Exported for observe.ts (Task I-7): `evidence_digest` is sha256 over this same canonical form
+ *  Exported for observe.ts: `evidence_digest` is sha256 over this same canonical form
  *  of the computed facts, so two callers who agree on the facts agree on the digest whatever
  *  order their own code happened to build the object in. */
 export function canonicalJson(value: unknown): string {

@@ -171,8 +171,8 @@ export async function specApprovalRefusal(
       recover: `Call \`document_approve\` of ${initiative}/${name} again: it asks again every reading it ` +
                "holds no row for." })));
     // The answers just taken are judged now, not read back on the next approval. `cache` was read
-    // before they existed, so judging from it alone reported every row asked here as unavailable
-    // and approved over a `no` (CS-8, 2026-10-06). From the answer itself rather than a re-read:
+    // before they existed, so judging from it alone would report every row asked here as
+    // unavailable and approve over a `no`. From the answer itself rather than a re-read:
     // an answer `assessFamily` returns is a row it wrote, or the call has already failed.
     batch.forEach((x, k) => (cache[x.r.id] ??= []).push({
       digest: x.digest, reading: answers[k].reading, probability: answers[k].probability,

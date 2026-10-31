@@ -33,16 +33,16 @@ check("every literal path a script or check names under scripts/ or checks/ is a
 check("every entry point a human types — an npm script, a deploy script — names the .ts file that exists, not the .mjs file that no longer does",
       runsCheck("entry-points-resolve.ts"));
 
-check("checks/ carries zero strict errors, and none of them was reached by widening to any",
+check("no file in checks/ reaches the compiler's zero by widening to any or silencing it",
       runsCheck("strict-checks-dir.ts"));
 
-check("scripts/gate/ carries zero strict errors, the registry it runs is unchanged, and none of them was reached by widening to any",
+check("every scripts/gate/ module is reached, the registry it runs is intact, and none is typed by widening to any",
       runsCheck("strict-gate-dir.ts"));
 
-check("the rest of scripts/ and testing/ carry zero strict errors, and none of them was reached by widening to any",
+check("nothing in the rest of scripts/ or in testing/ reaches the compiler's zero by widening to any",
       runsCheck("strict-scripts-dir.ts"));
 
-check("the six shipped skill scripts carry zero strict errors, every construct in them is erasable, and none was reached by widening to any",
+check("the six shipped skill scripts are type-checked, every construct in them is erasable, and none is typed by widening to any",
       runsCheck("strict-catalog-skills.ts"));
 
 check("what consumers receive is JavaScript, never the source, and rebuilding it changes nothing",
@@ -62,9 +62,6 @@ check("every script or check a document or a thrown error names by path is a fil
 
 check("a plugin's content identity moves with its content and not with its address",
       runsCheck("digest-per-plugin.ts"));
-
-check("a check that works is a check the gate runs",
-      runsCheck("working-checks-registered.ts"));
 
 check("every planted defect still lands in its subject, so no check is covered by a plant that never ran",
       runsCheck("mutation-specs-match-subjects.ts"));

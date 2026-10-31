@@ -115,18 +115,21 @@ check("a skill that counts its own contents counts them right", () => {
   //
   // Only headings that count something, matched against the numbered items beneath them.
   const bad: string[] = [];
-  const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
-                  nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13 };
+  const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+                 "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen"];
+  const COUNT = `(${WORDS.join("|")}|\\d+)`;
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     const lines = readFileSync(join(root, rel), "utf8").split("\n");
     for (const [i, line] of lines.entries()) {
-      // A count of what follows ("The seven verified traps"), not an ordinal naming this
-      // section ("## 2. Find the argument"). The number leading the heading and followed by
-      // punctuation is the tell; a count is always followed by the thing being counted.
-      if (/^##+\s*(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|\d+)\s*[.:)]/i.test(line)) continue;
-      const m = /^##+ .*?\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|\d+)\s+[a-z]/i.exec(line);
+      // A count of what follows ("The seven verified traps", "Taxonomy (10 Categories)"), not an
+      // ordinal naming this section ("## 2. Find the argument"). The number leading the heading
+      // and followed by punctuation is the tell; a count is always followed by the thing being
+      // counted.
+      if (new RegExp(`^##+\\s*${COUNT}\\s*[.:)]`, "i").test(line)) continue;
+      const m = new RegExp(`^##+ .*?\\b${COUNT}\\s+[a-z]`, "i").exec(line);
       if (!m) continue;
-      const claimed = WORDS[m[1].toLowerCase()] ?? Number(m[1]);
+      const word = WORDS.indexOf(m[1].toLowerCase());
+      const claimed = word >= 0 ? word : Number(m[1]);
       if (!claimed || claimed > 30) continue;
       // Numbered items until the next heading of the same or higher level.
       const level = (/^#+/.exec(line) ?? [""])[0].length;
@@ -363,42 +366,6 @@ check("the deck skill counts the template's slides correctly", () => {
       bad.push(`zz-deck's example stamps data-version ${JSON.stringify(example)} and the ` +
                `template is ${JSON.stringify(version)} — an author following it mislabels every slide`);
     }
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
-check("a heading that counts its own list counts it right", () => {
-  // A heading that states how many items follow ("Five Investigation Perspectives",
-  // "Failure-Mode Taxonomy (10 Categories)") carries a number maintained by hand against the
-  // list right underneath it.
-  //
-  // Counted to the next heading of the same or higher level, which is the section the number
-  // is about.
-  const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-                 "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen"];
-  const bad: string[] = [];
-  for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
-    const lines = readFileSync(join(root, rel), "utf8").split("\n");
-    lines.forEach((line, i) => {
-      const h = /^(#{2,6})\s+(.*)$/.exec(line);
-      if (!h) return;
-      // "The five perspectives" / "Five Investigation Perspectives" / "… (10 Categories)"
-      const m = /^(?:The\s+)?(\w+)\s+\S/.exec(h[2]) ?? /\((\w+)\s+\w+\)\s*$/.exec(h[2]);
-      if (!m) return;
-      const w = m[1].toLowerCase();
-      const said = /^\d+$/.test(w) ? Number(w) : WORDS.indexOf(w);
-      if (said < 2) return;                      // not a count, or too small to be one
-      const depth = h[1].length;
-      let items = 0;
-      for (let j = i + 1; j < lines.length; j += 1) {
-        const hh = /^(#{1,6})\s/.exec(lines[j]);
-        if (hh && hh[1].length <= depth) break;
-        if (/^\d+\.\s/.test(lines[j])) items += 1;
-      }
-      if (items && items !== said) {
-        bad.push(`${rel}: "${h[2]}" says ${said} and ${items} numbered items follow it`);
-      }
-    });
   }
   return bad.length ? bad.join("; ") : null;
 });

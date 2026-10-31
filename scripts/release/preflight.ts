@@ -1,4 +1,3 @@
-
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -15,6 +14,8 @@ export function preflight(): void {
   const say = (s: string): void => { if (!exportMode) log(s); };
   const row = (ok: boolean | null, label: string, detail: string | null = null): void =>
     say(`  ${ok === null ? "·" : ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${label}${detail ? ` — ${detail}` : ""}`);
+  // Two versions agree only when both were read: a "?" on either side is unknown, not a match.
+  const agree = (a: string, b: string): boolean | null => a === "?" || b === "?" ? null : a === b;
 
   // Which deployment, first and always. Half the rows below are read off a host over ssh, so a
   // preflight that does not say which host it asked is a page of facts about somewhere.
@@ -26,32 +27,34 @@ export function preflight(): void {
   const composeTxt = safe(() => readFileSync(join(root, "deploy/docker-compose.yml"), "utf8"), "");
   const composeVer = (/ZZ_VERSION:-([0-9][^}]*)\}/.exec(composeTxt) || [])[1] || "?";
   say("\n  versions on disk");
-  row(pkg === composeVer, `manifests ${pkg}, compose literal ${composeVer}`,
-      pkg === composeVer ? null : "they must move together — run set-version.ts");
+  row(agree(pkg, composeVer), `manifests ${pkg}, compose literal ${composeVer}`,
+      agree(pkg, composeVer) === false ? "they must move together — run set-version.ts" : null);
   const dashPkg = safe(() => JSON.parse(readFileSync(join(DASH_SRC, "package.json"), "utf8")).version, "?");
   const dashComposeTxt = safe(() => readFileSync(join(DASH_SRC, "docker-compose.yml"), "utf8"), "");
   const dashComposeVer = (/ZZ_DASHBOARD_VERSION:-([0-9][^}]*)\}/.exec(dashComposeTxt) || [])[1] || "?";
-  row(dashPkg === dashComposeVer, `console package.json ${dashPkg}, its compose literal ${dashComposeVer}`,
-      dashPkg === dashComposeVer ? null
-        : "they must move together — the release bumps both, so a disagreement here is a hand edit");
+  row(agree(dashPkg, dashComposeVer), `console package.json ${dashPkg}, its compose literal ${dashComposeVer}`,
+      agree(dashPkg, dashComposeVer) === false
+        ? "they must move together — the release bumps both, so a disagreement here is a hand edit" : null);
 
   /* The tree, checked now rather than by the gate after the changelog */
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
   const dirty = git(["status", "--porcelain"]).split("\n").filter(Boolean);
   safe(() => run("git", ["fetch", "origin", "--quiet"], { cwd: root }), "");
-  const behind = git(["rev-list", "--count", "HEAD..origin/master"]) || "0";
-  const ahead = git(["rev-list", "--count", "origin/master..HEAD"]) || "0";
+  const behind = git(["rev-list", "--count", "HEAD..origin/master"]) || "?";
+  const ahead = git(["rev-list", "--count", "origin/master..HEAD"]) || "?";
   say("\n  tree");
   row(null, `on ${branch}`, branch === "master" ? "release runs from master" : "bump and commit here, then merge to master");
   row(dirty.length === 0, dirty.length ? `${dirty.length} uncommitted change(s)` : "clean",
       dirty.length ? dirty.slice(0, 4).map((x) => x.trim()).join("; ") + (dirty.length > 4 ? " …" : "") : null);
-  row(behind === "0", `master vs origin: ${ahead} ahead, ${behind} behind`,
-      behind === "0" ? null : "the HOST pulls from origin — push before releasing");
+  row(behind === "?" ? null : behind === "0", `master vs origin: ${ahead} ahead, ${behind} behind`,
+      behind === "?" ? "git could not compare with origin/master"
+        : behind === "0" ? null : "the HOST pulls from origin — push before releasing");
 
   /* What moved */
   const tag = git(["describe", "--tags", "--abbrev=0"]);
   const range = tag ? `${tag}..HEAD` : "HEAD";
-  const commits = tag ? git(["rev-list", range]).split("\n").filter(Boolean) : [];
+  // One `git log` for the whole range, each commit's `%h %s` line and body ended by a NUL.
+  const commits = tag ? git(["log", "--format=%h %s%n%b%x00", range]).split("\0").map((c) => c.trim()).filter(Boolean) : [];
   say("\n  what moved");
   row(null, `zz-stack: ${commits.length} commit(s) since ${tag || "(no tag)"}`);
   const d = resolveDashboard();
@@ -79,9 +82,9 @@ export function preflight(): void {
    * saying so. This says where to start reading. */
   const breaking = [];
   for (const c of commits) {
-    const body = git(["log", "-1", "--format=%b", c]);
-    const line = body.split("\n").find((l) => /^\*{0,2}breaking/i.test(l.trim()));
-    if (line) breaking.push(`${git(["log", "-1", "--format=%h %s", c])}\n        ${line.trim()}`);
+    const [subject, ...body] = c.split("\n");
+    const line = body.find((l) => /^\*{0,2}breaking/i.test(l.trim()));
+    if (line) breaking.push(`${subject}\n        ${line.trim()}`);
   }
   say("\n  declared breaking (a FLOOR — read the diff for the rest)");
   if (breaking.length) breaking.forEach((x) => say(`    ${x}`));

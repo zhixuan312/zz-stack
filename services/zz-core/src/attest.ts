@@ -15,9 +15,9 @@
  * the decision basis when the caller stated one — is composed here (`approvalRecord`) and written in
  * the seal's transaction, as its one act row.
  *
- * COUPLED: `doc_revision.presented_at` is still set when a presentation completes the current
+ * COUPLED: `doc_revision.presented_at` is set when a presentation completes the current
  * snapshot's coverage in its review context (`commitPresentation`, review-context.ts), and the pin
- * rule (`currentRow`, document-snapshot.ts) reads it. No approval reads it any more: a timestamp per
+ * rule (`currentRow`, document-snapshot.ts) reads it. No approval reads it: a timestamp per
  * row cannot say who was shown the bytes, in which review, or which snapshot an approval means.
  */
 import type pg from "pg";

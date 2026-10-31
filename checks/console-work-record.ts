@@ -74,7 +74,8 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 import { TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
-import { answer, canonical, count, door, iso, phase, request, serveDoor, show, text, type Obj, type Route, type Who } from "./console-work-query-harness.ts";
+import { canonical, count, door, iso, phase, request, serveDoor, show, text, type Who } from "./console-work-query-harness.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-record";
 const DONE = "console-work-record: Record reads the retained text as of the cutoff, the same in every period, beside the period's " +

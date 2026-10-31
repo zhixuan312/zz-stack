@@ -76,8 +76,8 @@ export function registerSourceListTool(server: McpServer): void {
 
 /** What a source supports, in the order it declared them, each named once. A link needs its
  *  target's row, so a document not written yet has none until `saveDocument` files it at the
- *  document's first write; reading the links alone answered an empty `supports` for a source whose
- *  own text named one (bug e9d91c40). A declared target the initiative does not hold is named as
+ *  document's first write, and reading the links alone would answer an empty `supports` for a
+ *  source whose own text names one. A declared target the initiative does not hold is named as
  *  not written yet; one it holds is named plainly, linked or not. A name is spelled as the store
  *  spells it — `.md` when it has no extension — so `spec` and `spec.md` are one document. A link
  *  with no declaration behind it (a source filed before declarations were kept) is still named. */

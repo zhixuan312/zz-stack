@@ -76,15 +76,12 @@ import { HAN_SCALAR_RE, HAN_SQL_CLASS, LATIN_SQL_CLASS, QUERY_CONFIG, SIMPLE_QUE
  *
  *  DELIBERATE: a bound, and it is the difference between a working search and an unusable one.
  *  `ts_headline` re-parses the text and hunts fragments in it, and its cost is superlinear in
- *  the document — measured on this deployment's own bodies, one 1.1 MB plan took **33 s** to
- *  excerpt, while the same document truncated to 20 000 characters took 7.6 ms. The pool is up
- *  to 200 matching rows and the corpus holds 123 revisions over 300 kB, so the excerpt alone
- *  was the whole of a search's latency, and its tail: prod p90 1.1 s, max 11.5 s.
+ *  the document, so an unbounded excerpt of one large plan is the whole of a search's latency.
  *
  *  What this costs is marking deeper than the bound. Below it — every knowledge node on the
- *  shelf (largest 17 kB) and 1,710 of the 2,678 revisions — nothing changes at all. Above it
- *  the excerpt is drawn from the head of the document, which for markdown is the title and the
- *  summary, and matches inside that window are still marked exactly as they were. */
+ *  shelf and most revisions — nothing changes at all. Above it the excerpt is drawn from the
+ *  head of the document, which for markdown is the title and the summary, and matches inside
+ *  that window are marked as they are below it. */
 const HEADLINE_BYTES = 20_000;
 
 /** Marks a document's matched terms in markdown rather than ts_headline's default <b>: the rest
@@ -112,16 +109,14 @@ function headlineOf(column: string, queryExpr: string): string {
  *  token boundary before any dictionary runs, so a Han clause handed to the ASCII lane's
  *  `websearch_to_tsquery` call is one token that matches nothing the analyzer stored. Such a
  *  clause is MATCHED as a literal `body` substring — which is what `zz.doc_revision`'s
- *  `doc_revision_body_trgm` index serves, the trigram index `015_doc_body_drop.sql` moved there
- *  from the `zz.doc` column that used to hold a second copy of the same bytes — and scored here
- *  through the half of `body_tsv` the analyzer wrote it into: every
- *  Han unigram this attempt analysed, ANDed, through `SIMPLE_QUERY_CONFIG`, whose identity
- *  dictionary leaves a stored unigram equal to the term the query sends. Without it a Han-only
- *  query ties at zero, which is what every Han-only match did before this lane existed.
+ *  `doc_revision_body_trgm` trigram index serves — and scored here through the half of
+ *  `body_tsv` the analyzer wrote it into: every Han unigram this attempt analysed, ANDed,
+ *  through `SIMPLE_QUERY_CONFIG`, whose identity dictionary leaves a stored unigram equal to the
+ *  term the query sends. Without it a Han-only query ties at zero.
  *
  *  DELIBERATE: the rank does not span both halves. An attempt that has an ASCII clause keeps the
- *  rank it has always had, and a Han clause beside it adds nothing to it — this lane reaches
- *  exactly the queries that had no rank to lose.
+ *  ASCII lane's rank, and a Han clause beside it adds nothing to it — this lane reaches exactly
+ *  the queries that have no other rank.
  *
  *  DELIBERATE: no excerpt here, in any lane. `ts_headline` is the most expensive thing this
  *  handler does and the ranking pool is two hundred rows deep, while `want` — fifteen by
@@ -223,19 +218,17 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * outcome or approval, so those are constants on that side.
        *
        * `flow`/`outcome` on the document arm come from `zz.initiative`, not `zz.doc`: both are
-       * the initiative's own — `zz.doc.flow` was only ever the same flow copied onto every one
+       * the initiative's own — `zz.doc.flow` is only ever the same flow copied onto every one
        * of its documents, and `zz.doc.outcome` is the initiative's outcome stamped on the one
        * document that closed it, never a property of that document alone. Reading `zz.doc`
-       * returned it on that one row and `null` on every sibling; the anchor answers it for all
+       * would return it on that one row and `null` on every sibling; the anchor answers it for all
        * of them alike. Joined through zz.doc.initiative_id, which is NOT NULL and set by every
        * insert path from the same team and slug — the key the document is filed under, rather than
-       * two slugs read back and matched again. The note that stood here said the opposite, and
-       * described a column a lazy reconcile pass filled: that pass, and the column it wrote, went
-       * with the file store.
+       * two slugs read back and matched again.
        *
        * The node arm is its own literal, and the union's column names come from the document
        * arm, which is why it aliases none of them. Every column it renames for the node is
-       * DERIVED from the keys the reshape left: the shelf through `team_id`, the address from
+       * DERIVED from the node's own keys: the shelf through `team_id`, the address from
        * the ordinal and the slug the file's name carries, the successor from `superseded_by_id`,
        * the citations from `knowledge_node_evidence`. */
       const NODE_ARM = `(
@@ -271,10 +264,8 @@ export function registerKnowledgeSearch(server: McpServer): void {
                i.outcome, a.email as approved_by, r.approved_at, d.updated_at, d.title, d.tags,
                -- The initiative slugs this revision's citations point at, as the array the union's
                -- other arm produces. DELIBERATE: read from the cites links, not from
-               -- r.fields->>'evidence' — that key belonged to the retired doc.evidence column and
-               -- no writer sets it, so the neighbour lane's document arm never fired and no returned
-               -- row ever carried a citation. The comment above always said a document's citations
-               -- are the links beside it; this is what reads them.
+               -- r.fields->>'evidence' — no writer sets that key, so reading it would leave the
+               -- neighbour lane's document arm silent and no returned row carrying a citation.
                coalesce((select array_agg(distinct ti.slug order by ti.slug)
                            from zz.doc_link l
                            join zz.doc td on td.id = l.to_doc_id
@@ -297,16 +288,13 @@ export function registerKnowledgeSearch(server: McpServer): void {
           -- matches body with ilike, and the only index that serves it is doc_revision_body_trgm
           -- on this table. A from zz.doc d left join zz.doc_revision r puts the document first, and
           -- the planner then has no reason to reach the revision table through that index: it
-          -- walks doc_initiative_id and filters each revision it finds (measured at 831 ms on
-          -- 4,010 revisions in 168 MB, against 0.5 ms when the revision table drives). The
+          -- walks doc_initiative_id and filters each revision it finds. The
           -- predicate reaches the revision table either way — r.body is what makes that possible —
           -- but only this order lets the trigram index be CHOSEN.
           --
           -- COUPLED: a document whose current_revision is null has no bytes, so this inner join
-          -- leaves it out of the arm. That is the same document the fallback used to answer with a
-          -- stale copy of, and it can match no text query; zz.doc.tags is the current revision's
-          -- projection, so it carries no tag to match either. Zero documents on the deployment of
-          -- 2026-10-25 had one.
+          -- leaves it out of the arm. It can match no text query; zz.doc.tags is the current
+          -- revision's projection, so it carries no tag to match either.
           from zz.doc_revision r
           join zz.doc d on d.id = r.doc_id and d.current_revision = r.revision
           left join zz.initiative i on i.id = d.initiative_id
@@ -402,8 +390,8 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * `knowledge_node_evidence` — the initiatives it was learned from, keyed by initiative id
        * — so a node citing the same initiative as a strong hit is about the same work even when
        * it shares no vocabulary. The lane matches on those ids rather than on the slugs they
-       * spell: a slug is team-scoped, and two teams can each carry one. A document still cites
-       * its evidence as text this phase does not reshape, so the lane carries both keys and
+       * spell: a slug is team-scoped, and two teams can each carry one. A document cites its
+       * evidence as initiative slugs, so the lane carries both keys and
        * reads each subject by the one its citations are stored in. Bounded by (seeds x their
        * citations), fetched in one targeted query — never a scan. */
       const keyOf = (r: { subject: string; id: string }) => `${r.subject}:${r.id}`;
@@ -455,15 +443,14 @@ export function registerKnowledgeSearch(server: McpServer): void {
       /* The excerpts, read for the rows that come back rather than for the pool that was ranked.
        *
        * `ts_headline` is the most expensive thing this handler does — it re-parses a document
-       * and hunts fragments in it — and it was being run over the whole two-hundred-row pool to
-       * return fifteen rows. Measured against this deployment's own corpus, the excerpt was the
-       * entire latency of a search and its tail (prod p90 1.1 s, max 11.5 s).
+       * and hunts fragments in it — so it runs over the rows returned, never over the whole
+       * ranking pool.
        *
        * DELIBERATE: the lane a row came from still decides how its text is cut. A row the
        * lexical pass found is marked with that pass's own query; the broadened pass has a query
        * of its own and is the only one that runs when it runs. A row found ONLY by its tags or
        * by the citation graph need not contain the query at all, so marking it would mark
-       * nothing — it gets the head of its text, which is what it has always had.
+       * nothing — it gets the head of its text.
        *
        * The rows read are `ranked.slice(0, want + 1)`: the fill loop below pushes on each
        * iteration or breaks, so it cannot reach past the row after its last.

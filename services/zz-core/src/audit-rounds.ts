@@ -156,8 +156,7 @@ export async function assessRound(p: pg.Pool, team: string, initiative: string,
   const rows = await docRows(p, team, initiative);
   const agreed = rows.find((d) => d.path === document)?.body ?? "";
   // Persisted by `assessFamily` itself as the answer was taken: the `zz.assessment` row IS the
-  // memo, and the `<initiative>/_assessments/*.json` file this used to write was a second copy of
-  // it. A second copy is what drifts.
+  // memo, and nothing writes a second copy of it. A second copy is what drifts.
   // DELIBERATE: the recovery is `assess`, never the same `source_add`: the round is filed, and
   // sending it again files a second round of the same version.
   const answer = await assessFamily({ family: "changes_commitment", subject: content, context: stripEnvelope(agreed),
@@ -195,7 +194,7 @@ export function auditMove(initiative: string, stage: string, document: string,
   if (!rounds.length) {
     // An approved version no round has read still owes its round (checks/document-version-causes.ts):
     // approving without the audit does not settle it. The stakeholder may accept it unaudited, as a
-    // spent budget's decision does, by material filed after that approval (bug 12ec9d99). Material
+    // spent budget's decision does, by material filed after that approval. Material
     // from before it, such as the phase's execution report, is not that decision.
     if (approvedAt && waivedAfter(sources, document, approvedAt)) return null;
     // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.

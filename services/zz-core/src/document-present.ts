@@ -177,9 +177,9 @@ function metadataLine(text: string): string {
  *
  *  A version read as an unsigned snapshot can hold an approved one before it — a metadata-only
  *  change after the approval files a new row in the same version (a closed document's correction
- *  among them). `version: N` no longer reads that approval, so the entry names it by the token
- *  `content_revision` reads it with; without this, the approval's own reply was the one place the
- *  token was ever printed.
+ *  among them). `version: N` does not read that approval, so the entry names it by the token
+ *  `content_revision` reads it with; without this, the approval's own reply would be the one place
+ *  the token is printed.
  *
  *  COUPLED: the console's version history (services/gateway/src/console/initiatives.ts,
  *  `superseded_approved`) names the same snapshot by the same rule. */

@@ -31,15 +31,12 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { isMutationSpec } from "./sql-scan.ts";
+
 /** The trees that write to a database. `testing/` holds the mutation report — recorded runs of
  *  planted defects rather than call sites — and `checks/` reads files instead of writing rows. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-
-/** A mutation spec quotes a statement in order to plant a defect in it. Its `find`/`replace` text
- *  is the subject of the check that owns the spec, and reading it as a call site would report the
- *  defect the spec exists to plant. */
-const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
 
 interface Source { path: string; src: string }
 
@@ -324,6 +321,13 @@ for (const { path, src } of ROOTS.flatMap((r) => sources(r))) {
       fail.push(`FAIL: ${where} — the revoke names label ${bound(rl, rbind)}, the insert writes ${label}`);
     }
   }
+}
+
+// A scan that finds no labelled writer prints a green line over nothing: a renamed table or a
+// reworded insert reads exactly like a tree with no writer at all.
+if (seen - exempt === 0) {
+  fail.push(`FAIL: no insert into zz.pat that names a purpose was found under ${ROOTS.join(", ")} ` +
+            `(${seen} insert(s), ${exempt} exempt) — this check read nothing`);
 }
 
 if (fail.length) {

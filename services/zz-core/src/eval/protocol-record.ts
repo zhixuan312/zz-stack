@@ -1,5 +1,5 @@
 /**
- * `protocol_record`'s own writer (FR-4, FR-6, Task I-10; folded and reshaped by Task I-23):
+ * `protocol_record`'s own writer (FR-4, FR-6):
  * validates an `EvaluationProtocol` body, writes it as an immutable `zz.eval_protocol_version`
  * with its dimensions and measures, and folds DISCOVER's failure-mode lineage in as
  * `eval_protocol_failure_mode` rows. `protocol.ts` calls `recordProtocolVersion` once the body has
@@ -10,23 +10,22 @@
  * file only ever inserts. A body whose `version` does not name the next number after this
  * plugin's newest is refused before anything is written — see `nextVersionRefusal`.
  *
- * The two header tables are gone and their facts live on the version: `zz.eval_protocol` carried
- * a plugin and a key and nothing else, so `plugin_id` + `protocol_key` are written onto the
- * version (`unique (plugin_id, version)` is then the identity), and whose version it is is the
- * caller's own principal id (`recorded_by`). `zz.eval_evaluator` went the same way —
- * `evaluators.ts` writes `stable_key` onto the version it registers.
+ * There is no header table: `plugin_id` + `protocol_key` are written onto the version
+ * (`unique (plugin_id, version)` is then the identity), and whose version it is is the caller's
+ * own principal id (`recorded_by`). An evaluator's `stable_key` lives on its version the same
+ * way (`evaluators.ts`).
  *
  * Body field → column, positionally, never renamed: `pluginPurpose` → `purpose`,
- * `observableSurfaces` → `observable_surfaces` (a text array now, not jsonb), `version`,
+ * `observableSurfaces` → `observable_surfaces` (a text array, not jsonb), `version`,
  * `qualification` → `qualification_policy`, `scoring` → `scoring_policy`, `improvement` →
  * `improvement_policy`. Three of the body's own fields have no column in the target shape and
- * are not stored: `suites` (dropped — a measure's own `evaluator_type` is how it is evaluated),
- * and `improvement.evolvable` and `improvement.criticalGuardrails` (dropped from the policy: who
- * may release a candidate is the plugin's own `plugin_release_owner` rows, and a guardrail is a
+ * are not stored: `suites` (a measure's own `evaluator_type` is how it is evaluated), and
+ * `improvement.evolvable` and `improvement.criticalGuardrails` (not part of the policy: who may
+ * release a candidate is the plugin's own `plugin_release_owner` rows, and a guardrail is a
  * measure's `guardrail_threshold`). `packages/contracts/src/eval-protocol.ts` states the body's
  * own names; nothing here restates them a third time.
  *
- * Three measure facts that used to live inside `definition` jsonb are columns now —
+ * Three measure facts stated inside `definition` jsonb are also columns —
  * `fact_key` (`definition.factPath`), `subject_kind` (`definition.subjectKind`) and
  * `guardrail_threshold` (the threshold of the `improvement.criticalGuardrails` entry naming this
  * measure) — so a deterministic measure's fact and a guardrail's bar are readable without
@@ -79,12 +78,11 @@ function asEvaluatorDefinition(raw: unknown, measureKey: string): EvaluatorDefin
 }
 
 /** A `deterministic`/`outcome` measure's `definition.factPath` refused, by name, when it names no
- *  fact OBSERVE actually computes — the idea the removed legacy ruler's quantitative lines were
- *  held to (a `reads` dotted path checked against the profile sheet), applied here against
- *  `observe-facts.ts`'s own `OBSERVATION_FACT_KEYS` instead: only the path's FIRST segment is checked against that list — a nested path underneath
- *  a resolved fact is `evaluate-measures.ts`'s own business at read time, not something this
- *  file's static, pre-observation check can validate. `null` on a valid measure; this file's own
- *  Fix dispatch note (I-29) is what this refusal answers. */
+ *  fact OBSERVE actually computes, checked against `observe-facts.ts`'s own
+ *  `OBSERVATION_FACT_KEYS`: only the path's FIRST segment is checked against that list — a
+ *  nested path underneath a resolved fact is `evaluate-measures.ts`'s own business at read time,
+ *  not something this file's static, pre-observation check can validate. `null` on a valid
+ *  measure. */
 export function factPathRefusal(
   measure: { key: string; evaluatorType: string; definition: Record<string, unknown> },
 ): string | null {
@@ -188,10 +186,10 @@ function nextVersionRefusal(bodyVersion: number, currentMax: number | null): str
  *  protocol in `catalog/zz/zz-plugin-eval/protocols/zz-core.json` lists names of its own that no
  *  DISCOVER run has ever minted a stable key for).
  *
- *  DELIBERATE, and this task's own convention rather than one the plan states: `candidateId`
- *  accepts the one DISCOVER sighting this entry was written from; `mergedCandidateIds` names
- *  others folded into the same entry. Both name sightings now — a failure mode is an identity
- *  and a discovery of it is a sighting (Task I-24) — and each folds its own `failure_mode_id`
+ *  DELIBERATE, a convention of this file's own: `candidateId` accepts the one DISCOVER sighting
+ *  this entry was written from; `mergedCandidateIds` names others folded into the same entry.
+ *  Both name sightings — a failure mode is an identity and a discovery of it is a sighting —
+ *  and each folds its own `failure_mode_id`
  *  in, so two sightings of one identity are one relation row. */
 interface TaxonomyLineage { key?: unknown; candidateId?: unknown; mergedCandidateIds?: unknown }
 
@@ -251,8 +249,7 @@ async function resolveLineage(
 }
 
 /** Applies the lineage `resolveLineage` already validated: one `eval_protocol_failure_mode` row
- *  per failure-mode identity this version folds in — the relation that replaced the
- *  `failure_taxonomy` jsonb array, and the fact `protocol-triggers.ts` reads to know which
+ *  per failure-mode identity this version folds in — the fact `protocol-triggers.ts` reads to know which
  *  sightings no protocol version has read yet. Run inside the same transaction as the
  *  version/dimension/measure inserts below — lineage and the version it belongs to land together
  *  or not at all. */
@@ -296,7 +293,7 @@ interface RecordedVersion {
   content_digest: string;
   /** `failureTaxonomy` entries that named no failure mode of this plugin: a name no DISCOVER run
    *  has minted a stable key for. Reported, never refused — the relation is what a protocol's
-   *  lineage IS now, so a name that folded nothing is worth seeing. */
+   *  lineage IS, so a name that folded nothing is worth seeing. */
   unfolded_taxonomy_keys: string[];
 }
 
@@ -397,7 +394,7 @@ export async function recordProtocolVersion(
   };
 }
 
-/** The one write that binds a version to the document that affirmed it (Task I-40, AC-6.7).
+/** The one write that binds a version to the document that affirmed it (AC-6.7).
  *
  *  The affirmation names a DOCUMENT and, beside it, the exact revision it read — not a revision
  *  chosen by proximity in time. `approved_doc_revision` is the pin `eval_protocol_version`'s own

@@ -23,12 +23,18 @@
  * Run: node checks/plugin-register-source.ts   (also run by scripts/gate.ts)
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
+// DELIBERATE: the catalog root is a temporary directory, never the checkout's catalog/. The
+// fixtures below are symlinks to `/`, a FIFO and a `.git`, and every catalog read lists the root's
+// owners — a fixture left in catalog/ by a killed run would be an owner to every later read there.
+const catalogRoot = mkdtempSync(join(tmpdir(), "plugin-register-source-catalog-"));
+process.on("exit", () => rmSync(catalogRoot, { recursive: true, force: true }));
+cpSync(join(process.cwd(), "catalog/zz/zz-plugin-eval"), join(catalogRoot, "zz/zz-plugin-eval"), { recursive: true });
+process.env.ZZ_CATALOG_DIR = catalogRoot;
 
 const { resolveSource } = await import(
   pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/subject-source.js")).href);
@@ -42,18 +48,18 @@ const refused = async (kind: string, locator: string, why: RegExp) => {
 };
 
 // 1. local_dir
-const inside = await resolveSource("local_dir", join(process.cwd(), "catalog/zz/zz-plugin-eval"));
+const inside = await resolveSource("local_dir", join(catalogRoot, "zz/zz-plugin-eval"));
 if ("error" in inside || !inside.components.length) {
   fail.push(`a directory under the catalog root was not read: ${JSON.stringify(inside).slice(0, 200)}`);
 } else if (!/^[0-9a-f]{64}$/.test(String(inside.identityExtra.tree_digest))) {
   fail.push(`a local_dir capture records no tree_digest for the replay launcher to check: ${JSON.stringify(inside.identityExtra)}`);
 }
 await refused("local_dir", "/etc", /only under the catalog root/);
-await refused("local_dir", join(process.cwd(), "catalog/../services"), /only under the catalog root/);
-// A throwaway directory under the catalog root, so confinement passes and the symlink rule is
-// what answers.
-const linked = mkdtempSync(join(process.cwd(), "catalog", ".plugin-register-source-"));
-try {
+await refused("local_dir", join(catalogRoot, "zz/zz-plugin-eval/../../.."), /only under the catalog root/);
+// A directory under the catalog root, so confinement passes and the symlink rule is what answers.
+const linked = join(catalogRoot, "fixtures");
+mkdirSync(linked);
+{
   mkdirSync(join(linked, "skills-link"));
   symlinkSync("/", join(linked, "skills-link", "skills"));
   await refused("local_dir", join(linked, "skills-link"), /skills is a symlink/);
@@ -75,8 +81,6 @@ try {
   await bad("deep-link", (d) => { mkdirSync(join(d, "hooks")); symlinkSync("/etc/hosts", join(d, "hooks", "leak")); },
     /hooks\/leak is a symlink/);
   await bad("fifo", (d) => execFileSync("mkfifo", [join(d, "pipe")]), /pipe is not a regular file/);
-} finally {
-  rmSync(linked, { recursive: true, force: true });
 }
 
 // 2. git

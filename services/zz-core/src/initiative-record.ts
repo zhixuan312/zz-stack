@@ -1,23 +1,18 @@
 /**
  * The record an initiative is opened with, and the questions asked of it.
  *
- * COUPLED: every one of these reads or writes a ROW, and none of them reads a file. The store
- * the platform kept for a team — its working tree, the per-initiative JSON state files and its
- * git repository — is retired, so the four facts that used to live beside a team's documents
- * live where the rest of the initiative does:
+ * COUPLED: every one of these reads or writes a ROW, and none of them reads a file. An
+ * initiative's opening is a `zz.initiative` row (`slug`, `flow`, `opened_at`, `opened_by`), its
+ * branch facts are `zz.initiative_fact` rows keyed by the initiative's own id, and its stage
+ * records are `zz.initiative_record` rows — see `recordsFor`.
  *
- *   `_open.json`     → `zz.initiative` — `slug`, `flow`, `opened_at`, `opened_by`
- *   `_facts.json`    → `zz.initiative_fact`, keyed by the initiative's own id
- *   `_records.json`  → `zz.initiative_fact` too, under a two-part fact name — see `recordsFor`
- *
- * A declaration and no declaration are still different facts, which is why a freeform open still
- * writes a row (with `flow` null) and `openRecord` still returns null rather than an empty record
+ * A declaration and no declaration are different facts, which is why a freeform open still
+ * writes a row (with `flow` null) and `openRecord` returns null rather than an empty record
  * when nothing carries the slug. A helper collapsing both would let a fallback overrule a person
  * saying "nothing governs this".
  *
  * DELIBERATE: `chainFor` needs the flow of an initiative that has no document yet, which is the
- * window between `initiative_open` and the first write. The row answers it, and it is the same
- * answer the folder's `_open.json` gave.
+ * window between `initiative_open` and the first write. The row answers it.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -80,9 +75,9 @@ export async function recordOpen(
   const { rows } = await client.query<{ flow: string | null; opened_at: string; opened_by: string | null }>(
     // DELIBERATE: the row's `opened_at` is rendered in the DEPLOYMENT's zone, not the database's.
     // A `timestamptz` read by `to_char` alone comes back as the server's own date — UTC in these
-    // images — so an initiative opened at 00:30 in Asia/Singapore was named `2026-10-05-…` and
-    // reported `opened_at: 2026-10-04`, the same answer contradicting itself for the eight hours a
-    // day the two calendars disagree. `initiativeNameFor` above promises these two cannot disagree;
+    // images — so an initiative opened just after midnight in a zone ahead of UTC would be named
+    // for one day and report `opened_at` as the day before, for the hours a day the two
+    // calendars disagree. `initiativeNameFor` above promises these two cannot disagree;
     // `$5` is the zone it stamps the name with, bound rather than written down here.
     `insert into zz.initiative (team_id, slug, flow, opened_at, opened_by)
      values ($1::uuid, $2, $3, now(),
@@ -122,8 +117,7 @@ export async function initiativeIdFor(
   return rows[0]?.id ?? null;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────────────────────
- * An initiative's durable state, in two tables, because the two shapes are opposite:
+/* An initiative's durable state, in two tables, because the two shapes are opposite:
  *
  *   `zz.initiative_fact`    a BRANCH FACT — `protocol_action`, `improvement_mode`, `release_mode`
  *                           — recorded once by the stage that decides it and never revised;
@@ -132,14 +126,12 @@ export async function initiativeIdFor(
  *                           `produces: "record"` stage minted, written again when that stage runs
  *                           again, because a second profile or a re-score SUPERSEDES what it
  *                           recorded before. "Resume from the initiative" is what latest-wins
- *                           means.
- * ────────────────────────────────────────────────────────────────────────────────────────── */
+ *                           means. */
 
 /** The durable branch facts, or `{}` when none are recorded.
  *
- * DELIBERATE: no damage case. The file could be truncated by a writer that died between two
- * bytes, and `factsFor` used to throw a `Refusal` naming it; a row is written whole by the
- * database or not at all, so there is nothing here to be damaged and no refusal to invent. */
+ * DELIBERATE: no damage case. A row is written whole by the database or not at all, so there is
+ * nothing here to be damaged and no refusal to invent. */
 export async function factsFor(
   client: RecordClient, team: string | null, initiative: string,
 ): Promise<Record<string, string>> {
@@ -276,19 +268,20 @@ export async function lockInitiativeFacts(
 }
 
 /** Is the flow's DECLARED closing document (`chain.closingDoc`) ruled out for this initiative
- *  (FR-58, Task I-28)? `zz-plugin-eval` is the first flow whose closing document is itself
+ *  (FR-58)? `zz-plugin-eval` is a flow whose closing document is itself
  *  `when`-conditional — `improvement.md`, promotable only — so a branch that never reaches
  *  `promotable` has to close on something else, and `chain.closingDoc` (chain.ts) is a static,
  *  per-flow answer that cannot see this initiative's own branch facts.
  *
  *  Read by BOTH `initiative_close` (initiative-close.ts, to fall back to the furthest document
- *  this branch actually wrote — the same fallback it already used for a stop that never reached
- *  its closing document, now also triggered by a branch that ruled it out) and `closeCheck`
+ *  this branch actually wrote — the same fallback a stop that never reached its closing document
+ *  takes) and `closeCheck`
  *  (guards.ts, to recognise a write reaching that fallback document as still the closing write) —
  *  one function, so the two never disagree about which document a close lands on.
  *
  *  A document with no `when` is never ruled out — this returns `false` unconditionally, which is
- *  every flow that predates FR-58 (sdlc-flow, zz-access): asking never changes their answer. */
+ *  every flow without a `when`-conditional document (sdlc-flow, zz-access): asking never changes
+ *  their answer. */
 export function closingDocRuledOut(
   declared: { name: string; when?: Record<string, string | string[]> } | undefined,
   facts: Record<string, string>,

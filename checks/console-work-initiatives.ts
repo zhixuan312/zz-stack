@@ -64,6 +64,7 @@ import {
 } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
+import { answer, type Answered, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-initiatives";
 const DONE = "console-work-initiatives: the active team's initiatives are filtered and paged on the server with " +
@@ -80,9 +81,6 @@ const NOT_FOUND = {
   revision: "No snapshot of a document of the team you act for has that number.",
 };
 
-type Obj = Record<string, unknown>;
-type Answer = { status: number; body: Obj };
-type Route = (req: unknown, res: unknown) => void;
 type Who = { email: string; role: "superadmin" | "member"; team: string };
 type Move = { action: string; stage: string | null; document: string | null; waitingOn: string | null; why: string } | null;
 type Row = { slug: string; flow: string | null; nextMove: Move; state: string; gates: { passed: number; of: number };
@@ -131,18 +129,6 @@ function request(who: Who, query: Record<string, string | string[]>, params: Rec
       "x-zz-pat-team": "", "x-zz-session-team": who.team,
     },
   };
-}
-
-/** Calls the mounted route as Express would, and waits for the answer it sends. */
-function answer(route: Route, req: Obj): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** Each initiative of the seed made through zz-core as the seeded person, then moved where the seed says: its
@@ -498,7 +484,7 @@ async function opened(c: Core, built: Built, people: Who[], empty: string, freef
     "a flow the catalog cannot resolve keeps the fallback's eight, closed drawn once");
 
   step = "every not-found answer is one fixed message naming nothing that was asked for";
-  const asked: [string, () => Promise<Answer>, string, string[]][] = [];
+  const asked: [string, () => Promise<Answered>, string, string[]][] = [];
   for (const who of people) {
     asked.push(
       [`${who.role}: another team's initiative under its own team`, () => open(who, OTHER_TEAM, theirSlug), NOT_FOUND.initiative, [OTHER_TEAM, theirSlug]],

@@ -6,7 +6,7 @@
  *   node checks/table-retention.ts   # one arm needs Docker; exit 2 without it
  *
  * `SCHEMA.md` rule 9: a table nobody can bound says its retention, or it is a table whose growth
- * nobody decided. `checks/comment-completeness.ts:107,114` enforces that rule in general — an
+ * nobody decided. `checks/comment-completeness.ts` enforces that rule in general — an
  * `ephemeral` table, and any table whose own comment calls it unbounded, must carry `retention=`.
  * That check has to be green for every table, so it can only ask whether a value EXISTS, never
  * whether it is TRUE. This is the five things that are `zz.doc_revision`'s alone, and it is
@@ -14,7 +14,7 @@
  * carry a `retention=` today, and a class-wide reading of "is this retention true" is a different
  * job from the one rule 9's first failure needs done.
  *
- * Four arms, because a declaration can be wrong in four ways.
+ * Four arms, because a declaration can be wrong in four ways, run in this order.
  *
  *   (1) DECLARED. The comment in `schema-target/` carries a `retention=` naming the two
  *   constraints that REFUSE a referenced revision's deletion (`doc_id_current_revision_fkey`,
@@ -25,7 +25,18 @@
  *   would reopen the decision. A comment carrying four of those five is a comment a reader acts
  *   on wrongly, so each is named separately rather than matched as a whole.
  *
- *   (2) TRUE OF THE SCHEMA. On a throwaway migrated by the real runner, the catalog's comment for
+ *   (2) THE ARMS REJECT. The five facts are read by one function, and a reader that has stopped
+ *   rejecting is a reader that passes everything. Five planted clauses — a complete one and four
+ *   missing exactly one fact each — are put through that same function, and it must accept the
+ *   first and reject each of the others NAMING the fact it is missing.
+ *
+ *   (3) TRUE OF THE TREE. "No sweep runs" is a claim about code, and this is where it is checked:
+ *   no statement under the write trees deletes a `zz.doc_revision` row, and every statement that
+ *   deletes a `zz.doc` row — the one delete action a revision inherits — carries a `where`. An
+ *   unbounded `delete from zz.doc` would purge every revision in the database without ever naming
+ *   the table this check exists for.
+ *
+ *   (4) TRUE OF THE SCHEMA. On a throwaway migrated by the real runner, the catalog's comment for
  *   the table is read and held to the same five facts — a migration whose `COMMENT ON TABLE`
  *   names the wrong table leaves the target right and the database silent, and `schema-inventory`
  *   reports that as a disagreement rather than as a rule nobody wrote. Then `pg_constraint` is
@@ -34,24 +45,13 @@
  *   `CASCADE`. A comment naming a constraint whose behaviour is not what it says is a comment
  *   that will survive every schema diff and still be false.
  *
- *   (3) TRUE OF THE TREE. "No sweep runs" is a claim about code, and this is where it is checked:
- *   no statement under the write trees deletes a `zz.doc_revision` row, and every statement that
- *   deletes a `zz.doc` row — the one delete action a revision inherits — carries a `where`. An
- *   unbounded `delete from zz.doc` would purge every revision in the database without ever naming
- *   the table this check exists for.
- *
- *   (4) THE ARMS REJECT. The five facts are read by one function, and a reader that has stopped
- *   rejecting is a reader that passes everything. Five planted clauses — a complete one and four
- *   missing exactly one fact each — are put through that same function, and it must accept the
- *   first and reject each of the others NAMING the fact it is missing.
- *
  * DELIBERATE: the retention clause is read with `packages/tools/src/lib/schema-comment.ts`'s field
  * scan, not with a split on `;`. `question` is a sentence and a sentence may carry a semicolon, so
  * a naive split reads a later key's value as the tail of an earlier one; the scan is the one the
  * other comment check uses for that reason, and it lives in the tools package so there is one of it.
  *
  * Exit 0: every arm held. Exit 1: an arm failed, quoting what it read. Exit 2: Docker is not
- * available, so arm 2 could not run — which is not a pass, and is not a failure either.
+ * available, so arm 4 could not run — which is not a pass, and is not a failure either.
  */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -294,7 +294,10 @@ const CONSTRAINTS: { name: string; behaviour: "a" | "c"; what: string }[] = [
   { name: "doc_link_to_doc_id_to_revision_fkey", behaviour: "c", what: "removes a link with the revision it supports" },
 ];
 
-async function migrated(): Promise<void> {
+/** Arm 4's verdict: null when it held, or the failure to report. DELIBERATE: the callback returns
+ *  its failure rather than exiting — `process.exit` inside it skips `withThrowawayDb`'s `finally`,
+ *  and the container and its volume outlive the run. */
+async function migrated(): Promise<string | null> {
   type Throwaway = typeof import("../scripts/schema/throwaway.ts");
   const { withThrowawayDb }: Throwaway =
     await import(pathToFileURL(join(root, "scripts/schema/throwaway.ts")).href) as Throwaway;
@@ -302,20 +305,18 @@ async function migrated(): Promise<void> {
   const { readCatalog }: Catalog =
     await import(pathToFileURL(join(root, "scripts/schema/catalog.ts")).href) as Catalog;
 
-  await withThrowawayDb(async (client) => {
+  return await withThrowawayDb(async (client): Promise<string | null> => {
     const catalog = await readCatalog(client);
     const comment = catalog[TABLE]?.comment ?? null;
     if (comment === null) {
-      console.error(`table-retention: FAILED at "the declaration reached the database": the ` +
+      return `table-retention: FAILED at "the declaration reached the database": the ` +
         `migrated catalog has no comment on zz.${TABLE} — the target declares one and no ` +
-        `migration applies it`);
-      process.exit(1);
+        `migration applies it`;
     }
     const faults = retentionFaults(comment);
     if (faults.length > 0) {
-      console.error(`table-retention: FAILED at "the declaration reached the database": the ` +
-        `catalog's comment says:\n  ${comment}\n  and:\n  ${faults.join("\n  ")}`);
-      process.exit(1);
+      return `table-retention: FAILED at "the declaration reached the database": the ` +
+        `catalog's comment says:\n  ${comment}\n  and:\n  ${faults.join("\n  ")}`;
     }
 
     const { rows } = await client.query<{ conname: string; confdeltype: string }>(
@@ -335,19 +336,23 @@ async function migrated(): Promise<void> {
       }
     }
     if (wrong.length > 0) {
-      console.error(`table-retention: FAILED at "the declaration is true of the schema":\n  ` +
+      return `table-retention: FAILED at "the declaration is true of the schema":\n  ` +
         wrong.join("\n  ") +
         `\n  A comment that outlives the constraint it describes is a comment every schema diff ` +
-        `agrees with, and a reader acts on it.`);
-      process.exit(1);
+        `agrees with, and a reader acts on it.`;
     }
     console.log(`ok  the migrated catalog carries the same declaration, and all ${CONSTRAINTS.length} ` +
       `constraints it names delete the way it says they do`);
+    return null;
   });
 }
 
 try {
-  await migrated();
+  const failed = await migrated();
+  if (failed !== null) {
+    console.error(failed);
+    process.exit(1);
+  }
 } catch (err) {
   if (err instanceof Error && /Docker is not running/.test(err.message)) {
     console.error("table-retention: Docker is not available — the gate requires Docker to run the " +

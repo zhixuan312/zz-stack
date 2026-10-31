@@ -21,9 +21,9 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+import { connectTo, coreDoor } from "./in-process.ts";
 
 process.env.ZZ_CATALOG_DIR ??= join(process.cwd(), "catalog");
 
@@ -65,24 +65,12 @@ for (const f of walk("services")) {
 is(seen >= 60, `only ${seen} registrations found under services/ — this scan is blind`);
 
 // 3. The doors, as a client sees them
-async function toolsOf(server: McpServer) {
-  const [forServer, forClient] = InMemoryTransport.createLinkedPair();
-  await server.connect(forServer);
-  const client = new Client({ name: "checks/tool-annotations.ts", version: "0" });
-  await client.connect(forClient);
-  return (await client.listTools()).tools;
-}
+const toolsOf = async (server: McpServer) =>
+  (await (await connectTo(server, "checks/tool-annotations.ts")).listTools()).tools;
 try {
   const { buildEvalServer } = await import("../services/zz-core/dist/eval-door.js");
-  const { coreServer } = await import("../services/zz-core/dist/orientation.js");
-  const coreSrc = readFileSync("services/zz-core/src/server.ts", "utf8");
-  const core = coreServer("0.0.0-tool-annotations-check");
-  const mods = [...coreSrc.matchAll(/import \{ (register\w+) \} from "(\.\/tools\/[\w-]+)\.js"/g)];
-  is(mods.length > 0, "no tool modules found imported by services/zz-core/src/server.ts — this scan is blind");
-  for (const [, fn, rel] of mods) {
-    const mod = await import(`../services/zz-core/dist/${rel!.replace(/^\.\//, "")}.js`);
-    mod[fn!](core);
-  }
+  const { server: core, registrars } = await coreDoor("0.0.0-tool-annotations-check");
+  is(registrars.length > 0, "no tool modules found imported by services/zz-core/src/server.ts — this scan is blind");
   const served = [...await toolsOf(buildEvalServer()), ...await toolsOf(core)];
   is(served.length >= 40, `the doors served ${served.length} tools — this scan is blind`);
   for (const t of served) {
@@ -91,6 +79,11 @@ try {
   const hint = (n: string) => served.find((t) => t.name === n)?.annotations?.readOnlyHint;
   is(hint("initiative_status") === true, "initiative_status does not reach a client as read-only");
   is(hint("document_write") === false, "document_write does not reach a client as a write");
+  // The tools a door builder that reads one name per import, or only ./tools/, or registers with
+  // no role, would never serve: their hints go unchecked if the door is built short.
+  for (const n of ["bug_report", "bug_list", "bug_resolve", "bug_delete", "knowledge_reindex", "document_shown"]) {
+    is(typeof hint(n) === "boolean", `${n} is not served by the door this check builds — the build is short`);
+  }
 } catch (err) {
   fail.push(`the doors could not be built or listed: ${err instanceof Error ? err.message : String(err)}`);
 }

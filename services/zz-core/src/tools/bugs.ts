@@ -189,7 +189,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       const where: string[] = [];
       const put = (v: unknown): string => { args.push(v); return `$${args.length}`; };
       if (impact) where.push(`b.impact = ${put(impact)}`);
-      // Through the principal, because the column is an id now and nobody searches for one. COUPLED:
+      // Through the principal, because the column is an id and nobody searches for one. COUPLED:
       // the same join below hands the address back, so what is filtered on and what is shown are
       // one thing.
       if (reported_by) where.push(`lower(rp.email) = ${put(reported_by.toLowerCase())}`);

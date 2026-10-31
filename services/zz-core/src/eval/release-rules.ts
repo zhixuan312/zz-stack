@@ -1,5 +1,5 @@
 /**
- * The pure rules the release path decides from (Task I-22/I-23/I-24, FR-49, FR-50, AC-49.1,
+ * The pure rules the release path decides from (FR-49, FR-50, AC-49.1,
  * AC-50.1): promotion, the inputs `release_apply` feeds it, post-release verification and
  * rollback. Everything here is a function of its arguments — no database, no clock, no file —
  * so `checks/eval-release-rules.ts`, `checks/eval-release-apply-pure.ts` and
@@ -36,8 +36,8 @@ import { EVAL_STATE_ENUMS } from "@zz/contracts";
 
 /** The rollback verdict — and the attempt state of the same name — taken from the shared
  *  vocabulary every writer takes its state values from (`EVAL_STATE_ENUMS`), sixth of six. Never
- *  spelled here: group G drops the boolean column of that name, and `checks/release-relations.ts`
- *  reads this file's text for the retired COLUMN spellings. */
+ *  spelled here: it is also the name of a retired boolean column, and
+ *  `checks/release-relations.ts` reads this file's text for retired COLUMN spellings. */
 const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
 interface ReleaseDecisionInput {

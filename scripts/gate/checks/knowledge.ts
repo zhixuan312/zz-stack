@@ -7,22 +7,23 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogSource, gatewaySource, root, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
+import { catalogSource, gatewaySource, repositoryFiles, root, unbuilt, withoutComments, zzCoreSource, zzCoreTools } from "../read.ts";
 import { check } from "../run.ts";
 import { catalogRoot, flows } from "../facts.ts";
 
+/** A zz-core tool's handler, comments stripped, or null when no file registers it. Read file by
+ *  file, so a body never runs on into another module. */
+const toolBody = (name: string): string | null => {
+  const tool = zzCoreTools().find((t) => t.name === name);
+  return tool ? withoutComments(tool.body) : null;
+};
+
 check("_knowledge can never reach zz.initiative", () => {
-  // `_knowledge` is the reserved directory the knowledge store lives in. Until Task I-6,
-  // zz.initiative was derived in reconcileRuns() from arbitrary event/document text, which
-  // could carry `_knowledge` and had to exclude it by name. `initiative_open` is now the one
-  // writer (002_initiative_anchor.sql): it never derives a slug from event or document text,
-  // so the guard changes shape — from an exclusion in a derivation query to asserting the row
-  // is minted only from the platform's own dated name, never a caller's raw, unrefused slug.
-  // COUPLED: the INSERT moved, and the door did not. `initiative_open` is still the one act that
-  // opens an initiative, and it now goes through `recordOpen` in
-  // `services/zz-core/src/initiative-record.ts`, where the row is minted. The store's
-  // `_open.json` and the anchor row became ONE record when the store retired, so the write and
-  // the declaration are the same act and there is one statement to keep honest rather than two.
+  // `_knowledge` is the reserved name the knowledge shelf lives under. `initiative_open` is the
+  // one act that opens an initiative and never derives a slug from event or document text, so
+  // the row is minted only from the platform's own dated name, never a caller's raw, unrefused
+  // slug. COUPLED: the door is tools/initiative-open.ts, and the row is minted by `recordOpen`
+  // in initiative-record.ts.
   const door = "services/zz-core/src/tools/initiative-open.ts";
   const writer = "services/zz-core/src/initiative-record.ts";
   const doorCode = withoutComments(readFileSync(join(root, door), "utf8"));
@@ -247,10 +248,8 @@ check("a knowledge node says which shelf it belongs on", () => {
   // The node format is frozen and carries no tier, so the shelf can only be said at the write.
   // A default would make silence sayable again; the choice is forced between two sayable
   // answers.
-  const src = zzCoreSource();
-  const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
-  if (at < 0) return "knowledge_add is no longer registered";
-  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
+  const body = toolBody("knowledge_add");
+  if (body === null) return "knowledge_add is no longer registered";
   const bad: string[] = [];
   if (!/scope:\s*z\.enum\(\[\s*"team"\s*,\s*"platform"\s*\]\)/.test(body)) {
     bad.push("scope is missing or is not an enum of exactly team and platform");
@@ -266,10 +265,8 @@ check("a knowledge node is written to the shelf its scope names", () => {
   // DELIBERATE: directional. Asserting that both roots and the word platform merely appear
   // lets an inverted implementation — the platform branch resolving userRoot() — satisfy every
   // assertion while filing every node on the wrong shelf.
-  const src = zzCoreSource();
-  const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
-  if (at < 0) return "knowledge_add is no longer registered";
-  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
+  const body = toolBody("knowledge_add");
+  if (body === null) return "knowledge_add is no longer registered";
   const bad: string[] = [];
   // COUPLED: the two shelves are `KNOWLEDGE_TEAM` and the caller's own team now, not two
   // directories — a node is a `zz.knowledge_node` row whose shelf is a `team_id`, so the shelf
@@ -293,10 +290,8 @@ check("a platform-scoped node is about a registry entry", () => {
   // DELIBERATE: not anchored on ERROR: with a quote-excluding character class. The refusal's
   // quoted scope value sits between the anchor and the phrase, so such a class would stop
   // before reaching it and the check could never pass.
-  const src = zzCoreSource();
-  const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
-  if (at < 0) return "knowledge_add is no longer registered";
-  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
+  const body = toolBody("knowledge_add");
+  if (body === null) return "knowledge_add is no longer registered";
   if (!/SUBJECT_KINDS/.test(body)) {
     return "knowledge_add does not consult SUBJECT_KINDS — a platform node's tags are unchecked, or the five kinds were restated somewhere they can drift";
   }
@@ -310,10 +305,8 @@ check("a team-scoped node cannot be written by somebody in no team", () => {
   // userRoot() falls back to a personal directory outside teams/ when teamFor() is falsy, so a
   // team-scoped write from a teamless caller would report success and land where team-gated
   // search can never reach it.
-  const src = zzCoreSource();
-  const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
-  if (at < 0) return "knowledge_add is no longer registered";
-  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
+  const body = toolBody("knowledge_add");
+  if (body === null) return "knowledge_add is no longer registered";
   const bad: string[] = [];
   if (!/you are not in a team/.test(body)) {
     bad.push("knowledge_add does not refuse a team-scoped write from a caller with no team — the node would land in a personal directory nothing can search");
@@ -335,7 +328,6 @@ check("every act on the knowledge base leaves a record naming who did it", () =>
   // this. DELIBERATE: scoped to tools/knowledge.ts — knowledge_reconcile lives elsewhere and
   // reads zz.decision and zz.event rather than the shelves, so it is not an act on the
   // knowledge base.
-  const src = zzCoreSource();
   const MODULE = "services/zz-core/src/tools/knowledge.ts";
   const mod = readFileSync(join(root, MODULE), "utf8");
   const names = [...mod.matchAll(/registerTool\(\s*\n?\s*"(knowledge_[a-z_]+)"/g)].map((m) => m[1]);
@@ -347,9 +339,8 @@ check("every act on the knowledge base leaves a record naming who did it", () =>
   }
   const bad: string[] = [];
   for (const name of names) {
-    const at = src.indexOf(`registerTool(\n    "${name}"`);
-    if (at < 0) { bad.push(`${name} is no longer registered where this can read it`); continue; }
-    const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
+    const body = toolBody(name);
+    if (body === null) { bad.push(`${name} is no longer registered where this can read it`); continue; }
     if (!/platformEvent\(/.test(body)) {
       bad.push(`${name} leaves no record naming the caller — it acts on the knowledge base and ` +
                "the journal cannot say who, when, or on what");
@@ -362,10 +353,8 @@ check("supersession stays on one shelf and knows which", () => {
   // Ids restart at 0001 on each shelf, so the same number exists in two places. A resolver
   // returning only a path would pick whichever it looked at first and relabel somebody else's
   // node.
-  const src = zzCoreSource();
-  const at = src.indexOf(`registerTool(\n    "knowledge_supersede"`);
-  if (at < 0) return "knowledge_supersede is no longer registered";
-  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
+  const body = toolBody("knowledge_supersede");
+  if (body === null) return "knowledge_supersede is no longer registered";
   const bad: string[] = [];
   // COUPLED: a shelf is a NAME resolved to `zz.knowledge_node.team_id` now, so the resolver takes
   // the shelf it is looking on rather than a root. Both must be looked at, and the refusal must
@@ -452,10 +441,8 @@ check("a closed initiative owes nothing, and can still be handed over", () => {
 
 check("close names the handover document and not a file that was abolished", () => {
   // A tool's own return text is documentation and rots like it.
-  const src = zzCoreSource();
-  const at = src.indexOf(`registerTool(\n    "initiative_close"`);
-  if (at < 0) return "close is no longer registered";
-  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
+  const body = toolBody("initiative_close");
+  if (body === null) return "close is no longer registered";
   const bad: string[] = [];
   if (/learnings\.md/.test(body)) bad.push("close still names learnings.md, which zz-handover abolished");
   if (!/handover\.md/.test(body)) bad.push("close does not name the handover document the initiative now needs");
@@ -467,21 +454,13 @@ check("the retired sdlc closing skill is gone, everywhere it was not history", (
   // reads the whole repository, this module included, so a literal would find its own source.
   // Neither the title nor any comment here may contain it.
   //
-  // The gate's own source stays inside the walk: the removal must also retire any gate check
-  // naming the skill. CHANGELOG.md is exempt because it is history.
+  // The gate's own source stays inside the sweep: the removal must also retire any gate check
+  // naming the skill. CHANGELOG.md is exempt because it is history. What git ignores is not the
+  // repository, so a local note cannot turn this red on one machine.
   const needle = ["sdlc", "record"].join("-");
-  const bad: string[] = [];
-  const skipped = /(^|\/)(CHANGELOG\.md|node_modules|\.git|dist)(\/|$)/;
-  const walk = (dir: string): void => {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const p = join(dir, e.name);
-      if (skipped.test(p.slice(root.length + 1))) continue;
-      if (e.isDirectory()) { walk(p); continue; }
-      if (!/\.(md|json|mjs|ts|js)$/.test(e.name)) continue;
-      if (readFileSync(p, "utf8").includes(needle)) bad.push(p.slice(root.length + 1));
-    }
-  };
-  walk(root);
+  const bad = repositoryFiles()
+    .filter((f) => /\.(md|json|mjs|ts|js)$/.test(f) && f !== "CHANGELOG.md")
+    .filter((f) => readFileSync(join(root, f), "utf8").includes(needle));
   const dir = join(root, "catalog/sdlc/sdlc-flow/skills", needle);
   if (existsSync(dir)) bad.push(dir.slice(root.length + 1) + "/ still exists");
   return bad.length ? `${needle} survives in: ${bad.join(", ")}` : null;

@@ -1,24 +1,21 @@
 /**
- * DISCOVER (FR-11, Task I-9): mining real, recorded failures into candidate failure modes
+ * DISCOVER (FR-11): mining real, recorded failures into candidate failure modes
  * before any protocol exists. `failure_discover(observation_snapshot_id)` reads one immutable
- * `zz.eval_observation_snapshot` (OBSERVE, Task I-7) and writes, for every group it finds
- * (Task I-24):
+ * `zz.eval_observation_snapshot` (OBSERVE) and writes, for every group it finds:
  *
  *   - one `zz.eval_failure_mode` — the failure mode's IDENTITY, `(plugin_id, stable_key)`, which
  *     is current state: a later run that finds the same rule on the same tool resolves to that
- *     row rather than minting a second mode. Its description is the FIRST sighting's, which is
- *     what Task I-20's migration kept when it split the old candidate rows this way.
+ *     row rather than minting a second mode. Its description is the FIRST sighting's.
  *   - one `zz.eval_failure_mode_sighting` — the FINDING of it in this one snapshot: immutable
  *     history, carrying its own prevalence, its owner kind and ref, and the evidence behind them.
  *     `discovery_key` is the stable key it was discovered under.
  *
  * Neither write is a judgement about whether the mode is real. What DISCOVER produces is raw
- * material for DEFINE/QUALIFY: `protocol_record` (Task I-23) is what folds one in, writing the
+ * material for DEFINE/QUALIFY: `protocol_record` is what folds one in, writing the
  * `eval_protocol_failure_mode` row, and `protocol_read`'s `open_candidates` is a sighting of a
  * mode no version of this plugin's protocol has folded in yet. The response still names its array
  * `candidates`, because that is what these sightings are to the stage that reads them — the
- * proposals a `failureTaxonomy` entry may accept, merge or leave uncited (see the plan's own
- * boundary: final deliverable content is not in this plan).
+ * proposals a `failureTaxonomy` entry may accept, merge or leave uncited.
  *
  * Two passes over the evidence, both in `discover-groups.ts`:
  *   - deterministic grouping first, over refusal text/owner/failing tool and over stage-return
@@ -106,7 +103,7 @@ for (const k of EVAL_STATE_ENUMS.ownerKind) {
   if (!OWNER_KIND_MEANING[k]) throw new Error(`discover.owner_kind evaluator has no meaning for owner_kind "${k}"`);
 }
 
-/** The one evaluator this task defines (FR-13, FR-15): a `choice` over exactly
+/** The one evaluator DISCOVER defines (FR-13, FR-15): a `choice` over exactly
  *  `EVAL_STATE_ENUMS.ownerKind`, so its answer is in this table's vocabulary by construction —
  *  `askEvaluatorQuestion` cannot return an option this schema did not declare. */
 const OWNER_KIND_EVALUATOR: EvaluatorDefinition = {
@@ -125,7 +122,7 @@ const OWNER_KIND_EVALUATOR: EvaluatorDefinition = {
 /** One sighting as `failure_discover`'s response carries it: the finding of one failure mode in
  *  the snapshot this call mined, and the identity it belongs to. Two sightings that carry the same
  *  `failure_mode_id` are two windows' evidence of one failure mode, which is the whole reason the
- *  identity and the sighting are two rows (Task I-24). */
+ *  identity and the sighting are two rows. */
 interface SightingOut {
   /** The sighting — the id a `failureTaxonomy` entry names as its `candidateId`, and what
    *  `protocol_record` resolves to the identity it folds in. */
@@ -162,10 +159,9 @@ interface Snapshot {
  *  refused call writes no ledger row. A malformed uuid refuses the same way an unknown one does,
  *  rather than reaching Postgres and surfacing `::uuid`'s own error text.
  *
- *  The plugin is reached the way every other reader of this table reaches it now (Task I-20): the
- *  snapshot names a `plugin_version_id` itself, so `zz.eval_subject_version` — whose single fact
- *  was that pair — is gone. A snapshot whose window never resolved stores NULL on both window
- *  columns, and DISCOVER reads that as the same empty range a fresh OBSERVE used
+ *  The plugin is reached the way every other reader of this table reaches it: the snapshot names
+ *  a `plugin_version_id` itself. A snapshot whose window never resolved stores NULL on both window
+ *  columns, and DISCOVER reads that as the same empty range a fresh OBSERVE uses
  *  (`observe.ts`'s `windowOf`): the two grouping passes then find nothing in it, which is the
  *  honest result for a window that observed nothing. */
 async function resolveSnapshot(pool: pg.Pool, id: string): Promise<Snapshot | null> {
@@ -261,7 +257,7 @@ function returnSubject(g: ReturnGroup): string {
     "A return means a stage already passed was entered again later in the same initiative.";
 }
 
-/** The one generative-critic call this task makes (FR-11's own carve-out): a refusal group with
+/** The one generative-critic call DISCOVER makes (FR-11's own carve-out): a refusal group with
  *  no recorded text at all, which the deterministic pass has nothing to build a description
  *  from. Reuses `judge.ts`'s reading-judge `ask()` — the platform's one existing way to reach a
  *  larger model outside the typed service — under its own `purpose` so its `zz.model_call` rows
@@ -317,9 +313,7 @@ async function criticDescribe(
  *  under that key yet, and the id every sighting of it carries in `failure_mode_id`.
  *
  *  `on conflict do nothing` and then a read-back, rather than `do update`: the identity's
- *  description is its FIRST sighting's, which is what Task I-20's migration kept when it split the
- *  candidate rows this way (`(array_agg(c.description order by c.created_at))[1]`), and a
- *  `do update` would rewrite it with whatever wording this run's own prevalence figures happened
+ *  description is its FIRST sighting's, and a `do update` would rewrite it with whatever wording this run's own prevalence figures happened
  *  to produce. The read-back is also what makes a concurrent run that inserted the same key in
  *  another transaction a wait rather than a unique violation inside this ledger transaction.
  *
@@ -352,8 +346,7 @@ async function resolveFailureMode(
  *  The ownership is written three ways on purpose, and they are one fact: `owner_kind` and
  *  `owner_ref` are what a reader joins on, `ownership_reason` is what the evaluator answered (or
  *  the outage that stopped it), and the `ownership` entry inside `evidence_refs` is the provenance
- *  trail Task I-20's migration derives the first two from — so a sighting DISCOVER writes now
- *  reads exactly like one the migration carried over. The prevalence is two columns rather than a
+ *  trail the first two derive from. The prevalence is two columns rather than a
  *  jsonb object, so `prevalence_numerator <= prevalence_denominator` is a constraint the database
  *  holds rather than a shape a reader hopes for. */
 async function insertSighting(
@@ -521,7 +514,7 @@ async function insertPlanned(
  *  same key string against the same snapshot are two different requests, not one. So every sighting
  *  this file inserts carries both its `principal` and its `idempotency_key` inside
  *  `evidence_refs` (the `discovery_run` entry), and a replay filters on both — the same pair
- *  `withIdempotency`'s own ledger already used to decide this was a replay in the first place.
+ *  `withIdempotency`'s own ledger uses to decide this is a replay in the first place.
  *  `discovered_by` names the principal too, but not which call, and a replay is a claim about
  *  which call. */
 async function readBackCandidates(

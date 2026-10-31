@@ -255,7 +255,8 @@ export const COV_SKILLS: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/skill-claims.ts",
-    target: "a heading that counts its own list counts it right",
+    target: "a skill that counts its own contents counts them right",
+    assertion: "a count spelled as a word ahead of the heading's subject is held to its list",
     subject: `${SDLC}/sdlc-investigate/SKILL.md`,
     find: "### Five Investigation Perspectives",
     replace: "### Six Investigation Perspectives",
@@ -292,7 +293,7 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     subject: PLATFORM,
     find: "| plugin evaluation | `/eval/mcp` |",
     replace: "| plugin evaluation | `/core/mcp` |",
-    planted: "the roster puts the eleven evaluation tools on the baseline door, and zz-platform " +
+    planted: "the roster puts the evaluation tools on the baseline door, and zz-platform " +
       "ships in the required package — so every account on this platform is told it can call " +
       "tools that are not on its surface",
   },

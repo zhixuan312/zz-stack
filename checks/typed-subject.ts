@@ -6,18 +6,13 @@
 // child key that kind requires, and `eval_idempotency` is keyed by `(principal_id, tool,
 // idempotency_key)` rather than by the address the call was made from.
 //
-// Both were broken in the same way — the migration moved and every reader and writer kept spelling
-// the old shape. The phase-3 migration replaced `eval_assessment.subject_ref` with six typed
-// columns and added the kind-shape CHECK that makes a wrong combination unwritable; it replaced
-// `eval_idempotency.principal` with `principal_id uuid not null`, re-keyed the primary key and
-// added the foreign key. A statement still writing `principal` dies with `column "principal"
-// does not exist` BEFORE its own work, which is how every `/eval` mutator was dead on a migrated
-// database while this suite was green. The migration folded back into `001_init.sql` once release
-// 0.84.0 was verified in production, and that declaration is what this reads.
+// The declaration is `001_init.sql`, and a statement that writes a column it does not declare
+// dies with `column "…" does not exist` before its own work — so a writer that spells another
+// shape is dead on a migrated database however cleanly it compiles.
 //
 // Read, not run. The declaration is plain SQL, so the constraint text and the column lists are read
 // directly — `pg_dump` output, so its keywords are upper case and its shape is `CREATE TABLE`
-// clauses where the migration had `alter table`; in the write trees a statement is the text of the
+// clauses; in the write trees a statement is the text of the
 // string or template literal that carries it, found from the verb that opens it —
 // `checks/insert-arity.ts` reads statements the same way, and `checks/dropped-columns.ts` carries
 // the scanner this file's `literalAround` is a narrow form of.
@@ -40,8 +35,8 @@
 //
 // DELIBERATE: the six kinds are read from the CHECK rather than listed here, and the columns each
 // kind requires are read out of its own branch. A list in this file would agree with a CHECK that
-// had been narrowed to five. `doc_revision` is deliberately not one of the five: it is a Phase-6
-// pin on a `document` subject (AC-6.7), so a `document` branch that also requires it must not be
+// had been narrowed to five. `doc_revision` is deliberately not one of the five: it is a pin
+// on a `document` subject (AC-6.7), not a foreign key, so a `document` branch that also requires it must not be
 // read as a defect, and the branch parser ignores every term that is not one of the five child
 // foreign keys.
 //
@@ -55,18 +50,14 @@ import { join } from "node:path";
 const ROOTS = ["services", "packages", "scripts", "deploy"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 
-/** The declaration that gives the table this shape. The phase-3 migration was the file that
- *  retired `subject_ref` and `principal`; it folded back into `001_init.sql` once 0.84.0 was
- *  verified in production, so `001_init.sql` is now the one read for the target shape. */
+/** The declaration that gives the table this shape. */
 const MIGRATION = "services/gateway/migrations/001_init.sql";
 
 /** The five child foreign keys, in the order the table declares them. `run_level` names none of
- *  them. `doc_revision` is not here: it is not a foreign key, and Phase 6 owns it. */
+ *  them. `doc_revision` is not here: it is not a foreign key. */
 const CHILD_COLUMNS = ["run_id", "doc_id", "knowledge_node_id", "bug_id", "event_id"] as const;
 
-/** What each child column references after this phase. `run_id` is the one that moved: the table it
- *  names was `zz.run` and is `zz.skill_run` now, and a foreign key still pointing at the old name
- *  would be refused by the server. */
+/** What each child column references. */
 const CHILD_TARGET: Record<string, string> = {
   run_id: "zz.skill_run",
   doc_id: "zz.doc",
@@ -133,7 +124,7 @@ function columnsOf(table: string): Map<string, string> {
 // The body is split on the only thing that starts a branch, so a branch that stops requiring its
 // child — or that starts requiring two — is a change here rather than a string that still appears
 // somewhere in the file. A literal that is not one of the five child columns (today: `doc_revision`)
-// is parsed and dropped, which is what keeps this check out of Phase 6's way.
+// is parsed and dropped, so a branch may carry a pin beside its child.
 function kindBranches(body: string): Map<string, Set<string>> | null {
   // The leading branch opens with `(` and the rest with `or (`; the optional `or` is what keeps
   // `run_level` — the one kind that requires no child — from being dropped off the front of the
@@ -243,9 +234,8 @@ for (const column of ["subject_kind", "run_id", "doc_id", "doc_revision", "knowl
 }
 
 // The retired spellings: a column the writer must not name, and the free-text ref they replace.
-// The migration dropped both, and the declaration states that by not carrying them: either name
-// in the column list means the table carries the free-text shape beside the typed one, and a
-// reader could not say which is the subject.
+// The declaration must carry neither: either name in the column list means the table carries the
+// free-text shape beside the typed one, and a reader could not say which is the subject.
 for (const gone of ["subject_ref", "answer"]) {
   if (SUBJECT_COLUMNS.has(gone)) {
     fail.push(`FAIL: ${MIGRATION} still declares eval_assessment.${gone} — the table carries the ` +
@@ -374,7 +364,7 @@ for (const { path, line, columns, valueSlots, args } of inserts) {
   // The retired spellings, on the write path rather than in the DDL.
   for (const dead of ["subject_ref", "evaluator_version_id", "evidence_ref", "answer", "policy_version", "resulting_action"]) {
     if (columns.includes(dead)) {
-      fail.push(`FAIL: ${at} — the insert names eval_assessment.${dead}, which this phase drops: ` +
+      fail.push(`FAIL: ${at} — the insert names eval_assessment.${dead}, which the table does not declare: ` +
                 "the migrated table refuses the statement, so the row is never written");
     }
   }
@@ -447,8 +437,8 @@ for (const path of writerPaths) {
       }
     }
     if (/\belse\b/.test(projection)) {
-      fail.push(`FAIL: ${path}'s subject_ref projection has an \`else\` branch — a kind this phase ` +
-                "adds would resolve to a ref nobody wrote, instead of to nothing");
+      fail.push(`FAIL: ${path}'s subject_ref projection has an \`else\` branch — a kind added later ` +
+                "would resolve to a ref nobody wrote, instead of to nothing");
     }
   }
 }
@@ -457,9 +447,8 @@ for (const path of writerPaths) {
 // The ledger.
 // ---------------------------------------------------------------------------------------------
 
-// `principal_id` and the retired `principal` address are read off the table's own column list —
-// "declared not null" and "not declared" are the same two facts the migration established with
-// `alter table` — and the two keys as the constraints the declaration carries.
+// `principal_id` and the retired `principal` address are read off the table's own column list,
+// and the two keys as the constraints the declaration carries.
 const LEDGER_COLUMNS = columnsOf("zz.eval_idempotency");
 if (!LEDGER_COLUMNS.has("principal_id")) {
   fail.push(`FAIL: ${MIGRATION} declares no eval_idempotency.principal_id — the ledger is not ` +
@@ -515,7 +504,7 @@ if (ledger) {
     const sql = text.replace(/--[^\n]*/g, "").replace(/zz\.principal/g, "");
     if (/\bprincipal\b/.test(sql)) {
       fail.push(`FAIL: ${LEDGER}:${line} — a statement against zz.eval_idempotency reads the column ` +
-                "`principal`, which this phase drops: every mutator that reaches it dies with " +
+                "`principal`, which the table does not declare: every mutator that reaches it dies with " +
                 'column "principal" does not exist before doing its own work');
     }
   }

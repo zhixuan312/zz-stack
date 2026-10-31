@@ -1,5 +1,5 @@
 /**
- * `release_verify` (Task I-24, FR-50, AC-50.1): the automatic, no-gate check a released candidate
+ * `release_verify` (FR-50, AC-50.1): the automatic, no-gate check a released candidate
  * crosses after `release_record` moves it to `released` — judged on REAL use, never on replays.
  * Replaying past initiatives before a release cost more tokens than the evidence was worth, so an
  * improvement is released once built, gated and approved, and this file decides afterwards
@@ -31,16 +31,16 @@ import { releaseActorRefusal } from "./release-record.js";
 import { verifyDecision } from "./release-rules.js";
 import { Refusal } from "../refusal.js";
 
-/** The response field this tool has always answered with — the promote-verify skill documents it
- *  and `release_verify`'s own description states it — kept byte-for-byte while group G retires
- *  the column behind it: the released version is `release_attempt.released_plugin_version_id`
- *  now, and this name is the wire. Held as a template over its own parts so that
+/** The response field this tool answers with — the promote-verify skill documents it and
+ *  `release_verify`'s own description states it — kept byte-for-byte although no column is behind
+ *  it: the released version is `release_attempt.released_plugin_version_id`, and this name is the
+ *  wire. Held as a template over its own parts so that
  *  `checks/release-relations.ts`, which scans this file's text for the retired COLUMN spellings,
  *  does not read the wire name as a column read. */
 const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
 /** The rollback verdict and attempt state, from the shared vocabulary every writer takes its
- *  state values from (`EVAL_STATE_ENUMS`), sixth of six. Never spelled here: group G drops the
- *  boolean column of that name and the scan above reads this file's text. */
+ *  state values from (`EVAL_STATE_ENUMS`), sixth of six. Never spelled here: it is also the name
+ *  of a retired boolean column, and the scan above reads this file's text. */
 const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
 /** The protocol version's `improvement.release`, or the refusal naming why there is none. No
@@ -61,12 +61,12 @@ interface AttemptRow {
   readonly id: string;
   readonly status: string;
   readonly candidate_id: string;
-  /** The base release — the CANDIDATE's own immutable column (group G: the attempt's copy of it
-   *  is gone, and the candidate is where the fact lives). */
+  /** The base release — the CANDIDATE's own immutable column: the candidate is where the fact
+   *  lives, and the attempt carries no copy. */
   readonly base_plugin_version_id: string;
   readonly released_plugin_version_id: string | null;
-  /** The evidence a decided verdict rests on, and nothing else: group G moved the verdict and
-   *  the moment it landed to their own columns and left `verification` the numbers. */
+  /** The evidence a decided verdict rests on, and nothing else: the verdict and the moment it
+   *  landed are their own columns, and `verification` holds the numbers. */
   readonly verification: Evidence | null;
   readonly verdict: string | null;
   /** The applier's own address, resolved through the principal `applied_by` names — see
@@ -132,9 +132,9 @@ async function loadAttempt(p: pg.Pool, id: string): Promise<AttemptRow | null> {
   return row ?? null;
 }
 
-/** The reason a RECORDED verdict was reached, read off the numbers it recorded. Group G keeps
- *  the evidence in `verification` and the verdict in its own column, and the verdict's prose
- *  reason was not among the carried-over facts — so it is replayed here from `verifyDecision`'s
+/** The reason a RECORDED verdict was reached, read off the numbers it recorded. The evidence is
+ *  in `verification` and the verdict in its own column, and no column holds the verdict's prose
+ *  reason — so it is replayed here from `verifyDecision`'s
  *  own mapping over the stored figures, never re-decided: no live score is read again, and a
  *  verdict the evidence no longer explains is reported as such rather than invented. */
 function recordedReason(verdict: string, evidence: Evidence | null): string {
@@ -158,8 +158,8 @@ async function decidedOutcome(p: pg.Pool, attempt: AttemptRow, releasedId: strin
   };
 }
 
-/** The rollback the CLI executes when the verdict is a rollback, rebuilt on READ: group G keeps
- *  no copy of it (plugin, declared version and the prior version are all reachable), so it is
+/** The rollback the CLI executes when the verdict is a rollback, rebuilt on READ: no row keeps
+ *  a copy of it (plugin, declared version and the prior version are all reachable), so it is
  *  assembled from the candidate's own base release and that release's subject. `null` when the
  *  base release no longer resolves — a plan that named nothing would send the CLI to restore
  *  nothing, which is the one thing it must not do. */
@@ -266,7 +266,7 @@ export async function verifyRelease(
   // Already resolved, on ANY idempotency_key — a rollback verdict may since have been executed
   // (status moved to the rollback state by release_record) or may still be awaiting
   // rollback.ts; either way this is a read-back, never a re-decision. The verdict is its own
-  // column (group G), the rollback plan is rebuilt from the candidate's base release, and the
+  // column, the rollback plan is rebuilt from the candidate's base release, and the
   // verdict's reason is replayed off the evidence it recorded.
   if (attempt.verdict) return await decidedOutcome(p, attempt, releasedId);
 
@@ -306,7 +306,7 @@ export async function verifyRelease(
   const rollback_plan = decision.verdict === ROLLBACK_STATE ? await rollbackPlanFor(p, attempt) : null;
 
   // One write, CAS'd on no verdict yet: two concurrent resolving calls record one decision. The
-  // verdict and the moment it landed are their own columns (group G), each a query's own
+  // verdict and the moment it landed are their own columns, each a query's own
   // predicate; `verification` keeps the evidence the verdict rests on.
   const ledger: IdempotencyOutcome<{ id: string }> = await withIdempotency(
     principal, "release_verify", idempotencyKey, { release_attempt_id: attempt.id },

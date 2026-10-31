@@ -70,8 +70,10 @@ for (const dir of ["skills", "catalog", "marketplace"]) {
     if (/\/zz:[a-z]/.test(readFileSync(p, "utf8"))) fail.push(`${p} still uses the /zz: command prefix`);
   }
 }
-// Control: the Postgres schema keeps the name zz.
-if (!/schema|"zz"/.test(readFileSync("services/gateway/src/db.ts", "utf8"))) {
+// Control: the Postgres schema keeps the name zz — the statement that creates it and the
+// search_path every connection pins.
+const db = readFileSync("services/gateway/src/db.ts", "utf8");
+if (!/create schema if not exists zz"/.test(db) || !/search_path=zz,public"/.test(db)) {
   fail.push("the Postgres schema name zz was renamed; it must not change");
 }
 

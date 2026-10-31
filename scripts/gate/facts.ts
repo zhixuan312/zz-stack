@@ -11,10 +11,10 @@
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { manifestPaths } from "../manifests.ts";
-import { codeOnly, contractsSource, gatewaySource, root, sourceFiles, trackedFiles, withoutComments, zzCoreTools, errMessage } from "./read.ts";
+import { codeOnly, contractsSource, errMessage, functionBody, gatewaySource, root, sourceFiles, toolsIn, trackedFiles, withoutComments, zzCoreTools } from "./read.ts";
 
 export const MANIFESTS = manifestPaths(root);
 
@@ -25,15 +25,6 @@ export function ownedFields() {
   const src = contractsSource();
   const block = /export const PLATFORM_OWNED = \[([^\]]*)\]/.exec(src)?.[1] ?? "";
   return [...block.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
-}
-
-/** The platform's own skills: every directory under skills/ holding a SKILL.md, whatever flow
- *  a team runs. Both callers want all of them, so no count is stated. */
-export function platformSkills() {
-  const dir = join(root, "skills");
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && existsSync(join(dir, e.name, "SKILL.md")))
-    .map((e) => ({ name: e.name, path: join(dir, e.name, "SKILL.md") }));
 }
 
 /**
@@ -120,16 +111,9 @@ export const NAMING = (() => {
   try {
     // The catalog package, which every reader of the rule imports it from.
     const src = readFileSync(join(root, "packages/catalog/src/index.ts"), "utf8");
-    const grab = (name: string): string => {
-      const at = src.indexOf(`function ${name}(`);
-      if (at < 0) throw new Error(`@zz/catalog no longer defines ${name}()`);
-      const body = src.slice(src.indexOf("{", at), src.indexOf("\n}", at) + 2);
-      return body.replace(/:\s*string/g, "");          // the types, which JS has no use for
-    };
-    return {
-      pluginName: new Function("flow", grab("pluginName").slice(1, -1)),
-      error: null,
-    };
+    const body = functionBody(src, "pluginName");
+    if (body === null) throw new Error("@zz/catalog no longer defines pluginName()");
+    return { pluginName: new Function("flow", body), error: null };
   } catch (err) {
     // A sentence, not a stack trace out of module scope: three checks depend on this and each
     // reports the failure itself, naming the file that moved.
@@ -191,8 +175,9 @@ export const BASELINE = "zz-core";
 export const skillsDirOf = (f: CatalogPackage): string =>
   (f.flow === BASELINE ? join(root, "skills") : join(f.dir, "skills"));
 
+/** A package's skills, read from wherever it ships them — for the baseline, `skills/`. */
 export const skillsOf = (f: CatalogPackage): { name: string; path: string }[] => {
-  const dir = join(f.dir, "skills");
+  const dir = skillsDirOf(f);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((s) => existsSync(join(dir, s, "SKILL.md")))
@@ -326,6 +311,32 @@ export function platformSurface(): PlatformSurface {
 
   SURFACE = { served, nouns, verbs, params, actions, fields, foreign: FOREIGN, occurrences, closed };
   return SURFACE;
+}
+
+/** The factory of zz-core's evaluation door and of the gateway's /manage door. */
+export const EVAL_DOOR = "services/zz-core/src/eval-door.ts";
+export const MANAGE_DOOR = "services/gateway/src/access-door.ts";
+
+/**
+ * The tools one door serves, derived from its factory file: those it registers itself, and those
+ * of every module it imports a `register…` function from. A string is the reason it cannot say.
+ *
+ * Read off the door's own imports rather than off where modules sit, so a module mounted on the
+ * door is counted wherever its file lives, and one that is not is never counted.
+ */
+export function doorTools(door: string): Set<string> | string {
+  if (!existsSync(join(root, door))) return `${door} is gone`;
+  const src = readFileSync(join(root, door), "utf8");
+  const files = [door];
+  for (const m of withoutComments(src).matchAll(/^import \{([^}]*)\} from "(\.\.?\/[\w/.-]+)\.js"/gm)) {
+    if (!/\bregister\w+/.test(m[1])) continue;
+    const rel = join(dirname(door), `${m[2]}.ts`);
+    if (!existsSync(join(root, rel))) return `${door} imports ${m[2]}, which is not there`;
+    files.push(rel);
+  }
+  const tools = new Set<string>();
+  for (const rel of files) for (const t of toolsIn(readFileSync(join(root, rel), "utf8"))) tools.add(t.name);
+  return tools.size ? tools : `${door} and the ${files.length - 1} module(s) it mounts register no tool this can see`;
 }
 
 /** Does this name claim a tool on the platform's own surface? A `<noun>_<verb>` shape whose

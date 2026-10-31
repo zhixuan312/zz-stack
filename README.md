@@ -269,12 +269,7 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             checkout, and records whether the check noticed — mutation/ holds the
             workspace, the planting and
             one spec per check, and the answer lands in
-            testing/mutation-report.json), activation-rehearsal.ts (rehearses
-            deploy/activation-runbook.json against nothing live: it derives the blocker list from the runbook itself, proves a
-            precondition cannot be waived by deep-copying the document and trying,
-            and refuses to start if any database URL is set in the environment —
-            it exits non-zero while a precondition is blocked, which today is all
-            eight of them), schema-target-extract.ts (prints how PostgreSQL renders the tables
+            testing/mutation-report.json), schema-target-extract.ts (prints how PostgreSQL renders the tables
             named, from a throwaway database this checkout's migrations built, so a
             hand-written entry of the root-level schema target spells its types, checks
             and indexes exactly; it writes nothing — schema/ holds the throwaway database,

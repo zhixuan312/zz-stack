@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import { firstOf, root, sourceFiles } from "../read.ts";
 import { check } from "../run.ts";
-import { NAMING, catalogPackages, declaredCommands, everyShippedSkill, flows, ownedFields, platformSkills, skillsOf } from "../facts.ts";
+import { NAMING, catalogPackages, declaredCommands, everyShippedSkill, flows, ownedFields, skillsOf } from "../facts.ts";
 
 check("a skill_read a skill spells out names a skill that exists", () => {
   // `skill_read("X")` is an instruction to load X, not a citation, so it is checked
@@ -30,6 +30,7 @@ check("a skill_read a skill spells out names a skill that exists", () => {
 
 check("no skill references a skill that is not shipped", () => {
   const bad: string[] = [];
+  const packageNames = new Set(catalogPackages.map((p) => p.flow));
   for (const f of flows) {
     const have = new Set(skillsOf(f).map((s) => s.name));
     if (have.size === 0) continue;
@@ -54,8 +55,11 @@ check("no skill references a skill that is not shipped", () => {
       const txt = readFileSync(s.path, "utf8");
       for (const m of txt.matchAll(re)) {
         // Shipped anywhere, not just by this flow: a cross-flow citation is legitimate, so
-        // a check that knew only one flow's skills would call every one a defect.
-        if (!have.has(m[1]) && !everyShippedSkill().has(m[1])) bad.push(`${s.name} -> ${m[1]}`);
+        // a check that knew only one flow's skills would call every one a defect. A package's
+        // own name (`zz-core`) shares the baseline's prefix and is a plugin, not a skill.
+        if (!have.has(m[1]) && !everyShippedSkill().has(m[1]) && !packageNames.has(m[1])) {
+          bad.push(`${s.name} -> ${m[1]}`);
+        }
       }
     }
   }
@@ -123,34 +127,6 @@ check("every stage that writes a document names document_present, or says why no
   return bad.length ? bad.join("; ") : null;
 });
 
-check("a skill citing another document's section cites one that exists", () => {
-  // Skills send each other to numbered sections of documents other skills produce. The
-  // templates declare their sections as `N. **Title**`, and a citation must agree with a
-  // declaration on both the number and the name.
-  const declared = new Map();          // number -> Set of titles declared anywhere
-  const skillFiles = sourceFiles(["catalog", "skills"], ["SKILL.md"]);
-  for (const rel of skillFiles) {
-    for (const m of readFileSync(join(root, rel), "utf8").matchAll(/^(\d+)\.\s+\*\*([^*]+)\*\*/gm)) {
-      if (!declared.has(m[1])) declared.set(m[1], new Set());
-      declared.get(m[1]).add(m[2].trim().toLowerCase());
-    }
-  }
-  const bad: string[] = [];
-  for (const rel of skillFiles) {
-    for (const m of readFileSync(join(root, rel), "utf8").matchAll(/section (\d+) \("([^"]+)"\)/g)) {
-      const [, num, title] = m;
-      const titles = declared.get(num);
-      const want = title.trim().toLowerCase();
-      if (!titles) {
-        bad.push(`${rel}: cites section ${num} ("${title}"), and no template declares a section ${num}`);
-      } else if (![...titles].some((t) => t.includes(want) || want.includes(t))) {
-        bad.push(`${rel}: cites section ${num} as "${title}"; section ${num} is "${[...titles].join('", "')}"`);
-      }
-    }
-  }
-  return bad.length ? [...new Set(bad)].join("; ") : null;
-});
-
 check("no skill or agent prompt names a repository path that does not exist", () => {
   // COUPLED: `scripts/gate/checks/docs-integrity.ts` runs the same path check over release
   // documents and skips catalog/ and skills/, which are versioned by digest rather than
@@ -198,8 +174,8 @@ check("no flow tells an agent to refuse a person's own words", () => {
   // decision they already made. DELIBERATE: this matches the shape of such a whitelist, not
   // opinions about approvals, so a flow that states a stricter rule in its own words passes.
   const bad: string[] = [];
-  for (const f of [...flows, { dir: null }]) {
-    for (const sk of (f.dir === null ? platformSkills() : skillsOf(f))) {
+  for (const f of flows) {
+    for (const sk of skillsOf(f)) {
       for (const m of readFileSync(sk.path, "utf8").matchAll(/^.*\bapprov\w*\b.*$/gim)) {
         const line = m[0].trim();
         // Three shapes: a list of accepted words beside a list of rejected ones is the

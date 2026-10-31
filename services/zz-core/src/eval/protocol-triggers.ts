@@ -1,5 +1,5 @@
 /**
- * protocol_read's own derivation (FR-4, FR-5, Task I-10): whether the newest protocol version a
+ * protocol_read's own derivation (FR-4, FR-5): whether the newest protocol version a
  * plugin has is still the one to score against, computed from live state alone. `protocol_read`
  * takes only a `subject_version_id` — never a document, never a protocol body — so every trigger
  * below reads rows the platform already holds rather than anything a caller supplies this call.
@@ -7,12 +7,11 @@
  * Four triggers, and any one of them turns `protocol_action` from `reuse` into `revise`:
  *   - `purpose_changed`   the plugin's own catalog manifest states a purpose that no longer
  *                         matches the protocol version's recorded `purpose`.
- *   - `new_recurring_failure`  DISCOVER (Task I-9) has written a `zz.eval_failure_mode_sighting`
+ *   - `new_recurring_failure`  DISCOVER has written a `zz.eval_failure_mode_sighting`
  *                         for this plugin's failure modes that no protocol version has folded in
  *                         yet. Folding one in is exactly what writes the `eval_protocol_failure_mode`
  *                         row (`protocol-record.ts`), so this reads as "unfolded lineage exists"
- *                         by construction — the sighting's own mutable `status` is gone with
- *                         Task I-24's split of a failure mode into an identity and a sighting.
+ *                         by construction — a sighting carries no mutable `status`.
  *   - `evaluator_drift`   a measure under the latest version defers to an evaluator version that
  *                         is no longer that evaluator's newest — `evaluators.ts` minted a later
  *                         one since this protocol version was recorded.
@@ -46,8 +45,7 @@ interface LatestProtocolVersion {
 }
 
 /** The newest version of this plugin's protocol lineage, or null when it has none. The plugin is
- *  the version's own `plugin_id` now — `zz.eval_protocol` was a header carrying a plugin and a
- *  key and no other fact, so the phase-3 migration folded both onto the version. */
+ *  the version's own `plugin_id`. */
 export async function latestProtocolVersion(p: pg.Pool, pluginId: string): Promise<LatestProtocolVersion | null> {
   const row = (await p.query<LatestProtocolVersion>(`
     select epv.id::text as id, epv.version, epv.purpose, epv.observable_surfaces,
@@ -79,7 +77,7 @@ async function newRecurringFailure(p: pg.Pool, pluginId: string): Promise<boolea
 /** A measure under this protocol version whose evaluator has since been superseded — a later
  *  version of the same `stable_key` now exists (`evaluators.ts`'s `registerEvaluator` mints one
  *  whenever a caller registers a changed definition), and this version still points at the old
- *  one. The identity is the version's own `stable_key`: `zz.eval_evaluator` is gone. */
+ *  one. The identity is the version's own `stable_key`. */
 async function evaluatorDrift(p: pg.Pool, protocolVersionId: string): Promise<boolean> {
   const row = (await p.query<{ n: string }>(`
     select count(*)::text as n

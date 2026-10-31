@@ -15,9 +15,12 @@ const t = (n: string) => SCHEMA_TARGET.tables[n];
 const cols = (n: string) => (t(n)?.columns ?? []).map((c: [string, ...unknown[]]) => c[0]);
 const hasUnique = (n: string, key: string[]): boolean =>
   (t(n)?.uniques ?? []).some((u: string[]) => key.every((c) => u.includes(c)) && u.length === key.length);
+// A composite foreign key is positional — column i references refColumn i — so both lists must
+// match exactly, in order and in length.
+const same = (a: string[], b: string[]): boolean => a.length === b.length && a.every((c, i) => c === b[i]);
 const hasFk = (n: string, key: string[], refTable: string, refCols: string[], onDelete: string): boolean =>
   ((t(n)?.foreignKeys ?? []) as Fk[]).some((f) => f.refTable === refTable && f.onDelete === onDelete
-    && key.every((c) => f.columns.includes(c)) && refCols.every((c) => f.refColumns.includes(c)));
+    && same(f.columns, key) && same(f.refColumns, refCols));
 
 for (const name of ["eval_finding", "improvement_run", "improvement_run_finding", "candidate",
                     "release_attempt", "release_attempt_owner", "control_run", "control_evidence",

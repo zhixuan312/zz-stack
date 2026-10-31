@@ -1,5 +1,5 @@
 /**
- * Evidence gathering for `evaluator_qualify` (Task I-11): anchors, planted faults, controls,
+ * Evidence gathering for `evaluator_qualify`: anchors, planted faults, controls,
  * stability and labels.
  *
  *   - Anchors, faults and controls are the measure's OWN known-answer texts, declared in the
@@ -100,7 +100,7 @@ const ASKS_PER_ENTRY = 3;
 const ASK_WIDTH = 8;
 
 // ---------------------------------------------------------------------------------------------
-// Labels — selection is pure (pinned alongside the ladder in this task's own check); the query
+// Labels — selection is pure; the query
 // that feeds it is `labelEvidence` below.
 
 interface LabelMapping { readonly evaluator: string; readonly applied: string; readonly rejected: string }

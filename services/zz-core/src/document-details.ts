@@ -18,8 +18,8 @@
  * ref names a row that is not there.
  *
  * DELIBERATE: one list is bounded where it is built, not only in the reply — a repeated `find`'s
- * match lines, the first 1,000 per edit (document-edits.ts), by the stakeholder's decision of
- * 2026-10-07. Its count stays exact, and what it omitted is said, never silent: the line says
+ * match lines, the first 1,000 per edit (document-edits.ts), by the stakeholder's decision. Its
+ * count stays exact, and what it omitted is said, never silent: the line says
  * `details_complete: false` with the omitted count, and the stored row carries both.
  *
  * COUPLED: the ref sits in backticks, which the gateway's refusal redaction collapses, so a refusal
@@ -135,7 +135,7 @@ export const receiptReply = (c: Composed, extra = ""): string =>
 
 /** The receipt a committed request returns again: its first line marked as a replay, then the
  *  next move the first call was answered with, labelled as of then, and the one there is now. A
- *  receipt stored before next moves were (Phase 1) has none, and only the current one is said. */
+ *  receipt stored without a next move has none, and only the current one is said. */
 export function replayText(receipt: Record<string, unknown>, now: string): string {
   const lines = String(receipt.text ?? "").split("\n");
   lines[0] = `${lines[0]} (replayed)`;

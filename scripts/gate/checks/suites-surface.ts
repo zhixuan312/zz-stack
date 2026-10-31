@@ -29,7 +29,7 @@ check("a change to an approved body names its cause — a source on the record o
 check("a document read takes a list and a version, and history never vouches for the present",
       runsCheck("document-reads.ts"));
 
-check("a knowledge node is read from the shelf it is on, and the listing reaches the same table",
+check("a knowledge node is read from the shelf it is on, the platform's only by scope, and the listing shows the addresses the read serves",
       runsCheck("knowledge-shelf-read.ts"));
 
 check("the core door serves exactly its tools, and a removed tool is gone from every caller",
@@ -93,7 +93,7 @@ check("the evaluation door speaks four nouns, three names are deliberately untou
 check("every skill ships from the plugin that owns it, and its commands follow with it",
       runsCheck("skill-homes.ts"));
 
-check("every skill path a script or a check names is a skill on disk, and the shelf builds",
+check("every skill path a script or a check names is a skill on disk",
       runsCheck("skill-paths.ts"));
 
 check("no shipped file states a count of this platform's own surface",
@@ -333,8 +333,9 @@ check("the live chain check walks with a superadmin probe token, and a missing t
 check("the doctor's pre-deploy subset holds the status-gate probe, excludes migrations, and runs before step 4", runsCheck("doctor-predeploy.ts"));
 check("a door refusing initialize with HTTP 200 and an error frame is named as refusing, a non-2xx status is named with its code, and the doctor's initialize probes, release step 5's readiness poll and the pre-push tool-chain walk all read the frame", runsCheck("door-initialize-refusal.ts"));
 check("a stored body is bounded by the upload limit alone: exactly the limit under a title and tags is accepted, one byte more refused by name", runsCheck("stored-body-limit.ts"));
-check("with every precondition met the activation rehearsal prints and records the verdict it derived, never REFUSE", runsCheck("activation-rehearsal-verdict.ts"));
 check("a release records the version it replaced as the rollback target, and a same-version re-run keeps the target already recorded", runsCheck("release-rollback-target.ts"));
 check("a doctor run that asked no layer exits non-zero and never reports every layer agreeing", runsCheck("doctor-empty-ask.ts"));
 check("the doctor reads could-not-run as unknown, a missing image and a stopped or absent service as wrong, and the skill registry by name", runsCheck("doctor-verdicts.ts"));
 check("set-version writes every manifest, the lockfile and the compose file, or none of them", runsCheck("set-version-all-or-nothing.ts"));
+check("the console's shape comparison names a value whose kind differs between the real answer and the fake — an array against an object, an object against a primitive, two primitives of different types — and passes the same shape and a null", runsCheck("shape-diffs-kinds.ts"));
+check("the restore rehearsal accepts a table a pending migration creates only when expect.ts declares it added, and names an undeclared one as undeclared", runsCheck("rehearse-created-table.ts"));

@@ -17,7 +17,7 @@
  * Read, not run. A statement is the text of a string or template literal — adjacent literals that
  * a `+` joins read as one, so an insert list spread across four of them is still a single
  * statement — with the text after a `--` on each of its lines stripped, the way
- * `checks/catalog-eval-columns.ts`'s `withoutSqlComments` does it; or, in a shell script, one line. A
+ * `checks/sql-scan.ts`'s `withoutSqlComments` does it; or, in a shell script, one line. A
  * `${callee(…)}` the statement interpolates is replaced by the literals that callee returns before
  * the statement is read, so a `set` a caller cannot see is one this reads.
  *
@@ -53,79 +53,31 @@
  * check can be pointed at a scratch tree that plants a violation. Run it from the repository root
  * and it reads the repository.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried
-// its own copy of it, byte for byte with four others.
+import { homeOf, readsStatements, withoutSqlComments, writeShape } from "./sql-scan.ts";
+
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
 const { sourceFiles, regions, statementsOf, foldInterpolations } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
+const HOME = homeOf(regions);
 
 /** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
-
-/** A mutation spec quotes a statement in order to plant a defect in it. Its `find`/`replace` text
- *  is the subject of the check that owns the spec, and reading it as a call site would report the
- *  defect the spec exists to plant. */
-const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
-
-/** An applied migration is history — see the module doc. */
-const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/migrations/");
-
-/** The verb that writes `plugin_version`, or null: `update` and `delete from` rewrite or erase a
- *  row; `insert into` is the one permitted writer and is reported only when its own `on conflict`
- *  clause turns it into an update; `alter table` is the row gaining a shape it must not have. A
- *  subquery's `from zz.plugin_version` is not a write, so the verb has to be the table's own. */
-function writeShape(sql: string): string | null {
-  const table = "plugin_version(?!\\w)";
-  if (new RegExp(`\\bupdate\\s+(?:only\\s+)?(?:zz\\.)?${table}`, "i").test(sql)) return "updates";
-  if (new RegExp(`\\bdelete\\s+from\\s+(?:only\\s+)?(?:zz\\.)?${table}`, "i").test(sql)) return "deletes from";
-  if (new RegExp(`\\balter\\s+table\\s+(?:only\\s+)?(?:zz\\.)?${table}`, "i").test(sql)) return "alters";
-  if (new RegExp(`\\binsert\\s+into\\s+(?:zz\\.)?${table}[\\s\\S]*?\\bon\\s+conflict\\b[\\s\\S]*?\\bdo\\s+update\\s+set\\b`, "i").test(sql)) {
-    return "inserts into, then updates on conflict";
-  }
-  return null;
-}
-
-/** A statement with the text after a `--` on each of its lines removed — an SQL comment inside a
- *  template literal is prose, and prose is not a statement. */
-const withoutSqlComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
-
-/** The named imports of a source, by local name. This check's own policy: `HOME` uses it. */
-function importsOf(src: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const m of src.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
-    for (const raw of m[1].split(",")) {
-      const name = raw.trim().split(/\s+as\s+/).pop()?.trim();
-      if (name) out.set(name, m[2]);
-    }
-  }
-  return out;
-}
-
-/** Where an interpolated callee is declared: this file, or the module it was imported from. */
-const HOME = (callee: string, fromPath: string, fromSrc: string): { src: string; rs: unknown[] } | null => {
-  const spec = importsOf(fromSrc).get(callee);
-  if (!spec || !spec.startsWith(".")) return null;
-  const target = join(dirname(fromPath), spec.replace(/\.js$/, ".ts"));
-  if (!existsSync(target)) return null;
-  const home = readFileSync(target, "utf8");
-  return { src: home, rs: regions(home) };
-};
 
 const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, KEEP) : []))) {
+for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []))) {
   const rs = regions(src);
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(foldInterpolations(statement.sql, src, rs, path, HOME));
     scanned++;
     files.add(path);
-    const shape = writeShape(sql);
+    const shape = writeShape(sql, "plugin_version");
     if (shape) {
       fail.push(`FAIL: ${statement.path}:${statement.line} — this statement ${shape} zz.plugin_version, ` +
                 "which is immutable history: its digest is written once at insert and every later " +

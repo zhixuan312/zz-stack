@@ -1,9 +1,6 @@
 /**
- * The protocol lifecycle (FR-4, FR-5, FR-6, Task I-10): `protocol_read`, `protocol_record` and
- * `protocol_affirm` — the durable `EvaluationProtocol` a plugin version is scored against,
- * replacing the `ruler_*` tools this task removes from the door entirely. The `zz.rubric*` rows
- * those tools wrote are gone with the legacy evaluation family, which the phase-3 migration
- * archived before dropping the tables. Nothing here writes or reads that table.
+ * The protocol lifecycle (FR-4, FR-5, FR-6): `protocol_read`, `protocol_record` and
+ * `protocol_affirm` — the durable `EvaluationProtocol` a plugin version is scored against.
  *
  * `protocol_read` takes only a `subject_version_id` and decides `protocol_action` — `create` (no
  * protocol exists yet), `reuse` (the newest version is still compatible) or `revise` (a trigger
@@ -11,36 +8,31 @@
  * no edit: `protocol_record` always inserts a new, immutable version (`protocol-record.ts`), and
  * `protocol_affirm` binds a person's approval of `protocol.md` to the exact version they read.
  *
- * `protocol_affirm`'s binding mechanism, decided by this task (the plan states only the tool's
- * shape, not how a document's approval reaches this door): `protocol.md` is a governed document
- * like any other — `<initiative>/protocol.md` under the caller's own team, read from
- * `zz.doc`/`zz.doc_revision` the way `subject-ref.ts` reads a judged document, so the bytes this
- * binds are the ones the current revision holds. (It was read off disk while the store was files,
- * and the contrast that paragraph drew — a row lagging a fire-and-forget index — is gone with the
- * index: the row IS the record now.) Binding an
- * `initiative` was not in the plan's own signature — added here because there is no other way to
- * locate a team-scoped document from a bare `protocol_version_id`, stated in this file's own
- * tool description. "At the same digest" (the contract's own words) is checked by requiring the
+ * `protocol_affirm`'s binding mechanism: `protocol.md` is a governed document like any other —
+ * `<initiative>/protocol.md` under the caller's own team, read from `zz.doc`/`zz.doc_revision`
+ * the way `subject-ref.ts` reads a judged document, so the bytes this binds are the ones the
+ * current revision holds. `initiative` is an argument because there is no other way to locate a
+ * team-scoped document from a bare `protocol_version_id`, stated in this file's own tool
+ * description. "At the same digest" (the contract's own words) is checked by requiring the
  * document's body to quote the `content_digest` `protocol_record` returned, verbatim — the one
  * fact that ties a page of prose to the exact immutable row it was written to describe.
  *
- * The affirmation names the document, not its path: `approved_doc_id` is a row of `zz.doc` (the
- * phase-3 shape `eval_protocol_version` takes), and the three affirmation fields fill together,
+ * The affirmation names the document, not its path: `approved_doc_id` is a row of `zz.doc`, and
+ * the three affirmation fields fill together,
  * once — a version's payload and its affirmation are both written once and there is no path that
  * moves either again (FR-6's `recorded -> affirmed`). The document row itself is required rather
  * than assumed: a protocol.md that no row carries is
  * refused with that cause named, never written as a claim with nothing behind it.
  *
- * `writeBranchFacts` (Task I-27, FR-52, FR-58) is this file's third export: the one writer of
+ * `writeBranchFacts` (FR-52, FR-58) is this file's third export: the one writer of
  * an initiative's durable branch facts (`protocol_action`, `improvement_mode`, `release_mode`)
  * every flow's `when` reads (`documentApplies`, packages/contracts/src/flow-when.js). Placed
- * here per the plan's own Output line — `protocol_read` is its first caller — and imported by
+ * here because `protocol_read` is its first caller, and imported by
  * `candidates.ts` (`improvement_start`) and `release-prepare.ts` (`release_prepare`/`proposal_prepare`),
  * which is why it takes no `subject_version_id`-shaped context of its own: every caller already
  * knows its initiative and what it decided.
  *
- * The store write follows `writeRoundAssessments` (semantic.ts): `initiative-record.ts` owns
- * the rows' name and mechanical write (`factsFor`/`writeFacts`); this function owns the
+ * `initiative-record.ts` owns the rows' name and mechanical write (`factsFor`/`writeFacts`); this function owns the
  * one rule that write must obey — a fact already set refuses a different value, forever — and
  * mirrors every set fact into `zz.initiative_fact` (001) so the console, which
  * reads the rows alone, can compute the same `documentApplies` answer. The mirror is written in
@@ -90,8 +82,7 @@ interface BranchFacts {
 
 /** Where a branch-fact write lands and what it writes through: the team that owns the
  *  initiative, and the one client inside an open transaction that takes the cross-process lock
- *  and writes the rows. There is no store root any more — the facts ARE `zz.initiative_fact`
- *  rows, and a file was only ever the other half of the same record.
+ *  and writes the rows. There is no store root — the facts ARE `zz.initiative_fact` rows.
  *
  *  DELIBERATE: resolved by the caller BEFORE its transaction — `teamFor` queries the pool on a
  *  cache miss, and a second connection taken while this one is held is how the four-connection
@@ -257,7 +248,7 @@ export function registerProtocolTools(server: McpServer): void {
       // What DISCOVER left for this stage to fold in or leave uncited, read here rather than
       // carried from DISCOVER's own reply: a DEFINE opened in a new conversation has no other
       // door to them, and re-running failure_discover would mint a duplicate set. A failure mode
-      // is an identity now and a discovery of it is a sighting (Task I-24), so what is unfolded
+      // is an identity and a discovery of it is a sighting, so what is unfolded
       // is a sighting whose identity no protocol version of this plugin has folded in yet — the
       // relation `eval_protocol_failure_mode` is what folding writes, and `failure_mode_id` is
       // the id a `failureTaxonomy` entry actually folds in.
@@ -416,9 +407,9 @@ export function registerProtocolTools(server: McpServer): void {
       }
       // The document is read from the rows a document IS — `zz.doc` and the revision it points
       // at — never from a file. The affirmation names the document, not its path: `approved_doc_id`
-      // is a row in `zz.doc` and the migration derived it from exactly this pair, and the digest
-      // the version quotes is a claim about these bytes. A file the store has not caught up with
-      // is refused here rather than affirmed as a claim with nothing behind it.
+      // is the row in `zz.doc` this pair names, and the digest the version quotes is a claim about
+      // these bytes. A document no row carries is refused here rather than affirmed as a claim
+      // with nothing behind it.
       const docRow = (await p.query<{
         id: string; current_revision: number | null; status: string;
         approved_by: string | null; body: string | null;

@@ -3,11 +3,10 @@
  * by name, and undo a plant however the run ends.
  *
  * DELIBERATE: this file is not a check and must not be registered as one. It spawns
- * `scripts/gate.ts`, which `working-checks-registered.ts` refuses to run inside the gate — the
- * same classifier that keeps a registered check from launching the gate — and it asserts nothing
- * on its own.
+ * `scripts/gate.ts`, so a registered copy would make the gate invoke itself, and it asserts
+ * nothing on its own.
  *
- * `gate()`, `run()` and `failing()` are read-only: each returns its findings rather than pushing into
+ * `gate()`, `run()` and `verdicts()` are read-only: each returns its findings rather than pushing into
  * a caller's array. `measure()` is deliberately NOT here: it reports by pushing into the `fail` of
  * the file that called it, so the copies that look identical across two break-tests are the same
  * shape over different state, not one implementation duplicated.
@@ -91,9 +90,12 @@ export async function run(extra: readonly string[] = []): Promise<{ ran: Set<str
   return { ran, failed };
 }
 
-/** The gate's failures only, name -> the sentence under each, from a `--quiet` run. */
-export async function failing(): Promise<Map<string, string>> {
-  return (await run(["--quiet"])).failed;
+/** The gate's failures, name -> the sentence under each, and which of `names` never ran. A full run,
+ *  never `--quiet`: a quiet gate prints only its failures, so "not failed" there cannot be told from
+ *  "never reached", and a control judged on it passes on a gate that died early. */
+export async function verdicts(names: readonly string[]): Promise<{ failed: Map<string, string>; unreached: string[] }> {
+  const { ran, failed } = await run();
+  return { failed, unreached: names.filter((n) => !ran.has(n)) };
 }
 
 /**

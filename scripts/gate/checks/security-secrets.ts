@@ -2,10 +2,10 @@
  * Credentials: what must never carry them, and what must never ship one.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { gateOwnSource, gatewaySource, root, sourceFiles, trackedFiles, unbuilt } from "../read.ts";
+import { firstOf, gateOwnSource, gatewaySource, repositoryFiles, root, sourceFiles, unbuilt } from "../read.ts";
 import { check } from "../run.ts";
 
 /* What this repository discloses by being public.
@@ -38,12 +38,8 @@ check("nothing in this repository discloses an address, a host or a credential",
       bad.push(`this rule's own allowlist admits ${a}.${b}.${c}.${d}, a tailnet host address it exists to catch`);
     }
   }
-  for (const rel of trackedFiles() ?? []) {
+  for (const rel of repositoryFiles()) {
     if (!/\.(ts|tsx|mjs|js|sql|sh|md|json|yml|yaml|html|example)$/.test(rel)) continue;
-    // Tracked is not present: a file deleted in the working tree stays tracked until the
-    // deletion is staged, and readFileSync on it throws, reporting a check that could not run
-    // as one that failed.
-    if (!existsSync(join(root, rel))) continue;
     readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
       const at = `${rel}:${i + 1}`;
       // An address that is not a documentation address. RFC 2606 reserves .example and the
@@ -68,7 +64,7 @@ check("nothing in this repository discloses an address, a host or a credential",
       }
     });
   }
-  return bad.length ? bad.slice(0, 12).join("; ") : null;
+  return firstOf(bad, 12);
 });
 
 check("no proxy forwards the caller's credentials upstream", () => {
@@ -157,7 +153,7 @@ check("a platform token is one shape, whoever writes or reads it", () => {
 
   // And nobody else may spell it. Both shapes: building one from the prefix, and reading one
   // back with a length written out rather than derived.
-  const OWNER = join("packages", "contracts", "src", "index.ts");
+  const OWNER = join("packages", "contracts", "src", "identity.ts");
   for (const rel of sourceFiles(["services", "packages", "scripts"], [".ts"])) {
     if (rel === OWNER || gateOwnSource(rel)) continue;
     readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {

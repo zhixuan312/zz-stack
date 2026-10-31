@@ -16,7 +16,7 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 
-import { IMAGE, die, log, root, run } from "../deployment.ts";
+import { IMAGE, asExecError, die, log, redact, root, run } from "../deployment.ts";
 import { initializeRefusal } from "../door-frame.ts";
 import { owned, sweepOrphans } from "../owned-containers.ts";
 import { postgresService } from "./postgres-service.ts";
@@ -129,14 +129,22 @@ export function walkToolChain(version: string | undefined): void {
       }));
 
     log("  walking the tool chain against this release's own image");
-    execFileSync("node", [join(root, "packages/tools/dist/testing/chain-check.js")],
-                 { cwd: root, stdio: "inherit",
-                   env: { ...process.env, ZZ_GATEWAY: base, ZZ_PAT: token } });
+    try {
+      execFileSync("node", [join(root, "packages/tools/dist/testing/chain-check.js")],
+                   { cwd: root, stdio: "inherit",
+                     env: { ...process.env, ZZ_GATEWAY: base, ZZ_PAT: token } });
+    } catch {
+      // The chain check prints its own FAILED lines, each naming the rule and the tool. Restating
+      // "it exited nonzero" over the top of that would bury the only useful part.
+      die("the tool chain does not hold on this release's image — nothing was pushed");
+    }
     log("  every act in the chain behaves as this release's own code says it does");
-  } catch {
-    // The chain check prints its own FAILED lines, each naming the rule and the tool. Restating
-    // "it exited nonzero" over the top of that would bury the only useful part.
-    die("the tool chain does not hold on this release's image — nothing was pushed");
+  } catch (err) {
+    // Only standing the stack up throws to here: a network, a container, a port or the token
+    // insert. That is this machine's Docker, not the release's code, so it is named as such.
+    const e = asExecError(err);
+    die(`could not stand up this release's own stack, so the tool chain was never walked: ` +
+        redact((e.stderr || e.message).trim().slice(-400)));
   } finally {
     drop();
     process.removeListener("exit", drop);

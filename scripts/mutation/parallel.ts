@@ -23,6 +23,7 @@
  * independently computed baselines that disagree means the source moved mid-pass.
  */
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -68,11 +69,10 @@ function child(runner: string, files: string[], work: string, out: string,
                 ...extras];
   return new Promise((resolve) => {
     const p = spawn("node", args, { stdio: ["ignore", "pipe", "pipe"] });
-    const line = (b: Buffer): void => {
-      for (const l of b.toString().split("\n")) if (l.trim()) console.log(`  ${label} ${l.trim()}`);
-    };
-    p.stdout.on("data", line);
-    p.stderr.on("data", line);
+    // By line, not by chunk: a pipe splits a line, and a multi-byte character, wherever it likes.
+    for (const stream of [p.stdout, p.stderr]) {
+      createInterface({ input: stream }).on("line", (l) => { if (l.trim()) console.log(`  ${label} ${l.trim()}`); });
+    }
     p.on("close", (code) => resolve(code ?? 1));
   });
 }

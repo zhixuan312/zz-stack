@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, contractsSource, firstOf, functionBody, root, sourceFiles, trackedFiles, unbuilt, zzCoreSource, zzCoreTools, withoutComments, errMessage } from "../read.ts";
+import { between, contractsSource, errMessage, firstOf, functionBody, repositoryFiles, root, sourceFiles, unbuilt, withoutComments, zzCoreSource, zzCoreTools } from "../read.ts";
 import { check } from "../run.ts";
 import { flows } from "../facts.ts";
 
@@ -495,11 +495,8 @@ check("the schema's own document names things that exist", () => {
   // Comments stripped from the corpus first, or a comment naming a column that exists nowhere
   // matches itself.
   let corpus = "";
-  for (const f of trackedFiles() ?? []) {
+  for (const f of repositoryFiles()) {
     if (!/\.(ts|mjs|sql|sh|md|json|yml|yaml)$/.test(f)) continue;
-    // Tracked is not present: a file deleted in the working tree stays tracked until the
-    // deletion is staged, and reading it throws.
-    if (!existsSync(join(root, f))) continue;
     const text = readFileSync(join(root, f), "utf8");
     corpus += f.endsWith(".sql")
       ? text.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n")

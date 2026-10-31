@@ -45,8 +45,7 @@ import type { Chain } from "./write-guards.js";
  *
  *  COUPLED: these are `zz.assessment` ROWS, and the caller reads them with one query.
  *  `assessFamily` persists every answer as it is taken, so the memo is the record and nothing has
- *  to be written beside it — the `<initiative>/_assessments/*.json` files this used to read were a
- *  second copy of rows that already existed, and a second copy is what drifts.
+ *  to be written beside it, and a second copy is what drifts.
  *
  *  The map is a PARAMETER and not a query made here, so `reviewMove` stays a pure function of what
  *  its caller holds: the same rule the source rows follow. */
@@ -68,11 +67,10 @@ export async function assessmentsFor(
     resolved_model: string | null; identity_assurance: string | null; reason: string | null;
     initiative: string | null; about: string | null; asked_by: string; asked_at: string;
   }>(
-    // COUPLED: `requested_model` is NOT selected, and the column is not there to select. Phase 2
-    // retired it from `zz.assessment` — `checks/dropped-columns.ts` still watches for it and
-    // reports a statement that reaches for it. `Assessment.requested_model` survives because
-    // `assessFamily` sets it in memory from the typed call; a row cannot carry it, so a reader
-    // answers null rather than inventing one.
+    // COUPLED: `requested_model` is NOT selected, and `zz.assessment` has no such column —
+    // `checks/dropped-columns.ts` reports a statement that reaches for it.
+    // `Assessment.requested_model` exists because `assessFamily` sets it in memory from the typed
+    // call; a row cannot carry it, so a reader answers null rather than inventing one.
     `select a.family, a.instruction_version, a.question_digest, a.reading,
             a.probability::text as probability, a.resolved_model,
             a.identity_assurance, a.reason, i.slug as initiative, a.about,
@@ -204,8 +202,8 @@ export function reviewRounds(sources: readonly DocRow[], stage: string, document
     // writes one verifying document, and `source_add` refuses a round that does not name it — but
     // round 1 is recorded before that document exists, and a support for a document not yet
     // written files no link (`doc_link` needs a row to point at). Keyed on the link, every first
-    // round counted as none, so round 2 was refused as round 1 and `next_move` asked for round 1
-    // forever (bug c92d1bb1). A link naming ANOTHER document still rules the source out.
+    // round would count as none and `next_move` would ask for round 1 forever. A link naming
+    // ANOTHER document still rules the source out.
     const links = supportsOf(d);
     if (stageOf(d) !== stage || (links.length > 0 && !links.includes(document))) continue;
     const ledger = parseLedger(d.body);

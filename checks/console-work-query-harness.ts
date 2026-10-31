@@ -1,6 +1,6 @@
 /**
  * checks/console-work-query-harness.ts — what the console's Work and Platform checks share: the request a console
- * session's read arrives as, a mounted route called as Express would, the gateway's door to zz-core as server.ts mounts
+ * session's read arrives as, the gateway's door to zz-core as server.ts mounts
  * it and tool calls through it, a phase of the record moved into its week, and the cases every measure answers alike
  * over a window of dates (AC-5.2, AC-6.2 to AC-6.5). Not a check of its own: each check imports it and runs on its own
  * seeded record.
@@ -33,8 +33,8 @@ import { root } from "../scripts/deployment.ts";
 import type { Core } from "../scripts/schema/throwaway-core.ts";
 import { TIMEZONE } from "../scripts/schema/work-seed.ts";
 
-export type Obj = Record<string, unknown>;
-export type Route = (req: unknown, res: unknown) => void;
+import type { Obj } from "./in-process.ts";
+
 export type Who = { email: string; team: string | null; role?: "member" | "superadmin" };
 export type Query = Record<string, string | string[]>;
 type Counted = { value: number | null; why: string | null; unmeasured?: number; imported?: number };
@@ -101,20 +101,6 @@ export function request(who: Who, query: Query | Obj = {}, params: Obj = {}, bod
       "x-zz-via": "session", "x-zz-pat-team": "", "x-zz-session-team": who.team ?? "",
     },
   };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends: a JSON body, or a bare status. */
-export function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: {} }); },
-      sendStatus(code: number) { this.statusCode = code; this.end(); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** The gateway's door to zz-core as server.ts mounts it, on a port of its own: the gateway's built modules, loaded

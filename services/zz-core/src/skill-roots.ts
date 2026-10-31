@@ -4,10 +4,8 @@
  * Two sources, and the order between them is the whole rule: the platform's own `/skills`, then
  * every package in `/catalog`.
  *
- * DELIBERATE: there was a third — `<team root>/skills`, the team's own store — and it is gone
- * with the store. A team's own skills were files in a git repository the platform kept for them;
- * the store is retired, so a skill a team wrote for itself is no longer a place a skill can come
- * from, and a name it used to shadow resolves to the catalog's own or to nothing.
+ * DELIBERATE: there is no team layer. A skill a team wrote for itself is not a place a skill can
+ * come from, so a name resolves to the platform's own, the catalog's own, or to nothing.
  *
  * Every catalog package is readable by everyone. The platform cannot see what is on a person's
  * machine, so it does not decide what they may read either.

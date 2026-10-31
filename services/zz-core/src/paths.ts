@@ -2,9 +2,8 @@
  * The two things a platform path must be: a name a row can be addressed by, and a sentence
  * that teaches the shape of one it will not accept.
  *
- * The store these used to resolve against is gone — a document's bytes are `zz.doc_revision`
- * rows and its identity is a `zz.doc` row — so a path is no longer a place on disk. What is
- * left is the SHAPE: `safePath` refuses a path that could not name a document, and
+ * A document's bytes are `zz.doc_revision` rows and its identity is a `zz.doc` row, so a path
+ * is not a place on disk; it is a SHAPE: `safePath` refuses a path that could not name a document, and
  * `pathShapeRefusal` is the sentence that teaches the form, reached before every guard so the
  * sentence is what a caller with a bad path sees.
  *
@@ -130,11 +129,8 @@ export function pathShapeRefusal(path: string): string | null {
   // No dot segment anywhere in the path. safeName applies the same rule to an `initiative`
   // argument; document_write takes a `path`, which is what this covers.
   //
-  // `.git` sat at the root of every team's store. `.git/hooks/pre-commit` was the sharp end:
-  // every write was committed, so a file the model chose would have become an executable the
-  // service ran. The store is a database now and there is no repository — but a path with a
-  // dot segment is not the shape of a document on this platform either, and a name that is
-  // refused in one shape is refused in every shape.
+  // A path with a dot segment is not the shape of a document on this platform, and a name that
+  // is refused in one shape is refused in every shape.
   if (/(^|\/)\.[^/]/.test(path.replace(/^\/+/, ""))) {
     return "no part of a path may begin with a dot. Dot-prefixed names are the platform's own " +
       "bookkeeping, never a document's, and a document written there is invisible to " +
@@ -164,10 +160,10 @@ export async function safePath(path: string): Promise<string> {
  *   _ledger.md          the historical outcome ledger, appended when an initiative closed —
  *                       the outcome, the elapsed hours, the write counts. A model that could
  *                       rewrite it would write its own record.
- *   _activity.jsonl     the historical write log, one line per tool call.
- *   _knowledge/log.md   the journal's human-readable log, which the store held as a file.
- *                       Each act is a `zz.event` row now; the name stays reserved because a model must never be able to rewrite the record of
- *                       what it did. */
+ *   _activity.jsonl     a write log, one line per tool call.
+ *   _knowledge/log.md   the journal's human-readable log.
+ *                       Each act is a `zz.event` row; the name stays reserved because a model
+ *                       must never be able to rewrite the record of what it did. */
 const SYSTEM_FILES = /(^|\/)(_?activity\.jsonl|_ledger\.md|_knowledge\/log\.md)$/;
 
 /** Guards every mutation passes, whichever tool asks.

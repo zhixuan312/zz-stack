@@ -38,6 +38,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { answer, type Route } from "./in-process.ts";
 
 const NAME = "knowledge-search-parity";
 const DONE = "knowledge-search-parity: the console's page, its assistant and MCP answer one question with the " +
@@ -63,8 +64,6 @@ const ONE_INSTANT = "2026-10-01T00:00:00Z";
 /** The widening note's opening words (services/zz-core/src/tools/knowledge-search.ts). */
 const WIDENED_NOTE = /^No document contains all of those terms together/;
 
-type Answer = { status: number; body: Record<string, unknown> };
-type Route = (req: unknown, res: unknown) => void;
 type Row = Record<string, unknown>;
 
 /** The request a console session's call arrives as, past the gateway's middleware (COUPLED:
@@ -80,18 +79,6 @@ function request(c: Core, query: Record<string, string>): Record<string, unknown
       "x-zz-user-role": "user", "x-zz-via": "session", "x-zz-pat-team": "", "x-zz-session-team": c.team,
     },
   };
-}
-
-/** Calls the mounted route as Express would, and waits for the answer it sends. */
-function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Record<string, unknown>) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** A route row as one comparable line. A node has no initiative on the route. */

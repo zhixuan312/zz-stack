@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { root } from "../read.ts";
+import { firstOf, root } from "../read.ts";
 import { check } from "../run.ts";
 
 const REQUIRED = ["outcome", "required evidence", "allowed unknowns", "work roles",
@@ -22,5 +22,5 @@ check("no sdlc skill names a provider, a credential or a harness-specific call",
       if (!text.toLowerCase().includes(d)) bad.push(`${s.name} declares no ${d}`);
     }
   }
-  return bad.length ? bad.slice(0, 10).join("; ") : undefined;
+  return firstOf(bad, 10);
 });

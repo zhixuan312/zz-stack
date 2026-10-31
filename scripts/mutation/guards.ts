@@ -11,8 +11,13 @@
  * report.
  */
 import { spawnSync, execFileSync } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** This repository's root, whose `scripts/gate/run.ts` the external receipt below is about. */
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 interface GuardProbe {
   readonly probe: string;
@@ -86,10 +91,16 @@ export function probeGuards(repo: string, outsidePath: string): GuardProbe[] {
  * edit, in a copy as much as anywhere. So it was driven by the person the rule does not bind, in
  * a disposable copy, restored from a saved original rather than from git, and the receipt is
  * carried here with that attribution attached.
+ *
+ * DELIBERATE: `observed_run_sha256` is written by hand, as an unexercisable entry's digest is: the
+ * bytes of `scripts/gate/run.ts`, which holds `report()`, when the guard was driven. `guardsBlock`
+ * stamps the live digest and `stale` beside it, so a report never carries the observation as
+ * current once `report()` has changed. Driving it again means pasting a new receipt and digest.
  */
-const EXTERNALLY_DRIVEN: GuardProbe & { readonly driven_by: string } = {
+const EXTERNALLY_DRIVEN: GuardProbe & { readonly driven_by: string; readonly driven_at: string;
+                                        readonly observed_run_sha256: string } = {
   probe: "GATE INCOMPLETE — a check module on disk that gate.ts never imports is caught",
-  command: "in a disposable copy, remove one `import \"./gate/checks/<module>.ts\";` from " +
+  command: "in a disposable copy, remove one `await load(\"./gate/checks/<module>.ts\");` from " +
     "scripts/gate.ts, run the gate, then restore from a saved original",
   expected: "control PASSES; faulted run reports GATE INCOMPLETE and exits non-zero; " +
     "restored copy passes again and gate.ts is byte-identical to the original",
@@ -100,7 +111,17 @@ const EXTERNALLY_DRIVEN: GuardProbe & { readonly driven_by: string } = {
   held: true,
   driven_by: "the plan owner, because the rule forbidding this file's author to edit " +
     "scripts/gate.ts does not bind them",
+  driven_at: "2026-09-22",
+  observed_run_sha256: "866db9a2a48e4bea2919024c1313796563fe0f48c814732fcff9df9a2541bece",
 };
+
+/** The external receipt with the live digest of `scripts/gate/run.ts` and whether it still matches. */
+function externallyDriven(): typeof EXTERNALLY_DRIVEN & { live_run_sha256: string | null; stale: boolean } {
+  let live: string | null = null;
+  try { live = createHash("sha256").update(readFileSync(join(root, "scripts/gate/run.ts"))).digest("hex"); }
+  catch { /* no run.ts: the receipt describes nothing on disk, which is stale */ }
+  return { ...EXTERNALLY_DRIVEN, live_run_sha256: live, stale: live !== EXTERNALLY_DRIVEN.observed_run_sha256 };
+}
 
 /**
  * The `guards` block for the report: what this run probed, what was driven externally, and
@@ -115,6 +136,6 @@ export function guardsBlock(existing: unknown, fresh: readonly GuardProbe[] | nu
   const own = (fresh ?? carried).filter((g) => g.probe !== EXTERNALLY_DRIVEN.probe);
   return {
     probed_at: fresh ? new Date().toISOString() : prior.probed_at ?? null,
-    probes: [...own, EXTERNALLY_DRIVEN],
+    probes: [...own, externallyDriven()],
   };
 }

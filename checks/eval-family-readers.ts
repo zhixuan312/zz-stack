@@ -36,7 +36,7 @@
  * adjacent literals that a `+` joins read as one, so a select list spread across four of them is
  * still a single statement — with each literal's own delimiters dropped, so the text handed to the
  * database is the SQL itself, and with the text after a `--` on each of its lines stripped, the way
- * `checks/catalog-eval-columns.ts`'s `withoutSqlComments` does it; or, in a shell script, one line. A `${…}` the
+ * `checks/sql-scan.ts`'s `withoutSqlComments` does it; or, in a shell script, one line. A `${…}` the
  * statement interpolates — a call (`${clause(x)}`) or a bare const holding a fragment
  * (`${STORED_ANSWERS_SQL}`) — is replaced by the literals that declaration returns before the
  * statement is read, so the `from` a caller cannot see is one this reads. Every literal under the
@@ -62,41 +62,26 @@
  *   A mutation spec quotes a statement in order to plant a defect in it.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { PHASE3_RETIRED_COLUMNS } from "../scripts/schema/retired-columns.ts";
+import { homeOf, readsStatements, withoutSqlComments } from "./sql-scan.ts";
 
 /** The trees that write to a database — the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its own
-// copy of it, byte for byte with four others.
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
 const { sourceFiles, regions, statementsOf, opensStatement, foldInterpolations, bindings,
         cteNames, bareMention } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
+const HOME = homeOf(regions);
 
-/** Which files this check reads — its own policy, which is why the reader takes it as a predicate. */
-const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
-
-/** Where an interpolated callee is declared: this file, or the module it was imported from. */
-type Region = { kind: "code" | "literal" | "comment"; start: number; end: number };
 type Statement = { path: string; line: number; sql: string };
-const HOME = (callee: string, fromPath: string, fromSrc: string): { src: string; rs: Region[] } | null => {
-  const spec = importsOf(fromSrc).get(callee);
-  if (!spec || !spec.startsWith(".")) return null;
-  const target = join(dirname(fromPath), spec.replace(/\.js$/, ".ts"));
-  if (!existsSync(target)) return null;
-  const home = readFileSync(target, "utf8");
-  return { src: home, rs: regions(home) };
-};
 /** The tree the evaluation family's own readers live in — the half of the live pass that is
  *  EXECUTED. Every module that reads `zz.eval_*`, `zz.plugin_version`, `zz.plugin_release_owner`,
  *  `zz.candidate`, `zz.improvement_run` or `zz.release_attempt` is a file under it, and a
  *  statement outside it that named a dropped name is the static half's finding. */
 const READERS = "services/zz-core/src/eval";
-
-const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
-const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/migrations/");
 
 /** The tables the evaluation family is read through, by their name with `zz.` stripped. A
  *  statement naming none of them is not this check's subject: the rest of the write trees read
@@ -111,21 +96,7 @@ const FAMILY = new Set([
   "plugin_version_skill", "candidate", "improvement_run", "release_attempt",
 ]);
 
-
-const withoutSqlComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
-
 const canonical = (table: string): string => table.replace(/^zz\./i, "").toLowerCase();
-
-function importsOf(src: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const m of src.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
-    for (const raw of m[1].split(",")) {
-      const name = raw.trim().split(/\s+as\s+/).pop()?.trim();
-      if (name) out.set(name, m[2]);
-    }
-  }
-  return out;
-}
 
 const RETIRED_TABLES = new Set<string>([
   "eval", "eval_evaluator", "eval_evidence_snapshot", "eval_failure_mode_candidate",
@@ -267,7 +238,7 @@ const withoutParameters = (sql: string): string => sql.trim().replace(/\$\d+/g, 
 interface Planned { path: string; line: number }
 
 function statementsUnder(): Statement[] {
-  return ROOTS.flatMap((r) => sourceFiles(r, KEEP)).flatMap(({ path, src }) => {
+  return ROOTS.flatMap((r) => sourceFiles(r, readsStatements)).flatMap(({ path, src }) => {
     const rs = regions(src);
     return statementsOf(path, src, true).map((s: Statement) => ({
       ...s,
@@ -316,7 +287,7 @@ async function main(): Promise<void> {
   }
   // The reader tree, every literal, prose included. A tool description or a failure message that
   // tells its reader about a table this phase drops is wrong in the message too.
-  for (const { path, src } of sourceFiles(READERS, KEEP)) {
+  for (const { path, src } of sourceFiles(READERS, readsStatements)) {
     for (const r of regions(src)) {
       if (r.kind !== "literal") continue;
       const line = src.slice(0, r.start).split("\n").length;

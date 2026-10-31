@@ -1,12 +1,9 @@
 /**
  * Subject identity (FR-1, FR-24): the one immutable `subject_version` every later stage binds to.
  *
- * A subject version IS a `zz.plugin_version` row. The evaluation family used to keep a second row
- * per released thing — `zz.eval_subject_version`, carrying the same `plugin_id` and the same
- * declared version beside a digest `plugin_locate` recomputed on every call — and the two could
- * disagree: a component digest source that moved under a release made the same (plugin, version)
- * answer with two different ids depending on which tool had minted the row first. `plugin_version`
- * is that release's one identity now: its `digest` is written once, at insert, by whichever path
+ * A subject version IS a `zz.plugin_version` row, and no second row per released thing exists:
+ * two rows could disagree, answering the same (plugin, version) with two different ids.
+ * `plugin_version` is that release's one identity: its `digest` is written once, at insert, by whichever path
  * registered the version (`register-plugins.ts` at a release, `plugin_register` at a capture), and
  * no path rewrites it, so `subject_version_id` is a `plugin_version.id` and a released version is
  * a stable thing to evaluate.
@@ -79,8 +76,8 @@ const SUBJECT_SELECT = `
       from zz.plugin_version pv
       join zz.plugin p on p.id = pv.plugin_id
       left join zz.team t on t.id = p.owner_team_id
-      -- 'release_owners' was a jsonb list nobody could join; it is a relation now, and a reader
-      -- that wants the slugs aggregates the teams the relation names.
+      -- 'release_owners' is a relation, and a reader that wants the slugs aggregates the teams
+      -- the relation names.
       left join lateral (
         select coalesce(array_agg(t2.slug order by t2.slug), '{}'::text[]) as slugs
           from zz.plugin_release_owner r
@@ -201,18 +198,16 @@ async function subjectResponse(
  *  version rather than reading a source, and that is not its manifest ceasing to exist. It is
  *  DERIVED from what the release actually ships — the skills `plugin_version_skill` binds to this
  *  exact version, the servers the catalog entry declares (`serversOf`, the baseline door included)
- *  and the flow itself, in the order and with the kinds IDENTIFY derived them before a subject
- *  version folded onto `plugin_version`.
+ *  and the flow itself, in IDENTIFY's order and with its kinds.
  *
  *  Read, never guessed. `touchedComponents` matches a patch's file against THIS list, so a manifest
  *  inferred from the patch's own paths would answer `in_manifest` with the inference — and every
  *  digest below is a fact of the release, never a value minted to fill the shape: a skill version's
  *  own `content_hash`, the release digest `register-plugins.ts` wrote once at insert, and, for a
  *  server, the same construction the capture makes (`sha256(name:path)`, versioned when the door is
- *  the plugin's own — see the comment on it below). A shape without them was the hole
- *  `plugin_locate`'s response contract named: it promises "a per-component manifest
- *  (skill/server/flow/config digests, each a sha256 of the component's content)", and the column a
- *  catalog release answers from is null. */
+ *  the plugin's own — see the comment on it below). `plugin_locate`'s response contract promises
+ *  "a per-component manifest (skill/server/flow/config digests, each a sha256 of the component's
+ *  content)", and the column a catalog release answers from is null. */
 export async function componentManifestOf(
   runner: Pick<pg.Pool, "query">,
   subject: {
@@ -242,7 +237,7 @@ export async function componentManifestOf(
       kind: "skill", name: s.name,
       // A skill version's own content hash, never blank in practice (register-skills.ts always
       // writes one) — falling back to a hash of its identity rather than throwing, so a stray
-      // pre-migration row cannot take IDENTIFY down for the whole plugin.
+      // row without one cannot take IDENTIFY down for the whole plugin.
       digest: s.content_hash || sha256(`${s.name}@${s.version}`),
     })),
     // A plugin's own server is code in the platform build it shipped with, so its identity is
@@ -393,7 +388,7 @@ export function registerSubjectTools(server: McpServer): void {
 
       // Ahead of withIdempotency, and so ahead of the ledger's own proceed/replay decision — a
       // replayed call re-clones/re-fetches only to have its result discarded below, the same
-      // cost local_dir already paid to re-read a directory before this task. Moving the fetch
+      // cost local_dir pays to re-read a directory. Moving the fetch
       // inside the ledger's transaction would mean holding a database connection open for a
       // multi-second git clone or npm pack, which is the worse trade.
       const resolved = await resolveSource(source_kind, source_locator);

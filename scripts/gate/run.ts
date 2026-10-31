@@ -204,12 +204,11 @@ export function note(message: string): void {
   if (!quiet) console.log(message);
 }
 
-/** Print the verdict and exit. Called by `gate.ts` after every module has been imported —
- *  at the bottom of the entry file, because an ES module's imports all run first. */
+/** Print the verdict and exit. Called by `gate.ts` after every module has been loaded. */
 export function report() {
   // Every check on disk actually ran, and this is the only place that can know it: a module
-  // under gate/checks/ that nobody imports from gate.ts keeps its `check(` lines where a count
-  // can find them and registers nothing. Not a check itself, because a check runs partway
+  // under gate/checks/ that gate.ts never loads keeps its `check(` lines where a count can find
+  // them and registers nothing. Not a check itself, because a check runs partway
   // through and cannot see the final number.
   const written = gateCheckNames().length;
   const ran = executions.length;
@@ -219,7 +218,8 @@ export function report() {
     // which the line below can only count.
     writeReport("INCOMPLETE");
     console.error(`\n  GATE INCOMPLETE — ${written} checks are written under ` +
-      `scripts/gate/checks/ and ${ran} ran. A module is missing from gate.ts's imports.`);
+      `scripts/gate/checks/ and ${ran} ran. A module is missing from gate.ts's loads, or failed ` +
+      "to load above.");
     process.exit(1);
   }
   writeReport(failed === 0 ? "PASSED" : "FAILED");

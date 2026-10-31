@@ -49,6 +49,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { CUTOFFS, TEAM as RUNS_TEAM, TIMEZONE, WEEK, seedRuns } from "../scripts/schema/runs-seed.ts";
 import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "review-round2-reads";
 const DONE = "review-round2-reads: activity_refusals answers no more than Activity's window and refuses an initiative the " +
@@ -72,8 +73,6 @@ const CEILING = 500;
 const RECORDED = 520, SUPERSEDED = 10;
 const DAY = 86_400_000;
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
 type Span = { from: string; to: string };
 type Part<T> = { state: "ok"; data: T } | { state: "unavailable"; reason: string };
 type Caller = { email: string; superadmin: boolean; activeTeam: string | null };
@@ -110,20 +109,6 @@ function request(team: string | null, query: Obj = {}): Obj {
                   teams: team ? [{ slug: team, role: "admin" }] : [], activeTeam: team, patTeam: null, sessionTeam: team },
     headers: {},
   };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: {} }); },
-      sendStatus(code: number) { this.statusCode = code; this.end(); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** The teams, their initiatives and the calls Activity counts: the first team's first call 40 weeks back, past the

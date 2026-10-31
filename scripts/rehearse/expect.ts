@@ -4,10 +4,11 @@
  *
  * Keyed by migration file name, exactly as `zz.schema_migration` and
  * `services/gateway/migrations/` name it. A table a pending migration does not mention here — and
- * every table when no migration is pending at all — defaults to: row count unchanged, and the
- * `md5` over its primary-key-ordered rows unchanged. A migration that changes a table's shape or
- * its data declares that table explicitly; everything else stays proven unchanged rather than
- * silently unchecked.
+ * every table when no migration is pending at all — defaults to: present on both sides, row count
+ * unchanged, and the `md5` over its primary-key-ordered rows unchanged. A migration that changes a
+ * table's shape or its data declares that table explicitly, and so does one that creates or drops
+ * a table (`added`, `dropped`): a table present on one side only is a disagreement unless declared.
+ * Everything else stays proven unchanged rather than silently unchecked.
  */
 
 import { SCHEMA_TARGET } from "../../schema-target.ts";
@@ -293,6 +294,14 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
   "011_event_work_week.sql": {
     tables: {
       event_work_week: { added: true, count: "any", contentHash: "skip" },
+    },
+  },
+  // The word-count release. It creates `zz.doc_words` and moves no other row; the table starts
+  // empty on a production copy, because only a console read fills it. This entry leaves with the
+  // file when it folds into `001_init.sql`.
+  "008_doc_words.sql": {
+    tables: {
+      doc_words: { added: true },
     },
   },
   // The document-body release. It drops `zz.doc.body` and moves the trigram index from `doc` to

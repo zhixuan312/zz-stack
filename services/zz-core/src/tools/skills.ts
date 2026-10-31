@@ -9,10 +9,8 @@
  * platform's own `/skills`, then the catalog's packages, platform-owned ones first. That order
  * is `skill-roots.ts`'s, and it is the only thing that decides which of two answers.
  *
- * DELIBERATE: there was a third — a team's own overlay under the team root, and a skills root
- * of the team's own beside it — and both are gone with the store. Something used to be layered
- * on top of the shelf's text here; now nothing is. A layer that silently stopped arriving is
- * exactly what a reader would not notice, so it is stated rather than left to the absence.
+ * DELIBERATE: there is no team layer — no team overlay and no team skills root. Nothing is
+ * layered on top of the shelf's text, and that is stated rather than left to the absence.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -128,7 +126,7 @@ export function registerSkillTools(server: McpServer): void {
       // Where a root came from, decided by matching it rather than by spelling a path. The
       // catalog's location is settable (`CATALOG_DIR`), so a root is matched against the value
       // that produced it, and the platform's own `/skills` is what is left. There is no team
-      // root any more: a team's own skills were store files, and the store is retired.
+      // root.
       const packageAt = new Map<string, { owner: string; name: string; dir: string }>();
       for (const p of catalogPackages()) packageAt.set(join(p.dir, "skills"), p);
       const stagesOf = new Map<string, Map<string, { at: number; of: number; produces: string }>>();
@@ -278,10 +276,8 @@ export function registerSkillTools(server: McpServer): void {
         const path = join(dir, "SKILL.md");
         if (existsSync(path)) {
           platformEvent({ actor: parseCaller(requestHeaders()).email, kind: "skill_read", skill: name });
-          // DELIBERATE: nothing is layered on top. A team's own overlay was a file in the store
-          // the platform kept for them — `<team root>/overlays/<name>/SKILL.md` — and the store
-          // is retired, so the shelf's text IS the text. An overlay that silently stopped
-          // arriving is exactly the failure this line would otherwise hide.
+          // DELIBERATE: nothing is layered on top. There is no team overlay, so the shelf's text
+          // IS the text.
           if (file === undefined) return text(readFileSync(path, "utf8"));
           // Resolved inside the skill already found, never searched for on its own. Two
           // packages may ship a skill of one name — the roots are ordered so the first wins —
@@ -294,8 +290,7 @@ export function registerSkillTools(server: McpServer): void {
               "supporting files it has; read the skill first and follow what it points at.");
           }
           // Read straight out of the skill's own directory. Nothing is layered on a supporting
-          // file, and never was: the team layer that used to exist was a team's addition to a
-          // skill's instructions, and a reference document is not instructions.
+          // file: a reference document is not instructions.
           return text(readFileSync(sub, "utf8"));
         }
       }

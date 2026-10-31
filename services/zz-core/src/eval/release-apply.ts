@@ -1,5 +1,5 @@
 /**
- * `release_apply`'s own DB logic (Task I-23, FR-49, AC-49.1): the compare-and-swap FR-49 asks
+ * `release_apply`'s own DB logic (FR-49, AC-49.1): the compare-and-swap FR-49 asks
  * for, split from `release.ts`'s registration the same way `release-rules.ts` holds the pure
  * decision — this file is the part that touches the database.
  * `release_record`'s own half lives in `release-record.ts`.
@@ -17,7 +17,7 @@
  * read by `currentVersionOf` (`../release-head.ts`), the reader `plugin_locate`'s head calls too: a
  * catalog plugin's version as the running deployment declares it, any other plugin's newest by
  * semver with retracted versions left out. DELIBERATE: never joined to a second subject table to
- * find the head — the release IS the `plugin_version` row now (FR-24), and the head is settled
+ * find the head — the release IS the `plugin_version` row (FR-24), and the head is settled
  * from that table alone, so a version registered at deploy that nothing has located yet is still
  * read as current rather than as absent. The head version's own row is read after that, and it is
  * the row the head just named: a head newer than the base is stale_baseline, and one that is not
@@ -66,12 +66,12 @@ interface Queryable {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
 }
 
-/** The response field `release_apply` has always answered with — `packages/tools/src/release/
- *  apply.ts` mirrors it and the promote-verify skill documents it — kept byte-for-byte now that
- *  no column of that name exists: the base release is `candidate.base_plugin_version_id`, and
- *  this name is the wire. Written as a template over its own parts so that
- *  `checks/release-relations.ts`, which scans this file's text for the retired COLUMN spellings,
- *  does not read it as a read of a column that is gone. */
+/** The response field `release_apply` answers with — `packages/tools/src/release/apply.ts`
+ *  mirrors it and the promote-verify skill documents it — kept byte-for-byte although no column
+ *  of that name exists: the base release is `candidate.base_plugin_version_id`, and this name is
+ *  the wire. Written as a template over its own parts so that `checks/release-relations.ts`,
+ *  which scans this file's text for retired COLUMN spellings, does not read it as a column
+ *  read. */
 const BASE_SUBJECT_VERSION = `base${"_subject_version_id"}`;
 
 // -------------------------------------------------------------------------------------------
@@ -100,10 +100,10 @@ interface PreparedAttempt {
  *  refused rather than silently applying some other row. With no citation yet, the newest
  *  prepared attempt stands in so `approval_required` is recorded against it.
  *
- *  The owners, the base release and the approved digest are read from where they live now: the
- *  owners from the `release_attempt_owner` relation (group G's copy that gates), and the base
- *  release and digest from the CANDIDATE the attempt names — both are immutable columns of it,
- *  which is why the attempt no longer carries a second copy that could drift. */
+ *  The owners, the base release and the approved digest are read from where they live: the
+ *  owners from the `release_attempt_owner` relation, and the base release and digest from the
+ *  CANDIDATE the attempt names — both are immutable columns of it, which is why the attempt
+ *  carries no second copy that could drift. */
 async function loadPreparedAttempt(
   runner: Queryable, candidateId: string, cited: string | null,
 ): Promise<PreparedAttempt | null> {
@@ -138,8 +138,8 @@ interface ReleasedHead {
 }
 
 /** See the module note: the head of `zz.plugin_version` alone, by `currentVersionOf`, and then
- *  that version's own row — the subject IS the release row now (FR-24: `eval_subject_version`
- *  folded onto `plugin_version`, and `plugin_locate` writes nothing), so this is one table read
+ *  that version's own row — the subject IS the release row (FR-24, and `plugin_locate` writes
+ *  nothing), so this is one table read
  *  twice rather than a capture beside a release. Null when the plugin has no registered version
  *  at all. Also
  *  what `release_record`'s rollback branch asks, inside its own transaction, to confirm the prior
@@ -187,9 +187,8 @@ async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<str
  *  `planApply`: the read takes a pool connection of its own, and one taken while the transaction
  *  holds another, behind the plugin's advisory lock, is how the pool starves.
  *
- *  It is READ from the document's rows, never from a path: the store a document used to be a
- *  file in is retired (`versions.ts`), and a `readFileSync` of the old path answered `null` for
- *  every document that existed — which read as `approval_required` on a document its owners had
+ *  It is READ from the document's rows (`versions.ts`), never from a path: a document is not a
+ *  file, and a missing read would answer `approval_required` on a document its owners
  *  approved. */
 interface ImprovementDoc {
   readonly status: string | undefined;
@@ -402,8 +401,8 @@ export async function planApply(
   const headIsNewer = compareSemver(head.version, subject.declared_version) > 0;
 
   const decision = releaseDecision({
-    // The base is the candidate's own immutable column, which is exactly where the attempt's
-    // own copy of it used to be taken from — one fact, read from the row that owns it.
+    // The base is the candidate's own immutable column — one fact, read from the row that
+    // owns it.
     base_is_current: !headIsNewer && head.subject_id === attempt.base_plugin_version_id,
     approved_patch_digest: approvedPatchDigest,
     patch_digest: candidate.patch_digest,
@@ -430,7 +429,7 @@ export async function planApply(
   // keep one live attempt per candidate and one applying attempt per plugin — both
   // still catch a race the lock alone would not.
   //
-  // `applied_by` is a principal and the column is a uuid (group G re-typed it), so the caller's
+  // `applied_by` is a principal and the column is a uuid, so the caller's
   // address is resolved to the row it names BEFORE the CAS — and an address that names no
   // principal is refused by name, the way `control_run.started_by`'s own writer refuses one
   // (`host/store.ts`): every later reader of this attempt — `release_record`, `release_verify` —

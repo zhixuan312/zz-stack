@@ -3,16 +3,16 @@
  * Apps — ChatGPT, Claude, VS Code — and the record that the panel showed it.
  *
  * Why it exists. A present is a tool result, and a tool result is model input, not a display: a
- * 114k-character review reached a person only as fast as a model could page it into its own
- * context, 60k characters a call, and on ChatGPT not at all (0.91.1). The panel puts the document
- * in front of the person directly, at any length, and says so itself once it has.
+ * long document reaches a person only as fast as a model can page it into its own context, 60k
+ * characters a call, and on ChatGPT not at all. The panel puts the document in front of the
+ * person directly, at any length, and says so itself once it has.
  *
  * Three pieces, one module:
  *   - the resource, `PANEL_URI`: the built page, `dist/apps/document-panel.html`;
  *   - `panelDocuments`, what `document_present` hands the panel in its result's `_meta`. Never in
  *     `content` and never as `structuredContent`: Claude Code shows a model ONLY the structured
- *     half when one is present, and every client measured — Claude Code, Codex, and ChatGPT by its
- *     own documentation — keeps `_meta` from the model. Measured on 0.92.0, not assumed;
+ *     half when one is present, and Claude Code, Codex, and ChatGPT by its own documentation all
+ *     keep `_meta` from the model;
  *   - `document_shown`, the record that the whole of the current snapshot was shown — by the panel,
  *     under the review context its present minted, or by the console, under the console's own —
  *     through the one writer every presentation uses (`commitPresentation`, review-context.ts).
@@ -308,11 +308,11 @@ export function registerDocumentPanel(server: McpServer): void {
                     "document again with document_present");
       }
       // Once is the fact. A host re-mounts a panel whenever the person scrolls back to it or opens
-      // it full screen — ChatGPT re-mounted seven at once in the first live session — and a second
-      // record of the same present would count one reading as seven.
+      // it full screen, several at once, and a second record of the same present would count one
+      // reading as several.
       //
       // DELIBERATE: asked BEFORE the ticket. It writes nothing, so it vouches for nothing, and a
-      // panel that outlived its ticket — the key is drawn per process, so every deploy did that to
+      // panel that outlived its ticket — the key is drawn per process, so every deploy does that to
       // every panel open in a conversation — would otherwise show a person a refusal about a
       // document already covered in its own context.
       if (state.covered.includes(target)) {

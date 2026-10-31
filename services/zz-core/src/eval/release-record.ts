@@ -1,5 +1,5 @@
 /**
- * `release_record`'s own DB logic (Task I-23/I-24, FR-49, FR-50): records what the CLI that holds
+ * `release_record`'s own DB logic (FR-49, FR-50): records what the CLI that holds
  * the shell actually did — `packages/tools/src/release/apply.ts` (`released`/`failed`) or
  * `packages/tools/src/release/rollback.ts` (the rollback status). Split from `release-apply.ts`, which
  * keeps the compare-and-swap that moves an attempt INTO applying; this file moves it out.
@@ -20,13 +20,13 @@
  * attempt stays applying; the CLI prints the exact retry (or `--reconcile`) rather than recording
  * `failed` for a release that did land.
  *
- * A release that LANDS closes the findings it was built to fix (AC-7.2, Task I-32). The candidate
+ * A release that LANDS closes the findings it was built to fix (AC-7.2). The candidate
  * carries the improvement run it was proposed against, the run's targeted findings are its
  * `improvement_run_finding` rows, and each of them becomes `applied` with a `decision_note` naming
- * the version that shipped — so what used to be prose inside twenty-one notes is a relation a
- * later phase joins. The write goes through `decideFinding` (`./plugin-record.ts`), the ONE
- * deciding write on `zz.eval_finding`; a second private writer here is exactly what left the
- * finding-to-release provenance unrecorded. `failed` and the rollback close nothing: a finding
+ * the version that shipped — a relation a later phase joins, not prose. The write goes through
+ * `decideFinding` (`./plugin-record.ts`), the ONE deciding write on `zz.eval_finding`; a second
+ * private writer here would leave the finding-to-release provenance unrecorded. `failed` and the
+ * rollback close nothing: a finding
  * stays deferred until something shipped, and one an earlier release already closed — including
  * this release's own, when the rollback lands on it — is left alone rather than re-decided.
  */
@@ -42,11 +42,11 @@ import { ownerMember } from "../release-owners.js";
 
 const RELEASE_REF = /^[0-9a-f]{40}$/;
 
-/** `release_record`'s wire vocabulary, kept byte-for-byte while group G retires the column
- *  behind it: `packages/tools/src/release/apply.ts` sends this field and the promote-verify
- *  skill documents it, and the release is `release_attempt.released_plugin_version_id` now. Held
- *  as a template over its own parts so that `checks/release-relations.ts`, which scans this
- *  file's text for the retired COLUMN spellings, does not read the wire name as a column read. */
+/** `release_record`'s wire vocabulary, kept byte-for-byte although no column is behind it:
+ *  `packages/tools/src/release/apply.ts` sends this field and the promote-verify skill documents
+ *  it, and the release is `release_attempt.released_plugin_version_id`. Held as a template over
+ *  its own parts so that `checks/release-relations.ts`, which scans this file's text for retired
+ *  COLUMN spellings, does not read the wire name as a column read. */
 const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
 /** The attempt state a rollback leaves behind, and the verdict of the same name — taken from the
  *  shared vocabulary every writer takes its state values from (`EVAL_STATE_ENUMS`), sixth of
@@ -99,7 +99,7 @@ interface AttemptRow {
   readonly status: string; readonly released_plugin_version_id: string | null;
   readonly release_ref: string | null;
   /** The applier's own address, resolved through the principal `release_attempt.applied_by`
-   *  names (group G: the column is a principal id, and the address is that row's). Read as the
+   *  names (the column is a principal id, and the address is that row's). Read as the
    *  address because that is what a caller is known by here — `releaseActorRefusal` compares it
    *  with the caller's own, and an address that names no principal answers null, which is what
    *  the column itself holds. */
@@ -164,8 +164,8 @@ export async function recordRelease(
   client: Pick<pg.PoolClient, "query">, args: RecordArgs, principal: string,
 ): Promise<MutatorOutcome<RecordResult>> {
   // The base release is the candidate's own immutable column and the required owners are the
-  // `release_attempt_owner` relation (group G): neither is copied onto the attempt any more, so
-  // both are read through the row that owns them. The applier's address is resolved through the
+  // `release_attempt_owner` relation: neither is copied onto the attempt, so both are read
+  // through the row that owns them. The applier's address is resolved through the
   // principal the column names, which is what makes it comparable with this caller.
   const attempt = (await client.query<AttemptRow>(`
     select ra.id::text as id, ra.candidate_id::text as candidate_id,
@@ -204,8 +204,8 @@ export async function recordRelease(
         `${attempt.verdict ?? "not yet decided"}, not ${ROLLBACK_STATE}; a rollback is recorded only ` +
         "after release_verify established one");
     }
-    // One column records the rollback, not two: `status` is the attempt's lifecycle and the
-    // boolean copy of the same fact is gone with it (group G).
+    // One column records the rollback, not two: `status` is the attempt's lifecycle and there
+    // is no boolean copy of the same fact.
     const applied = await client.query(`
       update zz.release_attempt set status = '${ROLLBACK_STATE}', reason = $2
        where id = $1::uuid and status = 'released' returning id`,
@@ -279,7 +279,7 @@ export async function recordRelease(
     // `reason` on a release is the operator's accepted override (`--reconcile
     // --accept-tag-without-candidate-commit`), kept on the row so a reader sees the ancestry was
     // accepted rather than proved. The candidate's own status is NOT written here: released and
-    // the rollback state are the ATTEMPT's states (group G), and a reader that wants them joins it.
+    // the rollback state are the ATTEMPT's states, and a reader that wants them joins it.
     const applied = await client.query(`
       update zz.release_attempt
          set status = 'released', release_ref = $2, released_plugin_version_id = $3::uuid, reason = $4

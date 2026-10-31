@@ -112,8 +112,8 @@ export function sectionRange(text: string, section: string, pick: SectionPick = 
 
 /** `body` with one section replaced by `content`, which carries the section's heading line — or a
  *  refusal. Everything outside the section is kept byte for byte, which is the point: a large
- *  approved document is changed by sending the part that changed, not the whole of it (bug
- *  87fce795). The replacement is followed by one blank line when anything comes after it. */
+ *  approved document is changed by sending the part that changed, not the whole of it. The
+ *  replacement is followed by one blank line when anything comes after it. */
 export function replaceSection(body: string, section: string, content: string, pick: SectionPick = {}):
     { body: string } | { refusal: string } {
   const range = sectionRange(body, section, pick);
@@ -196,9 +196,9 @@ export function partHeader(rel: string, part: Part, of: string, text: string): s
   // envelope states none.
   const own = parseEnvelope(text).content_revision;
   if (own) lines.push(`content revision: ${own} (of the snapshot this part is cut from)`);
-  /* A hosted client keeps the tool list it read when the connector was added: ChatGPT's copy from
-   * before 0.79.3 had no `offset`, and a model holding it re-asked for part one until it filed a
-   * bug. The fix is on the person's side, so the line says what it is. */
+  /* A hosted client keeps the tool list it read when the connector was added, and a copy without
+   * `offset` leaves a model re-asking for part one. The fix is on the person's side, so the line
+   * says what it is. */
   if (part.end < part.total) {
     lines.push(`Next: offset ${part.end}. If this tool shows you no \`offset\` argument, your ` +
                "client holds an old copy of the tool list — ask the person to refresh or reconnect " +

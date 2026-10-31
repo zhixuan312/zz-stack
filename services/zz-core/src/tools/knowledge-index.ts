@@ -7,10 +7,9 @@
  * a row means.
  *
  * DELIBERATE: the rebuild re-derives the DERIVED columns — `body_tsv` and `analyzer_version` —
- * from each row's own `title`/`tags`/`body`. The store it used to re-read was the source of
- * truth when a node and a document were files; the rows are the record now, so there is nothing
- * else to read and the only thing a rebuild can mean is "produce the vector the current
- * analyzer would produce for what this row already holds".
+ * from each row's own `title`/`tags`/`body`. The rows are the record, so there is nothing else
+ * to read and the only thing a rebuild can mean is "produce the vector the current analyzer
+ * would produce for what this row already holds".
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { reindexAllTeams, reindexTeam, type TeamReindex } from "@zz/indexing";

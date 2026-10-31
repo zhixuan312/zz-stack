@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { manifestPaths } from "../../manifests.ts";
 import { flows } from "../facts.ts";
-import { gateOwnSource, root, sourceFiles, trackedFiles } from "../read.ts";
+import { gateOwnSource, repositoryFiles, root, sourceFiles } from "../read.ts";
 import { check } from "../run.ts";
 
 check("no fixture directory enters the image", () => {
@@ -167,6 +167,12 @@ check("one image, one recipe", () => {
     }
     for (const m of src.matchAll(/docker build\b[^\n]*?-f\s+(\S+)/g)) named.set(m[1], f);
   }
+  // CI builds the database image itself, with a literal `docker build -f`.
+  for (const f of repositoryFiles().filter((x) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(x))) {
+    for (const m of readFileSync(join(root, f), "utf8").matchAll(/docker build\b[^\n]*?-f\s+(\S+)/g)) {
+      named.set(m[1], f);
+    }
+  }
   for (const name of ["deploy/docker-compose.yml", "deploy/docker-compose.build.yml"]) {
     if (!existsSync(join(root, name))) continue;
     const text = readFileSync(join(root, name), "utf8");
@@ -183,12 +189,7 @@ check("one image, one recipe", () => {
   // prove a dependency before anything is deployed on it. They are different things, on different
   // schedules, for different readers — so the rule is per class: each class has one recipe, a
   // Dockerfile belongs to a class, and a class nothing builds from is still the other half of the
-  // defect.
-  //
-  // DELIBERATE: the database image is declared here rather than detected. Its builder,
-  // testing/tenant-info/deployment.ts, composes the path (`join(DEPLOY_DIR, "Dockerfile")`) instead
-  // of writing it as a literal, so the scan above cannot see it — and a path spelled out to satisfy
-  // a regex is a path that can drift from the one actually built.
+  // defect. A Dockerfile is classed by its path; which recipes exist is detected above.
   const CLASSES: readonly { name: string; is: (p: string) => boolean }[] = [
     { name: "database (dependency-proof)", is: (p) => p === "deploy/postgres/Dockerfile" },
     { name: "application", is: () => true },
@@ -209,12 +210,9 @@ check("one image, one recipe", () => {
   }
   // A Dockerfile nobody builds from is the other half of the same defect: it is what the
   // next person edits, and what this gate's image checks would go on reading.
-  for (const f of trackedFiles() ?? []) {
+  for (const f of repositoryFiles()) {
     if (!/(^|\/)Dockerfile$|\.Dockerfile$/.test(f)) continue;
     if (named.has(f)) continue;
-    // A declared class whose builder composes its path is accounted for; anything else is a
-    // Dockerfile with no builder at all.
-    if (CLASSES.some((c) => c.name !== "application" && c.is(f))) continue;
     bad.push(`${f} is a Dockerfile nothing builds from`);
   }
   for (const [d] of named) {

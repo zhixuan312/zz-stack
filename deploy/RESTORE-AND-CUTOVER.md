@@ -3,8 +3,7 @@
 How an operator stands up an isolated PostgreSQL 17 copy of this platform and restores a protected
 backup into it, so a cutover can be rehearsed against real data before it is performed.
 
-This is a **rehearsal** procedure. It never switches production. `deploy/ACTIVATION.md` is the
-switch, and it says in its own preamble that nothing authorises executing it.
+This is a **rehearsal** procedure. It never switches production.
 
 ---
 
@@ -77,13 +76,12 @@ rehearsal does not need it.
 ## 2. Check the copy, if you want to
 
 ```bash
-cd <checkout>/zz-stack
-./deploy/backup-manifest.sh ~/rehearsal/backup $STAMP
+shasum -a 256 ~/rehearsal/backup/*$STAMP*
 ```
 
-It writes `zz-backup-manifest-<stamp>.json` beside the set: the three files and the SHA-256 of
-each, to compare with the same listing taken on the source. It refuses a set missing any of the
-three. Nothing else in this procedure reads it.
+Run the same listing on the source and compare the two: the set is three files, and a missing
+one or a different digest is a copy that did not arrive whole. Nothing else in this procedure
+reads it.
 
 ---
 

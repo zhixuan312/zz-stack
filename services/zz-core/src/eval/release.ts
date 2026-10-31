@@ -1,10 +1,10 @@
 /**
- * `release_prepare` (Task I-22, FR-45 to FR-48, AC-45.1 to AC-48.1): the one boundary a built and
+ * `release_prepare` (FR-45 to FR-48, AC-45.1 to AC-48.1): the one boundary a built and
  * gated candidate crosses before a real owned system is ever touched (FR-46). It resolves this
  * candidate's required owners LIVE off the relation that holds them — `plugin_release_owner`,
- * read the same way `subject.ts`'s own response reads it (FR-23: the jsonb list `plugin` used
- * to carry is gone) — and records them as rows in `release_attempt_owner`, the relation
- * `document_approve` reads before an approval counts. That is why the plan's own FR-47 says
+ * read the same way `subject.ts`'s own response reads it (FR-23) — and records them as rows in
+ * `release_attempt_owner`, the relation `document_approve` reads before an approval counts. That
+ * is why FR-47 says
  * `release_prepare` "records the resolved list so a future path-level resolver can replace this
  * implementation without changing the gate contract" — records the promotion package as a
  * `zz.release_attempt` row (`prepared`), and
@@ -13,9 +13,9 @@
  * release: `release_apply`, `release_record` and `release_verify`, registered below, are the
  * stages that do, once improvement.md is approved.
  *
- * `initiative` was not in the plan's own signature. Added here for the same reason
- * `protocol_affirm` added it (`protocol.ts`'s own module note): there is no other way to locate a
- * team-scoped document from a bare `candidate_id`, and `improvement.md` — unlike `findings.md` —
+ * `initiative` is an argument for the same reason `protocol_affirm` takes it (`protocol.ts`'s
+ * own module note): there is no other way to locate a team-scoped document from a bare
+ * `candidate_id`, and `improvement.md` — unlike `findings.md` —
  * this tool writes unconditionally rather than only when a caller happens to name one.
  *
  * `releaseDecision` (`release-rules.ts`) is deliberately NOT called from here — see that file's
@@ -25,7 +25,7 @@
  * `stale_baseline`) belongs to `release_apply`, once an approved document and a live current
  * subject both exist to check the rest of it against.
  *
- * `release_apply` and `release_record` (Task I-23, FR-49, AC-49.1) are this same file's other two
+ * `release_apply` and `release_record` (FR-49, AC-49.1) are this same file's other two
  * tools, registered below. Their own decision/CAS/replay logic lives in `release-apply.ts` and
  * `release-record.ts`, and who may call them in `../release-owners.ts` — the same split `release_prepare` above already keeps against `release-rules.ts` and
  * `improvement-doc.ts` — so this file stays only registration and description. zz-core has no
@@ -35,11 +35,10 @@
  * shell), does the git and process work and reports back through `release_record`. The same
  * server-decides/CLI-executes split candidate-build already uses.
  *
- * `proposal_prepare` (Task I-25, FR-51, FR-53, AC-51.1) is this file's fifth and last tool: the
+ * `proposal_prepare` (FR-51, FR-53, AC-51.1) is this file's fifth and last tool: the
  * path `release_prepare`'s own `no_release_owners` refusal above points callers toward — "It may
  * still receive an owner-facing proposal — see proposal_prepare." Registered here, beside
- * `release_prepare`, rather than in a module of its own, per this task's own Output line
- * ("proposal path in `release.ts`"). Its OWN refusal is the mirror image of `release_prepare`'s
+ * `release_prepare`, rather than in a module of its own. Its OWN refusal is the mirror image of `release_prepare`'s
  * `no_release_owners` branch: `release_prepare` refuses a subject with NO owners; `proposal_prepare`
  * refuses a subject WITH owners — "ERROR: promotable — use release_prepare, not proposal_prepare"
  * — because an ungated `proposal.md` written for an owned subject would sit in the store looking
@@ -83,18 +82,18 @@ const noDb = () => text("ERROR: this deployment has no platform database, so no 
 
 /** The field names this door's callers already speak — the promote-verify skill,
  *  `packages/tools/src/release/apply.ts` and `scripts/eval-flow-e2e/improve.ts` — kept
- *  byte-for-byte while group G retires the COLUMNS behind them: the released version is
- *  `release_attempt.released_plugin_version_id` now and the base release is the candidate's own
+ *  byte-for-byte although no COLUMN is behind them: the released version is
+ *  `release_attempt.released_plugin_version_id` and the base release is the candidate's own
  *  `base_plugin_version_id`. Each name is written as a template over its own parts: a wire name
  *  spelled out in full would read — to `checks/release-relations.ts`, whose scan is over this
- *  file's text — as a read of a column that no longer exists. The values are what every caller
+ *  file's text — as a read of a column that does not exist. The values are what every caller
  *  already receives. */
 const BASE_SUBJECT_VERSION = `base${"_subject_version_id"}`;
 const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
 /** The state a rollback leaves an attempt in, and the verdict `release_verify` records for that
  *  same outcome — taken from the shared vocabulary every writer takes its state values from
  *  (`EVAL_STATE_ENUMS`), which is also why this file never spells the retired boolean column of
- *  that name (group G drops it). Sixth of six. */
+ *  that name. Sixth of six. */
 const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
 interface CandidateRow {
@@ -141,17 +140,13 @@ async function loadSubject(p: pg.Pool, subjectVersionId: string): Promise<Subjec
  *  version it was scored under — the baseline improvement.md quotes and release_verify's own
  *  comparison starts from.
  *
- *  The per-guardrail list is NOT a column of `zz.eval_run` any more: the phase-3 migration
- *  dropped the `guardrails` jsonb, because a guardrail is a MEASURE's own bar now
+ *  The per-guardrail list is NOT a column of `zz.eval_run`: a guardrail is a MEASURE's own bar
  *  (`eval_measure.guardrail_threshold`, written by `protocol_record` from the
- *  `improvement.criticalGuardrails` entry that named the measure). A statement selecting that
- *  column therefore fails to PREPARE on any migrated database, which is why the list is derived
- *  here the way `evaluation_score` derives it (`evaluate.ts`): the run's own measures through
+ *  `improvement.criticalGuardrails` entry that named the measure), so the list is derived here
+ *  the way `evaluation_score` derives it (`evaluate.ts`): the run's own measures through
  *  `guardrailsOfMeasures`, evaluated by `evaluateGuardrails` against the value each of those
- *  measures reduced to over the run's stored answers. That is exactly what the dropped column
- *  held — `001_init.sql` documents it as `evaluateGuardrails()`'s own
- *  `[{key, threshold, value, status}]` output — and a scored run is terminal, so re-deriving it
- *  from the run's immutable rows reproduces the figures that were scored. */
+ *  measures reduced to over the run's stored answers. A scored run is terminal, so re-deriving
+ *  it from the run's immutable rows reproduces the figures that were scored. */
 async function loadBaseScore(
   p: pg.Pool, evalRunId: string,
 ): Promise<(BaseScore & { protocol_version_id: string }) | null> {
@@ -289,7 +284,7 @@ export function registerReleaseTools(server: McpServer): void {
         principal, "release_prepare", idempotency_key, { candidate_id, initiative },
         placeForRelease, "promotable",
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
-          // The promotion package no longer copies anything off the candidate: the base release
+          // The promotion package copies nothing off the candidate: the base release
           // and the approved digest are the candidate's own immutable columns, read from it by
           // every consumer (`release-apply.ts`), and the required owners become
           // `release_attempt_owner` rows in the same transaction as the attempt they gate.

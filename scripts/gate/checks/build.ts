@@ -9,24 +9,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { manifestPaths } from "../../manifests.ts";
-import { asRecord, readJson, root, sourceFiles, trackedFiles, unbuilt, withoutComments} from "../read.ts";
+import { asRecord, readJson, root, sourceFiles, stderrOf, trackedFiles, unbuilt, withoutComments } from "../read.ts";
 import { check, note } from "../run.ts";
+import { execFields } from "../suite-runner.ts";
 import { MANIFESTS, catalogRoot, toolEntryPoints } from "../facts.ts";
-
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. Here it is an `execFileSync` failure, which carries `stdout`/`stderr`
- *  rather than a plain `message`; each is `undefined` exactly when the original untyped
- *  `err.stdout`/`err.stderr` would have been, and an empty Buffer becomes `""`. */
-function execFields(err: unknown): { stdout: string | undefined; stderr: string | undefined } {
-  if (err && typeof err === "object") {
-    const e = err as Record<string, unknown>;
-    return {
-      stdout: e.stdout !== undefined ? String(e.stdout) : undefined,
-      stderr: e.stderr !== undefined ? String(e.stderr) : undefined,
-    };
-  }
-  return { stdout: undefined, stderr: undefined };
-}
 
 /* The code compiles, and everything after this may rely on it. Several checks in this gate
  * run the compiled output rather than reading source, so this check is what produces it. */
@@ -39,7 +25,7 @@ check("tsc -b", () => {
     // `||`, not `??`: a build that fails writing only to stderr leaves stdout `""`, and an empty
     // detail is a pass.
     const { stdout, stderr } = execFields(err);
-    return (stdout?.trim() || stderr?.trim() || String(err)).slice(-600);
+    return (stdout.trim() || stderr.trim() || String(err)).slice(-600);
   }
 });
 
@@ -223,7 +209,7 @@ check("a built package holds together", () => {
                              { encoding: "utf8", env: { ...process.env, ZZ_CATALOG_DIR: catalogRoot, ZZ_SKILLS_DIR: join(root, "skills") } });
     return out.trim() || null;
   } catch (err) {
-    return `a package could not be built: ${String(execFields(err).stderr ?? err).slice(-300)}`;
+    return `a package could not be built: ${stderrOf(err).slice(-300)}`;
   }
 });
 

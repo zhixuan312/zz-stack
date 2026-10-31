@@ -1,8 +1,7 @@
-
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, published, run, ssh } from "../deployment.ts";
+import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, asExecError, published, run, ssh } from "../deployment.ts";
 import { dashArg } from "./config.ts";
 
 /** What this function can answer, across every path through it. `release` and `why` are
@@ -24,26 +23,36 @@ export function resolveDashboard(): DashboardResolution {
   if (!existsSync(DASH_SRC)) {
     return { release: false, why: `no console checkout beside this repo at ${DASH_SRC}` };
   }
-  const inDash = (a: string[]) => {
-    try { return run("git", a, { cwd: DASH_SRC }); } catch { return ""; }
-  };
+  const inDash = (a: string[]) => run("git", a, { cwd: DASH_SRC });
   const current = (() => {
     try { return JSON.parse(readFileSync(join(DASH_SRC, "package.json"), "utf8")).version || null; }
     catch { return null; }
   })();
   if (!current) return { release: false, why: "the console's package.json declares no version" };
 
-  const dirty = inDash(["status", "--porcelain"]).trim();
+  // A git that cannot answer is a blocked release, never an answer: read as empty output, a failed
+  // `status` would be a clean tree and a failed `describe` a console that was never released.
+  let dirty: string, tags: string, lastTag = "", since: string[] = [];
+  try {
+    dirty = inDash(["status", "--porcelain"]);
+    tags = inDash(["tag", "--list"]);
+    if (tags) {
+      lastTag = inDash(["describe", "--tags", "--abbrev=0"]);
+      since = inDash(["log", "--oneline", `${lastTag}..HEAD`]).split("\n").filter(Boolean);
+    }
+  } catch (err) {
+    const e = asExecError(err);
+    return { release: false, blocked: true, current,
+             why: `git could not read the console's checkout at ${DASH_SRC}: ${(e.stderr || e.message).trim().slice(-200)}` };
+  }
   if (dirty) {
     return { release: false, blocked: true, current,
              why: `the console's tree is dirty — commit or stash it, a release builds what is committed` };
   }
-  const lastTag = inDash(["describe", "--tags", "--abbrev=0"]);
   if (!lastTag) {
     return { release: true, version: dashArg || current, current,
              why: "never released — no tag in zz-stack-dashboard" };
   }
-  const since = inDash(["log", "--oneline", `${lastTag}..HEAD`]).split("\n").filter(Boolean);
   if (since.length === 0) {
     // The console is what people look at, so a production still on the previous image while
     // UAT has moved is a difference nobody would attribute to the release.

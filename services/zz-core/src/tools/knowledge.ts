@@ -6,9 +6,9 @@
  * from context is how a team's own circumstances end up on the shelf every team reads.
  *
  * A node IS a row: `zz.knowledge_node` carries its ordinal, slug, kind, lifecycle, title, body
- * and tags, and `zz.knowledge_node_evidence` records which initiatives it cites. The journal
- * files under `_knowledge/nodes/` are retired with the store, so both tools below write the row
- * through `indexNode`/`supersedeNode` — the package's one writer for that shape.
+ * and tags, and `zz.knowledge_node_evidence` records which initiatives it cites. Both tools
+ * below write the row through `indexNode`/`supersedeNode` — the package's one writer for that
+ * shape.
  *
  * A node that contradicts an existing one goes through `knowledge_supersede` rather than
  * beside it, and supersession refuses a pair that spans both shelves: the two are different
@@ -29,9 +29,8 @@ import { db, subjectVersionFor, teamFor, teamsFor } from "../platform-db.js";
 import { registerKnowledgeSearch } from "./knowledge-search.js";
 
 /** The highest ordinal a shelf's rows say it has issued, or 0 — the high-water mark an id is
- *  allocated above. Read from the rows because they are the whole record: the journal's
- *  append-only `log.md` was the other half and it is retired with the store, so a number once
- *  issued is held by the row that carries it. */
+ *  allocated above. Read from the rows because they are the whole record: a number once issued
+ *  is held by the row that carries it. */
 async function issuedOrdinals(shelf: string | null): Promise<number> {
   const p = db();
   if (!p || !shelf) return 0;

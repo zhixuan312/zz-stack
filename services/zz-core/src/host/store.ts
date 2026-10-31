@@ -131,8 +131,7 @@ export async function recordEvidence(
     // leaving it out would still populate it, and a reader of this statement could not tell
     // whether the platform or the database decides the value.
     //
-    // `note` is not written: the column held one sentence per fact kind, read by nothing, and
-    // the id now says what the sentence did.
+    // `note` is not written: the id says what a note would.
     `insert into zz.control_evidence
        (run_id, entry_id, step_id, kind, about, supersedes, recorded_at, recorded_by)
      values ($1,$2,$3,$4,$5,$6, now(), $7)`,
@@ -224,7 +223,7 @@ async function evidenceFor(runId: string): Promise<(EvidenceEntry & { step_id: s
   // whose withdrawals never happened, every verdict computed from the full history instead of
   // from what still stands.
   //
-  // `note` is not read, and the kernel is handed the empty string: the column is gone, and the
+  // `note` is not read, and the kernel is handed the empty string: no column holds it, and the
   // field is one the kernel's own type requires rather than one it reads.
   return rows.map((r: Record<string, string | null>) =>
     ({ id: String(r.id), stepId: String(r.step_id), step_id: String(r.step_id),
@@ -273,7 +272,7 @@ function stepExcused(
 }
 
 /** Read a verdict together with the waivers that cover it, and the steps a document's own
- *  branch applicability has already ruled out (FR-58, Task I-27) — the one reading of "clear",
+ *  branch applicability has already ruled out (FR-58) — the one reading of "clear",
  *  owed wherever a refusal is turned into an answer.
  *
  *  `ruledOutSteps` is never folded into `dischargedBy`: a waiver is somebody's signature on a
@@ -331,7 +330,7 @@ export function withWaivers(
  * caller deciding what to do about an un-enrolled initiative is answering a different question
  * from one deciding what to record next.
  *
- * `ruledOutSteps` (FR-58, Task I-27): step ids whose own document a caller has already found
+ * `ruledOutSteps` (FR-58): step ids whose own document a caller has already found
  * `not_applicable` on this initiative's own branch (`documentApplies`, packages/contracts/src/
  * flow-when.js) — never computed here, because this file holds no facts and no manifest, only
  * the run. The caller (initiative-close.ts) reads a step's document from `FlowDoc.stage`, the

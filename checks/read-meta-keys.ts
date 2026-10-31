@@ -80,19 +80,31 @@ if (typeof kept !== "function") {
     fail.push(`with no marker the cache reported hit=${a?.hit} then ${b?.hit} over ${unmarked} computation(s), not two misses over 2`);
   } else ok("with no marker nothing is kept: both reads are computations");
 
-  // 5. A full cache drops what has expired before anything live: 40 live answers, then 23 whose own boundary
-  // has passed, then one more. Oldest-first alone would drop 33 of the live ones and keep the expired.
-  type Bounded = <T>(key: string, read: () => Promise<T>, prefix: string, boundary: (v: T) => number | null) => Promise<{ value: T; hit: boolean }>;
-  const bounded = kept as unknown as Bounded;
-  const ev = "read-meta-keys|evict";
-  for (let i = 0; i < 40; i++) await bounded(`live-${i}`, async () => i, ev, () => null);
-  for (let i = 0; i < 23; i++) await bounded(`soon-${i}`, async () => i, ev, () => Date.now() + 5);
-  await new Promise((r) => setTimeout(r, 30));
-  await bounded("last", async () => 0, ev, () => null);
-  let survivors = 0;
-  for (let i = 0; i < 40; i++) if ((await bounded(`live-${i}`, async () => -1, ev, () => null)).hit) survivors++;
-  if (survivors < 30) fail.push(`a full cache kept ${survivors} of 40 live answers, dropping them ahead of 23 expired ones`);
-  else ok(`a full cache drops expired answers before live ones (${survivors} of 40 live answers kept)`);
+  // 5. A full cache drops what has expired before anything live. The fixture is sized from the cache's own
+  // capacity, read from the module under test, so a raised capacity still fills it: the one answer case 3
+  // kept, `live` live answers, then expired ones up to the capacity, then one more. Oldest-first alone would
+  // keep only `live - KEPT / 2` of the live ones; and a cache that evicted nothing would keep all of them.
+  const capacity = /^const KEPT = (\d+);$/m.exec(readFileSync(CACHE, "utf8"))?.[1];
+  if (capacity === undefined) {
+    fail.push("answer-cache.js no longer declares `const KEPT = <n>;`, so the eviction case cannot size its fixture");
+  } else {
+    const KEPT = Number(capacity);
+    const live = Math.ceil(KEPT * 5 / 8), expiring = KEPT - 1 - live;
+    type Bounded = <T>(key: string, read: () => Promise<T>, prefix: string, boundary: (v: T) => number | null) => Promise<{ value: T; hit: boolean }>;
+    const bounded = kept as unknown as Bounded;
+    const ev = "read-meta-keys|evict";
+    for (let i = 0; i < live; i++) await bounded(`live-${i}`, async () => i, ev, () => null);
+    for (let i = 0; i < expiring; i++) await bounded(`soon-${i}`, async () => i, ev, () => Date.now() + 5);
+    await new Promise((r) => setTimeout(r, 30));
+    await bounded("last", async () => 0, ev, () => null);
+    let survivors = 0;
+    for (let i = 0; i < live; i++) if ((await bounded(`live-${i}`, async () => -1, ev, () => null)).hit) survivors++;
+    if (survivors === live) {
+      fail.push(`all ${live} live answers survived a cache of ${KEPT} filled to capacity — nothing was evicted, so the order went untested`);
+    } else if (survivors <= live - KEPT / 2) {
+      fail.push(`a full cache kept ${survivors} of ${live} live answers, dropping them ahead of ${expiring} expired ones`);
+    } else ok(`a full cache drops expired answers before live ones (${survivors} of ${live} live answers kept, capacity ${KEPT})`);
+  }
 }
 
 if (fail.length) {

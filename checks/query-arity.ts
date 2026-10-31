@@ -53,7 +53,7 @@ function matchBracket(s: string, from: number): number {
   return -1;
 }
 
-for (const file of walk("services")) {
+for (const file of ["services", "packages", "scripts"].flatMap((d) => walk(d))) {
   const src = readFileSync(file, "utf8");
   for (const m of src.matchAll(/\.query(?:<[^>]*>)?\(\s*`/g)) {
     const tickAt = src.indexOf("`", m.index!);
@@ -108,7 +108,7 @@ for (const file of walk("services")) {
 // A rule that reaches nothing passes for the wrong reason, so the counts are printed and an
 // empty walk is a failure.
 if (!checked) {
-  fail.push(`no readable .query(\`…\`, [...]) call was found under services/ — this check read ` +
+  fail.push(`no readable .query(\`…\`, [...]) call was found under services/, packages/ or scripts/ — this check read ` +
             `nothing (${skipped} skipped)`);
 }
 

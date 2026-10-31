@@ -68,20 +68,6 @@ check("the team a person acts for is stored, not asserted", () => {
   }
   const srv = gatewaySource();
   if (!/"team_switch"/.test(srv)) bad.push("there is no way for a person to switch team");
-  // And nothing may quietly pick a different one: `teams[0]` is a membership row in whatever
-  // order a query returned it, so it silently answers about a team the person is not acting
-  // for. Scanned repo-wide, because any file holding the list can make the mistake.
-  for (const f of sourceFiles(["services", "packages"], [".ts"])) {
-    const src = readFileSync(join(root, f), "utf8");
-    for (const [i, line] of src.split("\n").entries()) {
-      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
-      // Any local that holds the list, not the name `teams` alone: an alias such as
-      // `myTeams[0]` has no word boundary before `teams`, so `\bteams\[0\]` would miss it.
-      if (/[Tt]eams\[0\]/.test(line)) {
-        bad.push(`${f}:${i + 1} takes the first membership row instead of the acting team`);
-      }
-    }
-  }
   // Switching is a state change on who did what, and this platform records those. The window
   // runs to the next registration rather than to a byte count: the rule is that this handler
   // records the switch, and the handler ends where the next `registerTool` begins.
@@ -324,7 +310,9 @@ check("nothing picks a team by taking the first membership row", () => {
     const code = /\.html$/.test(rel)
       ? src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*|<!--)/.test(l)).join("\n")
       : withoutComments(src);
-    for (const m of code.matchAll(/\bteams\s*\[\s*0\s*\]/g)) {
+    // Any local that holds the list, not the name `teams` alone: `myTeams[0]` has no word
+    // boundary before `teams`.
+    for (const m of code.matchAll(/[Tt]eams\s*\[\s*0\s*\]/g)) {
       const line = code.slice(0, m.index).split("\n").length;
       bad.push(`${rel}:${line} takes the first membership row as the team — that is a second ` +
                "answer to a question actingTeam already answers, and the two disagree for " +

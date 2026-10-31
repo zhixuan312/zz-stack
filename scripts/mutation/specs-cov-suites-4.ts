@@ -205,13 +205,16 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     check: "scripts/gate/checks/checkpoints-consumed.ts",
     target: "every question family a skill names is read by code that routes on it",
     subject: "services/zz-core/src/review-acceptance.ts",
-    // The one branch that makes a `no` from evidence_relation refuse a review row. This file had
-    // no plant at all until the first full run recorded it as never measured.
+    // The one branch that makes a `no` from evidence_relation refuse a review row.
+    //
+    // DELIBERATE: `yes`, a value the narrowed union still holds, so the plant compiles and only
+    // this check can catch it. A value outside the union fails the build beside the target and
+    // shows nothing the compiler does not.
     find: '    if (now.reading === "no") {',
-    replace: '    if (now.reading === "never") {',
+    replace: '    if (now.reading === "yes") {',
     planted: "sdlc-review still tells the agent the platform asks evidence_relation of every row, " +
-      "and a `no` no longer refuses anything — the question is asked and paid for and its answer " +
-      "is read by nobody",
+      "and the refusal now fires on a `yes` and never on a `no` — evidence read as not " +
+      "supporting its criterion is accepted, and evidence that supports it is refused",
   },
   {
     check: "scripts/gate/checks/skill-calls.ts",

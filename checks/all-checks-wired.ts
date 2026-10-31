@@ -90,9 +90,8 @@ const planted = async (file: string, body: string) => {
 
 // 3. The offline gate still refuses a check that needs a deployment
 //
-// The rule is narrow enough not to report the scanners that enforce it —
-// `working-checks-registered.ts` carries the literal ZZ_GATEWAY inside its own exclusion regex
-// — so the narrowing is proved here: a check that genuinely reads the variable, and is
+// The rule is narrow enough not to report a scanner that names ZZ_GATEWAY only inside a pattern
+// or a string, so the narrowing is proved here: a check that genuinely reads the variable, and is
 // registered, is still caught.
 //
 // It has to be registered as well as present, because an unregistered host-dependent check is

@@ -146,7 +146,7 @@ export async function seedFleetPeople(db: pg.ClientBase | pg.Pool): Promise<void
  * Seeds every row above on top of `seedFleetPeople`, cutting weeks in `timezone`, the gateway's `ZZ_TZ`. Returns each
  * week's first instant by `back`, 0 to 30. The database must hold no other tool call or document.
  */
-export async function seedFleet(db: pg.ClientBase | pg.Pool, timezone: string, now = Date.now()): Promise<Seeded> {
+export async function seedFleet(db: pg.ClientBase, timezone: string, now = Date.now()): Promise<Seeded> {
   const starts = new Map<number, number>();
   for (let back = 0; back <= EXPECTED.recordBegins; back++) starts.set(back, weekStart(now, back, timezone));
   const team = {} as Record<Slug, string>;

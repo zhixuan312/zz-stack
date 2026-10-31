@@ -41,9 +41,8 @@ const CLOSE_ACTION = "close:initiative";
  * freeform initiative closes on the document the caller names.
  *
  * An abandon of an initiative that holds no document is "" whatever `named` says, so it lands on
- * the anchor row: a close cannot be recorded on a document nobody wrote, and naming the one the
- * flow starts with was refused with "write it first" — which left an initiative opened under the
- * wrong slug open for good (bug 8fcf5d90).
+ * the anchor row: a close cannot be recorded on a document nobody wrote, and refusing it with
+ * "write it first" would leave an initiative opened under the wrong slug open for good.
  */
 export function closeLandsOn(o: {
   initiative: string; stopped: boolean; held: readonly string[]; closingDoc: string | null | undefined;
@@ -142,7 +141,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       const facts = await factsFor(p, team, initiative);
       if (disposition === OUTCOME_STOPPED) {
         const held = new Set(dirOf);
-        // FR-58 (Task I-26): a gate or a requiredForClose document the branch has ruled out
+        // FR-58: a gate or a requiredForClose document the branch has ruled out
         // (`not_applicable`) is excluded here too, for the same reason handover.md is —
         // without this, ANY flow declaring a conditional gate could never trip the refusal
         // below: the ruled-out document never exists, `gatesPassed`/`requiredPresent` would
@@ -194,12 +193,12 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // furthest declared document that exists instead. A caller may still name one with
       // `document`.
       const stopped = disposition === OUTCOME_STOPPED;
-      // FR-58 (Task I-28): the flow's declared closing document (`chain.closingDoc`) can itself
+      // FR-58: the flow's declared closing document (`chain.closingDoc`) can itself
       // be `when`-conditional — `improvement.md`, promotable only — and ruled out on every other
       // branch. That is not "stopped before it was written"; it is "this branch closes
-      // somewhere else", and the SAME fallback this call already used for an abandon whose
-      // closing document was never reached now also fires for a finished close whose declared
-      // document the branch ruled out. `closingDocRuledOut` is the one question guards.ts's
+      // somewhere else", and the SAME fallback this call uses for an abandon whose closing
+      // document was never reached fires for a finished close whose declared document the
+      // branch ruled out. `closingDocRuledOut` is the one question guards.ts's
       // `closeCheck` asks too, so the two never disagree about which document a close lands on.
       const declaredDoc = chain.documents.find((d) => d.name === chain.closingDoc);
       const ruledOut = closingDocRuledOut(declaredDoc, facts);
@@ -332,7 +331,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         if (governed && team) {
           const closingStep = [...governed.module.steps]
             .reverse().find((st) => st.grants.includes(CLOSE_ACTION));
-          // FR-58 (Task I-27): a step whose own document(s) — `FlowDoc.stage`, the same
+          // FR-58: a step whose own document(s) — `FlowDoc.stage`, the same
           // convention the console's `stageIndex` draws on — the branch has ruled
           // `not_applicable` owes this run nothing. Without this, a reviewed module gating a
           // conditional document (protocol.md under `when: protocol_action`, say) could never be
@@ -428,7 +427,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         // refused by `zz.doc_revision`'s own check.
         //
         // The act is `close_<outcome>`: it becomes the event's kind, which `event_kind_check` holds to
-        // `[a-z_]` words — `close accepted` was refused there and every close's event was dropped.
+        // `[a-z_]` words, so a kind with a space in it is refused and the close's event dropped.
         const stamped = stampEnvelope(chain, relPath, doc);
         const closed = await saveDocument({
           team, relPath, initiative, text: stamped, by: who.email,

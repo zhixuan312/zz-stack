@@ -35,6 +35,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "review-round2-platform";
 const DONE = "review-round2-platform: an assessment the platform cannot keep fails the call that asked, a token " +
@@ -46,26 +47,10 @@ const FAMILY = "changes_commitment";
 /** COUPLED: the route's sentence for a token that is not the caller's (services/gateway/src/settings/me.ts). */
 const NO_TOKEN = "no such active token of yours";
 
-type Obj = Record<string, unknown>;
-type Answer = { status: number; body: Obj };
-type Route = (req: unknown, res: unknown) => void;
-
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 400);
 /** What `assessFamily`'s refusal opens with, for a reading asked about `about`. */
 const unkept = (about: string): RegExp =>
   new RegExp(`^ERROR: the ${FAMILY} reading of ${about.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} was taken but could not be recorded`);
-
-/** Calls one mounted route as Express would, and waits for the answer it sends. */
-function answer(route: Route, req: Obj): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
-}
 
 /** How many `zz.assessment` rows were asked about `about`. */
 async function rows(c: Core, about: string): Promise<number> {

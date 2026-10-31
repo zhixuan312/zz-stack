@@ -12,9 +12,8 @@
 -- `countWords` that produced it, so a release that changes what a word is re-counts rather than
 -- answering old numbers.
 --
--- `schema-target/documents.ts` declares the table. `scripts/rehearse/expect.ts` needs no entry: a
--- new table starts empty on a production copy and no existing row moves, which is the default
--- assertion. The release before this file can run on what it builds — its code reads no such table.
+-- `schema-target/documents.ts` declares the table, and `scripts/rehearse/expect.ts` declares it
+-- added: a new table starts empty on a production copy and no existing row moves. The release before this file can run on what it builds — its code reads no such table.
 -- A rollback leaves it in place with the rows its own reads wrote, which the older release ignores.
 
 CREATE TABLE zz.doc_words (

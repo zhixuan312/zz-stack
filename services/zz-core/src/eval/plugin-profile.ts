@@ -17,7 +17,7 @@ import type pg from "pg";
  * one constant in one place and is reported beside the count it is compared against. */
 const USABLE_RUNS_FLOOR = 5;
 
-/** The bound every query in this file now takes (Task I-7): a resolved `{from, to}` range,
+/** The bound every query in this file takes: a resolved `{from, to}` range,
  *  never the caller's raw `evidence_window` shape — `observe.ts` resolves `last_runs: n` into a
  *  concrete range before this module ever sees it, so a query written once against two
  *  timestamps stays the only query, whichever way the caller asked for the window. */
@@ -105,7 +105,7 @@ interface PluginTraces {
   record: { documents: number; revised: number; revised_with_evidence: number;
             edits_without_cause: number; edits_with_cause: number } | null;
   /** Which query shape `use` and `never_called` were counted over — a door plugin's own traffic,
-   *  or the tool calls inside this version's own skill runs. Both are now bounded by the same
+   *  or the tool calls inside this version's own skill runs. Both are bounded by the same
    *  `EvidenceWindow` every other figure here is; this says which population, not which window. */
   use_window: string;
   /** Why there is no trace evidence, when there is none — said, not left to be inferred.
@@ -193,8 +193,8 @@ const RUNS_ON_DOOR = `
    and ${NOT_EVALUATION_RUN}`;
 
 /** The exact event population `use` is aggregated over: `$1`=plugin, `$2`=version, `$3`/`$4`=the
- *  resolved window. Exported so observe.ts's new facts (Task I-7 — latency, bytes, refusal
- *  text/owner detail) are computed over the identical rows `use`'s calls/refusals counts are,
+ *  resolved window. Exported so observe.ts's facts (latency, bytes, refusal text/owner detail)
+ *  are computed over the identical rows `use`'s calls/refusals counts are,
  *  rather than a second population with a different denominator. */
 export function toolCallEvents(servesOwnDoor: boolean): string {
   return servesOwnDoor
@@ -208,8 +208,8 @@ export function toolCallEvents(servesOwnDoor: boolean): string {
 }
 
 /** The same run population RUNS_BY_SKILL/RUNS_ON_DOOR select from, minus the window bound —
- *  `$1`=plugin, `$2`=version only. Exported for observe.ts's `last_runs: n` resolution (Task
- *  I-7), which has to find a window BEFORE one exists to bound anything by: `plugin_profile`
+ *  `$1`=plugin, `$2`=version only. Exported for observe.ts's `last_runs: n` resolution, which
+ *  has to find a window BEFORE one exists to bound anything by: `plugin_profile`
  *  picks the caller's most recent N runs first, then hands the concrete range this produces to
  *  `pluginTraces` as an ordinary resolved window, so that function never needs its own
  *  "unbounded" special case. */
@@ -293,7 +293,7 @@ export async function pluginTraces(
    *  True for zz-core, zz-access and zz-plugin-eval; false for sdlc, which reaches the baseline
    *  door. It decides where this plugin's evidence lives; see RUNS_ON_DOOR. */
   servesOwnDoor: boolean,
-  /** The resolved range every query below is bounded to (Task I-7). Required, never defaulted —
+  /** The resolved range every query below is bounded to. Required, never defaulted —
    *  a caller wanting a plugin's whole history names `{ from: "-infinity", to: "infinity" }`
    *  itself rather than this function silently choosing "everything" for an omitted argument. */
   window: EvidenceWindow,
@@ -313,7 +313,7 @@ export async function pluginTraces(
   // awaited together; what is computed from them follows.
   const runsQ = n(`select count(*)::text as n ${RUNS_OF}`);
   // A run is usable when it can be placed on a stage, and the step is nameable only through the
-  // skill version the event names: the retired `step` text is gone, and an event whose version
+  // skill version the event names, and an event whose version
   // could not be resolved at the door is a step no reader can name. Those events are counted in
   // the coverage gap below rather than dropped from the denominator.
   const usableQ = n(`
@@ -327,10 +327,10 @@ export async function pluginTraces(
   // Coverage over the events these runs own. `resolvable` is the count that can be placed on a
   // stage at all; the gap between it and `events` is what every other figure here is missing.
   //
-  // Read through the ids the row carries rather than the text it used to: `with_step` is an event
-  // naming a skill version, `with_initiative` an event naming an initiative, and `resolvable` the
-  // narrower question of whether that version's skill is in the registry at all. The two text
-  // columns are gone, so an event whose name resolved nothing is a null id and counts in neither.
+  // Read through the ids the row carries: `with_step` is an event naming a skill version,
+  // `with_initiative` an event naming an initiative, and `resolvable` the narrower question of
+  // whether that version's skill is in the registry at all. An event whose name resolved nothing
+  // is a null id and counts in neither.
   const covQ = pool.query<{ events: string; with_step: string; with_initiative: string; resolvable: string }>(`
     select count(*)::text                                                            as events,
            count(*) filter (where e.skill_version_id is not null)::text              as with_step,
@@ -352,18 +352,15 @@ export async function pluginTraces(
   // stays constant while the step does not change, so it numbers each visit.
   //
   // Grouped on the ids the event carries and named afterwards, so the step is `zz.skill.name` and
-  // the initiative is the initiative row's own `slug` — the two text columns are gone. The shape
-  // test below is kept, read against the initiative's slug: it is the shape `initiative_open`
+  // the initiative is the initiative row's own `slug`. The shape test below is read against the
+  // initiative's slug: it is the shape `initiative_open`
   // composes from its own clock and a safe name, so what it holds to is that a stage path is over
   // the initiatives the platform itself opened rather than over rows written by a fixture.
   //
   // DELIBERATE: the window partitions on the step's NAME, not on the skill version the event
-  // names. The retired `step` text was a name, so a skill re-released mid-initiative was one step
-  // then and would be two now — the visit that spans a re-release would split in two, and the
-  // stage path would gain a row that no reader ever observed. Measured on the deployment before
-  // the migration: partitioning on the version splits two of the 80 visits the old query returns,
-  // on `2026-09-26-eval-zz-core` and `2026-09-26-eval-zz-core-2`; partitioning on the name returns
-  // those 80 rows unchanged. The version is how the name is reached, not what the step is.
+  // names. Partitioned on the version, a skill re-released mid-initiative would be two steps — the
+  // visit that spans a re-release would split in two, and the stage path would gain a row that no
+  // reader ever observed. The version is how the name is reached, not what the step is.
   const pathRowsQ = pool.query<{ initiative: string; step: string; first_ts: string; last_ts: string }>(`
     select i.slug as initiative, x.step, min(x.ts)::text as first_ts, max(x.ts)::text as last_ts
       from (select e.initiative_id, s.name as step, e.ts,
@@ -440,7 +437,7 @@ export async function pluginTraces(
   // reached the door is use of this plugin whether or not the reconciler has since tied it to a
   // run.
   //
-  // Task I-7: both branches are now bounded to `window`, the same as every
+  // Both branches are bounded to `window`, the same as every
   // other query here — an observation snapshot is a statement about one window, and a door
   // plugin's "was this ever called" question belongs to an unbounded window named at the call
   // site, rather than to a special case inside this function.
@@ -503,9 +500,8 @@ export async function pluginTraces(
   // the test is: has this door recorded a call to a tool that writes a document. A door that only reads them has not produced them.
   const writesDocuments = servesOwnDoor && use.some((u) =>
     ["document_write", "document_edit"].includes(u.tool.split(":").pop() ?? ""));
-  // Scoped to the initiatives THIS window's own door traffic actually touched — the store-wide
-  // query this replaced counted every
-  // document on the platform, which made `record` a fact about zz-core's whole install rather
+  // Scoped to the initiatives THIS window's own door traffic actually touched — counting every
+  // document on the platform would make `record` a fact about zz-core's whole install rather
   // than about the window an observation snapshot is supposed to be a statement over.
   // Its own 3-value param array, not `params`: Postgres infers a parameter's type from where it
   // is USED, so a query that carries `params`' 4 values but only ever writes $1, $3 and $4 in
@@ -528,9 +524,8 @@ export async function pluginTraces(
         -- presentation or a metadata change to an approved document files one in the SAME
         -- version, with the cites links carried onto it. Its evidence is what the current
         -- revision's own cites links name —
-        -- DELIBERATE: not r.fields->>'evidence', which belonged to the retired doc.evidence column
-        -- and which no writer sets, so both counts read 0 for every plugin — including the ones
-        -- the measure exists to size.
+        -- DELIBERATE: not r.fields->>'evidence', which no writer sets, so both counts would read
+        -- 0 for every plugin — including the ones the measure exists to size.
         live as (select d.id,
                         coalesce((select array_agg(distinct td.path order by td.path)
                                     from zz.doc_link l

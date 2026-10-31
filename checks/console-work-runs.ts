@@ -53,6 +53,7 @@ import { root } from "../scripts/deployment.ts";
 import { CUTOFFS, OTHER, RUNS_READ, TEAM, TIMEZONE, seedRuns } from "../scripts/schema/runs-seed.ts";
 import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-runs";
 const DONE = "console-work-runs: Runs reads the active team's runs since its first, their observed output, by skill and " +
@@ -64,8 +65,6 @@ const SOURCE = join(root, "services", "gateway", "src", "console", "runs.ts");
 /** The words no field or label of Runs may say. */
 const FORBIDDEN = /context|tokens?\b|\bcost/i;
 
-type Obj = Record<string, unknown>;
-type Route = (req: unknown, res: unknown) => void;
 type Span = { from: string; to: string };
 type RunRow = { id: string; skill: string; initiative: string | null; lastCallAt: string; state: string } & Obj;
 type Part<T> = { state: "ok"; data: T } | { state: "unavailable"; reason: string };
@@ -115,20 +114,6 @@ function request(team: string | null, query: Obj = {}): Obj {
                   teams: team ? [{ slug: team, role: "admin" }] : [], activeTeam: team, patTeam: null, sessionTeam: team },
     headers: {},
   };
-}
-
-/** Calls a mounted route as Express would, and waits for what it sends. */
-function answer(route: Route, req: Obj): Promise<{ status: number; body: Obj }> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: {} }); },
-      sendStatus(code: number) { this.statusCode = code; this.end(); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 const ALL: Params = { skill: null, limit: 100, offset: 0 };

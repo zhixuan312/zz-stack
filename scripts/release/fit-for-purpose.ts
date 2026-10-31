@@ -26,22 +26,22 @@ import { die, log, root } from "../deployment.ts";
 
 /** Door path → the source that registers what it serves. */
 const DOORS: Record<string, string[]> = {
-  "/core/mcp": ["services/zz-core/src/tools"],
+  "/core/mcp": ["services/zz-core/src/tools", "services/zz-core/src/document-panel.ts"],
   "/eval/mcp": ["services/zz-core/src/eval"],
   "/manage/mcp": ["services/gateway/src/admin", "services/gateway/src/access-door.ts",
                   "services/gateway/src/admin.ts", "services/gateway/src/settings.ts",
                   "services/gateway/src/settings"],
 };
 
-/** Every `.ts` under a directory, or the file itself — missing paths are skipped, because the
- *  list above spans two services and not every spelling exists in both. */
+/** Every `.ts` under a directory at any depth, or the file itself — missing paths are skipped,
+ *  because the list above spans two services and not every spelling exists in both. */
 function sources(rel: string): string[] {
   const p = join(root, rel);
   if (!existsSync(p)) return [];
   if (p.endsWith(".ts")) return [p];
-  return readdirSync(p, { withFileTypes: true })
+  return readdirSync(p, { withFileTypes: true, recursive: true })
     .filter((e) => e.isFile() && e.name.endsWith(".ts"))
-    .map((e) => join(p, e.name));
+    .map((e) => join(e.parentPath, e.name));
 }
 
 /** The tool names a door registers. `registerTool(` is the literal every gate check splits

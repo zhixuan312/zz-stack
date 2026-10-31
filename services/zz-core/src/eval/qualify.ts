@@ -1,5 +1,5 @@
 /**
- * `evaluator_qualify` (Task I-11, FR-16, AC-16.1, AC-17.1): runs a protocol's qualification
+ * `evaluator_qualify` (FR-16, AC-16.1, AC-17.1): runs a protocol's qualification
  * policy over one registered evaluator version and writes exactly one
  * `zz.eval_evaluator_qualification` row naming its state and the evidence behind it.
  *
@@ -8,10 +8,9 @@
  * protocol's policy and the bound measure, gathering evidence, applying the ladder, and writing
  * the row through the FR-59 idempotency ledger, the same shape every mutator on this door uses.
  *
- * A qualification is about a MEASURE (Task I-23's reshape): the row names `measure_id` and who
- * qualified it (`qualified_by`), and the evaluator version and the protocol version are both
- * reached through that measure — `subject_scope` said only what the measure's own protocol
- * already says, and `evaluator_qualify` refuses a measure key two dimensions share, so the
+ * A qualification is about a MEASURE: the row names `measure_id` and who qualified it
+ * (`qualified_by`), and the evaluator version and the protocol version are both reached through
+ * that measure — the measure's own protocol says the scope, and `evaluator_qualify` refuses a measure key two dimensions share, so the
  * measure a row names is the one the evaluator was qualified for.
  *
  * DELIBERATE: the caller names the measure by `measure_key`, never an `evaluator_version_id`.
@@ -75,9 +74,7 @@ export function unaffirmedRefusal(protocolVersionId: string, protocol: ProtocolC
     "nothing is qualified or scored against a protocol nobody agreed";
 }
 
-/** The evaluator version's stable key — its identity, and now its own column: `zz.eval_evaluator`
- *  was a header carrying the key and a `kind` nothing read, and the phase-3 migration folded it
- *  onto the version. */
+/** The evaluator version's stable key — its identity, and a column of the version itself. */
 async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise<string | null> {
   if (!UUID_RE.test(evaluatorVersionId)) return null;
   const row = (await p.query<{ stable_key: string }>(`
@@ -89,13 +86,13 @@ async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise
 
 /** A `measure_key` inside one protocol version, resolved to its row — or the refusal, by name.
  *  `protocol_record` refuses a body that repeats a key anywhere in it (`duplicateMeasureKeyRefusal`),
- *  but migration 001 carries no such constraint and a version recorded before that refusal may
- *  still share one across two dimensions — refused here naming both rather than resolved to
+ *  but the schema carries no such constraint and a recorded version may still share one across
+ *  two dimensions — refused here naming both rather than resolved to
  *  whichever row came first. Exported for `finding_record` (plugin-record.ts), which cites a
  *  measure by the same key: one resolver, so the two can never read a key differently.
  *
- *  Read off the measure's own `protocol_version_id` (the phase-3 shape): a measure names its
- *  protocol version itself now, and the join to its dimension is kept only to name the dimension
+ *  Read off the measure's own `protocol_version_id`: a measure names its protocol version
+ *  itself, and the join to its dimension is kept only to name the dimension
  *  in the duplicate-key refusal. */
 export async function measureByKey(
   p: pg.Pool, protocolVersionId: string, measureKey: string,

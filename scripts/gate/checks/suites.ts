@@ -10,10 +10,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { asRecord, codeOnly, envNamesIn, isGateLaunchSource, readJson, root, trackedFiles, unbuilt, withoutComments }
+import { asRecord, codeOnly, envNamesIn, firstOf, isGateLaunchSource, readJson, root, trackedFiles, unbuilt, withoutComments }
   from "../read.ts";
 import { check } from "../run.ts";
-import { execFields, runsCheck, suiteSources } from "../suite-runner.ts";
+import { execFields, failureDetail, runsCheck, suiteSources } from "../suite-runner.ts";
 
 /** Run one of the offline check tools that live beside the code they are about. */
 const runsClean = (tool: string) => (): string | null => {
@@ -24,71 +24,21 @@ const runsClean = (tool: string) => (): string | null => {
                  { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     return null;
   } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`;
-    return out.split("\n").filter((l) => /fail|expected|FAIL/.test(l)).join("; ") || `${tool} failed`;
+    return failureDetail(execFields(err).stderr, execFields(err).stdout) || `${tool} failed`;
   }
 };
 
-check("a door that refuses ends the request", () => {
-  const nothingToRun = unbuilt();
-  if (nothingToRun) return nothingToRun;
-  // Cases against the real resolveThrough, with stub doors. The property is an
-  // authentication bypass: a refusing adapter that fell through would let the forwarded-header
-  // door answer for a revoked PAT. The bug is a missing early return, and the code reads
-  // identically with and without it.
-  try {
-    execFileSync("node", [join(root, "services/gateway/dist/identity-check.js")],
-                 { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return null;
-  } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`;
-    return out.split("\n").filter((l) => /failed|expected/.test(l)).join("; ")
-        || "identity adapter-walk check failed";
-  }
-});
+// Cases against the real resolveThrough, with stub doors. The property is an authentication
+// bypass: a refusing adapter that fell through would let the forwarded-header door answer for a
+// revoked PAT. The bug is a missing early return, and the code reads identically with and
+// without it.
+check("a door that refuses ends the request", runsClean("identity-check"));
 
-/* A check that runs the code, not one that reads it.
- *
- * Everything above asks what the source says; this one calls the function, through a prepared
- * script rather than one composed on the spot.
- *
- * The gate has already run `npm run -s build` by here, so dist is current. */
-check("the record knows whether a document was fetched before its gate", () => {
-  try {
-    execFileSync("node", ["checks/attest-shown.ts"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-    return null;
-  } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`.trim();
-    return out.split("\n").filter((l) => /FAIL|failed/.test(l)).join("; ")
-      || `checks/attest-shown.ts exited non-zero: ${out.slice(-300)}`;
-  }
-});
+check("the record knows whether a document was fetched before its gate", runsCheck("attest-shown.ts"));
 
-check("the write guards refuse what they say they refuse", () => {
-  const nothingToRun = unbuilt();
-  if (nothingToRun) return nothingToRun;
-  try {
-    execFileSync("node", [join(root, "checks/write-guards.ts")],
-                 { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return null;
-  } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`;
-    return out.split("\n").filter((l) => /FAIL|failed/.test(l)).join("; ") || "write-guards failed";
-  }
-});
+check("the write guards refuse what they say they refuse", runsCheck("write-guards.ts"));
 
-check("the pure document rules do what they say", () => {
-  const nothingToRun = unbuilt();
-  if (nothingToRun) return nothingToRun;
-  try {
-    execFileSync("node", [join(root, "checks/document-rules.ts")],
-                 { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return null;
-  } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`;
-    return out.split("\n").filter((l) => /FAIL|failed/.test(l)).join("; ") || "document-rules failed";
-  }
-});
+check("the pure document rules do what they say", runsCheck("document-rules.ts"));
 
 check("redaction lets no secret through, on the real predicate", runsClean("redact-check"));
 
@@ -167,7 +117,8 @@ check("every check this gate registers is a file git will carry", () => {
   const unresolvable = [];
   for (const src of sources) {
     const body = readFileSync(join(root, src), "utf8");
-    for (const m of body.matchAll(/(?:^|\n)\s*import\s+(?:[^"']*from\s*)?["'](\.[^"']+)["']/g)) {
+    // `await load("…")` is gate.ts's spelling for every module after the build.
+    for (const m of body.matchAll(/(?:^|\n)\s*(?:import\s+(?:[^"']*from\s*)?|await\s+load\(\s*)["'](\.[^"']+)["']/g)) {
       const target = join(dirname(src), m[1]).replace(/\\/g, "/");
       if (!trackedGate.has(target)) unresolvable.push(`${src} imports ${target}`);
     }
@@ -181,6 +132,34 @@ check("every check this gate registers is a file git will carry", () => {
     ? `${problems.join("; ")} — green here, and on a fresh clone the suite either cannot find ` +
       'the module or the gate throws before it runs. `git add` them by path (never `git add -A`).'
     : null;
+});
+
+check("the gate loads nothing built before its own build has run", () => {
+  // Node links and evaluates a module's whole static import graph before its body runs, so a
+  // check module that gate.ts imports statically has loaded `@zz/contracts` or `@zz/indexing`
+  // from the dist that existed before build.ts's `tsc -b`. It judges stale code, and on a clone
+  // with no dist the gate cannot start. So gate.ts imports build.ts statically and loads every
+  // other module afterwards, and nothing in the static graph it starts with reaches a package.
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  const follow = (rel: string): void => {
+    if (seen.has(rel) || !existsSync(join(root, rel))) return;
+    seen.add(rel);
+    const code = withoutComments(readFileSync(join(root, rel), "utf8"));
+    for (const m of code.matchAll(/^import\s+(?:[^"';]*?from\s*)?"([^"]+)"/gm)) {
+      const spec = m[1];
+      if (spec.startsWith("@zz/")) problems.push(`${rel} imports ${spec} statically`);
+      if (!spec.startsWith(".")) continue;
+      const target = join(dirname(rel), spec).replace(/\\/g, "/");
+      if (rel === "scripts/gate.ts" && target.startsWith("scripts/gate/checks/") &&
+          target !== "scripts/gate/checks/build.ts") {
+        problems.push(`scripts/gate.ts imports ${target} statically, so it loads before the build`);
+      }
+      follow(target);
+    }
+  };
+  follow("scripts/gate.ts");
+  return firstOf(problems, 6);
 });
 
 check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, search-extension release and actual preload membership",
@@ -199,50 +178,29 @@ check("the layer's tables, its files and its extension are gone from the tree",
  *
  * Named one by one, because a rule that exempted a check for failing would exempt every broken
  * check dropped in this directory.
- *
- * COUPLED: `working-checks-registered.ts` parses this map, so a name here exempts a file from
- * both rules.
  */
 const notRegistered = new Map<string, string>([
-  // Phase 6 holds two entries here, both from the same cause: a check whose remaining failures
-  // no task owns yet. I-41's `store-retired.ts` asserts a tree-wide negative that the plan
-  // wrongly assumed I-41 itself could satisfy — the drop is I-45's and the reader move is
-  // I-44's — and `no-store-namers.ts` is I-44's own tree-wide negative, red until it has moved
-  // them. Both are struck in the pass that registers them, as every entry here has been.
-  // Wave 3 held one entry here — `release-closes-findings.ts`, red on the registration
-  // rules from its activation until I-32 landed, as every check is between the two.
-  // Wave 2's one was named here in the pass that activated it, and struck when it landed.
-  // Empty again after wave 3. Phase 4 held three entries here from wave 2 until wave 2
-  // landed — I-29, I-30 and I-31's checks — and struck them in the same pass that
-  // registered them, the two-step Phase 1 used for the pat-label check, Phase 2 for
-  // `dropped-columns.ts` and Phase 3 for `catalog-eval-columns.ts`.
-  // The mechanism stays when the list is empty again: `working-checks-registered.ts` parses this
-  // map — a name here exempts a file from both rules — and the next phase needs somewhere to put
-  // its own.
-  //
-  // Phase 3 held one entry, `catalog-eval-columns.ts` (I-20), from wave 1 until wave 6: it forbids
-  // the very names I-21 to I-26 were still removing, and after wave 4 it still reported 15
-  // statements, every one in I-27's files. Wave 6 re-pointed those four readers, the check now
-  // reads 25,326 statements across 425 files clean, and the entry was struck in the same pass that
-  // registered it — re-read rather than trusted, since the wave-1 version of this comment named
-  // four hits that waves 2 and 3 had already fixed.
-  // Not a check, and not temporary: the Work rounds and request helpers checks/console-isolation.ts
-  // and checks/console-isolation-destinations.ts import (Phase 3, I-63; Phase 4, I-82), split out so no file passes the 700-line ceiling. Run
-  // alone it does nothing, so registering it would be a check green by absence.
+  // Not a check: the Work rounds and request helpers checks/console-isolation.ts and
+  // checks/console-isolation-destinations.ts import, split out so no file passes the 700-line
+  // ceiling. Run alone it does nothing, so registering it would be a check green by absence.
   ["console-isolation-work.ts",
    "a module checks/console-isolation.ts and checks/console-isolation-destinations.ts import, not a check of its own"],
-  // Not a check, and not temporary: the request helpers and the shared window, bucket, rows, where and first-day
-  // cases checks/console-work-query.ts and checks/console-work-query-destinations.ts import (Phase 5, I-91), split out
-  // so neither passes the 700-line ceiling. Run alone it does nothing, so registering it would be a check green by absence.
+  // Not a check: the request helpers and the shared window, bucket, rows, where and first-day cases
+  // checks/console-work-query.ts and checks/console-work-query-destinations.ts import, split out so
+  // neither passes the 700-line ceiling.
   ["console-work-query-harness.ts",
    "a module checks/console-work-query.ts and checks/console-work-query-destinations.ts import, not a check of its own"],
-  // Not checks: the seed checks/console-platform-query.ts reads and the platform query's isolation round
-  // checks/console-isolation.ts runs (Phase 5, I-90), split out so neither passes the 700-line ceiling.
+  // Not checks: the seed checks/console-platform-query.ts reads and the platform query's isolation
+  // round checks/console-isolation.ts runs, split out so neither passes the 700-line ceiling.
   ["console-platform-query-seed.ts", "a module checks/console-platform-query.ts imports, not a check of its own"],
   ["console-platform-query-isolation.ts", "a module checks/console-isolation.ts imports, not a check of its own"],
   // Not a check: the failure round's table map and its part at the member's own addresses, which
-  // checks/console-isolation.ts runs (Phase 7, I-121), split out so it does not pass the 700-line ceiling.
+  // checks/console-isolation.ts runs, split out so it does not pass the 700-line ceiling.
   ["console-isolation-failures.ts", "a module checks/console-isolation.ts imports, not a check of its own"],
+  // Not checks: the fakes checks drive the services in-process with — the core door, the stub pool, the route caller.
+  ["in-process.ts", "a module checks import to drive the services in-process, not a check of its own"],
+  // Not a check: what the SQL statement scanners share beside the statement reader.
+  ["sql-scan.ts", "a module the SQL statement scanners import, not a check of its own"],
 ]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {
@@ -252,22 +210,13 @@ check("every check in checks/ is registered here, or named here with a reason", 
   // gate with GATE INCOMPLETE and no verdict. Adding a check costs one line, and not adding it
   // costs a red gate naming the file.
   //
-  // A check that arrives broken is the case neither this rule nor
-  // `working-checks-registered.ts` covers on its own: that one reports an unregistered check
-  // only when it passes.
-  //
   // DELIBERATE: comments are stripped here and not in the rule above. `suiteSources()` hands
   // back raw text, and the two rules disagree about stripping for reasons written beside each.
   const declared = withoutComments(suiteSources());
   // Comments stripped first: a sentence naming `checks/foo.ts` in a paragraph explaining why
   // foo is unregistered would otherwise register it, and this file argues in exactly that way.
-  const registered = new Set([
-    ...[...declared.matchAll(/runs(?:Check|Shell)\("([A-Za-z0-9._-]+\.(?:ts|sh))"\)/g)]
-      .map((m) => m[1]),
-    // The older spelling: three checks are registered by an inline execFileSync naming the
-    // path, which the helper form alone does not find.
-    ...[...declared.matchAll(/["'`]checks\/([A-Za-z0-9._-]+)["'`]/g)].map((m) => m[1]),
-  ]);
+  const registered = new Set([...declared.matchAll(/runs(?:Check|Shell)\("([A-Za-z0-9._-]+\.(?:ts|sh))"\)/g)]
+    .map((m) => m[1]));
 
   // The two exempt categories, read off the file rather than off its name. A break-test spawns
   // `scripts/gate.ts`, so registering one makes the gate invoke itself. A host-dependent check
@@ -275,10 +224,9 @@ check("every check in checks/ is registered here, or named here with a reason", 
   // there is no deployment to reach. The `gate-` prefix decides nothing: not every such file
   // carries it.
   //
-  // DELIBERATE: no check in `checks/` reaches a deployment today — the one that did,
-  // `returns-sees-a-backtrack.ts`, was run by nothing and named columns the schema had dropped.
-  // The rule stays because it is judged on the syntax rather than on a list: the next such check
-  // is exempt the moment it is written, without an edit here.
+  // DELIBERATE: no check in `checks/` reaches a deployment today. The rule stays because it is
+  // judged on the syntax rather than on a list: the next such check is exempt the moment it is
+  // written, without an edit here.
   //
   // Judged on the syntax, not the text. `isGateLaunchSource` resolves the callee through the
   // file's real imports and reads its statically-known arguments, so a comment, a string and a

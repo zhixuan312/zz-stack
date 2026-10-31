@@ -36,6 +36,7 @@ import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { answer, type Route } from "./in-process.ts";
 
 const NAME = "approval-basis";
 const DONE = "approval-basis: an approval records the decision basis its caller stated and no other, an unknown " +
@@ -44,9 +45,6 @@ const DONE = "approval-basis: an approval records the decision basis its caller 
 /** A freeform document with two sections, the way an agent writes one. */
 const BODY = "# Notes\n\n## Alpha\n\nalpha line one\n\n## Beta\n\nbeta line one\n";
 const DOC = "notes.md";
-
-type Answer = { status: number; body: Record<string, unknown> };
-type Route = (req: unknown, res: unknown) => void;
 
 /** The request a console session's call arrives as, past the gateway's middleware: its resolved
  *  identity, and the `x-zz-*` headers it stamps (COUPLED: identity.ts, where a resolved identity is
@@ -62,18 +60,6 @@ function request(c: Core, body: Record<string, unknown>): Record<string, unknown
       "x-zz-user-role": "user", "x-zz-via": "session", "x-zz-pat-team": "", "x-zz-session-team": c.team,
     },
   };
-}
-
-/** Calls one mounted route as Express would, and waits for the answer it sends. */
-function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Record<string, unknown>) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** The details of the approval events on one document, oldest first. */

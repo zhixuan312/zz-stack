@@ -44,7 +44,8 @@ import { createHash } from "node:crypto";
 
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
-import { door, iso, phase, serveDoor, show, text, type Obj } from "./console-work-query-harness.ts";
+import { door, iso, phase, serveDoor, show, text } from "./console-work-query-harness.ts";
+import { type Obj } from "./in-process.ts";
 
 const NAME = "console-record-slices";
 const DONE = "console-record-slices: Record's Knowledge, Your agents, and Firsts and bests answer the window's activity " +

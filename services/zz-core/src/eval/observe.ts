@@ -1,21 +1,17 @@
 /**
- * OBSERVE (FR-8, Task I-7): the pre-protocol immutable evidence snapshot. `plugin_profile` binds
+ * OBSERVE (FR-8): the pre-protocol immutable evidence snapshot. `plugin_profile` binds
  * one `subject_version_id` (from `plugin_locate`/`plugin_register`) to a resolved window of real
  * runs and writes exactly one immutable `zz.eval_observation_snapshot` row — never updated, so
- * DISCOVER (a later task) and EVALUATE can bind a stable evidence reference without racing this
+ * DISCOVER and EVALUATE can bind a stable evidence reference without racing this
  * call, and the same release observed a second time (a different window, or one that resolved no
  * window at all) produces a second snapshot on the same subject rather than overwriting the first.
  *
- * FIXED (was DELIBERATE, migration 001 — fix dispatch on I-29's own follow-on): the row used to
- * store no facts, only the digest over them (`evidence_digest`) — so a deterministic/outcome
- * measure could read only whichever two facts a caller also happened to pass as raw columns.
- * `facts` (001) now stores the whole computed map, keyed by `OBSERVATION_FACT_KEYS`
+ * The row's `facts` stores the whole computed map, keyed by `OBSERVATION_FACT_KEYS`
  * (observe-facts.ts), so a measure can read any of them by dotted `definition.factPath`
- * (evaluate-measures.ts). The digest and the replay-recomputation behaviour are unchanged: a
- * replay of an idempotent call still recomputes the facts fresh, over the row's own stored
- * (resolved) window, and reports whether that recomputation still hashes to what was stored —
- * surfacing drift rather than silently serving whatever the facts happen to be today under the
- * old id.
+ * (evaluate-measures.ts), beside the digest over them (`evidence_digest`). A replay of an
+ * idempotent call recomputes the facts fresh, over the row's own stored (resolved) window, and
+ * reports whether that recomputation still hashes to what was stored — surfacing drift rather
+ * than silently serving whatever the facts happen to be today under the old id.
  *
  * Every fact below is `{numerator, denominator, value, coverage}` or `{value: null, reason}` —
  * never a bare 0 for a population with nothing in it. The heavier queries live in
@@ -77,8 +73,7 @@ type EvidenceWindowInput = { from: string; to: string } | { last_runs: number };
  *  the caller's most recent `n`, spanning from the OLDEST of those runs' `started_at` to the
  *  YOUNGEST run's own end — never its `started_at`. A run's events happen AFTER it starts, so a
  *  window bounded by `max(started_at)` alone clips the very events the most recent run in the
- *  window exists to include; verified against real seeded rows during this task (a run's events
- *  one and two minutes after its own `started_at` were silently dropped before this fix). A run
+ *  window exists to include. A run
  *  still open (`ended_at is null`) bounds by `now()`, so an in-progress run's events so far are
  *  still admitted rather than excluded for having no recorded end yet.
  *
@@ -114,9 +109,9 @@ async function doorSurface(
       join zz.plugin p on p.id = pv.plugin_id
      where p.name = $1 and pv.version = $2`, [plugin, version])).rows.map((r) => r.name);
   if (recorded.length) return { tools: recorded, source: `zz.plugin_tool at ${version}` };
-  // A version released before its door recorded a surface (/manage recorded none before 0.77.3):
-  // the nearest recorded version's, named, rather than every tool its skills mention — which
-  // counted /core's tools as zz-access's and as never called.
+  // A version whose door recorded no surface: the nearest recorded version's, named, rather than
+  // every tool its skills mention — which would count /core's tools as zz-access's and as never
+  // called.
   const nearest = (await pool.query<{ version: string; names: string[] }>(`
     select pv.version, array_agg(pt.name order by pt.name) as names
       from zz.plugin_tool pt
@@ -141,9 +136,7 @@ interface Observation {
   facts: Record<string, ObservedFact>;
   coverageSurface: { observed: number; total: number; source: string };
   /** The one runtime fact the snapshot row keeps: the platform version this observation ran on
-   *  (`platform_version`). The `runtime_identity` jsonb it used to be stored in, and the
-   *  `environment_digest` over it, are gone — nothing ever read the digest, and the version is
-   *  the whole of what the identity carried that a reader can act on. */
+   *  (`platform_version`) — the whole of a runtime identity that a reader can act on. */
   platformVersion: string;
 }
 

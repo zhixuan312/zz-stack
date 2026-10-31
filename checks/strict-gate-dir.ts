@@ -1,12 +1,8 @@
-// Two claims: the subtree is clean, and annotating it did not change what the gate runs.
-import { spawnSync } from "node:child_process";
+// Two claims: every gate module is reached, and none is typed by widening to `any`.
+// COUPLED: strict-tooling-zero.ts runs the compiler over this subtree; this reads what it accepts.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 const fail: string[] = [];
-const r = spawnSync("npx", ["tsc", "--noEmit", "-p", "tsconfig.tooling.json"], { encoding: "utf8" });
-const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-const mine = out.split("\n").filter((l) => /^scripts\/gate\/[^(]*\(\d+,\d+\): error TS/.test(l));
-if (mine.length) fail.push(`${mine.length} strict error(s) remain under scripts/gate/:\n` + mine.slice(0, 20).join("\n"));
 
 const modules = readdirSync("scripts/gate/checks").filter((f) => f.endsWith(".ts"));
 // DELIBERATE: a floor, not an exact count — the exact number is wrong the first time a module
@@ -36,7 +32,7 @@ for (const m of modules) {
 let registered = 0;
 for (const m of modules) registered += [...readFileSync(join("scripts/gate/checks", m), "utf8").matchAll(/^check\(/gm)].length;
 if (registered < 100) fail.push(`only ${registered} check() registrations found across the gate modules — ` +
-                                `annotating this subtree appears to have removed some`);
+                                `some were lost`);
 for (const f of modules) {
   const src = readFileSync(join("scripts/gate/checks", f), "utf8");
   src.split("\n").forEach((line, i) => {

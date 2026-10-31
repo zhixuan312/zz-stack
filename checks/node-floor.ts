@@ -28,16 +28,22 @@ if (!declared) {
   process.exit(1);
 }
 
-const requiredMatch = declared.match(/\d+/);
+// The whole version, not the major: a floor of `>=24.12.0` is unmet on 24.3. A part the floor
+// leaves out is 0.
+const requiredMatch = declared.match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
 if (!requiredMatch) {
   console.error(`package.json engines.node is ${JSON.stringify(declared)}, which names no ` +
     "version — the floor is undeclared, not unmet.");
   process.exit(1);
 }
-const requiredMajor = Number(requiredMatch[0]);
-const runningMajor = Number(process.version.replace(/^v/, "").split(".")[0]);
+const required = requiredMatch.slice(1, 4).map((n) => Number(n ?? 0));
+const running = process.versions.node.split(".").map(Number);
+const below = (a: number[], b: number[]): boolean => {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
+};
 
-if (runningMajor < requiredMajor) {
+if (below(running, required)) {
   console.error(
     `Node ${process.version} does not meet this project's floor of ${declared} ` +
     `(package.json engines.node) — ${WHY}`);

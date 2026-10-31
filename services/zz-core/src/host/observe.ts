@@ -82,9 +82,7 @@ export function evidenceEntryId(fact: EvidenceFact): string {
  * about. Only an audit asks: a write and an approval are told their snapshot by the act that made
  * it, which is the one place that knows it without a second read racing the next write.
  *
- * Read from the ROW (`versions.ts`), never from a file: a `readFileSync` of the retired store
- * answered 1 for every document, so an audit of a revised document pointed at its first version.
- * A document that cannot be read answers the first snapshot, whose entry a run that recorded
+ * Read from the ROW (`versions.ts`), never from a file. A document that cannot be read answers the first snapshot, whose entry a run that recorded
  * nothing else does not hold either — the audit then satisfies nothing, which is the truth.
  */
 async function currentSnapshot(team: string, relPath: string): Promise<Snapshot> {
@@ -231,7 +229,7 @@ async function note(
   await recordEvidence(runId, step, {
     id, stepId: step, kind: fact,
     about: fact === "document" ? relPath : documentEntry,
-    // The kernel's type requires it and the column that held it is gone; nothing reads it.
+    // The kernel's type requires it and no column holds it; nothing reads it.
     note: "",
     supersedes: replaced && held.has(replaced) ? replaced : undefined,
   }, by);

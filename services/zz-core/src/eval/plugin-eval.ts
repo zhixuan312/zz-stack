@@ -135,12 +135,11 @@ export function toolsNamedBy(plugin: string, entry: Entry = entryOf(plugin)): st
   return [...named].sort();
 }
 
-// `plugin_profile` moved to observe.ts (Task I-7): it now writes an immutable
-// `zz.eval_observation_snapshot` and takes a `subject_version_id` and an `evidence_window`
-// rather than the bare `plugin`/`version` every other tool here still takes, which made it a
-// mutator sharing nothing else about this file's read-only shape. `entryOf`, `serversOf`,
-// `servesOwnDoor` and `toolsNamedBy` stay here and observe.ts imports them, the same way
-// subject.ts already does.
+// `plugin_profile` lives in observe.ts: it writes an immutable `zz.eval_observation_snapshot`
+// and takes a `subject_version_id` and an `evidence_window` rather than the bare
+// `plugin`/`version` every other tool here takes, which makes it a mutator sharing nothing else
+// about this file's read-only shape. `entryOf`, `serversOf`, `servesOwnDoor` and `toolsNamedBy`
+// are here and observe.ts imports them, the same way subject.ts does.
 export function registerPluginEvalTools(server: McpServer): void {
   server.registerTool(
     "plugin_conform",

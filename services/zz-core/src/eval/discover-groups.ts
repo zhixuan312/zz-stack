@@ -1,10 +1,10 @@
 /**
- * The deterministic half of DISCOVER (Task I-9, FR-11): grouping real failures by the failure
+ * The deterministic half of DISCOVER (FR-11): grouping real failures by the failure
  * mode each is evidence of, before any model is asked anything. Kept out of discover.ts to stay under this
  * repository's 700-line ceiling — discover.ts is the tool, the evaluator and the model calls;
  * this is the SQL and the grouping arithmetic behind it.
  *
- * Two grouping passes, because the plan header names two evidence shapes and "prevalence" means
+ * Two grouping passes, because there are two evidence shapes and "prevalence" means
  * a different population for each:
  *   - REFUSAL groups: one (tool, refusal rule, owner) triple per group, over the
  *     exact event population `toolCallEvents` already bounds `pluginTraces`' own `use` rows to.
@@ -191,10 +191,10 @@ export function returnGroups(returns: Traces["returns"]): ReturnGroup[] {
 /** A failure mode's IDENTITY across snapshots: `(plugin_id, stable_key)` — the same refusal rule
  *  on the same tool, or the same return between the same stages, is the same failure mode
  *  whichever window found it. So a later window's run resolves to the identity a protocol already
- *  folded in and writes only a new sighting of it (Task I-24), and `new_recurring_failure` is
- *  asked about an identity no version has read rather than about every re-observation. Without
- *  one, every re-observation minted a second failure mode a protocol had already folded in, and
- *  that trigger demanded a new protocol version for nothing new. */
+ *  folded in and writes only a new sighting of it, and `new_recurring_failure` is asked about an
+ *  identity no version has read rather than about every re-observation. Without one, every
+ *  re-observation would mint a second failure mode a protocol had already folded in, and that
+ *  trigger would demand a new protocol version for nothing new. */
 export function refusalKey(g: Pick<RefusalGroup, "tool" | "normalized_text">): string {
   // `refusalRule`, the key `foldByRule` merges on — never the text a folded group happens to
   // carry, which is whichever of its singular and plural wordings came first.

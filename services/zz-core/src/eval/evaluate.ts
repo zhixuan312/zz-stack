@@ -96,8 +96,8 @@ async function qualificationMet(
   return latest.every((q) => !!q && rankOf(q.state) >= rankOf(minimum));
 }
 
-/** `EstablishmentPolicy.minCoverage` is `FreeformRecord` (spec v8 fixes no shape — this task's
- *  own plan boundary leaves it to this file): `minUsableRuns` and `minSubjectRefs`, the two
+/** `EstablishmentPolicy.minCoverage` is `FreeformRecord` (spec v8 fixes no shape, so it is this
+ *  file's): `minUsableRuns` and `minSubjectRefs`, the two
  *  numbers `evaluation_score` can actually check against what this run holds. Either left out
  *  (or the whole policy left out) is satisfied trivially — a protocol that names no coverage
  *  floor imposes none. */

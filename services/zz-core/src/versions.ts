@@ -8,9 +8,8 @@
  * reader is shown is the snapshot's PUBLIC `version`: several snapshots can share one, when a
  * change with no new cause lands on a row somebody was shown or signed.
  *
- * There is no second half. The team's file store and its git history are retired — phase 6
- * made the rows the record — so a document that exists is a row and a document that does not is
- * a refusal, never a file that failed to be read.
+ * There is no second half. The rows are the record, so a document that exists is a row and a
+ * document that does not is a refusal, never a file that failed to be read.
  *
  * DELIBERATE: `doc_revision.body` is the BODY. The schema gives a revision `title`, `body` and
  * `tags` as separate columns, so an envelope living inside `body` would put `title` and `tags`
@@ -429,12 +428,10 @@ export async function principalId(
 
 /** The platform's record of one act, as a `zz.event` row.
  *
- * The activity journal WAS a file beside each initiative's documents; the store is gone, so the
- * entry lands in `zz.event` — the same table `platformEvent` writes and the console reads.
+ * The entry lands in `zz.event` — the same table `platformEvent` writes and the console reads.
  *
- * DELIBERATE: the store root this used to take is gone from the signature. It addressed the file
- * the entry was appended to, and there is no file; the initiative and the team are resolved from
- * the path and the actor instead.
+ * DELIBERATE: the signature takes no store root. There is no file to append to; the initiative
+ * and the team are resolved from the path and the actor.
  *
  * COUPLED: the `kind` is `DOCUMENT_EVENT_PREFIX` + the act, imported from `attest.ts` rather
  * than spelled here — the writer and the reader of this record must agree on it by construction,

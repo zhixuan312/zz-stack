@@ -1,10 +1,9 @@
 /**
- * The qualification ladder's pure decision (Task I-11, FR-16): evidence counts and a protocol's
+ * The qualification ladder's pure decision (FR-16): evidence counts and a protocol's
  * own `QualificationPolicy.thresholds` in, one of `EVAL_STATE_ENUMS.qualificationState` out. No
  * database, no model call, no randomness — `qualify.ts` is the only caller that gathers real
- * evidence and hands it here, and `checks/eval-qualification-ladder.ts` (this task's own check,
- * not plan-authored — the plan's boundary leaves final deliverable content to this task) pins
- * every rung of this function against fixed evidence, offline.
+ * evidence and hands it here, and `checks/eval-qualification-ladder.ts` pins every rung of this
+ * function against fixed evidence, offline.
  *
  * The ladder is EARNED bottom-up, never scored top-down: a rung's own bar clearing is not enough
  * — every rung below it must already hold, so `human_calibrated` with a thin anchor pass rate is
@@ -12,7 +11,7 @@
  * an evaluator that cannot even answer a fact it was handed.
  *
  * `LADDER_THRESHOLD_KEYS` names every key this function reads off `thresholds` (a `FreeformRecord`
- * — spec v8 fixes no shape for it) — the vocabulary Task I-29's bootstrap protocol writes into
+ * — spec v8 fixes no shape for it) — the vocabulary the bootstrap protocol in
  * `catalog/zz/zz-plugin-eval/protocols/zz-core.json` has to match, so it is exported rather
  * than left implicit in this file's own reads.
  */

@@ -46,6 +46,7 @@ import type pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-close";
 const DONE = "console-close: the console and the MCP tool close an initiative to the same outcome, closer, acceptor " +
@@ -60,10 +61,6 @@ const OTHER_EMAIL = "other@example.test";
 const OTHER_TEAM = "other-team";
 /** COUPLED: NO_INITIATIVE in services/gateway/src/console/initiatives.ts, which the close's 404 answers. */
 const NOT_FOUND = "No initiative of the team you act for has that name.";
-
-type Obj = Record<string, unknown>;
-type Answer = { status: number; body: Obj };
-type Route = (req: unknown, res: unknown) => void;
 
 /** What an initiative is made as before its case closes it: freeform with `notes.md`, freeform with
  *  nothing, an sdlc initiative stopped at an unsigned spec, one walked to an unsigned review, one walked
@@ -135,18 +132,6 @@ function request(c: Core, team: string, slug: string, body: Obj): Obj {
       "x-zz-user-role": "user", "x-zz-via": "session", "x-zz-pat-team": "", "x-zz-session-team": c.team,
     },
   };
-}
-
-/** Calls the mounted route as Express would, and waits for the answer it sends. */
-function answer(route: Route, req: Obj): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: Obj) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 /** An initiative made as `shape` through zz-core as the seeded person: its dated name. The sdlc walk is

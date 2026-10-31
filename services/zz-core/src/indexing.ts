@@ -3,11 +3,10 @@
  *
  * COUPLED: the row a document IS — `zz.doc` + `zz.doc_revision` — is written by `saveDocument`
  * in `document-save.ts`, the ONE insert path into that shape. Nothing here writes a second one: two
- * writers for one row shape drift, and this platform's two already had (the path column, the
- * revision numbering, what a revision's `body` holds).
+ * writers for one row shape drift (the path column, the revision numbering, what a revision's
+ * `body` holds).
  *
- * The file store and its git history are gone with phase 6, so every fact a guard reads is a
- * row: a document's initiative and flow come from `zz.initiative`, a revision's approval from
+ * Every fact a guard reads is a row: a document's initiative and flow come from `zz.initiative`, a revision's approval from
  * `zz.doc_revision`, and the close's own `outcome`/`closed_by` from the revision's `fields`
  * payload — the envelope's open half, which is where a key no column carries lands.
  *
@@ -66,8 +65,8 @@ export function platformEvent(e: {
    *  id has to come from the statement that writes the row, not a second round trip that can
    *  disagree with it. */
   initiative?: string | null;
-  /** Everything else the act carries, as one bag. `activity` used to take it as the rest of the
-   *  object; one entry shape rather than two is why it is a named field now. */
+  /** Everything else the act carries, as one bag: a named field, so there is one entry shape
+   *  rather than two. */
   detail?: Record<string, unknown>;
 } & Record<string, unknown>): void {
   const { actor, kind, subject, team, initiative = null, detail, ...rest } = e;
@@ -122,10 +121,9 @@ export async function insertEvent(
   try {
     await c.query(
       `insert into zz.event (actor_id, team_id, initiative_id, kind, subject, detail, origin)
-       -- FOLDED ON BOTH SIDES. This folded
-       -- only the parameter, so an address stored with any upper case resolved to no principal and
-       -- zz.event.actor_id was written null, silently — platformEvent's insert is fire-and-forget and nothing
-       -- reads the column back to notice.
+       -- FOLDED ON BOTH SIDES. Folding only the parameter resolves an address stored with any
+       -- upper case to no principal, and zz.event.actor_id is written null, silently — platformEvent's
+       -- insert is fire-and-forget and nothing reads the column back to notice.
        values ((select id from zz.principal where lower(email) = lower($1)),
                (select id from zz.team where slug = $2),
                (select i.id from zz.initiative i join zz.team t on t.id = i.team_id
@@ -192,18 +190,16 @@ export interface DocRow {
    *  its only home, so a reader of "what is this source for" asks the link. */
   supports: string[];
 }
-/** Every document of one initiative — the folder listing the store used to answer with
- *  `readdirSync`, read from the rows that replaced it. Keyed by the same `path` a caller looks
+/** Every document of one initiative, read from its rows. Keyed by the same `path` a caller looks
  *  a document up by, so the two agree about which document a flow's declaration names.
  *
  *  `text` is whether the rows carry their BODIES. A reader that decides from the metadata alone —
  *  a status, a path, an envelope field, a support link — wants `"none"`: a document's body is its
- *  bytes, an initiative holds up to several megabytes of them, and reading a page of ten
- *  initiatives cost more in transferred bodies than in every other statement of the page put
- *  together (measured: 6.5 MB and 71 ms per initiative against 13 ms without). `docBodies` then
- *  fetches the text of the few paths the reader actually reads.
+ *  bytes, an initiative holds up to several megabytes of them, and a page of initiatives costs
+ *  more in transferred bodies than in every other statement of the page put together. `docBodies`
+ *  then fetches the text of the few paths the reader actually reads.
  *
- *  The default is `"all"`: a caller that does not say still gets what it always got. */
+ *  The default is `"all"`: a caller that does not say gets the bodies. */
 export async function docRows(
   p: pg.Pool, team: string | null, initiative: string, text: "all" | "none" = "all",
 ): Promise<DocRow[]> {
@@ -266,8 +262,8 @@ export function sealOf(
   stamped: string, rev: { approved_by: string | null; approved_at: string | null } | null,
 ): { by: string; at: string } | null {
   // DELIBERATE: the seal is the one the revision holds, never the envelope's `approved_at`. The
-  // envelope states a day; carried forward, that day was cast back to its midnight and replaced
-  // the instant `document_approve` sealed. `rev.approved_at` is the column's own text, which
+  // envelope states a day; carried forward, that day would be cast back to its midnight and
+  // replace the instant `document_approve` sealed. `rev.approved_at` is the column's own text, which
   // `::timestamptz` reads back as the same instant.
   return parseEnvelope(stamped).status === "approved" && rev?.approved_by && rev.approved_at
     ? { by: rev.approved_by, at: rev.approved_at } : null;
@@ -275,7 +271,7 @@ export function sealOf(
 
 /** Whether a source is the words a change filed as its own cause (`source_content`), which the
  *  routers never read as a stakeholder's decision: they were written with the version they caused,
- *  so they cannot decide anything about it, and a decision is filed with `source_add` (bug 0527280f). */
+ *  so they cannot decide anything about it, and a decision is filed with `source_add`. */
 export const isCapturedCause = (d: { fields: Record<string, string> | null }): boolean => Boolean(d.fields?.cause_of);
 
 /** A source document, written by source_add and by a captured `source_content` — same `type: source`,
@@ -288,7 +284,7 @@ export const isCapturedCause = (d: { fields: Record<string, string> | null }): b
  *
  * DELIBERATE: the content follows the envelope as it was sent, with nothing appended. A source is
  * material someone else wrote — an uploaded file is read back byte for byte, its last line ending
- * where the file's did — and a newline added here was a byte the file never had. */
+ * where the file's did — and a newline added here would be a byte the file never had. */
 export function sourceDocument(
   opts: { title: string; by: string; day: string; content: string;
           /** The flow stage this source is the output of — an audit round names its audit stage. */

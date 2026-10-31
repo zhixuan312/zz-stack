@@ -6,9 +6,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, functionBody, gatewaySource, root, sourceFiles, withoutComments, zzCoreSource } from "../read.ts";
+import { between, firstOf, root, sourceFiles, toolsIn, withoutComments, zzCoreSource } from "../read.ts";
 import { check, note } from "../run.ts";
-import { catalogRoot, claimsOurs, flows, platformSkills, platformSurface, skillsOf } from "../facts.ts";
+import { EVAL_DOOR, MANAGE_DOOR, catalogRoot, claimsOurs, doorTools, flows, platformSurface, skillsOf } from "../facts.ts";
 
 
 check("no tool description teaches a path form the platform refuses", () => {
@@ -85,8 +85,7 @@ check("a skill never names a platform tool that does not exist", () => {
   // The derived noun set leaves other servers' tools alone: a name under a noun this platform
   // registers nothing beneath is somebody else's.
   const bad: string[] = [];
-  const every = [...platformSkills().map((sk) => sk.path)];
-  for (const f of flows) for (const sk of skillsOf(f)) every.push(sk.path);
+  const every = flows.flatMap((f) => skillsOf(f).map((sk) => sk.path));
   for (const f of every) {
     const txt = readFileSync(f, "utf8");
     // A call shape, never a bare word: backticked, backtick-then-paren, or quoted. The quoted
@@ -111,25 +110,15 @@ check("zz-platform's roster of platform tools is the tools zz-core serves", () =
   // mounts on the evaluation path, so the modules it imports are that door's, and everything
   // else zz-core registers is on the core door wherever its file sits.
   const doorOfTool = new Map();
-  const EVAL_DOOR = "services/zz-core/src/eval-door.ts";
-  if (!existsSync(join(root, EVAL_DOOR))) return `${EVAL_DOOR} is gone — the roster's door column cannot be checked against anything`;
-  const evalNames = new Set();
-  for (const m of readFileSync(join(root, EVAL_DOOR), "utf8")
-         .matchAll(/import \{ register\w+ \} from "(\.\/[\w/-]+)\.js"/g)) {
-    const mod = join(root, "services/zz-core/src", `${m[1].replace(/^\.\//, "")}.ts`);
-    if (!existsSync(mod)) return `${EVAL_DOOR} imports ${m[1]}, which is not there`;
-    for (const t of readFileSync(mod, "utf8").matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) {
-      evalNames.add(t[1]);
-    }
-  }
+  const evalNames = doorTools(EVAL_DOOR);
+  if (typeof evalNames === "string") return `${evalNames} — the roster's door column cannot be checked against anything`;
   const src = zzCoreSource();
-  const served = new Set();
+  const served = new Set<string>();
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) served.add(m[1]);
   if (served.size < 10) return null;   // the shape of the source changed; a later check says so
   for (const t of served) doorOfTool.set(t, evalNames.has(t) ? "/eval/mcp" : "/core/mcp");
-  // The control on the split: both doors must have tools, or the column below is compared
-  // against a map that answers the same thing to everything.
-  if (!evalNames.size) return "no tool was attributed to the evaluation door, so the roster's door column is compared against a map that says /core/mcp to everything";
+  // The control on the split: both doors must have tools (doorTools refuses an empty one), or the
+  // column below is compared against a map that answers the same thing to everything.
   if (![...doorOfTool.values()].includes("/core/mcp")) return "no tool was attributed to the core door — the derivation put the whole service behind the evaluation door";
   // A third door on this roster is the gateway's /manage: a tool that migrated there from /core
   // must still be carried, so a delivery agent is still told it is ours.
@@ -139,21 +128,9 @@ check("zz-platform's roster of platform tools is the tools zz-core serves", () =
   // So /manage widens what the roster may name and what its door column is judged against, not
   // what it must be exhaustive about.
   //
-  // COUPLED: extend MANAGE_FILES with each /manage module as it is created, or the roster's
-  // rows for that module's tools read as names no door serves.
-  const MANAGE_FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
-                        "services/gateway/src/admin/flows.ts"];
-  const manageNames = new Set<string>();
-  for (const rel of MANAGE_FILES) {
-    if (!existsSync(join(root, rel))) {
-      return `${rel} is gone — the roster may name a /manage tool, so a scan that cannot read ` +
-             "that door would report every such name as a tool the platform does not serve";
-    }
-    for (const m of readFileSync(join(root, rel), "utf8")
-           .matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) manageNames.add(m[1]);
-  }
   // The control: an empty /manage set turns the widening below into "and anything else".
-  if (!manageNames.size) return "no tool was found on /manage — the roster's third door is derived from nothing, so any name at all would be accepted as one";
+  const manageNames = doorTools(MANAGE_DOOR);
+  if (typeof manageNames === "string") return `${manageNames} — the roster's third door is derived from nothing, so any name at all would be accepted as one`;
   // A name zz-core also registers keeps zz-core's door: the two never overlap today, and if they
   // ever did, the roster should say the door the flow agent reaches, not the administrator's.
   for (const t of manageNames) if (!doorOfTool.has(t)) doorOfTool.set(t, "/manage/mcp");
@@ -289,42 +266,18 @@ check("a skill never instructs a tool its package cannot reach", () => {
   // Reachable = the baseline (/core, in every agent and the required package) plus whatever the
   // manifest declares in `servers`.
   const surfaceOf = new Map();
-  const registered = (src: string, from: number, to?: number) => {
-    const body = to === undefined ? src.slice(from) : src.slice(from, to);
-    return [...body.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
-  };
-  const core = zzCoreSource();
-  const gw = gatewaySource();
-  const adm = readFileSync(join(root, "services/gateway/src/admin.ts"), "utf8");
   // zz-core serves two doors. `zzCoreSource()` is the whole service as one text, so filing all
   // of it under /core/mcp makes the clause below unfalsifiable for those tools: a package that
-  // declares no `servers` still reaches /core/mcp.
-  //
-  // COUPLED: derived from the door file's own imports, not from where the modules sit — the
-  // same derivation checks/eval-door.ts uses.
-  const EVAL_DOOR = "services/zz-core/src/eval-door.ts";
-  if (!existsSync(join(root, EVAL_DOOR))) return `${EVAL_DOOR} is gone — every tool zz-core registers would be filed under /core/mcp, which is the door every account already has, so this check could not find an unreachable tool on the evaluation door`;
-  const evalMods = [...readFileSync(join(root, EVAL_DOOR), "utf8")
-    .matchAll(/import \{ register\w+ \} from "(\.\/[\w/-]+)\.js"/g)]
-    .map((m) => `services/zz-core/src/${m[1].replace(/^\.\//, "")}.ts`);
-  const evalTools = new Set();
-  for (const rel of evalMods) {
-    if (!existsSync(join(root, rel))) return `${EVAL_DOOR} imports ${rel}, which is not there`;
-    for (const t of registered(readFileSync(join(root, rel), "utf8"), 0)) evalTools.add(t);
-  }
-  // Both controls, because either half collapsing makes this check pass on nothing: no eval
-  // tools and every zz-core tool is on /core/mcp again, no core tools and `reach` is never
-  // exercised.
-  if (!evalTools.size) return `${EVAL_DOOR} registers no tool this check can see (${evalMods.length} module(s) imported), so zz-core's whole surface would be filed under /core/mcp`;
-  for (const t of registered(core, 0)) surfaceOf.set(t, evalTools.has(t) ? "/eval/mcp" : "/core/mcp");
+  // declares no `servers` still reaches /core/mcp. Both controls, because either half
+  // collapsing makes this check pass on nothing: no eval tools and every zz-core tool is on
+  // /core/mcp again, no core tools and `reach` is never exercised.
+  const evalTools = doorTools(EVAL_DOOR);
+  if (typeof evalTools === "string") return `${evalTools}, so zz-core's whole surface would be filed under /core/mcp`;
+  for (const { name: t } of toolsIn(zzCoreSource())) surfaceOf.set(t, evalTools.has(t) ? "/eval/mcp" : "/core/mcp");
   if (![...surfaceOf.values()].includes("/core/mcp")) return "not one tool zz-core registers was attributed to /core/mcp — the split put everything on the evaluation door";
-  const manageRegion = between(gw, "async function buildAccessServer", "\nserveMcp(app,");
-  if (!manageRegion.text) return `the access server cannot be located: ${manageRegion.why}`;
-  for (const t of registered(manageRegion.text, 0)) surfaceOf.set(t, "/manage/mcp");
-  // Everything in admin.ts is on /manage too: registerShelf and registerAdminTools are both
-  // mounted by buildAccessServer. What separates them is the caller's role, checked by "the
-  // shelf is on the door everyone has, and installing is not".
-  for (const t of registered(adm, 0)) surfaceOf.set(t, "/manage/mcp");
+  const manageTools = doorTools(MANAGE_DOOR);
+  if (typeof manageTools === "string") return `the access door cannot be read: ${manageTools}`;
+  for (const t of manageTools) surfaceOf.set(t, "/manage/mcp");
 
   const bad: string[] = [];
   // The other direction is reported, not failed. A tool on a door a package reaches that none
@@ -415,16 +368,9 @@ check("every tool on the access door is taught by a skill that ships with it", (
   // practice, and nothing fails. Both skills in the package are read: zz-access for the person
   // in front of you, zz-admin for everybody else. Which of the two teaches a tool is editorial;
   // that one of them does is not.
-  const src = gatewaySource();
-  const adm = readFileSync(join(root, "services/gateway/src/admin.ts"), "utf8");
-  // The function's own braces, not a comment divider: access-door.ts contains no divider, so a
-  // region ending at one would run out of the file and into whatever `gatewaySource()`
-  // concatenated next.
-  const region = functionBody(src, "buildAccessServer");
-  if (!region) return "the access server's registrations cannot be located: buildAccessServer() is not a function this can read";
-  const grab = (t: string) => [...t.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
-  const tools = [...new Set([...grab(region), ...grab(adm)])];
-  if (tools.length === 0) return "no tool found on /manage — the extraction is broken";
+  const manage = doorTools(MANAGE_DOOR);
+  if (typeof manage === "string") return `the access door cannot be read: ${manage}`;
+  const tools = [...manage];
   const skillsDir = join(catalogRoot, "zz/zz-access/skills");
   const taught = readdirSync(skillsDir)
     .map((d) => join(skillsDir, d, "SKILL.md"))

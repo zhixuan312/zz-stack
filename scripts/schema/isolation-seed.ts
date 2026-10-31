@@ -106,7 +106,7 @@ function plain(): Record<Field, string> {
 
 const DAY = 86_400_000;
 
-async function seedTeam(db: pg.ClientBase | pg.Pool, n: "one" | "two", slug: string, w: Record<Field, string>, now: number): Promise<Team> {
+async function seedTeam(db: pg.ClientBase, n: "one" | "two", slug: string, w: Record<Field, string>, now: number): Promise<Team> {
   const one = async (sql: string, args: unknown[]): Promise<string> => (await db.query<{ id: string }>(sql, args)).rows[0].id;
   const ago = (days: number): string => new Date(now - days * DAY).toISOString();
   const email = `${n}@isolation.example.test`;
@@ -220,7 +220,7 @@ async function seedTeam(db: pg.ClientBase | pg.Pool, n: "one" | "two", slug: str
 
 /** Seeds both teams, the person in both and the superadmin into `db`, signs the admins and the superadmin
  *  in, and answers what it wrote; the second team's slug is its own sentinel. */
-export async function seedIsolation(db: pg.ClientBase | pg.Pool, now = Date.now()): Promise<Isolation> {
+export async function seedIsolation(db: pg.ClientBase, now = Date.now()): Promise<Isolation> {
   const s = sentinels();
   const superadmin = "superadmin@isolation.example.test";
   await db.query("insert into zz.principal (email, display_name, role) values ($1, 'Isolation superadmin', 'superadmin')", [superadmin]);

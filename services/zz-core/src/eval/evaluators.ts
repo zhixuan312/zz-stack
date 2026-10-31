@@ -1,13 +1,11 @@
 /**
- * The evaluator registry (FR-13, FR-15, Task I-8; one table since Task I-23): durable versions for
- * plugin-eval's bounded-semantic and generative-critic questions. Asking one is `semantic.ts`'s
- * `askEvaluatorQuestion`, and recording the answer its `insertEvaluatorAnswer`.
+ * The evaluator registry (FR-13, FR-15): durable versions for plugin-eval's bounded-semantic and
+ * generative-critic questions. Asking one is `semantic.ts`'s `askEvaluatorQuestion`, and
+ * recording the answer its `insertEvaluatorAnswer`.
  *
  * One table, two lifetimes folded into one row:
- *   - `zz.eval_evaluator` — one row per `stable_key`, forever — is gone. Its `kind`
- *     (`noul`/`choice`/`score`) was never read by anything, and the phase-3 migration moved the
- *     key onto the version, where it is the evaluator's identity: `unique (stable_key, version)`
- *     is what a later version is the next one of.
+ *   - the evaluator's identity is its `stable_key`, a column of the version:
+ *     `unique (stable_key, version)` is what a later version is the next one of.
  *   - `zz.eval_evaluator_version` — the frozen question/answer-schema/positive-answer a measure
  *     actually resolves to, keyed by `content_digest` so registering the same definition twice
  *     reuses the version rather than minting a new one on every call. `polarity` jsonb is the one
@@ -45,11 +43,10 @@ export type EvaluatorAnswerSchema =
  *
  *  `polarity` is the caller's own shape for "how the answer is meant"; the one fact the version
  *  stores is `good_when`, the single answer that counts as positive (`positive_answer`, spec item
- *  33). `model_policy` is carried for the callers that still declare it (a measure's evaluator
- *  object in `protocol_body`, and `checks/eval-evaluators.ts`'s own type sample) and has no
- *  column in the target shape: the phase-3 migration drops it, and it is no longer part of the
- *  content digest — a digest over a fact no row carries would mint two versions that differ in
- *  nothing. */
+ *  33). `model_policy` is carried for the callers that declare it (a measure's evaluator object
+ *  in `protocol_body`, and `checks/eval-evaluators.ts`'s own type sample) and has no column, and
+ *  it is not part of the content digest — a digest over a fact no row carries would mint two
+ *  versions that differ in nothing. */
 export interface EvaluatorDefinition {
   readonly stable_key: string;
   readonly kind: AnswerKind;
@@ -59,8 +56,8 @@ export interface EvaluatorDefinition {
   readonly model_policy: Readonly<Record<string, unknown>>;
 }
 
-/** The one answer that counts as positive, from the caller's `polarity` — `good_when`, as the
- *  migration reads it (`polarity->>'good_when'`). `null` when none is named: an evaluator may
+/** The one answer that counts as positive, from the caller's `polarity` — `good_when`
+ *  (`polarity->>'good_when'`). `null` when none is named: an evaluator may
  *  declare no positive side, and a made-up one is worse than an absent one. */
 function positiveAnswerOf(polarity: Readonly<Record<string, unknown>>): string | null {
   const good = polarity.good_when;
@@ -83,7 +80,7 @@ type Runner = Pick<pg.Pool, "query">;
  *  Refuses a `kind`/`answer_schema.type` mismatch, and a `stable_key` whose existing versions
  *  were registered under a different `answer_schema.type` — an evaluator's kind is its identity,
  *  not a per-version choice, and the version's own `answer_schema` is the only place it is
- *  recorded now that `zz.eval_evaluator` is gone. */
+ *  recorded. */
 export async function registerEvaluator(
   def: EvaluatorDefinition, runner: Runner | null = db(),
 ): Promise<{ evaluator_version_id: string; version: number }> {

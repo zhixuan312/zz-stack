@@ -1,7 +1,7 @@
 // Two claims: the project is wired into the build, and its strictness is the inherited
 // strictness rather than a softer local copy.
+// COUPLED: strict-tooling-zero.ts is what runs the project; this holds its configuration.
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 const fail: string[] = [];
 // DELIBERATE: JSON strings are skipped, not stripped. "scripts/**/*.ts" contains a literal
 // /**/ that a block-comment strip would remove, turning the glob into "scripts*.ts".
@@ -42,9 +42,5 @@ const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 if (pkg.scripts?.["typecheck:tooling"] !== "tsc --noEmit -p tsconfig.tooling.json") {
   fail.push('package.json has no "typecheck:tooling" script running ' +
             "`tsc --noEmit -p tsconfig.tooling.json` — nothing would run the tooling project");
-}
-const r = spawnSync("npx", ["tsc", "--noEmit", "-p", "tsconfig.tooling.json"], { encoding: "utf8" });
-if (r.status !== 0) {
-  fail.push(`the tooling project does not typecheck clean:\n${r.stdout ?? ""}${r.stderr ?? ""}`);
 }
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

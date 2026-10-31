@@ -5,8 +5,8 @@
  *
  * DELIBERATE: every insert here is ONE statement, whatever the count — the rows go in as arrays
  * through `unnest` — so a change citing two hundred sources runs the statements a change citing
- * one does (`checks/document-store.ts` counts them). Each was one insert per row, which made a
- * change's round trips grow with its causes.
+ * one does (`checks/document-store.ts` counts them), so a change's round trips do not grow with
+ * its causes.
  */
 import type pg from "pg";
 
@@ -29,8 +29,8 @@ interface Links {
 
 export const REQUEST_ID_CONFLICT = "ERROR: REQUEST_ID_CONFLICT — this request_id was used for a different request";
 
-/** The documents a set of store paths name, newest row per path, in one statement. It was a
- *  `documentAt` per entry — 2.1 ms each, sequential (checks/document-body-whole.ts). */
+/** The documents a set of store paths name, newest row per path, in one statement rather than a
+ *  sequential `documentAt` per entry (checks/document-body-whole.ts). */
 async function idsOf(c: Pick<pg.Pool, "query">, team: string, rels: string[]): Promise<Map<string, string>> {
   if (!rels.length) return new Map();
   const { rows } = await c.query<{ rel: string; id: string }>(`
@@ -77,7 +77,7 @@ export async function insertCauses(
   if (missing) return missing.path;
   // One row per link, `agent` kept over `platform`: an `on conflict do update` may not touch a row
   // twice in one statement, and a cause listed twice is one link whose origin the writer's naming
-  // decides — which is what inserting them one after another used to leave.
+  // decides.
   const links = new Map<string, Cause & { to: string }>();
   for (const k of causes) {
     const to = ids.get(k.path)!;

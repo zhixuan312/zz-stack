@@ -10,11 +10,15 @@
  *
  * The question asked here is "did this check fail, by name", which is falsifiable in both
  * directions and independent of whatever else the tree is in the middle of.
+ *
+ * DELIBERATE: every run is a full gate, never `--quiet`, and a check that never ran fails the
+ * plant. A control asserts a check stayed green, and on a quiet gate that died before reaching
+ * it, "not failed" would pass having measured nothing.
  */
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { failing, restoreOnInterrupt } from "../testing/gate-plant.ts";
+import { restoreOnInterrupt, verdicts } from "../testing/gate-plant.ts";
 
 const TOOLS = "no shipped prose names a tool no door registers";
 const SKILLS = "no shipped prose names a skill no plugin ships";
@@ -35,13 +39,20 @@ const restore = () => { writeFileSync(SK, skOriginal); writeFileSync(MOD, modOri
 // an interrupt between a plant and its restore would leave the working tree carrying it.
 restoreOnInterrupt(restore);
 
-/** The gate's failing checks, by name, with the sentence each gave. */
 const fail: string[] = [];
+
+/** The gate's failing checks, by name, with the sentence each gave, for one state of the tree; a
+ *  check of this plant's that never ran is a failure. */
+const failing = async (what: string): Promise<Map<string, string>> => {
+  const { failed, unreached } = await verdicts([TOOLS, SKILLS]);
+  for (const name of unreached) fail.push(`${what}: "${name}" never ran — the gate did not reach it, so nothing here was measured`);
+  return failed;
+};
 
 // Both checks must be green to start with, or nothing below separates the defect being planted
 // from one that was already there. The rest of the gate may be red for its own reasons and that
 // is deliberately not this plant's business.
-let now = await failing();
+let now = await failing("before planting");
 for (const name of [TOOLS, SKILLS]) {
   if (now.has(name)) fail.push(`"${name}" is already failing before anything was planted — this plant cannot measure it`);
 }
@@ -49,13 +60,13 @@ if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 
 const plant = (file: string, original: string, line: string) => writeFileSync(file, `${original}\n${line}\n`);
 const expect = async (name: string, what: string) => {
-  now = await failing();
+  now = await failing(what);
   if (!now.has(name)) fail.push(`${what} did not fail "${name}"`);
   else console.log(`  ${what} -> ✗ ${name}\n      ${now.get(name)}`);
   restore();
 };
 const expectNot = async (names: string[], what: string) => {
-  now = await failing();
+  now = await failing(what);
   for (const name of names) {
     if (now.has(name)) fail.push(`${what} fired "${name}"; it is too broad: ${now.get(name)}`);
   }
@@ -125,7 +136,7 @@ for (const dir of ["services", "scripts", "catalog", "skills", "packages", "mark
 
 // 9. And it stops when the planting does — a check that stays red after restore is measuring the
 //    tree it was run in rather than the defect.
-now = await failing();
+now = await failing("after restore");
 for (const name of [TOOLS, SKILLS]) {
   if (now.has(name)) fail.push(`"${name}" is still failing after restore: ${now.get(name)}`);
 }

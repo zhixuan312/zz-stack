@@ -67,7 +67,8 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 import { EXPECTED, TIMEZONE, WEEK, at, runningWeek, seedSearches, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
 import { EXPLORE_BODY, SPEC_BODY } from "../scripts/schema/spec-fixture.ts";
-import { answer, canonical, count, door, iso, phase, request, serveDoor, show, text, type Obj, type Route, type Who } from "./console-work-query-harness.ts";
+import { canonical, count, door, iso, phase, request, serveDoor, show, text, type Who } from "./console-work-query-harness.ts";
+import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-home";
 const DONE = "console-work-home: Home reads the active team's last whole week, what waits and what is open at one cutoff, " +

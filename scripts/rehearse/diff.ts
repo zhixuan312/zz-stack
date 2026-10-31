@@ -76,7 +76,7 @@ export function diffSnapshots(
       lines.push({
         table, was: exp.was, dropped: exp.dropped,
         before: b.present ? b.count : 0, after: a.present ? a.count : 0,
-        expectedCount: exp.added ? "created" : "dropped", countOk: ok, hashChecked: false, hashOk: ok,
+        expectedCount: exp.added ? "created" : exp.dropped ? "dropped" : "undeclared", countOk: ok, hashChecked: false, hashOk: ok,
       });
       continue;
     }

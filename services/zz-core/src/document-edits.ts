@@ -31,8 +31,8 @@ export type EditRefusal = {
 /** The most edits one batch may carry. COUPLED: the tool's description says the same number. */
 export const MAX_EDITS = 128;
 
-/** The most occurrences of one `find` whose lines a refusal keeps. The stakeholder's cap
- *  (2026-10-07): the count stays exact, and the detail says how many it omitted. */
+/** The most occurrences of one `find` whose lines a refusal keeps. The stakeholder's cap: the
+ *  count stays exact, and the detail says how many it omitted. */
 const KEPT_MATCHES = 1000;
 
 /** Every occurrence of `find`, overlapping ones included, counted, and the start offsets of the

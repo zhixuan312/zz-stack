@@ -130,9 +130,8 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       // somebody governed into one governed by nothing, permanently. The event is recorded here
       // because it is an event; the declaration is a file because it has to be readable back
       // with certainty.
-      // No `subject`: the declaration IS the initiative's own row now, so the act is about the
-      // initiative and `platformEvent` files it under `name`. The old form named the
-      // `_open.json` file it wrote, and there is no file.
+      // No `subject`: the declaration IS the initiative's own row, so the act is about the
+      // initiative and `platformEvent` files it under `name`.
       platformEvent({ actor: who, kind: "initiative_open",
                       initiative: name, flow: record.flow ?? "" });
 

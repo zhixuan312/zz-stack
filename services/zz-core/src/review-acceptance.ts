@@ -185,10 +185,9 @@ function checksNamed(c: Criterion, evidence: string): string[] {
  * DELIBERATE: a row whose evidence names a check the approved plan declares for this criterion is
  * asked only whether that check ran and passed. That the check verifies the criterion was settled
  * when the plan was approved — the plan's Checks are "the executable form of the technical AC" —
- * and asking it again, with a script name as the only context, read `check_i2_fixtures.py →
- * PASS` as not supporting the criterion it was written for (p=0.17, bug d5ab33bd). Asked the
- * narrow question, the same model read that row at 0.96 and a failing or skipped run at 0.12 and
- * 0.04: it judges a result well and a relevance it cannot see badly.
+ * and asking it again, with a script name as the only context, reads a passing check as not
+ * supporting the criterion it was written for. The model judges a result well and a relevance it
+ * cannot see badly.
  *
  * Exported because a check has to key the memo exactly as the reader does.
  */
@@ -250,7 +249,7 @@ type Cache = Record<string, CachedReading[]>;
  *
  *  And only readings taken under the question asked NOW: `question_digest` pins the instruction's
  *  exact bytes. When the question changes, a reading of the same evidence under the old question
- *  is an answer to something nobody is asking any more, and reusing it kept a `no` that the
+ *  is an answer to something nobody is asking, and reusing it would keep a `no` that the
  *  corrected question exists to fix. */
 export async function readAcceptanceCache(
   p: pg.Pool, team: string, initiative: string, doc: string,
@@ -360,7 +359,7 @@ export async function acceptanceApprovalRefusal(
   }
   // A table none of whose rows the gate can read is one sentence, not "no row for" every
   // criterion: a review written as `| Item | Locator | Decisive line |` holds every row a person
-  // would look for, and was refused 37 times over without being told why (bug a568b3d8).
+  // would look for, and is told why it is refused rather than refused once per criterion.
   if (!table.length) {
     return { refusal: refuse([...bad, `its \`## Acceptance evidence\` table has no row the gate can read — it ` +
              `starts \`${parsed.header || "(no table)"}\`, and the gate reads \`${TABLE_HEADER}\`: the criterion's id ` +

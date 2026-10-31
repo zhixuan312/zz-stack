@@ -1,4 +1,5 @@
-import { spawnSync } from "node:child_process";
+// The shipped skill scripts are in the tooling project, and none is typed by widening to `any` or
+// written in syntax node cannot strip. COUPLED: strict-tooling-zero.ts runs the compiler over them.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 const ROOT = "catalog/zz/zz-access/skills";
@@ -13,15 +14,11 @@ const walk = (dir: string, out: string[] = []): string[] => {
 const files = walk(ROOT).filter((f) => f.endsWith(".ts"));
 if (files.length !== 6) fail.push(`${files.length} .ts skill scripts under ${ROOT}, expected 6`);
 
-// They must be inside the project, or "zero errors" means "never looked".
+// They must be inside the project, or strict-tooling-zero's "zero errors" means "never looked".
 const tooling = JSON.parse(readFileSync("tsconfig.tooling.json", "utf8").replace(/\/\*[\s\S]*?\*\//g, ""));
 if (!(tooling.include ?? []).some((g: string) => g.startsWith("catalog/"))) {
   fail.push("tsconfig.tooling.json does not include catalog/ — these six files are not type-checked at all");
 }
-const r = spawnSync("npx", ["tsc", "--noEmit", "-p", "tsconfig.tooling.json"], { encoding: "utf8" });
-const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-const mine = out.split("\n").filter((l) => l.startsWith("catalog/") && /error TS/.test(l));
-if (mine.length) fail.push(`${mine.length} strict error(s) under ${ROOT}:\n` + mine.slice(0, 20).join("\n"));
 
 for (const f of files) {
   const src = readFileSync(f, "utf8");

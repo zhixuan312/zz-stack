@@ -1,13 +1,8 @@
-// Scoped to checks/: `tsc` errors from any other subtree are ignored here.
-import { spawnSync } from "node:child_process";
+// No file in checks/ reaches the compiler's zero by widening to `any` or silencing it.
+// COUPLED: strict-tooling-zero.ts runs the compiler over this subtree; this reads what it accepts.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-const r = spawnSync("npx", ["tsc", "--noEmit", "-p", "tsconfig.tooling.json"], { encoding: "utf8" });
-const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-const mine = out.split("\n").filter((l) => /^checks\/[^(]*\(\d+,\d+\): error TS/.test(l));
 const fail: string[] = [];
-if (mine.length) fail.push(`${mine.length} strict error(s) remain under checks/:\n` + mine.slice(0, 20).join("\n"));
-// Zero errors reached by widening is not zero errors.
 // DELIBERATE: the whole strict-* detector family is exempt from the scan below, not just this
 // file. Each carries the same two regexes, whose literals are the strings being detected, so
 // scanning one reports the detector instead of the code. Each covers a different directory

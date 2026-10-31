@@ -12,12 +12,12 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
-/** The one registered check the four contracts-door rows are aimed at, which makes four
- *  independent claims — a wildcard it refuses, a ratchet forward and two directions of a
- *  ratchet backward — and a mutation to any one of them says nothing about the other three. */
 const NCP_MEMBERSHIP =
   "every negative-control probe on the contracts door is run by this file";
 
+/** The registered contracts-door check both rows below are aimed at. It makes four independent
+ *  claims — a wildcard it refuses, a ratchet forward and two directions of a ratchet backward,
+ *  the last two in `unexercisable.ts` — and a mutation to any one says nothing about the others. */
 const DOOR = "a name on the contracts door has an importer";
 
 /** The one registered check both host-chain rows are aimed at; they differ by `assertion`. */

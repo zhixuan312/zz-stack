@@ -12,9 +12,9 @@
 // Read, not run. A statement is the text of a string or template literal — adjacent literals that
 // a `+` joins read as one, so an update spread across four of them is still a single statement —
 // with the text after a `--` on each of its lines stripped, the way
-// `checks/catalog-eval-columns.ts`'s `withoutSqlComments` does it; or, in a shell script, one line.
+// `checks/sql-scan.ts`'s `withoutSqlComments` does it; or, in a shell script, one line.
 //
-// Three write shapes are reported on `zz.eval_run`, and they are one fact spelled three ways:
+// Four write shapes are reported on `zz.eval_run`, and they are one fact spelled four ways:
 //
 //   `update zz.eval_run … set <score column> …` without `scored_at is null` in the same
 //                                   statement — a published result rewritten. An update that
@@ -54,53 +54,24 @@
 // check can be pointed at a scratch tree that plants a violation. Run it from the repository root
 // and it reads the repository.
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its
-// own copy of six functions until it did not: five checks did, byte for byte, and a scanner fixed
-// in one of them was not fixed in the other four.
+import { readsStatements, withoutSqlComments, writeShape } from "./sql-scan.ts";
+
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`.
 const { sourceFiles, statementsOf } =
   await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
-import { existsSync, readFileSync } from "node:fs";
+
 /** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-// Which files this check reads — its own policy, which is why the reader takes it as a predicate.
-const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
 
 /** Every column a published result is: what the run found, never which run it is. */
 const SCORE_COLUMNS = [
   "score_status", "overall_score", "score_lower", "score_upper", "measure_coverage",
   "establishment_blocked_by", "guardrail_status", "scorer_version", "scored_at",
 ];
-
-/** A mutation spec quotes a statement in order to plant a defect in it. Its `find`/`replace` text
- *  is the subject of the check that owns the spec, and reading it as a call site would report the
- *  defect the spec exists to plant. */
-const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p);
-
-/** An applied migration is history — see the module doc. */
-const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/migrations/");
-
-
-/** A statement with the text after a `--` on each of its lines removed — an SQL comment inside a
- *  template literal is prose, and prose is not a statement. */
-const withoutSqlComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
-
-/** The verb that writes `table`, or null: `update` and `delete from` rewrite or erase a row;
- *  `insert into` is the one permitted writer and is reported only when its own `on conflict`
- *  clause turns it into an update; `alter table` is the row gaining a shape it must not have. A
- *  subquery's `from <table>` is not a write, so the verb has to be the table's own. */
-function writeShape(sql: string, table: string): string | null {
-  const t = `${table}(?!\\w)`;
-  if (new RegExp(`\\bupdate\\s+(?:only\\s+)?(?:zz\\.)?${t}`, "i").test(sql)) return "updates";
-  if (new RegExp(`\\bdelete\\s+from\\s+(?:only\\s+)?(?:zz\\.)?${t}`, "i").test(sql)) return "deletes from";
-  if (new RegExp(`\\balter\\s+table\\s+(?:only\\s+)?(?:zz\\.)?${t}`, "i").test(sql)) return "alters";
-  if (new RegExp(`\\binsert\\s+into\\s+(?:zz\\.)?${t}[\\s\\S]*?\\bon\\s+conflict\\b[\\s\\S]*?\\bdo\\s+update\\s+set\\b`, "i").test(sql)) {
-    return "inserts into, then updates on conflict";
-  }
-  return null;
-}
 
 /** Whether the statement's `set` clause assigns any of `columns`. The clause is read apart from
  *  the `where`, so a guard that merely NAMES a score column (`scored_at is null`) is not read as
@@ -115,7 +86,7 @@ const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, KEEP) : []))) {
+for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, readsStatements) : []))) {
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(statement.sql);
     scanned++;

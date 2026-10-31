@@ -3,12 +3,14 @@
  * `checks/console-*.ts` that holds a gateway route to its fake makes.
  *
  * At an object both hold, the key sets; at an array both hold, the first elements, the same way; a
- * null on either side, nothing. What a route answers beyond that is named by its check in `rules`,
+ * value of a different kind on each side (an array and an object, a string and a number), the
+ * kinds; a null on either side, nothing. What a route answers beyond that is named by its check in `rules`,
  * never by a copy of this function, so a fix to the comparison reaches every check at once.
  */
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
+const kind = (v: unknown): string => Array.isArray(v) ? "an array" : isObj(v) ? "an object" : `a ${typeof v}`;
 
 /** A path is the keys that lead to an object, dot-joined (`summary.byKind`), and it matches
  *  wherever the comparison reaches that object, under whatever path the caller started from. */
@@ -68,6 +70,8 @@ export function shapeDiffs(a: unknown, b: unknown, path: string, out: string[], 
   if (a === null || b === null || reaches(path, rules.keyedByData)) return out;
   if (reaches(path, rules.counts)) {
     if (!isObj(a) || !Object.values(a).every((n) => Number.isInteger(n))) out.push(`${path} is ${JSON.stringify(a)}, not counts by key`);
+  } else if (kind(a) !== kind(b)) {
+    out.push(`${path || "the answer"} is ${kind(a)} where the fake has ${kind(b)}`);
   } else if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length && b.length) shapeDiffs(a[0], b[0], `${path}[0]`, out, rules);
     else if (rules.bothFilled && a.length !== b.length) out.push(`${path} is empty on one side, so its elements were not compared`);

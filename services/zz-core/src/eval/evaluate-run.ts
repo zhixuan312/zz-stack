@@ -93,8 +93,8 @@ export async function loadDimensions(p: pg.Pool, protocolVersionId: string): Pro
 }
 
 export async function loadSnapshotFacts(p: pg.Pool, observationSnapshotId: string): Promise<SnapshotFacts> {
-  // The snapshot's `coverage` jsonb is gone; the surface it held is three columns of its own, so
-  // the one shape still named here is rebuilt from them rather than answered as null.
+  // The snapshot's surface is columns of its own, so the `coverage` shape named here is rebuilt
+  // from them rather than answered as null.
   const row = (await p.query<SnapshotFacts>(`
     select usable_run_count, total_run_count, facts,
            jsonb_build_object('surface', jsonb_build_object(
@@ -104,7 +104,7 @@ export async function loadSnapshotFacts(p: pg.Pool, observationSnapshotId: strin
 }
 
 /** The newest qualification of the evaluator bound to a measure of THIS protocol version. A
- *  qualification is about a MEASURE now: `zz.eval_evaluator_qualification` carries no
+ *  qualification is about a MEASURE: `zz.eval_evaluator_qualification` carries no
  *  `evaluator_version_id` and no `protocol_version_id` of its own, so both are reached through
  *  the measure row it names. */
 export async function latestQualification(
@@ -144,8 +144,7 @@ interface SubjectColumns {
 
 const NO_CHILD = { run_id: null, doc_id: null, knowledge_node_id: null, bug_id: null, event_id: null };
 
-/** The typed columns one non-run-level ref names. Resolved by the SAME rules the phase-3
- *  migration applied to the rows it carried forward: a document by `initiative || '/' || path`
+/** The typed columns one non-run-level ref names: a document by `initiative || '/' || path`
  *  in the caller's own team's index, a knowledge node by its path under `_knowledge/`, a run by
  *  its `skill_run` row, a bug and a call by the id the ref spells. A ref that resolves to no row
  *  is refused BY NAME rather than written with a null in the column its kind requires — a subject
@@ -208,7 +207,7 @@ async function subjectColumnsOf(
     return { subject_kind: "document", ...NO_CHILD, doc_id: row.id, doc_revision: row.current_revision };
   }
   // A knowledge node is addressed by the two halves its file's name carries: `node_ordinal` and
-  // `slug`, which is what the reshape left where one address column used to be. The ref arrives
+  // `slug`; there is no single address column. The ref arrives
   // as `_knowledge/nodes/<ordinal>-<slug>.md`, so both are read out of it and compared to their
   // own columns; a ref of any other shape names no node.
   const named = /^_knowledge\/nodes\/([0-9]+)-(.+)\.md$/.exec(ref);
@@ -228,7 +227,7 @@ async function subjectColumnsOf(
  *  `runLevelRef` produces for the run-level rows, so `isRunLevelRef` keeps recognising them.
  *
  *  A knowledge node's address is reassembled from the two columns the file's name splits into;
- *  `zz.knowledge_node` has held no single address column since the reshape. */
+ *  `zz.knowledge_node` holds no single address column. */
 const SUBJECT_REF_SQL = `
   case a.subject_kind
     when 'run_level' then 'observation_snapshot:' || er.observation_snapshot_id::text
@@ -240,7 +239,7 @@ const SUBJECT_REF_SQL = `
   end`;
 
 /** The stored rows of one run, in the shape `readingsOf`/`reduceMeasureAnswers` read: the ref
- *  label above, and the four figures the row now holds as columns, rebuilt into the answer bag
+ *  label above, and the four figures the row holds as columns, rebuilt into the answer bag
  *  those functions already take. `excluded` is `value is null` — the table's own
  *  `(value is null) = (excluded_reason is not null)` invariant is what makes that equivalent. */
 export const STORED_ANSWERS_SQL = `

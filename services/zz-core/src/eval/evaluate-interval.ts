@@ -1,6 +1,6 @@
 /**
  * `evaluation_score`'s interval: "percentile bootstrap over subjects per the protocol's
- * `UncertaintyPolicy`" (Task I-13's own contract). Pure — no database, no clock, no `Math.random`
+ * `UncertaintyPolicy`". Pure — no database, no clock, no `Math.random`
  * — so a replay of the same per-subject scores reproduces the same interval bit for bit, the
  * same determinism `score.ts` itself is built around.
  *

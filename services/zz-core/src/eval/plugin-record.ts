@@ -3,36 +3,24 @@
  * `eval_run` concluded, and what became of each finding. Everything else in the plugin
  * evaluation reads.
  *
- * `round_score`, which computed a legacy round's two axes onto `zz.eval`, is gone with the
- * round writer it closed; `evaluation_score` (`evaluate.ts`) is what scores a run now. The legacy
- * rounds are in the phase-3 migration's archive, and no tool reads them.
+ * `evaluation_score` (`evaluate.ts`) is what scores a run, and `protocol_record` (`protocol.ts`)
+ * is what writes a plugin's measurement object, into `zz.eval_protocol_version`.
  *
- * Task I-10 removed `ruler_record`, which used to live here — writing `zz.rubric*` for the
- * define stage, ahead of `ruler_affirm`. `protocol_record` (`protocol.ts`) is what writes a
- * plugin's measurement object now, into `zz.eval_protocol_version` and never `zz.rubric*`.
+ * `finding_record`: a finding belongs to one `eval_run_id`, names its `kind`
+ * (strength/defect/unknown) and REQUIRES `owner_kind` at recording time rather than leaving
+ * ownership to a later pass.
  *
- * Task I-13 replaced `finding_record`'s own shape: a finding belongs to one `eval_run_id`, names
- * its `kind` (strength/defect/unknown) and REQUIRES `owner_kind` at recording time rather than
- * leaving ownership to a later pass. This is a breaking change: the OLD
- * `finding_record(eval_id, findings: [...])` shape this file used to accept is gone, not carried
- * forward under an alias — no caller of the legacy round pipeline ever wrote a new-pipeline
- * finding, and the reverse was never true either.
- *
- * Task I-31 closes the other half of that, and `zz.eval_finding` now holds ONE lifecycle. The
- * legacy lifecycle's five columns — `eval_id`, `scope`, `docs_affected`, `proposed_change` and
- * `resulted_in_skill_version_id` — had no writer since I-13 and their eleven rows went out with
- * the archived rounds in Phase 3, so the improve tables' migration drops them and no statement
- * here reads or writes one. The table's own constraints say what the surviving lifecycle is:
+ * `zz.eval_finding` holds ONE lifecycle, and the table's own constraints say what it is:
  * `decision` is null exactly when `kind='strength'` (a strength is what is working, terminal at
  * insert), `superseded_by` points at a rejected finding of the same run, and `owner_ref` stays
  * null for a plugin-owned finding because it always equals the subject's own plugin and is
  * derivable through the run. Both are refused by name below rather than left to the constraint.
  *
  * `finding_decide` writes through the FR-59 idempotency ledger like every other mutator on this
- * door — the plan's own words, "finding_decide joins the idempotency ledger" — and closes a
+ * door, and closes a
  * finding by `id` through `decideFinding` (below), the ONE deciding write on this table: a second
- * private writer is exactly what left the finding-to-release provenance unrecorded for
- * twenty-one releases, so `release_record` calls the same function by name.
+ * private writer would leave the finding-to-release provenance unrecorded, so `release_record`
+ * calls the same function by name.
  *
  * It does not approve. A defect or unknown lands `deferred` — open work, closed only by
  * `finding_decide` — and a strength lands terminal, with no decision at all. The platform holds

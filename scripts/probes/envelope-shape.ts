@@ -7,59 +7,21 @@
  * through stampEnvelope than every document a flow declares, and that path has to stamp the
  * date itself.
  *
- * stampEnvelope is not exported, so its body is brace-matched out, evaluated with its three
- * collaborators injected, and asked what it does to a document. A regex over the source would
- * test the spelling rather than the rule. Non-empty stdout reports a failure.
+ * The real stampEnvelope, from zz-core's build, asked what it does to a document. A regex over the
+ * source would test the spelling rather than the rule. Non-empty stdout reports a failure.
  */
-import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { ENVELOPE_BLOCK, parseEnvelope } from "@zz/contracts";
 
-import { errMessage } from "../gate/read.ts";
-
-
 const root = process.argv[2];
-// Every file in zz-core/src, not one path: a probe keyed to the file stampEnvelope lives in
-// today reports "nothing was checked" the day it moves.
-const src = readdirSync(join(root, "services/zz-core/src"))
-  .filter((f) => f.endsWith(".ts"))
-  .map((f) => readFileSync(join(root, "services/zz-core/src", f), "utf8"))
-  .join("\n");
+const { isoToday, stampEnvelope } = await import(pathToFileURL(join(root, "services/zz-core/dist/write-guards.js")).href) as
+  { isoToday: () => string; stampEnvelope: (chain: object, relPath: string, content: string) => string };
 const bad: string[] = [];
 
-/** stampEnvelope's body, brace-matched and stripped of the annotations JS has no use for. */
-function body() {
-  const at = src.indexOf("function stampEnvelope(");
-  if (at < 0) return null;
-  let depth = 0;
-  const open = src.indexOf("{", at);
-  for (let i = open; i < src.length; i++) {
-    if (src[i] === "{") depth++;
-    else if (src[i] === "}" && --depth === 0) {
-      return src.slice(open + 1, i)
-        .replace(/:\s*string\[\]/g, "").replace(/:\s*string \| undefined/g, "")
-        .replace(/:\s*string/g, "");
-    }
-  }
-  return null;
-}
-
-const source = body();
-if (!source) {
-  process.stdout.write("stampEnvelope is no longer where this can read it — nothing was checked");
-  process.exit(0);
-}
-
-const TODAY = "2026-01-02";
-let stamp;
-try {
-  stamp = new Function("parseEnvelope", "ENVELOPE_BLOCK", "isoToday", "chain", "relPath", "content", source)
-    .bind(null, parseEnvelope, ENVELOPE_BLOCK, () => TODAY);
-} catch (e) {
-  process.stdout.write(`stampEnvelope could not be evaluated: ${errMessage(e)}`);
-  process.exit(0);
-}
+const TODAY = isoToday();
+const stamp = stampEnvelope;
 
 // The manifest's own shape, including `documents` with each entry's gate. Two declared
 // documents differing only in `gate` and deliberately sharing a role, because the manifest

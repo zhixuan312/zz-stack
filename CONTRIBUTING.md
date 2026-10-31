@@ -33,8 +33,9 @@ entitled to make.
 comment what it was wrong about; a check nobody trusts is worse than no check. If you
 add behaviour, add the check that would have caught its absence.
 
-`scripts/gate.ts` is an order, not a list — one `import` line per subject. A module
-missing from it is a check that silently does not run, so `report()` refuses to pass
+`scripts/gate.ts` is an order, not a list — one static `import` of `build.ts`, then one
+`await load("./gate/checks/<subject>.ts")` line per subject, so nothing reads a build before
+the gate's own build has run. A module missing from it is a check that silently does not run, so `report()` refuses to pass
 unless the number of checks written under `scripts/gate/checks/` equals the number that
 ran. Neither number is written down here: a count in prose is a count that stops being
 true.

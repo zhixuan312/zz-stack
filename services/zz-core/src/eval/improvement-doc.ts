@@ -1,5 +1,5 @@
 /**
- * `improvement.md` (Task I-22, FR-48, AC-48.1): the authority-bearing gate a releasable owned
+ * `improvement.md` (FR-48, AC-48.1): the authority-bearing gate a releasable owned
  * candidate crosses before its patch is ever applied. Written by `release_prepare`
  * (`release.ts`) through `generated-doc.ts`'s `writeGeneratedDoc`, as `findings.md` and
  * `proposal.md` are — the same internals `document_write` calls.

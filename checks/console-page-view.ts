@@ -53,6 +53,7 @@ import pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
+import { answer, type Answered, type Route } from "./in-process.ts";
 
 const NAME = "console-page-view";
 const DONE = "console-page-view: a page view of each of the nineteen destinations is one console.page_view event naming its " +
@@ -85,27 +86,12 @@ const fail: Fail = failing(NAME);
 const pass = (line: string): void => console.log(`ok ${line}`);
 const load = (p: string) => import(pathToFileURL(join(root, p)).href);
 
-type Answer = { status: number; body: unknown };
-type Route = (req: unknown, res: unknown) => void;
 type Identity = Record<string, unknown>;
 
 /** A console session's identity, as identity.ts resolves one onto the request. */
 function session(email: string, role: "superadmin" | "member", team: string | null): Identity {
   return { email, displayName: email, platformRole: role, via: "session",
            teams: team ? [{ slug: team, role: "member" }] : [], activeTeam: team, patTeam: null, sessionTeam: team };
-}
-
-/** Calls the mounted route as Express would, and waits for the answer it sends — a body, or none. */
-function answer(route: Route, req: Record<string, unknown>): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const res = {
-      statusCode: 200, headersSent: false,
-      status(code: number) { this.statusCode = code; return this; },
-      json(body: unknown) { this.headersSent = true; resolve({ status: this.statusCode, body }); },
-      end() { this.headersSent = true; resolve({ status: this.statusCode, body: undefined }); },
-    };
-    try { route(req, res); } catch (err) { reject(err); }
-  });
 }
 
 async function seed(sql: pg.Client): Promise<{ member: string; loner: string; admin: string; team: string; control: string }> {
@@ -174,9 +160,9 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   mountActivity(app);
   const route = (key: string): Route => routes.get(key) ?? fail("mount", `no route ${key}`);
   const view = route("POST /api/console/page-view");
-  const post = (id: Identity | null, body: unknown): Promise<Answer> =>
+  const post = (id: Identity | null, body: unknown): Promise<Answered> =>
     answer(view, { params: {}, query: {}, headers: {}, body, ...(id ? { zzIdentity: id } : {}) });
-  const get = (key: string, id: Identity, query: Record<string, string>): Promise<Answer> =>
+  const get = (key: string, id: Identity, query: Record<string, string>): Promise<Answered> =>
     answer(route(key), { params: {}, query, headers: {}, zzIdentity: id });
 
   const member = session(MEMBER, "member", TEAM);
@@ -239,7 +225,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     ];
     for (const [what, id, body, status, says] of refused) {
       const a = await post(id, body);
-      const error = String((a.body as { error?: unknown } | undefined)?.error ?? "");
+      const error = String(a.body.error ?? "");
       if (a.status !== status || !says.test(error)) fail(step, `${what} answered ${a.status}: ${JSON.stringify(a.body)}`);
       if (says.test("not permitted") && JSON.stringify(a.body) !== JSON.stringify({ error: "not permitted" })) {
         fail(step, `${what} answered ${JSON.stringify(a.body)}, not the fixed refusal alone`);
@@ -260,7 +246,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
         : [viewer(feature), { feature }]);
     for (const [id, body] of recorded) {
       const a = await post(id, body);
-      if (a.status !== 204 || a.body !== undefined) fail(step, `${JSON.stringify(body)} answered ${a.status}: ${JSON.stringify(a.body)}`);
+      if (a.status !== 204 || !a.empty) fail(step, `${JSON.stringify(body)} answered ${a.status}: ${JSON.stringify(a.body)}`);
     }
     const rows = await views(sql, recorded.length);
     // Every refused request was answered before the first of these was sent, so a row from one of

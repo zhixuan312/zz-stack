@@ -72,7 +72,7 @@ export async function improvementApprovalRefusal(
   if (!attemptId) return null;
   const p = runner;
   if (!p) return "ERROR: this deployment has no platform database, so improvement.md's owner teams cannot be checked";
-  // The gate reads the relation `release_attempt_owner` (group G), which is what `release_prepare`
+  // The gate reads the relation `release_attempt_owner`, which is what `release_prepare`
   // wrote inside the same transaction as the attempt: an attempt nothing prepared has no rows and
   // therefore no owner — refused by the same message an ownerless attempt gets.
   const row = (await p.query<{ required_owners: string[] }>(`

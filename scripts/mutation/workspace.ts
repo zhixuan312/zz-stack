@@ -18,6 +18,8 @@ import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, 
 import { userInfo } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
+import { alive } from "../owned-containers.ts";
+
 /** Everything outside the tree a mutation can reach: dependencies and git's own store. Both
  *  are identical in the copy and the snapshot, so excluding them makes the restore a quarter
  *  of a second instead of several. */
@@ -170,15 +172,13 @@ export function makeWorkspace(source: string, at: string, prepare?: (repo: strin
   // a first is walking its rows removes the pristine snapshot the first restores from — which
   // surfaces as an rsync failure inside `restore`.
   //
-  // The lock names its owner and is stale only when that process is genuinely gone:
-  // `kill(pid, 0)` throws ESRCH for a pid nobody holds, so a crashed run's lock is reclaimed
-  // without a timeout that would be either too short for a long pass or too long to be useful.
+  // The lock names its owner and is removed when that process exits. One a killed run left behind
+  // is stale only when its process is genuinely gone, so it is reclaimed without a timeout that
+  // would be either too short for a long pass or too long to be useful.
   const lock = `${resolve(at)}.lock`;
   if (existsSync(lock)) {
     const held = Number(readFileSync(lock, "utf8").trim());
-    let alive = false;
-    try { process.kill(held, 0); alive = true; } catch { alive = false; }
-    if (alive) {
+    if (alive(held)) {
       console.error(`  REFUSED — pid ${held} is already using ${resolve(at)}, and the first ` +
         "thing this function does is delete that directory. Wait for it, or pass a different " +
         "--work. Two runs over one work directory take each other's snapshot away mid-pass.");
@@ -189,6 +189,7 @@ export function makeWorkspace(source: string, at: string, prepare?: (repo: strin
   rmSync(at, { recursive: true, force: true });
   mkdirSync(at, { recursive: true });
   writeFileSync(lock, `${process.pid}\n`);
+  process.on("exit", () => rmSync(lock, { force: true }));
   const parent = join(at, "parent");
   mkdirSync(parent);
   const repo = join(parent, basename(source));

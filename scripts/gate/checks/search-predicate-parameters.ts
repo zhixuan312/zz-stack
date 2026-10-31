@@ -19,7 +19,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
-import { root } from "../read.ts";
+import { root, stderrOf } from "../read.ts";
 import { check } from "../run.ts";
 
 check("every parameter the search predicate binds is one its SQL references", () => {
@@ -52,7 +52,6 @@ check("every parameter the search predicate binds is one its SQL references", ()
     return execFileSync(process.execPath, ["--input-type=module", "-e", probe],
       { encoding: "utf8", cwd: root }).trim() || undefined;
   } catch (err) {
-    const e = err as { stderr?: Buffer | string; message?: string };
-    return `the search-predicate parameter probe could not be run: ${String(e.stderr ?? e.message ?? err).slice(-300)}`;
+    return `the search-predicate parameter probe could not be run: ${stderrOf(err).slice(-300)}`;
   }
 });

@@ -23,7 +23,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import pg from "pg";
+import { rowsOf, stubInitiativePool, type StubInitiative } from "./in-process.ts";
 
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
@@ -48,8 +48,7 @@ const report = (line: string) => {
 
 // The fixture is rows under a stubbed `pg.Pool`: an initiative, and its documents as `zz.doc` rows.
 const TEAM = "t1";
-interface W { flow: string | null; docs: Record<string, unknown>[] }
-const world = new Map<string, W>();
+const world = new Map<string, StubInitiative>();
 let seq = 0;
 const row = (path: string, text: string) => ({
   id: `d${++seq}`, path, flow: "", type: "", status: "", outcome: null,
@@ -57,25 +56,10 @@ const row = (path: string, text: string) => ({
   title: "", body: text, tags: [], current_revision: 1, approved_revision: null, fields: null,
   supports: [] as string[] });
 
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
-  const sql = String(text).replace(/\s+/g, " ").trim();
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  const bySlug = world.get(String(values[1] ?? ""));
-  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
-    const names = (values[1] as string[]) ?? [];
-    return one(names.filter((n) => world.has(n)).map((n) => ({
-      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
-  }
-  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
-    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-10-23",
-                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
-  }
-  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
-    return one(world.get(String(values[0]))?.docs ?? []);
-  }
-  if (/insert into zz\.(assessment|model_call)\b/.test(sql)) return one([{ id: `a${++seq}` }]);
-  return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+stubInitiativePool(() => world, {
+  openedAt: "2026-10-23",
+  own: (sql) => /insert into zz\.(assessment|model_call)\b/.test(sql) ? rowsOf([{ id: `a${++seq}` }]) : undefined,
+});
 
 const doc = (fields: Record<string, string>, body: string) =>
   `---\n${Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n${body}\n`;

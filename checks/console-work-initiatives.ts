@@ -36,7 +36,9 @@
  *   - the key sets match the console's fake answer;
  *   - the shared figures over the seed: the grain a window is drawn at, closures by week and by month,
  *     the median hours to close and to abandon, each recomputed at its own grain, the most open at
- *     once and when, the initiatives opened, and the searches that found something.
+ *     once and when, the initiatives opened, and the searches that found something;
+ *   - a fit ledger row whose verdict is outside the four stays in the page's decisions with no verdict and
+ *     what it said as its qualifier.
  *
  * It prints how long zz-core took to answer a page of ten names: the throwaway's record is small, so
  * the number is a floor, not the representative measure the plan asks for before anything is cached.
@@ -409,6 +411,19 @@ async function run(c: Core): Promise<void> {
       took.push(performance.now() - t0);
     }
     c.pass(`${step}: ${took.map((t) => `${Math.round(t)} ms`).join(", ")} on the throwaway's thirteen initiatives`);
+
+    // Last, so the figures above read the seed as it was made.
+    step = "a ledger row whose verdict is outside the four stays on the page, with no verdict";
+    const ledger = slug("o-fresh");
+    await c.ok(step, "document_write", { path: `${ledger}/selection.md`, content: "# Selection\n\n" +
+      "| Criterion | Verdict | How |\n|---|---|---|\n| AC-1 sends | **Native** | built in |\n| AC-3 magic | **Maybe** | ? |\n" });
+    await c.sql.query("update zz.doc set type = 'selection' where path = 'selection.md'");
+    const ledgerPage = await answer(built.detail, request(SUPER, {}, { team: c.team, slug: ledger }));
+    const claimed = (ledgerPage.body.decisions as Obj[]).map((d) => [d.key, d.verdict, d.qualifier]);
+    if (ledgerPage.status !== 200 || !same(claimed, [["AC-1", "native", null], ["AC-3", null, "Maybe"]])) {
+      c.fail(step, `${ledger} answered ${ledgerPage.status}, decisions ${show(claimed)}`);
+    }
+    c.pass(step);
   } finally {
     await end();
     delete process.env.TEAM_DB_URL;

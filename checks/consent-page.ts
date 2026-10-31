@@ -14,7 +14,9 @@
  *   3. `mcp-oauth.ts` builds no HTML of its own: a second builder is a page that can skip the
  *      escaping;
  *   4. the gateway's wordmark is byte-identical to the one the document panel ships, which
- *      checks/document-panel.ts holds to the console's own.
+ *      checks/document-panel.ts holds to the console's own;
+ *   5. the consent page says what the door being connected reaches — a token answers on that door
+ *      alone — and not what another door does.
  *
  * Run: node checks/consent-page.ts   (also run by scripts/gate.ts)
  */
@@ -44,6 +46,19 @@ for (const [name, page] of [["consent", consent], ["refusal", refusal]] as const
 }
 is(/value="&quot;&gt;&lt;script&gt;/.test(consent), "a hidden input's value is not attribute-escaped");
 is(/<form method="post" action="\/oauth\/authorize">/.test(consent), "the consent form no longer posts to /oauth/authorize");
+
+// What each door grants, in the lede; a member and a superadmin on each.
+const lede = (door: string, admin: boolean): string =>
+  /<p class="lede">([\s\S]*?)<\/p>/.exec(consentHtml({ client: "c", door, email: "e", admin, dest: "d", hidden: {} }))?.[1] ?? "";
+for (const admin of [false, true]) {
+  is(/documents and knowledge/.test(lede("/core/mcp", admin)), `the /core/mcp consent (admin ${admin}) does not name documents and knowledge`);
+  is(/your own access/.test(lede("/manage/mcp", admin)) && !/documents/.test(lede("/manage/mcp", admin)),
+     `the /manage/mcp consent (admin ${admin}) does not say it reaches access, not documents: ${lede("/manage/mcp", admin)}`);
+  is(/evaluations/.test(lede("/eval/mcp", admin)) && !/documents/.test(lede("/eval/mcp", admin)),
+     `the /eval/mcp consent (admin ${admin}) does not say it reaches evaluations: ${lede("/eval/mcp", admin)}`);
+}
+is(/platform administration/.test(lede("/manage/mcp", true)) && !/platform administration/.test(lede("/manage/mcp", false)),
+   "only a superadmin's /manage/mcp consent names platform administration");
 
 const src = readFileSync(join(process.cwd(), "services/gateway/src/mcp-oauth.ts"), "utf8");
 is(!/<!doctype|<body|<h1|<form/i.test(src), "mcp-oauth.ts builds HTML itself; every page goes through oauth-page.ts");

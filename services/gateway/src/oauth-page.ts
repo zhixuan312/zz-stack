@@ -118,6 +118,20 @@ export function refusalPage(status: number, title: string, detail: string): stri
 
 const SHIELD = new Html('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>');
 
+/** What a token for each door may read and change. A token an application obtains answers on its
+ *  own door alone (identity.ts `doorAdmits`), so the consent names that door's reach and no other.
+ *  COUPLED: server.ts's DOORS; a door with no entry here is described by `ANY_DOOR`. */
+const REACH: Record<string, (admin: boolean) => Html> = {
+  "/core/mcp": () => html`your teams' documents and knowledge, with the same access you have in the console`,
+  "/manage/mcp": (admin) => admin
+    ? html`your own access — tokens, connected applications and the team you act for — and <b>platform administration</b>: people, teams and their tokens, as you are a superadmin`
+    : html`your own access — tokens, connected applications and the team you act for — and the members of any team you administer`,
+  "/eval/mcp": () => html`your teams' plugin evaluations — their runs, findings and improvement candidates`,
+};
+const ANY_DOOR = (admin: boolean): Html => admin
+  ? html`everything you can reach, <b>including platform administration</b> — you are a superadmin`
+  : html`everything you can reach, with the same access you have in the console`;
+
 /** The question a hosted client's authorization stops on.
  *
  *  The client names itself, so its name proves nothing — what it cannot forge is where the code
@@ -125,9 +139,7 @@ const SHIELD = new Html('<svg width="16" height="16" viewBox="0 0 24 24" fill="n
 export function consentHtml(o: {
   client: string; door: string; email: string; admin: boolean; dest: string; hidden: Record<string, string>;
 }): string {
-  const reach = o.admin
-    ? html`everything you can reach, <b>including platform administration</b> — you are a superadmin`
-    : html`your teams' documents and knowledge, with the same access you have in the console`;
+  const reach = (Object.hasOwn(REACH, o.door) ? REACH[o.door] : ANY_DOOR)(o.admin);
   const hidden = Object.entries(o.hidden).map(([k, v]) => html`<input type="hidden" name="${k}" value="${v}">`);
   return page("Connect to ZZ?", html`<p class="eyebrow">Connection request</p>
 <h1>Connect ${o.client} to ZZ<span class="dot">?</span></h1>

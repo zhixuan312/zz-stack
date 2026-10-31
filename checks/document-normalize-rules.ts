@@ -96,6 +96,10 @@ if (!("refusals" in all)) {
   holds("no planted value reaches the metadata", !JSON.stringify(all.metadata).includes("planted"), all.metadata);
 }
 
+/* Tags written as a YAML flow list, the spelling an agent reaches for first: the list, not "[a" and "b]". */
+taken("tags written as [a, b] are the two tags", "---\ntags: [alpha, Beta]\n---\n# T\n", {}, "# T\n",
+  { tags: ["alpha", "beta"] }, 2);
+
 /* A document read back and sent whole: its own envelope, every rendered key, is not a change. */
 const readBack = [
   "---", "flow: sdlc-flow", "type: spec", "title: Spec", "tags: alpha, beta", "version: 2",

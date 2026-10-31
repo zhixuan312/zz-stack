@@ -125,7 +125,9 @@ export function normalizeContent(content: string, named: Metadata): Normalised {
     let theirs: string[] | string | undefined;
     let arg: string;
     if (key === "tags") {
-      const listed = normalizeTags(value.split(",").map((t) => t.trim()).filter(Boolean));
+      // `[a, b]` is YAML's spelling of the same list, and the one an agent writes first: one pair
+      // of brackets around the whole value is the list's, not part of its first and last tags.
+      const listed = normalizeTags(value.replace(/^\[(.*)\]$/s, "$1").split(",").map((t) => t.trim()).filter(Boolean));
       mine = listed.tags ?? [];
       theirs = tagged.tags;
       arg = "tags";

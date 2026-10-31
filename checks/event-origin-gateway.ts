@@ -159,7 +159,6 @@ async function listen(c: Core): Promise<Gateway> {
   mountConsoleClose(app);
   mountConsoleWrite(app);
   mountSettings(app, {
-    myAccessTokensFor: credentials.myAccessTokensFor,
     issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
     revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor,
   });

@@ -594,19 +594,15 @@ Task I-19's third arm parses the line below, seeds to ten times the 41,772 real-
 The `ms` array is the one field whose size is not obviously bounded: its widest bucket holds 2,414 integers
 in 9,680 bytes against an average bucket's 276, and at ten times about 24,140 and 95 KB, one row's value still.
 
-The settings reads count people, teams and tokens rather than work, so the register does not reach them.
-Three of the five issue a statement, read with `EXPLAIN (ANALYZE, BUFFERS)` at 8 principals, 9 memberships
-and 34 tokens.
+The settings surface has one read, a team's roster, which counts people rather than work, so the register does
+not reach it. Read with `EXPLAIN (ANALYZE, BUFFERS)` at 8 principals and 9 memberships.
 
 | Settings read | What it runs | Range · grain | Budget | Today | At ten times |
 |---|---|---|---|---|---|
-| `/settings/me/tokens` | `myAccessTokensFor`, `pat` joined to `principal` | the caller's own token history · one row per token | `rows ≤ 400, ms ≤ 5` | 34 rows read, 6 buffers, 0.3 ms | about 340 rows, 60 buffers, under 3 ms |
 | `/settings/team/members` | the membership, principal and team join, for one team | that team's roster · team · member | `rows ≤ 400, ms ≤ 5` | 22 rows read, 14 buffers, 0.2 ms | about 220 rows, 140 buffers, about 2 ms |
-| `/settings/platform/people` | `listPeople`, a principal per row with its teams aggregated | the platform's principals · principal · its teams | `rows ≤ 800, ms ≤ 5` | 22 rows read, 13 buffers, 0.7 ms | about 220 rows, 130 buffers, about 7 ms |
-| `/settings/me/teams`, `/settings/me/client-setup` | `myTeamsSummary`, over the `Identity` the request resolved, and `renderClientSetup` around the caller's email: no statement between them | what the request already carries · the identity's teams, and one row for the setup | `rows 0, ms ≤ 1` | no statement, no buffers | no statement, no buffers |
 
-Their cost grows with the population, not with `zz.event` — a hundred people is eight hundred rows here — so
-none of the five needs a read model and none is on the strand list below.
+Its cost grows with the population, not with `zz.event`, so it needs no read model and is not on the strand
+list below.
 
 ### Answer classes that miss on every event write
 

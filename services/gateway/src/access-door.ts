@@ -132,7 +132,7 @@ export async function buildAccessServer(
     },
     async () => {
       // The same rule that decides it, not a second query that agrees most of the time.
-      // `myTeamsSummary` (settings.ts, shared with the browser route) applies `actingTeam`'s
+      // `myTeamsSummary` (settings.ts, shared with Access, console/access.ts) applies `actingTeam`'s
       // own fallback — admin-role first, then alphabetically. It is also the one
       // place that reads a bound token naming a team its owner is not in as "acts for no
       // team", which a fallback here would quietly paper over.

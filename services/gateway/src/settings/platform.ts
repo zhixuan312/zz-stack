@@ -10,30 +10,13 @@ import { redact } from "../redact.js";
 import { TEAM_SLUG } from "../identity.js";
 import { platformDbReady } from "../db.js";
 import { archiveTeam, createTeam } from "../admin/teams.js";
-import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "../admin/people.js";
+import { addPerson, deactivatePerson, issueEnrolmentLink } from "../admin/people.js";
 
 export function mountPlatformSettings(app: Express): void {
   // A superadmin's write surface over the whole platform: add and deactivate people, and create
   // and archive teams. Every route calls one of the extracted admin functions, each guarded by
   // `superOnly` inside that function rather than by a `platformRole` comparison here, so this
   // file and `/manage/mcp` enforce one rule.
-
-  /** Every principal, with the teams they are in, their role there, and who added them. Answered as `{ rows }`,
-   *  not a bare array: the console's envelope middleware stamps an object and leaves an array alone
-   *  (console/read-envelope.ts), so a list a page reads is an object the marker can be stated on. */
-  app.get("/api/console/settings/platform/people", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const r = await listPeople(id);
-      if (!r.ok) { res.status(r.status).json({ error: r.error }); return; }
-      res.json(redact({ rows: r.rows }));
-    })().catch((err: unknown) => {
-      console.error("settings/platform/people (list) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not list people" });
-    });
-  });
 
   /** Create a principal, or reactivate a deactivated one on the same email — `addPerson`'s
    *  own `on conflict` (admin/people.ts) is why there is no second path for "already exists". An email

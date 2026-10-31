@@ -125,12 +125,8 @@ export const READ_ROUTES: readonly ReadRoute[] = [
   { path: "/api/console/platform/knowledge", collections: ["knowledge", "activity", "runs"], invalidates: "platform" },
   { path: "/api/console/platform/audit", collections: ["activity", "runs", "people"], invalidates: "platform" },
   { path: "/api/console/platform/query", collections: ["activity", "runs", "knowledge", "plugins"], invalidates: "platform" },
-  // The settings surface's five reads: a person's own, a team's roster, and the platform's people.
-  { path: "/api/console/settings/me/tokens", collections: ["settings"], invalidates: "caller" },
-  { path: "/api/console/settings/me/client-setup", collections: ["settings"], invalidates: "caller" },
-  { path: "/api/console/settings/me/teams", collections: ["me", "teams", "settings"], invalidates: "caller" },
+  // The settings surface's one read: a team's roster, for its admins.
   { path: "/api/console/settings/team/members", collections: ["teams", "people", "settings"], invalidates: "caller" },
-  { path: "/api/console/settings/platform/people", collections: ["people", "teams", "settings"], invalidates: "platform" },
 ];
 
 /** A declared path as the expression that matches a request's own: `:name` is one segment and the

@@ -571,7 +571,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
   mountConsoleWrite(app);
-  mountSettings(app, { myAccessTokensFor: credentials.myAccessTokensFor, issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
+  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
                        revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
   app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
   app.all("/core/mcp", passThrough(core, "core proxy", "zz-core is not reachable"));

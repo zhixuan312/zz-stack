@@ -12,17 +12,6 @@ import { logEvent } from "./events.js";
 /** Who is calling, from the request's own headers. */
 export const caller = (): ReturnType<typeof parseCaller> => parseCaller(requestHeaders());
 
-/** The caller's own access tokens, masked at the query level (only a hash is ever stored) —
- *  when each was issued, last used, and whether revoked. */
-export async function myAccessTokensFor(email: string): Promise<Array<{
-  id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
-}>> {
-  const r = await platformDb().query(
-    `select pat.id, pat.label, pat.created_at, pat.last_used_at, pat.revoked_at
-     from pat join principal p on p.id = pat.principal_id
-     where p.email = $1 order by pat.created_at desc`, [email]);
-  return r.rows;
-}
 export type IssueTokenOutcome =
   | { ok: true; token: string; label: string; email: string }
   | { ok: false; error: string };

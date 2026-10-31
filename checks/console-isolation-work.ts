@@ -19,8 +19,8 @@
  *     Approvals' History and its tile, Home's paired figure, Record's foot and `work/query`'s approvals by
  *     every dimension and drilled: the first team's admin two, the second person on the same team one,
  *     the acting superadmin none and the second team's admin their one; the first team's admin and the
- *     second person each read their own token in `settings/me/tokens` and none of the other's, and the
- *     others read neither;
+ *     second person each read their own token in Access and none of the other's, and the others read
+ *     neither;
  *   - the first team's admin and the second person on the same team each hold, planted here, a labelled
  *     token, an application with a token minted through it, a second browser and a passkey, every label,
  *     name and user agent a fresh sentinel; each reads all of their own in Access, plainly and with the
@@ -291,12 +291,11 @@ async function own(c: Context, who: string, cookie: string, mine: string[], dims
     }
     same(`work/query's approvals by ${by}, drilled`, rows);
   }
-  const listed = await send(c.base, cookie, { method: "get", url: "/api/console/settings/me/tokens", body: null });
-  // The route answers `{ rows }`, not a bare array, so that the read envelope can stamp it (Task I-10).
-  const held = listed.status === 200 ? (JSON.parse(listed.text) as { rows: { id: string; label: string }[] }).rows : [];
-  if (listed.status !== 200) bad.push(`settings/me/tokens answered ${listed.status}`);
-  for (const t of tokens.mine) if (!held.some((h) => h.id === t.id && h.label === t.label)) bad.push(`settings/me/tokens left out their own ${t.label}`);
-  for (const t of tokens.theirs) if (listed.text.includes(t.id) || listed.text.includes(t.label)) bad.push(`settings/me/tokens held ${t.label}`);
+  const listed = await send(c.base, cookie, { method: "get", url: "/api/console/access", body: null });
+  const held = listed.status === 200 ? (JSON.parse(listed.text) as { issued: { id: string; label: string }[] }).issued : [];
+  if (listed.status !== 200) bad.push(`access answered ${listed.status}`);
+  for (const t of tokens.mine) if (!held.some((h) => h.id === t.id && h.label === t.label)) bad.push(`access left out their own token ${t.label}`);
+  for (const t of tokens.theirs) if (listed.text.includes(t.id) || listed.text.includes(t.label)) bad.push(`access held ${t.label}`);
 
   if (bad.length) c.found.push(...bad.map((b) => `${who}: ${b}`));
   else c.pass(`${who} reads ${mine.length} approval(s), their own alone, in History, its tile, Home's paired figure, ` +

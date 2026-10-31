@@ -1,6 +1,6 @@
 /**
- * /api/console/settings — a member's own write surface (access tokens, client setup, the
- * team they act for, and the applications and browsers Access revokes), a team admin's `/team/*` tier, and a superadmin's `/platform/*` tier over
+ * /api/console/settings — a member's own write surface (access tokens, the team they act for,
+ * and the applications and browsers Access revokes), a team admin's `/team/*` tier, and a superadmin's `/platform/*` tier over
  * people and teams.
  *
  * Every member route is `/me/*` alone: a route that names a token, an application or a browser
@@ -45,9 +45,6 @@ import { mountPlatformSettings } from "./settings/platform.js";
  * request's origin after it; every route below passes `{ via: "web" }` and the identity's origin.
  */
 export interface SettingsDeps {
-  myAccessTokensFor: (email: string) => Promise<Array<{
-    id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
-  }>>;
   issueMyAccessTokenFor: (
     email: string, label: string | undefined, extraDetail?: Record<string, unknown>, origin?: EventOrigin,
   ) => Promise<IssueTokenOutcome>;
@@ -58,7 +55,7 @@ export interface SettingsDeps {
 
 /** The caller's teams, and which one they act for — the same rule `team_mine` (access-door.ts)
  *  answers over MCP. It only reads the `Identity` the middleware resolved, so it lives here and
- *  its readers — settings/me.ts, access-door.ts and console/access.ts — import it from this file. */
+ *  its readers — access-door.ts and console/access.ts — import it from this file. */
 export function myTeamsSummary(id: Identity):
   | { ok: true; actingFor: string; teams: { team: string; role: string; active: boolean }[]; note?: string }
   | { ok: false; error: string } {

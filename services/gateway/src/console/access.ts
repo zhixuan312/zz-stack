@@ -7,14 +7,14 @@
  *
  * The parts, each from one read:
  *
- *   issued          the caller's zz.pat rows, as myAccessTokensFor reads them, newest first, each with the
+ *   issued          the caller's zz.pat rows, newest first, each with the
  *                   OAuth client it was minted through (oauth_client_id), null for one issued by hand
  *   applications    those rows grouped by client, the client of the newest token first: the client's
  *                   registered name, how many tokens, the first issued and the last used
  *   browsers        the caller's live console sessions by id, the one asking first, then the newest
  *   authenticators  the caller's passkeys, newest first: label, transports and dates
  *   teams           myTeamsSummary's teams and the one acted for, none for a person in no team
- *   setup           myClientSetup, as settings/me/client-setup answers it
+ *   setup           the Claude Code install steps for the caller, `renderClientSetup` around their email
  *
  * DELIBERATE: no secret and nothing it could be used as. A token is its id and label, never its value or
  * hash; a browser is its session's id, never its cookie, hash or address; a passkey is never its
@@ -35,7 +35,7 @@ import { platformDb } from "../db.js";
 import { CONSOLE_COOKIE, readCookie, sha256 } from "../identity.js";
 import { redact } from "../redact.js";
 import { myTeamsSummary } from "../settings.js";
-import { myClientSetup } from "../settings/me.js";
+import { renderClientSetup } from "../admin/flows.js";
 import type { ReadMeta } from "./figures.js";
 import { platformPublic, ZZ_TZ } from "./shared.js";
 
@@ -136,7 +136,7 @@ export function mountAccess(app: Express): void {
     const asOf = iso(Math.ceil(Date.now() / 1000) * 1000);
     const cookie = id.via === "session" ? readCookie(req, CONSOLE_COOKIE) : null;
     const [tokens, browsers, authenticators, setup] = await Promise.all([
-      tokensOf(id.email), browsersOf(id.email, cookie === null ? null : sha256(cookie), asOf), passkeysOf(id.email), myClientSetup(id.email),
+      tokensOf(id.email), browsersOf(id.email, cookie === null ? null : sha256(cookie), asOf), passkeysOf(id.email), renderClientSetup(id.email),
     ]);
     const summary = myTeamsSummary(id);
     const issued = tokens.map((t) => t.token);
@@ -152,7 +152,7 @@ export function mountAccess(app: Express): void {
       browsers,
       authenticators,
       teams: summary.ok ? { actingFor: summary.actingFor, teams: summary.teams } : { actingFor: null, teams: [] },
-      setup,
+      setup: { client: "claude-code", config: setup },
     };
     res.json(redact(answer));
   }));

@@ -259,7 +259,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   app.use(identityMiddleware());
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
-  mountSettings(app, { myAccessTokensFor: credentials.myAccessTokensFor, issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
+  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
                        revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));

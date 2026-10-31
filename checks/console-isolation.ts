@@ -393,7 +393,7 @@ async function run(c: Core): Promise<void> {
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
   mountConsoleWrite(app);
-  mountSettings(app, { myAccessTokensFor: credentials.myAccessTokensFor, issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
+  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
                        revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));

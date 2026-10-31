@@ -51,7 +51,7 @@ const DONE = "console-read-contract: every console GET the console's pages call 
 
 /** How many reads one sweep holds: the route table plus nothing. A table that grows past this is a phase of
  *  its own, and the count is printed so the growth is visible rather than inferred. */
-const ROUTES_EXPECTED = 41;
+const ROUTES_EXPECTED = 37;
 
 type Meta = {
   asOf?: string; observedAt?: string; revision?: string | null; cacheHit?: boolean;
@@ -257,7 +257,7 @@ async function run(c: Core): Promise<void> {
   app.use(identityMiddleware());
   mountConsole(app);
   mountSettings(app, {
-    myAccessTokensFor: credentials.myAccessTokensFor, issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
+    issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
     revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor,
   });
   const servers: Server[] = [];
@@ -379,7 +379,7 @@ async function run(c: Core): Promise<void> {
     c.pass(`once listening, revision composes ${named.length} followed collections (${named.join(", ")})`);
 
     step = "once listening every route answers the envelope and its own composite marker";
-    // DELIBERATE: after the two cache cases below, not before them. This sweep is 41 requests and several of the
+    // DELIBERATE: after the two cache cases below, not before them. This sweep is 37 requests and several of the
     // routes behind them record what they did — `/search` is zz-core's `knowledge_search`, which writes an
     // event — so a sweep between two reads of one answer moves the marker they are compared on, and the second
     // would be a computation rather than the kept answer the case exists to read.

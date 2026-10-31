@@ -16,7 +16,7 @@ import { recordAccessSurface } from "./access-surface.js";
 import { mountAgentDoor } from "./agent-door.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
-import { issueMyAccessTokenFor, myAccessTokensFor, revokeMyAccessTokenFor } from "./credentials.js";
+import { issueMyAccessTokenFor, revokeMyAccessTokenFor } from "./credentials.js";
 import { initPlatformDb, platformDbReady } from "./db.js";
 import { strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
@@ -272,7 +272,7 @@ mountConsoleWrite(app);
 // write route records the door it came through" check reads that literal text back out of
 // the route body.
 mountSettings(app, {
-  myAccessTokensFor, issueMyAccessTokenFor, revokeMyAccessTokenFor,
+  issueMyAccessTokenFor, revokeMyAccessTokenFor,
 });
 
 // One event per tool call, on every door, recording the outcome. Mounted after identity (it

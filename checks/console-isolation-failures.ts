@@ -26,7 +26,7 @@ import { send, type Answer, type Route } from "./console-isolation-work.ts";
  *  `zz.doc` for an initiative and a document, `zz.eval_run` for evaluation, `zz.bug` for a report and its
  *  duplicates, `zz.knowledge_node` for Knowledge health and Knowledge's summary, so one part fails and the rest
  *  stand, and for its list and a lesson, which read no event, `zz.passkey` for People, `zz.skill_run` for Runs,
- *  `zz.pat` for Access, whose read fails whole, and for the caller's tokens, and `zz.event` for the platform
+ *  `zz.pat` for Access, whose read fails whole, and `zz.event` for the platform
  *  query. A table the identity gate reads for a session (`zz.team`, `zz.principal`, `zz.membership`,
  *  `zz.console_session`) would fail every request before its read. */
 export function tableFor(path: string, platformQuery: string): string | null {
@@ -34,7 +34,7 @@ export function tableFor(path: string, platformQuery: string): string | null {
   if (/^\/api\/console\/teams(\/:slug)?$/.test(path)) return "event";
   if (path === "/api/console/people") return "passkey";
   if (path === "/api/console/platform/knowledge" || /^\/api\/console\/knowledge(\/summary|\/:team\/\*)?$/.test(path)) return "knowledge_node";
-  if (path === "/api/console/access" || path === "/api/console/settings/me/tokens") return "pat";
+  if (path === "/api/console/access") return "pat";
   if (path === "/api/console/platform/evaluation") return "eval_run";
   if (/^\/api\/console\/platform\/bugs\/:id(\/duplicates)?$/.test(path)) return "bug";
   if (path === "/api/console/work/query") return "initiative";
@@ -47,11 +47,8 @@ export function tableFor(path: string, platformQuery: string): string | null {
 
 /** The reads `ownFailures` cannot reach, and why: none reads a table renaming could fail it by alone. */
 const UNREACHABLE: Record<string, string> = {
-  "/api/console/settings/me/teams": "built from the identity alone, which the gate resolved before the route ran",
   "/api/console/live": "a held-open stream, answered 200 before any read beneath it can fail",
-  "/api/console/settings/me/client-setup": "reads no table: the setup is rendered from the catalog and the gateway's address",
   "/api/console/settings/team/members": "reads only the memberships, people and teams the identity gate reads for every request",
-  "/api/console/settings/platform/people": "reads only the people, memberships and teams the identity gate reads for every request",
 };
 
 /** One read asked at the member's own address: the table it is failed by, the body its handler answers then, and every
@@ -59,9 +56,8 @@ const UNREACHABLE: Record<string, string> = {
 interface Target { path: string; url: string; table: string | null; status?: number; error?: string; reads: string[] }
 
 /** Work's detail routes and the knowledge reads a member reaches with their own team's addresses and the shared lesson's,
- *  the search, and their own tokens; `/api/console/me` beside them as a control. COUPLED: the statements of
- *  services/gateway/src/console/initiatives.ts, knowledge.ts and search.ts (through zz-core's knowledge_search), and
- *  myAccessTokensFor in credentials.ts. */
+ *  and the search; `/api/console/me` beside them as a control. COUPLED: the statements of
+ *  services/gateway/src/console/initiatives.ts, knowledge.ts and search.ts (through zz-core's knowledge_search). */
 function targets(s: Isolation, cited: SharedCitations): Target[] {
   const work = ["doc", "doc_revision", "doc_link", "initiative", "team", "principal"];
   const shelf = ["knowledge_node", "knowledge_node_evidence", "initiative", "team"];
@@ -76,8 +72,6 @@ function targets(s: Isolation, cited: SharedCitations): Target[] {
       table: "knowledge_node_evidence", status: 500, error: "could not read the knowledge base", reads: shelf },
     { path: "/api/console/search", url: `/api/console/search?q=${cited.word}`,
       table: "knowledge_node_evidence", status: 502, error: "zz-core returned an unreadable search result", reads: [...work, ...shelf, "event"] },
-    { path: "/api/console/settings/me/tokens", url: "/api/console/settings/me/tokens",
-      table: "pat", status: 500, error: "could not list tokens", reads: ["pat"] },
     { path: "/api/console/me", url: "/api/console/me", table: null, reads: [] },
   ];
 }

@@ -1,7 +1,6 @@
 /**
- * A person's own settings: their access tokens, which team they act for, the teams they are on,
- * the client package that installs the platform for them, and the applications and browsers they
- * revoke from Access.
+ * A person's own settings, the writes Access makes: a token issued or revoked, the team a browser acts
+ * for, and an application or a browser revoked. What Access reads is one route, console/access.ts.
  *
  * Every route here acts on the caller. Those that name a token, an application or a browser find
  * it among the caller's own rows in the same statement that changes it, so somebody else's is
@@ -11,12 +10,10 @@
 import type { Express, Request, Response } from "express";
 
 import type { SettingsDeps } from "../settings.js";
-import { myTeamsSummary } from "../settings.js";
 import { redact } from "../redact.js";
 import { CONSOLE_COOKIE, readCookie, sha256, TEAM_SLUG } from "../identity.js";
 import { logEvent } from "../events.js";
 import { platformDb, platformDbReady } from "../db.js";
-import { renderClientSetup } from "../admin/flows.js";
 
 /** A console session's or a token's id: a uuid, so anything else names no browser or token and is answered as one
  *  that is not yours, before it reaches a `uuid` comparison that would throw. */
@@ -26,8 +23,8 @@ const BROWSER_ONLY = "revoke this from the console, signed in: a token cannot re
 
 /** Tells every console tab that a person's own tokens or browsers changed, so their other browsers read Access again.
  *  `settings`, with no team: a token or a session is a person's, not a team's. A call here rather than a trigger, as
- *  migrations/003_console_live.sql has for team rows: `zz.pat` and `zz.console_session` are written on every request
- *  (`last_used_at`, `last_seen_at`), and a trigger would put a hint, or the work of deciding against one, on each.
+ *  migrations/003_console_live.sql has for team rows: `zz.pat` and `zz.console_session` are written as they are used
+ *  (`last_used_at`, `last_seen_at`, once a minute), and a trigger would put a hint, or the work of deciding against one, on each.
  *
  *  DELIBERATE: never throws. It runs after the write has committed, so a hint that fails is logged and the route still
  *  answers by the write's own outcome: a 500 there would report an issued token, whose plaintext is shown once and
@@ -41,29 +38,7 @@ async function hintSettings(): Promise<void> {
   }
 }
 
-/** The caller's client setup: the Claude Code install steps, pointing here. Its bearer header is
- *  always a placeholder (`<YOUR-TOKEN>` / `$ZZ_TOKEN`); `renderClientSetup` never mints or embeds a
- *  real one. COUPLED: Access (console/access.ts) answers the same setup. */
-export async function myClientSetup(email: string): Promise<{ client: string; config: string }> {
-  return { client: "claude-code", config: await renderClientSetup(email) };
-}
-
 export function mountMySettings(app: Express, deps: SettingsDeps): void {
-  /** The caller's own access tokens — masked at the query level (only a hash is ever
-   *  stored), redacted here on top of that the same as every other row in this file. Answered as `{ rows }`,
-   *  not a bare array, so the envelope middleware states the marker on it (console/read-envelope.ts). */
-  app.get("/api/console/settings/me/tokens", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      res.json(redact({ rows: await deps.myAccessTokensFor(id.email) }));
-    })().catch((err: unknown) => {
-      console.error("settings/me/tokens (list) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not list tokens" });
-    });
-  });
-
   /** Change which team this browser acts for: the console's own `team_switch`.
    *
    * COUPLED: the browser's team is `console_session.team_id`, which `resolveSession`
@@ -263,28 +238,5 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       console.error("settings/me/browsers (sign out) failed:", err);
       if (!res.headersSent) res.status(500).json({ error: "could not sign the browser out" });
     });
-  });
-
-  /** The caller's own client setup, `myClientSetup` above. Still wrapped in `redact()`, so a
-   *  future change to what this renders does not have to remember to add it. */
-  app.get("/api/console/settings/me/client-setup", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      res.json(redact(await myClientSetup(id.email)));
-    })().catch((err: unknown) => {
-      console.error("settings/me/client-setup failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not render client setup" });
-    });
-  });
-
-  /** The caller's own teams, and which one they act for — see `myTeamsSummary` above. */
-  app.get("/api/console/settings/me/teams", (req: Request, res: Response) => {
-    const id = req.zzIdentity;
-    if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-    const result = myTeamsSummary(id);
-    if (!result.ok) { res.status(400).json({ error: result.error }); return; }
-    res.json(redact({ actingFor: result.actingFor, teams: result.teams, note: result.note ?? null }));
   });
 }

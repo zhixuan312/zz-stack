@@ -156,7 +156,7 @@ async function routes(c: Core, found: string[], load: (p: string) => Promise<unk
   const mounted = new Map<string, Route>();
   const on = (method: string) => (path: string, h: Route) => mounted.set(`${method} ${path}`, h);
   mountMySettings({ get: on("GET"), post: on("POST"), delete: on("DELETE") }, {
-    myAccessTokensFor: credentials.myAccessTokensFor, issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
+    issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
     revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
   const route = (key: string): Route => mounted.get(key) ?? c.fail("mount", `no route ${key}`);
   /** As the seeded person's signed-in browser, past the gateway's identity gate. */

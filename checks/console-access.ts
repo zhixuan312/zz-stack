@@ -16,7 +16,7 @@
  *     was minted for), applications (name, tokens, first issued, last used), browsers (the current one
  *     marked and first, user agent, signed in, last seen, expires; no expired or signed-out one), passkeys
  *     (label, transports, created, last used), the teams the caller may act for with the one acted for, and
- *     the setup text settings/me/client-setup answers; a person in no team is answered no teams;
+ *     the setup text the gateway's own renderClientSetup writes for them; a person in no team is answered no teams;
  *   - a second person on the same team sees none of the first's, and a token is refused the read;
  *   - the whole answer, and every event the check's issue, revokes and sign-out wrote, hold no token value,
  *     no token hash, no session cookie or its hash, no passkey credential id and no address, and no field is
@@ -211,7 +211,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   app.use(identityMiddleware());
   app.use(express.json({ limit: "1mb" }));
   mountAccess(app);
-  mountSettings(app, { myAccessTokensFor: credentials.myAccessTokensFor, issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
+  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
                        revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
@@ -267,15 +267,16 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     const read = clean(step, "the first person's read", await ask("GET", "/api/console/access", one));
     if (read.status !== 200) fail(step, `answered ${read.status}: ${read.text}`);
     const got = read.body;
-    const setup = clean(step, "client-setup", await ask("GET", "/api/console/settings/me/client-setup", one));
-    const want = { ...expectedOf(s), setup: setup.body };
+    const { renderClientSetup } = (await load("admin/flows.js")) as { renderClientSetup: (email: string) => Promise<string> };
+    const config = await renderClientSetup(ONE);
+    const want = { ...expectedOf(s), setup: { client: "claude-code", config } };
     const current = (got.browsers as Obj[] | undefined)?.[0];
     const seen = typeof current?.lastSeenAt === "string" ? Date.parse(current.lastSeenAt) : NaN;
     if (!(seen >= Date.parse(h(1)))) fail(step, `the current browser's last seen is ${String(current?.lastSeenAt)}, not at or after ${h(1)}`);
     const steady = { ...got, browsers: (got.browsers as Obj[]).map((b, i) => (i === 0 ? { ...b, lastSeenAt: h(1) } : b)) };
     delete (steady as Obj).meta;
     if (!same(steady, want)) fail(step, `answered\n  ${show(canonical(steady))}\nnot\n  ${show(canonical(want))}`);
-    if (!String((setup.body as { config?: unknown }).config ?? "").includes(ONE)) fail(step, `the setup text is not written for ${ONE}: ${setup.text.slice(0, 300)}`);
+    if (!config.includes(ONE)) fail(step, `the setup text is not written for ${ONE}: ${config.slice(0, 300)}`);
     const meta = got.meta as Obj;
     const asOf = Date.parse(String(meta.asOf));
     if (meta.scope !== "caller-in-active-team" || meta.coverageFrom !== null || !(asOf >= T) || asOf > Date.now() + 1000

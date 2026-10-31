@@ -101,6 +101,13 @@ const none = planAssessment({ measures: [recovery], subjectRefs: [cleanRun], run
 assert.equal(none.length, 1);
 assert.equal(none[0].ask, false);
 assert.match(none[0].excluded_reason, /applies only where one did/);
+// A later call bringing a run that refused nothing says so about that run, on its own row — never
+// nothing at all, which left the earlier "no subject_ref of kind run" standing in the score.
+const laterCall = planAssessment({ measures: [recovery], subjectRefs: [cleanRun], runLevel: run,
+  alreadyAssessed: new Set([recovery.id]), qualified: () => true, textOf: (r: string) => texts[r] });
+assert.equal(laterCall.length, 1, "a run ref with no refusal is reported, not dropped, after an earlier call");
+assert.equal(laterCall[0].subjectRef, cleanRun);
+assert.match(laterCall[0].excluded_reason, /refused no call/);
 
 // -- definition.documents: a document measure judges only the files it names ---------------------
 const agreement = measure("agreement", "bounded_semantic", { definition: { subjectKind: "document", documents: ["spec.md", "plan.md"] } });
@@ -110,7 +117,7 @@ assert.deepEqual(docsPlan.filter((p: { ask: boolean }) => p.ask).map((p: { subje
   ["x/plan.md", "x/spec.md"], "a measure naming spec.md and plan.md is asked of those alone");
 const docsNone = planAssessment({ measures: [agreement], subjectRefs: ["x/explore.md"],
   runLevel: run, alreadyAssessed: new Set(), qualified: () => true, textOf: noText });
-assert.match(docsNone[0].excluded_reason, /is one of the documents it judges \(spec\.md, plan\.md\)/);
+assert.match(docsNone[0].excluded_reason, /is not one of the documents it judges \(spec\.md, plan\.md\)/);
 
 // -- a long document is read whole, part by part ------------------------------------------------
 {

@@ -490,8 +490,9 @@ interface PlannedAssessment {
  *   - human: once per run, excluded (no label ingestion exists);
  *   - model-backed with no evaluator, or one `qualified` says is not: once per run, excluded by
  *     name, never asked;
- *   - model-backed otherwise: asked of each ref of the kind it judges only, or — no such ref in
- *     this call — once per run, excluded by name.
+ *   - model-backed otherwise: asked of each ref of the kind it judges that it applies to
+ *     (`appliesWhen`, `documents`), excluded by name on each other ref of that kind, or — no ref
+ *     of that kind in this call — once per run, excluded by name.
  *  `alreadyAssessed` is the measures a previous call on this run already wrote any row for: a
  *  run-level row is never written for them again, so "once per run" holds across calls, and a
  *  measure asked of its kind in one call is not marked excluded by a later call that brings no
@@ -537,13 +538,15 @@ export function planAssessment(opts: {
     const matching = ofKind
       .filter((r) => !refusedOnly || REFUSED_LINE.test(textOf(r) ?? ""))
       .filter((r) => !named || named.includes(r.split("/").pop() ?? r));
-    if (!matching.length) {
-      once(measure, false, refusedOnly
-        ? `none of the ${ofKind.length} subject_ref(s) of its kind refused a call — this measure applies only where one did`
-        : `none of the ${ofKind.length} subject_ref(s) of its kind is one of the documents it judges (${named?.join(", ")})`);
-      continue;
+    // A ref of its kind that the measure does not apply to is recorded on that ref, saying why —
+    // a run-level row would be skipped by a later call (once per run), leaving that call silent.
+    for (const subjectRef of ofKind) {
+      out.push(matching.includes(subjectRef)
+        ? { measure, subjectRef, ask: true, excluded_reason: null }
+        : { measure, subjectRef, ask: false, excluded_reason: refusedOnly && !REFUSED_LINE.test(textOf(subjectRef) ?? "")
+            ? "this run refused no call — this measure applies only where one did"
+            : `this is not one of the documents it judges (${named?.join(", ")})` });
     }
-    for (const subjectRef of matching) out.push({ measure, subjectRef, ask: true, excluded_reason: null });
   }
   return out;
 }

@@ -176,7 +176,12 @@ for (const p of current) {
 }
 // 3. Say what actually moved. The only evidence that an update updated anything is the number
 // being different afterwards.
-const after = installed() ?? [];
+const after = installed();
+if (after === null) {
+    console.error(`\nThe updates ran${failed ? `, and ${failed} of them FAILED,` : ""} but what is installed now ` +
+        "could not be read, so what moved is unknown. Run /zz-access:doctor.");
+    process.exit(1);
+}
 const now = new Map(after.map((p) => [p.id, p.version]));
 console.log("");
 let moved = 0;

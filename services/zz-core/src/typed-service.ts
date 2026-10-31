@@ -29,9 +29,8 @@
  *
  * `unsupported` is the ordinary outcome here, not a failure. The kernel turns a number into a
  * level only when a qualified mapping says where the lines are, and this platform has qualified
- * none — the 1-based rebase below and the 0.5 threshold cut next door are this flow's own
- * conventions. So the kernel validates the figures, declines to name a level, and naming it
- * stays here.
+ * none. So the kernel validates the figures and declines to name a level, and a caller reads the
+ * figure itself — `semantic.ts` reads a probability against its own `READING_BANDS`.
  *
  * Not used by `plugin_locate` or `plugin_profile`: those are facts — catalog contents, event
  * counts, deltas — and every ruler on this platform is written from them, so a model there

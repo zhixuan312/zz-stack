@@ -490,8 +490,9 @@ async function main(): Promise<number> {
   // ledgerOnClose skips the second row — the document and the team's ledger would say different
   // words.
   //
-  // DELIBERATE: the same disposition. `abandoned` never reaches this guard — an initiative whose
-  // gates are all approved is refused as a contradiction first.
+  // The same disposition as the close that landed, though either would do: a closed initiative
+  // is refused as already closed before every other rule, `abandoned`'s contradiction refusal
+  // included (services/zz-core/src/tools/initiative-close.ts reads the anchor row first).
   check("an initiative cannot be closed twice",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
     true, /already closed as/);

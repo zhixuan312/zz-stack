@@ -210,12 +210,12 @@
       "locator": "### After review · the close is an act, not a stage",
       "claim": "It is the closing document AND it carries a gate, so the platform refuses the close until its approval is recorded",
       "enforcement_class": "analytical_review",
-      "verified_by": "the reviewer reading `closeCheck` against `flow.json`'s `closing`/`gate`/`requiredForClose` flags — there is no executing test of the platform's own guard",
+      "verified_by": "the reviewer reading `closeCheck` against `flow.json`'s `closing`/`gate`/`requiredForClose` flags for review.md — checks/close-fallback-gates.ts executes the guard's own-gate refusal on zz-plugin-eval's closing document, not on this flow's",
       "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=review.md] — gate, closing, requiredForClose",
       "handler": "services/zz-core/src/guards.ts::closeCheck (private to the module), reached through services/zz-core/src/guards.ts::documentGuards, which dispatches to it at services/zz-core/src/guards.ts::closeCheck, from services/zz-core/src/tools/initiative-close.ts",
-      "behavioural_test": null,
-      "report": "Read as `verified_by` says: a reviewer reads `closeCheck` against flow.json's `closing`/`gate`/`requiredForClose` flags, and `scripts/gate/checks/documents-lifecycle.ts` drives `closeCheck` itself over fixtures for the close rules it can state. The `manifest-audit` tool this once drove is gone with the store it audited.",
-      "note": "Enforced in code; no test drives the platform's own guard.",
+      "behavioural_test": "checks/close-fallback-gates.ts — drives `closeCheck` through the exported `documentGuards` over the real catalog manifests: case 3 requires a finished close on zz-plugin-eval's draft improvement.md (gated, the declared closing document) to be refused with 'cannot be closed while its own approval is unrecorded' and admits it once approved; case 4 drives sdlc-flow's manifest for the stop waiver only",
+      "report": "Read as `verified_by` says. node checks/close-fallback-gates.ts, run by scripts/gate.ts, executes the same `closeCheck` branch this rule rests on, over zz-plugin-eval's closing document.",
+      "note": "Enforced in code by the one `closeCheck` every flow shares. No case asserts the refusal for sdlc-flow's review.md itself; a draft review.md closed `finished` in checks/close-fallback-gates.ts would make this a platform rule.",
       "also_claimed_in": [
         "sdlc-flow/SKILL.md"
       ]

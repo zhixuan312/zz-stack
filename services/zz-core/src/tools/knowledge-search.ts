@@ -316,7 +316,8 @@ export function registerKnowledgeSearch(server: McpServer): void {
       // so a Chinese query is visible to the tag and neighbour lanes below.
       // DELIBERATE: never ':'. That is what keeps the SUBJECT_KINDS expansion two blocks down
       // live rather than dead code.
-      // COUPLED: scripts/gate/checks/documents-schema.ts reads this exact character class.
+      // COUPLED: scripts/gate/checks/documents-schema.ts reads this character class, and
+      // scripts/mutation/specs-cov-knowledge.ts finds it by its exact literal.
       const tokens = (query ?? "").toLowerCase().split(/[^a-z0-9\p{Script=Han}]+/u).filter(Boolean);
 
       const CANDIDATE_CAP = 200;
@@ -459,14 +460,14 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * by the citation graph need not contain the query at all, so marking it would mark
        * nothing — it gets the head of its text.
        *
-       * The rows read are `ranked.slice(0, want + 1)`: the fill loop below pushes on each
-       * iteration or breaks, so it cannot reach past the row after its last.
+       * The rows read are `ranked.slice(0, want)`: the fill loop below pushes on each iteration
+       * or breaks, and breaks once it holds `want`, so it never reads a row past those.
        *
        * One statement for all of them, addressed by each row's key — one read of a body however
        * many lanes found it. `body` is not selected by any lane, so this is also the only place a
        * ranked row's text is materialised at all. */
       const snippets = new Map<string, string>();
-      const shortlist = ranked.slice(0, want + 1);
+      const shortlist = ranked.slice(0, want);
       if (shortlist.length) {
         const xArgs: unknown[] = [];
         const xPut = (v: unknown): string => { xArgs.push(v); return `$${xArgs.length}`; };

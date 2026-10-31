@@ -79,6 +79,9 @@ export function safeRelPath(value: string, what: string): string | null {
 /** What may appear inside a frontmatter list, which is written by interpolation and read
  * back by a comma-splitter: no separator, no bracket, no newline, no quote. */
 export const PLAIN_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** A uuid's shape. An id that fails it is refused as the id nothing minted, before a `::uuid`
+ *  cast answers with PostgreSQL's own `22P02` sentence. */
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A journal tag: a plain token, or a subject key — `plugin:sdlc`, `flow:sdlc-flow`.
  *
  * DELIBERATE: this admits a colon where PLAIN_TOKEN does not. parseEnvelope splits a
@@ -97,11 +100,11 @@ const TAG_TOKEN = /^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)?$/;
  *
  * DELIBERATE: the two document tools lower-case a tag first (`normalizeTags`,
  * document-normalize.ts) and say so in the receipt — case is the one thing about a tag that has a
- * single reading — and ask this of what is left. What lower-casing cannot fix, a space or a
- * comma, is refused here: rewriting it would store a value the caller did not send. knowledge_add
+ * single reading — and ask this of what is left. What lower-casing cannot fix, a space, a comma
+ * or a blank, is refused here: rewriting it would store a value the caller did not send. knowledge_add
  * refuses an upper-case tag as it always has. */
 export function tagRefusal(tags: string[] | undefined): string | null {
-  const bad = (tags ?? []).map((t) => t.trim()).filter((t) => t && !TAG_TOKEN.test(t));
+  const bad = (tags ?? []).map((t) => t.trim()).filter((t) => !TAG_TOKEN.test(t));
   return bad.length
     ? `ERROR: ${bad.map((t) => JSON.stringify(t)).join(", ")} ` +
       `${bad.length > 1 ? "are not tags" : "is not a tag"} — a tag is lowercase letters, ` +

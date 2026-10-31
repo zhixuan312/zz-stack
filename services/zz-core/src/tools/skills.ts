@@ -172,16 +172,13 @@ export function registerSkillTools(server: McpServer): void {
        * skill may carry neither, and that is said out loud rather than rendered as an
        * empty dash. */
       const describe = (
-        name: string, dir: string | null,
+        name: string, dir: string,
         stage?: { at: number; of: number; produces: string },
       ): string[] => {
         const head = stage
           ? `- ${name} [stage ${stage.at} of ${stage.of}` +
             (stage.produces && stage.produces !== "nothing" ? ` → ${stage.produces}]` : "]")
           : `- ${name}`;
-        // Registered and not on disk here. Said plainly rather than omitted: a skill missing
-        // from the list reads as a package that does not ship one.
-        if (!dir) return [head, "  (registered; its text is not on this deployment)"];
         // DELIBERATE: indexed, not read as a property. A SKILL.md's frontmatter is not a
         // document envelope, but the gate's "every envelope field the platform reads is one the
         // schema publishes" cannot see the difference and reads `env.when_to_use` as an
@@ -217,6 +214,7 @@ export function registerSkillTools(server: McpServer): void {
         const stages = pkg ? stagesOf.get(pkg.dir) : undefined;
         const g = groupFor(id, label);
         for (const entry of readdirSync(root).sort()) {
+          // A directory with no SKILL.md is not listed: skill_read could not return it.
           if (!existsSync(join(root, entry, "SKILL.md"))) continue;
           if (seen.has(entry)) continue;
           seen.add(entry);

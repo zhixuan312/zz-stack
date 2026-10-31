@@ -25,7 +25,7 @@
  * caller in the service holds a `Chain`, and a chain carries the flow's stages.
  */
 
-/** A stage as the manifest declares it, narrowed to the two fields this file asks about. */
+/** A stage as the manifest declares it, narrowed to the three fields this file asks about. */
 export interface DeclaredStage {
   readonly name?: string;
   readonly produces?: string;

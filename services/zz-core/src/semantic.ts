@@ -48,6 +48,7 @@ import { QUESTION_FAMILIES } from "@zz/contracts";
 import type pg from "pg";
 
 import { ask, configured, NOT_CONFIGURED, TypedCallRefusal, type Question } from "./typed-service.js";
+import { UUID_RE } from "./paths.js";
 import { db, teamFor } from "./platform-db.js";
 import { Refusal } from "./refusal.js";
 
@@ -114,9 +115,8 @@ export function questionDigest(family: string): string {
     .digest("hex").slice(0, 16);
 }
 
-/** How a probability is read. The platform's own convention, like the 0.5 cut the typed judge
- *  uses for a threshold line: no calibrated mapping exists for these questions, so the middle
- *  band is reported as `unclear` rather than forced to a side. */
+/** How a probability is read. The platform's own convention: no calibrated mapping exists for
+ *  these questions, so the middle band is reported as `unclear` rather than forced to a side. */
 export const READING_BANDS = Object.freeze({ no_below: 0.35, yes_above: 0.65 });
 
 export function readingOf(probability: number | null): Assessment["reading"] {
@@ -411,8 +411,6 @@ interface EvaluatorVersionRow {
   stable_key: string;
 }
 
-const EVALUATOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** The plan header's formula: the first 16 hex characters of sha256 over the evaluator's stable
  *  key, its version, and the exact question text — pinning the wording the same way a family's
  *  `questionDigest` pins its instruction, but keyed to a version rather than to a static map. */
@@ -425,7 +423,7 @@ async function resolveEvaluatorVersion(evaluatorVersionId: string): Promise<Eval
   if (!p) throw new Refusal("ERROR: this deployment has no platform database, so no evaluator can be resolved");
   // A malformed id is refused the same way an unknown one is, rather than reaching Postgres and
   // surfacing its own "invalid input syntax for type uuid" instead of this contract's text.
-  if (!EVALUATOR_UUID_RE.test(evaluatorVersionId)) {
+  if (!UUID_RE.test(evaluatorVersionId)) {
     throw new Refusal(`ERROR: "${evaluatorVersionId}" is not a registered evaluator version`);
   }
   const { rows } = await p.query<EvaluatorVersionRow>(`

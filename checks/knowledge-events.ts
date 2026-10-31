@@ -22,6 +22,7 @@
  *     refused and no two nodes name each other;
  *   - a `plugin:` tag naming no registered plugin is written, and the reply says so after the
  *     sentence below;
+ *   - a tag sent with spaces around it is stored trimmed, and a search by the trimmed tag finds the node;
  *   - both tools answer exactly as before, so the release's chain check, which reads
  *     `journal node NNNN created`, still reads them.
  *
@@ -178,6 +179,21 @@ async function pluginTagCases(c: Core, initiative: string): Promise<void> {
   c.pass("knowledge_add writes a node whose plugin tag names nothing registered and says so");
 }
 
+/** A tag is stored as the rules checked it, trimmed, so a search by that tag finds the node. */
+async function trimmedTagCase(c: Core, initiative: string): Promise<void> {
+  const step = "knowledge_add with a tag sent with spaces around it";
+  const title = "Trimmed tags are searchable";
+  await add(c, step, c.team, { title, type: "decision", scope: "team", evidence: [initiative], tags: [" alpha "],
+                               body: "A tag is stored as it was checked." });
+  const { rows } = await c.sql.query<{ tags: string[] }>(
+    `select k.tags from zz.knowledge_node k join zz.team t on t.id = k.team_id where t.slug = $1 and k.title = $2`,
+    [c.team, title]);
+  if (JSON.stringify(rows) !== JSON.stringify([{ tags: ["alpha"] }])) c.fail(step, `the node stores ${JSON.stringify(rows)}, not tags ["alpha"]`);
+  const found = JSON.parse(await c.ok(step, "knowledge_search", { query: title, tags: ["alpha"] })) as { results?: { title?: string }[] };
+  if (!found.results?.some((r) => r.title === title)) c.fail(step, `knowledge_search by tag alpha answered ${JSON.stringify(found).slice(0, 400)}`);
+  c.pass("a tag sent as \" alpha \" is stored as alpha, and knowledge_search by tags [alpha] finds the node");
+}
+
 /** A `zz-platform` member's team shelf is the platform shelf, so a bare id names one node there and
  *  is superseded, not refused as present on BOTH shelves with the same node named twice. */
 async function platformMemberCase(c: Core, initiative: string): Promise<void> {
@@ -228,6 +244,7 @@ async function run(c: Core): Promise<void> {
   await cycleCase(c, made[c.team][0], teamNewer);
   await retryCases(c, initiative);
   await pluginTagCases(c, initiative);
+  await trimmedTagCase(c, initiative);
   c.pass("both tools answer in the sentences the release's chain check reads");
 }
 

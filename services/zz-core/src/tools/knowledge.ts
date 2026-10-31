@@ -162,8 +162,11 @@ export function registerKnowledgeTools(server: McpServer): void {
         verified_against: z.string().optional(),
       },
     },
-    async ({ title, type, body, evidence, tags, verified_against, scope }) => {
+    async ({ title, type, body, evidence, tags: sentTags, verified_against, scope }) => {
       const who = parseCaller(requestHeaders());
+      // Trimmed once, as every write trims them: the tags each rule below checks are the tags the
+      // row stores, so a search by the tag as checked finds the node.
+      const tags = sentTags?.map((t) => t.trim());
       // The schema above already refuses a call that omits `scope`; this repeats the check for
       // a caller that reaches the handler past the schema, so the refusal keeps its reasoning
       // instead of degrading to a generic type error.

@@ -21,7 +21,7 @@
  *   - both sign-off fields, unapproved gates and a freeform finished close with no document are
  *     refused with the same sentence, the route's 400 carrying the tool's text, and nothing closes;
  *   - an initiative already closed is the route's 409 carrying the tool's sentence, and the first
- *     decision stays, an abandon naming no document included; two closes through the route at once answer one 200 and one 409, the first
+ *     decision stays, an abandon naming no document and a finish of an abandoned one included; two closes through the route at once answer one 200 and one 409, the first
  *     decision standing;
  *   - a body naming `outcome` or `closed_by`, a disposition outside the two, a blank sign-off field and
  *     a document the initiative does not hold are the route's 400, and nothing closes;
@@ -64,8 +64,9 @@ const NOT_FOUND = "No initiative of the team you act for has that name.";
 
 /** What an initiative is made as before its case closes it: freeform with `notes.md`, freeform with
  *  nothing, an sdlc initiative stopped at an unsigned spec, one walked to an unsigned review, one walked
- *  to its close, and `notes` already closed as accepted through the tool. */
-type Shape = "notes" | "empty" | "partial" | "reviewed" | "walked" | "closed";
+ *  to its close, `notes` already closed as accepted through the tool, and `partial` already abandoned
+ *  through it. */
+type Shape = "notes" | "empty" | "partial" | "reviewed" | "walked" | "closed" | "abandoned";
 
 /** The close as the initiative records it. */
 interface CloseRecord {
@@ -119,6 +120,9 @@ const CASES: Case[] = [
   { step: "abandoning an initiative already closed", key: "again-abandon", shape: "closed", body: { disposition: "abandoned" },
     want: "conflict", says: /^ERROR: a closing record already exists for this work.*already closed as `accepted`/s,
     record: { outcome: "accepted", acceptor: "closer", reason: null, document: "notes.md" } },
+  { step: "finishing an initiative already abandoned", key: "again-finish", shape: "abandoned", body: { disposition: "finished" },
+    want: "conflict", says: /^ERROR: a closing record already exists for this work.*already closed as `abandoned`/s,
+    record: { outcome: "abandoned", acceptor: null, reason: null, document: "spec.md" } },
 ];
 
 const show = (v: unknown): string => JSON.stringify(v).slice(0, 600);
@@ -143,15 +147,16 @@ function request(c: Core, team: string, slug: string, body: Obj): Obj {
  *  `checks/document-version.ts`'s, the one a governed close is known to be granted on. */
 async function make(c: Core, key: string, shape: Shape): Promise<string> {
   const step = `make ${key}`;
-  const slug = await c.open(key, ["partial", "reviewed", "walked"].includes(shape) ? "sdlc-flow" : undefined);
+  const slug = await c.open(key, ["partial", "reviewed", "walked", "abandoned"].includes(shape) ? "sdlc-flow" : undefined);
   if (shape === "notes" || shape === "closed") {
     await c.ok(step, "document_write", { path: `${slug}/notes.md`, content: "# Notes\n\nwritten\n" });
   }
   if (shape === "closed") await c.ok(step, "initiative_close", { initiative: slug, disposition: "finished", document: "notes.md" });
-  if (shape !== "partial" && shape !== "reviewed" && shape !== "walked") return slug;
+  if (shape !== "partial" && shape !== "reviewed" && shape !== "walked" && shape !== "abandoned") return slug;
   await c.ok(step, "document_write", { path: `${slug}/explore.md`, content: EXPLORE_BODY });
   await c.ok(step, "document_write", { path: `${slug}/spec.md`, content: SPEC_BODY });
-  if (shape === "partial") return slug;
+  if (shape === "abandoned") await c.ok(step, "initiative_close", { initiative: slug, disposition: "abandoned" });
+  if (shape === "partial" || shape === "abandoned") return slug;
   await c.sign(`${slug}/spec.md`);
   await c.source(step, { initiative: slug, title: "spec audit", content: "no blocking findings", supports: ["spec.md"], stage: "sdlc-spec-audit" });
   await c.ok(step, "document_write", { path: `${slug}/plan.md`, content: "## Full-suite gate\nRun the gate.\n" });

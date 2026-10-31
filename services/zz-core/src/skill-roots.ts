@@ -19,9 +19,8 @@ import { catalogPackages } from "@zz/catalog";
  * skills are not here — those are served from /catalog.
  *
  * `/skills` is the platform's own, true wherever this runs. (`zz-platform` is also the platform
- * team's slug, in identity.ts and paths.ts. Different namespace: a team is a directory under
- * `teams/`, a skill is a directory under a skills root, and nothing resolves a bare slug against
- * both.)
+ * team's slug, in identity.ts and paths.ts. Different namespace: a team is a `zz.team` row, a
+ * skill is a directory under a skills root, and nothing resolves a bare slug against both.)
  */
 const SKILL_ROOTS = ["/skills"];
 /* COUPLED: where the catalog is, and how it is walked, are both @zz/catalog's. catalogPackages()

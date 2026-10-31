@@ -103,7 +103,9 @@ export async function initiativeState(
   // nothing to compute a next move over either. `chain.name` is therefore null whenever this
   // fires, which is what makes `flow: null` below the truth rather than a guess.
   if (docs.length === 0) {
-    const files = [...rows.keys()].filter((f) => f.endsWith(".md") && !f.startsWith("_")).sort();
+    // A source is listed under `sources`, never as a document (`sourceRows`' own prefix).
+    const files = [...rows.keys()]
+      .filter((f) => f.endsWith(".md") && !f.startsWith("_") && !f.startsWith("sources/")).sort();
     // No manifest names a closing document, so the outcome is read off whichever document
     // carries one — where initiative_close wrote it.
     // COUPLED: the no-argument listing filters on `next_move.action === "closed"`.

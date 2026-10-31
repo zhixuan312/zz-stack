@@ -227,11 +227,12 @@ async function main() {
     try {
       // Tags carry the origin so a migrated node can be found as one, and so a second run can be
       // told apart from a node somebody wrote by hand. A colon form (`mma:0001`) is refused — the
-      // platform reads `kind:name` as a registry key — so the origin is spelled out flat.
+      // platform reads `kind:name` as a registry key — so the origin is spelled out flat. The
+      // origin goes first, so the cap of 20 cuts the node's own tags and never the origin.
       const tags = [...new Set([
+        "mma-import", `mma-${slug(s.repo)}-${n.mmaId}`,
         ...n.tags.map(slug).filter(Boolean),
         ...(n.topic ? [slug(n.topic)] : []),
-        "mma-import", `mma-${slug(s.repo)}-${n.mmaId}`,
       ])].filter((t) => /^[a-z0-9][a-z0-9._-]*$/.test(t)).slice(0, 20);
       const out = await core.call("knowledge_add", {
         title: n.title, type: n.type, scope: "team",

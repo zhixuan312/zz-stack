@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.18
+version: 2.19
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has recorded the close on the initiative.  Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -162,14 +162,15 @@ altered this way. A node saying only that it was corrected would establish that 
 happened and not that anybody agreed with it — which is the trap the platform's own guardrail
 node 0167 names, arrived at from the other side.
 
-**And pin the second reading, with `verified_against`.** `knowledge_add` takes it and writes it
-into the node's frontmatter. A corrected fact is true as of a version and a day — `review.md
-v3, 2026-09-21`, not `review.md` — and without the pin it has no expiry: the document moves
-again, the node still reads as current, and the entry written to keep the store honest becomes
-the stale one. With it, the next reader sees what was checked and against what, and supersedes
-it through `knowledge_supersede` rather than editing it. A node minted under this exception is
-more exposed to this than most, because its whole point is a claim about a document that had
-just changed once already.
+**And pin the second reading, in the node's body.** A corrected fact is true as of a version
+and a day — `review.md v3, 2026-09-21`, not `review.md` — and without the pin it has no expiry:
+the document moves again, the node still reads as current, and the entry written to keep the
+store honest becomes the stale one. With it, the next reader sees what was checked and against
+what, and supersedes it through `knowledge_supersede` rather than editing it. Pass the same pin
+as `verified_against` too: `knowledge_add` records it on the act that minted the node, not on
+the node, so a search or a read of the node never shows it and the body is where a reader
+finds it. A node minted under this exception is more exposed to this than most, because its
+whole point is a claim about a document that had just changed once already.
 
 The boundary is where the safety is, and it is the one you will be tempted to widen, because a
 judgement can nearly always be re-described as a fact that moved. If you cannot write the two

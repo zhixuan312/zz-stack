@@ -139,6 +139,24 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       const chain = await chainFor(p, team, join(initiative, "probe.md"));
       const dirOf = await documentPaths(team, initiative);
       const facts = await factsFor(p, team, initiative);
+      // Whether it already closed, and how — read off the anchor row before any rule below, so a
+      // second close is answered with the close that happened rather than with a document it would
+      // land on or a race it did not lose. The kernel is what refuses, from the fact this reads back.
+      const anchorOf = async () => (await p.query<{ closed_at: string | null; outcome: string | null }>(
+        `select i.closed_at::text, i.outcome from zz.initiative i
+           join zz.team t on t.id = i.team_id
+          where t.slug = $1 and i.slug = $2`,
+        [team, initiative],
+      )).rows[0];
+      const anchor = await anchorOf();
+      if (anchor?.closed_at) {
+        const undo = closeInitiative({ disposition, already: true });
+        return text(
+          `ERROR: ${undo.refusals.join("; ")}.\n\n${initiative} was already closed as ` +
+          `\`${anchor.outcome}\` on ${dayOf(anchor.closed_at)}. Nothing here is left to mark. If that ` +
+          "was wrong, record WHY as a journal node against this initiative — a correction somebody " +
+          "can find beats a second write nobody can.");
+      }
       if (disposition === OUTCOME_STOPPED) {
         const held = new Set(dirOf);
         // FR-58: a gate or a requiredForClose document the branch has ruled out
@@ -210,32 +228,12 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           // wrote — an initiative opened by mistake has no documents by definition and never
           // will. No ledger row is appended: a team's counts are built from work that happened,
           // and this is the record of work that did not.
-          const anchor = (await p.query<{ closed_at: string | null; outcome: string | null }>(
-            `select i.closed_at::text, i.outcome from zz.initiative i
-               join zz.team t on t.id = i.team_id
-              where t.slug = $1 and i.slug = $2`,
-            [team, initiative],
-          )).rows[0];
           if (!anchor) {
             return text(
               `ERROR: ${initiative} has neither a document nor an anchor row, so there is ` +
               "nothing here to mark and nothing that says it was ever opened.");
           }
-          const holdsDocs = dirOf.some((f: string) => f.endsWith(".md"));
-          // The kernel is what refuses, from the fact this reads back; no gate posture is
-          // passed, because an initiative holding no declared document declares no gate to anybody.
-          // Asked before a document is asked for: a closed initiative is answered as closed, not
-          // sent to name a document only for the next call to learn it.
-          const undo = closeInitiative({ disposition, already: Boolean(anchor.closed_at) });
-          if (!undo.ok) {
-            return text(
-              `ERROR: ${undo.refusals.join("; ")}.\n\n${initiative} was already closed as ` +
-              `\`${anchor.outcome}\` on ${dayOf(anchor.closed_at)}${holdsDocs ? "" : ", on its own anchor row"}. ` +
-              "Nothing here is left to mark. If that was wrong, record WHY as a " +
-              "journal node against this initiative — a correction somebody can find beats a " +
-              "second write nobody can.");
-          }
-          if (holdsDocs) {
+          if (dirOf.some((f: string) => f.endsWith(".md"))) {
             return text(
               `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
               "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
@@ -418,7 +416,14 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         const bad = await documentGuards(chain, relPath, doc, team, "initiative_close");
         // Every unmet gate and every missing document, counted; a cut list's detail is recorded
         // on the closing document before the refusal is answered.
-        if (bad) return text(await settleRefusal(p, { who: who.email, team, path: relPath }, bad));
+        if (bad) {
+          // A close that landed between the read above and these guards is a race this call lost,
+          // not a correction it asked for: answered as the concurrent close, as the anchor update is.
+          if ((await anchorOf())?.closed_at) {
+            return text(`ERROR: ${initiative} was closed by someone else just now — call initiative_status to see how.`);
+          }
+          return text(await settleRefusal(p, { who: who.email, team, path: relPath }, bad));
+        }
         // The ONE insert path: `saveDocument`, which stamps, files the row and its revision, and
         // records the close on the anchor row in the same transaction. `accepted_by` and
         // `no_signoff_reason` satisfy the two CHECKs the migration declares (an `accepted` outcome

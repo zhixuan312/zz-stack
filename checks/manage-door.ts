@@ -20,7 +20,9 @@
  *     records nothing, and a superadmin cannot deactivate themselves;
  *   - a NUL character in a tool's argument is refused by name on /manage and on /core, and an event
  *     carrying one is still recorded;
- *   - a body that does not parse, on a public route, is refused in JSON with no stack.
+ *   - a body that does not parse, on a public route, is refused in JSON with no stack;
+ *   - a token that does not authenticate is told why — unknown, revoked, expired, its owner
+ *     deactivated, its team archived — and pat_list shows an expired token as expired.
  *
  * The only database this touches is the one it started.
  *
@@ -35,7 +37,7 @@ import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from ".
 
 const NAME = "manage-door";
 const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
-  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, and an unreadable body in JSON: ok";
+  "membership changes say what changed, a deactivated person stays out, a NUL is refused in words, an unreadable body in JSON, and a dead token says why: ok";
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
@@ -220,6 +222,47 @@ async function bodyActs(c: Core, g: Gateway): Promise<void> {
   c.pass(step);
 }
 
+/** Each way a token stops working is named to whoever presents it, and pat_list agrees. */
+async function tokenStateActs(c: Core, g: Gateway): Promise<void> {
+  const step = "a token that does not authenticate is told why, and pat_list shows it expired";
+  const refusal = async (token: string): Promise<string> => {
+    const r = await fetch(`${g.url}/manage/mcp`, { method: "POST",
+      headers: { ...headersOf(null, { authorization: `Bearer ${token}` }), accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} } }) });
+    return `${r.status} ${await r.text()}`;
+  };
+  const expired = await insertPat(c, c.email, "short", null);
+  await c.sql.query("update zz.pat set expires_at = now() - interval '1 day' where id = $1", [expired.id]);
+  const revoked = await insertPat(c, c.email, "withdrawn", null);
+  await c.sql.query("update zz.pat set revoked_at = now() where id = $1", [revoked.id]);
+  // gone@example.test was deactivated by retireActs; a token written for them directly, as the
+  // hole retireActs closes once minted.
+  const owner = await insertPat(c, "gone@example.test", "left-behind", null);
+  await c.sql.query(
+    `with t as (insert into zz.team (slug, name, created_by) select 'fading', 'Fading', id from zz.principal where email = $1
+                returning id)
+     insert into zz.membership (team_id, principal_id, role, added_by)
+     select t.id, p.id, 'admin', p.id from t, zz.principal p where p.email = $1`, [c.email]);
+  const bound = await insertPat(c, c.email, "fading-bound", "fading");
+  await c.sql.query("update zz.team set status = 'archived' where slug = 'fading'");
+  const cases: [string, RegExp][] = [
+    [`zzp_${randomBytes(24).toString("hex")}`, /^401 .*no token on this platform has this value/],
+    [revoked.token, /^401 .*this token was revoked on \d{4}-\d{2}-\d{2}/],
+    [expired.token, /^401 .*this token expired on \d{4}-\d{2}-\d{2}/],
+    [owner.token, /^401 .*gone@example\.test is deactivated/],
+    [bound.token, /^401 .*bound to team 'fading', which is archived/],
+  ];
+  for (const [token, want] of cases) {
+    const said = await refusal(token);
+    if (!want.test(said)) c.fail(step, `answered "${said.slice(0, 200)}", expected ${want}`);
+  }
+  const listed = JSON.parse(await manageCall(g, g.token, "pat_list", {})) as { label: string; expired: boolean; expires_at: string | null }[];
+  const short = listed.find((t) => t.label === "short");
+  if (!short?.expired || !short.expires_at) c.fail(step, `pat_list shows the expired token as ${JSON.stringify(short)}`);
+  if (listed.find((t) => t.label === "withdrawn")?.expired !== false) c.fail(step, "pat_list calls a token with no expiry expired");
+  c.pass(step);
+}
+
 async function run(c: Core): Promise<void> {
   // A superadmin, so every tier of /manage is registered.
   await c.sql.query("update zz.principal set role = 'superadmin' where email = $1", [c.email]);
@@ -230,6 +273,7 @@ async function run(c: Core): Promise<void> {
     await retireActs(c, g);
     await nulActs(c, g);
     await bodyActs(c, g);
+    await tokenStateActs(c, g);
   } finally {
     await g.stop();
   }

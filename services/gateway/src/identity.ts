@@ -174,22 +174,33 @@ async function chosenTeam(principalId: string): Promise<string | null> {
   return r.rows[0]?.slug ?? null;
 }
 
-async function resolvePat(token: string): Promise<Identity | null> {
-  if (!platformDbReady()) return null;
+/** The person a token acts as, or why it does not authenticate.
+ *
+ * Each refusal names its own cause. One sentence for all of them sent somebody whose owner had
+ * been deactivated, or whose team had been archived, to look for a typo in a token that was
+ * neither invalid, expired nor revoked. Every reason is told only to whoever holds the token. */
+async function resolvePat(token: string): Promise<Identity | { refuse: string }> {
+  if (!platformDbReady()) return { refuse: "the platform database is unavailable, so no token can be checked — retry shortly" };
   const db = platformDb();
   const r = await db.query<{
     id: string; email: string; display_name: string; role: "superadmin" | "member";
     status: string; team_slug: string | null; door: string | null;
+    revoked_at: Date | null; expires_at: Date | null; expired: boolean;
   }>(
-    `select pat.id, p.email, p.display_name, p.role, p.status, t.slug as team_slug, pat.door
+    `select pat.id, p.email, p.display_name, p.role, p.status, t.slug as team_slug, pat.door,
+            pat.revoked_at, pat.expires_at, coalesce(pat.expires_at <= now(), false) as expired
      from pat join principal p on p.id = pat.principal_id
      left join team t on t.id = pat.team_id
-     where pat.token_hash = $1 and pat.revoked_at is null
-       and (pat.expires_at is null or pat.expires_at > now())`,
+     where pat.token_hash = $1`,
     [sha256(token)],
   );
   const row = r.rows[0];
-  if (!row || row.status !== "active") return null;
+  const day = (d: Date): string => d.toISOString().slice(0, 10);
+  const reissue = "issue a new one in the console's Access page, or with pat_issue";
+  if (!row) return { refuse: "no token on this platform has this value — check it was copied whole, or " + reissue };
+  if (row.status !== "active") return { refuse: `${row.email} is deactivated, so no token of theirs authenticates` };
+  if (row.revoked_at) return { refuse: `this token was revoked on ${day(row.revoked_at)} — ${reissue}` };
+  if (row.expired && row.expires_at) return { refuse: `this token expired on ${day(row.expires_at)} — ${reissue}` };
   // Logged because a permanently failing update here is indistinguishable from a succeeding
   // one, and this column is what "when was this token last used" answers. At most once a
   // minute: every tool call authenticates, and a minute is all that answer is read to.
@@ -198,13 +209,16 @@ async function resolvePat(token: string): Promise<Identity | null> {
     [row.id])
     .catch((err) => console.error("pat.last_used_at update failed:", err));
   const base = await principalByEmail(row.email);
-  if (!base) return null;
+  if (!base) return { refuse: `${row.email} has no record on this platform` };
 
   // A team-bound token acts inside that team and nowhere else. Every reader — the catalog
   // listing, the installs, the knowledge store, which blocks are granted — is scoped by
   // `teams`, so narrowing here is what makes the binding real for all of them.
   const teams = boundMemberships(base.teams, row.team_slug);
-  if (!teams) return null;
+  if (!teams) {
+    return { refuse: `this token is bound to team '${row.team_slug}', which is archived or no longer has ` +
+                     `${row.email} as a member — ${reissue}` };
+  }
   // Recomputed with the binding: `base` was resolved without it, so a bound token would
   // otherwise carry the person's own chosen team.
   return {
@@ -216,16 +230,16 @@ async function resolvePat(token: string): Promise<Identity | null> {
 
 /** Resolve a browser session cookie to the person who signed in.
  *
- * DELIBERATE: the same shape as resolvePat, down to the query. Both hash a
- * bearer secret, look it up, refuse a revoked or expired row, refuse a
- * non-active principal, and touch a last-used column without blocking the
- * request. COUPLED: a change to either belongs in both.
+ * DELIBERATE: the same shape as resolvePat. Both hash a bearer secret, look it
+ * up, refuse a revoked or expired row, refuse a non-active principal, and touch
+ * a last-used column without blocking the request. COUPLED: a change to either
+ * belongs in both.
  *
- * The one difference between the two queries: this one joins the team with `t.status = 'active'`
- * and a PAT's does not, so a bound token naming a team that has since gone inactive still resolves
- * that slug. It refuses either way — `principalByEmail` reads memberships through the same filter,
- * so `boundMemberships` finds nothing live to bind to. Stated because "the same shape" is what the
- * paragraph above claims, and a reader comparing the two should not have to wonder.
+ * Two differences between the queries. resolvePat reads a revoked or expired row so its refusal
+ * can name the cause, where this one filters them out: a browser whose session ended is sent to
+ * sign in again whatever the cause. And this one joins the team with `t.status = 'active'` where
+ * a PAT's does not, so a bound token naming a team that has since gone inactive still resolves
+ * that slug, for its refusal to name.
  *
  * No team binding, unlike a PAT: a session carries the person's whole
  * membership, exactly as an unbound token does. It carries a team of its own
@@ -337,7 +351,7 @@ const ADAPTERS: IdentityAdapter[] = [
       const m = (req.headers.authorization ?? "").match(/^Bearer\s+(zzp_[A-Za-z0-9]+)\s*$/);
       if (!m) return null;                       // no PAT presented: not this door
       const id = await resolvePat(m[1]);
-      if (!id) return { refuse: "invalid, expired or revoked PAT" };
+      if ("refuse" in id) return id;
       // An application was authorised for one door, and its token answers there alone.
       if (!doorAdmits(id.patDoor ?? null, req.path)) {
         return { refuse: `this token was issued to an application for ${id.patDoor}, and answers on that door ` +

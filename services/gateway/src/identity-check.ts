@@ -54,7 +54,7 @@ interface Case {
 const CASES: Case[] = [
   {
     name: "a refusal ends the walk",
-    doors: [{ refuse: "invalid, expired or revoked PAT" }, identity],
+    doors: [{ refuse: "this token was revoked" }, identity],
     asked: ["d0"],
     expect: "refuse",
     why: "the second door must never be asked — that is how a revoked PAT would become a " +
@@ -76,7 +76,7 @@ const CASES: Case[] = [
   },
   {
     name: "a refusal behind a non-applying door still ends the walk",
-    doors: [null, { refuse: "invalid, expired or revoked PAT" }, identity],
+    doors: [null, { refuse: "this token was revoked" }, identity],
     asked: ["d0", "d1"],
     expect: "refuse",
     why: "the early return has to survive being reached on a later iteration",

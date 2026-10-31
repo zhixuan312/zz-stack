@@ -370,8 +370,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     annotations: READS,
     description:
       "WHEN you need a token's id in order to revoke it, or need to know what is outstanding " +
-      "for somebody. RETURNS the token rows masked — label, bound team, issued, last " +
-      "used, revoked — your own by default, or everyone's for a superadmin. REFUSES another " +
+      "for somebody. RETURNS the token rows masked — label, bound team, the door an " +
+      "application's token answers on, issued, last used, revoked, when it expires and " +
+      "whether it has — your own by default, or everyone's for a superadmin. REFUSES another " +
       "person's tokens to anyone but a superadmin, and never returns a token's value: no " +
       "tool does, once it has been issued.",
     inputSchema: { email: z.string().email().optional() },
@@ -381,7 +382,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     const target = (email ?? id.email).toLowerCase();
     if (target !== id.email && !superOnly(id)) return text("ERROR: superadmin required for others");
     const r = await platformDb().query(
-      `select pat.id, p.email, pat.label, t.slug as team, pat.created_at, pat.last_used_at, pat.revoked_at
+      `select pat.id, p.email, pat.label, t.slug as team, pat.door, pat.created_at, pat.last_used_at, pat.revoked_at,
+              pat.expires_at, coalesce(pat.expires_at <= now(), false) as expired
        from pat join principal p on p.id = pat.principal_id left join team t on t.id = pat.team_id
        where $1 = '*' or p.email = $1 order by pat.created_at desc`,
       [superOnly(id) && !email ? "*" : target],

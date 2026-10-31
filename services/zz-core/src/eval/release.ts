@@ -459,12 +459,14 @@ export function registerReleaseTools(server: McpServer): void {
         "current, so the prior subject is current again — and candidate_record refuses " +
         "its hypothesis from then on. " +
         "RETURNS { status, release_attempt_id, " + RELEASED_SUBJECT_VERSION + ", release_ref, " +
-        "findings_decided, findings_left_alone }, and regenerates findings.md for the run wherever " +
+        "findings_decided, findings_left_alone, findings_reopened }, and regenerates findings.md for the run wherever " +
         "your team holds one (findings_md_refused names a rewrite that was refused). " +
         "A release that lands closes the findings its candidate's own improvement run " +
         "targeted — each applied, decided_by this call's actor, its note naming the version " +
-        "that shipped — while a failed record and a rollback close nothing, and a finding " +
-        "another release already closed is left alone. " +
+        "that shipped — while a failed record closes nothing, and a finding " +
+        "another release already closed is left alone. A rollback reopens, back to deferred, " +
+        "each finding this release applied (findings_reopened), since the version that fixed it " +
+        "is retracted; one decided any other way is left alone. " +
         "REFUSES not_owner — a caller who neither applied the attempt nor is in an owner team — " +
         "not_applying — an unknown release_attempt_id, or one that is not currently applying, for " +
         "a released/failed call (already released/refused/failed, or release_apply was never " +
@@ -519,8 +521,9 @@ export function registerReleaseTools(server: McpServer): void {
         actor: principal, kind: "release_record", release_attempt_id: result.release_attempt_id,
         status: result.status, replayed: outcome.replayed,
       });
-      // A release that decided findings changed what findings.md says about its run.
-      if (!result.findings_decided.length) return json(result);
+      // A release that decided findings, or a rollback that reopened them, changed what
+      // findings.md says about its run.
+      if (!result.findings_decided.length && !result.findings_reopened.length) return json(result);
       const run = (await p.query<{ run: string }>(`
         select ir.eval_run_id::text as run from zz.release_attempt ra
           join zz.candidate c on c.id = ra.candidate_id

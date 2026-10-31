@@ -198,6 +198,7 @@ await assert.rejects(run({ casRows: [] }).done, /left 'prepared' before this cal
 // recordRelease.
 
 const REL = "e0000000-0000-4000-8000-000000000001", OTHER_PLUGIN = "e0000000-0000-4000-8000-000000000002";
+const F1 = "f0000000-0000-4000-8000-000000000001";
 function recordClient(attempt: Record<string, unknown> | null, o: { versions?: string[]; cas?: boolean; claimedBy?: string } = {}) {
   const subjects: Record<string, { plugin_id: string; declared_version: string }> = {
     [BASE]: { plugin_id: "p1", declared_version: "1.1.0" },
@@ -209,6 +210,10 @@ function recordClient(attempt: Record<string, unknown> | null, o: { versions?: s
     [/where o\.released_plugin_version_id = /, () => (o.claimedBy ? [{ id: o.claimedBy, status: "rolled_back" }] : [])],
     [/from zz\.membership/, (v) => (String(v[0]) === OWNER ? [{ slug: "xuan" }] : [])],
     [/update zz\.release_attempt/, (v) => (o.cas === false ? [] : [{ id: v[0] }])],
+    // A rollback reopens what the release applied, matched by the exact note the release wrote.
+    [/update zz\.eval_finding/, (v) => (String(v[1]) === `Applied by release demo@1.2.0 (release_attempt ${A_OLD})`
+      && String(v[2]) === `Reopened: release demo@1.2.0 was rolled back (release_attempt ${A_OLD})`
+      ? (v[0] as string[]).map((id) => ({ id, pattern: "p" })) : [])],
     [/status = 'rolled_back'/, () => [{ declared_version: "1.2.0" }]],
     [/select name from zz\.plugin where id/, () => [{ name: "demo" }]],
     [/select pv\.version from zz\.plugin_version pv where/, () => (o.versions ?? ["1.1.0", "1.2.0"]).map((version) => ({ version }))],
@@ -244,7 +249,11 @@ await assert.rejects(rec(attemptRow({ status: "released", verdict: "rolled_back"
 // head reader's other caller, and the reachable half of what the removed planApply branch
 // ("registered but was never captured") tried to cover.
 await assert.rejects(rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" }, OWNER, { versions: [] }), /prior_not_current[\s\S]*current version is unresolvable/);
-assert.equal((await rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" })).result.status, "rolled_back");
+const rolledBack = (await rec(attemptRow({ status: "released", verdict: "rolled_back", released_plugin_version_id: REL, findings: [F1] }),
+  { status: "rolled_back", reason: "r" })).result;
+assert.equal(rolledBack.status, "rolled_back");
+// The rollback retracts the version that fixed the release's findings, so they are open again.
+assert.deepEqual(rolledBack.findings_reopened.map((f) => f.id), [F1]);
 await assert.rejects(rec(attemptRow({ status: "failed" }), {}), /not_applying/);
 await assert.rejects(rec(attemptRow(), { release_ref: REF }), /requires both release_ref and released_subject_version_id/);
 for (const bad of ["abc", "v1.2.0", "demo@1.2.0", REF.slice(0, 12), REF.toUpperCase(), `${REF}\n`]) {

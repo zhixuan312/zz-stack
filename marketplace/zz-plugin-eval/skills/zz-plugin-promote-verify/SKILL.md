@@ -205,9 +205,12 @@ the prior subject, and only then reports back itself:
 release_record(release_attempt_id, status: rolled_back, reason, idempotency_key)
 ```
 
-which marks the attempt and the candidate `rolled_back` and retracts the rolled-back version:
+which marks the attempt `rolled_back` and retracts the rolled-back version:
 `plugin_locate`'s head and `release_apply`'s baseline both skip it from then on, so no registry row
-is deleted, and `candidate_record` refuses the same hypothesis from then on. It refuses
+is deleted, and `candidate_record` refuses the same hypothesis from then on. The findings the
+release applied are live again, so it reopens them to `deferred` (`findings_reopened`), with a
+note naming the rollback, and regenerates `findings.md`; a later improvement run may target them
+with a different hypothesis. A finding decided any other way is left alone. It refuses
 `not_rolled_back` unless `release_verify` already decided `rolled_back`, and `prior_not_current`
 — recording nothing — when, with that version retracted, the plugin's current version is still
 not the prior one (a newer release stands over it).

@@ -41,6 +41,8 @@
  *   - `finding_record` with `supersedes` closes the old finding as rejected and superseded by the new
  *     one, and a second correction of it is refused with nothing written;
  *   - `finding_decide` regenerates findings.md in the initiative whose EVALUATE record names the run;
+ *   - `release_record` of a rollback reopens the findings its release applied, and only those, and
+ *     findings.md says so;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
@@ -556,6 +558,58 @@ async function decideRefreshesFindingsDoc(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
+async function rollbackReopensFindings(c: Core, s: Seed): Promise<void> {
+  const step = "a rollback reopens what its release applied";
+  const plugin = (await one<{ id: string }>(c,
+    "insert into zz.plugin (name, origin) values ('rollback-probe', 'platform') returning id::text as id")).id;
+  const version = async (v: string) => (await one<{ id: string }>(c,
+    "insert into zz.plugin_version (plugin_id, version, digest) values ($1, $2, 'check') returning id::text as id", [plugin, v])).id;
+  const base = await version("1.0.0");
+  const shipped = await version("1.1.0");
+  const improvement = (await one<{ id: string }>(c,
+    "insert into zz.improvement_run (eval_run_id, created_at) values ($1, now()) returning id::text as id", [s.run])).id;
+  const fixed = await finding(c, s, "rollback: fixed by the release");
+  const byHand = await finding(c, s, "rollback: applied by hand");
+  await c.sql.query("insert into zz.improvement_run_finding (improvement_run_id, finding_id) values ($1, $2), ($1, $3)",
+    [improvement, fixed, byHand]);
+  const candidate = (await one<{ id: string }>(c,
+    `insert into zz.candidate (improvement_run_id, base_plugin_version_id, hypothesis, expected_effect, patch_digest,
+                               complexity_delta, touched_components, status, created_at, patch, proposed_by)
+     values ($1, $2, 'h', '{}', 'pd-rollback', 0, '[]', 'valid', now(), 'diff', $3) returning id::text as id`,
+    [improvement, base, s.me])).id;
+  const attempt = (await one<{ id: string }>(c,
+    `insert into zz.release_attempt (candidate_id, status, released_plugin_version_id, release_ref, created_at, plugin_id,
+                                     applying_at, applied_by, verdict)
+     values ($1, 'released', $2, $3, now(), $4, now(), $5, 'rolled_back') returning id::text as id`,
+    [candidate, shipped, "a".repeat(40), plugin, s.me])).id;
+  const decide = (id: string, note: string) => c.sql.query(
+    "update zz.eval_finding set decision = 'applied', decided_by = $2, decided_at = now(), decision_note = $3 where id = $1",
+    [id, s.me, note]);
+  await decide(fixed, `Applied by release rollback-probe@1.1.0 (release_attempt ${attempt})`);
+  await decide(byHand, "fixed in the docs");
+  await c.sql.query(
+    `insert into zz.initiative_record (initiative_id, stage, id_name, value)
+     select id, 'zz-plugin-evaluate', 'eval_run_id', $2 from zz.initiative where slug = $1
+     on conflict do nothing`, [SLUG, s.run]);
+  const reply = await ask(evalDoor(c, c.email), "release_record",
+    { release_attempt_id: attempt, status: "rolled_back", reason: "measured worse", idempotency_key: "rollback-1" });
+  const rows = (await c.sql.query<{ id: string; decision: string; decided_by: string | null }>(
+    "select id::text as id, decision, decided_by::text as decided_by from zz.eval_finding where id = any($1::uuid[])",
+    [[fixed, byHand]])).rows;
+  const of = (id: string) => rows.find((r) => r.id === id);
+  if (of(fixed)?.decision !== "deferred" || of(fixed)?.decided_by !== null || of(byHand)?.decision !== "applied"
+      || !reply.includes(`"id": "${fixed}"`) || reply.includes(`"id": "${byHand}"`)) {
+    c.fail(step, `the findings read ${JSON.stringify(rows)} after ${reply.slice(0, 400)}`);
+  }
+  const body = (await one<{ body: string | null }>(c,
+    `select r.body from zz.doc d join zz.initiative i on i.id = d.initiative_id
+       join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+      where i.slug = $1 and d.path = 'findings.md'`, [SLUG]))?.body ?? "";
+  const line = body.split("\n").find((l) => l.includes(fixed));
+  if (!line?.includes("decision: deferred")) c.fail(step, `findings.md reads ${JSON.stringify(line)}`);
+  c.pass(step);
+}
+
 async function scoredRunIsNotRescored(c: Core, s: Seed): Promise<void> {
   const step = "evaluation_score on a scored run under a new key";
   const scored = (await one<{ id: string }>(c,
@@ -604,7 +658,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

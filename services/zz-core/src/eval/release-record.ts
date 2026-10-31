@@ -26,10 +26,11 @@
  * `improvement_run_finding` rows, and each of them becomes `applied` with a `decision_note` naming
  * the version that shipped — a relation a later phase joins, not prose. The write goes through
  * `decideFinding` (`./plugin-record.ts`), the ONE deciding write on `zz.eval_finding`; a second
- * private writer here would leave the finding-to-release provenance unrecorded. `failed` and the
- * rollback close nothing: a finding
- * stays deferred until something shipped, and one an earlier release already closed — including
- * this release's own, when the rollback lands on it — is left alone rather than re-decided.
+ * private writer here would leave the finding-to-release provenance unrecorded. `failed` closes
+ * nothing: a finding stays deferred until something shipped. A rollback REOPENS the findings this
+ * release applied — the version that fixed them is retracted, so the defect is live again — back to
+ * deferred, with a note naming the rollback, so a later improvement run can target them again; a
+ * finding anybody else decided, by hand or by another release, is left alone.
  */
 import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type pg from "pg";
@@ -54,6 +55,8 @@ const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
  *  six. This is also why this file never spells the retired boolean column of that name. */
 const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
+export interface ReopenedFinding { readonly id: string; readonly pattern: string }
+
 interface RecordArgs {
   readonly release_attempt_id: string;
   readonly status: "released" | "failed" | typeof ROLLBACK_STATE;
@@ -72,6 +75,8 @@ export interface RecordResult {
    *  made, read back from `zz.eval_finding`. Empty on a `failed` record and on a rollback, which
    *  close nothing: a finding stays deferred until something shipped. */
   readonly findings_decided: readonly DecidedFinding[];
+  /** On a rollback, the findings this release had applied, now deferred again; empty otherwise. */
+  readonly findings_reopened: readonly ReopenedFinding[];
   /** The targeted findings this record left exactly as it found them, each entry a sentence saying
    *  why — already decided, or a strength (terminal at insert, with no decision to record). They
    *  are reported rather than thrown: the release is recorded either way, and a finding closed by
@@ -134,6 +139,19 @@ async function releasedLabel(
   const named = (await client.query<{ name: string }>(
     "select name from zz.plugin where id = $1::uuid", [pluginId])).rows[0];
   return named ? `${named.name}@${declaredVersion}` : declaredVersion;
+}
+
+/** The note a release writes on each finding it applied, and the one its rollback replaces it
+ *  with. The rollback matches the first exactly, so it reopens only what this release closed. */
+const appliedNote = (label: string, attemptId: string) => `Applied by release ${label} (release_attempt ${attemptId})`;
+const reopenedNote = (label: string, attemptId: string) =>
+  `Reopened: release ${label} was rolled back (release_attempt ${attemptId})`;
+
+/** The label of the version an attempt released, as both notes name it. A rolled-back attempt
+ *  was released, so it always names one. */
+async function attemptLabel(client: Pick<pg.PoolClient, "query">, versionId: string | null): Promise<string> {
+  const released = versionId ? await subjectOf(client, versionId) : null;
+  return released ? releasedLabel(client, released.plugin_id, released.declared_version) : String(versionId);
 }
 
 /** Closes the findings the released candidate was built to fix, through the ONE deciding write on
@@ -230,13 +248,21 @@ export async function recordRelease(
         `${prior?.declared_version ?? attempt.base_plugin_version_id}; nothing recorded`);
     }
 
+    // The version that fixed this release's findings is retracted, so each one it applied is
+    // live again: back to deferred, which is what a later improvement run targets. Matched by the
+    // exact note the release wrote, so a finding somebody decided by hand stays as they left it.
+    const label = await attemptLabel(client, attempt.released_plugin_version_id);
+    const reopened = (await client.query<ReopenedFinding>(`
+      update zz.eval_finding
+         set decision = 'deferred', decided_by = null, decided_at = null, decision_note = $3
+       where id = any($1::uuid[]) and decision = 'applied' and decision_note = $2
+      returning id::text as id, pattern`,
+      [attempt.findings ?? [], appliedNote(label, attempt.id), reopenedNote(label, attempt.id)])).rows;
+
     const result: RecordResult = {
       status: ROLLBACK_STATE, release_attempt_id: attempt.id,
       [RELEASED_SUBJECT_VERSION]: attempt.released_plugin_version_id, release_ref: attempt.release_ref,
-      // A rollback closes nothing. Whatever the release decided when it landed is what the
-      // findings carry; re-deciding them here would reopen work the release did deliver, and the
-      // note already names the version that shipped it.
-      findings_decided: [], findings_left_alone: [],
+      findings_decided: [], findings_left_alone: [], findings_reopened: reopened,
     };
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
@@ -309,14 +335,13 @@ export async function recordRelease(
     // only place a reader learns WHICH release applied them, so it names the version. Same
     // transaction as the update above: a decision that could not land leaves the release
     // unrecorded rather than recorded-and-silent.
-    const note = `Applied by release ${await releasedLabel(client, released.plugin_id, released.declared_version)} ` +
-      `(release_attempt ${attempt.id})`;
+    const note = appliedNote(await releasedLabel(client, released.plugin_id, released.declared_version), attempt.id);
     const findings = await decideTargetedFindings(client, attempt.findings ?? [], note, principal);
 
     const result: RecordResult = {
       status: "released", release_attempt_id: attempt.id,
       [RELEASED_SUBJECT_VERSION]: releasedVersionId, release_ref: args.release_ref,
-      findings_decided: findings.decided, findings_left_alone: findings.left_alone,
+      findings_decided: findings.decided, findings_left_alone: findings.left_alone, findings_reopened: [],
     };
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
@@ -336,7 +361,7 @@ export async function recordRelease(
     status: "failed", release_attempt_id: attempt.id,
     [RELEASED_SUBJECT_VERSION]: null, release_ref: null,
     // Nothing shipped, so nothing is applied: a finding stays deferred until a release lands.
-    findings_decided: [], findings_left_alone: [],
+    findings_decided: [], findings_left_alone: [], findings_reopened: [],
   };
   return { result, result_table: "zz.release_attempt", result_id: attempt.id };
 }
@@ -344,12 +369,25 @@ export async function recordRelease(
 /** What a replayed record says about the findings: the durable rows, read back. A finding counts
  *  as decided by this release only when the call the ledger row records decided it — the same
  *  principal, in the same transaction — so one somebody else decided, before or since, is left
- *  alone here as it was on the first call. Only a `released` attempt carries any: a failed call and
- *  a rollback decided none. */
+ *  alone here as it was on the first call. Only a `released` attempt decided any, and only a
+ *  rolled-back one reopened any — those still carrying its rollback's note. */
 async function findingsForReplay(
   pool: pg.Pool, attemptId: string, status: string, call: LedgerCall,
-): Promise<{ findings_decided: DecidedFinding[]; findings_left_alone: string[] }> {
-  if (status !== "released") return { findings_decided: [], findings_left_alone: [] };
+): Promise<Pick<RecordResult, "findings_decided" | "findings_left_alone" | "findings_reopened">> {
+  if (status === ROLLBACK_STATE) {
+    const attempt = (await pool.query<{ version: string | null }>(
+      "select released_plugin_version_id::text as version from zz.release_attempt where id = $1::uuid", [attemptId])).rows[0];
+    const reopened = (await pool.query<ReopenedFinding>(`
+      select f.id::text as id, f.pattern
+        from zz.release_attempt ra
+        join zz.candidate c on c.id = ra.candidate_id
+        join zz.improvement_run_finding r on r.improvement_run_id = c.improvement_run_id
+        join zz.eval_finding f on f.id = r.finding_id
+       where ra.id = $1::uuid and f.decision = 'deferred' and f.decision_note = $2
+       order by f.id`, [attemptId, reopenedNote(await attemptLabel(pool, attempt?.version ?? null), attemptId)])).rows;
+    return { findings_decided: [], findings_left_alone: [], findings_reopened: reopened };
+  }
+  if (status !== "released") return { findings_decided: [], findings_left_alone: [], findings_reopened: [] };
   const stamp = await ledgerStamp(pool, call);
   const rows = (await pool.query<{
     id: string; pattern: string; decision: string | null;
@@ -379,7 +417,7 @@ async function findingsForReplay(
         "this release recorded no decision on it");
     }
   }
-  return { findings_decided: decided, findings_left_alone: left_alone };
+  return { findings_decided: decided, findings_left_alone: left_alone, findings_reopened: [] };
 }
 
 /** `release_record`'s replay path — read the row back rather than trust anything held in memory

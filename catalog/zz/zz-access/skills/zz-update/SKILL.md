@@ -1,6 +1,6 @@
 ---
 name: zz-update
-version: 1.3
+version: 1.4
 description: "Bring every ZZ plugin on this machine up to date in one command — refresh the marketplace, update each plugin that is actually installed, and print the version on both sides so 'nothing changed' is a result rather than a silent tick."
 when_to_use: "The person typed /zz-access:update, or asked how to update, or is on a version that does not have something they were told they have."
 ---

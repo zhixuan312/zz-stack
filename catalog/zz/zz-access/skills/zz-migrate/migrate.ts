@@ -23,6 +23,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { EXPLORE_SENT, openArchive, slug, type Ledger } from "./archive.ts";
 import { Door, gateway, token } from "./mcp.ts";
 import { survey } from "./read-mma.ts";
 import type { JournalNode, Survey } from "./read-mma.ts";
@@ -50,20 +51,12 @@ const DRY = flag("--dry-run");
 const LIMIT = Number(value("--limit", "0")) || 0;
 const repoRoot = resolve(argv.find((a) => !a.startsWith("--") && argv[argv.indexOf(a) - 1] !== "--limit") || ".");
 
-const FLOW = "sdlc-flow";
-const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-
 // ── the ledger ─────────────────────────────────────────────────────────────
 // Beside the data it describes, not in the store: it records what this machine has already
 // sent, and a copy of the repository somewhere else has sent nothing.
 //
 // `__initiative` and `__ids` are the two keys this file writes for itself; every other key is
-// `source:<key>` / `node:<id>` / `supersede:<id>`, each marking one send as done.
-type Ledger = {
-  __initiative?: string;
-  __ids?: Record<string, string | boolean>;
-  [key: string]: unknown;
-};
+// `doc:explore.md` / `source:<key>` / `node:<id>` / `supersede:<id>`, each marking one send as done.
 const ledgerPath = (mmaDir: string): string => join(mmaDir, ".zz-migrated.json");
 const readLedger = (mmaDir: string): Ledger => {
   try {
@@ -98,7 +91,7 @@ function nodeBody(n: JournalNode, repo: string, initiative: string): string {
   return parts.join("\n\n");
 }
 
-function exploreDoc(s: Survey): string {
+function exploreDoc(s: Survey, minted: number): string {
   const kinds: Record<string, number> = {};
   for (const x of s.sources) kinds[x.kind] = (kinds[x.kind] ?? 0) + 1;
   const dates = s.sources.map((x) => x.date).filter(Boolean).sort();
@@ -119,8 +112,10 @@ function exploreDoc(s: Survey): string {
     "",
     ...Object.entries(kinds).sort().map(([k, n]) => `- ${n} × ${k}`),
     "",
-    `${s.nodes.length} journal nodes were minted into the team's knowledge base, each citing ` +
-    "this initiative as its evidence.",
+    `${minted} journal nodes, the adopted and superseded ones, are minted into the team's knowledge ` +
+    "base, each citing this initiative as its evidence" +
+    (minted < s.nodes.length ? `; the other ${s.nodes.length - minted} record work mma dropped or left inconclusive, ` +
+      "which this platform has no state for, and stay in the repository." : "."),
     "",
     "## Rough direction",
     "",
@@ -143,18 +138,8 @@ async function main() {
   const whoRaw: unknown = JSON.parse(await core.call("session_whoami", {}));
   const me: { today?: string; team?: string; email?: string } =
     typeof whoRaw === "object" && whoRaw !== null ? whoRaw : {};
-  const today = me.today;
-  const initiative = ledger.__initiative || `${today}-mma-archive-${slug(s.repo)}`;
-
-  console.log(`Repository   ${repoRoot}`);
-  console.log(`Platform     ${base} — team ${me.team}, as ${me.email}`);
-  console.log(`Initiative   ${initiative}`);
-  console.log(`To import    ${s.sources.length} sources, ${s.nodes.filter((n) => n.status === "adopted" || n.status === "superseded").length} journal nodes` +
-              (LIMIT ? `  (--limit ${LIMIT})` : ""));
-  const done = Object.keys(ledger).filter((k) => !k.startsWith("__")).length;
-  if (done) console.log(`Already sent ${done} — those are skipped`);
-  if (DRY) console.log(`\nDRY RUN — deciding everything, sending nothing.\n`);
-  else console.log("");
+  // Until the open answers, the name it will give: today's date before the slug, as zz-core composes it.
+  let initiative = ledger.__initiative || `${me.today}-mma-archive-${slug(s.repo)}`;
 
   // Only what this platform can say. mma's journal has four statuses; a zz node has two, adopted
   // and superseded-by-another-node. A `dropped` or `inconclusive` node imported anyway would be
@@ -163,39 +148,43 @@ async function main() {
   // trusted, because the schema allows both.
   const IMPORTABLE = new Set(["adopted", "superseded"]);
   const untaken = s.nodes.filter((n) => !IMPORTABLE.has(n.status));
-  const importable = s.nodes.filter((n) => IMPORTABLE.has(n.status));
+  // A type outside the six is refused by knowledge_add, so it is left out here, where the dry run says so too.
+  const untyped = s.nodes.filter((n) => IMPORTABLE.has(n.status) && n.type === null);
+  const importable = s.nodes.filter((n) => IMPORTABLE.has(n.status) && n.type !== null);
+
+  console.log(`Repository   ${repoRoot}`);
+  console.log(`Platform     ${base} — team ${me.team}, as ${me.email}`);
+  console.log(`Initiative   ${initiative}`);
+  console.log(`To import    ${s.sources.length} sources, ${importable.length} journal nodes` +
+              (LIMIT ? `  (--limit ${LIMIT})` : ""));
   if (untaken.length) {
     const by: Record<string, number> = {};
     for (const n of untaken) by[n.status] = (by[n.status] ?? 0) + 1;
     console.log(`Not imported ${Object.entries(by).map(([k, v]) => `${v} ${k}`).join(", ")} — ` +
                 `this platform has no such state, and importing them would stamp them adopted.`);
   }
+  if (untyped.length) {
+    console.log(`Not imported ${untyped.length} of a type this platform has no kind for: ` +
+                `${[...new Set(untyped.map((n) => n.rawType))].join(", ")}.`);
+  }
+  const done = Object.keys(ledger).filter((k) => !k.startsWith("__")).length;
+  if (done) console.log(`Already sent ${done} — those are skipped`);
+  if (DRY) console.log(`\nDRY RUN — deciding everything, sending nothing.\n`);
+  else console.log("");
 
   const sources = LIMIT ? s.sources.slice(0, LIMIT) : s.sources;
   const nodes = LIMIT ? importable.slice(0, LIMIT) : importable;
 
   // 1 ── the archive initiative. It has to exist before anything can cite it: evidence is
   // checked against the folder on disk, not merely against being non-empty.
-  if (!ledger.__initiative) {
+  if (ledger.__initiative && ledger[EXPLORE_SENT]) {
+    console.log(`Initiative already created.`);
+  } else {
     console.log(`Creating ${initiative}/explore.md`);
     if (!DRY) {
-      // Opened first, and this is the whole of why the import used to fail: zz-core refuses a
-      // write into an initiative nobody opened — `unopenedRefusal`, the same guard `source_add`
-      // carries — so every document_write here answered ERROR, the run exited 1, and `--dry-run`
-      // is the only path that ever looked complete.
-      await core.call("initiative_open", { slug: initiative, flow: FLOW });
-      // DELIBERATE: no `flow` on the write. `document_write` takes path, content, stakeholder,
-      // tags, title and fields; the flow is the initiative's, recorded by the open above.
-      await core.call("document_write", {
-        path: `${initiative}/explore.md`,
-        content: exploreDoc(s),
-        title: `The mma archive of ${s.repo}`,
-        tags: ["mma-import", `mma-${slug(s.repo)}`],
-      });
-      remember("__initiative", initiative);
+      initiative = await openArchive(core, s.repo, ledger, remember,
+        { content: exploreDoc(s, importable.length), title: `The mma archive of ${s.repo}` });
     }
-  } else {
-    console.log(`Initiative already created.`);
   }
 
   // 2 ── the historical corpus, as sources. Oldest first, so the archive reads as a timeline.
@@ -285,15 +274,9 @@ async function main() {
   }
   console.log(`  history  ${sup} supersede edges${supFailed.length ? `, ${supFailed.length} not made` : ""}`);
 
-  // 5 ── say plainly that the archive stays open.
-  //
-  // There is no archived state on this platform. `initiative_close` writes the outcome onto the
-  // flow's closing document, every flow that declares one gates it, and an imported archive has
-  // no approvals. So the archive sits in `initiative_status()` beside real work, and this says so
-  // rather than letting it be discovered later as a mystery entry.
-  console.log(`  open     ${initiative} stays OPEN — this platform has no archived state, and ` +
-              `closing it\n           would mean signing a gate nobody signed. It will appear ` +
-              `in initiative_status().`);
+  // 5 ── say plainly that the archive stays open, so it is not discovered later as a mystery entry.
+  console.log(`  open     ${initiative} stays open, with no flow: it is listed in ` +
+              `initiative_status()\n           and nothing asks it for a next document.`);
 
   // ── what happened ────────────────────────────────────────────────────────
   const problems = [...failed, ...nFailed, ...supFailed];

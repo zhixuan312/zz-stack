@@ -38,9 +38,9 @@ type ConfirmResult = { ok: true; email: string; team?: string } | { ok: false; w
  * separate "record that update ran" call would be a second thing to keep true. */
 async function confirm(url: string): Promise<ConfirmResult> {
   const read = (p: string): string | null => { try { return readFileSync(p, "utf8"); } catch { return null; } };
+  // The header helper's order (zz-mcp-headers.mjs): a set $ZZ_TOKEN_FILE is the one file read.
   const token = (process.env.ZZ_TOKEN
-    || (process.env.ZZ_TOKEN_FILE ? read(process.env.ZZ_TOKEN_FILE) : null)
-    || read(join(homedir(), ".zz", "token")) || "").trim();
+    || read(process.env.ZZ_TOKEN_FILE || join(homedir(), ".zz", "token")) || "").trim();
   if (!token) return { ok: false, why: "there is no token on this machine yet" };
   try {
     const res = await fetch(url, {

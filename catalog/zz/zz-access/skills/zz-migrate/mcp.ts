@@ -21,9 +21,9 @@ const MARKETPLACE = "zz-stack";
 
 export function token(): string {
   const read = (p: string): string | null => { try { return readFileSync(p, "utf8"); } catch { return null; } };
-  const t = process.env.ZZ_TOKEN
-    || (process.env.ZZ_TOKEN_FILE ? read(process.env.ZZ_TOKEN_FILE) : null)
-    || read(join(homedir(), ".zz", "token"));
+  // The header helper's order (zz-mcp-headers.mjs): a set $ZZ_TOKEN_FILE is the one file read, so
+  // the import acts as the identity the plugins do, never as an older token left in ~/.zz/token.
+  const t = process.env.ZZ_TOKEN || read(process.env.ZZ_TOKEN_FILE || join(homedir(), ".zz", "token"));
   if (!t || !t.trim()) {
     throw new Error("No platform token. Looked at $ZZ_TOKEN, $ZZ_TOKEN_FILE and ~/.zz/token. " +
       "Ask for a token, then: (umask 077; mkdir -p ~/.zz) && (umask 077; printf '%s' \"$ZZ_TOKEN\" > ~/.zz/token)" +

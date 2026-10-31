@@ -30,3 +30,16 @@ export async function inCallerTeam(p: pg.Pool, kind: keyof typeof TO_RUN, id: st
     `select 1 from ${TO_RUN[kind]} and er.team_id = (select id from zz.team where slug = $2)`, [id, team]);
   return rowCount === 1;
 }
+
+/** Which of `ids`, each a well-formed uuid of `kind`, belong to the team the caller acts for — one
+ *  query for a batch. Asked before a `withIdempotency` transaction, whose callback may not use the
+ *  pool. */
+export async function ownedByCallerTeam(p: pg.Pool, kind: keyof typeof TO_RUN, ids: string[]): Promise<Set<string>> {
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  if (!team || !ids.length) return new Set();
+  const { rows } = await p.query<{ id: string }>(
+    `select x.id::text as id from unnest($1::uuid[]) x(id)
+      where exists (select 1 from ${TO_RUN[kind].replace("$1::uuid", "x.id")}
+                      and er.team_id = (select id from zz.team where slug = $2))`, [ids, team]);
+  return new Set(rows.map((r) => r.id));
+}

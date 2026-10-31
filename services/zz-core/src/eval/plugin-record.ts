@@ -40,7 +40,7 @@ import { z } from "zod";
 import { refreshFindingsDocs, writeFindingsDoc } from "./findings-doc.js";
 import { ledgerStamp, UUID_RE, withIdempotency, type IdempotencyOutcome, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
 import { measureByKey } from "./qualify.js";
-import { inCallerTeam } from "./team-scope.js";
+import { inCallerTeam, ownedByCallerTeam } from "./team-scope.js";
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
@@ -385,6 +385,8 @@ export function registerPluginRecordTools(server: McpServer): void {
           "somebody proposed; say what happened to it.");
       }
       const who = parseCaller(requestHeaders()).email;
+      // Before the transaction: its callback holds a pooled connection and may not ask for another.
+      const ours = await ownedByCallerTeam(p, "finding", decisions.map((d) => d.finding_id).filter((id) => UUID_RE.test(id)));
 
       const outcome: IdempotencyOutcome<{ done: DecidedFinding[]; refused: string[] }> =
         await withIdempotency(
@@ -394,7 +396,7 @@ export function registerPluginRecordTools(server: McpServer): void {
             const refused: string[] = [];
             for (const d of decisions) {
               // Another team's finding is unknown here, in the words an unknown id gets.
-              if (UUID_RE.test(d.finding_id) && !(await inCallerTeam(p, "finding", d.finding_id))) {
+              if (UUID_RE.test(d.finding_id) && !ours.has(d.finding_id.toLowerCase())) {
                 refused.push(decisionRefusal(d.finding_id, undefined));
                 continue;
               }

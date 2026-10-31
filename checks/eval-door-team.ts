@@ -11,7 +11,9 @@
  * the id of a run or of what hangs off one is called with the seeded team's ids, well-formed so that
  * no input schema refuses first: `evaluation_assess`, `evaluation_score`, `finding_record`,
  * `finding_decide`, `improvement_start` (opening a run, and with `skip`), `candidate_record`,
- * `candidate_validate` and `candidate_read`. What it establishes:
+ * `candidate_validate` and `candidate_read`; and `proposal_prepare`, `improvement_stop` and
+ * `release_prepare` on an initiative of the outsider's own whose findings.md, written by the
+ * outsider, names the seeded run. What it establishes:
  *
  *   - each refuses with `ERROR:` and none of the
  *     seeded team's text;
@@ -89,6 +91,24 @@ async function outsiderChangesNothing(c: Core, s: Seed): Promise<void> {
     const reply = await ask(door, tool, args);
     if (!/^ERROR:/.test(reply) || reply.includes(SECRET)) wrong.push(`${tool} answered ${reply.slice(0, 200)}`);
   }
+  // The tools that take only an initiative resolve the run from its findings.md. An agent writes
+  // that document too, so one naming the seeded team's run must not reach it: the platform keeps
+  // eval_run_id its own, and these three find no run.
+  const core = c.client({ email: OUTSIDER });
+  const forged = JSON.parse(await c.ok(step, "initiative_open", { slug: "forged-findings" }, core)).initiative as string;
+  // `fields` refuses eval_run_id by name; an envelope in the content is the other way to send it.
+  await c.ok(step, "document_write", { path: `${forged}/findings.md`,
+    content: `---\ntitle: Findings\neval_run_id: ${s.run}\n---\n\n# Findings\n\nForged.\n` }, core);
+  for (const [tool, args] of [
+    ["proposal_prepare", { initiative: forged, idempotency_key: "out-proposal" }],
+    ["improvement_stop", { initiative: forged, idempotency_key: "out-stop" }],
+    ["release_prepare", { initiative: forged, idempotency_key: "out-release" }],
+  ] as [string, Record<string, unknown>][]) {
+    const reply = await ask(door, tool, args);
+    if (!/^ERROR:/.test(reply) || reply.includes(SECRET)) wrong.push(`${tool} on a forged findings.md answered ${reply.slice(0, 200)}`);
+  }
+  const proposal = await c.call(step, "document_read", { path: `${forged}/proposal.md` }, core);
+  if (proposal.includes(SECRET)) wrong.push("the outsider's proposal.md holds the seeded team's findings");
   const after = await holdings(c, s);
   if (after !== before) wrong.push(`the seeded run held ${before} and now holds ${after}`);
   if (wrong.length) c.fail(step, wrong.join("; "));

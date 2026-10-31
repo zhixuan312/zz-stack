@@ -62,6 +62,23 @@ export const READS = { readOnlyHint: true, openWorldHint: false } as const;
 export const WRITES = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
 export const DESTROYS = { readOnlyHint: false, destructiveHint: true, openWorldHint: false } as const;
 
+/** Whether a JSON value holds a NUL character, in a string or a key, at any depth. */
+const holdsNul = (v: unknown): boolean =>
+  typeof v === "string" ? v.includes("\0")
+    : typeof v === "object" && v !== null && Object.entries(v).some(([k, x]) => k.includes("\0") || holdsNul(x));
+
+/** The argument of a single `tools/call` that holds a NUL character, by name, or null.
+ *
+ * No text column in Postgres stores a NUL, so a tool handed one fails at its first write with
+ * the database's own words, and the call's telemetry, carrying the same argument, fails with it.
+ * Refusing here, before any door's handler, is one answer for every tool on every door. */
+function nulArgument(body: unknown): string | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const { method, params } = body as { method?: unknown; params?: { arguments?: unknown } };
+  if (method !== "tools/call" || typeof params?.arguments !== "object" || params.arguments === null) return null;
+  return Object.entries(params.arguments).find(([k, v]) => k.includes("\0") || holdsNul(v))?.[0] ?? null;
+}
+
 /**
  * Mount an MCP endpoint on an express app. `buildServer` is called once per request.
  *
@@ -107,6 +124,15 @@ export function serveMcp(
         error: { code: -32000, message: "Method not allowed: this endpoint serves POST only" },
         id: null,
       });
+      return;
+    }
+
+    const nul = nulArgument(req.body);
+    if (nul !== null) {
+      res.json({ jsonrpc: "2.0", id: (req.body as { id?: unknown }).id ?? null, result: {
+        ...text(`ERROR: argument \`${nul.replaceAll("\0", "\\0")}\` holds a NUL character (U+0000), which ` +
+                "nothing on this platform can store — remove it and call again."),
+        isError: true } });
       return;
     }
 

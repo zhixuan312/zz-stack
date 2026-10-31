@@ -17,7 +17,9 @@
  *     administer is refused alike whether it exists, the refusal naming the teams they do;
  *   - member_add and member_remove say what changed and keep a team's last admin;
  *   - a deactivated person is issued no token, deactivating them again says nothing changed and
- *     records nothing, and a superadmin cannot deactivate themselves.
+ *     records nothing, and a superadmin cannot deactivate themselves;
+ *   - a NUL character in a tool's argument is refused by name on /manage and on /core, and an event
+ *     carrying one is still recorded.
  *
  * The only database this touches is the one it started.
  *
@@ -32,7 +34,7 @@ import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from ".
 
 const NAME = "manage-door";
 const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
-  "membership changes say what changed, and a deactivated person stays out: ok";
+  "membership changes say what changed, a deactivated person stays out, and a NUL is refused in words: ok";
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
@@ -180,6 +182,28 @@ async function retireActs(c: Core, g: Gateway): Promise<void> {
   c.pass(step);
 }
 
+/** A NUL character no text column can store: the call is refused in words, and its telemetry lands. */
+async function nulActs(c: Core, g: Gateway): Promise<void> {
+  const step = "a NUL in an argument is refused by name, and an event carrying one is recorded";
+  const named = /^ERROR: argument `(name|initiative)` holds a NUL character/;
+  const manage = await manageCall(g, g.token, "team_create", { slug: "nul-team", name: "a\u0000b" });
+  if (!named.test(manage)) c.fail(step, `team_create on /manage answered: ${manage.slice(0, 200)}`);
+  await c.refused(step, "initiative_status", { initiative: "a\u0000b" }, named);
+  const { logEvent } = (await import(new URL("../services/gateway/dist/events.js", import.meta.url).href)) as
+    { logEvent: (e: { actor: string; kind: string; subject?: string; detail?: Record<string, unknown> }) => void };
+  logEvent({ actor: c.email, kind: "nul.probe", subject: "a\u0000b", detail: { ids: { name: "a\u0000b" } } });
+  for (const until = Date.now() + 5000; ;) {
+    const { rows } = await c.sql.query<{ subject: string }>("select subject from zz.event where kind = 'nul.probe'");
+    if (rows.length) {
+      if (rows[0].subject !== "a\ufffdb") c.fail(step, `the event's subject reads ${JSON.stringify(rows[0].subject)}`);
+      break;
+    }
+    if (Date.now() > until) c.fail(step, "an event carrying a NUL was not recorded");
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  c.pass(step);
+}
+
 async function run(c: Core): Promise<void> {
   // A superadmin, so every tier of /manage is registered.
   await c.sql.query("update zz.principal set role = 'superadmin' where email = $1", [c.email]);
@@ -188,6 +212,7 @@ async function run(c: Core): Promise<void> {
     await applicationActs(c, g);
     await leadActs(c, g);
     await retireActs(c, g);
+    await nulActs(c, g);
   } finally {
     await g.stop();
   }

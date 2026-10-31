@@ -220,6 +220,11 @@ async function write(record: Record<string, unknown>, params: unknown[]): Promis
   }
 }
 
+/** NUL is the one character no Postgres text or jsonb value holds. A call's arguments reach an
+ *  event's columns and detail as the caller sent them, and one NUL there would strand the whole
+ *  event; it is recorded with U+FFFD in its place instead. */
+const storable = (s: string): string => s.replaceAll("\0", "\uFFFD");
+
 export function logEvent(e: {
   actor: string;
   kind: string;
@@ -304,7 +309,7 @@ export function logEvent(e: {
     e.responseBytes ?? null,                 // $7
     e.kind,                                  // $8
     e.subject ?? "",                         // $9
-    JSON.stringify(e.detail ?? {}),          // $10
+    JSON.stringify(e.detail ?? {}, (_k, v: unknown) => typeof v === "string" ? storable(v) : v),  // $10
     e.refusal ?? null,                       // $11
     e.ok === false ? refusalOwner(e.refusal ?? "") : null,   // $12
     e.plugin ?? null,                        // $13
@@ -314,5 +319,5 @@ export function logEvent(e: {
     e.requestBytes ?? null,                  // $17
     e.batched ?? false,                      // $18
     e.origin ?? "work",                      // $19
-  ]);
+  ].map((v) => typeof v === "string" ? storable(v) : v));
 }

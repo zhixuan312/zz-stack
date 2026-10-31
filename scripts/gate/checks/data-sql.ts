@@ -401,9 +401,8 @@ check("the run reconcile rewrites only the runs that changed", () => {
   // `reconcileRuns` runs over every run at start and over every run an event named lately every five
   // minutes, so an unconditional `do update` rewrites each of those rows on every pass, a dead tuple
   // each time. Every write skips a row it would leave as it is, compared against the values it would
-  // write: the door's upsert against `excluded`, the repair
-  // against the aggregate it recomputed. One comparison, in both, because "nothing moved" has to
-  // mean the same thing at the door and on the timer.
+  // write: the door's upsert against `excluded`, the repair against the aggregate it recomputed. One
+  // comparison, in both, because "nothing moved" has to mean the same thing at the door and on the timer.
   //
   // One conflict target, too. The run's identity is the tuple `skill_run_identity` declares, and
   // it is `nulls not distinct`, so a run with no initiative is a row on that index rather than a

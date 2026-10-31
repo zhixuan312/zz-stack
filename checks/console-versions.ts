@@ -54,6 +54,7 @@ import pg from "pg";
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { answer, type Answered, type Route } from "./in-process.ts";
+import { deferred } from "../scripts/schema/throwaway.ts";
 
 const EMAIL = "console@example.test";
 const TEAM = "console-team";
@@ -104,32 +105,31 @@ async function document(db: pg.Client, principal: string, initiativeId: string, 
   const approvedAt = snaps.map((s, i) => (s.approved ? i + 1 : 0)).filter(Boolean).pop() ?? null;
   // `zz.doc` names its current revision before it exists (a deferrable key); the approved one is
   // set once the revisions are in, because that key is not deferrable.
-  await db.query("BEGIN");
-  await db.query("SET CONSTRAINTS ALL DEFERRED");
-  const d = await db.query<{ id: string }>(
-    `INSERT INTO zz.doc (initiative_id, path, type, status, updated_at, title, current_revision,
-                         current_version)
-     VALUES ($1, $2, $3, 'draft', now(), $2, $4, $5) RETURNING id`,
-    [initiativeId, path, type, current, last.version]);
-  for (const [i, s] of snaps.entries()) {
-    const fields = { ...s.fields, ...(s.outcome ? { outcome: s.outcome, closed_by: EMAIL } : {}) };
-    await db.query(
-      `INSERT INTO zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
-                                    written_by, written_at, approved_by, approved_at, presented_at, fields,
-                                    content_generation)
-       VALUES ($1, $2, $3, 'retained', $4, $5, '{}', $6, $7, now() - make_interval(mins => $8::int),
-               $9, $10, $11, $12, $13)`,
-      [d.rows[0].id, i + 1, s.version, path, `body of r${i + 1}`, `h${i + 1}`, principal, current - i,
-       s.approved ? principal : null, s.approved ? new Date().toISOString() : null,
-       s.presented || s.approved ? new Date().toISOString() : null, JSON.stringify(fields), s.generation ?? null]);
-  }
-  // The document's counter is never behind a row's generation, as zz-core keeps it: the token a
-  // row is named by stays one `document_read(content_revision)` can resolve.
-  await db.query(`UPDATE zz.doc SET status = $2, approved_revision = $3,
-                    content_generation = (select coalesce(max(content_generation), 0) from zz.doc_revision where doc_id = $1)
-                  WHERE id = $1`,
-    [d.rows[0].id, last.approved ? "approved" : "draft", approvedAt]);
-  await db.query("COMMIT");
+  await deferred(db, async () => {
+    const d = await db.query<{ id: string }>(
+      `INSERT INTO zz.doc (initiative_id, path, type, status, updated_at, title, current_revision,
+                           current_version)
+       VALUES ($1, $2, $3, 'draft', now(), $2, $4, $5) RETURNING id`,
+      [initiativeId, path, type, current, last.version]);
+    for (const [i, s] of snaps.entries()) {
+      const fields = { ...s.fields, ...(s.outcome ? { outcome: s.outcome, closed_by: EMAIL } : {}) };
+      await db.query(
+        `INSERT INTO zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
+                                      written_by, written_at, approved_by, approved_at, presented_at, fields,
+                                      content_generation)
+         VALUES ($1, $2, $3, 'retained', $4, $5, '{}', $6, $7, now() - make_interval(mins => $8::int),
+                 $9, $10, $11, $12, $13)`,
+        [d.rows[0].id, i + 1, s.version, path, `body of r${i + 1}`, `h${i + 1}`, principal, current - i,
+         s.approved ? principal : null, s.approved ? new Date().toISOString() : null,
+         s.presented || s.approved ? new Date().toISOString() : null, JSON.stringify(fields), s.generation ?? null]);
+    }
+    // The document's counter is never behind a row's generation, as zz-core keeps it: the token a
+    // row is named by stays one `document_read(content_revision)` can resolve.
+    await db.query(`UPDATE zz.doc SET status = $2, approved_revision = $3,
+                      content_generation = (select coalesce(max(content_generation), 0) from zz.doc_revision where doc_id = $1)
+                    WHERE id = $1`,
+      [d.rows[0].id, last.approved ? "approved" : "draft", approvedAt]);
+  });
 }
 
 /** Every document sdlc-flow gates (handover.md included), approved, with the closing document's

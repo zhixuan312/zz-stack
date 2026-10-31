@@ -54,7 +54,7 @@ import { root } from "../scripts/deployment.ts";
 import { seedIsolation, seedWork, type Isolation } from "../scripts/schema/isolation-seed.ts";
 import { signIn } from "../scripts/schema/status-seed.ts";
 import { said } from "../scripts/schema/shape-diffs.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { deferred, withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 import { dimensions, routesOf, send, tally, wide, type Answer, type Query } from "./console-isolation-work.ts";
 
@@ -153,17 +153,16 @@ async function plant(sql: pg.Client, s: Isolation, x: Record<Field, string>, shi
       [who.team, initiative, version, `isolation-${hex()}`]);
   }
   // The document and its one revision, presented and not approved, as the seed's own: it waits.
-  await sql.query("begin");
-  await sql.query("set constraints all deferred");
-  const doc = await one(
-    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
-     values ($1, $2, 'spec', 'draft', now() - interval '1 day', $3, 1, 1) returning id`, [initiative, DOC, x.docTitle]);
-  await sql.query(
-    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
-                                  written_at, presented_at)
-     values ($1, 1, 1, 'retained', $2, $3, '{}', $4, $5, now() - interval '1 day', now() - interval '1 day')`,
-    [doc, x.docTitle, x.docBody, `hash-${doc}`, who.admin]);
-  await sql.query("commit");
+  await deferred(sql, async () => {
+    const doc = await one(
+      `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
+       values ($1, $2, 'spec', 'draft', now() - interval '1 day', $3, 1, 1) returning id`, [initiative, DOC, x.docTitle]);
+    await sql.query(
+      `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                    written_at, presented_at)
+       values ($1, 1, 1, 'retained', $2, $3, '{}', $4, $5, now() - interval '1 day', now() - interval '1 day')`,
+      [doc, x.docTitle, x.docBody, `hash-${doc}`, who.admin]);
+  });
   const lesson = "first-team-kept-lesson";
   await sql.query(
     `insert into zz.knowledge_node (kind, title, body, team_id, node_ordinal, slug) values ('decision', $1, $2, $3, 2, $4)`,

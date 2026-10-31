@@ -47,6 +47,7 @@ import type pg from "pg";
 
 import { signIn } from "./status-seed.ts";
 import type { Core } from "./throwaway-core.ts";
+import { deferred } from "./throwaway.ts";
 
 /** Every field of the second team's that carries a sentinel. */
 const FIELDS = [
@@ -130,17 +131,16 @@ async function seedTeam(db: pg.ClientBase, n: "one" | "two", slug: string, w: Re
 
   // A document and its one revision, presented and not approved: it waits.
   const docPath = "spec.md";
-  await db.query("begin");
-  await db.query("set constraints all deferred");
-  const doc = await one(
-    `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
-     values ($1, $2, 'spec', 'draft', $3, $4, 1, 1) returning id`, [open, docPath, ago(20), w.docTitle]);
-  await db.query(
-    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
-                                  written_at, presented_at)
-     values ($1, 1, 1, 'retained', $2, $3, '{}', $4, $5, $6, $6)`,
-    [doc, w.docTitle, w.docBody, `hash-${doc}`, admin, ago(20)]);
-  await db.query("commit");
+  await deferred(db, async () => {
+    const doc = await one(
+      `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
+       values ($1, $2, 'spec', 'draft', $3, $4, 1, 1) returning id`, [open, docPath, ago(20), w.docTitle]);
+    await db.query(
+      `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                    written_at, presented_at)
+       values ($1, 1, 1, 'retained', $2, $3, '{}', $4, $5, $6, $6)`,
+      [doc, w.docTitle, w.docBody, `hash-${doc}`, admin, ago(20)]);
+  });
 
   const report = (status: "fixed" | "open", days: number): Promise<string> => one(
     `insert into zz.bug (reported_at, title, detail, surface, platform_version, impact, status, resolution, resolved_at,

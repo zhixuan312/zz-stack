@@ -16,7 +16,9 @@
  *     `candidate_validate`, `finding_record`, `finding_decide`, `evaluation_start`, `protocol_read`,
  *     `protocol_record`, `release_verify` or `release_apply` is refused with `ERROR:` naming the
  *     malformed value, never with PostgreSQL's `invalid input syntax for type uuid`, and
- *     `finding_decide` still decides the well-formed findings of the same batch;
+ *     `finding_decide` still decides the well-formed findings of the same batch; a well-formed
+ *     `subject_version_id` that names nothing is refused by `protocol_read` and `protocol_record`
+ *     naming it too;
  *   - `plugin_locate` naming a version a registered plugin has no row for names that version, not
  *     the plugin as unregistered;
  *   - `plugin_profile` refuses a window bound that is not an ISO date or timestamp, and a window
@@ -43,6 +45,7 @@ import { join } from "node:path";
 import { root } from "../scripts/deployment.ts";
 import { ask, evalDoor, finding, one, PLUGIN, seed, SLUG, VERSION, type Seed } from "../scripts/schema/eval-door-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { deferred } from "../scripts/schema/throwaway.ts";
 
 const NAME = "eval-door-inputs";
 const DONE = "eval-door-inputs: an argument naming nothing real, or the wrong thing, is refused in the tool's own " +
@@ -64,11 +67,7 @@ async function affirmWithNoDocument(c: Core, s: Seed): Promise<void> {
   if (first.startsWith("ERROR")) c.fail(step, `binding the version answered ${first.slice(0, 300)}`);
   const later = (await one<{ id: string }>(c,
     "insert into zz.initiative (team_id, slug, flow) values ($1, '2026-10-31-later-protocol', '') returning id::text as id", [s.team])).id;
-  // On the shared client: a statement that fails rolls back, or every later case meets an aborted
-  // transaction and the first error is buried under theirs.
-  await c.sql.query("BEGIN");
-  try {
-    await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
+  await deferred(c.sql, async () => {
     const doc = (await one<{ id: string }>(c,
       `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
        values ($1, 'protocol.md', 'draft', now(), 1, 1) returning id::text as id`, [later])).id;
@@ -78,16 +77,15 @@ async function affirmWithNoDocument(c: Core, s: Seed): Promise<void> {
        values ($1, 1, 1, 'retained', 'Protocol', '# Protocol v3\n\ndigest-later-0003\n', '{}', 'h3', $2, now(), '{}', $2, now())`,
       [doc, s.me]);
     await c.sql.query("update zz.doc set status = 'approved', approved_revision = 1 where id = $1", [doc]);
-    await c.sql.query("COMMIT");
-  } catch (err) {
-    await c.sql.query("ROLLBACK");
-    throw err;
-  }
+  });
   const bound = await ask(evalDoor(c, c.email), "protocol_affirm",
     { protocol_version_id: s.protocols.replayed, initiative: "2026-10-31-later-protocol", idempotency_key: "affirm-later" });
   if (!bound.includes("is already affirmed")) c.fail(step, `a bound version under a later document answered ${bound.slice(0, 300)}`);
   c.pass(step);
 }
+
+/** A well-formed id no row has. */
+const NOBODY = "00000000-0000-4000-8000-0000000000aa";
 
 async function malformedIdsAreNamed(c: Core, s: Seed): Promise<void> {
   const step = "a malformed id on the evaluation door";
@@ -109,8 +107,13 @@ async function malformedIdsAreNamed(c: Core, s: Seed): Promise<void> {
     ["protocol_read", { subject_version_id: "zzz" }],
     ["protocol_record", { subject_version_id: "nope", idempotency_key: "bad-9",
                           protocol_body: JSON.parse(readFileSync(join(root, "catalog/zz/zz-plugin-eval/protocols/zz-core.json"), "utf8")) }],
-    ["release_verify", { release_attempt_id: "zz", idempotency_key: "bad-10" }],
-    ["release_apply", { candidate_id: "zz", approved_patch_digest: "d", initiative: SLUG, idempotency_key: "bad-11" }],
+    // Not "zz", which nearly every reply of this platform contains whatever it refused.
+    ["release_verify", { release_attempt_id: "qq-bad", idempotency_key: "bad-10" }],
+    ["release_apply", { candidate_id: "qq-bad", approved_patch_digest: "d", initiative: SLUG, idempotency_key: "bad-11" }],
+    // Well formed and naming nothing: past the cast, to the tool's own lookup, which names it too.
+    ["protocol_read", { subject_version_id: NOBODY }],
+    ["protocol_record", { subject_version_id: NOBODY, idempotency_key: "bad-12",
+                          protocol_body: JSON.parse(readFileSync(join(root, "catalog/zz/zz-plugin-eval/protocols/zz-core.json"), "utf8")) }],
   ];
   const raw: string[] = [];
   for (const [tool, args] of calls) {
@@ -119,7 +122,7 @@ async function malformedIdsAreNamed(c: Core, s: Seed): Promise<void> {
     // decides the well-formed finding beside the malformed one.
     // And it is about the malformed id: it names the value, so an earlier argument's refusal, or a
     // malformed id skipped in silence, does not pass for this one.
-    const bad = ["abc", "zzz", "nope", "zz"].find((v) => JSON.stringify(args).includes(`"${v}"`))!;
+    const bad = ["abc", "zzz", "nope", "qq-bad", NOBODY].find((v) => JSON.stringify(args).includes(`"${v}"`))!;
     if (/invalid input syntax|THROWN/.test(reply) || (tool !== "finding_decide" && !reply.startsWith("ERROR:"))
         || !reply.includes(bad)) {
       raw.push(`${tool}: ${reply.slice(0, 160)}`);

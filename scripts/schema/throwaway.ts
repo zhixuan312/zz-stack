@@ -198,3 +198,21 @@ export async function withThrowawayDbCheck(
   console.log(done);
   return 0;
 }
+
+/**
+ * `work` in one transaction with every deferrable constraint deferred: how a seed writes a `zz.doc`, which names its
+ * current revision before that revision exists. A failure is rolled back before it is rethrown, or on a check's one
+ * shared client every later query meets an aborted transaction and the first error is buried under theirs.
+ */
+export async function deferred<T>(db: { query(text: string): Promise<unknown> }, work: () => Promise<T>): Promise<T> {
+  await db.query("begin");
+  try {
+    await db.query("set constraints all deferred");
+    const out = await work();
+    await db.query("commit");
+    return out;
+  } catch (err) {
+    await db.query("rollback");
+    throw err;
+  }
+}

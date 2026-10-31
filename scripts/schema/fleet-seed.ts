@@ -33,6 +33,7 @@
 import type pg from "pg";
 
 import { weekStart, type Seeded } from "./status-seed.ts";
+import { deferred } from "./throwaway.ts";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -162,23 +163,22 @@ export async function seedFleet(db: pg.ClientBase, timezone: string, now = Date.
   // A document and its revisions, each `[presented days ago | null, approved days ago | null]` (a negative day is after
   // the clock), the last current.
   const document = async (init: string, path: string, type: string, revisions: [number | null, number | null][]): Promise<void> => {
-    await db.query("begin");
-    await db.query("set constraints all deferred");
-    const doc = await one(db,
-      `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
-       values ($1, $2, $3, 'draft', now(), $2, $4, $4) returning id`, [init, path, type, revisions.length]);
-    for (const [i, [presented, approved]] of revisions.entries()) {
-      await db.query(
-        `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
-                                      written_at, approved_by, approved_at, presented_at)
-         values ($1, $2, $2, 'retained', 'seeded', 'seeded', '{}', $3, $4, $5, case when $6::timestamptz is null then null else $4::uuid end,
-                 $6, $7)`,
-        [doc, i + 1, `hash-${doc}-${i + 1}`, member, ago(45), approved === null ? null : ago(approved), presented === null ? null : ago(presented)]);
-    }
-    const approvedAt = revisions.map(([, a], i) => (a === null ? 0 : i + 1)).filter(Boolean).pop() ?? null;
-    await db.query("update zz.doc set approved_revision = $2, status = case when $2 = current_revision then 'approved' else 'draft' end where id = $1",
-                   [doc, approvedAt]);
-    await db.query("commit");
+    await deferred(db, async () => {
+      const doc = await one(db,
+        `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
+         values ($1, $2, $3, 'draft', now(), $2, $4, $4) returning id`, [init, path, type, revisions.length]);
+      for (const [i, [presented, approved]] of revisions.entries()) {
+        await db.query(
+          `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                        written_at, approved_by, approved_at, presented_at)
+           values ($1, $2, $2, 'retained', 'seeded', 'seeded', '{}', $3, $4, $5, case when $6::timestamptz is null then null else $4::uuid end,
+                   $6, $7)`,
+          [doc, i + 1, `hash-${doc}-${i + 1}`, member, ago(45), approved === null ? null : ago(approved), presented === null ? null : ago(presented)]);
+      }
+      const approvedAt = revisions.map(([, a], i) => (a === null ? 0 : i + 1)).filter(Boolean).pop() ?? null;
+      await db.query("update zz.doc set approved_revision = $2, status = case when $2 = current_revision then 'approved' else 'draft' end where id = $1",
+                     [doc, approvedAt]);
+    });
   };
 
   const gated = await initiative("alder", "2026-09-01-alder-gated", "sdlc-flow", null);

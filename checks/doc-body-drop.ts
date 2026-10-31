@@ -61,6 +61,9 @@ type CoreModule = typeof import("../scripts/schema/throwaway-core.ts");
 const { withThrowawayCore }: CoreModule =
   await import(pathToFileURL(join(process.cwd(), "scripts/schema/throwaway-core.ts")).href) as CoreModule;
 type Core = Awaited<Parameters<Parameters<CoreModule["withThrowawayCore"]>[2]>[0]>;
+type DbModule = typeof import("../scripts/schema/throwaway.ts");
+const { deferred }: DbModule =
+  await import(pathToFileURL(join(process.cwd(), "scripts/schema/throwaway.ts")).href) as DbModule;
 
 const NAME = "doc-body-drop";
 const DONE = "doc-body-drop: zz.doc keeps no copy of a document's bytes, the trigram index answers " +
@@ -273,19 +276,19 @@ async function run(c: Core): Promise<void> {
   // ── (6) the index is chosen. A heap the planner can price, then the SHIPPED statement.
   const bulk = (await c.sql.query("select id, slug from zz.initiative where slug = $1 and team_id = (select id from zz.team where slug = $2)",
     [engInit, c.team])).rows[0];
-  await c.sql.query("begin");
-  await c.sql.query(
-    `insert into zz.doc (id, initiative_id, path, type, status, updated_at, title, tags,
-                         content_hash, current_revision, current_version)
-     select gen_random_uuid(), $1::uuid, 'bulk/' || g || '.md', 'source', '', now(), 'Bulk ' || g,
-            '{}'::text[], '', 1, 1
-       from generate_series(1, $2) g`, [bulk.id, HEAP_ROWS]);
-  await c.sql.query(
-    `insert into zz.doc_revision (doc_id, revision, content_state, title, body, tags, content_hash,
-                                  version, content_generation)
-     select d.id, 1, 'retained', d.title, repeat(md5(random()::text), $1), '{}'::text[], '', 1, 0
-       from zz.doc d where d.path like 'bulk/%'`, [Math.floor(HEAP_CHARS / 32)]);
-  await c.sql.query("commit");
+  await deferred(c.sql, async () => {
+    await c.sql.query(
+      `insert into zz.doc (id, initiative_id, path, type, status, updated_at, title, tags,
+                           content_hash, current_revision, current_version)
+       select gen_random_uuid(), $1::uuid, 'bulk/' || g || '.md', 'source', '', now(), 'Bulk ' || g,
+              '{}'::text[], '', 1, 1
+         from generate_series(1, $2) g`, [bulk.id, HEAP_ROWS]);
+    await c.sql.query(
+      `insert into zz.doc_revision (doc_id, revision, content_state, title, body, tags, content_hash,
+                                    version, content_generation)
+       select d.id, 1, 'retained', d.title, repeat(md5(random()::text), $1), '{}'::text[], '', 1, 0
+         from zz.doc d where d.path like 'bulk/%'`, [Math.floor(HEAP_CHARS / 32)]);
+  });
   // The pending list, not the statistics: a GIN index has `fastupdate` on, so every row inserted
   // since its last clean sits in a pending list a scan has to read linearly — and the planner prices
   // that and declines the index. A bulk load followed by nothing is not the state production is in

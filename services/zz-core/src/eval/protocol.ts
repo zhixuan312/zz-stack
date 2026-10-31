@@ -217,7 +217,7 @@ export function registerProtocolTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
       const subject = await pluginOf(p, subject_version_id);
-      if (!subject) return text("ERROR: unknown subject_version_id — call plugin_locate or plugin_register first");
+      if (!subject) return text(`ERROR: unknown subject_version_id ${subject_version_id} — call plugin_locate or plugin_register first`);
 
       const latest = await latestProtocolVersion(p, subject.pluginId);
       let response: Record<string, unknown>;
@@ -327,7 +327,7 @@ export function registerProtocolTools(server: McpServer): void {
       if (!parsed.success) return json({ issues: parsed.error.issues });
 
       const subject = await pluginOf(p, subject_version_id);
-      if (!subject) return text("ERROR: unknown subject_version_id — call plugin_locate or plugin_register first");
+      if (!subject) return text(`ERROR: unknown subject_version_id ${subject_version_id} — call plugin_locate or plugin_register first`);
 
       const principal = parseCaller(requestHeaders()).email;
       // The version names who recorded it — `recorded_by` is a principal, and a row that named an

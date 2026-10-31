@@ -37,6 +37,7 @@ import { pathToFileURL } from "node:url";
 import { root } from "../scripts/deployment.ts";
 import { ask, evalDoor, finding, one, seed, SLUG, type Seed } from "../scripts/schema/eval-door-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { deferred } from "../scripts/schema/throwaway.ts";
 
 const NAME = "eval-door-team";
 const DONE = "eval-door-team: another team's caller holding an evaluation's ids reads nothing of it and changes nothing in it: ok";
@@ -161,18 +162,17 @@ async function anotherTeamsPluginIsAProposal(c: Core, s: Seed): Promise<void> {
      values ($1, $2, 'built', '{}', 'digest-valid', 0, '[]', 'valid', now(), 'diff --git a/x b/x', $3)`,
     [improvement, s.versionId, s.me]);
   // findings.md as finding_record files it: eval_run_id is the platform's own field.
-  await c.sql.query("BEGIN");
-  await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
-  const doc = (await one<{ id: string }>(c,
-    `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
-     select i.id, 'findings.md', 'draft', now(), 1, 1 from zz.initiative i join zz.team t on t.id = i.team_id
-      where i.slug = $1 and t.slug = $2 returning id::text as id`, [SLUG, c.team])).id;
-  await c.sql.query(
-    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
-                                  written_by, written_at, fields)
-     values ($1, 1, 1, 'retained', 'Findings', '# Findings\n', '{}', 'hf', $2, now(), $3)`,
-    [doc, s.me, JSON.stringify({ eval_run_id: s.run })]);
-  await c.sql.query("COMMIT");
+  await deferred(c.sql, async () => {
+    const doc = (await one<{ id: string }>(c,
+      `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
+       select i.id, 'findings.md', 'draft', now(), 1, 1 from zz.initiative i join zz.team t on t.id = i.team_id
+        where i.slug = $1 and t.slug = $2 returning id::text as id`, [SLUG, c.team])).id;
+    await c.sql.query(
+      `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
+                                    written_by, written_at, fields)
+       values ($1, 1, 1, 'retained', 'Findings', '# Findings\n', '{}', 'hf', $2, now(), $3)`,
+      [doc, s.me, JSON.stringify({ eval_run_id: s.run })]);
+  });
   await c.sql.query("delete from zz.plugin_release_owner where plugin_id = $1", [s.pluginId]);
   await owners("elsewhere");
   const prepared = await ask(evalDoor(c, c.email), "release_prepare", { initiative: SLUG, idempotency_key: "prepare-not-owner" });

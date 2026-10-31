@@ -29,7 +29,7 @@ import { pathToFileURL } from "node:url";
 
 import type pg from "pg";
 
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { deferred, withThrowawayDb } from "../scripts/schema/throwaway.ts";
 
 const NAME = "eval-profile-record";
 const PLUGIN = "zz-core";
@@ -41,25 +41,24 @@ const { outcomeAndApprovalFacts } = await import(pathToFileURL(join(process.cwd(
  *  the last current), each citing `cites` when given. */
 async function document(db: pg.Client, by: string, initiative: string, path: string, versions: number[],
                         cites: string | null = null): Promise<string> {
-  await db.query("BEGIN");
-  await db.query("SET CONSTRAINTS ALL DEFERRED");
-  const d = await db.query<{ id: string }>(
-    `INSERT INTO zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
-     VALUES ($1, $2, 'draft', now(), $3, $4) RETURNING id`, [initiative, path, versions.length, versions.at(-1)]);
-  const id = d.rows[0]!.id;
-  for (const [i, version] of versions.entries()) {
-    await db.query(
-      `INSERT INTO zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
-                                    written_by, written_at, fields)
-       VALUES ($1, $2, $3, 'retained', $4, 'body', '{}', $5, $6, now(), '{}')`,
-      [id, i + 1, version, path, `h${i + 1}`, by]);
-    if (cites) {
-      await db.query("INSERT INTO zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind) VALUES ($1, $2, $3, 1, 'cites')",
-                     [id, i + 1, cites]);
+  return deferred(db, async () => {
+    const d = await db.query<{ id: string }>(
+      `INSERT INTO zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
+       VALUES ($1, $2, 'draft', now(), $3, $4) RETURNING id`, [initiative, path, versions.length, versions.at(-1)]);
+    const id = d.rows[0]!.id;
+    for (const [i, version] of versions.entries()) {
+      await db.query(
+        `INSERT INTO zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
+                                      written_by, written_at, fields)
+         VALUES ($1, $2, $3, 'retained', $4, 'body', '{}', $5, $6, now(), '{}')`,
+        [id, i + 1, version, path, `h${i + 1}`, by]);
+      if (cites) {
+        await db.query("INSERT INTO zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind) VALUES ($1, $2, $3, 1, 'cites')",
+                       [id, i + 1, cites]);
+      }
     }
-  }
-  await db.query("COMMIT");
-  return id;
+    return id;
+  });
 }
 
 async function run(db: pg.Client): Promise<string[]> {

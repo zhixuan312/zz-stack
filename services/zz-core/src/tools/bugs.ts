@@ -242,7 +242,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         "Close a report with what was decided. `fixed` when it is; `not_a_bug` when the " +
         "behaviour is intended; `duplicate` when it is already filed — pass the id of the report " +
         "it duplicates as `duplicate_of`, which is required for that status and refused for every " +
-        "other. REQUIRES a resolution in every case, including the two that are not fixes: " +
+        "other; it names the original, never a report itself closed as a duplicate. REQUIRES a resolution in every case, including the two that are not fixes: " +
         "a report somebody took the trouble to make deserves a sentence, and a status with no " +
         "reason is a tracker nobody learns anything from. RETURNS the id, the status it now " +
         "carries and the resolution as stored, so the close can be read back rather than " +
@@ -303,8 +303,8 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
           await client.query("rollback");
           return text(said);
         };
-        const { rows: held } = await client.query<{ id: string; team_id: string | null; status: string }>(
-          `select id::text as id, team_id::text as team_id, status from zz.bug
+        const { rows: held } = await client.query<{ id: string; team_id: string | null; status: string; duplicate_of: string | null }>(
+          `select id::text as id, team_id::text as team_id, status, duplicate_of::text as duplicate_of from zz.bug
             where id = any($1::uuid[]) order by id for update`,
           [duplicate_of ? [id, duplicate_of] : [id]]);
         const source = held.find((r) => r.id === id.toLowerCase());
@@ -324,6 +324,13 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
             return refuse(`ERROR: bug ${id} cannot duplicate bug ${duplicate_of} — a duplicate is read ` +
               "within one team's reports, and the report it points at was filed by another team " +
               "than this one. Nothing was written.");
+          }
+          // A duplicate points at a report that is not itself one. Pointing at a duplicate is how
+          // two reports come to name each other, and then neither is open and nothing counts the
+          // problem they both describe.
+          if (target.status === "duplicate") {
+            return refuse(`ERROR: bug ${duplicate_of} is itself closed as a duplicate of ${target.duplicate_of} — ` +
+              `point at ${target.duplicate_of} instead. Nothing was written.`);
           }
         }
         if (!source) return refuse(`ERROR: no bug with id ${id}`);

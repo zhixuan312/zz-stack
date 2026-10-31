@@ -15,7 +15,8 @@
  *   - `fixed`, `not_a_bug` and `duplicate` leave the same rows through both, the route answering
  *     204 where the tool answers its JSON, and a report filed in no team may duplicate another in
  *     none;
- *   - a duplicate with no target, a foreign, self or nonexistent target, a target given with
+ *   - a duplicate with no target, a foreign, self or nonexistent target, a target that is itself
+ *     closed as a duplicate (which is how two reports come to name each other), a target given with
  *     another status, and an empty or whitespace resolution are refused with the same sentence,
  *     the route's 400 carrying the tool's text, and change nothing;
  *   - a second close is the route's 409 carrying the tool's sentence, which still opens `already
@@ -57,6 +58,7 @@ const F = "00000000-0000-4000-8000-000000000003";   // open, another team: a for
 const N1 = "00000000-0000-4000-8000-000000000004";  // open, no team
 const N2 = "00000000-0000-4000-8000-000000000005";  // open, no team: N1's target
 const C = "00000000-0000-4000-8000-000000000006";   // already closed
+const D = "00000000-0000-4000-8000-000000000007";   // closed as a duplicate of T
 const NONE = "00000000-0000-4000-8000-000000000099"; // carried by no report
 const SEEDED_AT = "2026-10-02T00:00:00Z";
 const FIRST = "Fixed by the first operator.";
@@ -125,6 +127,10 @@ const CASES: Case[] = [
     want: "refused", says: /filed by another team/ },
   { step: "self target", id: S, body: { status: "duplicate", resolution: "Same.", duplicate_of: S },
     want: "refused", says: /cannot duplicate itself/ },
+  // Pointing at a report that is itself a duplicate is how two reports end up naming each other,
+  // and then neither is open: the refusal names the report to point at instead.
+  { step: "target closed as a duplicate", id: S, body: { status: "duplicate", resolution: "Same.", duplicate_of: D },
+    want: "refused", says: new RegExp(`closed as a duplicate of ${T} — point at ${T}`) },
   { step: "nonexistent target", id: S, body: { status: "duplicate", resolution: "Same.", duplicate_of: NONE },
     want: "refused", says: new RegExp(`no bug with id ${NONE}`) },
   { step: "target on another status", id: S, body: { status: "fixed", resolution: "Done.", duplicate_of: T },
@@ -159,6 +165,11 @@ async function run(c: Core): Promise<void> {
               ($5::uuid, 'Teamless target', 'Also filed in no team.', null, $8::uuid, $9::timestamptz, 'open', null, null, null),
               ($6::uuid, 'Closed', 'Already decided.', (select id from zz.team where slug = $7), $8::uuid, $9::timestamptz, 'fixed', $11, $8::uuid, $9::timestamptz)`,
       [S, T, F, N1, N2, C, c.team, ids.principal, SEEDED_AT, ids.other, FIRST]);
+    await c.sql.query(
+      `insert into zz.bug (id, title, detail, team_id, reported_by, reported_at, status, resolution, resolved_by, resolved_at, duplicate_of)
+       values ($1::uuid, 'Duplicate', 'The target filed again.', (select id from zz.team where slug = $3), $4::uuid, $5::timestamptz,
+               'duplicate', 'Same as the target.', $4::uuid, $5::timestamptz, $2::uuid)`,
+      [D, T, c.team, ids.principal, SEEDED_AT]);
   };
   /** Every report as a case compares it: a close made now reads `now`, the seeded one `seeded`. */
   const rows = async (): Promise<string> => JSON.stringify((await c.sql.query(

@@ -108,16 +108,17 @@ function refusesUnknownArguments(server: McpServer): void {
     const takes = declaredArguments(tool.inputSchema);
     const unknown = takes && args && typeof args === "object" ? Object.keys(args).filter((k) => !takes.includes(k)) : [];
     if (!takes || !unknown.length) return rawValidate(tool, args, name);
+    // Worded as the SDK's own schema refusals are, so the telemetry owns it as the call's shape.
     const said = await rawValidate(tool, args, name).then(
-      () => "",
+      () => `Input validation error: Invalid arguments for tool ${name}: it`,
       (err: unknown) => {
         if (!(err instanceof McpError) || err.code !== ErrorCode.InvalidParams) throw err;
-        return `${err.message.replace(/^MCP error -?\d+: /, "")} — `;
+        return `${err.message.replace(/^MCP error -?\d+: /, "")} — ${name}`;
       });
     const named = (ks: string[]) => ks.map((k) => `\`${k}\``).join(", ");
-    throw new McpError(ErrorCode.InvalidParams, said + (takes.length
-      ? `${name} takes no ${named(unknown)}; its arguments are ${named(takes)}`
-      : `${name} takes no arguments; ${named(unknown)} was passed`));
+    throw new McpError(ErrorCode.InvalidParams, takes.length
+      ? `${said} takes no ${named(unknown)}; its arguments are ${named(takes)}`
+      : `${said} takes no arguments; ${named(unknown)} was passed`);
   };
 }
 

@@ -249,7 +249,7 @@ async function precedence(c: Core): Promise<void> {
   await refusedUnchanged(c, step, p, { upload: minted.upload }, /^ERROR: UPLOAD_MISSING — /);
   c.pass(step);
 
-  step = "(4) with no OPENAI_FILE_HOSTS no write tool advertises `file`, and a `file` sent anyway is undeclared: no body change";
+  step = "(4) with no OPENAI_FILE_HOSTS no write tool advertises `file`, and a `file` sent anyway is refused by name: no body change";
   type Listed = { name: string; description?: string; inputSchema?: { properties?: Record<string, unknown> };
                   _meta?: Record<string, unknown> };
   const listed = ((await c.mcp.rpc("tools/list")).result?.tools ?? []) as Listed[];
@@ -262,7 +262,14 @@ async function precedence(c: Core): Promise<void> {
     }
   }
   const attached = { download_url: "https://files.example.com/f?sig=x", file_id: "file-1", file_name: "x.md" };
-  await refusedUnchanged(c, step, p, { file: attached }, /^ERROR: INVALID_MODE — /);
+  // A schema refusal, not the door's own: it reads as the SDK's, so `c.refused` (which wants ERROR) is not it.
+  const fileBefore = await stateOf(c, step, p);
+  const fileSaid = await c.call(step, "document_edit", { path: p, file: attached });
+  if (!/^MCP error -32602: Input validation error: Invalid arguments for tool document_edit: it takes no `file`; its arguments are `path`/.test(fileSaid)) {
+    c.fail(step, `a \`file\` was not refused by name: ${fileSaid}`);
+  }
+  const fileAfter = await stateOf(c, step, p);
+  if (fileAfter.body !== fileBefore.body || fileAfter.token !== fileBefore.token) c.fail(step, "the refused `file` changed the document");
   c.pass(step);
 
   step = "(5) a call sending no change, or two body changes, or a malformed selector or source, is INVALID_MODE";

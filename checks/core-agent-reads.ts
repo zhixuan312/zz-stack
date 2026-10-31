@@ -389,7 +389,7 @@ async function cases(s: Isolation, seeded: Awaited<ReturnType<typeof seedReads>>
   for (const [tool, args] of asked) {
     const plain = await call(step, people.member, tool, args);
     const extra = await call(step, people.member, tool, { ...args, ...widen });
-    if (extra.structured !== undefined || !extra.text.includes(`${tool} takes no \`team\`, \`scope\`, \`everyone\``)) {
+    if (extra.structured !== undefined || !extra.text.includes(`Invalid arguments for tool ${tool}: it takes no \`team\`, \`scope\`, \`everyone\``)) {
       fail(step, `${tool}(${show(args)}) with team, scope and everyone reads ${extra.text.slice(0, 300)}`);
     }
     const a = await call(step, people.member, tool, args, forged);

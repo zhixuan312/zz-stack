@@ -18,6 +18,7 @@ import express from "express";
 import { z } from "zod";
 
 const { serveMcp } = await import(pathToFileURL(join(process.cwd(), "packages/mcp-http/dist/index.js")).href);
+const { refusalOwner } = await import(pathToFileURL(join(process.cwd(), "packages/contracts/dist/index.js")).href);
 
 const app = express();
 app.use(express.json());
@@ -53,11 +54,13 @@ try {
 
   const extra = await client.callTool({ name: "document_read", arguments: { path: "x/spec.md", doc_path: "y" } });
   assert.equal(extra.isError, true, `a call the schema would accept is refused for its extra name: ${textOf(extra)}`);
-  assert.match(textOf(extra), /document_read takes no `doc_path`; its arguments are `path`, `version`/);
+  assert.match(textOf(extra), /Invalid arguments for tool document_read: it takes no `doc_path`; its arguments are `path`, `version`/);
+  // The telemetry owns it as the call's shape, as it owns the SDK's own schema refusals.
+  for (const r of [wrong, extra]) assert.equal(refusalOwner(textOf(r)), "ours", textOf(r));
 
   const bare = await client.callTool({ name: "session_whoami", arguments: { team: "x" } });
   assert.equal(bare.isError, true, "a tool with no arguments refuses one");
-  assert.match(textOf(bare), /session_whoami takes no arguments; `team` was passed/);
+  assert.match(textOf(bare), /Invalid arguments for tool session_whoami: it takes no arguments; `team` was passed/);
 
   const right = await client.callTool({ name: "document_read", arguments: { path: "x/spec.md" } });
   assert.equal(textOf(right), "read x/spec.md", "a call naming only declared arguments is untouched");

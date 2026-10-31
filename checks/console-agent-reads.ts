@@ -340,7 +340,13 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
     }
   }
   for (const bad of [{ since: "9.9.9" }, { since: "" }, { since: 9 }]) await refused(step, member, "releaseList", bad, "since");
-  for (const bad of [{ limit: 0 }, { limit: 51 }, { limit: 2.5 }, { limit: "5" }, { offset: -1 }]) await refused(step, member, "releaseList", bad, "limit");
+  for (const bad of [{ limit: 0 }, { limit: 51 }, { limit: 2.5 }, { limit: "5" }, { offset: -1 }]) {
+    // The tool takes no offset, so the refusal names one only when one was given.
+    const said = await refused(step, member, "releaseList", bad, "limit");
+    if (said.includes("offset") !== ("offset" in bad)) fail(step, `${show(bad)} was refused "${said}"`);
+  }
+  const unknown = await refused(step, member, "releaseList", { since: "9.9.9" }, "since");
+  if (!unknown.includes('"9.9.9"')) fail(step, `an unknown version was refused "${unknown}", not naming it`);
   pass("since 0.9.0 answers 0.12.0 to 0.10.0 newest first, 0.10.2 before 0.10.1 at the same instant, never 0.9.0 itself; since " +
     "0.10.1 answers the three after it; limit 2 two of five; five when no limit is asked and up to 50; an unknown version is an " +
     "input error naming since, never every release; a limit of 0, 51 or 2.5 and an offset of -1 are input errors");

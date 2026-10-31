@@ -96,7 +96,8 @@ export function registerAgentReadTools(server: McpServer): void {
         "release's summary, its upgrade notes, what a client must do after it, and the window the " +
         "platform has observed it over. `limit` is how many (5 unless asked, at most 50); `since` names " +
         "a release's version and answers only the releases recorded after it, in recorded order. An " +
-        "unknown version is refused, never read as every release. Not the evaluation door's release_* " +
+        "unknown version is refused, never read as every release. The tiles' `lastWeek` counts the last " +
+        "whole week, Monday to Monday, not the last seven days: `latest` says when the newest was. Not the evaluation door's release_* " +
         "tools, which promote a plugin's candidate. One object, as structured content and as its JSON text.",
       inputSchema: { limit: z.number().optional(), since: z.string().optional() },
     },

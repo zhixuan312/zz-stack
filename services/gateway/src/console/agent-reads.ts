@@ -92,11 +92,15 @@ export async function platformStatus(caller: Caller, args: { tool?: string }): P
 
 /** Releases, a page of the latest or of those recorded after since, each row with its upgrade notes. */
 export async function releaseList(_caller: Caller, args: { limit?: number; offset?: number; since?: string }): Promise<ReleaseList | InputError> {
-  const page = pageOf(args, RELEASES, `limit must be a whole number from 1 to ${RELEASES.max}, and offset one from 0`);
+  // The tool declares no offset, so its refusal names one only when one was given.
+  const page = pageOf(args, RELEASES, `limit must be a whole number from 1 to ${RELEASES.max}` +
+    (args.offset === undefined ? "" : ", and offset one from 0"));
   if (typeof page === "string") return { inputError: page };
   if (args.since !== undefined && !text(args.since)) return { inputError: "since must name a recorded release's version" };
   const read = await releasesOf({ ...page, since: args.since ?? null });
-  if (read === null) return { inputError: "since names no recorded release: name one release_list or Releases lists" };
+  if (read === null) {
+    return { inputError: `since names no recorded release: "${args.since}" — release_list without since lists the recorded versions` };
+  }
   const { rows, ...rest } = read;
   return {
     ...rest,

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { Express, Request, Response } from "express";
 
 type HeaderBag = Record<string, string | string[] | undefined>;
@@ -79,6 +80,47 @@ function nulArgument(body: unknown): string | null {
   return Object.entries(params.arguments).find(([k, v]) => k.includes("\0") || holdsNul(v))?.[0] ?? null;
 }
 
+/** The argument names a tool's input schema declares; null when its shape cannot be read. */
+function declaredArguments(schema: unknown): string[] | null {
+  if (schema === undefined) return [];
+  const shape = (schema as { shape?: unknown }).shape;
+  return shape && typeof shape === "object" ? Object.keys(shape) : null;
+}
+
+/**
+ * An argument a tool does not take is refused by name, with the arguments it does take.
+ *
+ * The SDK drops an undeclared key before the handler runs, so a misspelt argument is not a slip
+ * the caller hears about: `flwo` on `initiative_open` opened a freeform initiative for good, and a
+ * misspelt `request_id` or `base` would quietly switch off replay or stale-write protection. A
+ * refusal costs one retry; a client holding a stale cached schema is told which name to drop.
+ * Where the schema also refused the call, its own sentence leads.
+ *
+ * DELIBERATE: patched on the instance — `validateToolInput` is the SDK's one validation path and
+ * has no hook. A schema whose shape cannot be read is left to the SDK alone. checks/
+ * door-unknown-arguments.ts pins this to the installed SDK.
+ */
+function refusesUnknownArguments(server: McpServer): void {
+  type Validate = (tool: { inputSchema?: unknown }, args: unknown, name: string) => Promise<unknown>;
+  const inner = server as unknown as { validateToolInput: Validate };
+  const rawValidate: Validate = inner.validateToolInput.bind(server);
+  inner.validateToolInput = async (tool, args, name) => {
+    const takes = declaredArguments(tool.inputSchema);
+    const unknown = takes && args && typeof args === "object" ? Object.keys(args).filter((k) => !takes.includes(k)) : [];
+    if (!takes || !unknown.length) return rawValidate(tool, args, name);
+    const said = await rawValidate(tool, args, name).then(
+      () => "",
+      (err: unknown) => {
+        if (!(err instanceof McpError) || err.code !== ErrorCode.InvalidParams) throw err;
+        return `${err.message.replace(/^MCP error -?\d+: /, "")} — `;
+      });
+    const named = (ks: string[]) => ks.map((k) => `\`${k}\``).join(", ");
+    throw new McpError(ErrorCode.InvalidParams, said + (takes.length
+      ? `${name} takes no ${named(unknown)}; its arguments are ${named(takes)}`
+      : `${name} takes no arguments; ${named(unknown)} was passed`));
+  };
+}
+
 /**
  * Mount an MCP endpoint on an express app. `buildServer` is called once per request.
  *
@@ -137,6 +179,7 @@ export function serveMcp(
     }
 
     const server = await buildServer();
+    refusesUnknownArguments(server);
     // The caller may have hung up while we were resolving who they are. Nothing is connected
     // yet, so there is nothing to close — but there is also no point building a transport for
     // a response that will never be written.

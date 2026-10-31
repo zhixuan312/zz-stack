@@ -70,7 +70,7 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 const NAME = "core-agent-reads";
 const DONE = "core-agent-reads: the core door lists platform_status, release_list, activity_refusals, run_summary " +
   "and record_read to every caller as reads taking no team, answers each with the gateway function's answer to that " +
-  "person as structured content and its JSON text, widens nothing for an undeclared argument or a forged header, " +
+  "person as structured content and its JSON text, refuses an undeclared argument by name, widens nothing for a forged header, " +
   "leaks no second team's sentinel to a member, and reaches the gateway through an agent door that answers zz-core " +
   "alone and that Caddy refuses from outside: ok";
 const TIMEZONE = "Asia/Singapore";
@@ -383,19 +383,21 @@ async function cases(s: Isolation, seeded: Awaited<ReturnType<typeof seedReads>>
     `of both teams acts for ${s.one.slug}, the team session_whoami names and not the first of theirs, whose refusals differ; ` +
     "the acting superadmin's status and record equal the console routes' answers to the same token, which refuse a member's");
 
-  step = "an undeclared argument or a forged header widens nothing";
+  step = "an undeclared argument is refused and a forged header widens nothing";
   const widen = { team: s.two.slug, scope: "platform", everyone: true };
   const forged = { "x-zz-user-email": s.two.email, "x-zz-user-role": "admin", "x-zz-pat-team": s.two.slug, "x-zz-session-team": s.two.slug };
   for (const [tool, args] of asked) {
     const plain = await call(step, people.member, tool, args);
-    for (const [what, a] of [["the extra arguments", await call(step, people.member, tool, { ...args, ...widen })],
-                             ["the forged headers", await call(step, people.member, tool, args, forged)]] as [string, Answer][]) {
-      if (masked(a.structured) !== masked(plain.structured) || a.structured === undefined) fail(step, `${tool}(${show(args)}) with ${what} reads ${masked(a.structured).slice(0, 300)}, without ${masked(plain.structured).slice(0, 300)}`);
-      memberAnswers.push(a);
+    const extra = await call(step, people.member, tool, { ...args, ...widen });
+    if (extra.structured !== undefined || !extra.text.includes(`${tool} takes no \`team\`, \`scope\`, \`everyone\``)) {
+      fail(step, `${tool}(${show(args)}) with team, scope and everyone reads ${extra.text.slice(0, 300)}`);
     }
+    const a = await call(step, people.member, tool, args, forged);
+    if (masked(a.structured) !== masked(plain.structured) || a.structured === undefined) fail(step, `${tool}(${show(args)}) with the forged headers reads ${masked(a.structured).slice(0, 300)}, without ${masked(plain.structured).slice(0, 300)}`);
+    memberAnswers.push(extra, a);
   }
-  pass(`team ${s.two.slug.slice(0, 12)}…, scope platform and an argument no read declares, and identity headers naming the ` +
-    "second team's member as an admin of it, leave every read's answer to the first team's member as it was");
+  pass(`team ${s.two.slug.slice(0, 12)}…, scope platform and an argument no read declares are refused by name, and identity ` +
+    "headers naming the second team's member as an admin of it leave every read's answer to the first team's member as it was");
 
   step = "the first team's member reads none of the second team's sentinels";
   const words = [...Object.values(s.sentinels), theirs.report, theirs.refusal];

@@ -212,17 +212,15 @@ export async function eventRows(team: string, end: string, f: {
 async function logOf(team: string, asked: Asked, asOf: string): Promise<ActivityLog> {
   const db = platformDb();
   const head = await db.query<{ id: string; first_ms: number | null; kinds: string[]; tools: string[] }>(
-    `select t.id::text as id,
-            (select (extract(epoch from min(e.ts)) * 1000)::float8 from zz.event e
-              where e.team_id = t.id and e.origin = 'work' and e.kind <> 'console.page_view' and e.ts < $2::timestamptz) as first_ms,
-            array(select distinct e.kind from zz.event e
-                   where e.team_id = t.id and e.origin = 'work' and e.kind <> 'console.page_view' and e.ts < $2::timestamptz
-                   order by 1) as kinds,
-            array(select distinct e.tool_key from zz.event e
-                   where e.team_id = t.id and e.origin = 'work' and e.kind = 'tool_call' and e.tool_key is not null
-                     and e.ts < $2::timestamptz
-                   order by 1) as tools
+    // One pass over the team's work answers all three: where its record begins, and the kinds and tools it holds.
+    `select t.id::text as id, h.first_ms, coalesce(h.kinds, '{}') as kinds, coalesce(h.tools, '{}') as tools
        from zz.team t
+       cross join lateral (
+         select (extract(epoch from min(e.ts)) * 1000)::float8 as first_ms,
+                array_agg(distinct e.kind order by e.kind) as kinds,
+                array_agg(distinct e.tool_key order by e.tool_key) filter (where e.kind = 'tool_call' and e.tool_key is not null) as tools
+           from zz.event e
+          where e.team_id = t.id and e.origin = 'work' and e.kind <> 'console.page_view' and e.ts < $2::timestamptz) h
       where t.slug = $1`, [team, asOf]);
   const t = head.rows[0];
   // An initiative is named by its slug within the team and filtered by its id, so a slug the team does

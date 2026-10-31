@@ -1,8 +1,9 @@
 /**
  * The one writer for a document the evaluation door renders from its own record — findings.md,
  * improvement.md and proposal.md. Each is regenerated whole from rows, never edited by hand, so
- * each write is a rewrite of the caller's own team's copy, through the same guards and the same
- * insert path (`saveDocument`) as a document an agent writes.
+ * each write is a rewrite of one team's copy — the caller's own, or the evaluation run's team when a
+ * writer names it (refreshFindingsDocs) — through the same guards and the same insert path
+ * (`saveDocument`) as a document an agent writes.
  */
 import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";

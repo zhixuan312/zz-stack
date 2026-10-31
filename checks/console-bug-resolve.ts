@@ -86,12 +86,6 @@ function request(c: Core, who: { email: string; role: "superadmin" | "member" },
   };
 }
 
-/** A superadmin's MCP client: the harness's own carry `x-zz-user-role: user`, and zz-core offers
- *  `bug_resolve` only behind `if (sup)`. */
-function adminClient(c: Core): Mcp {
-  return c.client({ role: "admin" });
-}
-
 /** The tool's success reply, or null for anything else. */
 function closed(reply: string): { id: string; status: string; resolution: string } | null {
   try {
@@ -193,7 +187,8 @@ async function run(c: Core): Promise<void> {
   const admin = { email: c.email, role: "superadmin" as const };
   const post = (id: string, body: Record<string, unknown>, who: { email: string; role: "superadmin" | "member" } = admin) =>
     answer(route, request(c, who, id, body));
-  const tool = adminClient(c);
+  // zz-core offers `bug_resolve` only to a superadmin's client.
+  const tool = c.client({ role: "admin" });
   const resolve = (id: string, body: Record<string, unknown>, via: Mcp = tool): Promise<string> =>
     c.call(`bug_resolve ${id}`, "bug_resolve", { id, ...body }, via);
 
@@ -254,7 +249,7 @@ async function run(c: Core): Promise<void> {
 
     step = "two resolves through the tool at once";
     await reset();
-    const replies = await Promise.all(raced.map((b, i) => resolve(S, b, i ? adminClient(c) : tool)));
+    const replies = await Promise.all(raced.map((b, i) => resolve(S, b, i ? c.client({ role: "admin" }) : tool)));
     const first = replies.findIndex((r) => closed(r) !== null);
     const held = (JSON.parse(await rows()) as Record<string, unknown>[]).find((r) => r.id === S);
     if (first < 0 || !/^ERROR: that report was already closed as/.test(replies[1 - first])

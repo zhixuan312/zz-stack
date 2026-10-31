@@ -248,7 +248,11 @@ async function addPassesADemotion(c: Core, g: Gateway): Promise<void> {
     const demoted = manageCall(g, g.token, "member_add", { team: "pair-team", email: "pair-c@example.test", role: "member" });
     demoted.catch(() => undefined);
     const held = await waiting(c, "%insert into membership%", 1);
-    if (held < 1) c.fail(step, `the demotion never waited on pair-c's row; it answered ${JSON.stringify(await demoted)}`);
+    if (held < 1) {
+      // Let the demotion go first, or reading its answer waits out the call's own timeout.
+      await holder.query("commit");
+      c.fail(step, `the demotion never waited on pair-c's row; it answered ${JSON.stringify(await demoted)}`);
+    }
     const added = manageCall(g, g.token, "member_add", { team: "pair-team", email: "pair-d@example.test", role: "admin" });
     added.catch(() => undefined);
     const first = await Promise.race([added, new Promise<null>((r) => setTimeout(() => r(null), 5_000))]);

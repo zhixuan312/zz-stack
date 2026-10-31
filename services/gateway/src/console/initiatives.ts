@@ -379,14 +379,13 @@ export function mountInitiatives(app: Express): void {
       // key would empty this panel for every source added after that change, and the two would
       // be two answers to one question for every source added before it.
       db.query(
-        `select s.path, s.title, sr.body as body,
+        `select s.path, s.title,
                 (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
                               from zz.doc_link l
                               join zz.doc td on td.id = l.to_doc_id
                              where l.from_doc_id = s.id and l.from_revision = sr.revision
                                and l.kind = 'supports') as supports,
-                to_char(s.updated_at at time zone $4,'YYYY-MM-DD') as added,
-                length(coalesce(sr.body,'')) as bytes
+                to_char(s.updated_at at time zone $4,'YYYY-MM-DD') as added
            from zz.doc s
            join zz.initiative i on i.id = s.initiative_id
            join zz.team t on t.id = i.team_id
@@ -451,7 +450,7 @@ export function mountInitiatives(app: Express): void {
           content_revision: sealed_generation == null ? null : contentRevision(doc_id, Number(sealed_generation)),
         },
       })),
-      sources: sources.rows.map((x) => ({ ...x, bytes: +x.bytes })),
+      sources: sources.rows,
     });
   }));
 }

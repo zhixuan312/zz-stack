@@ -46,7 +46,8 @@ try {
   const said = textOf(wrong);
   assert.match(said, /takes no `doc_path`/, `the refusal names the argument the caller passed: ${said}`);
   assert.match(said, /`path`, `version`/, `and the ones the tool takes: ${said}`);
-  assert.match(said, /path/, `and keeps what the schema itself refused: ${said}`);
+  assert.match(said, /^MCP error -32602: Input validation error: .*[Rr]equired.* — document_read takes no/,
+    `and keeps what the schema itself refused, ahead of it: ${said}`);
   assert.doesNotMatch(said, /MCP error -32602: .*MCP error/, "the SDK's prefix is not doubled");
 
   const missing = await client.callTool({ name: "document_read", arguments: {} });

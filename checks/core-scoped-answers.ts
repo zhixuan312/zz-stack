@@ -116,7 +116,9 @@ async function reindexSaysWhatItWalked(c: Core): Promise<void> {
     "x-zz-user-email": c.email, "x-zz-user-name": "Skeleton", "x-zz-user-id": "", "x-zz-user-role": "admin",
     "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
   const forced = await c.ok(step, "knowledge_reindex", { team: c.team, force: true }, operator);
-  if (!new RegExp(`^knowledge index: ${c.team}: (\\d+) of \\1 row\\(s\\) re-derived \\(force: every row\\)$`).test(forced)) c.fail(step, `force answered "${forced}"`);
+  // Documents are written by the cases before this one, so a forced walk that reached none is the defect.
+  const walked = new RegExp(`^knowledge index: ${c.team}: (\\d+) of \\1 row\\(s\\) re-derived \\(force: every row\\)$`).exec(forced);
+  if (!walked || Number(walked[1]) === 0) c.fail(step, `force answered "${forced}"`);
   const settled = await c.ok(step, "knowledge_reindex", { team: c.team }, operator);
   if (settled !== `knowledge index: ${c.team}: every row is at the current analyzer — nothing to re-derive`) c.fail(step, `a settled team answered "${settled}"`);
   c.pass(step);

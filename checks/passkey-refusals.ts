@@ -89,7 +89,9 @@ async function run(c: Core): Promise<void> {
     const asked = await post(g, "/auth/passkey/login/options", {});
     const wrong = await post(g, "/auth/passkey/login/verify",
       { credential: key.get(randomBytes(32).toString("base64url"), person) }, asked.ceremony);
-    if (wrong.status !== 401 || WRONG_WAY.test(wrong.body.error ?? "")) c.fail(step, `answered ${wrong.status}: ${JSON.stringify(wrong.body)}`);
+    if (wrong.status !== 401 || !/^[A-Z].*\.( Try again\.)?$/.test(wrong.body.error ?? "") || WRONG_WAY.test(wrong.body.error ?? "")) {
+      c.fail(step, `answered ${wrong.status}: ${JSON.stringify(wrong.body)}`);
+    }
     const again = await post(g, "/auth/passkey/login/options", {});
     const signedIn = await post(g, "/auth/passkey/login/verify", { credential: key.get(again.body.challenge!, person) }, again.ceremony);
     if (signedIn.status !== 200) c.fail(step, `the same key then answered ${signedIn.status}: ${JSON.stringify(signedIn.body)}`);

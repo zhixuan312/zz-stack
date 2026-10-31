@@ -14,10 +14,9 @@
  * this file records both, the gate compares them, and a plugin whose content changed without its
  * version changing is refused.
  *
- * DELIBERATE: not the shelf digest. `claude plugin list` shows a version like 0.31.0+1e7d702a and
- * every plugin on the shelf carries the same suffix, because that digest is computed over the
- * whole shelf and includes each server's URL. It answers "what did this person receive"; it
- * cannot answer "what is sdlc".
+ * DELIBERATE: not the suffix `claude plugin list` shows (0.31.0+1e7d702a). That digest includes
+ * each server's URL, so it answers "what did this person receive"; it cannot answer "what is
+ * sdlc", which two deployments running the same code must agree on.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

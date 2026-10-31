@@ -241,13 +241,13 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
     );
   }
 
-  // The platform's own version, plus a digest of what this person's shelf contains.
+  // Each plugin's version is the platform's own, plus a digest of that plugin as received.
   //
   // The runtime caches an installed plugin in a directory named by its version, so a version
-  // that does not change means a changed file never reaches anyone. The shelf differs per
-  // person, so the platform version alone cannot identify it. Semver build metadata is legal,
-  // is part of the directory name, and does not pretend to be a release.
-  const version = `${PLATFORM_VERSION}+${digestOf(plugins)}`;
+  // that does not change means a changed file never reaches anyone, and one that changes with an
+  // unrelated plugin re-fetches what did not move. Semver build metadata is legal, is part of
+  // the directory name, and does not pretend to be a release.
+  const versionOf = (pl: Plugin): string => `${PLATFORM_VERSION}+${digestOf(pl)}`;
 
   files.push({
     path: ".claude-plugin/marketplace.json",
@@ -268,7 +268,7 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
   for (const pl of plugins) {
     files.push({
       path: `${pl.name}/.claude-plugin/plugin.json`,
-      content: JSON.stringify({ name: pl.name, description: pl.description, version, author: OWNER }, null, 2) + "\n",
+      content: JSON.stringify({ name: pl.name, description: pl.description, version: versionOf(pl), author: OWNER }, null, 2) + "\n",
     });
     if (pl.servers.length) {
       files.push({

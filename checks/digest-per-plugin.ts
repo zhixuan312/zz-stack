@@ -1,9 +1,12 @@
-// digestOfPlugin: stable, sensitive to every content field, blind to the server URL.
+// digestOfPlugin: stable, sensitive to every content field, blind to the server URL. digestOf:
+// the same plugin as a person received it, URL included, and each plugin's own — so the version a
+// plugin ships under moves only when that plugin does.
 //
-// DELIBERATE: it is a different identity from the shelf-wide digestOf and the two must not be
-// collapsed. digestOf answers "what did this person receive", so the URL is part of it and it
-// serves as the runtime's per-person cache key. digestOfPlugin answers "what is this plugin" —
-// a content identity two deployments running byte-identical code have to agree on.
+// DELIBERATE: they are different identities and the two must not be collapsed. digestOf answers
+// "what did this person receive of this plugin", so the URL is part of it and it serves as the
+// runtime's cache key. digestOfPlugin answers "what is this plugin" — a content identity two
+// deployments running byte-identical code have to agree on.
+import { readdirSync, readFileSync } from "node:fs";
 import { digestOf, digestOfPlugin } from "../services/gateway/dist/package/describe.js";
 
 // SYNTHETIC: these two paths are fields of an in-memory package, never opened — the digest is
@@ -46,17 +49,29 @@ if (digestOfPlugin(elsewhere) !== d0) {
        "identity and the deployment base is not content");
 }
 
-// The shelf digest KEEPS the URL, and stays order-insensitive.
+// The received digest KEEPS the URL.
 const withUrl = base(), otherUrl = base();
 otherUrl.servers = [{ name: "zz-core", url: "https://another-host.example/core/mcp" }];
-if (digestOf([withUrl]) === digestOf([otherUrl])) {
-  fail("the shelf digest ignored the server URL — it is a per-person cache key and the URL " +
+if (digestOf(withUrl) === digestOf(otherUrl)) {
+  fail("the received digest ignored the server URL — it is the runtime's cache key and the URL " +
        "is part of what that person received");
 }
-const a = base(), b = { ...base(), name: "other" };
-if (digestOf([a, b]) !== digestOf([b, a])) fail("digestOf is order-sensitive");
-if (digestOf([base()]) === digestOfPlugin(base())) {
-  fail("the shelf digest of one plugin equals that plugin's own digest — two identities " +
-       "collapsed into one");
+if (digestOf(base()) === digestOfPlugin(base())) {
+  fail("a plugin's received digest equals its own content digest — two identities collapsed into one");
+}
+
+// The committed shelf: every plugin ships under its own suffix, so a change to one plugin does
+// not re-version the others.
+const suffixes = new Map<string, string>();
+for (const name of readdirSync("marketplace")) {
+  let manifest: { version?: string };
+  try {
+    manifest = JSON.parse(readFileSync(`marketplace/${name}/.claude-plugin/plugin.json`, "utf8"));
+  } catch { continue; }
+  suffixes.set(name, String(manifest.version).split("+")[1] ?? "");
+}
+if (suffixes.size > 1 && new Set(suffixes.values()).size === 1) {
+  fail(`every plugin on the committed shelf ships under one suffix (${[...suffixes.values()][0]}), ` +
+       "so a change to any plugin re-versions all of them");
 }
 console.log("PASS");

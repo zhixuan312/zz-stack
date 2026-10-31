@@ -14,24 +14,21 @@ import { MARKETPLACE, type ClientPackage } from "../client-package.js";
 import type { Plugin } from "../client-package.js";
 import { entryCommand, openedAs } from "./skills.js";
 
-/** A short, stable digest of everything on this person's shelf — the plugin names and the
- * bytes of every file. Two people with the same shelf get the same digest; one changed
- * skill changes it. That is the whole job: give the runtime's version-keyed cache a reason
- * to notice. */
-export function digestOf(plugins: Plugin[]): string {
+/** A short, stable digest of one plugin as a person received it — its fields, its server URLs
+ * and the bytes of every file. One changed skill changes its plugin's digest and no other's.
+ * That is the whole job: give the runtime's version-keyed cache a reason to notice, for the
+ * plugin that moved and only that one. */
+export function digestOf(plugin: Plugin): string {
   const h = createHash("sha256");
-  for (const pl of [...plugins].sort((a, b) => a.name.localeCompare(b.name))) {
-    feed(h, pl, true);
-  }
+  feed(h, plugin, true);
   return h.digest("hex").slice(0, 8);
 }
 
 /** What one plugin is, which is a different question from the one above.
  *
- * `digestOf` answers what this person received: it runs over the whole shelf, includes each
- * server's URL, and is the runtime's per-person cache key. As an identity for a plugin it is
- * useless — every plugin on a shelf carries the same value, it moves when an unrelated plugin
- * moves, and it differs between two people running identical code.
+ * `digestOf` answers what this person received: it includes each server's URL and is the
+ * runtime's cache key. As an identity for a plugin it is useless — it differs between two
+ * deployments running identical code.
  *
  * This answers what the plugin is: one plugin, and no server URL. The URL carries the
  * deployment's own base address, so including it would make two deployments running
@@ -49,7 +46,7 @@ export function digestOfPlugin(plugin: Plugin): string {
 /** The fields of one plugin, in a fixed order, into a hash.
  *
  * One function for both digests, so a field added to a plugin cannot be remembered in one and
- * forgotten in the other: a field left out of the shelf digest lets a content change move the
+ * forgotten in the other: a field left out of the received digest lets a content change move the
  * marketplace card while the version-keyed cache goes on serving the old text.
  *
  * `withUrl` is the only difference between the two. See digestOfPlugin. */

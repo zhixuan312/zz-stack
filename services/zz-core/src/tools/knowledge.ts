@@ -22,7 +22,7 @@ import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { journalLog, platformEvent } from "../indexing.js";
+import { platformEvent } from "../indexing.js";
 import { KNOWLEDGE_TEAM, PLAIN_TOKEN, tagRefusal, titleSlug } from "../paths.js";
 import { db, subjectVersionFor, teamFor, teamsFor } from "../platform-db.js";
 
@@ -242,7 +242,6 @@ export function registerKnowledgeTools(server: McpServer): void {
         });
         if ("taken" in written) continue;
         if ("refusal" in written) return text(written.refusal);
-        journalLog(shelf, "create", ordinal, title);
         // `ids.node` is the node's own id, so a lesson is found from the act that made it without
         // its ordinal, which is only unique per shelf. The answer below stays as it is: the
         // release's chain check reads `journal node NNNN created` out of it.

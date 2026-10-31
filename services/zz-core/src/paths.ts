@@ -166,8 +166,7 @@ export async function safePath(path: string): Promise<string> {
  *                       rewrite it would write its own record.
  *   _activity.jsonl     the historical write log, one line per tool call.
  *   _knowledge/log.md   the journal's human-readable log, which the store held as a file.
- *                       `journalLog` writes the entry as a `zz.event` row now; the name stays
- *                       reserved because a model must never be able to rewrite the record of
+ *                       Each act is a `zz.event` row now; the name stays reserved because a model must never be able to rewrite the record of
  *                       what it did. */
 const SYSTEM_FILES = /(^|\/)(_?activity\.jsonl|_ledger\.md|_knowledge\/log\.md)$/;
 

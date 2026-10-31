@@ -13,8 +13,7 @@
  *
  * What is here is zz-core's alone: `insertEvent` is the one statement that writes a `zz.event`
  * row, which `platformEvent` runs fire-and-forget for a mutating tool and `saveDocument` runs on its
- * transaction's client; `journalLog` is the knowledge tools' spelling of
- * the same act; `docRows` is the folder listing every document reader here shares; `sealOf` is
+ * transaction's client; `docRows` is the folder listing every document reader here shares; `sealOf` is
  * the approval a write carries forward into `saveDocument`; and `sourceDocument` is the envelope
  * shape the knowledge tools produce.
  */
@@ -25,17 +24,14 @@ import type pg from "pg";
 import { renderEnvelope } from "./document-rules.js";
 import { db, teamFor } from "./platform-db.js";
 
-/** The knowledge base's own log, in the platform's event table, which the console reads.
- *
- * `_knowledge/log.md` used to be appended beside it; the store is the database now, so there is
- * no file and this is the whole of the record. `journalLog` below keeps the knowledge tools'
- * spelling of the same act.
+/** The knowledge base's own log, in the platform's event table, which the console reads: there
+ * is no file, and this is the whole of the record.
  *
  * DELIBERATE: not a `tool_call` row. A tool_call carries no actor because it measures a
  * skill; a journal entry names who recorded or read what.
  *
  * DELIBERATE: searches are entries too. `knowledge_add` and `knowledge_supersede` each leave
- * three records and a search would otherwise leave none, so "which nodes does anyone read"
+ * a record and a search would otherwise leave none, so "which nodes does anyone read"
  * would have no answer.
  *
  * COUPLED: the actor and the team are written as ids resolved in the statement that writes the row
@@ -106,8 +102,8 @@ const clientOf = (v: string | string[] | undefined): string | undefined => (Arra
  *  DELIBERATE: the team is a slug or null, never "resolve it": the resolution is `teamFor`, a pool
  *  query, and a transaction must not wait on a second connection. `platformEvent` resolves first.
  *
- *  DELIBERATE: no refusal for an actor this platform does not know. A journal entry by nobody —
- *  `journalLog` writes one — has that column null, and a row that is a record of an act is worth
+ *  DELIBERATE: no refusal for an actor this platform does not know. A row by nobody has that column
+ *  null, and a row that is a record of an act is worth
  *  more than a refusal to make one. The statement resolves the id, so an address nothing matches
  *  lands as null rather than as an error.
  *
@@ -126,7 +122,7 @@ export async function insertEvent(
   try {
     await c.query(
       `insert into zz.event (actor_id, team_id, initiative_id, kind, subject, detail, origin)
-       -- FOLDED ON BOTH SIDES, as platform-db.ts, versions.ts and semantic.ts all do. This folded
+       -- FOLDED ON BOTH SIDES. This folded
        -- only the parameter, so an address stored with any upper case resolved to no principal and
        -- zz.event.actor_id was written null, silently — platformEvent's insert is fire-and-forget and nothing
        -- reads the column back to notice.
@@ -141,20 +137,6 @@ export async function insertEvent(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-}
-/** The journal's human-readable log. It named `_knowledge/log.md`; the store is the database
- * now, so the entry lands in `zz.event` like every other act and there is no file to append to.
- *
- * The signature is the knowledge tools' own (`root` is no longer read), so its callers keep
- * working unchanged. */
-export function journalLog(_root: string, action: string, id: string, detail: string): void {
-  // Written with an explicit null team rather than through the resolving arm: this entry carries
-  // no actor, and `platformEvent` refuses a row it cannot attribute rather than writing an
-  // unattributed one with a team guessed from nobody.
-  platformEvent({
-    actor: "", kind: `knowledge.${action}`, subject: id, team: null,
-    detail: { node: id, detail },
-  });
 }
 /** One row of the knowledge base as retrieval reads it. */
 export interface KbRow {

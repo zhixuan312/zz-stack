@@ -98,19 +98,19 @@ export async function createTeam(
     return { ok: false, status: 400,
       error: `'${PLATFORM_TEAM}' is the platform's own team and cannot be created or claimed.` };
   }
-  // `do nothing` would report "team X active" for a slug that already existed — a lie when it
-  // was archived, which is the case where someone types team_create precisely because they want
-  // it back. Reactivate, and say which happened.
-  const r = await db.query<{ status: string; existed: boolean }>(
+  // An archived slug is reactivated, which is why someone types team_create on it; an active one
+  // is left exactly as it is, name included, and no act is recorded.
+  const r = await db.query<{ existed: boolean }>(
     `insert into team (slug, name, created_by) values ($1,$2,$3)
-     on conflict (slug) do update set status = 'active', name = excluded.name
-     returning status, (xmax <> 0) as existed`,
+     on conflict (slug) do update set status = 'active', name = excluded.name where team.status <> 'active'
+     returning (xmax <> 0) as existed`,
     [slug, name, pid],
   );
-  const existed = r.rows[0]?.existed ?? false;
+  if (!r.rowCount) return { ok: true, message: `team ${slug} is already active — nothing changed` };
+  const existed = r.rows[0].existed;
   auditAdmin(id, "create_team", slug, { reactivated: existed, ...extraDetail }, slug);
   return { ok: true, message: existed
-    ? `team ${slug} already existed and is now active`
+    ? `team ${slug} was archived and is active again`
     : `team ${slug} active` };
 }
 /** Retire a team. `confirm` must repeat the team slug exactly. */
@@ -120,6 +120,10 @@ export async function archiveTeam(
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required (retiring a team removes access)" };
   if (confirm !== team) return { ok: false, status: 400, error: `confirm must repeat the team slug exactly ('${team}')` };
+  // team_create refuses this slug, so nothing could bring it back.
+  if (team === PLATFORM_TEAM) {
+    return { ok: false, status: 400, error: `'${PLATFORM_TEAM}' is the platform's own team and cannot be archived.` };
+  }
   const db = platformDb();
   const r = await db.query("update team set status = 'archived' where slug = $1 and status = 'active'", [team]);
   if (!r.rowCount) return { ok: false, status: 400, error: `no active team '${team}'` };

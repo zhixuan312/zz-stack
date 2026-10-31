@@ -281,6 +281,19 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   const { wrong, expect } = judge();
   const check = async (step: string, kind: string, subject: string, f: Client): Promise<void> =>
     expect(`${kind} about ${subject}`, await originOf(c, step, kind, subject, f.client), f);
+  {
+    // A token revoked twice: the second answer says nothing changed, and only the first is an act.
+    const step = "a token revoked twice on /manage";
+    await tool(c, g, step, null, "pat_issue", { label: "revoke-twice" });
+    const patId = String((await c.sql.query("select id from zz.pat where label = 'revoke-twice'")).rows[0]?.id ?? "");
+    if (!patId) c.fail(step, "pat_issue left no token labelled revoke-twice");
+    const first = await tool(c, g, step, null, "pat_revoke", { pat_id: patId, confirm: patId });
+    const second = await tool(c, g, step, null, "pat_revoke", { pat_id: patId, confirm: patId });
+    const acts = await rowsOnce(c, "select 1 from zz.event where kind = 'admin.revoke_pat' and subject = $1", [patId], 2);
+    if (!/ revoked$/.test(first) || !/already revoked/.test(second) || acts.length !== 1) {
+      c.fail(step, `answered "${first}" then "${second}", with ${acts.length} revoke events`);
+    }
+  }
   for (const [i, f] of CLIENTS.entries()) {
     let step = `an administration act on /manage as ${shown(f.client)}`;
     await tool(c, g, step, f.client, "team_create", { slug: `mcp-made-${i}`, name: `Made on manage ${i}` });

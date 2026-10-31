@@ -292,6 +292,17 @@ async function writeCases(db: pg.Client, get: Get, send: Send): Promise<void> {
   }
   pass("the superadmin creates grove through the console's route, and the list reads it active, with nobody in it and no activity");
 
+  step = "creating an active team again changes nothing";
+  const again = await send("POST", "/settings/platform/teams", SUPERADMIN, { slug: "grove", name: "Another Name" });
+  if (again.status !== 200 || !/already active/.test(again.text)) fail(step, `answered ${again.status}: ${again.text.slice(0, 200)}`);
+  if ((await row())?.name !== "Grove Labs") fail(step, `grove's name reads ${JSON.stringify((await row())?.name)}`);
+  pass("creating grove again answers that it is already active, and its name stays Grove Labs");
+
+  step = "the platform's own team cannot be archived";
+  const platform = await send("DELETE", "/settings/platform/teams", SUPERADMIN, { team: "zz-platform", confirm: "zz-platform" });
+  if (platform.status !== 400 || !/platform's own team/.test(platform.text)) fail(step, `answered ${platform.status}: ${platform.text.slice(0, 200)}`);
+  pass("archiving zz-platform is refused 400: no tool could restore it");
+
   step = "the superadmin adds a member";
   const added = await send("POST", "/settings/team/members", SUPERADMIN, { team: "grove", email: NEWCOMER });
   if (added.status !== 200) fail(step, `answered ${added.status}: ${added.text.slice(0, 200)}`);

@@ -319,7 +319,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     if (owner !== id.email && !superOnly(id)) return text("ERROR: only the owner or superadmin can revoke");
     // revokePat is the one revoke path — teardownReplayTeam (packages/contracts) goes through
     // the same function rather than a second copy of it.
-    await revokePat(db, pat_id);
+    if (!(await revokePat(db, pat_id))) return text(`PAT ${pat_id} was already revoked — nothing changed`);
     auditAdmin(id, "revoke_pat", pat_id, { owner, team: r.rows[0].team }, r.rows[0].team);
     return text(`PAT ${pat_id} revoked`);
   });
@@ -328,7 +328,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     annotations: READS,
     description:
       "WHEN you need a token's id in order to revoke it, or need to know what is outstanding " +
-      "for somebody. RETURNS the token rows masked — label, scope, bound team, issued, last " +
+      "for somebody. RETURNS the token rows masked — label, bound team, issued, last " +
       "used, revoked — your own by default, or everyone's for a superadmin. REFUSES another " +
       "person's tokens to anyone but a superadmin, and never returns a token's value: no " +
       "tool does, once it has been issued.",

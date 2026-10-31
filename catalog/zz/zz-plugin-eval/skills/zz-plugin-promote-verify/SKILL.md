@@ -125,7 +125,8 @@ base's release tag, or pass `--base-ref` together with `--base-tag` naming the b
 release tag, which must contain that commit. When both refs resolve they must name the same commit.
 
 `released` moves the attempt (and the candidate) to `released`; it refuses `not_newer` when the
-subject is not newer, by semver, than the base, and the attempt stays applying so it can be
+subject is not newer, by semver, than the base, and `already_recorded` when another attempt already
+recorded that version (a rolled-back one included), and the attempt stays applying so it can be
 retried. `failed` moves the attempt to `failed`; the CLI has already removed its worktree and
 branch. Only the principal who applied the attempt, or an owner-team member, may record it
 (`not_owner`). Once the release command has succeeded the CLI never records `failed`: if locating

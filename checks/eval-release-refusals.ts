@@ -192,7 +192,7 @@ await assert.rejects(run({ casRows: [] }).done, /left 'prepared' before this cal
 // recordRelease.
 
 const REL = "e0000000-0000-4000-8000-000000000001", OTHER_PLUGIN = "e0000000-0000-4000-8000-000000000002";
-function recordClient(attempt: Record<string, unknown> | null, o: { versions?: string[]; cas?: boolean } = {}) {
+function recordClient(attempt: Record<string, unknown> | null, o: { versions?: string[]; cas?: boolean; claimedBy?: string } = {}) {
   const subjects: Record<string, { plugin_id: string; declared_version: string }> = {
     [BASE]: { plugin_id: "p1", declared_version: "1.1.0" },
     [REL]: { plugin_id: "p1", declared_version: "1.2.0" },
@@ -200,6 +200,7 @@ function recordClient(attempt: Record<string, unknown> | null, o: { versions?: s
   };
   return stub([
     [/p\.email as applied_by/, () => (attempt ? [attempt] : [])],
+    [/where o\.released_plugin_version_id = /, () => (o.claimedBy ? [{ id: o.claimedBy, status: "rolled_back" }] : [])],
     [/from zz\.membership/, (v) => (String(v[0]) === OWNER ? [{ slug: "xuan" }] : [])],
     [/update zz\.release_attempt/, (v) => (o.cas === false ? [] : [{ id: v[0] }])],
     [/status = 'rolled_back'/, () => [{ declared_version: "1.2.0" }]],
@@ -246,6 +247,11 @@ for (const bad of ["abc", "v1.2.0", "demo@1.2.0", REF.slice(0, 12), REF.toUpperC
 }
 await assert.rejects(rec(attemptRow(), { release_ref: REF, released_subject_version_id: OTHER_PLUGIN }), /SAME plugin/);
 await assert.rejects(rec(attemptRow(), { release_ref: REF, released_subject_version_id: BASE }), /not_newer/);
+// A version another attempt already released is that attempt's release, not this one's — and one
+// rolled back is retracted. Recording it would close this candidate's findings on a release that
+// never carried its patch (runtime pass 2, F3).
+await assert.rejects(rec(attemptRow(), { release_ref: REF, released_subject_version_id: REL }, OWNER, { claimedBy: A_NEW }),
+  new RegExp(`already_recorded — [\\s\\S]*${A_NEW}[\\s\\S]*rolled_back`));
 await assert.rejects(rec(attemptRow(), { release_ref: REF, released_subject_version_id: REL }, OWNER, { cas: false }), /left 'applying'/);
 assert.equal((await rec(attemptRow(), { release_ref: REF, released_subject_version_id: REL })).result.status, "released");
 await assert.rejects(rec(attemptRow(), { status: "failed" }), /requires failure_tail/);

@@ -469,7 +469,9 @@ export function registerReleaseTools(server: McpServer): void {
         "reached released — not_rolled_back for a rollback with no release_verify verdict " +
         "of " + ROLLBACK_STATE + " — prior_not_current for a rollback after which the prior subject " +
         "would still not be current — not_newer for a released call whose subject is not newer than the base " +
-        "(retryable: the attempt stays applying) — a released call whose release_ref is not a " +
+        "(retryable: the attempt stays applying) — already_recorded for a released call naming a " +
+        "version another attempt already recorded, released or rolled back (retryable too) — " +
+        "a released call whose release_ref is not a " +
         "40-hex commit sha (retryable too) — a released call naming a " +
         RELEASED_SUBJECT_VERSION + " of another plugin, a released call missing release_ref or " +
         RELEASED_SUBJECT_VERSION + ", a failed call missing failure_tail, a rollback " +

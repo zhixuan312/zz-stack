@@ -9,7 +9,8 @@
  *     record anything on it (`releaseActorRefusal`, below — `release_verify` checks it too);
  *   - `released` must name a subject of the same plugin at a version NEWER, by semver, than the
  *     base — a released id equal to or older than the base is the unchanged head located after a
- *     release that registered nothing, not the release;
+ *     release that registered nothing, not the release — and one no other attempt has recorded,
+ *     which would be that attempt's release (a rolled-back one's is retracted);
  *   - the rollback status needs `release_verify` to have decided it first — a rollback with
  *     no recorded verdict behind it is a rollback nobody established — and, once its version is
  *     retracted (`retractedVersions`, `../release-head.ts`), the prior version must be the current one.
@@ -274,6 +275,21 @@ export async function recordRelease(
         `version ${released.declared_version}, not newer than the base ${base.declared_version}; ` +
         "call plugin_locate with the exact version the release published and record that. The " +
         "attempt stays applying, so this call can be retried");
+    }
+    // A version another attempt already recorded is that attempt's release — and one it rolled
+    // back is retracted. Recording it here would close this candidate's findings on a release that
+    // never carried its patch, and release_verify would judge it on the other release's evidence.
+    // No two attempts of a plugin are applying at once (`release_in_progress`), so a read suffices.
+    const claimed = (await client.query<{ id: string; status: string }>(`
+      select o.id::text as id, o.status from zz.release_attempt o
+       where o.released_plugin_version_id = $1::uuid and o.id <> $2::uuid`,
+      [releasedVersionId, attempt.id])).rows[0];
+    if (claimed) {
+      throw new Refusal(
+        `ERROR: already_recorded — version ${released.declared_version} (${RELEASED_SUBJECT_VERSION} ` +
+        `${releasedVersionId}) is release_attempt ${claimed.id}'s release, now ` +
+        `${claimed.status}; record the version THIS release published (plugin_locate with that exact ` +
+        "version). The attempt stays applying, so this call can be retried");
     }
 
     // `reason` on a release is the operator's accepted override (`--reconcile

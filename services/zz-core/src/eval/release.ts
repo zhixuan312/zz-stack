@@ -21,7 +21,7 @@
  * `releaseDecision` (`release-rules.ts`) is deliberately NOT called from here — see that file's
  * own module note. This tool's gate is only the first branch of that same refusal order
  * (`no_release_owners`) plus a `not_eligible` refusal for a candidate that is not `valid` (built
- * and gated) and a `not_owner` refusal for a caller in none of the owner teams; the rest of the order (`approval_required`, `digest_mismatch`,
+ * and gated) and a `proposal_only` refusal for an evaluation whose team is not an owner; the rest of the order (`approval_required`, `digest_mismatch`,
  * `stale_baseline`) belongs to `release_apply`, once an approved document and a live current
  * subject both exist to check the rest of it against.
  *
@@ -52,6 +52,7 @@ import { refreshFindingsDocs } from "./findings-doc.js";
 import { writeImprovementDoc, type BaseScore } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { releasableCandidateOf } from "./initiative-run.js";
+import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { describeApplyOutcomeForReplay, planApply, readImprovementDoc, type ApplyResult } from "./release-apply.js";
 import { initiativePlace, prepareWithBranchFact } from "./release-prepare.js";
 import { describeRecordOutcomeForReplay, recordRelease, type RecordResult } from "./release-record.js";
@@ -59,7 +60,6 @@ import { loadReleasePolicy, verifyRelease, type VerifyOutcome } from "./release-
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
-import { memberTeams } from "../release-owners.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no release can be prepared");
@@ -202,8 +202,9 @@ export function registerReleaseTools(server: McpServer): void {
         "(no_eval_run), none of whose candidates is valid (not_eligible), or more than one of " +
         "whose are with no candidate_id naming one (ambiguous_candidate, listing them); a " +
         "candidate_id that is not a valid candidate of it (not_eligible); a protocol version with " +
-        "no usable improvement.release; a caller who is not a member of one of the base subject's " +
-        "owner teams (not_owner); a base subject with no recorded release_owners — a " +
+        "no usable improvement.release; an evaluation whose own team is not one of the base " +
+        "subject's release owners — proposal_prepare writes its proposal.md instead (proposal_only); " +
+        "a base subject with no recorded release_owners — a " +
         "third-party or not-yet-owned subject, which stays proposal-only (no_release_owners); " +
         "a deployment with no platform database; and (a hard " +
         "refusal, before any write) this initiative's release_mode already set to something " +
@@ -244,13 +245,15 @@ export function registerReleaseTools(server: McpServer): void {
 
       // Only an owner may prepare: every prepared attempt is one `release_apply` could bind to,
       // and a stranger's fresh attempt would rewrite improvement.md to cite a row the owners
-      // never read. Membership, never the caller's active team (release-owners.ts).
+      // never read. The owner is the evaluation's own team — the rule improvement_start,
+      // improvement_stop and proposal_prepare read (`promotable`), so the four agree on which
+      // branch an initiative is on whatever other teams the caller is also in.
       const principal = parseCaller(requestHeaders()).email;
-      const callerTeams = await memberTeams(p, principal);
-      if (!requiredOwners.some((owner) => callerTeams.includes(owner))) {
-        return text(
-          `ERROR: not_owner — ${principal || "this caller"} is not a member of an owner team of ` +
-          `${subject.plugin} (${requiredOwners.join(", ")}); only an owner may prepare its release`);
+      const ran = await loadSubjectForEvalRun(p, candidate.eval_run_id);
+      if (!ran?.promotable) {
+        return text(`ERROR: proposal_only — ${ran?.run_team ?? "this team"} is not a release owner of this ` +
+          `subject (${requiredOwners.join(", ")}); proposal_prepare(initiative) writes its proposal.md, which is how ` +
+          "IMPROVE ends for it");
       }
 
       const base = await loadBaseScore(p, candidate.eval_run_id);

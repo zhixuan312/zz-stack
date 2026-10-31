@@ -21,7 +21,8 @@
  *     candidates it held before, and the run is still unscored;
  *   - the seeded team's own caller reads its candidate, so the refusal is about the team;
  *   - a run of a plugin whose release owners are another team is not promotable for the run's own
- *     team, and is once that team is an owner too.
+ *     team, and is once that team is an owner too; release_prepare reads the same rule, so a member
+ *     of the owner team acting for the run's team is sent to proposal_prepare.
  *
  * The only database this touches is the one it started.
  *
@@ -33,7 +34,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { root } from "../scripts/deployment.ts";
-import { ask, evalDoor, finding, one, seed, type Seed } from "../scripts/schema/eval-door-seed.ts";
+import { ask, evalDoor, finding, one, seed, SLUG, type Seed } from "../scripts/schema/eval-door-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
 const NAME = "eval-door-team";
@@ -137,6 +138,36 @@ async function anotherTeamsPluginIsAProposal(c: Core, s: Seed): Promise<void> {
   if (outside.promotable !== false || outside.run_team !== c.team) {
     c.fail(step, `owned by elsewhere, ${c.team}'s run read as ${JSON.stringify(outside)}`);
   }
+  // release_prepare reads the same rule, not the caller's other memberships: a person in the owner
+  // team as well, acting for the run's team, is sent to proposal_prepare like improvement_stop is.
+  await c.sql.query(
+    `insert into zz.membership (team_id, principal_id, role, added_by)
+     select t.id, p.id, 'member', p.id from zz.team t, zz.principal p where t.slug = 'elsewhere' and p.email = $1`, [c.email]);
+  const improvement = (await one<{ id: string }>(c,
+    "insert into zz.improvement_run (eval_run_id, created_at) values ($1, now()) returning id::text as id", [s.run])).id;
+  await c.sql.query(
+    `insert into zz.candidate (improvement_run_id, base_plugin_version_id, hypothesis, expected_effect, patch_digest,
+                               complexity_delta, touched_components, status, created_at, patch, proposed_by)
+     values ($1, $2, 'built', '{}', 'digest-valid', 0, '[]', 'valid', now(), 'diff --git a/x b/x', $3)`,
+    [improvement, s.versionId, s.me]);
+  // findings.md as finding_record files it: eval_run_id is the platform's own field.
+  await c.sql.query("BEGIN");
+  await c.sql.query("SET CONSTRAINTS ALL DEFERRED");
+  const doc = (await one<{ id: string }>(c,
+    `insert into zz.doc (initiative_id, path, status, updated_at, current_revision, current_version)
+     select i.id, 'findings.md', 'draft', now(), 1, 1 from zz.initiative i join zz.team t on t.id = i.team_id
+      where i.slug = $1 and t.slug = $2 returning id::text as id`, [SLUG, c.team])).id;
+  await c.sql.query(
+    `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash,
+                                  written_by, written_at, fields)
+     values ($1, 1, 1, 'retained', 'Findings', '# Findings\n', '{}', 'hf', $2, now(), $3)`,
+    [doc, s.me, JSON.stringify({ eval_run_id: s.run })]);
+  await c.sql.query("COMMIT");
+  await c.sql.query("delete from zz.plugin_release_owner where plugin_id = $1", [s.pluginId]);
+  await owners("elsewhere");
+  const prepared = await ask(evalDoor(c, c.email), "release_prepare", { initiative: SLUG, idempotency_key: "prepare-not-owner" });
+  if (!/^ERROR: proposal_only — /.test(prepared)) c.fail(step, `release_prepare by a member of the owner team, acting for ${c.team}, answered ${prepared.slice(0, 300)}`);
+
   await owners(c.team);
   const inside = await loadSubjectForEvalRun(pool, s.run) as { promotable: boolean };
   if (inside.promotable !== true) c.fail(step, `with ${c.team} an owner too, the run read as ${JSON.stringify(inside)}`);

@@ -27,25 +27,24 @@ export const DEFAULT_PSQL = "docker compose exec -T postgres psql -U zz -d zz";
  * answer this schema can produce for a single window. */
 const MAX_OUTPUT = 256 * 1024 * 1024;
 
-/** Every statement a REGISTRAR writes, with psql's `ON_ERROR_STOP`, as `psqlText`'s `vars`.
+/** One query, as raw `-tA` text. `vars` become psql `-v name=value` bindings.
  *
- * Without it psql prints a refused statement to stderr and still exits 0, so a registration whose
- * every write was refused reports itself finished with a count of zero — which is how 0.76.2
- * shipped a release with no release owners. A registration either writes the rows or says why.
- * COUPLED: both registrars pass it; a write that does not is a write nobody hears fail. */
-export const STOP_ON_ERROR: Record<string, string> = { ON_ERROR_STOP: "1" };
-
-/** One query, as raw `-tA` text. `vars` become psql `-v name=value` bindings. */
+ * Always with `ON_ERROR_STOP`. Without it psql prints a refused statement to stderr and still exits
+ * 0 with nothing on stdout: a registration whose every write was refused reported itself finished
+ * (0.76.2 shipped with no release owners), and a read the database refused came back as no rows.
+ *
+ * A failure exits 2, the readers' "could not tell": 1 is what watch-results and tool-report
+ * answer when they looked and found something. */
 export function psqlText(psql: string, sql: string, vars: Record<string, string> = {}): string {
   const [cmd, ...rest] = splitCommand(psql);
-  const argv = [...rest, "-tA"];
+  const argv = [...rest, "-tA", "-v", "ON_ERROR_STOP=1"];
   for (const [k, v] of Object.entries(vars)) argv.push("-v", `${k}=${v}`);
   try {
     return execFileSync(cmd, argv,
       { input: sql, encoding: "utf8", maxBuffer: MAX_OUTPUT, stdio: ["pipe", "pipe", "pipe"] }).trim();
   } catch (err) {
     const e = err as { stderr?: string; stdout?: string; message?: string };
-    return die(`psql failed: ${(e.stderr || e.stdout || e.message || "").trim().slice(-400)}`);
+    return die(`psql failed: ${(e.stderr || e.stdout || e.message || "").trim().slice(-400)}`, 2);
   }
 }
 

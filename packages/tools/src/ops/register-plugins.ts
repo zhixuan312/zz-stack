@@ -39,7 +39,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { envRequired, optional, parseArgs } from "../lib/cli.js";
-import { DEFAULT_PSQL, psqlText, STOP_ON_ERROR } from "../lib/psql.js";
+import { DEFAULT_PSQL, psqlText } from "../lib/psql.js";
 
 interface LockEntry {
   version: string;
@@ -91,7 +91,7 @@ function main(argv: string[]): number {
     console.log("    members recorded  0\n");
     return 0;
   }
-  const teamId = psqlText(psql, "select id from zz.team where slug = :'team'", { ...STOP_ON_ERROR, team: ownerTeam });
+  const teamId = psqlText(psql, "select id from zz.team where slug = :'team'", { team: ownerTeam });
   if (!teamId) {
     console.error(`\n  no team has the slug ${ownerTeam} — ZZ_CATALOG_OWNER_TEAM names the team every ` +
                   "catalog plugin's release authority resolves to, and zz.plugin.owner_team_id is a " +
@@ -175,7 +175,7 @@ function main(argv: string[]): number {
           and newest.id <> bound.id
         order by sk.name;`,
       "commit;",
-    ].join("\n"), { ...STOP_ON_ERROR, team: teamId, name, origin: ORIGIN, version: p.version, digest: p.digest,
+    ].join("\n"), { team: teamId, name, origin: ORIGIN, version: p.version, digest: p.digest,
                   skills: JSON.stringify(skills) });
     const lines = said.split("\n");
     const bound = lines.filter((l) => l === "bound").length;

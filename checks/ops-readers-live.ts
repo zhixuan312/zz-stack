@@ -69,4 +69,11 @@ process.exitCode = await withThrowawayDbCheck(NAME, DONE, async (c) => {
   }
   console.log(`  ${step1}`);
 
+  const step3 = "a query the database refuses is exit 2 with its error, not an empty window";
+  const refused = tool("ops/watch-results.js", "--window", "nonsense");
+  if (refused.status !== 2 || !/psql failed: .*invalid input syntax for type interval/s.test(refused.stderr)) {
+    fail(step3, `exit ${refused.status}, said ${JSON.stringify((refused.stdout + refused.stderr).trim().slice(0, 600))}`);
+  }
+  console.log(`  ${step3}`);
+
 });

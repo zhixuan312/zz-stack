@@ -27,7 +27,7 @@ import { manifestAt } from "@zz/catalog";
 import { documentBody } from "@zz/contracts";
 
 import { optional, parseArgs } from "../lib/cli.js";
-import { DEFAULT_PSQL, psqlRows, psqlText, STOP_ON_ERROR } from "../lib/psql.js";
+import { DEFAULT_PSQL, psqlRows, psqlText } from "../lib/psql.js";
 
 const SKILL_KINDS = ["flow_step", "plugin_skill"] as const;
 type SkillKind = (typeof SKILL_KINDS)[number];
@@ -201,7 +201,7 @@ function main(argv: string[]): number {
         where name not in (select f.name from jsonb_to_recordset(:'catalog'::jsonb) as f(name text))
           and not retired;`,
       "commit;",
-    ].join("\n"), { ...STOP_ON_ERROR, catalog });
+    ].join("\n"), { catalog });
   }
 
   const by = (k: SkillKind): number => found.filter((f) => f.kind === k).length;

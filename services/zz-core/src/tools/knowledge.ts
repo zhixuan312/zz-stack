@@ -122,7 +122,8 @@ export function registerKnowledgeTools(server: McpServer): void {
       description:
         "Mint a knowledge-journal node in the team's journal: numbered, typed, evidence-linked. " +
         "type: decision|design|behavior|process|knowledge|style. evidence: initiative slug(s) the " +
-        "lesson comes from — a node without evidence is an opinion and is refused. " +
+        "lesson comes from — a node without evidence is an opinion and is refused. A retry that " +
+        "sends the same title, type and body answers the node the first call made. " +
         "WHEN THE LESSON IS ABOUT SOMETHING THE PLATFORM PLUGS IN rather than about your own " +
         "work, tag it with what it is about: `plugin:<name>`, `flow:sdlc-flow`, " +
         "`provider:forgejo`, `interface:claude-code`, `platform:guardrail`. That is what makes " +
@@ -156,6 +157,9 @@ export function registerKnowledgeTools(server: McpServer): void {
           "holds for everybody."
         );
       }
+      // A node with nothing in it is listed by search and ranks in results, with nothing to say.
+      if (!title.trim()) return text("ERROR: `title` is blank — a node's title is what search shows for it");
+      if (!body.trim()) return text("ERROR: `body` is blank — a node's body is the lesson itself");
       const badTag = subjectTagError(tags);
       if (badTag) return text(badTag);
 
@@ -225,6 +229,17 @@ export function registerKnowledgeTools(server: McpServer): void {
       const badTagShape = tagRefusal(tags);
       if (badTagShape) return text(badTagShape);
 
+      // A retry after a dropped reply sends the same node again. The current node with this
+      // exact title, kind and body on the shelf is that first call's, so its number is the
+      // answer and nothing is written: a second copy would only restate it.
+      const { rows: [same] } = await p.query<{ ordinal: string }>(
+        `select k.node_ordinal as ordinal from zz.knowledge_node k join zz.team t on t.id = k.team_id
+          where t.slug = $1 and k.kind = $2 and k.title = $3 and k.body = $4 and k.lifecycle = 'adopted'
+          order by k.node_ordinal limit 1`, [shelf, type, title, body]);
+      if (same) {
+        return text(`journal node ${same.ordinal} created on ${shelf}'s shelf — this exact node was ` +
+                    "already there, so nothing new was written");
+      }
       const slug = titleSlug(title, type);
       // Resolved from the registry when the node is about a plugin and the caller did not say:
       // a claim with no version behind it cannot be retired when the plugin moves.

@@ -14,6 +14,8 @@
  *     a lesson is found from its event by id, without its ordinal;
  *   - `knowledge_supersede` writes exactly one event, under the team of the shelf the superseded node is on:
  *     the caller's team for a team node, the shared shelf's for a platform node;
+ *   - a retried `knowledge_add` answers the node the first call made, and a blank title or body is
+ *     refused;
  *   - a node is superseded only by a current one, so the reverse of a supersede already made is
  *     refused and no two nodes name each other;
  *   - both tools answer exactly as before, so the release's chain check, which reads
@@ -134,6 +136,27 @@ async function supersedeCases(c: Core, initiative: string, made: Record<string, 
   return teamNewer;
 }
 
+/** A retried `knowledge_add` answers the node the first call made, and a blank node is not one. */
+async function retryCases(c: Core, initiative: string): Promise<void> {
+  let step = "knowledge_add sent twice, identically";
+  const args = { title: "Retries are idempotent", type: "decision", scope: "team", evidence: [initiative],
+                 body: "A retried call returns the first reply." };
+  const first = await add(c, step, c.team, args);
+  const again = await c.ok(step, "knowledge_add", args);
+  const { rows } = await c.sql.query<{ n: number }>(
+    `select count(*)::int as n from zz.knowledge_node k join zz.team t on t.id = k.team_id
+      where t.slug = $1 and k.title = $2`, [c.team, args.title]);
+  if (/journal node (\d+) created/.exec(again)?.[1] !== first || rows[0].n !== 1) {
+    c.fail(step, `the retry answered "${again}" and the shelf holds ${rows[0].n} such nodes, not node ${first} alone`);
+  }
+  c.pass("a retried knowledge_add answers the node the first call made and writes no second one");
+
+  step = "knowledge_add with a blank title or body";
+  await c.refused(step, "knowledge_add", { ...args, title: "  " }, /^ERROR: `title` is blank/);
+  await c.refused(step, "knowledge_add", { ...args, title: "Another", body: "\n " }, /^ERROR: `body` is blank/);
+  c.pass("knowledge_add refuses a title or a body that is blank after trimming");
+}
+
 /** A node is superseded only by a current one: the reverse of a supersede already made would leave
  *  the topic with no current node, each pointing at the other. */
 async function cycleCase(c: Core, older: string, newer: string): Promise<void> {
@@ -158,6 +181,7 @@ async function run(c: Core): Promise<void> {
   const made = await addCases(c, initiative);
   const teamNewer = await supersedeCases(c, initiative, made);
   await cycleCase(c, made[c.team][0], teamNewer);
+  await retryCases(c, initiative);
   c.pass("both tools answer in the sentences the release's chain check reads");
 }
 

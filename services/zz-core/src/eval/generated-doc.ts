@@ -18,15 +18,16 @@ import { teamFor } from "../platform-db.js";
 import { loadDocument } from "../versions.js";
 import { envelopeFor, normalizeSections, stampEnvelope } from "../write-guards.js";
 
-/** Write `body` at `path` (`<initiative>/<name>.md`) for the caller's team, under `title` and the
- *  envelope `fields` that name the rows it was rendered from. The fields the platform owns, and
- *  the version, are carried from the document's current revision, so a regeneration never resets
- *  them. Returns the path and the stamped length, or a refusal string — never throws for a refusal,
- *  the same contract `documentGuards` answers in. */
+/** Write `body` at `path` (`<initiative>/<name>.md`) for `team` — the caller's, unless the rows it
+ *  renders belong to another — under `title` and the envelope `fields` that name the rows it was
+ *  rendered from. The fields the platform owns, and the version, are carried from the document's
+ *  current revision, so a regeneration never resets them. Returns the path and the stamped length,
+ *  or a refusal string — never throws for a refusal, the same contract `documentGuards` answers in. */
 export async function writeGeneratedDoc(
   p: pg.Pool, path: string, body: string, envelope: { title: string; fields: Record<string, string> },
+  forTeam?: string,
 ): Promise<{ path: string; chars: number } | string> {
-  const team = await teamFor(parseCaller(requestHeaders()).email);
+  const team = forTeam ?? await teamFor(parseCaller(requestHeaders()).email);
   if (!team) {
     return "ERROR: this caller resolves to no team, so the document has no shelf to be filed on";
   }

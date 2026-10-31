@@ -60,6 +60,8 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { Mcp } from "@zz/mcp-client";
+
 import { root } from "../scripts/deployment.ts";
 import { ask, evalDoor, finding, LONER, one, OTHER, PLUGIN, seed, SLUG, VERSION, type Seed } from "../scripts/schema/eval-door-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
@@ -584,7 +586,17 @@ async function rollbackReopensFindings(c: Core, s: Seed): Promise<void> {
     `insert into zz.initiative_record (initiative_id, stage, id_name, value)
      select id, 'zz-plugin-evaluate', 'eval_run_id', $2 from zz.initiative where slug = $1
      on conflict do nothing`, [SLUG, s.run]);
-  const reply = await ask(evalDoor(c, c.email), "release_record",
+  // Recorded by the applier while acting for a second team of theirs: findings.md is the run's
+  // team's document, and it is refreshed there all the same.
+  await c.sql.query(
+    `with t as (insert into zz.team (slug, name, created_by) select 'rollback-other', 'Other', p.id
+                  from zz.principal p where p.email = $1 returning id)
+     insert into zz.membership (team_id, principal_id, role, added_by)
+     select t.id, p.id, 'admin', p.id from t, zz.principal p where p.email = $1`, [c.email]);
+  const elsewhere = new Mcp(c.mcp.url.replace(/\/mcp$/, "/eval-mcp"), { client: "zz-eval-check", timeoutMs: 60_000, headers: {
+    "x-zz-user-email": c.email, "x-zz-user-name": c.email, "x-zz-user-id": "", "x-zz-user-role": "user",
+    "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "rollback-other" } });
+  const reply = await ask(elsewhere, "release_record",
     { release_attempt_id: attempt, status: "rolled_back", reason: "measured worse", idempotency_key: "rollback-1" });
   const rows = (await c.sql.query<{ id: string; decision: string; decided_by: string | null }>(
     "select id::text as id, decision, decided_by::text as decided_by from zz.eval_finding where id = any($1::uuid[])",

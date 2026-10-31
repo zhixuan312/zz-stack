@@ -14,8 +14,6 @@
  * `chain.documents` is empty, and every guard above no-ops.
  */
 
-import { parseCaller } from "@zz/contracts";
-import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
 import {
@@ -24,7 +22,6 @@ import {
 } from "./evaluate-measures.js";
 import { loadDimensions, STORED_ANSWERS_SQL } from "./evaluate-run.js";
 import { safeName } from "../paths.js";
-import { teamFor } from "../platform-db.js";
 import { writeGeneratedDoc } from "./generated-doc.js";
 import { loadSubjectForEvalRun } from "./proposal-doc.js";
 
@@ -291,7 +288,7 @@ function renderBody(
  *  describes. Returns the written path and byte count, or a refusal string — never throws, the
  *  same contract `documentGuards` itself answers in. */
 export async function writeFindingsDoc(
-  p: pg.Pool, initiative: string, evalRunId: string,
+  p: pg.Pool, initiative: string, evalRunId: string, team?: string,
 ): Promise<{ path: string; chars: number } | string> {
   const badInitiative = safeName(initiative, "initiative");
   if (badInitiative) return badInitiative;
@@ -309,29 +306,30 @@ export async function writeFindingsDoc(
   return writeGeneratedDoc(p, `${initiative}/findings.md`, body, {
     title: `Findings — ${subject.plugin} ${subject.declared_version}`,
     fields: { eval_run_id: evalRunId },
-  });
+  }, team);
 }
 
-/** Regenerates findings.md wherever the caller's team already holds one for these runs: the
+/** Regenerates findings.md wherever the run's own team already holds one for these runs: the
  *  initiatives whose EVALUATE record names the run. `finding_decide` and `release_record` name no
  *  initiative, and without this the document a reader opens kept saying `deferred` about a finding
- *  the database held as applied. An initiative with no findings.md is left without one — only
- *  `finding_record` starts the document. Answers each refusal; never throws. */
+ *  the database held as applied. The run's team, not the caller's: a release may be recorded by a
+ *  member of another owner team, acting for it. An initiative with no findings.md is left without
+ *  one — only `finding_record` starts the document. Answers each refusal; never throws. */
 export async function refreshFindingsDocs(p: pg.Pool, evalRunIds: readonly string[]): Promise<string[]> {
-  const team = await teamFor(parseCaller(requestHeaders()).email);
-  if (!team || !evalRunIds.length) return [];
-  const { rows } = await p.query<{ slug: string; run: string }>(`
-    select distinct i.slug, r.value as run
+  if (!evalRunIds.length) return [];
+  const { rows } = await p.query<{ team: string; slug: string; run: string }>(`
+    select distinct t.slug as team, i.slug, r.value as run
       from zz.initiative i
       join zz.team t on t.id = i.team_id
       join zz.initiative_record r on r.initiative_id = i.id and r.id_name = 'eval_run_id'
-     where t.slug = $1 and r.value = any($2::text[])
+      join zz.eval_run er on er.id::text = r.value and er.team_id = i.team_id
+     where r.value = any($1::text[])
        and exists (select 1 from zz.doc d where d.initiative_id = i.id and d.path = 'findings.md')
-     order by i.slug`, [team, evalRunIds]);
+     order by t.slug, i.slug`, [evalRunIds]);
   const refused: string[] = [];
   // One at a time: each write takes the document's own guards and revision.
-  for (const { slug, run } of rows) {
-    const written = await writeFindingsDoc(p, slug, run);
+  for (const { team, slug, run } of rows) {
+    const written = await writeFindingsDoc(p, slug, run, team);
     if (typeof written === "string") refused.push(`${slug}/findings.md: ${written}`);
   }
   return refused;

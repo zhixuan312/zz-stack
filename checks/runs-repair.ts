@@ -14,10 +14,12 @@
  *     because a run is counted whole or not at all;
  *   - a pass with no bound recounts r2 too, answering it alone, because the other two are already right;
  *   - a second pass with no bound rewrites nothing and answers nothing;
- *   - with the three runs wrong again, runRepair's first pass recounts all three and its second only r1 and r3.
+ *   - with the three runs wrong again, runRepair's first pass recounts all three and its second only r1 and r3;
+ *   - over a pass that records the bound it is given: the bound is an hour before the last pass that succeeded
+ *     began, not the current one, and a pass that fails leaves it where it was.
  *
  * It starts a throwaway PostgreSQL migrated by the real runner, seeds the runs `scripts/schema/runs-seed.ts`
- * declares, and calls the gateway's own built `reconcileRuns`. The only database it touches is the one it started.
+ * declares, and calls the gateway's own built `reconcileRuns` and `runRepair`. The only database it touches is the one it started.
  *
  * Exit 0: every case held. Exit 1: a case failed — the case and what was found. Exit 2: Docker is not available —
  * the check could not run, and that is not a pass.
@@ -64,7 +66,7 @@ process.exitCode = await withThrowawayDbCheck(NAME,
     await db.initPlatformDb();
     try {
       const { reconcileRuns, runRepair } = (await load("services/gateway/dist/runs.js")) as
-        { reconcileRuns: Reconcile; runRepair: () => () => ReturnType<Reconcile> };
+        { reconcileRuns: Reconcile; runRepair: (pass?: Reconcile) => () => ReturnType<Reconcile> };
       const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString();
       const repair = runRepair();
       const steps: [string, () => ReturnType<Reconcile>, { runs: number; linked: number }, Record<string, number>][] = [
@@ -81,6 +83,35 @@ process.exitCode = await withThrowawayDbCheck(NAME,
         if (!isDeepStrictEqual(seen, want)) fail(step, `left the runs counting ${JSON.stringify(seen)}, not ${JSON.stringify(want)}`);
         console.log(`  ✓ ${step}`);
       }
+
+      // The bound a pass is given, from a pass that records it and fails when told to.
+      const asked: (string | null)[] = [];
+      let down = false;
+      const timer = runRepair(async (since) => {
+        asked.push(since);
+        if (down) throw new Error("the repair failed");
+        return { runs: 0, linked: 0 };
+      });
+      const hourBefore = (ms: number) => new Date(ms - 60 * 60_000).toISOString();
+      const pause = () => new Promise((r) => setTimeout(r, 20));
+      const began: [number, number][] = [];
+      for (const fails of [false, false, true, false]) {
+        await pause();
+        down = fails;
+        const at = Date.now();
+        await timer().catch(() => undefined);
+        began.push([at, Date.now()]);
+      }
+      const step = "runRepair's bound";
+      if (asked[0] !== null) fail(step, `the first pass was bounded at ${asked[0]}`);
+      for (const k of [1, 2]) {
+        const [from, to] = began[k - 1]!;
+        if (asked[k] === null || asked[k]! < hourBefore(from) || asked[k]! > hourBefore(to)) {
+          fail(step, `pass ${k + 1} was bounded at ${asked[k]}, not an hour before pass ${k} began (${hourBefore(from)} to ${hourBefore(to)})`);
+        }
+      }
+      if (asked[3] !== asked[2]) fail(step, `pass 3 failed and moved the bound from ${asked[2]} to ${asked[3]}`);
+      console.log(`  ✓ ${step}: none on the first pass, an hour before the last good one after, unmoved by a failure`);
     } finally {
       await db.platformDb().end().catch(() => undefined);
       delete process.env.TEAM_DB_URL;

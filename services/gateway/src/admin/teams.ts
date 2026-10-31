@@ -35,15 +35,20 @@ export async function addMember(
   id: Identity | null, team: string, email: string, role: "member" | "admin" | undefined,
   extraDetail: Record<string, unknown> = {},
 ): Promise<TeamWriteOutcome> {
+  // Authority first, and one refusal whether or not the team exists: answering a missing team
+  // differently would tell anybody which slugs are taken. Naming the teams the caller does
+  // administer is what makes a mistyped slug obvious without that.
+  const mine = (id?.teams ?? []).filter((t) => t.role === "admin").map((t) => t.slug);
+  if (!teamAuthority(id, team)) {
+    return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` +
+      (mine.length ? ` — you administer ${mine.join(", ")}` : "") };
+  }
   const db = platformDb();
   const tid = await teamId(db, team);
-  // A mistyped slug is named as one before authority is asked: told "admin required" for a team
-  // that does not exist, an admin goes looking for a permission they already have.
   if (!tid) {
     return { ok: false, status: 400,
       error: `no active team '${team}' — team_create on the same slug restores an archived one` };
   }
-  if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
   const pid = await principalId(db, email);
   if (!pid) return { ok: false, status: 400, error: `no principal '${email}' — person_add first` };
   const status = (await db.query<{ status: string }>("select status from principal where id = $1", [pid])).rows[0]?.status;

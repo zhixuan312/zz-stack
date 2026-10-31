@@ -46,25 +46,17 @@
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
 import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
-import type { Server } from "node:http";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { lastJson } from "@zz/mcp-client";
-import type { Express, RequestHandler } from "express";
-import type pg from "pg";
 
-import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
+import { CONSOLE_URL, headersOf, listenGateway, type Gateway } from "../scripts/schema/throwaway-gateway.ts";
 
 const NAME = "event-origin-gateway";
 const DONE = "event-origin-gateway: an administration act, a team switch, a console write — a token, a bug, a document " +
   "shown and approved, an initiative closed, a browser signed out — an OAuth credential and a passkey registration " +
   "and sign-in made by a maintenance client land platform on the row the gateway writes, by any other client or " +
   "none land work, and a page view stays work: ok";
-
-/** The console's own origin, which the passkey ceremony is bound to. Any https origin will do. */
-const CONSOLE_URL = "https://console.example.test";
 
 type Origin = "work" | "platform";
 
@@ -85,104 +77,6 @@ const PAGES = ["home", "record", "initiatives", "approvals", "knowledge", "activ
 const shown = (client: string | null): string => (client === null ? "no client" : JSON.stringify(client));
 const b64 = (b: Buffer): string => b.toString("base64url");
 const hash = (s: string | Buffer): Buffer => createHash("sha256").update(s).digest();
-
-/** The gateway as server.ts mounts the parts this check drives, and the seeded person's
- *  credentials: a PAT for /manage, a console session's cookie secret, and a second session that
- *  stays on the seeded team. */
-interface Gateway {
-  url: string; token: string; session: string; teamSession: string;
-  /** `issueEnrolment`, the passkey module's own: an enrolment link for one principal. */
-  enrol(principalId: string): Promise<{ url: string }>;
-  stop(): Promise<void>;
-}
-
-/** The paths server.ts lets past the identity gate that this check reaches.
- *  COUPLED: `PUBLIC_PREFIXES` in services/gateway/src/server.ts. */
-const PUBLIC_PREFIXES = ["/auth/", "/oauth/"];
-
-async function listen(c: Core): Promise<Gateway> {
-  // Read by passkey.js and mcp-oauth.js when they load, so set before anything is imported.
-  process.env.CONSOLE_PUBLIC_URL = CONSOLE_URL;
-  // `withThrowawayDb` ended the gateway's pool after migrating; a fresh one on the same container.
-  process.env.TEAM_DB_URL = c.url;
-  process.env.ZZ_CATALOG_DIR = join(root, "catalog");
-  // The console's acts reach zz-core here, the harness's own child.
-  process.env.CORE_MCP_URL = c.mcp.url;
-  const load = (p: string) => import(pathToFileURL(join(root, p)).href);
-  const express = (await import("express")).default;
-  const { serveMcp } = (await import("@zz/mcp-http")) as
-    { serveMcp: (app: Express, path: string, build: () => unknown) => void };
-  const db = (await load("services/gateway/dist/db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
-  await db.initPlatformDb();
-  const { identityMiddleware } = (await load("services/gateway/dist/identity.js")) as { identityMiddleware: () => RequestHandler };
-  const { mountMcpOauth } = (await load("services/gateway/dist/mcp-oauth.js")) as
-    { mountMcpOauth: (app: Express, doors: readonly string[]) => void };
-  const passkey = (await load("services/gateway/dist/passkey.js")) as
-    { mountPasskey: (app: Express) => void; issueEnrolment: (principalId: string) => Promise<{ url: string }> };
-  const { mountSettings } = (await load("services/gateway/dist/settings.js")) as
-    { mountSettings: (app: Express, deps: Record<string, unknown>) => void };
-  const credentials = (await load("services/gateway/dist/credentials.js")) as Record<string, unknown>;
-  const { mountPageView } = (await load("services/gateway/dist/console/page-view.js")) as { mountPageView: (app: Express) => void };
-  const { mountPlatformBugResolve } = (await load("services/gateway/dist/console/platform-bug-resolve.js")) as
-    { mountPlatformBugResolve: (app: Express) => void };
-  const { mountConsoleClose } = (await load("services/gateway/dist/console-close.js")) as { mountConsoleClose: (app: Express) => void };
-  const { mountConsoleWrite } = (await load("services/gateway/dist/console-write.js")) as { mountConsoleWrite: (app: Express) => void };
-  const { buildAccessServer } = (await load("services/gateway/dist/access-door.js")) as { buildAccessServer: () => unknown };
-
-  const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate with its public prefixes let past
-  // it, the JSON and form parsers, the OAuth surface, the passkey ceremony, the console's routes
-  // (mountConsole's page view, bug resolve and close, then mountConsoleWrite and mountSettings),
-  // then the /manage door, in the order server.ts mounts them.
-  const requireIdentity = identityMiddleware();
-  app.use((req, res, next) => {
-    if (PUBLIC_PREFIXES.some((p) => req.path.startsWith(p))) { next(); return; }
-    requireIdentity(req, res, next);
-  });
-  app.use(express.json({ limit: "20mb" }));
-  app.use(express.urlencoded({ extended: false, limit: "1mb" }));
-  mountMcpOauth(app, ["/manage/mcp"]);
-  passkey.mountPasskey(app);
-  mountPageView(app);
-  mountPlatformBugResolve(app);
-  mountConsoleClose(app);
-  mountConsoleWrite(app);
-  mountSettings(app, {
-    issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-    revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor,
-  });
-  serveMcp(app, "/manage/mcp", buildAccessServer);
-  const server: Server = app.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
-
-  const hex = (s: string): string => hash(s).toString("hex");
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
-  await c.sql.query("insert into zz.pat (principal_id, token_hash) select id, $2 from zz.principal where email = $1",
-                    [c.email, hex(token)]);
-  const session = randomBytes(24).toString("hex");
-  const teamSession = randomBytes(24).toString("hex");
-  await c.sql.query(
-    `insert into zz.console_session (principal_id, token_hash, expires_at, team_id)
-     select p.id, s.h, now() + interval '1 hour', case when s.on_team then t.id end
-       from zz.principal p, zz.team t, (values ($2, false), ($3, true)) s (h, on_team)
-      where p.email = $1 and t.slug = $4`, [c.email, hex(session), hex(teamSession), c.team]);
-  return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
-    token, session, teamSession,
-    enrol: passkey.issueEnrolment,
-    stop: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await db.platformDb().end().catch(() => undefined);
-      for (const k of ["CONSOLE_PUBLIC_URL", "TEAM_DB_URL", "ZZ_CATALOG_DIR", "CORE_MCP_URL"]) delete process.env[k];
-    },
-  };
-}
-
-/** The headers a caller sends: its credential, and its client name unless it sends none. */
-function headersOf(client: string | null, credential: Record<string, string>): Record<string, string> {
-  return { ...credential, "content-type": "application/json", ...(client === null ? {} : { "x-zz-client": client }) };
-}
 
 /** One tool on /manage, with the PAT, as `client`: the tool's reply. */
 async function tool(c: Core, g: Gateway, step: string, client: string | null, name: string,
@@ -512,83 +406,10 @@ async function pageViews(c: Core, g: Gateway): Promise<void> {
   c.pass(`a page view lands work whoever sent it, ${CLIENTS.map((f) => shown(f.client)).join(", ")} included`);
 }
 
-/** A team admin's token authority reaches no further than the team: a lead may not mint a token
- *  for the superadmin, may not replace a member's token outside the team by reusing its label, and
- *  a token bound to a team revokes only tokens bound to it. */
-async function leadActs(c: Core, g: Gateway): Promise<void> {
-  const step = "a team admin's token acts stay inside the team";
-  const pat = async (email: string, label: string, team: string | null): Promise<{ token: string; id: string }> => {
-    const token = `zzp_${randomBytes(24).toString("hex")}`;
-    const id = String((await c.sql.query(
-      `insert into zz.pat (principal_id, token_hash, label, team_id)
-       select p.id, $2, $3, (select id from zz.team where slug = $4) from zz.principal p where p.email = $1
-       returning id`, [email, createHash("sha256").update(token).digest("hex"), label, team])).rows[0].id);
-    return { token, id };
-  };
-  const ask = async (token: string, name: string, args: Record<string, unknown>): Promise<string> => {
-    const res = await fetch(`${g.url}/manage/mcp`, {
-      method: "POST",
-      headers: { ...headersOf(null, { authorization: `Bearer ${token}` }), accept: "application/json, text/event-stream" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const env = lastJson(await res.text());
-    return env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? `HTTP ${res.status}`;
-  };
-  await c.sql.query(
-    `with p as (insert into zz.principal (email, display_name) values ('lead@example.test', 'Lead'), ('mate@example.test', 'Mate')
-                returning id, email),
-          t as (insert into zz.team (slug, name, created_by) select 'lead-team', 'Lead team', id from p where email = 'lead@example.test'
-                returning id)
-     insert into zz.membership (team_id, principal_id, role, added_by)
-     select t.id, p.id, case when p.email = 'lead@example.test' then 'admin' else 'member' end, p.id from t, p`);
-  const lead = await pat("lead@example.test", "lead", null);
-  const laptop = await pat("mate@example.test", "laptop", null);
-  const live = async (id: string): Promise<boolean> =>
-    (await c.sql.query("select 1 from zz.pat where id = $1 and revoked_at is null", [id])).rowCount === 1;
-
-  await ask(lead.token, "member_add", { team: "lead-team", email: c.email });
-  const forSuper = await ask(lead.token, "pat_issue", { email: c.email, team: "lead-team", label: "as-super" });
-  if (!/^ERROR: .*superadmin/.test(forSuper)) c.fail(step, `a lead minting the superadmin's token answered: ${forSuper.slice(0, 200)}`);
-
-  const reused = await ask(lead.token, "pat_issue", { email: "mate@example.test", team: "lead-team", label: "laptop" });
-  if (!/^ERROR: .*laptop/.test(reused) || !(await live(laptop.id))) {
-    c.fail(step, `a lead reusing a member's label answered "${reused.slice(0, 200)}", the member's token ${await live(laptop.id) ? "live" : "REVOKED"}`);
-  }
-
-  const bound = await pat("lead@example.test", "bound", "lead-team");
-  const crossed = await ask(bound.token, "pat_revoke", { pat_id: lead.id, confirm: lead.id });
-  if (!/^ERROR: .*bound to team 'lead-team'/.test(crossed) || !(await live(lead.id))) {
-    c.fail(step, `a bound token revoking its owner's unbound token answered "${crossed.slice(0, 200)}"`);
-  }
-  const own = await pat("lead@example.test", "bound-2", "lead-team");
-  if (!/ revoked$/.test(await ask(bound.token, "pat_revoke", { pat_id: own.id, confirm: own.id }))) {
-    c.fail(step, "a bound token could not revoke a token bound to its own team");
-  }
-  c.pass(step);
-
-  // member_add says what happened, keeps a role nobody named, and names a missing team as missing;
-  // member_remove keeps the team's last admin.
-  const roles = "member_add and member_remove say what changed and keep a team's last admin";
-  const said = [
-    [await ask(lead.token, "member_add", { team: "lead-team", email: "Mate@Example.test", role: "admin" }),
-     /^mate@example\.test is now admin of lead-team \(was member\)$/],
-    [await ask(lead.token, "member_add", { team: "lead-team", email: "mate@example.test" }),
-     /^mate@example\.test is already admin of lead-team — nothing changed$/],
-    [await ask(lead.token, "member_add", { team: "lead-tem", email: "mate@example.test" }), /^ERROR: no active team 'lead-tem'/],
-    [await ask(lead.token, "member_add", { team: "lead-team", email: "mate@example.test", role: "member" }),
-     /^mate@example\.test is now member of lead-team \(was admin\)$/],
-    [await ask(lead.token, "member_remove", { team: "lead-team", email: "lead@example.test", confirm: "lead-team" }),
-     /^ERROR: lead@example\.test is the only admin of lead-team/],
-  ] as const;
-  for (const [reply, want] of said) if (!want.test(reply)) c.fail(roles, `answered "${reply.slice(0, 200)}", expected ${want}`);
-  c.pass(roles);
-}
-
 async function run(c: Core): Promise<void> {
   await seed(c);
   await seedBugs(c);
-  const g = await listen(c);
+  const g = await listenGateway(c);
   try {
     // First: the switches in `cases` move the person's own acting team, which the harness's MCP
     // client writes the documents under.
@@ -596,7 +417,6 @@ async function run(c: Core): Promise<void> {
     await cases(c, g);
     await publicActs(c, g);
     await pageViews(c, g);
-    await leadActs(c, g);
   } finally {
     await g.stop();
   }

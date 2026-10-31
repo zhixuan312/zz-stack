@@ -25,7 +25,8 @@
  *   - `release_list` with `since` answers the releases recorded after that version, newest first in recorded
  *     order (a tie on the time broken by the version), the named one left out; `limit` bounds them, five
  *     when none is asked and at most 50; an unknown version is an input error naming `since`;
- *   - `activity_refusals` answers the page's summary with `byTool`, the window's refusals summed by tool,
+ *   - `activity_refusals` answers the page's summary with `totals`, the window's calls and refusals, and
+ *     `byTool`, the window's refusals summed by tool,
  *     and `messages`, its ten largest groups; with `since` the weeks and groups count only what happened
  *     from that date, the tiles staying the page's last whole week; with `initiative` only that
  *     initiative of the active team's, the second team's refused as one nobody has; a read that fails is
@@ -280,7 +281,7 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
       }
     } else {
       const activity = await read(step, who, "activityRefusals");
-      pairs.push(["Activity", without(activity, "byTool", "messages"), await route(step, who, "/api/console/activity/summary")]);
+      pairs.push(["Activity", without(activity, "totals", "byTool", "messages"), await route(step, who, "/api/console/activity/summary")]);
       pairs.push(["Runs", await read(step, who, "runSummary"), await route(step, who, "/api/console/runs")]);
       pairs.push(["Runs of one skill, a page of one", await read(step, who, "runSummary", { skill: "isolation-skill", limit: 1 }),
         await route(step, who, "/api/console/runs?skill=isolation-skill&limit=1")]);
@@ -358,6 +359,9 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
     ["the tiles from a date before it", masked(longer.tiles), masked(page.tiles)],
     [`refused from ${five}`, refusedIn(recent), 2],
     [`refused from ${fifteen}`, refusedIn(longer), 3],
+    // The totals are the window's, summed over its weeks, beside tiles that are the last whole week's alone.
+    ["the totals", [data<Obj>(step, recent.totals).refused, data<Obj>(step, longer.totals).refused,
+                    data<Obj>(step, recent.totals).from], [2, 3, ((recent.meta as Obj).period as Obj).from]],
     [`by tool from ${five}`, sums(recent), [{ tool: `core:${TOOL}`, count: 1 }, { tool: `core:${OTHER_TOOL}`, count: 1 }]],
     [`by tool from ${fifteen}`, sums(longer), [{ tool: `core:${TOOL}`, count: 2 }, { tool: `core:${OTHER_TOOL}`, count: 1 }]],
     ["the messages", data(step, longer.messages), groupsOf(longer).slice(0, 10)],
@@ -391,6 +395,7 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
   const weekly = await g.failing((sql) => sql.includes("with ordinality as p(lo, hi, n)"), () => read(step, member, "activity_refusals", {}, true));
   const weeklyWant = [{ value: null, why: "unavailable" }, UNREAD, pageTiles.mostRefused, UNREAD, "unavailable", "ok", "ok"];
   if (!isDeepStrictEqual(said(weekly), weeklyWant)) fail(step, `the weekly read failing, it reads ${show(said(weekly))}, expected ${show(weeklyWant)}`);
+  if ((weekly.totals as Part).state !== "unavailable") fail(step, `the weekly read failing, the totals read ${show(weekly.totals)}`);
   // Last week's refusals by tool is the grouping statement over the last whole week alone; from fifteen days back, the
   // groups and the refusals by tool span more.
   const lastFrom = pageTiles.calls.window.from;

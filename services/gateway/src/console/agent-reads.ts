@@ -50,6 +50,9 @@ type InputError = { inputError: string };
 
 type ReleaseList = Releases<Omit<ReleaseDetail, "changelog">>;
 type ActivityRefusals = ActivitySummary & {
+  /** The window asked, summed over its weeks: what "how many calls were refused" asks. The tiles stay
+   *  the last whole week's, which reads as nothing when every call is in the running week. */
+  totals: Part<{ from: string; to: string; calls: number; refused: number }>;
   byTool: Part<{ tool: string; count: number }[]>;
   messages: Part<RefusalGroup[]>;
 };
@@ -122,7 +125,11 @@ export async function activityRefusals(caller: Caller, args: { since?: string; i
   }
   const messages: ActivityRefusals["messages"] = summary.groups.state === "ok"
     ? { state: "ok", data: summary.groups.data.rows.slice(0, MESSAGES) } : summary.groups;
-  return { ...summary, byTool, messages };
+  const totals: ActivityRefusals["totals"] = summary.weeks.state === "ok"
+    ? { state: "ok", data: { ...summary.meta.period, calls: summary.weeks.data.reduce((n, p) => n + p.calls, 0),
+                             refused: summary.weeks.data.reduce((n, p) => n + p.refused, 0) } }
+    : summary.weeks;
+  return { totals, ...summary, byTool, messages };
 }
 
 /** Runs for the active team, from since when asked, narrowed to the skill. */

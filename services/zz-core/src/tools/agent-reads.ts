@@ -109,7 +109,8 @@ export function registerAgentReadTools(server: McpServer): void {
       annotations: READS,
       description:
         "The refused calls of the team you act for (session_whoami says which), as the console's " +
-        "Activity page reads them: calls and refusals by week, whose each refusal is, the refusals by " +
+        "Activity page reads them: `totals`, the calls and refusals over the window asked; the page's " +
+        "headline `tiles`, which are the last whole week's alone; calls and refusals by week, whose each refusal is, the refusals by " +
         "tool and the ten most frequent messages with their counts and when each was last seen. " +
         "`since` is a date, YYYY-MM-DD, seven days before today unless asked; `initiative` narrows it " +
         "to one of your team's initiatives. Takes no team. One object, as structured content and as " +

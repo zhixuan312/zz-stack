@@ -114,7 +114,9 @@ export function startStub(logFile: string, port = 0): Promise<{ server: Server; 
     });
   });
   return new Promise((ok) => {
-    server.listen(port, "127.0.0.1", () => {
+    // Containers reach it as host.docker.internal. Docker Desktop forwards that to the host's
+    // loopback; on Linux it is the bridge gateway, which a loopback-only listener never answers.
+    server.listen(port, process.platform === "linux" ? "0.0.0.0" : "127.0.0.1", () => {
       const addr = server.address();
       ok({ server, port: typeof addr === "object" && addr ? addr.port : 0 });
     });

@@ -110,7 +110,10 @@ function seedRepository(work: string, version: string): { seed: string; origin: 
   }
   git("add", "-A");
   git("commit", "-q", "-m", `zz-stack ${version} (eval-flow-e2e seed)`);
-  git("tag", `v${version}`);
+  // The checkout's release tags as well: the candidate build runs the gate here, and the gate
+  // derives the release a rollback returns to from them. This version's own tag names the seed.
+  git("fetch", "-q", "--no-tags", live, "+refs/tags/v*:refs/tags/v*");
+  git("tag", "-f", `v${version}`);
   const origin = join(work, "origin.git");
   sh("git", ["clone", "-q", "--bare", seed, origin]);
   git("remote", "add", "origin", origin);

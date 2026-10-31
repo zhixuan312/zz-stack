@@ -13,6 +13,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { EVAL_STATE_ENUMS } from "@zz/contracts";
+
 import { Conversation, obj, str, type Reply } from "./doors.ts";
 import { live } from "./stack.ts";
 
@@ -71,7 +73,11 @@ export async function discover(w: Walk): Promise<number> {
   const snapshot = recorded(status, "zz-plugin-observe", "observation_snapshot_id");
   const d = await c.call("eval", "failure_discover", { observation_snapshot_id: snapshot, idempotency_key: c.key("discover"), initiative: w.initiative },
     { note: (r) => `${Array.isArray(r.candidates) ? r.candidates.length : "?"} candidate(s)` });
-  return Array.isArray(d.candidates) ? d.candidates.length : 0;
+  // The seeded runs carry refusals with no recorded text, which is what DISCOVER exists to find:
+  // none found is the stage not working, not a quiet deployment.
+  const found = Array.isArray(d.candidates) ? d.candidates.length : 0;
+  if (!found) throw new Error(`failure_discover found no candidate in runs seeded with refusals: ${JSON.stringify(d).slice(0, 400)}`);
+  return found;
 }
 
 /** The reference protocol for zz-core, the sample the define stage starts from, with DISCOVER's
@@ -177,6 +183,14 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
       { note: (r) => `${m.key}: ${String(r.state)}` });
     qualified[m.key] = String(q.state);
   }
+  // Every model-backed measure must reach the protocol's own bar, or EVALUATE scores with
+  // qualification_met false and the walk would be checking a run nothing can establish.
+  const ladder: readonly string[] = EVAL_STATE_ENUMS.qualificationState;
+  const minimum = String((body.qualification as { boundedSemanticMinimum?: string } | undefined)?.boundedSemanticMinimum ?? "operationally_qualified");
+  const short = Object.entries(qualified).filter(([, state]) => ladder.indexOf(state) < ladder.indexOf(minimum));
+  if (!Object.keys(qualified).length || short.length) {
+    throw new Error(`evaluator_qualify left ${short.map(([k, v]) => `${k} at ${v}`).join(", ") || "no measure qualified"}, below the protocol's ${minimum}`);
+  }
   return { protocol, qualified };
 }
 
@@ -191,16 +205,33 @@ export async function evaluate(w: Walk): Promise<{ evalRun: string; score: Reply
     idempotency_key: c.key("start"), initiative: w.initiative,
   }, { note: (r) => `eval_run ${String(r.eval_run_id)}` });
   const evalRun = str(started, "eval_run_id", "evaluation_start");
-  // The documents the tools under evaluation produced: the approved documents of the closed
-  // initiatives of real use, found through the store's own listing.
+  // Refs of every kind the protocol's measures judge, as the stage skill says, each found in this
+  // stage: the approved specs of real use through the store's listing, the runs evaluation_start
+  // returned, the team's knowledge nodes through search, and the bug reports through the queue.
   const listed = await c.call("core", "document_list", {});
-  const refs = (String(listed.text ?? JSON.stringify(listed)).match(/\d{4}-\d{2}-\d{2}-[a-z0-9-]+-use-\d+\/spec\.md/g) ?? []).slice(0, 6);
-  if (refs.length < 5) throw new Error(`document_list named ${refs.length} spec.md documents to judge: ${String(listed.text ?? "").slice(0, 400)}`);
+  const specs = (String(listed.text ?? JSON.stringify(listed)).match(/\d{4}-\d{2}-\d{2}-[a-z0-9-]+-use-\d+\/spec\.md/g) ?? []).slice(0, 6);
+  if (specs.length < 5) throw new Error(`document_list named ${specs.length} spec.md documents to judge: ${String(listed.text ?? "").slice(0, 400)}`);
+  const rows = (r: Reply, key: string): Reply[] => (Array.isArray(r[key]) ? r[key] as Reply[] : []);
+  // The runs that refused a call first: the refusal measures are asked about no other run.
+  const runs = rows(started, "run_refs").sort((a, b) => Number(b.refused) - Number(a.refused))
+    .map((r) => String(r.run_id)).slice(0, 6);
+  const nodes = rows(await c.call("core", "knowledge_search", { query: "how a request is settled", limit: 20 }), "results")
+    .filter((r) => r.initiative === "_knowledge").map((r) => `_knowledge/${String(r.path)}`).slice(0, 6);
+  const bugs = rows(await c.call("core", "bug_list", { limit: 20 }), "bugs").map((b) => `bug:${String(b.id)}`).slice(0, 6);
+  for (const [kind, found] of [["run", runs], ["knowledge", nodes], ["bug", bugs]] as const) {
+    if (!found.length) throw new Error(`EVALUATE found no ${kind} ref to judge in the seeded use`);
+  }
+  const refs = [...specs, ...runs, ...nodes, ...bugs];
   await c.call("eval", "evaluation_assess", { eval_run_id: evalRun, subject_refs: refs, idempotency_key: c.key("assess") },
     { note: (r) => `${String(r.assessment_count)} assessments over ${refs.length} refs` });
   const score = await c.call("eval", "evaluation_score", { eval_run_id: evalRun, idempotency_key: c.key("score"), initiative: w.initiative },
     { note: (r) => `overall ${String(r.overall_score)} status ${String(r.score_status)} guardrails ${String(r.guardrail_status)} blocked by ${JSON.stringify(r.establishment_blocked_by)}` });
   if (score.record_refused) throw new Error(`evaluation_score did not record: ${String(score.record_refused)}`);
+  // Seeded use carries every kind the reference protocol judges and its evaluators are qualified,
+  // so anything short of established is a stage that did not work.
+  if (score.score_status !== "established") {
+    throw new Error(`evaluation_score is ${String(score.score_status)}, blocked by ${JSON.stringify(score.establishment_blocked_by)}`);
+  }
   return { evalRun, score };
 }
 

@@ -5,8 +5,8 @@
  * Each piece of use is one sdlc-flow initiative, driven through its gates the way
  * scripts/control-loop-e2e.ts drives one, plus what the person said in their own words: load the
  * platform skill, open it, write and approve each gated document, record both audit rounds, and
- * close it. The skill load attributes the calls after it to a step, so OBSERVE counts the run as
- * usable.
+ * close it, leaving a team knowledge node and, for every other initiative, a bug report. The skill
+ * load attributes the calls after it to a step, so OBSERVE counts the run as usable.
  *
  * The same use is seeded twice: before the evaluation, against the release under evaluation, and
  * again after PROMOTE/VERIFY released its improvement — real use of the released version, which
@@ -72,6 +72,9 @@ export async function seedUsage(url: string, pat: string, tag: string, round: "u
     }
     await doc("spec.md", SPEC.map((h) => `## ${h}\n${SPEC_BODY[h] ?? `Change ${topic} as asked in request ${i}.${mark}`}\n`).join("\n"));
     await sign("spec.md");
+    // The agent reads its approved spec back before planning, twice: OBSERVE's repeat_read_rate
+    // is a fact only a run that read a document has.
+    for (let read = 0; read < 2; read += 1) await c.call("core", "document_read", { path: `${name}/spec.md` });
     await c.call("core", "source_add", { initiative: name, title: `spec audit ${i}`,
       content: "Audit round 1 of spec.md: no blocking findings.", supports: ["spec.md"], stage: "sdlc-spec-audit" });
     await c.skill("sdlc-plan");
@@ -86,6 +89,17 @@ export async function seedUsage(url: string, pat: string, tag: string, round: "u
       stage: "sdlc-review", content: "Review round 1: nothing blocking.\n\n```json\n" +
         JSON.stringify({ round: 1, scope: { base: "HEAD~1", head: "HEAD" }, findings: [], resolved: [] }) + "\n```\n" });
     await sign("review.md");
+    // What the work left beside its documents: a node on the team's shelf, and for every other
+    // initiative a bug report about the refusal above. The reference protocol judges knowledge and
+    // bug reports with measures of their own, which have nothing to read without them.
+    await c.call("core", "knowledge_add", {
+      title: `How a request about ${topic} is settled (${round} ${i})`, type: "process", scope: "team", evidence: [name],
+      body: `A request about ${topic} is settled by naming what its reader does first, then changing that.${mark}` });
+    if (i % 2 === 0) {
+      await c.call("core", "bug_report", {
+        title: `plan.md was refused before spec.md was approved (${round} ${i})`, surface: "document_write", initiative: name,
+        detail: `I wrote plan.md before approving spec.md and it was refused. I expected the refusal to say spec.md needs approving first.${mark}` });
+    }
     await c.call("core", "initiative_close", { initiative: name, disposition: "finished" });
     names.push(name);
   }

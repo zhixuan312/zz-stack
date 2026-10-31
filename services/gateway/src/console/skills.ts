@@ -84,7 +84,7 @@ export function mountSkills(app: Express): void {
                 round(avg(case when m.calls = 0 then r.bytes_total when m.measured = 0 then null
                                else r.bytes_total - m.bytes end)/1024.0,1)  as kb_avg,
                 round((sum(case when m.calls = 0 then r.bytes_total when m.measured = 0 then null
-                                else r.bytes_total - m.bytes end)/1048576.0)::numeric,1) as mb_total
+                                else r.bytes_total - m.bytes end)/1024.0)::numeric,1) as kb_total
            from zz.skill_run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
@@ -139,7 +139,7 @@ export function mountSkills(app: Express): void {
         // measured, and empty.
         durationAvg: num(r.dur_avg), durationMedian: num(r.dur_med), durationMax: num(r.dur_max),
         durationTotal: num(r.dur_total),
-        kbPerRun: num(r.kb_avg), mbTotal: num(r.mb_total),
+        kbPerRun: num(r.kb_avg), kbTotal: num(r.kb_total),
         logged: ev ? { calls: +ev.calls, failed: +ev.failed, tools: +ev.tools } : null,
       };
     }) });

@@ -9,7 +9,7 @@ const src = readFileSync(f, "utf8");
 
 // The fields that come from `avg`/`sum`/`round` and can therefore be SQL null. A unary plus
 // on any of them turns null into 0.
-const FIELDS = ["durationAvg", "durationMedian", "durationMax", "kbPerRun", "mbTotal"];
+const FIELDS = ["durationAvg", "durationMedian", "durationMax", "kbPerRun", "kbTotal"];
 for (const field of FIELDS) {
   const m = new RegExp(`${field}\\s*:\\s*([^,\\n}]+)`).exec(src);
   if (!m) { fail.push(`${f} no longer emits ${field}`); continue; }

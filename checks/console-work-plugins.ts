@@ -243,10 +243,10 @@ const expectedOne = (admin: boolean) => [
 /** Team one's skills, by name. */
 const SKILLS_ONE = [
   { name: "sdlc-spec", version: "1.0.0", kind: "plugin_skill", flow: null, retired: false, runs: 2, calls: 4, callsAvg: 2, callsMax: 3,
-    timedRuns: 1, refusals: 1, durationAvg: 1800, durationMedian: 1800, durationMax: 1800, durationTotal: 1800, kbPerRun: 2, mbTotal: 0,
+    timedRuns: 1, refusals: 1, durationAvg: 1800, durationMedian: 1800, durationMax: 1800, durationTotal: 1800, kbPerRun: 2, kbTotal: 2,
     logged: { calls: 4, failed: 1, tools: 2 } },
   { name: "zz-platform", version: "1.0.0", kind: "plugin_skill", flow: null, retired: false, runs: 1, calls: 3, callsAvg: 3, callsMax: 3,
-    timedRuns: 1, refusals: 1, durationAvg: 3600, durationMedian: 3600, durationMax: 3600, durationTotal: 3600, kbPerRun: 4, mbTotal: 0,
+    timedRuns: 1, refusals: 1, durationAvg: 3600, durationMedian: 3600, durationMax: 3600, durationTotal: 3600, kbPerRun: 4, kbTotal: 4,
     logged: { calls: 3, failed: 1, tools: 1 } },
 ];
 const DETAIL_ONE = {

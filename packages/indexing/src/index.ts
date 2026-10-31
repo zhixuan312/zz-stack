@@ -98,10 +98,9 @@ async function nodeIdForOrdinal(p: pg.Pool, teamId: string, ordinal: string): Pr
  * is one `knowledge_search` answers with half a node — and the derived columns come from the
  * same `buildRowVector` every other writer of a `body_tsv` calls.
  *
- * `cited` names initiatives by slug and is resolved to ids here: a slug is team-scoped and an
- * identity is not, and the evidence relation is the id. A cited slug that names no initiative
- * on any shelf inserts nothing — the same reading the migration takes of a citation it cannot
- * resolve, and `knowledge_add` refuses one at the door. */
+ * `cited` is each cited initiative by slug and by the id the caller resolved it to on the shelves
+ * it validated: a slug is team-scoped and an identity is not, so the evidence relation is written
+ * from the id, never looked up again by slug across teams. */
 export async function indexNode(node: {
   team: string;
   ordinal: string;
@@ -113,7 +112,7 @@ export async function indexNode(node: {
   /** A successor named by ORDINAL, as a supersession records it. Resolved to the row's id here;
    *  a node indexed before its successor exists resolves to nothing and stays `adopted`. */
   successorOrdinal?: string | null;
-  cited?: readonly string[];
+  cited?: readonly { slug: string; id: string }[];
 }): Promise<{ id: string } | { taken: true } | { refusal: string }> {
   const p = db();
   if (!p) return { refusal: "ERROR: no platform database — there is nowhere to write this node." };
@@ -124,7 +123,7 @@ export async function indexNode(node: {
       "team_id has no row to name, so the node is refused rather than written onto a shelf " +
       "nobody reads" };
   }
-  const cited = [...(node.cited ?? [])];
+  const cited = (node.cited ?? []).map((c) => c.slug);
   const successorOrdinal = (node.successorOrdinal ?? "").trim();
   const successorId = successorOrdinal && successorOrdinal !== "null"
     ? await nodeIdForOrdinal(p, teamId, successorOrdinal)
@@ -171,17 +170,12 @@ export async function indexNode(node: {
     // Rewritten wholesale rather than diffed — a node's evidence is a handful of rows and the
     // caller states the whole set.
     await client.query("delete from zz.knowledge_node_evidence where node_id=$1::uuid", [id.id]);
-    for (const citedSlug of cited) {
+    for (const { id: initiative } of node.cited ?? []) {
       await client.query(
         `insert into zz.knowledge_node_evidence (node_id, initiative_id)
-         select $1::uuid, i.id
-           from zz.initiative i
-           join zz.team t on t.id = i.team_id
-          where i.slug = $2
-          order by (t.id = $3::uuid) desc, i.id
-          limit 1
+         values ($1::uuid, $2::uuid)
          on conflict do nothing`,
-        [id.id, citedSlug, teamId]);
+        [id.id, initiative]);
     }
     await client.query("commit");
     return id;

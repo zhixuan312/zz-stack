@@ -238,7 +238,7 @@ export function registerKnowledgeTools(server: McpServer): void {
       for (let attempt = 0; attempt < 50; attempt++) {
         const ordinal = String(issued + 1 + attempt).padStart(4, "0");
         const written = await indexNode({
-          team: shelf, ordinal, slug, kind: type, title, body, tags: tags ?? [], cited: names,
+          team: shelf, ordinal, slug, kind: type, title, body, tags: tags ?? [], cited: names.map((slug) => ({ slug, id: found.get(slug)! })),
         });
         if ("taken" in written) continue;
         if ("refusal" in written) return text(written.refusal);

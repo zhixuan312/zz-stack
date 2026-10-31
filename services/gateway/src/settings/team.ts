@@ -37,8 +37,9 @@ export function mountTeamSettings(app: Express): void {
         res.status(403).json({ error: `team admin or superadmin required for ${team}` });
         return;
       }
-      const r = await platformDb().query<{ email: string; role: string }>(
-        `select p.email, m.role from zz.membership m
+      // A deactivated person keeps their membership and can act for nobody: each row says which a member is.
+      const r = await platformDb().query<{ email: string; role: string; state: "active" | "deactivated" }>(
+        `select p.email, m.role, p.status as state from zz.membership m
            join zz.principal p on p.id = m.principal_id
            join zz.team t on t.id = m.team_id
           where t.slug = $1 order by m.role, p.email`, [team]);

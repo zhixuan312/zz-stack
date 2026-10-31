@@ -158,7 +158,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     }
     // Ordered by role then email, so the team's admin is first and the member second.
     const memberRows = (members.body as Obj).rows;
-    if (!Array.isArray(memberRows) || !same(memberRows, [{ email: SUPERADMIN, role: "admin" }, { email: MEMBER, role: "member" }])) {
+    if (!Array.isArray(memberRows) || !same(memberRows, [{ email: SUPERADMIN, role: "admin", state: "active" }, { email: MEMBER, role: "member", state: "active" }])) {
       fail(step, `${MEMBERS} answers ${JSON.stringify(memberRows)}, not the admin and then the member: ${members.text.slice(0, 400)}`);
     }
     pass("a team's roster answers its admin and then its member under rows, with observedAt, a non-null revision " +

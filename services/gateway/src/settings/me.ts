@@ -21,8 +21,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Why a token-borne caller is refused Access's two revokes: each acts on what signs a person in. */
 const BROWSER_ONLY = "revoke this from the console, signed in: a token cannot revoke what signs you in";
 
-/** Tells every console tab that a person's own tokens, browsers or browser's team changed, so their other tabs and
- *  browsers read Access again.
+/** Tells every console tab that a person's own tokens or browsers changed, so their other browsers read Access again.
  *  `settings`, with no team: a token or a session is a person's, not a team's. A call here rather than a trigger, as
  *  migrations/003_console_live.sql has for team rows: `zz.pat` and `zz.console_session` are written as they are used
  *  (`last_used_at`, `last_seen_at`, once a minute), and a trigger would put a hint, or the work of deciding against one, on each.
@@ -96,8 +95,8 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
         actor: id.email, kind: "team.switch", subject: team, teamSlug: team, origin: id.origin,
         detail: { via: "web", from },
       });
-      // Every tab of this browser shares the session, so each is told: what it shows is the old team's.
-      await hintSettings();
+      // No hint: the switch moves this browser alone, and its other tabs follow through the browser's own storage
+      // event (the console's ConsoleCaller), so no other stream has anything to read again.
       res.json(redact({ ok: true, actingFor: team, from }));
     })().catch((err: unknown) => {
       console.error("settings/me/active-team failed:", err);

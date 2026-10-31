@@ -55,7 +55,7 @@ type TeamRow = {
 type Teams = { meta: ReadMeta; tiles: { teams: number; openWork: number; pending: number; lessons: number }; teams: TeamRow[]; total: number };
 type TeamDetail = {
   team: { slug: string; name: string; status: string; created: string };
-  members: { email: string; name: string; role: string; joined: string }[];
+  members: { email: string; name: string; role: string; state: "active" | "deactivated"; joined: string }[];
   meta: ReadMeta;
   tiles: { people: number; openWork: number; waiting: number; lessons: number };
   calls: PeriodFigure[];
@@ -235,8 +235,9 @@ export function mountTeams(app: Express): void {
       res.status(404).end();
       return;
     }
-    const members = await db.query<{ email: string; name: string; role: string; joined: string }>(
-      `select p.email, p.display_name as name, m.role,
+    // A deactivated person keeps their membership and can act for nobody: each row says which a member is.
+    const members = await db.query<{ email: string; name: string; role: string; state: "active" | "deactivated"; joined: string }>(
+      `select p.email, p.display_name as name, m.role, p.status as state,
               to_char(m.created_at at time zone $2::text, 'YYYY-MM-DD') as joined
          from zz.membership m join zz.principal p on p.id = m.principal_id
         where m.team_id = $1::uuid order by m.role, p.email`, [base.id, ZZ_TZ]);

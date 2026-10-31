@@ -235,7 +235,7 @@ async function detailCases(s: Seeded, get: Get, list: Answer): Promise<Answer> {
     const t = TEAMS[team];
     const want = {
       team: { slug: team, name: t.name, status: t.status, created: EXPECTED.rows[team].created },
-      members: EXPECTED.members[team].map(([email, role]) => ({ email, name: email.split("@")[0], role, joined: today })),
+      members: EXPECTED.members[team].map(([email, role]) => ({ email, name: email.split("@")[0], role, state: email === DEACTIVATED ? "deactivated" : "active", joined: today })),
       tiles: { people: row.people, openWork: row.openWork, waiting: row.waiting, lessons: row.lessons },
       calls: series(s, team, 1, asOf),
     };

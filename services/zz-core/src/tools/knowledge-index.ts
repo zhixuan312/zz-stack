@@ -32,7 +32,7 @@ export function registerKnowledgeIndexTools(server: McpServer, sup: boolean): vo
         "WHEN a release changes what an index row means, or a search returns a document whose " +
         "vector looks wrong — and with `force`, which re-derives every row rather than " +
         "skipping the ones whose analyzer generation already matches. RETURNS one line per " +
-        "team: rows scanned, rows re-derived. Omit `team` and it walks EVERY team on the " +
+        "team: the rows behind the current analyzer (every row with `force`) and how many were re-derived. Omit `team` and it walks EVERY team on the " +
         "deployment, which is what a restore needs. REFUSES anyone but a superadmin, and " +
         "refuses a team slug no team on this deployment carries — naming the slug it was " +
         "given, because an unknown team is a typo and rebuilding nothing would look " +
@@ -53,15 +53,20 @@ export function registerKnowledgeIndexTools(server: McpServer, sup: boolean): vo
       const line = (r: TeamReindex) =>
         (r.error
           ? `${r.team}: FAILED — ${r.error}`
-          : `${r.team}: ${r.scanned} row(s) scanned, ${r.indexed} re-derived` +
-            (r.indexed === 0 ? " (nothing had changed)" : ""));
+          // A walk without `force` selects only the rows behind the current analyzer, so its count is
+          // those rows, never the corpus: "0 scanned" read as "found nothing to scan".
+          : force === true
+            ? `${r.team}: ${r.indexed} of ${r.scanned} row(s) re-derived (force: every row)`
+            : r.scanned === 0
+              ? `${r.team}: every row is at the current analyzer — nothing to re-derive`
+              : `${r.team}: ${r.scanned} row(s) behind the current analyzer, ${r.indexed} re-derived`);
       // No `team` means every team, and the list is the roster rather than the rows: a team
       // holding nothing yet has nothing to rebuild, and a team with a stale vector is on it
       // either way.
       if (team === undefined) {
         const all = await reindexAllTeams(force === true);
         if (!all.length) return text("no team is on this deployment — nothing to rebuild");
-        return text(`knowledge index rebuilt for ${all.length} team(s):\n` +
+        return text(`knowledge index walked for ${all.length} team(s):\n` +
                     all.map(line).join("\n"));
       }
       // A slug that names no team is refused by name, and this guard is what makes the named
@@ -75,7 +80,7 @@ export function registerKnowledgeIndexTools(server: McpServer, sup: boolean): vo
                     "team_list shows the slugs. Omit `team` to rebuild every one of them.");
       }
       const r = await reindexTeam(slug, force === true);
-      return text(`knowledge index rebuilt for ${line(r)}`);
+      return text(`knowledge index: ${line(r)}`);
     },
   );
 }

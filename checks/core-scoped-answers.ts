@@ -14,7 +14,8 @@
  *     under, naming the dated initiative an undated slug is short for; `bug_list` refuses a
  *     `reported_by` no principal carries, and still takes a known address in any case;
  *   - `knowledge_reconcile` names a fit ledger row whose verdict is outside the four apart from the
- *     claims, rather than dropping it;
+ *     claims, rather than dropping it; `knowledge_reindex` says a settled team is current, not that it
+ *     scanned 0 rows;
  *   - `document_present` with an array whose later path is refused still answers the earlier
  *     document it recorded as presented; an empty array is refused by it and by `document_read`;
  *     and `document_write` names the body length `document_present` pages beside the file's;
@@ -107,6 +108,20 @@ async function reconcileNamesUnreadVerdicts(c: Core): Promise<void> {
   c.pass(step);
 }
 
+/** A walk without `force` selects only the rows behind the current analyzer, so a settled team is said
+ *  to be current, never "0 row(s) scanned" over a corpus that holds rows. */
+async function reindexSaysWhatItWalked(c: Core): Promise<void> {
+  const step = "knowledge_reindex says what it walked";
+  const operator = new Mcp(c.mcp.url, { client: NAME, timeoutMs: 60_000, headers: {
+    "x-zz-user-email": c.email, "x-zz-user-name": "Skeleton", "x-zz-user-id": "", "x-zz-user-role": "admin",
+    "x-zz-via": "forwarded", "x-zz-pat-team": "", "x-zz-session-team": "" } });
+  const forced = await c.ok(step, "knowledge_reindex", { team: c.team, force: true }, operator);
+  if (!new RegExp(`^knowledge index: ${c.team}: (\\d+) of \\1 row\\(s\\) re-derived \\(force: every row\\)$`).test(forced)) c.fail(step, `force answered "${forced}"`);
+  const settled = await c.ok(step, "knowledge_reindex", { team: c.team }, operator);
+  if (settled !== `knowledge index: ${c.team}: every row is at the current analyzer — nothing to re-derive`) c.fail(step, `a settled team answered "${settled}"`);
+  c.pass(step);
+}
+
 async function presentAnswersWhatItRecorded(c: Core): Promise<void> {
   const step = "document_present with a refused later path";
   const slug = await c.open("present-many");
@@ -191,7 +206,7 @@ async function emailLookupsAreCaseless(c: Core): Promise<void> {
 // Every case runs, and the failures are reported together: the cases share nothing but the database.
 process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   const failed: string[] = [];
-  for (const run of [assessStaysOnTeam, unknownNamesAreRefused, reconcileNamesUnreadVerdicts, presentAnswersWhatItRecorded, bugTallyFollowsFilters, principalByName,
+  for (const run of [assessStaysOnTeam, unknownNamesAreRefused, reconcileNamesUnreadVerdicts, reindexSaysWhatItWalked, presentAnswersWhatItRecorded, bugTallyFollowsFilters, principalByName,
                      emailLookupsAreCaseless]) {
     try {
       await run(c);

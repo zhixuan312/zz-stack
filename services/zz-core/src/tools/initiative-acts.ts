@@ -155,7 +155,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       const basis = await approvalBasis(p, caller, relPath, contentRevision(loaded.doc.id, state.generation),
                                         { expected: expected_revision, context: review_context });
       if ("refusal" in basis) return text(basis.refusal);
-      const signer = (on_behalf_of ?? "").trim() || who.email;
+      const named = (on_behalf_of ?? "").trim() || who.email;
       // DELIBERATE: the signer is resolved HERE rather than at the row. `zz.doc_revision.approved_by`
       // is a principal id and `doc_revision_approval_paired` holds it null exactly when
       // `approved_at` is, so a signer no principal carries would write an approval with no
@@ -163,13 +163,20 @@ export function registerInitiativeActTools(server: McpServer): void {
       // so the document would read as approved with nobody's name on it, and the next gate would
       // refuse it with a message about the document rather than about the name. Refusing here names
       // the thing to fix: add them as a person, or approve on behalf of someone the platform knows.
-      if (!(await principalId(p, signer))) {
+      //
+      // And the resolved person's ADDRESS is the signer from here on, whatever `on_behalf_of` named:
+      // the envelope, the seal, the approval's record and the reply. A display name kept as typed
+      // left the record naming someone no reader matches by address, so the person's own approvals
+      // were credited to nobody.
+      const signerId = await principalId(p, named);
+      if (!signerId) {
         return text(
-          `ERROR: \`${signer}\` is not the address of a person this platform knows, nor a name exactly ` +
+          `ERROR: \`${named}\` is not the address of a person this platform knows, nor a name exactly ` +
           `one active person carries, so the approval would carry no attribution — and a gated ` +
           `document approved with nobody's name on it is refused by the next gate it meets. Pass ` +
           `\`on_behalf_of\` their address, or add them first (\`person_add\`).\n`);
       }
+      const signer = (await p.query<{ email: string }>("select email from zz.principal where id = $1", [signerId])).rows[0].email;
       let doc = loaded.text;
       // COUPLED: release_apply (eval/release-apply.ts) counts this approval only for owner teams the
       // signer is a member of. Checked here too, so a name nobody can vouch for is never stamped

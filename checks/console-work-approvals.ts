@@ -23,7 +23,8 @@
  *     nothing, and unknown; explicit, delegation and unknown;
  *   - a console presentation seconds before an agent's approval in another context is not shown, and a
  *     revision presented again after a newer one was approved is not labelled by the newer one;
- *   - an approval B signed on A's behalf is A's, and one A signed on B's behalf is B's; B reads none of
+ *   - an approval B signed on A's behalf, naming A by display name, is A's, and one A signed on B's
+ *     behalf is B's; B reads none of
  *     A's approvals in History or the tiles; the console's own `document.approve` row is never counted,
  *     and neither is one a maintenance client (`zz-migrate`) signed in A's name, in History, the tiles,
  *     the weeks or the exported reads;
@@ -221,9 +222,9 @@ async function run(c: Core): Promise<void> {
     await c.ok(step, "document_edit", { path: again, edits: [{ find: "alpha line one", replace: "alpha line two" }], source_content: "a second look" });
     expect(again, 2, await consoleSign(again), "console_revision_shown", "explicit_recorded");
     await c.ok(step, "document_present", { path: again, version: 1 });
-    // Signed by B on A's behalf: A's.
+    // Signed by B on A's behalf, naming A by display name rather than address: A's.
     const forA = await doc("signed-for-a");
-    expect(forA, 1, await sign(forA, { on_behalf_of: A }, agentB), "agent_context_covered", "unknown");
+    expect(forA, 1, await sign(forA, { on_behalf_of: "Skeleton" }, agentB), "agent_context_covered", "unknown");
     // Its context's presentation rows lost: a context that covered nothing of the revision.
     const lost = await doc("context-lost");
     expect(lost, 1, await sign(lost), "not_recorded", "unknown");

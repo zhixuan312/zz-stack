@@ -100,7 +100,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "both services authenticate their own network the same way",
     assertion: "a peer missing from the cached set is looked up again before it is refused",
     subject: "packages/contracts/src/identity.ts",
-    find: "      if (Date.now() - cache.at < (hit ? ttlMs : missMs)) return cache.ips;",
+    find: "      if (hit ? Date.now() - cache.at < ttlMs : Date.now() - lookedAt < missMs) return cache.ips;",
     replace: "      if (Date.now() - cache.at < ttlMs) return cache.ips;",
     planted: "the cached set answers every peer until its TTL runs out, so a gateway recreated " +
       "on a new compose address during a deploy is refused 403 by zz-core for up to a minute, " +
@@ -262,8 +262,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "a database read is not silently cut off at one megabyte",
     assertion: "every psql invocation bounds its own output",
     subject: "packages/tools/src/lib/psql.ts",
-    find: '{ input: sql, encoding: "utf8", maxBuffer: MAX_OUTPUT, stdio: ["pipe", "pipe", "pipe"] }',
-    replace: '{ input: sql, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }',
+    find: '{ input: sql, encoding: "utf8", maxBuffer: MAX_OUTPUT,\n                                  stdio: ["pipe", "pipe", "pipe"] }',
+    replace: '{ input: sql, encoding: "utf8",\n                                  stdio: ["pipe", "pipe", "pipe"] }',
     planted: "an answer over a megabyte is truncated where execFileSync kills the child, and " +
       "the only symptom is JSON that stops parsing — every tool reading this database breaks " +
       "at exactly the volume the platform exists to produce, and the refusal blames the " +

@@ -41,7 +41,9 @@
  *     one, and a second correction of it is refused with nothing written;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
- *   - `protocol_record` writes each model-backed measure against the evaluator version it registered.
+ *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
+ *   - a knowledge subject_ref resolves, for the text judged and for the row pinned, to the node its
+ *     ordinal and slug name, on the caller's shelf or the platform's, with both numbering from one.
  *
  * The only database it touches is the one it started.
  *
@@ -526,6 +528,33 @@ async function unclearIsNamed(c: Core): Promise<void> {
   c.pass(step);
 }
 
+/** A knowledge ref names the node its file name spells — ordinal and slug, on the caller's own
+ *  shelf or the platform's — and the text judged is that node's. Each shelf numbers its own nodes,
+ *  so the two seeded here share an ordinal. */
+async function knowledgeRefsResolve(c: Core, s: Seed): Promise<void> {
+  const step = "a knowledge subject_ref on either shelf";
+  const { pool } = await c.inProcess();
+  const { resolveSubjectRef, knowledgeNodeAt } = await import(pathToFileURL(join(root, "services/zz-core/dist/eval/subject-ref.js")).href);
+  await c.sql.query("insert into zz.team (slug, name, created_by) select 'zz-platform', 'Platform', $1 " +
+    "where not exists (select 1 from zz.team where slug = 'zz-platform')", [s.me]);
+  const platform = (await one<{ id: string }>(c, "select id::text as id from zz.team where slug = 'zz-platform'")).id;
+  const node = async (team: string, slug: string, title: string) => (await one<{ id: string }>(c,
+    `insert into zz.knowledge_node (kind, title, body, team_id, node_ordinal, slug)
+     values ('process', $1, 'body', $2, '0901', $3) returning id::text as id`, [title, team, slug])).id;
+  const mine = await node(s.team, "on-the-team-shelf", "The team's node");
+  const theirs = await node(platform, "on-the-platform-shelf", "The platform's node");
+  for (const [ref, id, title] of [["_knowledge/nodes/0901-on-the-team-shelf.md", mine, "The team's node"],
+                                  ["_knowledge/nodes/0901-on-the-platform-shelf.md", theirs, "The platform's node"]]) {
+    const judged = await resolveSubjectRef(pool, c.team, ref) as { text?: string; error?: string };
+    if (!judged.text?.startsWith(title)) c.fail(step, `${ref} resolved to ${JSON.stringify(judged)}, not "${title}"`);
+    const pinned = await knowledgeNodeAt(pool, c.team, ref) as { id: string } | null;
+    if (pinned?.id !== id) c.fail(step, `${ref} pins ${JSON.stringify(pinned)}, not node ${id}`);
+  }
+  const none = await resolveSubjectRef(pool, c.team, "_knowledge/nodes/0901-on-no-shelf.md") as { error?: string };
+  if (!/names no journal node/.test(none.error ?? "")) c.fail(step, `an unknown slug resolved to ${JSON.stringify(none)}`);
+  c.pass(step);
+}
+
 async function supersedeClosesTheOld(c: Core, s: Seed): Promise<void> {
   const step = "finding_record with supersedes";
   const door = evalDoor(c, c.email);
@@ -600,7 +629,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, labelsPairWithinARun, staleRecordRegistersNothing,
                      partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, scoredRunIsNotRescored,
-                     recordRegistersEvaluators]) {
+                     recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);
     } catch (err) {

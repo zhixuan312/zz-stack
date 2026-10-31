@@ -32,7 +32,7 @@ import {
 } from "./evaluate-measures.js";
 import { decideBeforeWork, UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { resolveProtocol, unaffirmedRefusal } from "./qualify.js";
-import { resolveSubjectRef } from "./subject-ref.js";
+import { knowledgeNodeAt, resolveSubjectRef } from "./subject-ref.js";
 import { teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -206,20 +206,9 @@ async function subjectColumnsOf(
     }
     return { subject_kind: "document", ...NO_CHILD, doc_id: row.id, doc_revision: row.current_revision };
   }
-  // A knowledge node is addressed by the two halves its file's name carries: `node_ordinal` and
-  // `slug`; there is no single address column. The ref arrives
-  // as `_knowledge/nodes/<ordinal>-<slug>.md`, so both are read out of it and compared to their
-  // own columns; a ref of any other shape names no node.
-  const named = /^_knowledge\/nodes\/([0-9]+)-(.+)\.md$/.exec(ref);
-  const row = named
-    ? (await p.query<{ id: string }>(`
-        select k.id::text as id
-          from zz.knowledge_node k
-          join zz.team t on t.id = k.team_id
-         where t.slug = $1 and k.node_ordinal = $2 and k.slug = $3`,
-      [team, named[1], named[2]])).rows[0]
-    : undefined;
-  if (!row) return { error: `ERROR: subject_ref "${ref}" names no knowledge node in team "${team}"'s index — nothing to record` };
+  // The node `resolveSubjectRef` read the judged text from, on whichever shelf it is.
+  const row = await knowledgeNodeAt(p, team, ref);
+  if (!row) return { error: `ERROR: subject_ref "${ref}" names no knowledge node on team "${team}"'s shelf or the platform's — nothing to record` };
   return { subject_kind: "knowledge", ...NO_CHILD, knowledge_node_id: row.id };
 }
 

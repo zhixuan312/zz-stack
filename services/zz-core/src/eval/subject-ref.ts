@@ -43,6 +43,25 @@ function splitDocumentRef(ref: string): { initiative: string; docPath: string } 
   return { initiative: ref.slice(0, slash), docPath: ref.slice(slash + 1) };
 }
 
+/** The node a `_knowledge/nodes/<ordinal>-<slug>.md` ref names, or null. `knowledge_search`
+ *  answers both shelves under that one spelling, and each shelf numbers its nodes from one, so the
+ *  slug is matched as well as the ordinal and the caller's own shelf is read before the platform's.
+ *
+ *  COUPLED: `evaluate-run.ts` pins the assessment to this row's id, so the text judged and the row
+ *  recorded are one node. */
+export async function knowledgeNodeAt(
+  p: pg.Pool, team: string, ref: string,
+): Promise<{ id: string; title: string; body: string } | null> {
+  const named = /^_knowledge\/nodes\/(\d+)-(.+)\.md$/.exec(ref);
+  if (!named) return null;
+  return (await p.query<{ id: string; title: string; body: string }>(
+    `select k.id::text as id, k.title, k.body from zz.knowledge_node k
+       join zz.team t on t.id = k.team_id
+      where t.slug in ($1, $2) and k.node_ordinal = $3 and k.slug = $4
+      order by t.slug = $1 desc limit 1`,
+    [team, KNOWLEDGE_TEAM, named[1], named[2]])).rows[0] ?? null;
+}
+
 /** One `subject_ref`, resolved to the text a model-backed measure is actually asked to judge, or
  *  the named refusal `evaluation_assess` returns instead of scoring nothing. `team` is the
  *  caller's own team (`teamFor(principal)`, the same resolution `findings-doc.ts` uses) — a
@@ -105,18 +124,10 @@ export async function resolveSubjectRef(
           "no team — a document ref can only be read from the caller's own store",
       };
     }
-    // A journal node is not a document: it is a `zz.knowledge_node` row on the platform shelf,
-    // addressed by its ordinal and slug. Recognised by both halves, the same way `knowledge_add`
-    // decides which shelf a node lands on.
+    // A journal node is not a document: it is a `zz.knowledge_node` row, on this team's shelf or
+    // the platform's.
     if (doc.initiative === "_knowledge") {
-      const named = /^nodes\/(\d+)-(.+)\.md$/.exec(doc.docPath);
-      const row = named
-        ? (await p.query<{ title: string | null; body: string | null }>(
-            `select k.title, k.body from zz.knowledge_node k
-               join zz.team t on t.id = k.team_id
-              where t.slug = $1 and k.node_ordinal = $2`,
-            [KNOWLEDGE_TEAM, named[1]])).rows[0]
-        : undefined;
+      const row = await knowledgeNodeAt(p, team, subjectRef);
       if (!row) {
         return {
           error: `ERROR: subject_ref "${subjectRef}" names no journal node — nothing to judge`,

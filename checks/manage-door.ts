@@ -9,6 +9,8 @@
  * own built routes in this process (`listenGateway`), the seeded person a superadmin. What it
  * establishes:
  *
+ *   - a token an application obtained through OAuth answers on the door it was issued for and on
+ *     `/upload/`, is refused on every other door, and cannot issue a token of its own;
  *   - a team admin's token authority reaches no further than the team: a lead may not mint a token
  *     for the superadmin, may not replace a member's token outside the team by reusing its label,
  *     and a token bound to a team revokes only tokens bound to it; one who names a team they do not
@@ -21,11 +23,70 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
+import { createHash, randomBytes } from "node:crypto";
+
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
-import { insertPat, listenGateway, manageCall, type Gateway } from "../scripts/schema/throwaway-gateway.ts";
+import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from "../scripts/schema/throwaway-gateway.ts";
 
 const NAME = "manage-door";
-const DONE = "manage-door: a team admin's authority stays in the team, and membership changes say what changed: ok";
+const DONE = "manage-door: an application's token stays on its door, a team admin's authority stays in the team, " +
+  "and membership changes say what changed: ok";
+
+const b64 = (b: Buffer): string => b.toString("base64url");
+
+/** A token an OAuth client obtains for `door`, through register, authorize (the console session, a
+ *  loopback redirect, so no consent page) and the form-encoded exchange. */
+async function oauthToken(c: Core, g: Gateway, step: string, door: string): Promise<string> {
+  const redirect = "http://127.0.0.1:9/callback";
+  const reg = await fetch(`${g.url}/oauth/register`, { method: "POST", headers: headersOf(null, {}),
+    body: JSON.stringify({ redirect_uris: [redirect], client_name: `Door probe ${door}` }) });
+  const { client_id: clientId } = await reg.json() as { client_id?: string };
+  if (!clientId) return c.fail(step, `register answered ${reg.status}`);
+  const verifier = b64(randomBytes(32));
+  const query = new URLSearchParams({ client_id: clientId, redirect_uri: redirect, response_type: "code",
+    code_challenge: b64(createHash("sha256").update(verifier).digest()), code_challenge_method: "S256",
+    resource: `${g.url}${door}` });
+  const authz = await fetch(`${g.url}/oauth/authorize?${query}`,
+    { headers: { cookie: `zz_console=${g.session}` }, redirect: "manual" });
+  const code = new URL(authz.headers.get("location") ?? "http://none/").searchParams.get("code")
+    ?? c.fail(step, `authorize answered ${authz.status}: ${(await authz.text()).slice(0, 300)}`);
+  const exchanged = await fetch(`${g.url}/oauth/token`, { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code, code_verifier: verifier,
+                                client_id: clientId, redirect_uri: redirect }).toString() });
+  const { access_token: token } = await exchanged.json() as { access_token?: string };
+  return token ?? c.fail(step, `token answered ${exchanged.status}`);
+}
+
+/** An application's token reaches the door it was issued for and nothing else. */
+async function applicationActs(c: Core, g: Gateway): Promise<void> {
+  const step = "a token an application obtained stays on its door and issues no token";
+  const token = await oauthToken(c, g, step, "/manage/mcp");
+  const door = (await c.sql.query<{ door: string | null }>(
+    "select door from zz.pat where token_hash = $1", [createHash("sha256").update(token).digest("hex")])).rows[0]?.door;
+  if (door !== "/manage/mcp") c.fail(step, `the token's row names door ${JSON.stringify(door)}, not /manage/mcp`);
+  const who = await manageCall(g, token, "whoami", {});
+  if (!who.includes(c.email)) c.fail(step, `on its own door whoami answered: ${who.slice(0, 200)}`);
+  const minted = await manageCall(g, token, "pat_issue", { label: "from-an-application" });
+  if (!/^ERROR: .*application/.test(minted)) c.fail(step, `pat_issue through it answered: ${minted.slice(0, 200)}`);
+
+  // A token issued for /core, presented on /manage: refused, naming the door it belongs to.
+  const { client_id: clientId } = (await c.sql.query<{ client_id: string }>(
+    "select client_id from zz.mcp_oauth_client limit 1")).rows[0];
+  const core = await insertPat(c, c.email, "core-app", null, { door: "/core/mcp", oauthClientId: clientId });
+  const crossed = await fetch(`${g.url}/manage/mcp`, { method: "POST",
+    headers: { ...headersOf(null, { authorization: `Bearer ${core.token}` }), accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} } }) });
+  const said = await crossed.text();
+  if (crossed.status !== 401 || !said.includes("/core/mcp")) {
+    c.fail(step, `a /core/mcp token on /manage/mcp answered ${crossed.status}: ${said.slice(0, 200)}`);
+  }
+  // /upload/ is every door's: a file staged for a call on /core arrives there with the same token.
+  const upload = await fetch(`${g.url}/upload/00000000-0000-4000-8000-000000000000`,
+    { method: "PUT", headers: { authorization: `Bearer ${core.token}` }, body: "x" });
+  if (upload.status === 401) c.fail(step, `the /core/mcp token was refused on /upload/: ${(await upload.text()).slice(0, 200)}`);
+  c.pass(step);
+}
 
 /** A team admin's token authority reaches no further than the team: a lead may not mint a token
  *  for the superadmin, may not replace a member's token outside the team by reusing its label, and
@@ -89,6 +150,7 @@ async function run(c: Core): Promise<void> {
   await c.sql.query("update zz.principal set role = 'superadmin' where email = $1", [c.email]);
   const g = await listenGateway(c);
   try {
+    await applicationActs(c, g);
     await leadActs(c, g);
   } finally {
     await g.stop();

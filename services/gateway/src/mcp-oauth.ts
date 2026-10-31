@@ -434,8 +434,9 @@ export function mountMcpOauth(app: Express, doors: readonly string[]): void {
         return;
       }
 
-      // The token carries the person's own authority and states nothing about what its holder
-      // may do: every authority check reads the principal on the call it is deciding.
+      // The token carries the person's own authority, read from the principal on every call, and
+      // answers on the one door the person authorised this application for: `door`, which the
+      // identity gate holds it to.
       //
       // The label is what a person reads in their token list when deciding what to revoke, and —
       // through the one-live-token-per-label rule below — what a reconnect replaces. So it names
@@ -456,7 +457,7 @@ export function mountMcpOauth(app: Express, doors: readonly string[]): void {
       // from, so revoking that client takes its tokens with it.
       const { token } = await issuePat(platformDb(), {
         principalId: won.principal_id, teamId: null, label, expiresAt: expiry,
-        oauthClientId: won.client_id,
+        oauthClientId: won.client_id, door: won.resource,
       });
       // From the request's own header: the token endpoint is public, so no identity carries it.
       logEvent({

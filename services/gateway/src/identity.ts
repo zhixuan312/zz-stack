@@ -34,6 +34,9 @@ export interface Identity {
   /** Which team a token is confined to, when one is. Answers "acting inside which team",
    *  not "may do what". */
   patTeam?: string | null;
+  /** The one door a token answers on, when an application obtained it through OAuth for that
+   *  door. Null for a token a person issued, which answers on every door. */
+  patDoor?: string | null;
   /** The team this browser session acts for, when the caller arrived on one. The console's
    *  own switch moves it, and it moves that browser alone: the agents that authenticate as the
    *  same person keep reading the principal's. Null for every other credential, which has no
@@ -176,9 +179,9 @@ async function resolvePat(token: string): Promise<Identity | null> {
   const db = platformDb();
   const r = await db.query<{
     id: string; email: string; display_name: string; role: "superadmin" | "member";
-    status: string; team_slug: string | null;
+    status: string; team_slug: string | null; door: string | null;
   }>(
-    `select pat.id, p.email, p.display_name, p.role, p.status, t.slug as team_slug
+    `select pat.id, p.email, p.display_name, p.role, p.status, t.slug as team_slug, pat.door
      from pat join principal p on p.id = pat.principal_id
      left join team t on t.id = pat.team_id
      where pat.token_hash = $1 and pat.revoked_at is null
@@ -207,7 +210,7 @@ async function resolvePat(token: string): Promise<Identity | null> {
   return {
     ...base, teams,
     activeTeam: actingTeam(base.teams, base.activeTeam, row.team_slug),
-    via: "pat", patTeam: row.team_slug,
+    via: "pat", patTeam: row.team_slug, patDoor: row.door,
   };
 }
 
@@ -302,6 +305,14 @@ async function fromComposeNetwork(req: Request): Promise<boolean> {
   return false;
 }
 
+/** Whether a token confined to `door` answers on `path`: its own door, and `/upload/`, where a file
+ *  staged for a call on that door arrives under the same token. Null is a token a person issued,
+ *  and it answers everywhere. */
+export function doorAdmits(door: string | null, path: string): boolean {
+  if (!door) return true;
+  return path === door || path.startsWith(`${door}/`) || path.startsWith("/upload/");
+}
+
 /** The identity port: one question, many doors.
  *
  * An adapter answers exactly one thing — which person is calling — with an email or with
@@ -325,7 +336,14 @@ const ADAPTERS: IdentityAdapter[] = [
     async resolve(req) {
       const m = (req.headers.authorization ?? "").match(/^Bearer\s+(zzp_[A-Za-z0-9]+)\s*$/);
       if (!m) return null;                       // no PAT presented: not this door
-      return (await resolvePat(m[1])) ?? { refuse: "invalid, expired or revoked PAT" };
+      const id = await resolvePat(m[1]);
+      if (!id) return { refuse: "invalid, expired or revoked PAT" };
+      // An application was authorised for one door, and its token answers there alone.
+      if (!doorAdmits(id.patDoor ?? null, req.path)) {
+        return { refuse: `this token was issued to an application for ${id.patDoor}, and answers on that door ` +
+                         `alone — connect the application to ${req.path} on its own` };
+      }
+      return id;
     },
   },
   {
@@ -443,6 +461,9 @@ export function identityMiddleware() {
       // for. Both are stamped on every request and never merged with what arrived, so a caller
       // writing either one by hand cannot move a team.
       req.headers["x-zz-pat-team"] = id.patTeam ?? "";
+      // The door an application's token is confined to, for the tools that must not let it mint
+      // a credential reaching further. Stamped the same way, so a caller cannot write it.
+      req.headers["x-zz-pat-door"] = id.patDoor ?? "";
       req.headers["x-zz-session-team"] = id.sessionTeam ?? "";
       next();
     })().catch((err: unknown) => {
@@ -460,14 +481,15 @@ export function identityMiddleware() {
  *
  * No scope: authority is read from the principal, every time. `patTeam` answers a different
  * question — which team this token acts inside — which is not a claim about what its holder
- * may do, and `sessionTeam` answers a third: the team the console session that forwarded this
- * request acts for. */
+ * may do, `patDoor` which door an application's token answers on, and `sessionTeam` the team the
+ * console session that forwarded this request acts for. */
 function callerAuth(headers: Record<string, string | string[] | undefined>): {
-  via: "pat" | "forwarded"; patTeam: string | null; sessionTeam: string | null;
+  via: "pat" | "forwarded"; patTeam: string | null; patDoor: string | null; sessionTeam: string | null;
 } {
   return {
     via: one(headers["x-zz-via"]) === "pat" ? "pat" : "forwarded",
     patTeam: one(headers["x-zz-pat-team"]) || null,
+    patDoor: one(headers["x-zz-pat-door"]) || null,
     sessionTeam: one(headers["x-zz-session-team"]) || null,
   };
 }

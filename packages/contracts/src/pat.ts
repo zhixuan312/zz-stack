@@ -40,6 +40,9 @@ interface DbConnection {
 export async function issuePat(db: Db, args: {
   principalId: string; teamId: string | null; label?: string; expiresAt: string | null;
   oauthClientId: string | null;
+  /** The one door the token answers on — an OAuth token's, the door its application was
+   *  authorised for; null answers on every door. */
+  door: string | null;
 }): Promise<{ token: string; patId: string; replaced: number }> {
   const token = mintPat();
   const label = args.label ?? "";
@@ -62,9 +65,9 @@ export async function issuePat(db: Db, args: {
       "where principal_id = $1 and label = $2 and label <> '' and revoked_at is null",
       [args.principalId, label]);
     const issued = await client.query(
-      `insert into zz.pat (principal_id, token_hash, label, team_id, expires_at, oauth_client_id)
-       values ($1,$2,$3,$4,$5,$6) returning id`,
-      [args.principalId, sha256(token), label, args.teamId, args.expiresAt, args.oauthClientId],
+      `insert into zz.pat (principal_id, token_hash, label, team_id, expires_at, oauth_client_id, door)
+       values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+      [args.principalId, sha256(token), label, args.teamId, args.expiresAt, args.oauthClientId, args.door],
     );
     await client.query("commit");
     patId = String(issued.rows[0].id);

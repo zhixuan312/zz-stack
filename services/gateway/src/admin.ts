@@ -217,7 +217,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "earlier one with the same label, because a purpose has one current credential. REFUSES " +
       "issuing for anybody but yourself without superadmin or team-admin authority; a team " +
       "admin issuing for a superadmin, or reusing the label of a token the person holds outside " +
-      "the team; and " +
+      "the team; a token an application obtained through OAuth, which answers on its own door " +
+      "alone and issues none; and " +
       "refuses to bind a token to a team its holder is not in — that token would " +
       "authenticate nowhere.",
     inputSchema: {
@@ -239,6 +240,13 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     const target = (email ?? id.email).toLowerCase();
     if (target !== id.email && !superOnly(id)) {
       if (!team || !teamAuthority(id, team)) return text("ERROR: issuing for others needs superadmin, or team admin with team specified");
+    }
+    // An application's token cannot issue one: what it minted would answer on every door, never
+    // expire, and outlive the client_revoke that withdraws the application.
+    if (id.patDoor) {
+      return text(
+        `ERROR: this token belongs to an application connected to ${id.patDoor}, and an application ` +
+        "issues no tokens — issue one in the console's Access page, or with a token you hold yourself.");
     }
     const db = platformDb();
     // A bound token cannot issue a wider one. `pat_issue` with no arguments is the ordinary
@@ -298,7 +306,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     // held to the same rule by `checks/pat-one-live-per-label.ts`. A second copy of the
     // statement is a second credential mechanism.
     const { token, replaced } = await issuePat(db, {
-      principalId: pid, teamId: tid, label, expiresAt: expiry, oauthClientId: null });
+      principalId: pid, teamId: tid, label, expiresAt: expiry, oauthClientId: null, door: null });
     auditAdmin(id, "issue_pat", target,
                { team: team ?? null, label: label ?? "", expires_at: expiry,
                  ...(replaced ? { replaced } : {}) },

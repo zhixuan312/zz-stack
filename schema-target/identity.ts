@@ -327,6 +327,12 @@ export const IDENTITY: Record<string, TableTarget> = {
         true,
         null,
       ],
+      [
+        "door",
+        "text",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "id",
@@ -371,12 +377,14 @@ export const IDENTITY: Record<string, TableTarget> = {
         deferrable: false,
       },
     ],
-    checks: [],
+    checks: [
+      "CHECK ((door = ANY (ARRAY['/core/mcp'::text, '/manage/mcp'::text, '/eval/mcp'::text])))",
+    ],
     indexes: [
       "CREATE UNIQUE INDEX pat_live_label ON zz.pat USING btree (principal_id, label) WHERE ((revoked_at IS NULL) AND (label <> ''::text))",
       "CREATE INDEX pat_principal ON zz.pat USING btree (principal_id)",
     ],
-    comment: "class=current_state; authority=this; question=which bearer credential does a program hold to act as a person, confined to which team and client, with what lifetime and revocation?; retention=kept as durable provenance until explicitly revoked or expired; a revoked row is never deleted, because pat_list and client_revoke read it",
+    comment: "class=current_state; authority=this; question=which bearer credential does a program hold to act as a person, confined to which team, client and door, with what lifetime and revocation?; retention=kept as durable provenance until explicitly revoked or expired; a revoked row is never deleted, because pat_list and client_revoke read it",
     columnComments: {
       id: "class=current_state; authority=this; question=what handle lists and revokes this token?",
       principal_id: "class=relation; authority=this; question=whose authority does this token carry?",
@@ -388,6 +396,7 @@ export const IDENTITY: Record<string, TableTarget> = {
       last_used_at: "class=current_state; authority=this; question=when did this token last authenticate?",
       created_at: "class=current_state; authority=this; question=when was this token issued?",
       oauth_client_id: "class=relation; authority=this; question=which registered OAuth client was this token minted for?",
+      door: "class=current_state; authority=this; question=which MCP door does this token answer on, the one an application was authorised for when it obtained the token through OAuth, and null for a token a person issued, which answers on every door?",
     },
   },
   console_session: {

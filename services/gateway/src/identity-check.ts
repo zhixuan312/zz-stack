@@ -19,7 +19,7 @@
  */
 import type { Request } from "express";
 
-import { type IdentityAdapter, resolveThrough } from "./identity.js";
+import { doorAdmits, type IdentityAdapter, resolveThrough } from "./identity.js";
 
 const req = {} as Request;   // no adapter here reads it; the walk is the subject
 
@@ -107,6 +107,18 @@ async function main(): Promise<number> {
     }
   }
 
+  // An application's token answers on its own door and on /upload/, and on no other door; a token
+  // a person issued answers everywhere. A prefix that merely starts like the door is another path.
+  const DOOR_CASES: [string | null, string, boolean][] = [
+    ["/core/mcp", "/core/mcp", true], ["/core/mcp", "/upload/0b2c", true],
+    ["/core/mcp", "/manage/mcp", false], ["/core/mcp", "/eval/mcp", false],
+    ["/core/mcp", "/core/mcpx", false], ["/core/mcp", "/api/console/me", false],
+    [null, "/manage/mcp", true],
+  ];
+  for (const [d, path, want] of DOOR_CASES) {
+    if (doorAdmits(d, path) !== want) failures.push(`doorAdmits(${d}, ${path}) is ${!want}, expected ${want}`);
+  }
+
   if (failures.length) {
     console.error(`\n  identity: ${failures.length} of ${CASES.length} case(s) failed\n`);
     for (const f of failures) console.error(`    ${f}`);
@@ -114,7 +126,7 @@ async function main(): Promise<number> {
     return 1;
   }
   console.log(`  identity: ${CASES.length} adapter-walk cases pass — a door that refuses ends ` +
-              "the request");
+              `the request — and ${DOOR_CASES.length} door cases: an application's token answers on its own door alone`);
   return 0;
 }
 

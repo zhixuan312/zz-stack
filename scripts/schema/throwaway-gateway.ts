@@ -135,12 +135,18 @@ export async function manageCall(g: Gateway, token: string, name: string, args: 
   return env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? `HTTP ${res.status}`;
 }
 
-/** A PAT inserted for `email`, labelled and bound as asked: the plaintext and its row id. */
-export async function insertPat(c: Core, email: string, label: string, team: string | null): Promise<{ token: string; id: string }> {
+/** A PAT inserted for `email`, labelled and bound as asked: the plaintext and its row id. It replaces
+ *  a live token of the same label, as every writer of a token does (checks/pat-one-live-per-label.ts). */
+export async function insertPat(c: Core, email: string, label: string, team: string | null,
+                                extra: { door?: string; oauthClientId?: string } = {}): Promise<{ token: string; id: string }> {
   const token = `zzp_${randomBytes(24).toString("hex")}`;
+  await c.sql.query(
+    `update zz.pat set revoked_at = now()
+      where principal_id = (select id from zz.principal where email = $1) and label = $2 and label <> '' and revoked_at is null`,
+    [email, label]);
   const id = String((await c.sql.query(
-    `insert into zz.pat (principal_id, token_hash, label, team_id)
-     select p.id, $2, $3, (select id from zz.team where slug = $4) from zz.principal p where p.email = $1
-     returning id`, [email, hash(token).toString("hex"), label, team])).rows[0].id);
+    `insert into zz.pat (principal_id, token_hash, label, team_id, door, oauth_client_id)
+     values ((select id from zz.principal where email = $1), $2, $3, (select id from zz.team where slug = $4), $5, $6)
+     returning id`, [email, hash(token).toString("hex"), label, team, extra.door ?? null, extra.oauthClientId ?? null])).rows[0].id);
   return { token, id };
 }

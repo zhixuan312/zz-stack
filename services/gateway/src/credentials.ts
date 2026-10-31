@@ -35,7 +35,7 @@ export async function issueMyAccessTokenFor(
   // token a person issues for themselves carries no expiry and no OAuth client — those are the
   // two things only the other two writers know.
   const { token } = await issuePat(db, {
-    principalId: r.rows[0].id, teamId: null, label, expiresAt: null, oauthClientId: null,
+    principalId: r.rows[0].id, teamId: null, label, expiresAt: null, oauthClientId: null, door: null,
   });
   logEvent({ actor: email, kind: "pat.self_issue", subject: label ?? "", detail: extraDetail, origin });
   return { ok: true, token, label: label ?? "", email };

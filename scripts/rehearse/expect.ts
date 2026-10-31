@@ -311,6 +311,18 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
   // side only, so leaving it in the digest would report a difference this file causes rather than
   // one it failed to prevent. The columns below are the ones that survive on both sides. This entry
   // leaves with the file when it folds into `001_init.sql`.
+  // The application-door release. It adds `zz.pat.door`, fills it on OAuth tokens from their label,
+  // and revokes an OAuth token whose label names no door; no row is added or removed. The digest is
+  // taken over the columns that exist on both sides less `revoked_at`, the one this file may move.
+  // This entry leaves with the file when it folds into `001_init.sql`.
+  "016_pat_door.sql": {
+    tables: {
+      pat: {
+        hashColumns: ["id", "principal_id", "token_hash", "label", "team_id", "expires_at", "last_used_at",
+                      "created_at", "oauth_client_id"],
+      },
+    },
+  },
   "015_doc_body_drop.sql": {
     tables: {
       doc: {

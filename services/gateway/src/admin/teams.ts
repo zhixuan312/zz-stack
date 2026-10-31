@@ -25,36 +25,49 @@ import { type PlatformWriteOutcome } from "./people.js";
 // Not exported: settings/team.ts and admin.ts import the two member writes below as values and let
 // their return type infer, so nothing outside this file needs to name this shape.
 type TeamWriteOutcome = { ok: true; message: string } | { ok: false; status: 400 | 403; error: string };
-/** Add a principal to a team, or change their role — the same call, because the insert's
- * own `on conflict (team_id, principal_id) do update set role = excluded.role` already
- * handles both. A second code path for "already a member" would only be a second way for
- * add and change-role to disagree about what happened. A deactivated principal is refused:
- * a membership is access, and deactivation is the act that ended theirs. */
+/** Add a principal to a team, or change their role — the same statement, which keeps the role
+ * a member already holds unless `role` names another, and says which of the three happened: a
+ * new member, a role changed, or nothing. An omitted role is not a demotion: re-adding an admin
+ * to be sure they are in must not quietly take away the authority to add the next one. A
+ * deactivated principal is refused: a membership is access, and deactivation is the act that
+ * ended theirs. */
 export async function addMember(
   id: Identity | null, team: string, email: string, role: "member" | "admin" | undefined,
   extraDetail: Record<string, unknown> = {},
 ): Promise<TeamWriteOutcome> {
-  if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
   const db = platformDb();
   const tid = await teamId(db, team);
-  const pid = await principalId(db, email);
+  // A mistyped slug is named as one before authority is asked: told "admin required" for a team
+  // that does not exist, an admin goes looking for a permission they already have.
   if (!tid) {
     return { ok: false, status: 400,
       error: `no active team '${team}' — team_create on the same slug restores an archived one` };
   }
+  if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
+  const pid = await principalId(db, email);
   if (!pid) return { ok: false, status: 400, error: `no principal '${email}' — person_add first` };
   const status = (await db.query<{ status: string }>("select status from principal where id = $1", [pid])).rows[0]?.status;
   if (status === "deactivated") {
     return { ok: false, status: 400, error: `principal ${email} is deactivated — person_add restores them before a team can take them` };
   }
   const actorId = await principalId(db, id.email);
-  await db.query(
-    `insert into membership (team_id, principal_id, role, added_by) values ($1,$2,$3,$4)
-     on conflict (team_id, principal_id) do update set role = excluded.role`,
-    [tid, pid, role ?? "member", actorId],
+  // The role before, read in the same statement as the write, so the answer says what changed.
+  const { rows: [done] } = await db.query<{ before: string | null; role: string; email: string }>(
+    `with prior as (select role from membership where team_id = $1 and principal_id = $2),
+          put as (insert into membership (team_id, principal_id, role, added_by) values ($1, $2, coalesce($3, 'member'), $4)
+                  on conflict (team_id, principal_id) do update set role = coalesce($3, membership.role)
+                  returning role)
+     select (select role from prior) as before, (select role from put) as role,
+            (select email from principal where id = $2) as email`,
+    [tid, pid, role ?? null, actorId],
   );
-  auditAdmin(id, "add_member", `${team}:${email}`, { role: role ?? "member", ...extraDetail }, team);
-  return { ok: true, message: `${email} is now ${role ?? "member"} of ${team}` };
+  if (done.before === done.role) {
+    return { ok: true, message: `${done.email} is already ${done.role} of ${team} — nothing changed` };
+  }
+  auditAdmin(id, "add_member", `${team}:${done.email}`, { role: done.role, ...extraDetail }, team);
+  return { ok: true, message: done.before
+    ? `${done.email} is now ${done.role} of ${team} (was ${done.before})`
+    : `${done.email} is now ${done.role} of ${team}` };
 }
 /** Remove a principal from a team. `confirm` must repeat the team slug exactly. */
 export async function removeMember(
@@ -64,6 +77,19 @@ export async function removeMember(
   if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
   if (confirm !== team) return { ok: false, status: 400, error: `confirm must repeat the team slug exactly ('${team}')` };
   const db = platformDb();
+  // A team keeps someone who can add the next member. Removing its last admin leaves a team only
+  // a superadmin can manage, so only a superadmin may do it.
+  if (!superOnly(id)) {
+    const { rows: [last] } = await db.query<{ last: boolean }>(
+      `select count(*) filter (where m.role = 'admin') = 1
+              and bool_or(m.role = 'admin' and p.email = $2) as last
+         from membership m join team t on t.id = m.team_id join principal p on p.id = m.principal_id
+        where t.slug = $1`, [team, email.toLowerCase()]);
+    if (last?.last) {
+      return { ok: false, status: 400, error: `${email} is the only admin of ${team}, and a team keeps ` +
+        "someone who can add the next member. Make another member admin first (member_add with role admin)." };
+    }
+  }
   // What was actually deleted, not what was asked for: reporting "removed" whatever happened
   // makes a mistyped address read as done while the person it was meant for stays a member.
   // COUPLED: the destructive siblings hold the same rule — team_archive refuses an inactive
@@ -76,7 +102,8 @@ export async function removeMember(
   );
   if (!r.rowCount) {
     return { ok: false, status: 400, error:
-      `${email} is not a member of ${team} — nothing was removed. Check the address and the team with team_list.` };
+      `${email} is not a member of ${team} — nothing was removed. Check the address: the team's members ` +
+      "are listed on the console's Access page, and by person_list for a superadmin." };
   }
   auditAdmin(id, "remove_member", `${team}:${email}`, { ...extraDetail }, team);
   return { ok: true, message: `${email} removed from ${team}. ` +

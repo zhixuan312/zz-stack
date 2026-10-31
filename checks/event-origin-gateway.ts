@@ -566,6 +566,23 @@ async function leadActs(c: Core, g: Gateway): Promise<void> {
     c.fail(step, "a bound token could not revoke a token bound to its own team");
   }
   c.pass(step);
+
+  // member_add says what happened, keeps a role nobody named, and names a missing team as missing;
+  // member_remove keeps the team's last admin.
+  const roles = "member_add and member_remove say what changed and keep a team's last admin";
+  const said = [
+    [await ask(lead.token, "member_add", { team: "lead-team", email: "Mate@Example.test", role: "admin" }),
+     /^mate@example\.test is now admin of lead-team \(was member\)$/],
+    [await ask(lead.token, "member_add", { team: "lead-team", email: "mate@example.test" }),
+     /^mate@example\.test is already admin of lead-team — nothing changed$/],
+    [await ask(lead.token, "member_add", { team: "lead-tem", email: "mate@example.test" }), /^ERROR: no active team 'lead-tem'/],
+    [await ask(lead.token, "member_add", { team: "lead-team", email: "mate@example.test", role: "member" }),
+     /^mate@example\.test is now member of lead-team \(was admin\)$/],
+    [await ask(lead.token, "member_remove", { team: "lead-team", email: "lead@example.test", confirm: "lead-team" }),
+     /^ERROR: lead@example\.test is the only admin of lead-team/],
+  ] as const;
+  for (const [reply, want] of said) if (!want.test(reply)) c.fail(roles, `answered "${reply.slice(0, 200)}", expected ${want}`);
+  c.pass(roles);
 }
 
 async function run(c: Core): Promise<void> {

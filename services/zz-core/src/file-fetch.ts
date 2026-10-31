@@ -69,7 +69,7 @@ export async function fetchFile(url: string, route: FetchRoute): Promise<{ bytes
   const resolve = route.lookup ?? systemLookup;
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), DEADLINE_MS);
-  const late = forbidden(`the file did not arrive within ${DEADLINE_MS / 1000} seconds`);
+  const late = unavailable(`the file did not arrive within ${DEADLINE_MS / 1000} seconds`);
   try {
     let at = url;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {

@@ -252,8 +252,9 @@ mock.timers.enable({ apis: ["setTimeout"] });
 stalled = () => mock.timers.tick(30_000);
 const slow = await get(`https://files.example.test/stall?${SIG}`);
 mock.timers.reset();
-is("refusal" in slow && /^ERROR: FORBIDDEN — /.test(slow.refusal) && /30 seconds/.test(slow.refusal),
-   `a download that does not finish in 30 seconds is stopped: ${text(slow).slice(0, 200)}`);
+// A slow host is not a forbidden one: the agent is told to try again, not that the host is blocked.
+is("refusal" in slow && /^ERROR: FILE_UNAVAILABLE — /.test(slow.refusal) && /30 seconds/.test(slow.refusal),
+   `a download that does not finish in 30 seconds is stopped as unavailable: ${text(slow).slice(0, 200)}`);
 
 // ── no URL anywhere ─────────────────────────────────────────────────────────────────────────────
 // The rule itself, over the spellings an IPv6 address can hide an internal IPv4 in: every one

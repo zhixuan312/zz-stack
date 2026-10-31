@@ -200,7 +200,8 @@ export function batchRefusal(path: string, r: EditRefusal): Line {
         "(an empty `replace` deletes).";
     case "NO_MATCH":
       return `ERROR: NO_MATCH — ${at}\`find\` does not occur in ${path}. Matching is exact, with no ` +
-        "whitespace folding: read the document and copy the text as it is.";
+        "whitespace folding: read the document and copy the text as it is." +
+        (r.replaced ? " Its `replace` text does occur: if this call is a retry, the edit may have landed already." : "");
     case "MULTIPLE_MATCHES": {
       const kept = r.lines ?? [];
       const total = r.match_count ?? kept.length;

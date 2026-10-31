@@ -304,6 +304,9 @@ async function precedence(c: Core): Promise<void> {
 
   step = "(8) the batch's own refusals: NO_MATCH, MULTIPLE_MATCHES, OVERLAPPING_EDITS, INVALID_EDIT";
   await refusedUnchanged(c, step, p, { edits: [{ find: "gamma", replace: "x" }] }, /^ERROR: NO_MATCH — edit 0 \(0-based\): `find` does not occur/);
+  // The edit (7) made, sent again: its `find` is gone and its `replace` is there, so it may be a retry.
+  await refusedUnchanged(c, step, p, { edits: [{ find: "beta\n\nalpha", replace: "beta\n\nALPHA" }] },
+    /^ERROR: NO_MATCH — edit 0 .* Its `replace` text does occur: if this call is a retry, the edit may have landed already\.$/m);
   await refusedUnchanged(c, step, p, { edits: [{ find: "beta", replace: "x" }] },
     /^ERROR: MULTIPLE_MATCHES — edit 0 \(0-based\): `find` occurs 2 times in the body, on lines \(2\): 5, 7\. /);
   await refusedUnchanged(c, step, p, { edits: [{ find: "alpha\n\nbeta", replace: "x" }, { find: "beta\n\nALPHA", replace: "y" }] },

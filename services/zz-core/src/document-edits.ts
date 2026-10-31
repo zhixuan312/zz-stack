@@ -26,6 +26,8 @@ export type EditRefusal = {
   match_count?: number;
   /** One 1-based line per occurrence of the first KEPT_MATCHES, in order, duplicates kept. */
   lines?: number[];
+  /** NO_MATCH only: the edit's non-empty `replace` occurs in the body — a retry of an edit that landed. */
+  replaced?: boolean;
 };
 
 /** The most edits one batch may carry. COUPLED: the tool's description says the same number. */
@@ -106,7 +108,11 @@ export function applyEdits(body: string, edits: Edit[]): { body: string; changed
       continue;
     }
     const { count, at, lines } = countOf(e.find);
-    if (count === 0) { refusals.push({ code: "NO_MATCH", edit_index: i, match_count: 0 }); continue; }
+    if (count === 0) {
+      refusals.push({ code: "NO_MATCH", edit_index: i, match_count: 0,
+                      ...(e.replace && body.includes(e.replace) ? { replaced: true } : {}) });
+      continue;
+    }
     if (count > 1) {
       refusals.push({ code: "MULTIPLE_MATCHES", edit_index: i, match_count: count, lines });
       continue;

@@ -270,7 +270,8 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         "a report somebody took the trouble to make deserves a sentence, and a status with no " +
         "reason is a tracker nobody learns anything from. RETURNS the id, the status it now " +
         "carries and the resolution as stored, so the close can be read back rather than " +
-        "assumed. REFUSES a second close, naming who decided and what they said. CLOSING NEVER " +
+        "assumed. REFUSES a second close, naming who decided and what they said — the same close " +
+        "sent again by the same caller is answered as the close it already made. CLOSING NEVER " +
         "REMOVES THE ROW, and that is the point of it: `not_a_bug` and `duplicate` are findings, " +
         "and a report that turned out not to be a bug is still evidence that something was " +
         "confusing enough to file. `bug_delete` is not a stronger version of this — it is for " +
@@ -366,6 +367,16 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
           const { rows: had } = await client.query<{ status: string; resolution: string | null; resolved_by: string | null }>(
             `select b.status, b.resolution, p.email as resolved_by from zz.bug b
                left join zz.principal p on p.id = b.resolved_by where b.id = $1::uuid`, [id]);
+          // The same caller sending the same decision is a retry of a close that landed, not a
+          // second opinion: it is answered as the close it already made, and records nothing more.
+          if (had[0].status === status && had[0].resolution === resolution.trim()
+              && had[0].resolved_by?.toLowerCase() === who.toLowerCase()
+              && source.duplicate_of === (duplicate_of?.toLowerCase() ?? null)) {
+            await client.query("rollback");
+            return text(JSON.stringify({ id: source.id, status, resolved_by: had[0].resolved_by,
+              resolution: had[0].resolution, duplicate_of: source.duplicate_of,
+              note: "already closed so by you; nothing changed" }, null, 2));
+          }
           return refuse(
             `ERROR: that report was already closed as \`${had[0].status}\` by ${had[0].resolved_by} — ` +
             `"${had[0].resolution}". If that decision was wrong, file what you now know as a new ` +
@@ -444,7 +455,16 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       if (!rows.length) {
         const { rows: dups } = await db.query<{ id: string }>(
           "select id::text as id from zz.bug where duplicate_of = $1::uuid order by id", [id]);
-        if (!dups.length) return text(`ERROR: no bug with id ${id}`);
+        if (!dups.length) {
+          // A retried delete whose first call landed finds no row: the event it wrote says so.
+          const gone = (await db.query<{ by: string | null; at: string; title: string | null }>(
+            `select p.email as by, e.ts::text as at, e.detail->>'title' as title from zz.event e
+               left join zz.principal p on p.id = e.actor_id
+              where e.kind = 'bug.delete' and e.subject = $1 order by e.ts desc limit 1`, [id.toLowerCase()])).rows[0];
+          return text(gone
+            ? `bug ${id} was already deleted by ${gone.by ?? "someone"} at ${gone.at} — "${gone.title ?? ""}". Nothing more to remove.`
+            : `ERROR: no bug with id ${id}`);
+        }
         const named = dups.map((d) => d.id).join(", ");
         return text(`ERROR: bug ${id} is the report ${named} was closed as a duplicate of — ` +
           "deleting it would leave that close pointing at nothing. Delete the duplicate first " +

@@ -29,6 +29,8 @@
  *   - `bug_report` refuses a title or a detail that is blank after trimming, and a report its
  *     reporter sends again while it is open answers the first one's id;
  *   - `bug_delete` refuses a report another was closed as a duplicate of, naming that one;
+ *   - a resolve its caller sends again with the same decision answers that close, and a delete
+ *     sent again names who deleted the report, not "no bug";
  *   - the route records its act as the console's door, `via: "web"`.
  *
  * The only database it touches is the one it started.
@@ -307,6 +309,30 @@ async function run(c: Core): Promise<void> {
     const gone = await c.call(step, "bug_delete", { id: D }, tool);
     if (!gone.includes('"deleted"')) c.fail(step, `deleting the duplicate itself answered ${JSON.stringify(gone)}`);
     c.pass("bug_delete refuses a report a duplicate points at, naming the duplicate, and deletes the duplicate itself");
+
+    // A client retry is the same call again. It is answered as the act it repeats, never as somebody
+    // else's decision or a report that never existed.
+    step = "a retried resolve and a retried delete";
+    await reset();
+    const close = { status: "fixed", resolution: "Fixed: sent twice." };
+    const [once, twice] = [await resolve(S, close), await resolve(S, close)];
+    const afterRetry = (JSON.parse(await rows()) as Record<string, unknown>[]).find((r) => r.id === S);
+    if (closed(once)?.resolution !== close.resolution || closed(twice)?.resolution !== close.resolution
+        || !twice.includes("already closed so by you; nothing changed") || afterRetry?.resolution !== close.resolution) {
+      c.fail(step, `the resolve answered ${JSON.stringify([once, twice])}`);
+    }
+    await c.call(step, "bug_delete", { id: D }, tool);
+    const retryUntil = Date.now() + 5000;
+    let again = "";
+    // The delete's event is written after its answer, so the retry is waited on, briefly.
+    while (!again.startsWith(`bug ${D} was already deleted by ${c.email} at `) && Date.now() < retryUntil) {
+      again = await c.call(step, "bug_delete", { id: D }, tool);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!again.startsWith(`bug ${D} was already deleted by ${c.email} at `) || !again.endsWith('"Duplicate". Nothing more to remove.')) {
+      c.fail(step, `the delete sent again answered ${JSON.stringify(again)}`);
+    }
+    c.pass("a resolve sent again with the same decision answers that close, and a delete sent again names who deleted it");
 
     step = "the route records the console's door";
     await reset();

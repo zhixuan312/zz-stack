@@ -75,7 +75,7 @@ export async function approvalBasis(
       if (s.baseline && s.open?.target !== target) return { refusal: await approvalConflict(p, who, rel, s.baseline, target) };
       // The ranges still owed, read from the context's own pages: a last part that ran to the end
       // names no next offset, so "the offset its last part named" would point at nothing.
-      const gaps = s.open?.target === target ? gapsOf(await pagesOf(p, who, rel, a.context), s.open) : [];
+      const gaps = s.open?.target === target ? gapsOf(s.pages, s.open) : [];
       return { refusal:
         `ERROR: PRESENTATION_REQUIRED — the review context ${a.context} has not covered ${target}, the current ` +
         `snapshot of ${rel}: its presentation of it is not complete` +

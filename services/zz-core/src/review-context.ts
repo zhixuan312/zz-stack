@@ -169,13 +169,14 @@ export function gapsOf(pages: Page[], page: Page): [number, number][] {
 }
 
 /** One context as the viewer holds it: whether it is theirs at all, what it covered, its baseline,
- *  and its open presentation — the last page recorded in it. */
+ *  its open presentation — the last page recorded in it — and the pages themselves. */
 export async function contextState(
   c: Pick<pg.Pool, "query">, who: Viewer, rel: string, context: string,
-): Promise<{ known: boolean; covered: string[]; baseline: string | null; open: Page | null }> {
+): Promise<{ known: boolean; covered: string[]; baseline: string | null; open: Page | null; pages: Page[] }> {
   const pages = await pagesOf(c, who, rel, context);
   const covered = coverageOf(pages);
-  return { known: pages.length > 0, covered, baseline: covered[covered.length - 1] ?? null, open: pages[pages.length - 1] ?? null };
+  return { known: pages.length > 0, covered, baseline: covered[covered.length - 1] ?? null,
+           open: pages[pages.length - 1] ?? null, pages };
 }
 
 /** What a present in a context shows: the context, why it is a new one when that needs saying,

@@ -638,6 +638,12 @@ export async function planCreate(
   sent: { body: string; metadata: Metadata; normalised: string[] }, moveOf: MoveOf = noMove, staged?: Staged,
 ): Promise<{ reply: string } | Omit<Planned, "noChange" | "replaced">> {
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
+  // A document is `<name>.md`: initiative_status, the handover and search read that shape, and a
+  // name without it was stored where no listing of the initiative would ever show it.
+  if (!name.endsWith(".md")) {
+    return { reply: `ERROR: "${name}" is not a document name — a document is named \`<name>.md\`, ` +
+      "which is what initiative_status and document_list read. Nothing was written." };
+  }
   if (await documentAt(p, team, path)) return { reply: targetExists(path) };
   const refs = normalizeRefs(a.sources, initiative);
   const named = await namedSources(p, team, path, wellFormed(a.sources, initiative));

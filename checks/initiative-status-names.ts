@@ -23,7 +23,8 @@
  *     initiative it opened;
  *   - a closed initiative still owing a move (its handover) is listed under `closed_owing`, never
  *     under `open`.
- *   - a document the closed initiative does not hold is refused, as a closed record takes none.
+ *   - a document the closed initiative does not hold is refused, as a closed record takes none;
+ *   - a document name that does not end in `.md` is refused, as initiative_status would never list it.
  *   - a caller in no team is told that, not that the deployment may lack its database.
  *
  * The only database it touches is the one it started.
@@ -82,6 +83,14 @@ async function run(c: Core): Promise<void> {
   // take a correction through document_edit.
   await c.refused(step, "document_write", { path: `${closed}/later.md`, content: "# Later\n\nafter the close\n" },
     /^ERROR: .* is closed, .*takes no new document/);
+
+  // initiative_status and document_list read `<name>.md`; a name without it was stored and never shown.
+  step = "a document name without .md";
+  await c.refused(step, "document_write", { path: `${open}/notes.txt`, content: "# Notes\n\nplain\n" },
+    /^ERROR: "notes\.txt" is not a document name — /);
+  await c.refused(step, "document_write", { path: `${open}/no-ext`, content: "# Notes\n\nplain\n" },
+    /^ERROR: "no-ext" is not a document name — /);
+  c.pass("document_write refuses a document name that does not end in .md, which no listing would show");
 
   // Asked out of the slugs' own order, so the answer's order can only be the order asked.
   const asked = [open, UNKNOWN, closed];

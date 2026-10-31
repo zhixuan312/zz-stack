@@ -41,6 +41,7 @@ import { PLATFORM_VERSION } from "../platform-version.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 import type { DimensionScoreRow, MeasureScoreRow } from "./findings-doc.js";
+import { inCallerTeam } from "./team-scope.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no evaluation can be run");
@@ -127,7 +128,7 @@ export async function scoreEvaluation(
 } | { readonly error: string }> {
   const { eval_run_id, idempotency_key, initiative } = args;
   const run: RunContext | null = await loadRunContext(p, eval_run_id);
-  if (!run) return { error: "ERROR: unknown eval_run_id" };
+  if (!run || !(await inCallerTeam(p, "eval_run", eval_run_id))) return { error: "ERROR: unknown eval_run_id" };
 
   // A scored run's result is published — findings cite it and release_verify reads it — so it is
   // never scored again: a re-score is a new eval_run. The retry of the call that scored it is

@@ -40,6 +40,7 @@ import { z } from "zod";
 import { writeFindingsDoc } from "./findings-doc.js";
 import { ledgerStamp, UUID_RE, withIdempotency, type IdempotencyOutcome, type LedgerCall, type MutatorOutcome } from "./idempotency.js";
 import { measureByKey } from "./qualify.js";
+import { inCallerTeam } from "./team-scope.js";
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
@@ -227,7 +228,7 @@ export function registerPluginRecordTools(server: McpServer): void {
       const run = (await p.query<{ id: string; protocol_version_id: string }>(
         "select id::text as id, protocol_version_id::text as protocol_version_id from zz.eval_run where id = $1::uuid",
         [eval_run_id])).rows[0];
-      if (!run) return text(`ERROR: no eval_run ${eval_run_id}`);
+      if (!run || !(await inCallerTeam(p, "eval_run", eval_run_id))) return text(`ERROR: no eval_run ${eval_run_id}`);
       // Resolved before the ledger, so an unknown key refuses by name and anchors no ledger row.
       let measureId: string | null = null;
       if (finding.measure_key !== undefined) {
@@ -382,6 +383,11 @@ export function registerPluginRecordTools(server: McpServer): void {
             const done: DecidedFinding[] = [];
             const refused: string[] = [];
             for (const d of decisions) {
+              // Another team's finding is unknown here, in the words an unknown id gets.
+              if (UUID_RE.test(d.finding_id) && !(await inCallerTeam(p, "finding", d.finding_id))) {
+                refused.push(decisionRefusal(d.finding_id, undefined));
+                continue;
+              }
               // The one deciding write on this table, shared with release_record: guarded in its
               // own where clause, so two callers deciding the same finding cannot both write, and
               // it says by name which of the three reasons closed nothing when it closed nothing.

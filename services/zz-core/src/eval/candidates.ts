@@ -41,6 +41,7 @@ import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { loadProposerBundle, REJECTED_CANDIDATE_STATUSES, type ProposerBundle } from "./proposer-bundle.js";
 import { componentManifestOf } from "./subject.js";
 import { writeBranchFacts } from "./protocol.js";
+import { inCallerTeam } from "./team-scope.js";
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
@@ -145,7 +146,7 @@ export function registerCandidateTools(server: McpServer): void {
           from zz.eval_run er
           join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
          where er.id = $1::uuid`, [eval_run_id])).rows[0];
-      if (!run) return text(`ERROR: no eval_run ${eval_run_id}`);
+      if (!run || !(await inCallerTeam(p, "eval_run", eval_run_id))) return text(`ERROR: no eval_run ${eval_run_id}`);
 
       if (skip) {
         if (finding_ids.length) {
@@ -340,7 +341,9 @@ export function registerCandidateTools(server: McpServer): void {
       const run = (await p.query<{ id: string; eval_run_id: string }>(
         "select id::text as id, eval_run_id::text as eval_run_id from zz.improvement_run where id = $1::uuid",
         [improvement_run_id])).rows[0];
-      if (!run) return text(`ERROR: no improvement_run ${improvement_run_id}`);
+      if (!run || !(await inCallerTeam(p, "improvement_run", improvement_run_id))) {
+        return text(`ERROR: no improvement_run ${improvement_run_id}`);
+      }
 
       if (!UUID_RE.test(baseVersionId)) return text(`ERROR: unknown ${BASE_SUBJECT_VERSION}`);
       const subject = (await p.query<{
@@ -534,6 +537,9 @@ export function registerCandidateTools(server: McpServer): void {
       if (!p) return noDb();
       const principal = parseCaller(requestHeaders()).email;
 
+      if (UUID_RE.test(candidate_id) && !(await inCallerTeam(p, "candidate", candidate_id))) {
+        return text(`ERROR: no candidate ${candidate_id}`);
+      }
       const outcome = await validateCandidate(p, candidate_id, idempotency_key, principal);
       if ("error" in outcome) return text(outcome.error);
       if ("build_required" in outcome) return json(outcome);

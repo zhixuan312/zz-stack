@@ -33,6 +33,7 @@ import {
 import { decideBeforeWork, UUID_RE, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { resolveProtocol, unaffirmedRefusal } from "./qualify.js";
 import { knowledgeNodeAt, resolveSubjectRef } from "./subject-ref.js";
+import { inCallerTeam } from "./team-scope.js";
 import { teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -356,7 +357,7 @@ export async function assessEvaluation(
 } | { readonly error: string }> {
   const { eval_run_id, subject_refs, idempotency_key } = args;
   const run = await loadRunContext(p, eval_run_id);
-  if (!run) return { error: "ERROR: unknown eval_run_id" };
+  if (!run || !(await inCallerTeam(p, "eval_run", eval_run_id))) return { error: "ERROR: unknown eval_run_id" };
   // `scored_at` is the terminal marker: a scored run's assessments are the evidence behind a
   // published result, so no later call may add to them. A re-assessment is a new eval_run.
   if (run.scored_at !== null) {

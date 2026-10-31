@@ -55,9 +55,8 @@ async function documents(p: pg.Pool, team: string | null, initiative: string): P
    *
    * A guard asks five facts about a document and never its text, and `docRows` selects every
    * body the initiative holds — one detoast per document, plus the `supports` link aggregate
-   * nothing here reads. The guard chain calls this four to seven times per write, so each one
-   * paid that bill again to answer a question none of them asked: 8.0 ms a call for the largest
-   * initiative here, against about one for the columns below.
+   * nothing here reads: 8.0 ms a call for the largest initiative here, against about one for the
+   * columns below. A guard run reads it once (`readsOf`), however many checks ask.
    *
    * The joins, the predicate and the `[initiative, team]` order are `docRows`'s, so the two
    * answer the same facts — this one simply does not carry the part the guards never look at. */
@@ -83,6 +82,18 @@ async function documents(p: pg.Pool, team: string | null, initiative: string): P
   return out;
 }
 
+/** One guard run's reads of its initiative, each made at most once and only when a check asks:
+ *  the document map and the branch facts answer every check of one write alike. */
+interface Reads { documents(): Promise<Map<string, HeldDoc>>; facts(): Promise<Record<string, string>> }
+function readsOf(p: pg.Pool, team: string | null, initiative: string): Reads {
+  let docs: Promise<Map<string, HeldDoc>> | undefined;
+  let facts: Promise<Record<string, string>> | undefined;
+  return {
+    documents: () => (docs ??= documents(p, team, initiative)),
+    facts: () => (facts ??= factsFor(p, team, initiative)),
+  };
+}
+
 /** Why a stop discharges a close-time requirement, written once because two rules claim it.
  *
  * An initiative that was dropped is precisely one whose gates were never passed, so requiring
@@ -100,12 +111,12 @@ const STOPPED_GROUND =
  * `team` is the caller's own. A caller resolving to no team reads the slug across every team,
  * which is the same widening `protocol_affirm` already takes — an initiative slug is
  * team-scoped, so "no team" is only ever a caller whose team the database could not answer. */
-async function held(p: pg.Pool, team: string | null, relPath: string):
+async function held(r: Reads, relPath: string):
   Promise<{ doc: HeldDoc | null; initiative: string; name: string }> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return { doc: null, initiative: parts[0] ?? "", name: parts[1] ?? "" };
   return {
-    doc: (await documents(p, team, parts[0])).get(parts[1]) ?? null,
+    doc: (await r.documents()).get(parts[1]) ?? null,
     initiative: parts[0], name: parts[1],
   };
 }
@@ -119,12 +130,11 @@ async function held(p: pg.Pool, team: string | null, relPath: string):
  * it is admitted with no gate or close requirement asked again — the close happened, and a draft
  * correction awaiting its own approval does not undo it — and changing or dropping either is
  * refused, because what an initiative closed on is not what a correction may rewrite. */
-async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
-                          content: string): Promise<string | null> {
+async function closeCheck(r: Reads, chain: Chain, relPath: string, content: string): Promise<string | null> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   const env = parseEnvelope(content);
-  const rows = await documents(p, team, parts[0]);
+  const rows = await r.documents();
   const stored = rows.get(parts[1]) ?? null;
   if (stored?.outcome) {
     const kept = (env.outcome ?? "").trim() === stored.outcome.trim()
@@ -147,12 +157,13 @@ async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath
   // that call already does when a caller names a document explicitly, rather than recomputing
   // "the furthest one" a second way here.
   const stop = env.outcome === OUTCOME_STOPPED;
-  const facts = await factsFor(p, team, parts[0]);
+  const facts = await r.facts();
   const ruledOut = closingDocRuledOut(chain.documents.find((d) => d.name === chain.closingDoc), facts);
   const missing = stop && !!chain.closingDoc && !rows.has(chain.closingDoc);
   const isClosingWrite = parts[1] === chain.closingDoc
     ? !ruledOut
-    : (ruledOut || missing) && chain.docs.has(parts[1]) && parts[1] !== "handover.md";
+    : (ruledOut || missing) && chain.docs.has(parts[1])
+      && !isHandover(chain.documents.find((d) => d.name === parts[1]) ?? { name: parts[1] });
   if (!isClosingWrite) return null;
   // The closing document's own gate, when it declares one. gateCheck enforces a gate only
   // where another document `requires` it, so the last gated document in a chain — usually the
@@ -308,10 +319,10 @@ async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath
  *
  * Only while approved and signed. A flow may mark an ungated document `approved` as a working
  * state, and editing that is ordinary work, as is editing a draft. */
-async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
+async function approvedDocumentGuard(r: Reads, chain: Chain, relPath: string,
                                      via: string | null): Promise<string | null> {
   if (via) return null;                       // the acts that pass `via` own their writes, document_edit among them
-  const { doc } = await held(p, team, relPath);
+  const { doc } = await held(r, relPath);
   if (!doc || doc.status !== "approved") return null;
   // A signature in the revision table, not a line in a manifest. Testing the manifest's `gate`
   // instead would abstain for every document of a freeform initiative, where `document_approve`
@@ -340,10 +351,10 @@ async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | nu
  * (`currentRow`, document-snapshot.ts) counts the row the close stamped as pinned, signed or not —
  * and carries the outcome forward; a write without `via` does neither. A closed record may be
  * corrected; it may not be quietly overwritten. */
-async function closedDocumentGuard(p: pg.Pool, team: string | null, relPath: string,
+async function closedDocumentGuard(r: Reads, relPath: string,
                                    via: string | null): Promise<string | null> {
   if (via) return null;                       // the acts that pass `via` own their writes, document_edit among them
-  const { doc } = await held(p, team, relPath);
+  const { doc } = await held(r, relPath);
   if (!doc?.outcome) return null;
   return (
     `ERROR: ${relPath} is the document this initiative closed on (outcome: ${doc.outcome}), so it ` +
@@ -358,8 +369,8 @@ async function closedDocumentGuard(p: pg.Pool, team: string | null, relPath: str
  * the work reached. An outcome anywhere in the initiative is the proof: it is written by
  * initiative_close and by nothing else, and a close asserts exactly what the prerequisite
  * exists to establish. The narrower rule still applies to every open initiative. */
-async function closedOnSomeDocument(p: pg.Pool, team: string | null, initiative: string): Promise<boolean> {
-  return [...(await documents(p, team, initiative)).values()].some((d) => !!d.outcome);
+async function closedOnSomeDocument(r: Reads): Promise<boolean> {
+  return [...(await r.documents()).values()].some((d) => !!d.outcome);
 }
 /** May this document be written at all, given the branch the initiative is on (FR-58, Task
  *  I-26) — distinct from `gateCheck` below, which asks whether an EARLIER document's gate has
@@ -371,12 +382,12 @@ async function closedOnSomeDocument(p: pg.Pool, team: string | null, initiative:
  *  same as `document_write`.
  *  `undetermined`: the branch has not resolved yet; the contract calls this "not writable yet",
  *  not a refusal about approval or ownership. */
-async function applicabilityCheck(p: pg.Pool, team: string | null, chain: Chain, relPath: string): Promise<string | null> {
+async function applicabilityCheck(r: Reads, chain: Chain, relPath: string): Promise<string | null> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   const doc = chain.documents.find((d) => d.name === parts[1]);
   if (!doc?.when) return null;
-  const facts = await factsFor(p, team, parts[0]);
+  const facts = await r.facts();
   const recorded = `this initiative's branch facts (zz.initiative_fact)`;
   const applic = documentApplies(doc, facts);
   if (applic === "applies") return null;
@@ -403,7 +414,7 @@ async function applicabilityCheck(p: pg.Pool, team: string | null, chain: Chain,
  * What stays here is what the kernel must not know: that a prerequisite is a document the
  * store holds a revision of, that `gate: true` is what ratifies one, and what to tell an agent
  * that has been refused. */
-async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
+async function gateCheck(r: Reads, chain: Chain, relPath: string,
                          ): Promise<string | null> {
   const clean = relPath.replace(/^\/+/, "");
   const parts = clean.split("/");
@@ -413,7 +424,7 @@ async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath:
   // FR-58 (Task I-26): a dependency the branch has ruled out is discharged, not missing — the
   // ground below is what lets a document downstream of a not_applicable one still be written.
   const depDoc = chain.documents.find((d) => d.name === dep);
-  const depFacts = depDoc?.when ? await factsFor(p, team, parts[0]) : {};
+  const depFacts = depDoc?.when ? await r.facts() : {};
   const depApplic = !depDoc?.when ? "applies" : documentApplies(depDoc, depFacts);
   // A non-gated prerequisite is satisfied by existing. `gate: false` says no approval is
   // required, so nothing ever approves such a document and its status stays `draft` for the
@@ -426,7 +437,7 @@ async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath:
   // when it is not. The kernel states it as `EvidenceStandard`: a gated prerequisite is
   // required `ratified`, an ungated one `recorded`.
   const depGate = depDoc?.gate === true;
-  const depRow = (await documents(p, team, parts[0])).get(dep) ?? null;
+  const depRow = (await r.documents()).get(dep) ?? null;
   const exists = depRow !== null;
   const status = depRow?.status ?? null;
   // The handover's prerequisite, when it carries the initiative's outcome, is the document the
@@ -447,7 +458,7 @@ async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath:
     // discharging that too would let a closed initiative write over a gate a person was
     // still owed a say in.
     [
-      ...(!exists && await closedOnSomeDocument(p, team, parts[0])
+      ...(!exists && await closedOnSomeDocument(r)
         ? [{ kind: dep, ground: `this initiative is closed, and the close settled ${dep} by landing its outcome elsewhere` }]
         : []),
       // FR-58 (Task I-26): a dependency the branch has ruled out is never going to exist, on
@@ -486,10 +497,10 @@ async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath:
  * Change is the test, not presence: re-sending an unchanged approval line while patching a
  * typo is not an attempt to forge one, and comparing against the stored revision is what tells
  * those apart. */
-async function ownershipCheck(p: pg.Pool, team: string | null, relPath: string, content: string,
+async function ownershipCheck(r: Reads, relPath: string, content: string,
                               via: string | null): Promise<string | null> {
   if (via) return null;
-  const { doc } = await held(p, team, relPath);
+  const { doc } = await held(r, relPath);
   // The fields PLATFORM_OWNED names, as the row the store holds carries them. A field the row
   // does not carry is absent, which is the stricter reading and the one a new document gets.
   const prev: Record<string, string> = {};
@@ -546,15 +557,16 @@ export async function documentGuards(chain: Chain, relPath: string, content: str
     return "ERROR: no platform database — the store is the database now, so no document can be " +
       "judged and none is written. Configure TEAM_DB_URL and call again.";
   }
-  // Run in order, stopping at the first refusal: each check is cheaper than the ones below it,
-  // and short-circuiting is what keeps a refused write from reading rows it will not judge.
+  // Run in order, stopping at the first refusal, so a write with several faults is refused for the
+  // first of them. The rows and the facts are read at most once, by the first check that asks.
+  const r = readsOf(p, team, relPath.replace(/^\/+/, "").split("/")[0] ?? "");
   const checks: (() => Promise<string | null>)[] = [
-    () => ownershipCheck(p, team, relPath, content, via),
-    () => closedDocumentGuard(p, team, relPath, via),
-    () => approvedDocumentGuard(p, chain, team, relPath, via),
-    async () => applicabilityCheck(p, team, chain, relPath),
-    () => gateCheck(p, chain, team, relPath),
-    () => closeCheck(p, chain, team, relPath, content),
+    () => ownershipCheck(r, relPath, content, via),
+    () => closedDocumentGuard(r, relPath, via),
+    () => approvedDocumentGuard(r, chain, relPath, via),
+    async () => applicabilityCheck(r, chain, relPath),
+    () => gateCheck(r, chain, relPath),
+    () => closeCheck(r, chain, relPath, content),
     async () => statusCheck(chain, relPath, content),
     async () => outcomeCheck(chain, relPath, content),
     async () => attributionCheck(chain, relPath, content, team),

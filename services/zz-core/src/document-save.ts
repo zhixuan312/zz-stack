@@ -43,6 +43,7 @@ import {
 import type { Composed } from "./document-details.js";
 import { RESERVED_ENVELOPE } from "./document-rules.js";
 import { insertEvent } from "./indexing.js";
+import { initiativeIdFor } from "./initiative-record.js";
 import { currentRow, landing, lockPath, reservePath, rowHeld } from "./document-snapshot.js";
 import { stampEnvelope } from "./write-guards.js";
 import { db as platformDb } from "./platform-db.js";
@@ -266,17 +267,6 @@ async function prepare(p: pg.Pool, w: DocumentWrite): Promise<Prepared | { refus
            tsv: bodyTsvParams(vector) };
 }
 
-/** The initiative id a slug names inside a team, or null. Resolved THROUGH the team, never by
- *  the slug alone: two teams' initiatives may share a slug. */
-async function initiativeIdIn(
-  p: Pick<pg.Pool, "query">, team: string, initiative: string,
-): Promise<string | null> {
-  const { rows } = await p.query<{ id: string }>(
-    `select i.id::text as id from zz.initiative i join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug = $2`, [team, initiative]);
-  return rows[0]?.id ?? null;
-}
-
 /** The document's state, as a change service reads it before computing, and as `saveDocument`
  *  compares it under the lock. Null when the document does not exist. */
 export async function documentState(
@@ -301,7 +291,7 @@ type SaveAnswer = Saved | { refusal: string } | Retry | Replayed;
 export async function saveDocument(w: DocumentWrite): Promise<SaveAnswer> {
   const p = pool();
   if (!p) return { refusal: NO_DB };
-  const initiativeId = await initiativeIdIn(p, w.team, w.initiative);
+  const initiativeId = await initiativeIdFor(p, w.team, w.initiative);
   if (!initiativeId) {
     return { refusal:
       `ERROR: there is no initiative "${w.initiative}" in this team's store, so a document ` +

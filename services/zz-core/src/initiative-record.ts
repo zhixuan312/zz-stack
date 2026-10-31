@@ -21,7 +21,7 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import { documentApplies, OUTCOME_STOPPED } from "@zz/contracts";
+import { documentApplies } from "@zz/contracts";
 import type pg from "pg";
 
 import { Refusal } from "./refusal.js";
@@ -344,7 +344,3 @@ export async function unopenedRefusal(
     "supports, and documents, gates, approvals and closing all still work without one."
   );
 }
-
-/** The stop word, re-exported so a caller naming the abandon outcome does not reach past this
- *  module for it. See @zz/contracts for what it says. */
-export { OUTCOME_STOPPED };

@@ -78,7 +78,8 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
         "WHEN somebody using this platform hits something broken, surprising, or wrong — a tool " +
         "that refused what should have worked, an answer that disagrees with itself, a step no " +
         "instruction prepared them for. Report it as they describe it; do not diagnose first. " +
-        "RETURNS the id it was filed under, which is what `bug_resolve` takes. Only `title` and " +
+        "RETURNS the id it was filed under, which is what `bug_resolve` takes; the same words " +
+        "sent again while that report is open return its id rather than filing twice. Only `title` and " +
         "`detail` are required: somebody who has just hit a wall should not be interviewed, and " +
         "every other field narrows a search later without blocking a report now. The platform " +
         "version is recorded from the service answering this call rather than asked, because a " +
@@ -120,6 +121,20 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
           `resolved through the team that owns them, and ${team ? `yours is ${team}` : "you belong to none"}. ` +
           "Nothing was written. Leave `initiative` out to file the report with nothing " +
           "against it, which is what a report that interrupted no initiative is.");
+      }
+      // A retry after a dropped reply files the same words again. The reporter's own open report
+      // saying exactly this is that first call's, and a member cannot list reports to see it
+      // landed, so its id is the answer.
+      const { rows: [same] } = await p.query<{ id: string }>(
+        `select id::text as id from zz.bug
+          where reported_by = $1::uuid and status = 'open' and title = $2 and detail = $3
+          order by reported_at limit 1`, [reporter, title.trim(), detail.trim()]);
+      if (same) {
+        return json({
+          id: same.id, reported_by: who, platform_version: platformVersion, status: "open",
+          note: "Already filed: this is the report the same words made earlier, still open. Nothing " +
+                "new was written — say it is recorded and carry on.",
+        });
       }
       const { rows } = await p.query<{ id: string }>(
         `insert into zz.bug (reported_by, team_id, initiative_id, title, detail, impact, surface,

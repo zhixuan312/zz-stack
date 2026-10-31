@@ -26,7 +26,8 @@
  *   - two resolves started together, through either adapter, leave the first decision and refuse
  *     the other, the route answering one 204 and one 409;
  *   - a member's request to the route is 403 with no name in the body, and changes nothing;
- *   - `bug_report` refuses a title or a detail that is blank after trimming;
+ *   - `bug_report` refuses a title or a detail that is blank after trimming, and a report its
+ *     reporter sends again while it is open answers the first one's id;
  *   - `bug_delete` refuses a report another was closed as a duplicate of, naming that one;
  *   - the route records its act as the console's door, `via: "web"`.
  *
@@ -282,6 +283,18 @@ async function run(c: Core): Promise<void> {
     await c.refused(step, "bug_report", { title: "It broke", detail: " \n " }, /^ERROR: `detail` is blank/);
     if (await rows() !== start) c.fail(step, "a blank report was filed");
     c.pass("bug_report refuses a title or a detail that is blank after trimming, and files nothing");
+
+    step = "a report sent twice";
+    await reset();
+    const report = { title: "Present answered nothing", detail: "document_present with path: [] replied empty." };
+    const filed = [await c.ok(step, "bug_report", report), await c.ok(step, "bug_report", report)]
+      .map((r) => (JSON.parse(r) as { id?: string }).id);
+    const { rows: copies } = await c.sql.query<{ n: number }>(
+      "select count(*)::int as n from zz.bug where title = $1", [report.title]);
+    if (!filed[0] || filed[0] !== filed[1] || copies[0].n !== 1) {
+      c.fail(step, `the two calls answered ids ${JSON.stringify(filed)} and ${copies[0].n} reports were filed, not one`);
+    }
+    c.pass("bug_report sent twice by the same person answers the first report's id and files one");
 
     // The database's own foreign-key error reached the caller here, with no ERROR and no next step.
     step = "deleting a report a duplicate names";

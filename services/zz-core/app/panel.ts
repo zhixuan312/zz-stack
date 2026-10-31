@@ -11,13 +11,13 @@
  * — so a re-review reads only what moved, and take the approval through the same `document_approve`
  * a model would call. Layout follows the panel's own width, not the window's.
  *
- * One theme and one register, the console's: cream ground, hairlines not shadows, one accent for
+ * One theme and one register, the console's: a cool grey-blue ground, hairlines not shadows, one accent for
  * the one primary action, green/amber/red for approved/waiting/refused and nothing else, the kit
  * blue for what changed. The `state-approved` mascot appears for its one job.
  */
-import { marksOf, minutesOf, renderMarkdown } from "./render.ts";
+import { marksOf, minutesLeft, minutesOf, renderMarkdown } from "./render.ts";
 import { schedule, tellModel } from "./context.ts";
-import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
+import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection, tell } from "./review.ts";
 import { day, esc, standing, versionHistory } from "./facts.ts";
 import { answer, app, current, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
 import approvedArt from "./brand/state-approved-2x.webp";
@@ -128,7 +128,7 @@ function footer(s: Slot): string {
   if (s.approval === "done") {
     return `<footer class="foot foot-done" role="status">
       <img class="mascot" src="${approvedArt}" alt="" />
-      <div><p class="done-title">Approved</p><p class="note">v${d.version} carries your signature. The conversation has been told.</p></div>
+      <div><p class="done-title">Approved</p><p class="note">v${d.version} carries your signature. ${esc(s.sent ?? "The conversation has been told.")}</p></div>
     </footer>`;
   }
   const shown = s.shown === "recorded"
@@ -230,9 +230,8 @@ function follow(): void {
       label.innerHTML = esc(top2?.text ?? "Beginning") +
         (here && here !== top2 ? `<span class="sub"> / ${esc(here.text)}</span>` : "");
     }
-    const left = Math.round((1 - share) * s.view.words / 220);
     const meta = read.querySelector(".bar-meta");
-    if (meta) meta.textContent = share >= 0.99 ? "End" : `${Math.round(share * 100)}% · ${Math.max(1, left)} min left`;
+    if (meta) meta.textContent = share >= 0.99 ? "End" : `${Math.round(share * 100)}% · ${minutesLeft(s.view.words, share)} min left`;
     const fill = read.querySelector<HTMLElement>(".progress i");
     if (fill) fill.style.width = `${share * 100}%`;
     read.querySelector<HTMLElement>(".bar-top")?.toggleAttribute("hidden", read.scrollTop < read.clientHeight);
@@ -302,14 +301,19 @@ async function sign(s: Slot): Promise<void> {
       ...(s.doc.review_context ? { review_context: s.doc.review_context } : {}),
     } }));
     if (!r.ok) { s.approval = { failed: r.said }; draw(); return; }
-    s.approval = "done";
-    draw();
-    await app.sendMessage({ role: "user", content: [{ type: "text",
-      text: `I approved ${s.doc.path} (v${s.doc.version}) in the document panel.` }] });
   } catch (err) {
     s.approval = { failed: err instanceof Error ? err.message : String(err) };
     draw();
+    return;
   }
+  // The approval stands whatever happens next: telling the conversation is a separate act, and a hand-off that fails
+  // says so beside the approval rather than undoing it on screen.
+  s.approval = "done";
+  s.sent = "Telling the conversation…";
+  draw();
+  const missed = await tell(`I approved ${s.doc.path} (v${s.doc.version}) in the document panel.`);
+  s.sent = missed ? `The conversation was not told (${missed}): say in the chat that you approved v${s.doc.version}.` : null;
+  draw();
 }
 
 /** The jump list, opened and closed in place: redrawing the page would lose the reader's place. */
@@ -345,7 +349,7 @@ root.addEventListener("click", (e) => {
     case "jump": setJump(!jumpOpen); break;
     case "top": root.querySelector<HTMLElement>(".read")?.scrollTo({ top: 0, behavior: "smooth" }); break;
     case "only-changes": s.onlyChanges = !s.onlyChanges; s.scroll = 0; draw(); break;
-    case "explain": void explain(s); break;
+    case "explain": void explain(s).then(draw); break;
     case "close-pick": dropPick(); break;
     case "note-sel": startNote(s, true); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
     case "note-doc": startNote(s, false); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;

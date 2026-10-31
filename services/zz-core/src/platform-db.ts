@@ -21,10 +21,9 @@ let pool: pg.Pool | undefined;
 /** The platform database, connected on first use, or null when this deployment has none.
  *
  * One accessor, so "is there a database configured" and "has anybody connected yet" are not
- * answered with each other. Reading `pool` directly and treating `undefined` as "there is no
- * database" makes a write arriving before any pool exists go to disk and never reach the index,
- * invisible to knowledge_search until the next reindex. The pool size lives here for the same
- * reason.
+ * answered with each other: reading `pool` directly and treating `undefined` as "there is no
+ * database" would refuse a write that arrives before the first connection as if no database were
+ * configured. The pool size lives here for the same reason.
  *
  * Every wait here is bounded, and with four connections that is not a refinement: a statement with
  * no timeout holds its connection for as long as the server will let it, and four of those leave

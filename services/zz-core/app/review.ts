@@ -81,6 +81,17 @@ const heading = (text: string): string => {
   return `### Explaining: “${words.slice(0, 10).join(" ")}${words.length > 10 ? "…" : ""}”`;
 };
 
+/** Send `text` to the conversation as the person: null once the host took it, else why it did not. The host answers a
+ *  message it rejects with `isError` and throws on a timeout or a lost connection; either way nothing reached the agent. */
+export async function tell(text: string): Promise<string | null> {
+  try {
+    const r = await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
+    return r.isError ? "the conversation did not take the message" : null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 /** Ask the agent about the selected passage, quoted, in the person's own voice. */
 export async function explain(s: Slot): Promise<void> {
   const pick = state.pick;
@@ -88,12 +99,13 @@ export async function explain(s: Slot): Promise<void> {
   const where = pick.section ? `, in “${pick.section}”` : "";
   dropPick();
   document.getSelection()?.removeAllRanges();
-  await app.sendMessage({ role: "user", content: [{ type: "text", text: [
+  const missed = await tell([
     `Explain this passage from ${s.doc.path} (v${s.doc.version})${where}:`, "",
     `> ${clip(pick.text, QUOTE_MAX).replace(/\n/g, "\n> ")}`, "",
     "Begin your reply with exactly this line, then a horizontal rule (---), then the explanation:",
     heading(pick.text),
-  ].join("\n") }] });
+  ].join("\n"));
+  if (missed) s.sent = `The question was not sent: ${missed}. Select the passage and ask again.`;
 }
 
 /** Open the note box, on the selected passage or on the document as a whole. */
@@ -124,14 +136,16 @@ export async function sendNotes(s: Slot): Promise<void> {
     ...(n.quote ? [`   > ${n.quote.replace(/\n/g, "\n   > ")}`] : []),
     `   ${n.text}`,
   ].join("\n"));
-  await app.sendMessage({ role: "user", content: [{ type: "text", text: [
+  const missed = await tell([
     `Review notes on ${s.doc.path} (v${s.doc.version}), from the document panel:`, "", ...items, "",
     // The panel's own review context, named so the next present shows what changed since this one.
     s.doc.review_context
       ? `Change the document for these with document_edit, then call document_present on it with review_context ` +
         `"${s.doc.review_context}", so I am shown only what changed.`
       : "Change the document for these with document_edit, then call document_present on it, so I can see the result.",
-  ].join("\n") }] });
+  ].join("\n"));
+  // Kept until the agent has them: a note the conversation never received is not sent.
+  if (missed) { s.sent = `The notes were not sent: ${missed}. They are kept here; send them again.`; return; }
   s.sent = `${s.notes.length} note${s.notes.length === 1 ? "" : "s"} sent — the assistant will revise and show it again, with what changed marked.`;
   s.notes = [];
   keep(s);

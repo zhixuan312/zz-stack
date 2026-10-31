@@ -345,7 +345,6 @@ button.bar-section:hover { background: var(--surface-2); }
   .row .btn { flex: 1; }
   .title-row { flex-direction: column; gap: 8px; }
 }
-@media (prefers-reduced-motion: reduce) { .sk, .selbar, .head, .read { animation: none; } .btn, .sel-btn { transition: none; } }
 
 /* What changed since the revision before: a categorical blue, never a status — a
    changed section is neither good nor bad, only the part a re-review has to read. */
@@ -418,4 +417,9 @@ button.bar-section:hover { background: var(--surface-2); }
   .sel-text { flex-basis: 100%; }
   .sel-acts { margin-left: auto; }
   .prose .sec[data-mark] { margin-left: -10px; padding-left: 8px; }
+}
+/* Last, so it outranks every rule it stills: a media query adds no specificity. */
+@media (prefers-reduced-motion: reduce) {
+  .sk, .selbar, .arrive .head, .arrive .read .prose { animation: none; }
+  .btn, .sel-btn, .progress i { transition: none; }
 }

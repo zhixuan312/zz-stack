@@ -36,6 +36,10 @@ export interface Rendered {
 
 /** Reading time at 220 words a minute, never under one. */
 export const minutesOf = (words: number): number => Math.max(1, Math.round(words / 220));
+/** The reading time left with `share` of `words` read, at the same pace. */
+export const minutesLeft = (words: number, share: number): number => minutesOf((1 - share) * words);
+/** A script written without spaces between words, whose characters are read one at a time. */
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
 
 const ENTITY: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#x27;": "'" };
 /** The text of an HTML fragment micromark wrote: its tags dropped, its entities decoded. */
@@ -104,7 +108,11 @@ export function renderMarkdown(body: string): Rendered {
     // micromark writes `<img src="…" alt="…" />`; the alt is already escaped where it stands.
     .replace(/<img src="[^"]*" alt="([^"]*)"[^>]*\/?>/g,
              (_m, alt: string) => `<em class="dropped">${alt || "image not shown"}</em>`);
-  const count = (fragment: string): number => plain(fragment).split(/\s+/).filter(Boolean).length;
+  // A run between spaces is a word; a character of a script written without spaces is one on its own.
+  const count = (fragment: string): number => {
+    const text = plain(fragment);
+    return (text.match(UNSPACED)?.length ?? 0) + text.replace(UNSPACED, " ").split(/\s+/).filter(Boolean).length;
+  };
   // Each listed heading's section is the HTML from it to the next listed heading.
   const cuts = [...html.matchAll(/<h[23] id="([^"]+)">/g)];
   cuts.forEach((m, i) => {

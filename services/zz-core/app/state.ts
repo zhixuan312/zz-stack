@@ -57,7 +57,7 @@ export interface Slot {
   other: string[];
   onlyChanges: boolean;
   notes: Note[];
-  /** What the footer says about the notes just sent, until the next act. */
+  /** What the footer says about the last message the panel sent the conversation, until the next act. */
   sent: string | null;
   /** The footer's note box: closed, or open for a note with or without a passage. */
   noting: { quote: string | null; section: string | null } | null;

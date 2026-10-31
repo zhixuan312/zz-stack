@@ -136,8 +136,16 @@ if (!existsSync(join(CONSOLE, "src/styles/tokens.css"))) {
 }
 
 // 5. Rendering
-const { renderMarkdown, marksOf } = await load("services/zz-core/app/render.ts");
+const { renderMarkdown, marksOf, minutesOf, minutesLeft } = await load("services/zz-core/app/render.ts");
 const { deltaOf } = await load("services/zz-core/dist/document-delta.js");
+{
+  // A script written without spaces is read a character at a time: about 2,000 Han characters in eleven
+  // runs is a ten-minute read, not a one-minute one, and the time left is told at the same pace.
+  const han = renderMarkdown(`# 规格\n\n## 范围\n\n${Array.from({ length: 11 }, () => "这是一个用于测试阅读时间的段落。".repeat(12)).join("\n\n")}\n`);
+  is(minutesOf(han.words) >= 9, `a Han document of about 2,000 characters reads as ${minutesOf(han.words)} min (${han.words} words)`);
+  is(minutesLeft(han.words, 0.5) === minutesOf(han.words / 2), "the time left is not told at the reading pace");
+  is(renderMarkdown("one two three four\n").words === 4, "words separated by spaces are no longer counted one each");
+}
 {
   // A re-review reads what moved: the change set's records mark a section edited as changed, one
   // added as new, and name one gone as removed.

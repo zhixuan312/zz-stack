@@ -10,7 +10,7 @@
  * settles, never per scroll event.
  */
 import { app, current, root, state, type Slot } from "./state.ts";
-import type { Rendered } from "./render.ts";
+import { minutesLeft, type Rendered } from "./render.ts";
 
 type Heading = Rendered["outline"][number];
 let position: { here?: Heading; top2?: Heading; share: number } = { share: 0 };
@@ -79,7 +79,7 @@ function compose(): void {
   const where = top2 ? `"${top2.text}"${here && here !== top2 ? ` › "${here.text}"` : ""}` : "the opening, before the first section";
   const lines = [
     `The person is reading ${s.doc.path} (v${s.doc.version}) in the document panel, which shows them all of it.`,
-    `They are at ${where} — ${Math.round(share * 100)}% through, about ${Math.max(1, Math.round((1 - share) * s.view.words / 220))} min left.`,
+    `They are at ${where} — ${Math.round(share * 100)}% through, about ${minutesLeft(s.view.words, share)} min left.`,
     !passed.length ? "They have not yet passed a section."
       : passed.length <= 12 ? `Sections they have scrolled past: ${passed.join("; ")}.`
       : `They have scrolled past ${passed.length} sections, most recently: ${passed.slice(-8).join("; ")}.`,

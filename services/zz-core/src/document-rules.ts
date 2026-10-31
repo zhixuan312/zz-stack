@@ -5,7 +5,7 @@
  * database, no filesystem, no clock beyond a stated timezone.
  *
  * What does not belong here: anything that reads the store, queries Postgres, or decides policy
- * about a caller. Those stay in `server.ts` with the tool that owns them.
+ * about a caller. Those stay with the tool that owns them, in `src/tools/<subject>.ts`.
  */
 import { ENVELOPE_BLOCK, Envelope } from "@zz/contracts";
 

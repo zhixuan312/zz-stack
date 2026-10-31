@@ -4,7 +4,7 @@
 // labels what it creates with its own pid and sweeps the labels of dead pids first (scripts/owned-containers.ts).
 //
 //   - `orphans` names exactly the rows whose owner is gone: never this process, never a live one, never a malformed row;
-//   - every detached `docker run` and every `docker network create` under scripts/ carries `...owned()`, and each file
+//   - every detached `docker run` and every `docker network create` under scripts/ carries `...owned(…)`, and each file
 //     that creates one sweeps first, so a new starter cannot leak the old way.
 //
 // Offline: it starts nothing. The sweep's own docker calls run on every throwaway start the gate makes.
@@ -21,6 +21,8 @@ const isAlive = (pid: number) => pid === live;
 assert.deepEqual(orphans(`a ${dead}\nb ${live}\nc ${process.pid}\nd\n e notapid\n\nf ${dead}`, isAlive), ["a", "f"]);
 assert.deepEqual(orphans("", isAlive), []);
 assert.deepEqual(owned(), ["--label", `${OWNER_LABEL}=${process.pid}`]);
+// A stack kept on purpose (eval-flow-e2e --keep) outlives its starter, so nothing sweeps it.
+assert.deepEqual(owned(true), []);
 
 // ── every starter under scripts/ labels and sweeps ──
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
@@ -35,7 +37,7 @@ for (const file of walk("scripts")) {
   const sites = lines.flatMap((l, i) => (creates.test(l) ? [i] : []));
   if (sites.length === 0) continue;
   starters.push(file);
-  for (const i of sites) if (!lines[i].includes("...owned()")) problems.push(`${file}:${i + 1} creates without ...owned()`);
+  for (const i of sites) if (!lines[i].includes("...owned(")) problems.push(`${file}:${i + 1} creates without ...owned()`);
   if (!lines.some((l) => /\bsweepOrphans\(\)/.test(l))) problems.push(`${file} creates containers and never calls sweepOrphans()`);
 }
 assert.deepEqual(problems, []);

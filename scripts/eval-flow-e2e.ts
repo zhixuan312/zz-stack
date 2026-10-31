@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   let stack: Stack | null = null;
   let ok = false;
   try {
-    stack = await up(port);
+    stack = await up(port, keep);
     console.log(`  stack ${stack.prefix}: gateway ${stack.url}, database ${stack.db.replace(/:[^:@/]+@/, ":***@")}`);
     await walk(stack);
     ok = true;
@@ -109,7 +109,10 @@ async function main(): Promise<void> {
     const kept = keep || !ok;
     if (!kept) rmSync(stubLog, { force: true });
     report(ok, kept ? stubLog : null);
-    if (stack && keep) console.log(`  kept: ${stack.work} (containers ${stack.prefix}-*)`);
+    if (stack && keep) {
+      console.log(`  kept: ${stack.work} (containers ${stack.prefix}-*). Remove it with:\n` +
+        `    docker rm -f -v ${stack.prefix}-gw ${stack.prefix}-core ${stack.prefix}-pg && docker network rm ${stack.prefix}-net`);
+    }
     else if (stack) down(stack);
     server.close();
   }

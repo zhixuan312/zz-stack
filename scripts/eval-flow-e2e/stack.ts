@@ -124,20 +124,23 @@ function seedRepository(work: string, version: string): { seed: string; origin: 
 
 const PAT_OF = (token: string): string => createHash("sha256").update(token).digest("hex");
 
-export async function up(stubPort: number): Promise<Stack> {
+/** `keep`: the stack outlives this process, so it carries no owner label (`owned(true)`) — a labelled
+ *  one is an orphan the moment the walk exits, and the next throwaway check anywhere on the machine
+ *  sweeps it. Removing it is the operator's, with the commands the walk prints. */
+export async function up(stubPort: number, keep = false): Promise<Stack> {
   const work = realpathSync(mkdtempSync(join(tmpdir(), "zz-eval-flow-")));
   const prefix = `zz-evalflow-${process.pid}`;
   // A failed start removes what it made — the tree and its node_modules copy, the network and the
   // containers — before it is reported: the caller holds no stack to take down.
   try {
-    return await start(stubPort, work, prefix);
+    return await start(stubPort, work, prefix, keep);
   } catch (err) {
     down({ prefix, work });
     throw err;
   }
 }
 
-async function start(stubPort: number, work: string, prefix: string): Promise<Stack> {
+async function start(stubPort: number, work: string, prefix: string, keep: boolean): Promise<Stack> {
   const version = (JSON.parse(readFileSync(join(live, "package.json"), "utf8")) as { version: string }).version;
   // The gate the candidate build runs resolves the console's checkout as a sibling of the repo.
   const dash = resolve(live, "..", "zz-stack-dashboard");
@@ -147,9 +150,9 @@ async function start(stubPort: number, work: string, prefix: string): Promise<St
 
   const net = `${prefix}-net`, pg = `${prefix}-pg`, core = `${prefix}-core`, gw = `${prefix}-gw`;
   sweepOrphans();
-  sh("docker", ["network", "create", ...owned(), net]);
+  sh("docker", ["network", "create", ...owned(keep), net]);
   const pgsvc = postgresService(live);
-  sh("docker", ["run", "-d", ...owned(), "--name", pg, "--network", net, "--network-alias", "postgres",
+  sh("docker", ["run", "-d", ...owned(keep), "--name", pg, "--network", net, "--network-alias", "postgres",
     "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=evalflow", "-e", "POSTGRES_DB=zz",
     "-p", "127.0.0.1:0:5432", pgsvc.image, ...pgsvc.command]);
   waitFor("postgres", () => { try { sh("docker", ["exec", pg, "pg_isready", "-U", "zz", "-d", "zz"]); return true; } catch { return false; } });
@@ -170,11 +173,11 @@ async function start(stubPort: number, work: string, prefix: string): Promise<St
   // Fixed rather than `127.0.0.1:0`: docker picks a new port for `:0` on every restart, and the
   // walk restarts the gateway once to make it reconcile runs.
   const gwPort = sh("node", ["-e", "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})"]);
-  sh("docker", ["run", "-d", ...owned(), "--name", core, "--network", net, "--network-alias", "zz-core", ...mounts,
+  sh("docker", ["run", "-d", ...owned(keep), "--name", core, "--network", net, "--network-alias", "zz-core", ...mounts,
     "-e", "TYPESAFE_API_KEY=stub", "-e", `TYPESAFE_BASE_URL=${stub}`, "-e", "TYPESAFE_ATTEMPTS=1",
     "-e", `LLM_BASE_URL=${stub}/v1`, "-e", "LLM_API_KEY=stub",
     "node:24", ...boot("services/zz-core/dist/server.js")]);
-  sh("docker", ["run", "-d", ...owned(), "--name", gw, "--network", net, "--network-alias", "cred-proxy", ...mounts,
+  sh("docker", ["run", "-d", ...owned(keep), "--name", gw, "--network", net, "--network-alias", "cred-proxy", ...mounts,
     "-e", `SUPERADMIN_EMAIL=${OPERATOR}`, "-e", `BOOTSTRAP_TEAM=${TEAM}`,
     "-e", `GATEWAY_PUBLIC_URL=http://127.0.0.1:${gwPort}`, "-p", `127.0.0.1:${gwPort}:8000`,
     "node:24", ...boot("services/gateway/dist/server.js")]);

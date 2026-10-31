@@ -14,8 +14,10 @@ import { execFileSync } from "node:child_process";
 
 export const OWNER_LABEL = "zz.owner-pid";
 
-/** The `docker run` / `docker network create` arguments that mark what this process creates as its own. */
-export const owned = (): string[] => ["--label", `${OWNER_LABEL}=${process.pid}`];
+/** The `docker run` / `docker network create` arguments that mark what this process creates as its own. `kept`:
+ *  nothing — what is created to outlive this process on purpose is not its to sweep, and would be an orphan the moment
+ *  it exits. */
+export const owned = (kept = false): string[] => (kept ? [] : ["--label", `${OWNER_LABEL}=${process.pid}`]);
 
 /** Whether a process exists. EPERM is a process of another user: it exists. */
 export function alive(pid: number): boolean {

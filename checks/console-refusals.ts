@@ -6,8 +6,8 @@
  *   node checks/console-refusals.ts   # needs Docker and a built tree (`npm run build`)
  *
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), seeds what
- * `scripts/schema/refusals-seed.ts` declares, and calls the gateway's own built `refusalWeeks` and
- * `refusalGroups` (`services/gateway/dist/console/refusals.js`). What it establishes, with the expected
+ * `scripts/schema/refusals-seed.ts` declares, and calls the gateway's own built `refusalWeeks`,
+ * `everyRefusalGroup` and `foldGroups` (`services/gateway/dist/console/refusals.js`). What it establishes, with the expected
  * values written in the seed:
  *
  *   - by week, the four owners of the team's real-work refused calls sum to the week's refused total, and
@@ -63,7 +63,8 @@ type Group = { owner: string; tool: string; message: string | null; count: numbe
 type Groups = { rows: Group[]; groups: number; rest: { groups: number; count: number } | null };
 type Reads = {
   refusalWeeks: (team: string, window: Span, asOf: string, grain: string) => Promise<Weeks>;
-  refusalGroups: (team: string, window: Span, asOf: string, limit?: number) => Promise<Groups>;
+  everyRefusalGroup: (team: string, window: Span, asOf: string) => Promise<Group[]>;
+  foldGroups: (all: Group[], limit: number) => Groups;
 };
 
 const fail: Fail = failing(NAME);
@@ -76,7 +77,8 @@ const sum = (o: Owners): number => o.guardrail + o.ours + o.theirs + o.other;
 
 async function cases(db: pg.Client, read: Reads, add: () => Promise<void>): Promise<void> {
   const weeks = () => read.refusalWeeks(TEAM, WINDOW, AS_OF, "week");
-  const groups = (limit?: number) => read.refusalGroups(TEAM, WINDOW, AS_OF, limit);
+  const groupsOf = async (team: string, limit = 20) => read.foldGroups(await read.everyRefusalGroup(team, WINDOW, AS_OF), limit);
+  const groups = (limit?: number) => groupsOf(TEAM, limit);
 
   let step = "the four owners by week, summing to the refused total and the weeks to the window's";
   const before = await weeks();
@@ -104,7 +106,7 @@ async function cases(db: pg.Client, read: Reads, add: () => Promise<void>): Prom
 
   step = "the rest folded with its count";
   same(step, await groups(4), { rows: EXPECTED.groups.slice(0, 4), groups: 9, rest: { groups: 5, count: 5 } });
-  const many = await read.refusalGroups(MANY, WINDOW, AS_OF);
+  const many = await groupsOf(MANY);
   const doubled = MANY_RULES.slice(0, 20).reverse().map((r) => `ERROR: rule ${r} is broken`);
   same(step, [many.rows.map((g) => [g.message, g.count]), many.groups, many.rest], [doubled.map((m) => [m, 2]), 23, { groups: 3, count: 3 }]);
   pass("of 23 groups the 20 largest are answered and the other 3 folded with their 3 refusals; asked for 4 of team one's 9, the other 5 fold the same way");

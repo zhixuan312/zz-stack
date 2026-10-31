@@ -88,13 +88,12 @@ export async function refusalWeeks(team: string, window: Span, asOf: string, gra
   return { periods: out, maintenance };
 }
 
+export type FoldedGroups = { rows: RefusalGroup[]; groups: number; rest: { groups: number; count: number } | null };
+
 /** The team's real-work refusals inside the window, grouped by owner, tool and normalised message,
- *  the largest first and then the most recent: the first limit answered, the rest folded into their
- *  count. A refusal recorded with no text is a group of its own, its message null, in its owner's
- *  count. */
-export async function refusalGroups(team: string, window: Span, asOf: string, limit = 20, initiative: string | null = null): Promise<{
-  rows: RefusalGroup[]; groups: number; rest: { groups: number; count: number } | null;
-}> {
+ *  the largest first and then the most recent; foldGroups keeps the first few. A refusal recorded with
+ *  no text is a group of its own, its message null, in its owner's count. */
+export async function everyRefusalGroup(team: string, window: Span, asOf: string, initiative: string | null = null): Promise<RefusalGroup[]> {
   const end = new Date(Math.min(Date.parse(window.to), Date.parse(asOf))).toISOString();
   // The initiative asked for is a second complete statement, as in refusalWeeks.
   type Row = { owner: RefusalOwner; tool: string; message: string | null; n: number; last_ms: number };
@@ -124,7 +123,11 @@ export async function refusalGroups(team: string, window: Span, asOf: string, li
         group by 1, 2, 3
         order by count(*) desc, max(e.ts) desc, 1, 2, 3`,
       [team, window.from, end, initiative]);
-  const all = rows.map((r): RefusalGroup => ({ owner: r.owner, tool: r.tool, message: r.message, count: r.n, lastSeen: iso(r.last_ms) }));
+  return rows.map((r): RefusalGroup => ({ owner: r.owner, tool: r.tool, message: r.message, count: r.n, lastSeen: iso(r.last_ms) }));
+}
+
+/** The `limit` largest groups, the rest folded with their count. */
+export function foldGroups(all: RefusalGroup[], limit: number): FoldedGroups {
   const folded = all.slice(limit);
   return {
     rows: all.slice(0, limit), groups: all.length,

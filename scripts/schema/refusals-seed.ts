@@ -1,7 +1,7 @@
 /**
  * The tool calls a team's refusals are counted from, seeded into a throwaway database as `zz.event`
  * rows, and the values a reader must find over them: `checks/console-refusals.ts` calls the gateway's
- * own `refusalWeeks` and `refusalGroups` over them.
+ * own `refusalWeeks`, `everyRefusalGroup` and `foldGroups` over them.
  *
  * Every instant is fixed, so nothing depends on the day the check runs. The reporting timezone is
  * Asia/Singapore, eight hours ahead of UTC: day 0 is Monday 7 September 2026, local midnight, and an

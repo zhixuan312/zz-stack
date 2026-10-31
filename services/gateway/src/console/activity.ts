@@ -14,7 +14,7 @@
  *   tiles        the last whole week's real-work calls, its refusals with their four owners, and the
  *                tool refused most then, with its count and of how many (none, when nothing was refused)
  *   weeks        refusalWeeks by week: the calls, and the refused by owner summing to the refused total
- *   groups       refusalGroups over the weeks: the 20 largest groups, the rest folded with their count
+ *   groups       every refusal group over the weeks, folded: the 20 largest, the rest with their count
  *   maintenance  the maintenance calls and refusals over the weeks, counted apart
  *
  * Each part fails alone: weeks or groups unread is unavailable and the rest stands. The calls, the
@@ -22,9 +22,9 @@
  * is unavailable, never zero. The tool refused most is last week's refusals by tool, a read of its own:
  * when it fails it is unavailable, never none, and the tiles beside it stand.
  *
- * The summary's body is summaryOf, which the agent read activity_refusals (console/agent-reads.ts) calls
- * too, with a first instant and an initiative the route never names: the weeks, the groups and the
- * maintenance are then counted from that instant to the cutoff, or from the start of the route's own
+ * The summary's body is summaryWithGroups, which the agent read activity_refusals (console/agent-reads.ts)
+ * calls too, summing its unfolded groups by tool, with a first instant and an initiative the route never
+ * names: the weeks, the groups and the maintenance are then counted from that instant to the cutoff, or from the start of the route's own
  * window when that instant is before it, and every part, the tiles included, only in the team's
  * initiative of that slug. The tiles stay the last whole week's, read on their own when the window starts
  * inside it.
@@ -45,7 +45,7 @@ import type { Express, Request } from "express";
 
 import { platformDb } from "../db.js";
 import type { Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
-import { refusalGroups, refusalWeeks, type RefusalGroup, type RefusalPeriod } from "./refusals.js";
+import { everyRefusalGroup, foldGroups, refusalWeeks, type FoldedGroups, type RefusalGroup, type RefusalPeriod } from "./refusals.js";
 import { BAD_PAGE, iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import { lastWholeWeek, periodsOf } from "./work-figures.js";
 
@@ -55,7 +55,7 @@ export type ActivitySummary = {
   meta: ReadMeta;
   tiles: { calls: PeriodFigure; refused: PeriodFigure & { owners: Part<Owners> }; mostRefused: Part<MostRefused | null> };
   weeks: Part<RefusalPeriod[]>;
-  groups: Part<{ rows: RefusalGroup[]; groups: number; rest: { groups: number; count: number } | null }>;
+  groups: Part<FoldedGroups>;
   maintenance: Part<{ calls: number; refused: number }>;
 };
 type ActivityRow = {
@@ -99,17 +99,27 @@ async function firstCall(team: string, asOf: string): Promise<number | null> {
   return rows[0]?.first_ms ?? null;
 }
 
+/** The groups' refusals summed by tool, the most refused first. */
+export function byToolOf(groups: RefusalGroup[]): { tool: string; count: number }[] {
+  const sums = new Map<string, number>();
+  for (const g of groups) sums.set(g.tool, (sums.get(g.tool) ?? 0) + g.count);
+  return [...sums].map(([tool, count]) => ({ tool, count })).sort((a, b) => b.count - a.count || (a.tool < b.tool ? -1 : a.tool > b.tool ? 1 : 0));
+}
+
 /** The tool refused most among the groups, the count of its refusals and of all of them; null with none. */
 function mostRefusedOf(groups: RefusalGroup[]): MostRefused | null {
-  const byTool = new Map<string, number>();
-  for (const g of groups) byTool.set(g.tool, (byTool.get(g.tool) ?? 0) + g.count);
-  const [top] = [...byTool].sort(([a, m], [b, n]) => n - m || (a < b ? -1 : a > b ? 1 : 0));
-  return top ? { tool: top[0], count: top[1], of: groups.reduce((n, g) => n + g.count, 0) } : null;
+  const [top] = byToolOf(groups);
+  return top ? { ...top, of: groups.reduce((n, g) => n + g.count, 0) } : null;
 }
 
 /** The summary for the team at the cutoff: from the first call's week, or from the instant given, and in the
  *  initiative named. */
 export async function summaryOf(team: string, asOf: string, ask: { from: string | null; initiative: string | null } = { from: null, initiative: null }): Promise<ActivitySummary> {
+  return (await summaryWithGroups(team, asOf, ask)).summary;
+}
+
+/** summaryOf, with every refusal group of its window rather than the 20 it shows; null when they could not be read. */
+export async function summaryWithGroups(team: string, asOf: string, ask: { from: string | null; initiative: string | null }): Promise<{ summary: ActivitySummary; all: RefusalGroup[] | null }> {
   const { initiative } = ask;
   const [week, firstMs] = await Promise.all([lastWholeWeek(asOf), firstCall(team, asOf)]);
   const weekMs = Date.parse(week.from);
@@ -124,13 +134,13 @@ export async function summaryOf(team: string, asOf: string, ask: { from: string 
 
   const [weeks, groups, lastWeek, ownWeek] = await Promise.all([
     attempt("the refusals by week", () => refusalWeeks(team, span, asOf, "week", initiative)),
-    attempt("the refusal groups", () => refusalGroups(team, span, asOf, 20, initiative)),
-    attempt("last week's refusals by tool", () => refusalGroups(team, { from: week.from, to: week.to }, asOf, Infinity, initiative)),
+    attempt("the refusal groups", () => everyRefusalGroup(team, span, asOf, initiative)),
+    attempt("last week's refusals by tool", () => everyRefusalGroup(team, { from: week.from, to: week.to }, asOf, initiative)),
     whole ? null : attempt("last week's refusals", () => refusalWeeks(team, { from: week.from, to: week.to }, asOf, "week", initiative)),
   ]);
   const last = (whole ? weeks : ownWeek)?.periods.find((p) => p.window.from === week.from);
   const unread = (w: Window): PeriodFigure => ({ window: w, figure: { value: null, why: "unavailable" }, numerator: null, denominator: null });
-  return {
+  const summary: ActivitySummary = {
     meta: {
       asOf, timezone: ZZ_TZ, period: { from: span.from, to: asOf }, scope: "active-team",
       population: population(team, initiative), coverageFrom: firstMs === null ? null : iso(firstMs),
@@ -141,12 +151,13 @@ export async function summaryOf(team: string, asOf: string, ask: { from: string 
         ? { window: last.window, figure: { value: last.refused, why: null }, numerator: last.refused, denominator: last.calls, owners: partOf(last.owners) }
         : { ...unread(week), owners: UNREAD },
       // Read, a week with nothing refused is none; unread, it is unavailable.
-      mostRefused: lastWeek ? { state: "ok", data: mostRefusedOf(lastWeek.rows) } : UNREAD,
+      mostRefused: lastWeek ? { state: "ok", data: mostRefusedOf(lastWeek) } : UNREAD,
     },
     weeks: partOf(weeks && weeks.periods),
-    groups: partOf(groups),
+    groups: partOf(groups && foldGroups(groups, 20)),
     maintenance: partOf(weeks && weeks.maintenance),
   };
+  return { summary, all: groups };
 }
 
 /** The filters and the page, or the refusal. */

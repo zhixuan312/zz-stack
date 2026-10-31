@@ -6,7 +6,7 @@
  *
  *   platformStatus     statusOf (platform-status.ts), with one canonical tool's open reports
  *   releaseList        releasesOf (platform-releases.ts), each row with its upgrade notes
- *   activityRefusals   summaryOf (activity.ts), with the window's refusals by tool and its ten largest groups
+ *   activityRefusals   summaryWithGroups (activity.ts), with the window's refusals by tool and its ten largest groups
  *   runSummary         runsAt (runs.ts)
  *   recordRead         recordOf (record.ts)
  *
@@ -31,14 +31,14 @@
  * checks/console-agent-reads.ts compares each function's answer with its route's.
  */
 import { platformDb } from "../db.js";
-import { cutoff, summaryOf, type ActivitySummary } from "./activity.js";
+import { byToolOf, cutoff, summaryWithGroups, type ActivitySummary } from "./activity.js";
 import type { Part } from "./figures.js";
 import { NO_INITIATIVE } from "./initiatives.js";
 import { canonicalSurface, vocabulary } from "./platform-bugs.js";
 import { releasesOf, type ReleaseDetail, type Releases } from "./platform-releases.js";
 import { statusOf, type PlatformStatus } from "./platform-status.js";
 import { PERIODS, recordOf, type PeriodName, type RecordRead } from "./record.js";
-import { refusalGroups, type RefusalGroup } from "./refusals.js";
+import type { RefusalGroup } from "./refusals.js";
 import { runsAt, type Runs } from "./runs.js";
 import { BAD_PAGE, iso, NO_TEAM, ZZ_TZ } from "./shared.js";
 import { addDays, isDate, localDay, midnight } from "./work-query-buckets.js";
@@ -116,17 +116,8 @@ export async function activityRefusals(caller: Caller, args: { since?: string; i
   if (args.initiative !== undefined && !text(args.initiative)) return { inputError: "initiative must be the slug of one of your team's initiatives" };
   const team = caller.activeTeam, initiative = args.initiative ?? null;
   if (initiative !== null && !(await holds(team, initiative))) return { inputError: NO_INITIATIVE };
-  const summary = await summaryOf(team, asOf, { from: args.since === undefined ? null : iso(midnight(args.since)), initiative });
-  let byTool: ActivityRefusals["byTool"];
-  try {
-    const all = await refusalGroups(team, { from: summary.meta.period.from, to: asOf }, asOf, Infinity, initiative);
-    const sums = new Map<string, number>();
-    for (const g of all.rows) sums.set(g.tool, (sums.get(g.tool) ?? 0) + g.count);
-    byTool = { state: "ok", data: [...sums].map(([tool, count]) => ({ tool, count })).sort((a, b) => b.count - a.count || (a.tool < b.tool ? -1 : 1)) };
-  } catch (err) {
-    console.error("console activity: the refusals by tool could not be read:", err);
-    byTool = { state: "unavailable", reason: "query_failed" };
-  }
+  const { summary, all } = await summaryWithGroups(team, asOf, { from: args.since === undefined ? null : iso(midnight(args.since)), initiative });
+  const byTool: ActivityRefusals["byTool"] = all === null ? { state: "unavailable", reason: "query_failed" } : { state: "ok", data: byToolOf(all) };
   const messages: ActivityRefusals["messages"] = summary.groups.state === "ok"
     ? { state: "ok", data: summary.groups.data.rows.slice(0, MESSAGES) } : summary.groups;
   const totals: ActivityRefusals["totals"] = summary.weeks.state === "ok"

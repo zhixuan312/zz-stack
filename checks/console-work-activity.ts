@@ -23,7 +23,7 @@
  *     calls, the refused, its owners, the weeks and the maintenance are each unavailable and the tool
  *     refused most stands; with last week's refusals by tool failing, the tool refused most is
  *     unavailable and everything else stands. The faults are injected into the gateway's own pool;
- *   - its groups are refusalGroups' for the team: owner, tool, the newest text (null with none), count and
+ *   - its groups are the gateway's own groups for the team, folded to 20: owner, tool, the newest text (null with none), count and
  *     last seen, the second team's identical refusal in none of them;
  *   - the log is the team's real-work events newest first, no page view among them, each with its id, kind,
  *     tool, initiative, owner and message; kind, tool, initiative and refused=true each narrow it and
@@ -106,7 +106,7 @@ function request(who: Who, query: Record<string, string | string[]> = {}): Obj {
 interface Gateway {
   url: string; mine: string; theirs: string;
   log: Route; summary: Route; pageView: Route;
-  refusalGroups: (team: string, window: { from: string; to: string }, asOf: string) => Promise<Obj>;
+  refusalGroups: (team: string, window: { from: string; to: string }, asOf: string) => Promise<unknown>;
   /** Runs `f` with every statement `when` picks failing in the gateway's own pool, then restores it. */
   failing<T>(when: (sql: string, params: unknown[]) => boolean, f: () => Promise<T>): Promise<T>;
   stop(): Promise<void>;
@@ -139,7 +139,11 @@ async function listen(c: Core): Promise<Gateway> {
   const fake = { get: (p: string, h: Route) => routes.set(`GET ${p}`, h), post: (p: string, h: Route) => routes.set(`POST ${p}`, h) };
   ((await load("console/activity.js")) as { mountActivity: (app: unknown) => void }).mountActivity(fake);
   ((await load("console/page-view.js")) as { mountPageView: (app: unknown) => void }).mountPageView(fake);
-  const { refusalGroups } = (await load("console/refusals.js")) as Pick<Gateway, "refusalGroups">;
+  const { everyRefusalGroup, foldGroups } = (await load("console/refusals.js")) as {
+    everyRefusalGroup: (team: string, window: { from: string; to: string }, asOf: string) => Promise<unknown[]>;
+    foldGroups: (all: unknown[], limit: number) => unknown;
+  };
+  const refusalGroups: Gateway["refusalGroups"] = async (team, window, asOf) => foldGroups(await everyRefusalGroup(team, window, asOf), 20);
 
   const app = express();
   // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the telemetry on the door and
@@ -355,7 +359,7 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   c.pass(`${step}: 9 calls last week, 7 refused (guardrail 3, ours 1, theirs 1, other 2 with the row of no owner), ` +
          `${STATUS} refused 3 of 7; the weeks from the first call's, each owners summing to its total; maintenance 2 and 1 apart`);
 
-  step = "the groups are refusalGroups' for the team";
+  step = "the groups are the gateway's own for the team";
   const groups = summary.groups as { state: string; data: { rows: Group[]; groups: number; rest: unknown } };
   same(step, groups, { state: "ok", data: await g.refusalGroups(c.team, { from: iso(w0 - 2 * WEEK), to: asOf }, asOf) });
   const shape = groups.data.rows.map((r) => [r.owner, r.tool, r.count]);

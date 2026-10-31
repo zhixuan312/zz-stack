@@ -75,7 +75,7 @@ check("a released plugin_version is written once, and no statement updates it",
       runsCheck("plugin-version-immutable.ts"));
 check("a failure mode is an identity and a discovery of it is a sighting: identified by (plugin_id, stable_key), carrying its own prevalence, owner and evidence, and always resolving to a mode",
       runsCheck("failure-mode-identity.ts"));
-check("a scored run is terminal, and every result row names who produced it",
+check("a scored run is terminal: evaluation_score refuses it under a new key before any work, the key that scored it replays, the write lands only on an unscored run, and every result row names who produced it",
       runsCheck("scored-run-terminal.ts"));
 check("an assessment names what it judged by kind and by exactly one child key, and the ledger keys on the principal's id",
       runsCheck("typed-subject.ts"));

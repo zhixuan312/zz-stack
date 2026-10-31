@@ -565,7 +565,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
           .filter(([, v]) => v !== undefined && !(Array.isArray(v) && !v.length));
         if (scope?.rows === false && declared.length) {
           nothingSelected = true;
-          causes.push(`The filters ${declared.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")} select no row ` +
+          causes.push(`The filters ${declared.map(([name, value]) => `${name}: ${JSON.stringify(value)}`).join(", ")} select no row ` +
             "on either shelf, so the query was never compared against anything — check each value.");
         }
         if (query && !withHistory) {

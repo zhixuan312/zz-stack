@@ -66,19 +66,22 @@ services:
       - LLM_API_KEY=${LLM_API_KEY:-}
       - ZZ_JUDGE_MODEL=${ZZ_JUDGE_MODEL:-deepseek-v4.1-flash}
       - ZZ_JUDGE_THINKING=${ZZ_JUDGE_THINKING:-on}
-      # The typed judge, which answers shapes rather than sentences: a position on named levels,
-      # one word from a closed set, a yes/no. It marks a ruler whose dimensions name their levels.
+      # The model the team's agents run on, read only to warn at boot when ZZ_JUDGE_MODEL is the
+      # same one.
+      - PLATFORM_BASE_MODEL=${PLATFORM_BASE_MODEL:-}
+      # The typed judgement service, which answers shapes rather than sentences: a position on
+      # named levels, one word from a closed set, a yes/no. It answers the flows' checkpoints and
+      # the evaluation measures that ask a typed question.
       #
-      # DELIBERATE: optional. With no key the reading judge marks every ruler, and the report
-      # names the recommendation as absent with the reason. A third party that can stop an
-      # evaluation existing is a dependency nobody agreed to.
+      # DELIBERATE: optional. With no key every caller reports the typed judgement as absent, with
+      # the reason, and carries on. A third party that can stop a flow is a dependency nobody
+      # agreed to.
       - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
       - TYPESAFE_MODEL=${TYPESAFE_MODEL:-jev-latest}
       - TYPESAFE_BASE_URL=${TYPESAFE_BASE_URL:-}
-      # The database pool and the typed service's budget. Documented in .env.example and, until
-      # now, reaching nothing: compose forwards its own `environment:` names and only those, so
-      # setting any of these in .env changed nothing at all. `|| ` on the reading side, so an
-      # empty value here is still the code's own default.
+      # The database pool and the typed service's budget. Compose forwards its own `environment:`
+      # names and only those, so each has to be listed here to reach the service. `||` on the
+      # reading side, so an empty value here is still the code's own default.
       - ZZ_DB_POOL_MAX=${ZZ_DB_POOL_MAX:-}
       - ZZ_DB_STATEMENT_TIMEOUT_MS=${ZZ_DB_STATEMENT_TIMEOUT_MS:-}
       - ZZ_DB_CONNECT_TIMEOUT_MS=${ZZ_DB_CONNECT_TIMEOUT_MS:-}
@@ -92,14 +95,10 @@ services:
       # default: only register-plugins refuses on an unset value, so an install that never
       # registers a plugin is unaffected.
       - ZZ_CATALOG_OWNER_TEAM=${ZZ_CATALOG_OWNER_TEAM:-}
-    # DELIBERATE: no volumes. This service used to mount `zz-artifacts:/artifacts` for the
-    # team/per-user `.zz` stores it wrote documents into. The store is gone (Task I-41): a
-    # document, its revisions and its citations are rows in the database this service is already
-    # given, so the mount was a second home for facts the `pg_dump` carries — and the copy that
-    # went stale the moment a tool wrote a document. /catalog and /skills ship inside the image;
-    # see the root Dockerfile and docker-compose.build.yml, which mounts the working tree back
-    # over them for development. Nothing zz-core writes lives outside the database, so it is
-    # given no volume at all rather than one left mounted for nobody.
+    # DELIBERATE: no volumes. Nothing zz-core writes lives outside the database: a document, its
+    # revisions and its citations are rows. /catalog and /skills ship inside the image; see the
+    # root Dockerfile and docker-compose.build.yml, which mounts the working tree back over them
+    # for development.
     # DELIBERATE: INTERNAL_BIND, never the gateway's bind. zz-core has no authentication of its
     # own and trusts the identity headers it is sent, so published beyond loopback it would
     # answer anyone as anyone. The gateway is the authenticated door; /core/mcp reaches this.
@@ -126,15 +125,12 @@ services:
       # is not: teamFor() returns null, so every document tool refuses for want of a
       # team, and there is no other store for a document to land in.
       - BOOTSTRAP_TEAM=${BOOTSTRAP_TEAM:-}
-      # The model the flows' own agents run on. The judge must not be this one.
-      - PLATFORM_BASE_MODEL=${PLATFORM_BASE_MODEL:-}
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
       # Where the gateway finds zz-core's eval door (`relay.ts`). Spelled here with the same
       # default the code carries: a knob `.env.example` documents and compose never forwards is
       # a switch that does nothing.
       - EVAL_MCP_URL=${EVAL_MCP_URL:-http://zz-core:8000/eval-mcp}
-      # The gateway's own pool (db.ts). Same reason as zz-core's above: documented, and previously
-      # reaching nothing.
+      # The gateway's own pool (db.ts), listed for the same reason as zz-core's above.
       - ZZ_DB_POOL_MAX=${ZZ_DB_POOL_MAX:-}
       - ZZ_DB_STATEMENT_TIMEOUT_MS=${ZZ_DB_STATEMENT_TIMEOUT_MS:-}
       - ZZ_DB_CONNECT_TIMEOUT_MS=${ZZ_DB_CONNECT_TIMEOUT_MS:-}
@@ -157,11 +153,9 @@ services:
       - CORE_PEERS=${CORE_PEERS:-zz-core}
     volumes:
       # The gateway's own durable data: `/data/events-unwritten.jsonl`, the events it could not
-      # write to the database. DELIBERATE: `zz-artifacts` is NOT mounted here any more. The console
-      # read documents and knowledge off that volume; both are `zz.doc` / `zz.doc_revision` /
-      # `zz.knowledge_node` rows in the database this service is already given, so the read-only
-      # mount was a second answer to a question the gateway can ask directly. See deploy/backup.sh,
-      # which stopped backing the volume up with it.
+      # write to the database. The console's documents and knowledge are `zz.doc` /
+      # `zz.doc_revision` / `zz.knowledge_node` rows, read from the database, so nothing else is
+      # mounted. deploy/backup.sh archives this volume.
       - cred-data:/data
     # The only service that may be published beyond loopback: it authenticates every request
     # itself, and Caddy proxies the public host to it.
@@ -172,11 +166,11 @@ services:
   postgres:
     image: ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0
     restart: unless-stopped
-    # Sized to the host. The image ships the specification's reference settings, and
-    # `shared_buffers = 8GB` stops PostgreSQL 17 starting at all on a small machine.
+    # Sized to the host. The image's own configuration sets `shared_buffers = 8GB`, which stops
+    # PostgreSQL 17 starting at all on a small machine.
     #
-    # DELIBERATE: overridden here, not in the conf the image ships, so the reference values stay
-    # readable and a larger host has one line to delete.
+    # DELIBERATE: overridden here, not in the conf the image ships, so a larger host has one line
+    # to delete.
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf",
               "-c", "shared_buffers=512MB", "-c", "maintenance_work_mem=128MB"]
     environment:

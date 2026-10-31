@@ -1,7 +1,7 @@
 {
   "_header": [
-    "Each field is pinned and verified unless listed in unverified_fields. testing/tenant-info/",
-    "deployment.ts cross-checks this lock against the Dockerfile and postgresql.conf."
+    "checks/postgres-image-pinned.ts holds this lock, the Dockerfile and postgresql.conf together;",
+    "scripts/gate/checks/deploy-compose.ts holds the image tag in docker-compose.yml to it."
   ],
   "postgres_major": 17,
   "postgres_version": "17.11",
@@ -28,8 +28,7 @@
   "shared_preload_libraries": [
     "pg_textsearch"
   ],
-  "feature_report": "artifacts/tenant-info-v4/extension-features.json \u2014 produced by `npm run tenant-info -- verify --suite deployment --profile integration --cases extension` on the built image; not in this checkout",
   "unverified_fields": [
-    "okf_reference_digest \u2014 a placeholder: the specification asks for a vendored OKF reference digest, and this repository vendors no OKF reference (services/zz-core/src/tenant-info/export.ts is its own implementation). Vendor the OKF v0.2 reference and digest it, or strike the field from the specification."
+    "okf_reference_digest \u2014 a placeholder: the specification asks for a vendored OKF reference digest, and this repository vendors no OKF reference. Vendor the OKF v0.2 reference and digest it, or strike the field from the specification."
   ]
 }

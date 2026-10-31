@@ -32,8 +32,10 @@ on the production host:
 ```
 zz-db-<stamp>.sql.gz            the `zz` schema — principals, teams, PATs, events, AND every team's
                                 documents, revisions, citations and knowledge
-zz-credentials-<stamp>.tar.gz   the gateway's own data: events it could not write to the database
-zz-config-<stamp>.tar.gz        deploy/.env, Caddyfile and docker-compose.yml
+zz-credentials-<stamp>.tar.gz   the gateway's own data volume: /data/events-unwritten.jsonl, the
+                                events it could not write to the database
+zz-config-<stamp>.tar.gz        deploy/.env, plus docker-compose.yml and a Caddyfile when either
+                                sits beside backup.sh
 ```
 
 Copy one complete set — all three files, same stamp — to the rehearsal host:
@@ -46,9 +48,10 @@ scp root@<production-host>:/root/zz-backups/zz-*-$STAMP.* ~/rehearsal/backup/
 
 Copy, never move. The original set stays where it is.
 
-> `zz-credentials-*.tar.gz` holds API keys in plaintext and `zz-config-*.tar.gz` holds the
-> database password. Both are mode 600 on the source. Keep them that way, and do not put
-> either on shared storage.
+> `zz-config-*.tar.gz` holds `deploy/.env` in plaintext: the database password and every key set
+> there. `zz-credentials-*.tar.gz` holds the events the gateway could not write, which name who
+> did what. Both are mode 600 on the source. Keep them that way, and do not put either on shared
+> storage.
 
 ### A set with a fourth file is an OLDER set
 
@@ -71,22 +74,16 @@ rehearsal does not need it.
 
 ---
 
-## 2. Build the manifest
+## 2. Check the copy, if you want to
 
 ```bash
 cd <checkout>/zz-stack
 ./deploy/backup-manifest.sh ~/rehearsal/backup $STAMP
 ```
 
-It writes `zz-backup-manifest-<stamp>.json` beside the set, listing the three components `backup.sh`
-writes — the database, the credentials volume and the configuration files — each with a locator and
-the SHA-256 of the actual file.
-
-It refuses, rather than writing a manifest, if any of the three is missing. An incomplete set is not
-a backup, and a manifest over two of them would describe a restore that leaves something behind,
-which is the whole thing the rehearsal exists to refuse.
-
-Each refusal is a real finding about the backup. None of them is a problem with the script.
+It writes `zz-backup-manifest-<stamp>.json` beside the set: the three files and the SHA-256 of
+each, to compare with the same listing taken on the source. It refuses a set missing any of the
+three. Nothing else in this procedure reads it.
 
 ---
 
@@ -101,11 +98,17 @@ docker run -d --name zz-rehearsal-db --network zz-rehearsal \
   -e POSTGRES_PASSWORD="$(openssl rand -hex 24)" \
   -e POSTGRES_USER=zz -e POSTGRES_DB=zz_rehearsal \
   -p 127.0.0.1:55432:5432 \
-  zz-postgres-rehearsal:17
+  zz-postgres-rehearsal:17 \
+  postgres -c config_file=/etc/postgresql/postgresql.conf \
+           -c shared_buffers=512MB -c maintenance_work_mem=128MB
 ```
 
 `-p 127.0.0.1:55432` binds to loopback only. A rehearsal database that anything else on the
 network can reach is not isolated.
+
+The command line is the one `deploy/docker-compose.yml` gives the platform's database: the
+image's own configuration sets `shared_buffers = 8GB`, which stops PostgreSQL starting at all on a
+small machine.
 
 `deploy/postgres/versions.lock.json` carries the pins for this image; read the lock file rather
 than any prose about it if the two ever disagree.
@@ -116,50 +119,35 @@ than any prose about it if the two ever disagree.
 
 ```bash
 cd ~/rehearsal/backup
-gzip -dc zz-db-$STAMP.sql.gz | docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal
+gzip -dc zz-db-$STAMP.sql.gz | docker exec -i zz-rehearsal-db psql -v ON_ERROR_STOP=1 -U zz -d zz_rehearsal
 ```
 
 **Logical restore into a new cluster — never mount an older major version's data directory into a
 newer one.** The dump is `pg_dump --clean --if-exists`, so it restores over an empty database.
-Treat any error as fatal: a partial restore that looks finished is the failure this whole rehearsal
-exists to find.
+`ON_ERROR_STOP` makes psql exit non-zero on the first error. Treat that as fatal: a partial restore
+that looks finished is the failure this whole rehearsal exists to find.
 
-**There is no second restore.** This step used to extract the artifacts archive onto a separate new
-volume beside the database. The deployment has no artifact volume any more — no service in
-`deploy/docker-compose.yml` mounts one — and the documents the archive held are rows in the database
-this step just restored.
+**There is no second restore.** No service in `deploy/docker-compose.yml` mounts a document volume:
+documents are rows in the database this step just restored.
 
 ---
 
 ## 5. Apply the schema
 
+A restored dump carries its own ledger, `zz.schema_migration`, and a migration is applied to it only
+by the gateway's own runner, which applies what that ledger lacks. Never pipe `001_init.sql` into
+it with `psql`: that re-creates what the dump already holds, and fails on it.
+
+From a checkout with `npm install` done:
+
 ```bash
-docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal \
-  < <checkout>/zz-stack/services/gateway/migrations/001_init.sql
+node scripts/rehearse.ts --dump ~/rehearsal/backup/zz-db-$STAMP.sql.gz
 ```
 
-`001_init.sql` is every migration its `-- absorbs:` lines name, squashed into one file. Apply every
-other file in `services/gateway/migrations/` after it, in filename order.
-
-**The line above is for a DATABASE THAT HAS NO LEDGER, and a restored dump has one.** The gateway's
-runner records each file it applies in `zz.schema_migration` by name and skips what that table
-already lists, so piping a restore's own ledger back through the platform leaves `001_init.sql`
-unapplied wherever the dump already carries its row — which every production dump does. The schema
-still ends up where it should: `001_init.sql` is every migration its `-- absorbs:` lines name, so a
-deployment that ran them has the schema this head reaches, and the ledger's own rows are the record
-of that. What the paragraph above is for is the case the commands beside it describe — a new cluster
-with no ledger, where `001_init.sql` is what builds the whole schema in one file. Read the ledger
-back and compare it against the `-- absorbs:` list before deciding which case you are in.
-
-Just after its header come `create extension if not exists` lines for `citext`, `pg_trgm` and the
-rest. Applied through `psql` as above those run unconditionally — the `requires-extension:`
-directives in its header are read by the gateway's own migration runner
-(`services/gateway/src/db.ts`), which defers the file on a cluster that cannot supply them; piping
-it straight into `psql` bypasses that and fails outright.
-
-**Read the applied head back and compare it against the highest-numbered file in
-`services/gateway/migrations/`.** A rehearsal that stops short of the tree's head has rehearsed a
-schema nobody is going to deploy.
+It restores the dump into a throwaway container of its own, lets the real migration runner apply
+every pending file in `services/gateway/migrations/`, compares the result with the schema target and
+reports what moved, ending `REHEARSAL OK` or with the lines that disagree. The database from step 4
+stays as restored, for reading.
 
 ---
 
@@ -197,97 +185,21 @@ What this may name, and what it may never name:
 - **Never** the live cluster.
 - **Never** a value inferred, copied or derived from `TEAM_DB_URL` or `PLATFORM_DB_URL`.
 
-This used to be `ZZ_TENANT_INFO_ISOLATED_DB_URL`, and it used to unblock a set of verification
-suites. **The `tenant-info` CLI and its corpora went with the artifact/search layer in 0.86.0**, so
-nothing in this checkout consumes the URL any more. It is what an operator points a `psql` or a GUI
-client at to read the restored copy; the rehearsal that runs automatically is
-`node scripts/rehearse.ts --dump <zz-db-*.sql.gz>`, which starts its own container and refuses to
-be handed a URL.
+Nothing in this checkout consumes the URL. It is what an operator points a `psql` or a GUI client
+at to read the restored copy; the migration rehearsal in step 5 starts its own container and
+refuses to start with `TEAM_DB_URL` or `PLATFORM_DB_URL` in the environment.
 
 ---
 
-## 7. The cutover rehearsal
-
-The steps are `deploy/ACTIVATION.md`'s twelve, and they are executed by an operator, not by a suite.
-What an operator does here is judge the record they made while executing them, and then check the
-one fact a record cannot be trusted for: that the writes accepted after the resume are really there.
-
-Write your observations to a JSON file as you go:
+## 7. Tear down
 
 ```bash
-export ZZ_CUTOVER_OBSERVATIONS=~/rehearsal/cutover-observations.json
-```
-
-```json
-{
-  "drain": {
-    "mutation_paths": [
-      { "kind": "request",       "maintenance": true, "in_flight": 0 },
-      { "kind": "background",    "maintenance": true, "in_flight": 0 },
-      { "kind": "legacy_client", "maintenance": true, "in_flight": 0 }
-    ],
-    "active_writers": 0,
-    "platform_snapshot_boundary": "<pg_current_wal_lsn() at the freeze>"
-  },
-  "matched_unit": {
-    "old_unit": {
-      "app_image_digest": "sha256:...",
-      "database_identity": "zz-rehearsal-source",
-      "read_only": true
-    },
-    "new_unit": {
-      "app_image_digest": "sha256:...",
-      "database_identity": "zz-rehearsal-db",
-      "postgres_major": 17,
-      "data_directory_reused": false
-    },
-    "outbound_integrations_disabled": true
-  },
-  "forward_recovery": {
-    "strategy": "forward_recovery",
-    "target_postgres_major": 17,
-    "resume_boundary_at": "<ISO timestamp when you resumed writes>",
-    "post_resume_write_ref": "<zz.event.id of the first accepted write after resume>",
-    "recovered_write_refs": ["<...>"],
-    "platform_db_changes_preserved": true
-  }
-}
-```
-
-> **Two fields are gone from this record.** `drain.file_commit_watermark` was the last commit of each
-> team's store repository, and `forward_recovery.new_file_commits` / `recovered_file_commits` were
-> the commits a recovery replayed. There are no store repositories: the documents are rows, and
-> `platform_snapshot_boundary` plus `platform_db_changes_preserved` are the whole of that claim now.
-> A record that still carries them is recording something this platform does not have.
-
-Filling the two fields that matter:
-
-```bash
-# the freeze boundary
-docker exec zz-rehearsal-db psql -U zz -d zz_rehearsal -tAc 'select pg_current_wal_lsn()'
-
-# the first accepted write after you resume — inject it deliberately, then read it back
-docker exec zz-rehearsal-db psql -U zz -d zz_rehearsal -tAc \
-  'select id from zz.event order by id desc limit 1'
-
-# after forward recovery, every write that came back
-docker exec zz-rehearsal-db psql -U zz -d zz_rehearsal -tAc \
-  "select id from zz.event where id > <boundary id> order by id"
-```
-
-`post_resume_write_ref` is a **`zz.event.id`**. That is the identity one accepted write actually has
-in this schema — every door call, every document write and every close records one — and it is what
-"it survived" can be checked against rather than taken on trust. The `zz.artifact_event` table this
-document used to read it from went with the artifact/search layer in 0.86.0.
-
----
-
-## 8. Tear down
-
-```bash
-docker rm -f zz-rehearsal-db
+docker rm -f -v zz-rehearsal-db
 docker network rm zz-rehearsal
 ```
 
-Keep the backup set and the manifest. Do not delete the original set: the source deployment is still
+`-v` removes the database's data volume with the container: the image declares one, and without
+`-v` it is left behind where `docker ps` never shows it.
+
+Keep the backup set. Do not delete the original set: the source deployment is still
 the only place some of this exists.

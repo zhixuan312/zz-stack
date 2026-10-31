@@ -248,14 +248,9 @@ const bundle = `dist/release/zz-stack-deploy-${version}.tgz`;
 /* What ships is the compose file, the example environment, and the scripts an operator runs
  * by hand.
  *
- * COUPLED: backup.sh and install-backup-cron.sh ship too, because deploy/README.md's Day-2
- * section tells an operator to run both from the directory this bundle unpacks to — and
- * backup-manifest.sh ships with them, because backup.sh's own closing NOTE tells the operator
- * to run `./deploy/backup-manifest.sh` over the set it just wrote. A script that names a
- * sibling the bundle does not carry is the same gap this comment records for the first two,
- * found by reading the output of a backup taken on the host rather than by the gate: the gate
- * derives its list from deploy/README.md's commands, and this one is named by a shipped
- * script instead. */
+ * COUPLED: backup.sh, backup-manifest.sh and install-backup-cron.sh ship too, because
+ * deploy/README.md's Backups section tells an operator to run each from the directory this
+ * bundle unpacks to. */
 run("bash", ["-c",
   `mkdir -p dist/release && cd deploy && tar czf ../${bundle} docker-compose.yml .env.example issue-first-pat.sh issue-enrolment.sh zz-tool backup.sh backup-manifest.sh install-backup-cron.sh`],
   { cwd: root });

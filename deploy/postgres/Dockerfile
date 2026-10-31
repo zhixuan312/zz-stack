@@ -1,7 +1,7 @@
 # deploy/postgres/Dockerfile — the pinned PostgreSQL 17 + pg_textsearch v1.4.0 image.
-# COUPLED: every value that identifies which bytes this builds is cross-checked against
-# versions.lock.json by testing/tenant-info/deployment.ts's validateImageInputs, and
-# checks/postgres-image-pinned.ts holds the two files together.
+# COUPLED: versions.lock.json records which bytes this builds. checks/postgres-image-pinned.ts
+# holds the lock, this file and postgresql.conf together, and scripts/gate/checks/deploy-compose.ts
+# holds the image tag in docker-compose.yml to the lock.
 #
 # DELIBERATE: the Debian (glibc) variant, not Alpine: pg_textsearch's musl compatibility is not
 # established.
@@ -12,8 +12,8 @@
 # an ARG, because `FROM image@${DIGEST}` can be overridden with `--build-arg` at build time.
 FROM postgres:17.11-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652 AS builder
 # DELIBERATE: the defaults are the pin, for the same reason. COUPLED: versions.lock.json records
-# the same three, and validateImageInputs refuses a Dockerfile that does not carry the lock's
-# commit and hash literally.
+# the same three, and checks/postgres-image-pinned.ts refuses a Dockerfile that does not carry the
+# lock's tag and source hash literally.
 ARG PG_TEXTSEARCH_TAG=v1.4.0
 ARG PG_TEXTSEARCH_COMMIT=7a932505b537d50ad8d2d068a053cd1dd7b646ea
 ARG PG_TEXTSEARCH_SOURCE_SHA256=b05f668806199f747218e43f659a5d3f56e254ff7cf63fab23586e832218ca30

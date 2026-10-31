@@ -71,8 +71,9 @@ cat <<EOF
 
 $HOST is provisioned. NOT yet done, each on purpose:
   1. deploy/.env       — every secret and address. Nothing here invents one.
-  2. the Caddyfile     — ./deploy/install-caddy.sh $HOST, once .env names the public URL
-  3. the stack itself  — unpack a release bundle into $REMOTE/deploy and
+  2. the stack itself  — unpack a release bundle into $REMOTE/deploy and
                          \`docker compose up -d\`. See deploy/README.
+  3. the Caddyfile     — ./deploy/install-caddy.sh $HOST, once the stack runs and
+                         .env names the public URL
   4. data              — a fresh store, or a migration you decide on
 EOF

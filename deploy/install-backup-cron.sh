@@ -5,9 +5,10 @@
 # 03:17 and 04:37 Sunday are in the host's timezone, because that is what cron uses — not
 # UTC. Anyone reasoning about how old a backup is must read the host's zone.
 set -euo pipefail
-# Where this script is, not where a deployment happens to live: a release bundle unpacked
-# anywhere else must get cron lines pointing at its own directory.
-REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+# The jobs run the backup.sh beside this script: a release bundle unpacks flat into one directory,
+# wherever that is, and a checkout keeps both in deploy/.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+[ -x "$HERE/backup.sh" ] || { echo "no executable backup.sh beside this script in $HERE — refusing to schedule a job that cannot run" >&2; exit 1; }
 tmp=$(mktemp)
 # DELIBERATE: a failure to read the crontab is fatal. Treating it as "no crontab yet" would
 # make our own lines the entire crontab and delete every unrelated job on the host.
@@ -35,8 +36,8 @@ printf '%s' "$existing" | grep -vF "$TAG" > "$tmp" || true
 # removed here is asserted by having been added or removed. Re-running this removes any
 # tagged job no longer listed.
 JOBS=(
-  "17 3 * * * $REPO/deploy/backup.sh >> /var/log/zz-backup.log 2>&1 $TAG"
-  "37 4 * * 0 $REPO/deploy/backup.sh --verify >> /var/log/zz-backup.log 2>&1 $TAG"
+  "17 3 * * * $HERE/backup.sh >> /var/log/zz-backup.log 2>&1 $TAG"
+  "37 4 * * 0 $HERE/backup.sh --verify >> /var/log/zz-backup.log 2>&1 $TAG"
 )
 printf '%s\n' "${JOBS[@]}" >> "$tmp"
 crontab "$tmp"

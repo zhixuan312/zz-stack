@@ -66,11 +66,23 @@ if [ "$(printf '%s' "$EXISTS" | tr -d '[:space:]')" != "1" ]; then
 fi
 
 # No issuer column: the host's shell authorised this, and there is no signed-in person to name.
-printf '%s\n' "insert into zz.passkey_enrolment (token_hash, principal_id, expires_at)
+#
+# DELIBERATE: ON_ERROR_STOP, and the inserted row counted. Without the first, psql exits 0 after an
+# SQL error read from stdin; without the second, an insert that matched no principal succeeds with
+# no row. Either way the link printed below would be one no row holds.
+INSERTED="$(printf '%s\n' "insert into zz.passkey_enrolment (token_hash, principal_id, expires_at)
    select :'hash', id, now() + interval '7 days'
-   from zz.principal where email = :'email';" \
-  | docker compose exec -T postgres psql -U "${POSTGRES_USER:-zz}" -d "${POSTGRES_DB:-zz}" -q \
-      -v email="$EMAIL" -v hash="$HASH" >/dev/null
+   from zz.principal where email = :'email'
+   returning 1;" \
+  | docker compose exec -T postgres psql -U "${POSTGRES_USER:-zz}" -d "${POSTGRES_DB:-zz}" -q -tA \
+      -v ON_ERROR_STOP=1 -v email="$EMAIL" -v hash="$HASH")" || {
+  echo "the enrolment row was not written — no link was issued." >&2
+  exit 1
+}
+if [ "$(printf '%s' "$INSERTED" | tr -d '[:space:]')" != "1" ]; then
+  echo "the enrolment insert wrote no row for $EMAIL — no link was issued." >&2
+  exit 1
+fi
 
 cat <<MSG
 

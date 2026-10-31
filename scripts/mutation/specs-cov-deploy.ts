@@ -291,8 +291,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-ops.ts",
     target: "a script the bundle ships needs nothing the host does not have",
     subject: "deploy/install-backup-cron.sh",
-    find: '"17 3 * * * $REPO/deploy/backup.sh >> /var/log/zz-backup.log 2>&1 $TAG"',
-    replace: '"17 3 * * * cd $REPO && npm run backup >> /var/log/zz-backup.log 2>&1 $TAG"',
+    find: '"17 3 * * * $HERE/backup.sh >> /var/log/zz-backup.log 2>&1 $TAG"',
+    replace: '"17 3 * * * cd $HERE && npm run backup >> /var/log/zz-backup.log 2>&1 $TAG"',
     planted: "the nightly job reaches for a toolchain a deploy host does not have — it " +
       "receives the bundle and docker and nothing else — so the backup never runs at all, " +
       "every night, from a cron entry that installed cleanly",
@@ -377,8 +377,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/config-env.ts",
     target: "every variable zz-tool forwards is read by a tool that exists",
     subject: "deploy/zz-tool",
-    find: "LLM_API_KEY JUDGE_MODEL TEAM_DB_URL \\",
-    replace: "LLM_API_KEY JUDGE_MODEL TEAM_DB_URL LIBRECHAT_MONGO_URL \\",
+    find: "ZZ_CATALOG_OWNER_TEAM; do",
+    replace: "ZZ_CATALOG_OWNER_TEAM LIBRECHAT_MONGO_URL; do",
     planted: "the passthrough list carries a variable belonging to a front end this platform " +
       "removed, so an operator reading the list cannot tell a live knob from a fossil — and " +
       "neither can the next person deciding whether it is safe to delete one",

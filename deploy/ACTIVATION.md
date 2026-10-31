@@ -85,25 +85,9 @@ started, and one is superseded.
 Two of these rows are worth spelling out, because the honest answer is narrower than the
 available artifact makes it look.
 
-**`parity_evidence` is not the mutation report.** `testing/mutation-report.json` is real and it
-is good: at commit `fa975c4`, **68 rows — one per declared check, nothing uncovered** — baseline
-passed with zero failures, every check going red under its planted defect, 158 substitutions, no
-zero-replacement row, and each row's tree restored byte-identical.
-
-One thing about it should not be rounded off. It was taken across **two trees, not one** — 67
-rows against `0ccd5970c9151f4d` and 1 against `53806f4a3d1947`, the authorised top-up that added
-`activation-runbook.ts` (the check that reads this runbook) after it landed too late for the main
-run's snapshot. Every row names the digest it was measured against, which is what makes that
-honest rather than misleading; but the report's top-level `snapshot_tree_sha256` is the second of
-the two, and 67 of its 68 rows were not measured against it. Quoting that one field as the run's
-digest would be a single-snapshot claim the run does not support.
-
-> **This passage was wrong once, and the reason is worth keeping.** It described a 66-row report
-> across three trees with two checks uncovered. That report was superseded by a consolidating run
-> and a top-up, and this prose was not re-opened; a closing reviewer caught it by parsing both
-> artifacts. The gate could not — `scripts/gate/checks/activation-runbook.ts` validates the
-> runbook's *shape* and never compares a written reading against the artifact it cites. **A number
-> copied out of an artifact is a claim with an expiry date, and nothing here enforces it.**
+**`parity_evidence` is not the mutation report.** `testing/mutation-report.json` is real: read
+its own `source_commit`, `declared_count` and `results` for what it covers, rather than a copy of
+those numbers here.
 
 What it establishes is that this gate's declared checks **discriminate** — each one notices when
 the thing it guards breaks. That is a fact about the checks. It is not a fact about whether a
@@ -111,10 +95,8 @@ restored deployment serves the same content as the old one, which is what a cuto
 evidence has to mean. Citing it here would be citing the right-sounding words over the wrong
 measurement.
 
-The measurements that *would* be parity are absent, in three different ways.
-`RESTORE-AND-CUTOVER.md` section 7 records that `projection_parity_against_the_isolated_database`
-and `copied_multi_owner_store_projection_replay` are a hardcoded `NOT_RUN` map reading no
-environment variable — unimplemented, not merely unconfigured. `semantic_parity` is one of the
+The measurements that *would* be parity are absent. No parity case has code behind it in this
+repository. `semantic_parity` is one of the
 benchmark report's blocked targets. And AC-7.3 did not close: its producer runs and refuses at
 preflight, because schema `zz` carries no `using bm25` index, all seven declared corpora hold 0
 artifacts against a pinned 780,000, and all 98 judged relevant artifacts are unresolvable under
@@ -209,7 +191,7 @@ failure this whole procedure exists to find.
 **Step 6 — apply migrations to the candidate head.**
 `001_init.sql` first — it is every migration its `-- absorbs:` lines name, squashed into one file —
 then every other file in `services/gateway/migrations/` in filename order, up to and including the
-candidate head: the highest-numbered file there, `006_release.sql` as the tree stands. The nullable
+candidate head: the highest-numbered file there. The nullable
 `analyzer_version` columns on `zz.doc` and `zz.knowledge_node` are declared in `001_init.sql`, which
 absorbed the migration that added them. Where the database already carries a ledger the runner skips
 what `zz.schema_migration` lists, so `001_init.sql` is a no-op there and the ledger's own rows are
@@ -284,7 +266,8 @@ live platform, and it is the reason steps 2 and 9 are not optional.
 **What it does.**
 
 - Stops admitting new work on the three mutation paths — request, background and legacy client —
-  by putting each into maintenance.
+  by putting each into maintenance. **No maintenance mode or admission switch exists in this
+  platform**, so every step below that sets or lifts maintenance has no mechanism to do it.
 - Revokes the grants that would authorise further work, so nothing new becomes authorised while
   the switch is under way.
 - Waits for work already in flight to finish, and records the count still outstanding when the
@@ -351,8 +334,7 @@ connection string lying around in the environment is how a rehearsal becomes an 
 
 **A clean rehearsal and a permitted activation are different facts**, so they get different exit
 codes. Collapsing them into one zero is how a refusing gate gets read as green by anything
-checking `$?` — the same conclusion `BENCHMARK-MEASUREMENT.md` section 8 reaches about its own
-report, that a structurally valid one is not a passing one.
+checking `$?`.
 
 | Exit | Meaning |
 |---|---|
@@ -385,8 +367,7 @@ report, that a structurally valid one is not a passing one.
   procedure describing how to apply it are not the same claim as a platform ready to apply it.
   The new framework may be built and exercised on copied fixtures while the operational migration
   is outstanding — what it may not do is claim active native guarantees over production artifacts
-  nobody has migrated. Production holds 971 documents and 902 knowledge nodes with no
-  `analyzer_version` column and no BM25 index.
+  nobody has migrated.
 - It did not verify that suspension stops a worker, because suspension does not do that and no
   rehearsal could show that it did.
 

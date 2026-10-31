@@ -2,7 +2,8 @@
 #
 # Two hostnames, one machine, one deployment:
 #
-#   console.example.com       the console — the only dashboard this deployment has
+#   console.example.com       the console — the only dashboard this deployment has, installed
+#                             only when CONSOLE_PUBLIC_URL is set
 #   api.example.com           the platform gateway — every non-browser client
 #
 # DELIBERATE: this file is a template, and `install-caddy.sh` is the only thing that should
@@ -16,8 +17,8 @@
 # needs that address, and install-caddy.sh reads the real one off the running container.
 #
 # Both hostnames need an A record to this machine, DNS only: a proxying CDN cuts an idle response
-# at about 100 seconds, and the timeouts below are 30 minutes because a turn runs that long. Caddy
-# issues both certificates itself. The api. host exists because an MCP client runs on somebody's
+# at about 100 seconds, and the console's live route (/api/console/live) holds one server-sent-events
+# response open for as long as a page is open. Caddy issues both certificates itself. The api. host exists because an MCP client runs on somebody's
 # laptop and needs a public route in.
 #
 # After changing this file:
@@ -26,11 +27,12 @@
 #      unreachable URLs to every person who installs
 #   2. set CONSOLE_PUBLIC_URL=https://console.example.com in deploy/.env — its hostname is the
 #      passkey relying party, so changing it makes everybody re-enrol
-#   3. docker compose up -d cred-proxy zz-core
+#   3. docker compose up -d cred-proxy zz-core — install-caddy.sh reads the running gateway's port
 #   4. run deploy/install-caddy.sh — do not copy it by hand
 
-# An agent turn runs for minutes: tens of sequential tool calls, each a round trip to a door,
-# and Caddy's defaults would sever the response mid-turn.
+# Long-lived responses: the console's live stream stays open while a page is, and one MCP call can
+# take up to about two minutes (a typed-service call alone is budgeted 100 seconds). Caddy's
+# defaults would sever either mid-response.
 #
 # DELIBERATE: global options. `timeouts` is not a site directive — inside a site block Caddy
 # rejects the whole file, `systemctl reload` fails, and the old config stays loaded.
@@ -94,9 +96,9 @@ console.example.com {
         reverse_proxy 127.0.0.1:8764
     }
     handle /api/console/* {
-        # -1 disables response buffering. The discussion thread is server-sent events, and a
-        # buffering proxy holds a stream until the connection closes — the feature silently never
-        # updates.
+        # -1 disables response buffering. The live route (/api/console/live) is server-sent
+        # events, and a buffering proxy holds a stream until the connection closes — the console
+        # silently never updates.
         reverse_proxy 127.0.0.1:8764 {
             flush_interval -1
         }

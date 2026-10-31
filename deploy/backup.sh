@@ -6,12 +6,9 @@
 #   <p>_cred-data     the gateway's own data: events it could not write to the database
 #   deploy/.env       this deployment's configuration and the database password
 #
-# The team file store is NOT backed up here any more. It was the `<p>_zz-artifacts` volume, and
-# its every fact is inside the `pg_dump` now (Task I-41): backing the volume up as well would back
-# up a second copy of what the dump already carries, and that copy is the one that goes stale the
-# moment a tool writes a document. The store was retired once, on 2026-09-27, into an archive
-# named `zz-store-archive-<stamp>.tar.gz` by a one-shot script deleted in 0.89.0 with its work done
-# — see the prune's exemption at the end of this script, which is what keeps that archive alive.
+# Documents, revisions, citations and knowledge are rows, so the `pg_dump` carries them. The
+# store's retirement archive, `zz-store-archive-<stamp>.tar.gz` in the same directory, is never
+# written or pruned here — see the prune's exemption at the end of this script.
 #
 #   ./deploy/backup.sh            # write one dated set into $BACKUP_DIR
 #   ./deploy/backup.sh --verify   # also prove the dump restores into a
@@ -191,11 +188,8 @@ if [ "${1:-}" = "--verify" ]; then
   echo "[$(date -u +%FT%TZ)] restore drill into zz_restore_check"
   docker compose exec -T postgres psql -U "$PG_USER" -d postgres -c 'drop database if exists zz_restore_check' >/dev/null
   docker compose exec -T postgres psql -U "$PG_USER" -d postgres -c 'create database zz_restore_check' >/dev/null
-  # The exit status IS the drill, and this used to discard it twice over: `|| true` threw psql's
-  # status away and `2>&1 >/dev/null` swallowed its stderr, while psql itself was run without
-  # ON_ERROR_STOP and so answered 0 after an error it had merely printed. A restore that died
-  # part-way through the revisions was counted by the next line, found principals, and reported
-  # "restore drill OK" — an operator told a set they could not restore from was good.
+  # The exit status is the drill. ON_ERROR_STOP, because without it psql answers 0 after an error
+  # it merely printed, and a restore that died part-way would still find principals below.
   #
   # COUPLED: `set -o pipefail` above, so the pipeline's status is psql's and not zcat's. The
   # table check a few lines up is written around the same hazard in the other direction.
@@ -227,4 +221,3 @@ echo "NOTE: $BACKUP_DIR is on the same host as the data it protects — copy it 
 echo "NOTE: a $STORE_ARCHIVE_GLOB in $BACKUP_DIR is the store's retirement archive: unlike the"
 echo "  nightly set it is not pruned, so it is the copy most worth carrying off this host."
 echo "NOTE: zz-config-*.tar.gz holds deploy/.env, which carries the database password. Same treatment."
-echo "NOTE: ./deploy/backup-manifest.sh turns one dated set into the manifest a restore rehearsal validates before it touches a byte."

@@ -32,9 +32,12 @@ Fill `deploy/.env` on the host from the `.env.example` the bundle just delivered
 keys** below), then:
 
 ```bash
-./deploy/install-caddy.sh <ssh-host>    # HTTPS, once .env names the public URL
 ssh <ssh-host> 'cd /root/zz-parent/zz-stack/deploy && docker compose up -d --remove-orphans'
+./deploy/install-caddy.sh <ssh-host>    # HTTPS, once the gateway runs and .env names the public URL
 ```
+
+`install-caddy.sh` reads where the running gateway is published, so the stack starts first. The
+console's site block is installed only when `CONSOLE_PUBLIC_URL` is set.
 
 `provision-host.sh` deliberately does not touch secrets, DNS, the Caddyfile or data. A
 provisioning script that quietly makes decisions is worse than one that stops.
@@ -82,12 +85,12 @@ better value than we already know.
 
 | | |
 |---|---|
-| `LLM_BASE_URL` + `LLM_API_KEY` | any OpenAI-compatible endpoint and a key for it |
 | `GATEWAY_PUBLIC_URL` | this platform's public gateway address. **Every client package generated here embeds it**, so a wrong value hands out unreachable URLs to everyone who installs. It must be reachable from a laptop, not just from inside the network |
 | `SUPERADMIN_EMAIL` | the platform superadmin — who can create teams, add people and issue tokens |
 | `BOOTSTRAP_TEAM` | the first team, created on boot with the superadmin as its admin. **Set it.** A deployment with a superadmin and no team looks perfectly healthy and is not: nobody acts for a team, so every document tool refuses for want of one, and there is no other store for a document to land in. **It is re-seeded on every boot** — `on conflict do nothing`, so it is a no-op once the team exists, but a team named here cannot be deleted: it returns on the next restart. Point it at a team you actually use, and change it rather than deleting what it names |
 | `POSTGRES_PASSWORD` | the platform database's own password |
 | `CONSOLE_PUBLIC_URL` | only if you run the console — see below |
+| `LLM_BASE_URL` + `LLM_API_KEY` | optional. Any OpenAI-compatible endpoint and a key for it, for the server's one model call: the critic `failure_discover` uses to describe a failure mode. Unset, the critic is skipped and the deterministic description stands |
 | `OPENAI_FILE_HOSTS` | leave it empty. The hosts a file attached in ChatGPT may be fetched from, comma-separated; zz-core fetches over HTTPS, from public addresses only, within 30 seconds and 8 MiB. Empty keeps that route off: no tool offers ChatGPT a `file` argument, and a file goes through `upload_start`, which works in every client. Which hosts ChatGPT serves files from is not established yet |
 
 ### The admin console, if you want it (optional)
@@ -233,26 +236,23 @@ team knowledge store and the same gates — enforced in zz-core, so no client ca
 
 ## Sizing
 
-Inference is on the provider `LLM_BASE_URL` names — the server never runs a model.
+Agents run in each person's own client, so the host carries no inference: it runs the gateway,
+zz-core and Postgres, and its load is MCP calls and the database queries behind them. The one
+model call the server makes, the critic, goes to the provider `LLM_BASE_URL` names.
 
-| Concurrent pipeline users | Droplet |
-|---|---|
-| 1–5 | Basic 4GB / 2vCPU (~$24/mo) |
-| ~20 | Basic 8GB / 4vCPU (~$48/mo) |
-| 40+ | 16GB / 8vCPU (~$96/mo), headroom for concurrent long agent turns |
+Size the host on the database. Compose starts Postgres with `shared_buffers` at 512MB and
+`maintenance_work_mem` at 128MB, so a Basic 4GB / 2vCPU droplet (~$24/mo) runs the stack; a
+larger host raises those two in `docker-compose.yml` and gets more of the database in memory.
 
 OS: Ubuntu 24.04 LTS or the DO "Docker" marketplace image. Postgres always runs — the platform
 keeps its own data there — and is an ordinary service in this compose, started by
 `docker compose up -d` like everything else.
 
-The one caveat the server cannot fix: **the model provider's rate limits.** Concurrent
-reasoning streams share the one `LLM_API_KEY`; raise the plan or rotate several keys.
-
 ## HTTPS
 
 Caddy, with Let's Encrypt fetched and renewed automatically. `deploy/Caddyfile` is a template and
 `install-caddy.sh` is the only thing that should apply it; see **Standing up a host** above. It
-serves two hostnames on one machine:
+serves two hostnames on one machine, the console's only when `CONSOLE_PUBLIC_URL` is set:
 
 | Hostname | From | Serves |
 |---|---|---|
@@ -260,7 +260,8 @@ serves two hostnames on one machine:
 | `api.zz-stack.com` here | `GATEWAY_PUBLIC_URL` | the gateway, which is how Claude Code reaches this platform from a laptop |
 
 Both need an `A` record to the host, **DNS only**: a proxying CDN cuts an idle response at about
-100 seconds, and an agent turn runs for minutes. The two must be different hosts, because the
+100 seconds, and the console's live route holds one server-sent-events response open for as long
+as a page is open. The two must be different hosts, because the
 console's sign-in cookie is host-only and the API must not receive it.
 
 Moving either hostname, in this order, once its DNS answers:
@@ -323,11 +324,10 @@ nothing else. A run that fails deletes what it had written, so a partial set nev
 directory looking like the newest backup. `--verify` also restores into a throwaway database and
 counts principals.
 
-`deploy/backup-manifest.sh <set>` turns one dated set into the manifest a restore rehearsal
-validates before it touches a byte — the three components, their locators and their digests, so a
-set that lost a file or gained a truncated one is refused rather than restored. It requires all
-three and describes no fourth. `backup.sh` names it in its own closing note, which is why it ships
-in the bundle beside it.
+`deploy/backup-manifest.sh <dir> <stamp>` writes a JSON listing of one dated set — the three
+files and the SHA-256 of each — for comparing an off-host copy with its source by hand. It refuses
+a set missing any of the three. Nothing in this repository reads the manifest, and no restore
+checks it.
 
 `deploy/install-backup-cron.sh` installs a nightly run and a weekly verify. It replaces its own
 tagged lines and touches nothing else, so re-running it is how you pick up a change — including

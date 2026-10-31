@@ -121,6 +121,10 @@ newer one.** The dump is `pg_dump --clean --if-exists`, so it restores over an e
 `ON_ERROR_STOP` makes psql exit non-zero on the first error. Treat that as fatal: a partial restore
 that looks finished is the failure this whole rehearsal exists to find.
 
+**A backup taken before 0.86.0 does not restore here.** It still declares the `pg_textsearch`
+extension, which 0.86.0 dropped and the official image does not carry, so the restore stops at
+`create extension pg_textsearch`. Rehearse with a backup taken on 0.86.0 or later.
+
 **There is no second restore.** No service in `deploy/docker-compose.yml` mounts a document volume:
 documents are rows in the database this step just restored.
 

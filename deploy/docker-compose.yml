@@ -167,8 +167,8 @@ services:
   # The platform's database. Not optional and behind no profile: every service above defaults
   # to it, and the gateway keeps teams, people, tokens, grants and the document index in it.
   postgres:
-    # The official image, pinned by the digest of its multi-architecture index: it carries pg_trgm,
-    # the one extension the schema creates, and nothing is built for it. Every throwaway database
+    # The official image, pinned by the digest of its multi-architecture index: it carries citext and
+    # pg_trgm, the extensions the schema creates, and nothing is built for it. Every throwaway database
     # the gate and the release start reads this line (scripts/release/postgres-service.ts).
     image: postgres:17.11-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652
     restart: unless-stopped

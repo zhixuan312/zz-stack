@@ -100,7 +100,9 @@ export function probeGuards(repo: string, outsidePath: string): GuardProbe[] {
 const EXTERNALLY_DRIVEN: GuardProbe & { readonly driven_by: string; readonly driven_at: string;
                                         readonly observed_run_sha256: string } = {
   probe: "GATE INCOMPLETE — a check module on disk that gate.ts never imports is caught",
-  command: "in a disposable copy, remove one `await load(\"./gate/checks/<module>.ts\");` from " +
+  // The command as it was driven, on the gate.ts of 2026-09-22; gate.ts has loaded its modules
+  // with `await load(...)` since, and `stale` says the receipt predates that.
+  command: "in a disposable copy, remove one `import \"./gate/checks/<module>.ts\";` from " +
     "scripts/gate.ts, run the gate, then restore from a saved original",
   expected: "control PASSES; faulted run reports GATE INCOMPLETE and exits non-zero; " +
     "restored copy passes again and gate.ts is byte-identical to the original",

@@ -75,7 +75,7 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
     plantable_when: "the runner can express a subject's ABSENCE as a mutation. The stake: this " +
       "check's own comment records that a wrong Caddyfile leaves the public URL answering 502 " +
       "while every container reads as healthy.",
-    observed_check_sha256: "e767ba4252c32edec100c49e5c8eac9467670bf1a0c7a1b140f7c5e44c60cd98",
+    observed_check_sha256: "f0198a4cc5ab84a295d256021043dc07561303306859aa376d30d45d8b434ee1",
   },
   {
     check: "scripts/gate/checks/console.ts",

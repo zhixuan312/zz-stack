@@ -67,8 +67,8 @@ export function walkToolChain(version: string | undefined): void {
     run("docker", ["network", "create", ...owned(), net]);
     // The deployment's own database image, read from compose (postgres-service.ts): a cluster
     // offering different extensions walks a chain the deployment does not have. Its command
-    // comes too — the image ships `shared_buffers = 8GB` and compose cuts that down to
-    // something a release host can map.
+    // comes too: compose sizes the memory settings to the host, and a walk on the image's
+    // defaults would run a different database.
     const pgsvc = postgresService(root);
     run("docker", ["run", "-d", ...owned(), "--name", pg, "--network", net, "--network-alias", "postgres",
                    "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=chaincheck",

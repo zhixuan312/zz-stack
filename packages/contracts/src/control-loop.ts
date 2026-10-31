@@ -11,12 +11,9 @@
 // The generic control-loop host: what a reviewed module is, the five operations a host serves
 // (`run_start`, `method_read`, `evidence_record`, `control_evaluate`, `action_claim`), and the
 // digest a registration is checked against.
-// DELIBERATE: the second-flow signature is computed inside the module and reaches a consumer on
-// `SecondFlowRun`, not as an exported function.
 export {
   createHost,
   moduleDigest,
-  runSecondFlowFixture,
   type ActionGrant,
   type CompletionRule,
   type ControlVerdict,
@@ -25,11 +22,9 @@ export {
   type EvidenceEntry,
   type EvidenceKind,
   type Host,
-  type ProcedureSignature,
   type ProcedureStep,
   type ReviewedModule,
   type RunCaller,
-  type SecondFlowRun,
 } from "./host.js";
 
 // What a documentary recall episode concluded. `retrieval_inconclusive` (could not answer) is

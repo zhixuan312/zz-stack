@@ -50,10 +50,10 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/generic-host-genericity.ts",
     target: "the generic host serves a second flow and the kernel never branches on an SDLC stage",
     subject: "packages/contracts/src/host.ts",
-    find: "    invoked: [...host.trace],",
-    replace: "    invoked: [],",
-    planted: "the second-flow fixture reports no operations at all, so it demonstrates " +
-      "nothing about the host being generic",
+    find: "      trace.push(ACTION_CLAIM);",
+    replace: "",
+    planted: "the host stops recording the claims it answers, so its trace no longer proves " +
+      "it was driven through all five operations and an action can be granted unrecorded",
   },
   {
     check: "scripts/gate/checks/negative-control-probes.ts",

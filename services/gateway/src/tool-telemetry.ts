@@ -25,7 +25,7 @@ import { StringDecoder } from "node:string_decoder";
 import type { NextFunction, Request, Response } from "express";
 
 import { pluginForDoor } from "@zz/catalog";
-import { eventOrigin, refusalClass } from "@zz/contracts";
+import { eventOrigin, refusalClass, refusalOwner, type RefusalOwner } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 // COUPLED: `tool_key` must fold onto the same series a reader building one from historical
 // `subject` values would, so nothing but this resolver may produce it.
@@ -56,6 +56,8 @@ interface ToolOutcome {
   reason?: string;
   /** Set when the answer could not be read at all — a transport failure, not a refusal. */
   unreadable?: boolean;
+  /** Set when the answer carried `isError`: the handler threw, or the SDK refused the call's shape. */
+  isError?: boolean;
 }
 
 /** Read the outcome out of what the caller was actually sent.
@@ -74,9 +76,17 @@ interface Envelope {
 function outcomeOf(env: Envelope): ToolOutcome {
   if (env.error) return { ok: false, reason: cap(env.error.message ?? "jsonrpc error") };
   const text = (env.result?.content ?? []).map((c) => c.text ?? "").join(" ").trim();
-  if (env.result?.isError === true) return { ok: false, reason: cap(text || "isError") };
+  if (env.result?.isError === true) return { ok: false, reason: cap(text || "isError"), isError: true };
   if (/^ERROR\b/.test(text)) return { ok: false, reason: cap(text) };
   return { ok: true };
+}
+
+/** Who a refusal belongs to when the text alone would say `other`: an `isError` answer this platform's
+ *  refusals never carry is a handler that threw, so the tool failed — counted with the tool failures a
+ *  door's status reports, where a server-side exception reaching a caller read as a door with none.
+ *  Undefined for every other answer, which the insert owns from its text. */
+function toolOwner(o: ToolOutcome): RefusalOwner | undefined {
+  return o.isError && refusalOwner(o.reason ?? "") === "other" ? "theirs" : undefined;
 }
 
 /** Every answer in what the caller was sent, by the id it answers.
@@ -482,6 +492,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           // The platform's own sentence saying which rule was broken — the one thing a skill
           // can actually be edited from.
           refusal: outcome.reason,
+          refusalOwner: toolOwner(outcome),
           // What the call cost, as columns rather than in the bag, so a latency or payload-size
           // percentile is a WHERE/GROUP BY. `batched` says whether this row's duration and
           // response size belong to it alone or were shared with the rest of `wanted`.

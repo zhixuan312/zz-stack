@@ -248,7 +248,8 @@ export function logEvent(e: {
   refusal?: string;
   /** Who the refusal belongs to — guardrail, ours, theirs or other, from @zz/contracts'
    *  refusalOwner(). Derived at the insert rather than asked of the caller, so one table does not
-   *  end up holding four vocabularies: this field names the column and is never set. Null whenever
+   *  end up holding four vocabularies. Set only by a writer that knows more than the text: the tool
+   *  telemetry, for an answer a handler threw (`toolOwner`, tool-telemetry.ts). Null whenever
    *  `ok` is not false. COUPLED: the telemetry gate reads the written fields off this type. */
   refusalOwner?: string;
 
@@ -311,7 +312,7 @@ export function logEvent(e: {
     e.subject ?? "",                         // $9
     JSON.stringify(e.detail ?? {}, (_k, v: unknown) => typeof v === "string" ? storable(v) : v),  // $10
     e.refusal ?? null,                       // $11
-    e.ok === false ? refusalOwner(e.refusal ?? "") : null,   // $12
+    e.ok === false ? (e.refusalOwner ?? refusalOwner(e.refusal ?? "")) : null,   // $12
     e.plugin ?? null,                        // $13
     e.pluginVersion ?? null,                 // $14
     e.toolKey ?? null,                       // $15

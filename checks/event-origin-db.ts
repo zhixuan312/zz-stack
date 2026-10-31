@@ -21,6 +21,8 @@
  *     the backfill gave the same name;
  *   - the event zz-core writes while handling that same call, the header relayed to it by the
  *     gateway, lands with the same origin;
+ *   - a handler that threw is recorded as a tool failure (`theirs`), and a call the SDK refused for its
+ *     shape as `ours`;
  *   - an event zz-core writes inside a transaction for a caller naming `zz-doctor` lands
  *     `platform`, and the same act by another client lands `work`;
  *   - no row of `zz.event` holds a null or a third value.
@@ -187,7 +189,7 @@ async function listen(c: Core): Promise<Gateway> {
 
 /** One `knowledge_search` through the gateway, as a client naming itself `client` — or sending no
  *  `x-zz-client` at all — and the tool's reply. */
-async function search(g: Gateway, client: string | null, query: string): Promise<{ status: number; reply: string }> {
+async function search(g: Gateway, client: string | null, query: unknown): Promise<{ status: number; reply: string }> {
   const res = await fetch(`${g.url}/core/mcp`, {
     method: "POST",
     headers: {
@@ -228,6 +230,30 @@ async function liveCases(c: Core, g: Gateway): Promise<void> {
   c.pass("the event zz-core writes for each of those calls, the header relayed by the gateway, lands with the same origin");
 }
 
+/** A handler that threw reaches the caller as MCP's `isError` with the bare exception text; the gateway owns
+ *  it as a tool failure (`theirs`), which the door's status counts, while a call the SDK refused for its shape
+ *  stays `ours`. The throw is made by renaming the table the search reads, and put back. */
+async function thrownCase(c: Core, g: Gateway): Promise<void> {
+  const step = "a handler that threw is a tool failure";
+  const owners = async (n: number) => (await c.rowsOnce<{ owner: string; refusal: string }>(`select refusal_owner as owner, refusal from zz.event
+      where kind = 'tool_call' and subject = 'core:knowledge_search' and ok = false order by id`, [], n));
+  const before = (await owners(0)).length;
+  await c.sql.query("alter table zz.knowledge_node rename to knowledge_node_away");
+  let thrown;
+  try {
+    thrown = await search(g, NAME, "thrown probe");
+  } finally {
+    await c.sql.query("alter table zz.knowledge_node_away rename to knowledge_node");
+  }
+  const shaped = await search(g, NAME, 5);
+  const rows = (await owners(before + 2)).slice(before);
+  if (thrown.reply.startsWith("ERROR") || rows.length !== 2 || rows[0].owner !== "theirs" || rows[1].owner !== "ours") {
+    c.fail(step, `the thrown call answered "${thrown.reply.slice(0, 200)}", the malformed one "${shaped.reply.slice(0, 200)}"; ` +
+      `their rows read ${JSON.stringify(rows)}`);
+  }
+  c.pass("a handler that threw is recorded as a tool failure (theirs), and a call refused for its shape as ours");
+}
+
 async function transactionCase(c: Core): Promise<void> {
   const step = "an event zz-core writes in a transaction";
   const path = `${await c.open("event-origin")}/notes.md`;
@@ -259,6 +285,7 @@ async function run(c: Core): Promise<void> {
   const g = await listen(c);
   try {
     await liveCases(c, g);
+    await thrownCase(c, g);
     await transactionCase(c);
     await everyRow(c);
   } finally {

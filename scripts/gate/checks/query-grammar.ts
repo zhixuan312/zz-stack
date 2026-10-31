@@ -8,6 +8,11 @@ check("query grammar survives a Chinese query with a phrase and an exclusion", (
   const excluded = q.clauses.filter((c) => c.kind === "exclude").map((c) => c.text);
   if (!excluded.includes("测试")) return "the exclusion -测试 did not survive parsing";
   if (!q.clauses.some((c) => c.kind === "alternation")) return "the explicit OR did not survive parsing";
+  // OR straight after an exclusion joins nothing to it: the exclusion stays one, the term stands alone.
+  const after = parseQuery("-测试 OR 模式");
+  if (after.clauses.map((c) => `${c.kind}:${c.text}`).join(" ") !== "exclude:测试 term:模式") {
+    return `"-测试 OR 模式" parsed into ${JSON.stringify(after.clauses)}, not an exclusion and a term`;
+  }
   const run = parseQuery("这个迁移会破坏旧的模式");
   if (run.clauses.length !== 1) return `an unspaced Han run parsed into ${run.clauses.length} clauses, not 1`;
   const ident = parseQuery("primary_evidence-000037.txt");

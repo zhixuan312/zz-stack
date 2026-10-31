@@ -118,7 +118,8 @@ function buildClauses(tokens: readonly RawToken[], scalars: readonly string[]): 
 
   for (const tok of tokens) {
     if (isOrKeyword(tok)) {
-      if (clauses.length > 0) pendingOr = true;
+      // An OR after an exclusion joins nothing to it: "-测试 OR 模式" stays an exclusion and a term.
+      if (clauses.length > 0 && clauses[clauses.length - 1]!.kind !== "exclude") pendingOr = true;
       continue;
     }
     const clause: QueryClause = tok.excluded
@@ -128,8 +129,7 @@ function buildClauses(tokens: readonly RawToken[], scalars: readonly string[]): 
         : { kind: "term", text: tok.text };
 
     if (tok.excluded) {
-      // A hard exclusion never joins an alternation — "-测试 OR 模式" excludes 测试 and offers
-      // 模式 as its own term, not "either 测试 or 模式".
+      // A hard exclusion never joins an alternation, on either side of an OR.
       clauses.push(clause);
       spans.push({ start: tok.start, end: tok.end });
       pendingOr = false;

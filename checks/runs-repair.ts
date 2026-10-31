@@ -41,7 +41,8 @@ type Reconcile = (since: string | null) => Promise<{ runs: number; linked: numbe
 
 process.exitCode = await withThrowawayDbCheck(NAME,
   `${NAME}: a bounded pass recounts, whole, only the runs an event named since its bound, an unbounded one recounts the rest, ` +
-  "a pass over runs that are right rewrites nothing, and runRepair's first pass is unbounded and its next bounded: ok",
+  "a pass over runs that are right rewrites nothing, and runRepair's first pass is unbounded, each later one bounded an " +
+  "hour before the last good pass began, a failure leaving the bound: ok",
   async (client, url) => {
     const ids = await seedRuns(client);
     // r1 is seeded with 4 calls, r2 with 6 and r3 with 10; their events say 2, 2 and 3.
@@ -84,23 +85,25 @@ process.exitCode = await withThrowawayDbCheck(NAME,
         console.log(`  ✓ ${step}`);
       }
 
-      // The bound a pass is given, from a pass that records it and fails when told to.
+      // The bound a pass is given, from a pass that records it, takes 20 ms, and fails when told to: a bound
+      // taken when a pass ends then falls after the window of when it began.
       const asked: (string | null)[] = [];
       let down = false;
+      const pause = () => new Promise((r) => setTimeout(r, 20));
+      const began: [number, number][] = [];
       const timer = runRepair(async (since) => {
         asked.push(since);
+        began[began.length - 1]![1] = Date.now();
+        await pause();
         if (down) throw new Error("the repair failed");
         return { runs: 0, linked: 0 };
       });
       const hourBefore = (ms: number) => new Date(ms - 60 * 60_000).toISOString();
-      const pause = () => new Promise((r) => setTimeout(r, 20));
-      const began: [number, number][] = [];
       for (const fails of [false, false, true, false]) {
         await pause();
         down = fails;
-        const at = Date.now();
+        began.push([Date.now(), 0]);
         await timer().catch(() => undefined);
-        began.push([at, Date.now()]);
       }
       const step = "runRepair's bound";
       if (asked[0] !== null) fail(step, `the first pass was bounded at ${asked[0]}`);

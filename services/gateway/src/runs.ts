@@ -148,8 +148,8 @@ export async function reconcileRuns(since: string | null): Promise<{ runs: numbe
 /** The gateway's repair, one pass per call: the first recounts every run, which covers what was written
  *  while the gateway was down, and each later one only the runs an event named since an hour before the
  *  last pass that succeeded. A pass that fails leaves the bound where it was, so the next one reaches
- *  back over it. `pass` is the repair itself; checks/runs-repair.ts gives one that records its bound and fails
- *  on demand. */
+ *  back over it. `pass` is the repair itself; checks/runs-repair.ts gives one that records its bound
+ *  and fails on demand. */
 export function runRepair(pass = reconcileRuns): () => Promise<{ runs: number; linked: number }> {
   let since: string | null = null;
   return async () => {

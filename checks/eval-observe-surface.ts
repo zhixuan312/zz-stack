@@ -30,7 +30,7 @@ assert.deepEqual(surfaceCoverage(["core:team_switch", "core:other_tool"], ownToo
 // -- run ids -----------------------------------------------------------------------------------
 const seen: string[] = [];
 const runRow = { run_id: "0b7c7a9e-1111-4222-8333-444455556666", team: "zz", initiative: "2026-09-26-eval-zz-core",
-                 started_at: "2026-09-26 08:00:00+08" };
+                 refused: 1, started_at: "2026-09-26 08:00:00+08" };
 const pool = {
   query: async (sql: string) => {
     seen.push(sql);
@@ -44,6 +44,8 @@ const runSql = seen.find((q) => /as run_id/.test(q)) ?? "";
 assert.match(runSql, /zz\.team/, "the team is resolved, since an initiative slug is only unique within a team");
 assert.match(runSql, /exists \(select 1 from zz\.event e where e\.run_id = r\.id\)/,
   "only runs a run-kind subject_ref can resolve (it needs zz.event rows) are listed");
+assert.match(runSql, /count\(\*\)::int from zz\.event e where e\.run_id = r\.id and e\.ok is false\) as refused/,
+  "each run carries its refused calls, so an agent can hand a refusal measure the runs it applies to");
 // -- the traces queries overlap -------------------------------------------------------------------
 // Each depends only on the arguments, and the profile runs inside a request severed at about two
 // minutes: they are asked together, not one after another.

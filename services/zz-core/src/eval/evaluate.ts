@@ -312,7 +312,8 @@ export function registerEvaluationTools(server: McpServer): void {
         "opens exactly one zz.eval_run bound to that snapshot, carrying the team it is opened in, " +
         "the principal who opened it and, when `initiative` names one, the initiative. RETURNS " +
         "{ eval_run_id, observation_snapshot_id, run_refs, refusal_refs } — the last two are the " +
-        "snapshot's own runs and refused door calls, the subject_refs evaluation_assess takes, so " +
+        "snapshot's own runs (each with its count of refused calls) and refused door calls, the " +
+        "subject_refs evaluation_assess takes, so " +
         "a conversation holding only the snapshot id has them. REFUSES an observation_snapshot_id " +
         "nothing minted; a protocol_version_id nothing minted, or one protocol_affirm has not " +
         "bound to an approved protocol.md (named, with its version); an observation snapshot " +

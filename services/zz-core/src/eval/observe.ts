@@ -247,7 +247,7 @@ function windowOf(row: { window_from: string | null; window_to: string | null })
 /** The runs and refused calls an observation snapshot's own window holds, recomputed from the
  *  row: what `evaluation_start` hands a conversation that has only the snapshot id. */
 export async function snapshotSubjectRefs(pool: pg.Pool, snapshotId: string): Promise<{
-  run_refs: { run_id: string; team: string | null; initiative: string | null }[];
+  run_refs: { run_id: string; team: string | null; initiative: string | null; refused: number }[];
   run_refs_truncated: boolean; refusal_refs: string[];
 } | null> {
   const row = (await pool.query<{
@@ -261,7 +261,7 @@ export async function snapshotSubjectRefs(pool: pg.Pool, snapshotId: string): Pr
   if (!row || row.window_from === null || row.window_to === null) return null;
   const refs = await subjectRefsOf(pool, row.plugin, row.version, servesOwnDoor(row.plugin),
     { from: row.window_from, to: row.window_to });
-  return { ...refs, run_refs: refs.run_refs.map(({ run_id, team, initiative }) => ({ run_id, team, initiative })) };
+  return { ...refs, run_refs: refs.run_refs.map(({ run_id, team, initiative, refused }) => ({ run_id, team, initiative, refused })) };
 }
 
 function returnsByPair(returns: Observation["traces"]["returns"]): { from_step: string; back_to_step: string; count: number }[] {
@@ -305,7 +305,7 @@ function respond(
       // Counted per pair of stages, not listed per visit: 109 returns were 17KB of sdlc's reply.
       returns: returnsByPair(observation.traces.returns),
       // What EVALUATE needs to cite a run, and nothing it does not.
-      run_refs: observation.traces.run_refs.map(({ run_id, team, initiative }) => ({ run_id, team, initiative })),
+      run_refs: observation.traces.run_refs.map(({ run_id, team, initiative, refused }) => ({ run_id, team, initiative, refused })),
     },
     sufficient_for_judging: observation.traces.sufficient,
     ...(drift ? {

@@ -52,8 +52,9 @@ interface PluginTraces {
    *  same condition the resolver checks), with the team it acted for. The run carries that team
    *  itself, so it is read from the run and not reached through the initiative: an initiative slug
    *  is only unique within a team, so the slug below is read beside the team and never without
-   *  it. */
-  run_refs: { run_id: string; team: string | null; initiative: string | null; started_at: string }[];
+   *  it. `refused` counts the run's refused calls: a measure that applies only where a call was
+   *  refused is asked about no other run, and without it an agent picks those runs blind. */
+  run_refs: { run_id: string; team: string | null; initiative: string | null; refused: number; started_at: string }[];
   run_refs_truncated: boolean;
   /** A door's refused calls, newest first, as `event:<id>` subject_refs: a call made outside any
    *  run (an admin act, an evaluation) has no run to hand a judge, and its refusal is the thing
@@ -261,8 +262,9 @@ export async function subjectRefsOf(
 ): Promise<Pick<PluginTraces, "run_refs" | "run_refs_truncated" | "refusal_refs">> {
   const RUNS_OF = servesOwnDoor ? RUNS_ON_DOOR : RUNS_BY_SKILL;
   const params = [plugin, version, window.from, window.to];
-  const runRefs = (await pool.query<{ run_id: string; team: string | null; initiative: string | null; started_at: string }>(`
+  const runRefs = (await pool.query<{ run_id: string; team: string | null; initiative: string | null; refused: number; started_at: string }>(`
     select r.id::text as run_id, r.started_at::text as started_at,
+           (select count(*)::int from zz.event e where e.run_id = r.id and e.ok is false) as refused,
            (select t.slug from zz.team t where t.id = r.team_id) as team,
            (select i.slug from zz.initiative i where i.id = r.initiative_id) as initiative
       ${RUNS_OF}

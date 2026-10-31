@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 1.5
+version: 1.6
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -53,7 +53,9 @@ runs and reports those tools produced — the ones worth judging, not an arbitra
 refs of every kind the protocol's measures judge**: a measure is asked only about refs of its
 own kind (`definition.subjectKind`, else the "Read this run / document / bug report / record"
 its evaluator's question opens with), so a protocol with a run measure and no run ref leaves
-that measure excluded, by name.
+that measure excluded, by name. A measure that applies only where a call was refused is asked
+only about runs that refused one: include runs whose `refused` is above zero, or it is excluded
+too.
 
 **`subject_refs` may be empty** when the subject's use left nothing to hand a judge — a door used
 only outside initiatives has no run, document or bug report. The call then reads the run's facts

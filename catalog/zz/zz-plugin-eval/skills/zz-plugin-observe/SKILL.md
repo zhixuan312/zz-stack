@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-observe
-version: 0.8
+version: 0.9
 description: Stage 2 of zz-plugin-eval (OBSERVE). Compute the pre-protocol observation snapshot — production facts from this subject's real runs, in one resolved window — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after IDENTIFY has settled subject_version_id. Also the stage that decides whether there is enough evidence for DISCOVER and EVALUATE to work from. No shell required."
 ---
@@ -71,8 +71,8 @@ itself, whose evidence is exactly that.
   (`stage_return_rate` is returns over successful stage-document writes). A **repeated read** is
   a `document_read` of a path the same run already read with nothing written to it between
   (`repeat_read_rate`); a read of a section, an offset or an older version is never one.
-  `traces.run_refs` lists the observed runs, newest first — each `run_id` with its `team` and
-  `initiative`. A `run_id` is what EVALUATE takes as a run-kind `subject_ref`, and what a
+  `traces.run_refs` lists the observed runs, newest first — each `run_id` with its `team`,
+  `initiative` and `refused`, the number of its calls that were refused. A `run_id` is what EVALUATE takes as a run-kind `subject_ref`, and what a
   finding cites; never cite an initiative slug without its team.
 - `environment_digest` / `evidence_digest` — the snapshot's own identity: deployed service
   versions, and a hash over the canonical facts.

@@ -84,8 +84,8 @@
     "sha": "d6db2a3d55fb"
   },
   "zz-plugin-evaluate": {
-    "version": "1.5",
-    "sha": "db2810cc69e5"
+    "version": "1.6",
+    "sha": "39c297685da7"
   },
   "zz-plugin-explain": {
     "version": "0.6",
@@ -100,8 +100,8 @@
     "sha": "1462f846cd5e"
   },
   "zz-plugin-observe": {
-    "version": "0.8",
-    "sha": "90f295f14015"
+    "version": "0.9",
+    "sha": "0153f1e1ad08"
   },
   "zz-plugin-promote-verify": {
     "version": "1.2",

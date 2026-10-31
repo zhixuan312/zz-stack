@@ -48,7 +48,8 @@
  *               and the lessons that cite it as evidence, inventories both, imports included; the summary
  *               by outcome and by flow over all of them, never the page
  *
- * The route's body is recordOf, which the agent read record_read (console/agent-reads.ts) calls too.
+ * The route keeps the period's whole answer once and cuts each page from it; recordOf is the same for one page,
+ * which the agent read record_read (console/agent-reads.ts) calls.
  *
  * Each part fails alone: what it is read from failing makes it unavailable, its figure null with why
  * unavailable, or the lead's estimate null, and the rest stands. No figure is hours saved, a speedup or
@@ -259,12 +260,12 @@ async function wordsByInitiative(team: string, asOf: string): Promise<Map<string
   return words;
 }
 
-/** The record table: every initiative newest first, the slug breaking a tie, one page of it. */
-function tableOf(initiatives: Initiative[], lessons: Map<string, number>, page: { limit: number; offset: number }): RecordTable {
+/** The record table: every initiative newest first, the slug breaking a tie; `pageOf` cuts the page a reader asks for. */
+function tableOf(initiatives: Initiative[], lessons: Map<string, number>): RecordTable {
   const rows = [...initiatives].sort((a, b) => b.openedMs - a.openedMs || a.slug.localeCompare(b.slug));
   const flows = [...new Set(rows.map((r) => r.flow))];
   return {
-    rows: rows.slice(page.offset, page.offset + page.limit).map((r) => ({
+    rows: rows.map((r) => ({
       slug: r.slug, outcome: r.outcome, opened: iso(r.openedMs), closed: r.closedMs === null ? null : iso(r.closedMs),
       tookHours: r.closedMs === null ? null : (r.closedMs - r.openedMs) / HOUR, documents: r.documents, lessons: lessons.get(r.slug) ?? 0,
     })),
@@ -281,7 +282,21 @@ function tableOf(initiatives: Initiative[], lessons: Map<string, number>, page: 
 }
 
 /** Record for the team over the period at the cutoff, the approvals in it the caller's; its table paged. */
-export async function recordOf(team: string, caller: string, period: PeriodName, page: { limit: number; offset: number }, asOf: string): Promise<RecordRead> {
+export async function recordOf(team: string, caller: string, period: PeriodName, page: Page, asOf: string): Promise<RecordRead> {
+  return pageOf(await wholeRecord(team, caller, period, asOf), page);
+}
+
+type Page = { limit: number; offset: number };
+
+/** One page of a Record's table; the slices and the table's total and summary stay the whole period's. */
+function pageOf(read: RecordRead, page: Page): RecordRead {
+  if (read.record.state !== "ok") return read;
+  const data = read.record.data;
+  return { ...read, record: { ...read.record, data: { ...data, rows: data.rows.slice(page.offset, page.offset + page.limit) } } };
+}
+
+/** Record over the period with every row of its table, which the route keeps once and pages from. */
+async function wholeRecord(team: string, caller: string, period: PeriodName, asOf: string): Promise<RecordRead> {
   const bounds = await boundsOf(team, caller, asOf);
   const asOfMs = Date.parse(asOf);
   const startMs = period === "quarter" ? bounds.quarter_ms : period === "year" ? bounds.year_ms : bounds.first_ms ?? asOfMs;
@@ -367,7 +382,7 @@ export async function recordOf(team: string, caller: string, period: PeriodName,
     knowledge: partOf(knowledge),
     agents: partOf(agents),
     firsts: partOf(firsts),
-    record: partOf(initiatives && lessons && tableOf(initiatives, lessons, page)),
+    record: partOf(initiatives && lessons && tableOf(initiatives, lessons)),
   };
 }
 
@@ -393,12 +408,15 @@ export function mountRecord(app: Express): void {
     const params = recordParams(req.query as Record<string, unknown>);
     if (typeof params === "string") { res.status(400).json({ error: params }); return; }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
-    // DELIBERATE: kept as one answer per caller, team, period and page until a write moves the marker of what it
-    // reads (answer-cache.ts). The email stays in the key because the answer itself uses it: the approvals are the
-    // ones signed in the caller's own name. The record is the whole history reduced by week; re-reading it between
-    // two clicks that changed nothing was most of the page's time.
-    res.json(served(await cachedWithHit(`record|${activeTeam}|${req.zzIdentity!.email}|${JSON.stringify(params)}`, () =>
-      recordOf(activeTeam, req.zzIdentity!.email, params.period, params, iso(Math.ceil(Date.now() / 1000) * 1000)),
-      prefixFor("/api/console/record", req.zzIdentity!, req))));
+    // DELIBERATE: kept as one answer per caller, team and period until a write moves the marker of what it reads
+    // (answer-cache.ts), and each page of the table cut from it: a page press re-read the whole history before. The
+    // email stays in the key because the answer itself uses it: the approvals are the ones signed in the caller's
+    // own name. The record is the whole history reduced by week; re-reading it between two clicks that changed
+    // nothing was most of the page's time.
+    const { period, ...page } = params;
+    const kept = await cachedWithHit(`record|${activeTeam}|${req.zzIdentity!.email}|${period}`, () =>
+      wholeRecord(activeTeam, req.zzIdentity!.email, period, iso(Math.ceil(Date.now() / 1000) * 1000)),
+      prefixFor("/api/console/record", req.zzIdentity!, req));
+    res.json(served({ value: pageOf(kept.value, page), hit: kept.hit }));
   }));
 }

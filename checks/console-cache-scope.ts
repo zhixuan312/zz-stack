@@ -3,7 +3,7 @@
  * checks/console-cache-scope.ts — the gate's guard that a kept console answer is reachable exactly when
  * what it read has not moved, and unreachable when it has.
  *
- *   node checks/console-cache-scope.ts   # a throwaway core, the built gateway in-process, six cases
+ *   node checks/console-cache-scope.ts   # a throwaway core, the built gateway in-process, eight cases
  *
  * The cache exists so a page a person returns to costs nothing. That is only sound if the key names what
  * the answer was computed FROM: the collections its own entry declares, at the scope its figures are
@@ -32,17 +32,20 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 const NAME = "console-cache-scope";
 const DONE = "console-cache-scope: a kept answer is reachable exactly when what it read has not moved, " +
   "per scope — a collection the answer does not read leaves it reachable, another team's write strands " +
-  "only the public aggregate, and two members of one team share one computation";
+  "only the public aggregate, two members of one team share one computation, and a page of Record's table is " +
+  "cut from the period's one answer";
 
 const INITIATIVES = "/api/console/initiatives";
 const USAGE = "/api/console/platform/usage";
 const STATUS = "/api/console/platform/status";
+const RECORD = "/api/console/record";
 
 /** The statements a route's own reads run, told apart from the identity gate's, which every request pays. */
 const OWN_READS: Record<string, RegExp> = {
   [INITIATIVES]: /zz\.initiative|zz\.doc\b|zz\.doc_revision/,
   [USAGE]: /zz\.event/,
   [STATUS]: /zz\.event/,
+  [RECORD]: /zz\.initiative|zz\.doc\b|zz\.doc_revision|zz\.event/,
 };
 
 const SECOND = "cache-scope-second@example.test";
@@ -99,6 +102,11 @@ async function seed(sql: pg.Client, core: Core): Promise<{ teamA: string; teamB:
   await sql.query("update zz.principal set active_team_id = $2 where id = $1", [superId, teamA]);
   await sql.query("update zz.principal set active_team_id = $1 where id = $2", [teamA, person]);
   await sql.query("update zz.principal set active_team_id = $1 where id = $2", [teamB, other]);
+  // Two initiatives, so Record's table has a second page for case (h).
+  for (const [slug, days] of [["2026-10-01-cache-scope-older", 2], ["2026-10-02-cache-scope-newer", 1]] as const) {
+    await sql.query("insert into zz.initiative (team_id, slug, opened_by, opened_at) values ($1, $2, $3, now() - make_interval(days => $4))",
+      [teamA, slug, person, days]);
+  }
   return { teamA, teamB };
 }
 
@@ -138,7 +146,7 @@ async function run(core: Core): Promise<void> {
     const from = counter.texts.length;
     const res = await fetch(`${base}${path}`, { headers: { cookie, accept: "application/json" } });
     const body = await res.json() as Record<string, unknown>;
-    const own = counter.texts.slice(from).filter((text) => OWN_READS[path]?.test(text) ?? false).length;
+    const own = counter.texts.slice(from).filter((text) => OWN_READS[path.split("?")[0]]?.test(text) ?? false).length;
     return { answer: { status: res.status, meta: (body.meta ?? {}) as Meta, body }, own };
   };
   const hit = async (step: string, path: string, cookie: string, want: boolean): Promise<Answer> => {
@@ -223,6 +231,17 @@ async function run(core: Core): Promise<void> {
     await hit(stepG, INITIATIVES, otherTeam, false);
     await hit(stepG, INITIATIVES, otherTeam, true);
     pass("the other team's member computes once and is served its own answer, never the first team's");
+
+    // (h) Record's table is paged, and every page is the same period's answer: the next page is cut from the one
+    // kept, not a second read of the team's whole history. The rows are the page asked for all the same.
+    const stepH = "the next page of Record's table is cut from the period's kept answer";
+    const first = await hit(stepH, `${RECORD}?period=all&limit=1&offset=0`, member, false);
+    const next = await hit(stepH, `${RECORD}?period=all&limit=1&offset=1`, member, true);
+    const rowsOf = (a: Answer) => ((a.body.record as { data?: { rows?: { slug: string }[] } }).data?.rows ?? []).map((r) => r.slug);
+    if (rowsOf(first).length !== 1 || rowsOf(next).length > 1 || rowsOf(next)[0] === rowsOf(first)[0]) {
+      fail(stepH, `page one read ${JSON.stringify(rowsOf(first))} and page two ${JSON.stringify(rowsOf(next))}`);
+    }
+    pass("page two of Record's table ran none of the route's statements and answered its own row");
   } finally {
     counter.stop();
     for (const s of servers) s.close();

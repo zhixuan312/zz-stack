@@ -16,6 +16,8 @@ const { EvaluationProtocol } = await load("packages/contracts/dist/index.js");
 const { gatherCountedEvidence } = await load("services/zz-core/dist/eval/qualify-evidence.js");
 const { qualificationState, resolveThresholds } = await load("services/zz-core/dist/eval/qualify-ladder.js");
 const { toolsNamedBy } = await load("services/zz-core/dist/eval/plugin-eval.js");
+const { sourceFiles } = await load("packages/tools/dist/lib/sql-statements.js") as
+  { sourceFiles: (dir: string, keep: (path: string) => boolean) => { path: string; src: string }[] };
 
 type Anchor = { id: string; role: "anchor" | "fault" | "control"; text: string; expected: string };
 type Measure = { key: string; evaluatorType: string; definition: { qualification?: { anchors: Anchor[] } } };
@@ -36,12 +38,22 @@ for (const m of semantic) {
   assert.deepEqual(new Set(anchors.filter((a) => a.role === "anchor").map((a) => a.expected)), new Set(["yes", "no"]),
     `${m.key}'s anchors do not cover both answers`);
 }
-// The surfaces cover every tool zz-core's own skills name: one missing fires protocol_read's
-// new_evidence_surface on the shipped protocol itself, before any evaluation (runtime pass 2, F8).
+// The surfaces cover every tool zz-core's own skills name and its door serves: one missing fires
+// protocol_read's new_evidence_surface on the shipped protocol itself, before any evaluation
+// (runtime pass 2, F8). A tool another door serves is not zz-core's surface, as protocol_read and
+// OBSERVE narrow it (ownTools): zz-core's skills name /manage's team_switch, and listing it put a
+// tool zz-core never serves into its protocol. What zz-core serves is what its source registers.
 {
+  const registered = new Set(sourceFiles("services/zz-core/src", (p) => p.endsWith(".ts"))
+    .flatMap(({ src }) => [...src.matchAll(/registerTool\(\s*"([a-z0-9_]+)"/g)].map((m) => m[1])));
+  const named: string[] = toolsNamedBy("zz-core");
+  assert.ok(named.includes("team_switch") && !registered.has("team_switch"),
+    "the case this narrows, a tool zz-core's skills name and another door serves, is still there");
   const surfaces = new Set<string>(protocol.observableSurfaces);
-  const missing = toolsNamedBy("zz-core").filter((t: string) => !surfaces.has(t));
-  assert.deepEqual(missing, [], "zz-core.json's observableSurfaces lack tools zz-core's skills name");
+  const missing = named.filter((t) => registered.has(t) && !surfaces.has(t));
+  assert.deepEqual(missing, [], "zz-core.json's observableSurfaces lack tools zz-core's skills name and its door serves");
+  const foreign = named.filter((t) => !registered.has(t) && surfaces.has(t));
+  assert.deepEqual(foreign, [], "zz-core.json's observableSurfaces list a tool another door serves");
 }
 assert.ok(!measures.some((m) => m.key === "document_frontmatter_conformance"),
   "document_frontmatter_conformance asks a text judge about row state; it was dropped, not kept");

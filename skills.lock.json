@@ -72,8 +72,8 @@
     "sha": "b8e3c03eabf2"
   },
   "zz-plugin-define-qualify": {
-    "version": "0.17",
-    "sha": "487076cac448"
+    "version": "0.18",
+    "sha": "efd17f1076f3"
   },
   "zz-plugin-discover": {
     "version": "0.8",
@@ -104,8 +104,8 @@
     "sha": "c214f6f0fbbb"
   },
   "zz-plugin-promote-verify": {
-    "version": "1.4",
-    "sha": "92d5f95d01d2"
+    "version": "1.5",
+    "sha": "2e7859b666f2"
   },
   "zz-authoring": {
     "version": "1.2",

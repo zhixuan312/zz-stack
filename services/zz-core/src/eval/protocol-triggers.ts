@@ -15,16 +15,19 @@
  *   - `evaluator_drift`   a measure under the latest version defers to an evaluator version that
  *                         is no longer that evaluator's newest — `evaluators.ts` minted a later
  *                         one since this protocol version was recorded.
- *   - `new_evidence_surface`  a tool this plugin's own skills name today is absent from the
- *                         latest version's `observable_surfaces` — the plugin's reachable surface
- *                         grew since the protocol was written.
+ *   - `new_evidence_surface`  a tool this plugin's own skills name today, and its door serves
+ *                         (`ownTools`, as OBSERVE narrows it), is absent from the latest version's
+ *                         `observable_surfaces` — the plugin's reachable surface grew since the
+ *                         protocol was written.
  *
  * No protocol at all is not a trigger — it is `protocol_action = "create"`, decided by
  * `protocol.ts` before any of these run.
  */
 import type pg from "pg";
 
-import { entryOf, toolsNamedBy } from "./plugin-eval.js";
+import { doorSurface } from "./observe.js";
+import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
+import { ownTools } from "./plugin-profile.js";
 
 type Trigger = "purpose_changed" | "new_recurring_failure" | "evaluator_drift" | "new_evidence_surface";
 
@@ -95,7 +98,7 @@ async function evaluatorDrift(p: pg.Pool, protocolVersionId: string): Promise<bo
  *  and the tools behind `new_evidence_surface`: which the version's surfaces lack, so the next
  *  version can add them rather than record the same surfaces again. */
 export async function triggersFor(
-  p: pg.Pool, pluginId: string, plugin: string, latest: LatestProtocolVersion,
+  p: pg.Pool, pluginId: string, plugin: string, version: string, latest: LatestProtocolVersion,
 ): Promise<{ fired: Trigger[]; missingSurfaces: string[] }> {
   const fired: Trigger[] = [];
   const entry = entryOf(plugin);
@@ -104,7 +107,8 @@ export async function triggersFor(
   if (await newRecurringFailure(p, pluginId)) fired.push("new_recurring_failure");
   if (await evaluatorDrift(p, latest.id)) fired.push("evaluator_drift");
   const surfaces = new Set(latest.observable_surfaces ?? []);
-  const missingSurfaces = toolsNamedBy(plugin, entry).filter((n) => !surfaces.has(n));
+  const surface = await doorSurface(p, plugin, version, servesOwnDoor(plugin, entry));
+  const missingSurfaces = ownTools(toolsNamedBy(plugin, entry), surface.tools).filter((n) => !surfaces.has(n));
   if (missingSurfaces.length) fired.push("new_evidence_surface");
   return { fired, missingSurfaces };
 }

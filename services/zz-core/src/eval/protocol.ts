@@ -63,7 +63,7 @@ const noDb = () => text("ERROR: this deployment has no platform database, so no 
  *  and the trigger fires on the next version too. */
 const surfacesLacking = (missing: readonly string[]) => (missing.length ? { missing_surfaces: missing } : {});
 const lackingNote = (missing: readonly string[]) => (missing.length
-  ? ` observableSurfaces lacks ${missing.join(", ")}, which this plugin's skills name — add ${missing.length === 1 ? "it" : "them"} to the new version.`
+  ? ` observableSurfaces lacks ${missing.join(", ")}, which this plugin's skills name and its door serves — add ${missing.length === 1 ? "it" : "them"} to the new version.`
   : "");
 
 /** `subject_version_id` → the plugin it names, or null for one nothing minted. A subject version
@@ -71,12 +71,12 @@ const lackingNote = (missing: readonly string[]) => (missing.length
  *  `plugin_locate`/`plugin_register` (subject.ts) are the only writers of that table, so a miss
  *  here means the caller has not IDENTIFY'd the subject yet — the same ordering DISCOVER's
  *  `resolveSnapshot` enforces one stage later. */
-async function pluginOf(p: pg.Pool, subjectVersionId: string): Promise<{ pluginId: string; plugin: string } | null> {
-  const row = (await p.query<{ plugin_id: string; plugin: string }>(`
-    select pv.plugin_id::text as plugin_id, pl.name as plugin
+async function pluginOf(p: pg.Pool, subjectVersionId: string): Promise<{ pluginId: string; plugin: string; version: string } | null> {
+  const row = (await p.query<{ plugin_id: string; plugin: string; version: string }>(`
+    select pv.plugin_id::text as plugin_id, pl.name as plugin, pv.version
       from zz.plugin_version pv join zz.plugin pl on pl.id = pv.plugin_id
      where pv.id = $1::uuid`, [subjectVersionId])).rows[0];
-  return row ? { pluginId: row.plugin_id, plugin: row.plugin } : null;
+  return row ? { pluginId: row.plugin_id, plugin: row.plugin, version: row.version } : null;
 }
 
 /** The three durable branch facts (FR-58) — every caller passes only the ones it decided.
@@ -191,7 +191,7 @@ export function registerProtocolTools(server: McpServer): void {
         "version is affirmed and still fits, nothing to do) or revise (a trigger fired, record a new version) " +
         "— and triggers: which of purpose_changed, new_recurring_failure, evaluator_drift, " +
         "new_evidence_surface fired, or none — with missing_surfaces, the tools this plugin's skills " +
-        "name that the version's observableSurfaces lack, when new_evidence_surface fired. A newest " +
+        "name and its door serves that the version's observableSurfaces lack, when new_evidence_surface fired. A newest " +
         "version protocol_affirm never bound is " +
         "never reuse: it answers create (no version was ever affirmed) or revise, plus " +
         "awaiting_affirmation: { version, content_digest } — with no trigger, get that version's " +
@@ -229,7 +229,7 @@ export function registerProtocolTools(server: McpServer): void {
         // reusable — nothing may score against it — so the stage that recorded it is still open:
         // `create`/`revise` as the lineage began, which keeps protocol.md applying on this
         // initiative's branch. It is not a reason to record again unless a trigger fired.
-        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, latest);
+        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, subject.version, latest);
         response = {
           protocol_version_id: latest.id, protocol_action: latest.any_affirmed ? "revise" : "create",
           triggers: triggers.length ? triggers : ["none"],
@@ -244,7 +244,7 @@ export function registerProtocolTools(server: McpServer): void {
               "qualifies or scores against it until then.",
         };
       } else {
-        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, latest);
+        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, subject.version, latest);
         const protocol_action = triggers.length ? "revise" : "reuse";
         response = {
           protocol_version_id: latest.id, protocol_action, triggers: triggers.length ? triggers : ["none"],

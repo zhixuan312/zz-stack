@@ -115,7 +115,7 @@ async function resolveWindow(
  *  nothing here recorded, whose skill-named tools then stand unnarrowed (`ownTools`).
  *  COUPLED: the gateway's console/platform-evaluation.ts reads each `source` sentence as a population
  *  kind; a new or reworded sentence is a new kind there, and scores across it stop reading as a trend. */
-async function doorSurface(
+export async function doorSurface(
   pool: pg.Pool, plugin: string, version: string, serves: boolean,
 ): Promise<{ tools: string[] | null; source: string }> {
   if (!serves) return { tools: null, source: "no door of its own: the tools its skills name" };

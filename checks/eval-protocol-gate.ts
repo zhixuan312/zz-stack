@@ -16,6 +16,7 @@
 // which owns the run: a tool asks whose a run is before anything about it.
 import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -25,6 +26,8 @@ process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 // zz-core's own skills are this repository's, not the image's /skills: read before plugin-eval.js
 // loads, which captures it (`SKILLS_DIR`).
 process.env.ZZ_SKILLS_DIR ??= join(process.cwd(), "skills");
+// And its catalog entry, which says zz-core serves a door: the tools its skills name narrow to it.
+process.env.ZZ_CATALOG_DIR ??= join(process.cwd(), "catalog");
 
 const PV = "a0000000-0000-4000-8000-000000000001";
 const SV = "b0000000-0000-4000-8000-000000000001";
@@ -41,6 +44,8 @@ let latest: Row = {
 let connected = 0;
 /** The plugin the subject version resolves to: one outside the catalog names no tool. */
 let subjectPlugin = "acme-not-in-catalog";
+/** The tools zz.plugin_tool records the subject's door serving at its version: none by default. */
+let served: Row[] = [];
 
 function answer(sql: string): Row[] {
   // The caller's teams (platform-db.ts teamsFor), then the run is theirs (eval/team-scope.ts).
@@ -65,7 +70,8 @@ function answer(sql: string): Row[] {
   // The subject-resolution statement: a subject version IS a `plugin_version` row, so the plugin's
   // name is reached through that row's own `plugin_id`. The moment the statement no longer reads
   // it that way, the stub stops answering and every assertion below fails.
-  if (/from zz\.plugin_version pv join zz\.plugin pl on pl\.id = pv\.plugin_id where pv\.id/.test(sql)) return [{ plugin_id: "p1", plugin: subjectPlugin }];
+  if (/from zz\.plugin_version pv join zz\.plugin pl on pl\.id = pv\.plugin_id where pv\.id/.test(sql)) return [{ plugin_id: "p1", plugin: subjectPlugin, version: "1.0.0" }];
+  if (/^select pt\.name from zz\.plugin_tool pt/.test(sql)) return served;
   if (/as any_affirmed/.test(sql)) return [latest];
   if (/select count\(\*\)::text as n/.test(sql)) return [{ n: "0" }];
   return [];
@@ -167,12 +173,25 @@ assert.equal(got.awaiting_affirmation, undefined);
   assert.ok(named.length > 1, "zz-core's skills name tools");
   const [missing, ...kept] = named;
   subjectPlugin = "zz-core";
-  // zz-core is the platform's own skills, not a catalog flow, so no manifest purpose is compared.
-  latest = { ...latest, affirmed: true, observable_surfaces: kept };
+  // The version states zz-core's own purpose, so only the surface is compared.
+  const { purpose } = JSON.parse(readFileSync(join(process.cwd(), "catalog/zz/zz-core/flow.json"), "utf8")) as { purpose: string };
+  latest = { ...latest, affirmed: true, purpose, observable_surfaces: kept };
   got = await read();
   assert.deepEqual(got.triggers, ["new_evidence_surface"]);
   assert.deepEqual(got.missing_surfaces, [missing], `protocol_read answered ${JSON.stringify(got)}`);
   assert.match(got.note, new RegExp(`observableSurfaces lacks ${missing}`));
+
+  // A tool zz-core's skills name that its door does not serve is another door's — team_switch is
+  // /manage's — and is no surface of zz-core's to lack, as OBSERVE narrows it (ownTools). Counted,
+  // the trigger fired until the protocol listed a tool zz-core never serves.
+  assert.ok(named.includes("team_switch"), "zz-core's skills name /manage's team_switch");
+  const own = named.filter((n) => n !== "team_switch");
+  served = own.map((name) => ({ name }));
+  latest = { ...latest, affirmed: true, observable_surfaces: own };
+  got = await read();
+  assert.deepEqual(got.triggers, ["none"], `a tool another door serves is not lacking: ${JSON.stringify(got)}`);
+  assert.equal(got.protocol_action, "reuse");
+  served = [];
   subjectPlugin = "acme-not-in-catalog";
 }
 

@@ -375,10 +375,15 @@ async function cases(s: Isolation, w: WorkRecord, theirs: string, g: Awaited<Ret
   for (const [what, found, expected] of expectations) if (!isDeepStrictEqual(found, expected)) fail(step, `${what} reads ${show(found)}, expected ${show(expected)}`);
   if (groupsOf(longer).some((x) => x.lastSeen === undefined) || groupsOf(longer).length !== 2) fail(step, `the groups read ${show(groupsOf(longer))}`);
   // The window's groups are read once, for the page's twenty and the tool's sums alike, and last week's once.
-  let grouped = 0;
-  await g.failing((sql) => { if (sql.includes("as normalized")) grouped += 1; return false; },
-    () => read(step, member, "activityRefusals", { since: fifteen }));
+  // And the caller is resolved in two: the session, then the person with their teams and chosen team.
+  let grouped = 0, identity = 0;
+  await g.failing((sql) => {
+    if (sql.includes("as normalized")) grouped += 1;
+    if (/\b(from|join) (zz\.)?(principal|membership)\b/.test(sql)) identity += 1;
+    return false;
+  }, () => read(step, member, "activityRefusals", { since: fifteen }));
   if (grouped !== 2) fail(step, `one call ran ${grouped} grouping statements, expected 2: the window's and last week's`);
+  if (identity !== 2) fail(step, `resolving the caller ran ${identity} statements, expected 2: the session's and the person's`);
   pass(`from ${five} the weeks count the two refusals of two days back and from ${fifteen} the three, by tool as the groups sum; ` +
     "the window starts at that date's first instant, the tiles stay the page's last whole week, and the messages are the largest groups; " +
     "the window's groups are read once");

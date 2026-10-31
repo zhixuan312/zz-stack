@@ -142,36 +142,36 @@ async function principalByEmail(email: string): Promise<Identity | null> {
     // resolvePat refuses outright, having nothing to look a token up against.
     return { email, displayName: "", platformRole: "member", teams: [], activeTeam: null, via: "forwarded" };
   }
-  const db = platformDb();
-  const p = await db.query<{ id: string; email: string; display_name: string; role: "superadmin" | "member"; status: string }>(
-    "select id, email, display_name, role, status from principal where email = $1",
-    [email.toLowerCase()],
-  );
-  const row = p.rows[0];
-  if (!row || row.status !== "active") return null;
-  const teams = await db.query<{ slug: string; role: "admin" | "member" }>(
-    `select t.slug, m.role from membership m join team t on t.id = m.team_id
-     where m.principal_id = $1 and t.status = 'active'`,
-    [row.id],
-  );
-  return {
-    email: row.email,
-    displayName: row.display_name,
-    platformRole: row.role,
-    teams: teams.rows,
-    activeTeam: actingTeam(teams.rows, await chosenTeam(row.id), null),
-    via: "forwarded",
-  };
+  const person = await activePerson(email);
+  if (!person) return null;
+  const { chosen, ...who } = person;
+  return { ...who, activeTeam: actingTeam(who.teams, chosen, null), via: "forwarded" };
 }
 
-/** The team a person has chosen, when it is still live. Fetched beside their memberships
- * so this gateway can hand `actingTeam` the same inputs zz-core gives it. */
-async function chosenTeam(principalId: string): Promise<string | null> {
-  const r = await platformDb().query<{ slug: string | null }>(
-    `select t.slug from principal p
-       left join team t on t.id = p.active_team_id and t.status = 'active'
-      where p.id = $1`, [principalId]);
-  return r.rows[0]?.slug ?? null;
+type Person = {
+  email: string; displayName: string; platformRole: "superadmin" | "member";
+  teams: { slug: string; role: "admin" | "member" }[]; chosen: string | null;
+};
+
+/** An active person, their memberships of live teams, and the live team they chose, in one statement; null when no
+ * active person has the address. COUPLED: both builders of an identity, principalByEmail and callerIdentity, read
+ * through here, so `actingTeam` is handed the same inputs zz-core gives it. */
+async function activePerson(email: string): Promise<Person | null> {
+  const r = await platformDb().query<{
+    email: string; display_name: string; role: "superadmin" | "member"; status: string;
+    chosen: string | null; teams: Person["teams"];
+  }>(
+    `select p.email, p.display_name, p.role, p.status, ct.slug as chosen,
+            coalesce((select json_agg(json_build_object('slug', t.slug, 'role', m.role))
+                        from membership m join team t on t.id = m.team_id
+                       where m.principal_id = p.id and t.status = 'active'), '[]') as teams
+       from principal p left join team ct on ct.id = p.active_team_id and ct.status = 'active'
+      where p.email = $1`,
+    [email.toLowerCase()],
+  );
+  const row = r.rows[0];
+  if (!row || row.status !== "active") return null;
+  return { email: row.email, displayName: row.display_name, platformRole: row.role, teams: row.teams, chosen: row.chosen };
 }
 
 /** The person a token acts as, or why it does not authenticate.
@@ -575,34 +575,24 @@ export async function callerIdentity(
 ): Promise<Identity | null> {
   const email = parseCaller(headers).email;
   if (!email || !platformDbReady()) return null;
-  const db = platformDb();
-  const p = await db.query<{ id: string; email: string; display_name: string; role: "superadmin" | "member"; status: string }>(
-    "select id, email, display_name, role, status from principal where email = $1",
-    [email],
-  );
-  if (!p.rows[0] || p.rows[0].status !== "active") return null;
-  const teams = await db.query<{ slug: string; role: "admin" | "member" }>(
-    `select t.slug, m.role from membership m join team t on t.id = m.team_id
-     where m.principal_id = $1 and t.status = 'active'`,
-    [p.rows[0].id],
-  );
+  const person = await activePerson(email);
+  if (!person) return null;
   // Role and membership come from the database; how they authenticated comes from the
   // middleware, which overwrites these headers on every request so they cannot be forged.
   const auth = callerAuth(headers);
-  const bound = boundMemberships(teams.rows, auth.patTeam);
+  const bound = boundMemberships(person.teams, auth.patTeam);
   if (!bound) return null;
-  const chosen = await chosenTeam(p.rows[0].id);
   return {
-    email: p.rows[0].email,
-    displayName: p.rows[0].display_name,
-    platformRole: p.rows[0].role,
+    email: person.email,
+    displayName: person.displayName,
+    platformRole: person.platformRole,
     // Narrowed to the token's team, exactly as the middleware does: this rebuild asks the
     // database who the person is, and the database has never heard of their token.
     teams: bound,
     // The session's team outranks the principal's column here too, or a console request that
     // reached a tool would act for one team while the same request's HTTP half acted for
     // another. Both headers are the middleware's own, rewritten on every request.
-    activeTeam: actingTeam(teams.rows, auth.sessionTeam ?? chosen, auth.patTeam ?? null),
+    activeTeam: actingTeam(person.teams, auth.sessionTeam ?? person.chosen, auth.patTeam ?? null),
     ...auth,
     origin: requestOrigin(headers),
   };

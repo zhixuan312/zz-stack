@@ -21,20 +21,30 @@ interface Queryable {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
 }
 
-/** Every active team `email` is an active member of. Empty for an unknown or deactivated person. */
-export async function memberTeams(runner: Queryable, email: string): Promise<string[]> {
-  if (!email.trim()) return [];
+/** Every active team the person `who` names is an active member of. Empty for an unknown or deactivated person.
+ *
+ *  COUPLED: `who` names one person as `principalId` (versions.ts) resolves a signer — an address first, a display name
+ *  only when no address matches, the lowest id of either — because `document_approve` accepts a signer that way and
+ *  this is asked of that same signer. Matching the address alone refused an owner signed by name. */
+export async function memberTeams(runner: Queryable, who: string): Promise<string[]> {
+  if (!who.trim()) return [];
   return (await runner.query<{ slug: string }>(`
+    with named as (
+      select id from (
+        (select id, 0 as rank from zz.principal where lower(email) = lower($1) order by id limit 1)
+        union all
+        (select id, 1 as rank from zz.principal where lower(display_name) = lower($1) order by id limit 1)
+      ) c order by rank limit 1)
     select t.slug
       from zz.membership m
       join zz.team t on t.id = m.team_id
       join zz.principal p on p.id = m.principal_id
-     where p.email = $1 and p.status = 'active' and t.status = 'active'`, [email.trim()])).rows
+     where p.id = (select id from named) and p.status = 'active' and t.status = 'active'`, [who.trim()])).rows
     .map((r) => r.slug);
 }
 
-export async function ownerMember(runner: Queryable, email: string, owners: readonly string[]): Promise<boolean> {
-  const teams = await memberTeams(runner, email);
+export async function ownerMember(runner: Queryable, who: string, owners: readonly string[]): Promise<boolean> {
+  const teams = await memberTeams(runner, who);
   return owners.some((owner) => teams.includes(owner));
 }
 

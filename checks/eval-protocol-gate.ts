@@ -8,7 +8,8 @@
 //   - evaluator_qualify refuses an unaffirmed protocol version by name, and a deterministic measure.
 //   - evaluation_start refuses an unaffirmed protocol version by name.
 //   - protocol_read never answers reuse for an unaffirmed newest version: create when no version was
-//     ever affirmed, revise when one was, with awaiting_affirmation carrying the digest to quote.
+//     ever affirmed, revise when one was, with awaiting_affirmation carrying the digest to quote;
+//     and when new_evidence_surface fires it names the tools the version's surfaces lack.
 //   - protocol_record's duplicateMeasureKeyRefusal names a key repeated in two dimensions.
 // Driven against a stubbed pg.Pool; the handlers are harvested by handing each registrar a stub
 // server, the same registrars the /eval door mounts. The caller is one person acting for one team,
@@ -21,6 +22,9 @@ import { pathToFileURL } from "node:url";
 import pg from "pg";
 
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+// zz-core's own skills are this repository's, not the image's /skills: read before plugin-eval.js
+// loads, which captures it (`SKILLS_DIR`).
+process.env.ZZ_SKILLS_DIR ??= join(process.cwd(), "skills");
 
 const PV = "a0000000-0000-4000-8000-000000000001";
 const SV = "b0000000-0000-4000-8000-000000000001";
@@ -35,6 +39,8 @@ let latest: Row = {
   content_digest: "digest-v2", any_affirmed: false,
 };
 let connected = 0;
+/** The plugin the subject version resolves to: one outside the catalog names no tool. */
+let subjectPlugin = "acme-not-in-catalog";
 
 function answer(sql: string): Row[] {
   // The caller's teams (platform-db.ts teamsFor), then the run is theirs (eval/team-scope.ts).
@@ -59,7 +65,7 @@ function answer(sql: string): Row[] {
   // The subject-resolution statement: a subject version IS a `plugin_version` row, so the plugin's
   // name is reached through that row's own `plugin_id`. The moment the statement no longer reads
   // it that way, the stub stops answering and every assertion below fails.
-  if (/from zz\.plugin_version pv join zz\.plugin pl on pl\.id = pv\.plugin_id where pv\.id/.test(sql)) return [{ plugin_id: "p1", plugin: "acme-not-in-catalog" }];
+  if (/from zz\.plugin_version pv join zz\.plugin pl on pl\.id = pv\.plugin_id where pv\.id/.test(sql)) return [{ plugin_id: "p1", plugin: subjectPlugin }];
   if (/as any_affirmed/.test(sql)) return [latest];
   if (/select count\(\*\)::text as n/.test(sql)) return [{ n: "0" }];
   return [];
@@ -152,6 +158,23 @@ latest = { ...latest, affirmed: true };
 got = await read();
 assert.equal(got.protocol_action, "reuse", "an affirmed newest version with no trigger is reuse");
 assert.equal(got.awaiting_affirmation, undefined);
+
+// ---- protocol_read: new_evidence_surface names the tools the version lacks, or an agent following
+// the note records the same surfaces again and the trigger fires forever (runtime pass 2, F8).
+{
+  const { toolsNamedBy } = await load("services/zz-core/dist/eval/plugin-eval.js");
+  const named: string[] = toolsNamedBy("zz-core");
+  assert.ok(named.length > 1, "zz-core's skills name tools");
+  const [missing, ...kept] = named;
+  subjectPlugin = "zz-core";
+  // zz-core is the platform's own skills, not a catalog flow, so no manifest purpose is compared.
+  latest = { ...latest, affirmed: true, observable_surfaces: kept };
+  got = await read();
+  assert.deepEqual(got.triggers, ["new_evidence_surface"]);
+  assert.deepEqual(got.missing_surfaces, [missing], `protocol_read answered ${JSON.stringify(got)}`);
+  assert.match(got.note, new RegExp(`observableSurfaces lacks ${missing}`));
+  subjectPlugin = "acme-not-in-catalog";
+}
 
 // ---- protocol_record: measure keys are unique protocol-wide.
 const body = (dims: [string, string[]][]) => ({ dimensions: dims.map(([key, keys]) => ({ key, measures: keys.map((k) => ({ key: k })) })) });

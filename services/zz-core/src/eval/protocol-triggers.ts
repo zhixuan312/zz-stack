@@ -91,18 +91,20 @@ async function evaluatorDrift(p: pg.Pool, protocolVersionId: string): Promise<bo
 }
 
 /** Every trigger that fires for `plugin`'s latest protocol version, in the fixed order the
- *  contract lists them. Empty means the version is still compatible — `protocol_action = reuse`. */
+ *  contract lists them — empty means the version is still compatible, `protocol_action = reuse` —
+ *  and the tools behind `new_evidence_surface`: which the version's surfaces lack, so the next
+ *  version can add them rather than record the same surfaces again. */
 export async function triggersFor(
   p: pg.Pool, pluginId: string, plugin: string, latest: LatestProtocolVersion,
-): Promise<Trigger[]> {
+): Promise<{ fired: Trigger[]; missingSurfaces: string[] }> {
   const fired: Trigger[] = [];
   const entry = entryOf(plugin);
   const entryPurpose = entry?.manifest.purpose;
   if (entryPurpose && entryPurpose !== latest.purpose) fired.push("purpose_changed");
   if (await newRecurringFailure(p, pluginId)) fired.push("new_recurring_failure");
   if (await evaluatorDrift(p, latest.id)) fired.push("evaluator_drift");
-  const named = toolsNamedBy(plugin, entry);
   const surfaces = new Set(latest.observable_surfaces ?? []);
-  if (named.some((n) => !surfaces.has(n))) fired.push("new_evidence_surface");
-  return fired;
+  const missingSurfaces = toolsNamedBy(plugin, entry).filter((n) => !surfaces.has(n));
+  if (missingSurfaces.length) fired.push("new_evidence_surface");
+  return { fired, missingSurfaces };
 }

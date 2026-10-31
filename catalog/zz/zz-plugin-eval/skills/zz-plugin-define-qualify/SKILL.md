@@ -20,7 +20,8 @@ plugin whose identity no protocol version has folded in, with its `id`, `stable_
 `protocol_read` decides nothing for you: `create` means this plugin has no protocol yet;
 `reuse` means the newest version is affirmed and still compatible and there is nothing to write;
 `revise` names which trigger fired (`purpose_changed, new_recurring_failure, evaluator_drift,
-new_evidence_surface`) and expects a new version, never an edit to the old one. Pass
+new_evidence_surface`) and expects a new version, never an edit to the old one —
+`new_evidence_surface` comes with `missing_surfaces`, the tools to add to `observableSurfaces`. Pass
 `initiative` to record protocol_action as this initiative's durable branch fact — this
 is what tells `initiative_status`, and every later close, whether `protocol.md` applies on this
 branch. **On `reuse`, stop here** — protocol.md is `not_applicable` for this run and DEFINE has

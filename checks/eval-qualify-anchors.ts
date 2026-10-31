@@ -9,9 +9,13 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
+// zz-core's own skills are this repository's, not the image's /skills: read before plugin-eval.js
+// loads, which captures it (`SKILLS_DIR`).
+process.env.ZZ_SKILLS_DIR ??= join(process.cwd(), "skills");
 const { EvaluationProtocol } = await load("packages/contracts/dist/index.js");
 const { gatherCountedEvidence } = await load("services/zz-core/dist/eval/qualify-evidence.js");
 const { qualificationState, resolveThresholds } = await load("services/zz-core/dist/eval/qualify-ladder.js");
+const { toolsNamedBy } = await load("services/zz-core/dist/eval/plugin-eval.js");
 
 type Anchor = { id: string; role: "anchor" | "fault" | "control"; text: string; expected: string };
 type Measure = { key: string; evaluatorType: string; definition: { qualification?: { anchors: Anchor[] } } };
@@ -31,6 +35,13 @@ for (const m of semantic) {
   assert.ok(roles.has("anchor") && roles.has("fault") && roles.has("control"), `${m.key} lacks an anchor, fault or control`);
   assert.deepEqual(new Set(anchors.filter((a) => a.role === "anchor").map((a) => a.expected)), new Set(["yes", "no"]),
     `${m.key}'s anchors do not cover both answers`);
+}
+// The surfaces cover every tool zz-core's own skills name: one missing fires protocol_read's
+// new_evidence_surface on the shipped protocol itself, before any evaluation (runtime pass 2, F8).
+{
+  const surfaces = new Set<string>(protocol.observableSurfaces);
+  const missing = toolsNamedBy("zz-core").filter((t: string) => !surfaces.has(t));
+  assert.deepEqual(missing, [], "zz-core.json's observableSurfaces lack tools zz-core's skills name");
 }
 assert.ok(!measures.some((m) => m.key === "document_frontmatter_conformance"),
   "document_frontmatter_conformance asks a text judge about row state; it was dropped, not kept");

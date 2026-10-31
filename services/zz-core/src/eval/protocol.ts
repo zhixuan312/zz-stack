@@ -58,6 +58,13 @@ import { Refusal } from "../refusal.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no protocol can be recorded or read");
+/** The tools behind `new_evidence_surface`, answered as their own field and named in the note: a
+ *  trigger that says only that the surface grew sends an agent to record the same surfaces again,
+ *  and the trigger fires on the next version too. */
+const surfacesLacking = (missing: readonly string[]) => (missing.length ? { missing_surfaces: missing } : {});
+const lackingNote = (missing: readonly string[]) => (missing.length
+  ? ` observableSurfaces lacks ${missing.join(", ")}, which this plugin's skills name — add ${missing.length === 1 ? "it" : "them"} to the new version.`
+  : "");
 
 /** `subject_version_id` → the plugin it names, or null for one nothing minted. A subject version
  *  IS a `plugin_version` row (FR-24), so the release's own row carries the plugin it belongs to;
@@ -183,7 +190,9 @@ export function registerProtocolTools(server: McpServer): void {
         "none exists yet), protocol_action — create (no protocol at all), reuse (the newest " +
         "version is affirmed and still fits, nothing to do) or revise (a trigger fired, record a new version) " +
         "— and triggers: which of purpose_changed, new_recurring_failure, evaluator_drift, " +
-        "new_evidence_surface fired, or none. A newest version protocol_affirm never bound is " +
+        "new_evidence_surface fired, or none — with missing_surfaces, the tools this plugin's skills " +
+        "name that the version's observableSurfaces lack, when new_evidence_surface fired. A newest " +
+        "version protocol_affirm never bound is " +
         "never reuse: it answers create (no version was ever affirmed) or revise, plus " +
         "awaiting_affirmation: { version, content_digest } — with no trigger, get that version's " +
         "protocol.md approved and affirmed rather than recording another. Also RETURNS " +
@@ -220,28 +229,30 @@ export function registerProtocolTools(server: McpServer): void {
         // reusable — nothing may score against it — so the stage that recorded it is still open:
         // `create`/`revise` as the lineage began, which keeps protocol.md applying on this
         // initiative's branch. It is not a reason to record again unless a trigger fired.
-        const triggers = await triggersFor(p, subject.pluginId, subject.plugin, latest);
+        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, latest);
         response = {
           protocol_version_id: latest.id, protocol_action: latest.any_affirmed ? "revise" : "create",
           triggers: triggers.length ? triggers : ["none"],
+          ...surfacesLacking(missingSurfaces),
           awaiting_affirmation: { version: latest.version, content_digest: latest.content_digest },
           note: triggers.length
             ? `RECORD A NEW VERSION: ${triggers.join(", ")} fired against version ${latest.version}, ` +
-              "which was never affirmed either. protocol_record never edits a version in place."
+              `which was never affirmed either.${lackingNote(missingSurfaces)} protocol_record never edits a version in place.`
             : `AWAITING APPROVAL OF VERSION ${latest.version}, DO NOT RECORD. It was recorded, but no ` +
               `approved protocol.md is bound to it: write protocol.md quoting content_digest ` +
               `${latest.content_digest}, have it approved, then call protocol_affirm. Nothing ` +
               "qualifies or scores against it until then.",
         };
       } else {
-        const triggers = await triggersFor(p, subject.pluginId, subject.plugin, latest);
+        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, latest);
         const protocol_action = triggers.length ? "revise" : "reuse";
         response = {
           protocol_version_id: latest.id, protocol_action, triggers: triggers.length ? triggers : ["none"],
+          ...surfacesLacking(missingSurfaces),
           note: protocol_action === "reuse"
             ? "REUSE, DO NOT RECORD. This plugin's newest protocol version is affirmed and still compatible."
-            : `RECORD A NEW VERSION: ${triggers.join(", ")} fired against version ${latest.version}. ` +
-              "protocol_record never edits a version in place.",
+            : `RECORD A NEW VERSION: ${triggers.join(", ")} fired against version ${latest.version}.` +
+              `${lackingNote(missingSurfaces)} protocol_record never edits a version in place.`,
         };
       }
       // What DISCOVER left for this stage to fold in or leave uncited, read here rather than

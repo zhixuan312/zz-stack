@@ -15,7 +15,8 @@
  *     for the superadmin, may not replace a member's token outside the team by reusing its label,
  *     and a token bound to a team revokes only tokens bound to it; one who names a team they do not
  *     administer is refused alike whether it exists, the refusal naming the teams they do;
- *   - member_add and member_remove say what changed and keep a team's last admin;
+ *   - member_add and member_remove say what changed and keep a team's last admin, a deactivated
+ *     admin not counting as one;
  *   - a deactivated person is issued no token, deactivating them again says nothing changed and
  *     records nothing, and a superadmin cannot deactivate themselves;
  *   - a NUL character in a tool's argument is refused by name on /manage and on /core, and an event
@@ -155,6 +156,16 @@ async function leadActs(c: Core, g: Gateway): Promise<void> {
      /^ERROR: lead@example\.test is the only admin of lead-team/],
   ] as const;
   for (const [reply, want] of said) if (!want.test(reply)) c.fail(roles, `answered "${reply.slice(0, 200)}", expected ${want}`);
+  // A second admin who has since been deactivated cannot add anybody, so the lead is still the
+  // last admin who can act.
+  await c.sql.query("insert into zz.principal (email, display_name) values ('idle-admin@example.test', 'Idle Admin')");
+  const added = await ask(lead.token, "member_add", { team: "lead-team", email: "idle-admin@example.test", role: "admin" });
+  if (!/is now admin of lead-team/.test(added)) c.fail(roles, `adding a second admin answered "${added.slice(0, 200)}"`);
+  await c.sql.query("update zz.principal set status = 'deactivated' where email = 'idle-admin@example.test'");
+  const alone = await ask(lead.token, "member_remove", { team: "lead-team", email: "lead@example.test", confirm: "lead-team" });
+  if (!/^ERROR: lead@example\.test is the only admin of lead-team/.test(alone)) {
+    c.fail(roles, `with the other admin deactivated, the lead's own removal answered "${alone.slice(0, 200)}"`);
+  }
   c.pass(roles);
 }
 

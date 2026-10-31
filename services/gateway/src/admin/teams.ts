@@ -85,11 +85,12 @@ export async function removeMember(
   if (confirm !== team) return { ok: false, status: 400, error: `confirm must repeat the team slug exactly ('${team}')` };
   const db = platformDb();
   // A team keeps someone who can add the next member. Removing its last admin leaves a team only
-  // a superadmin can manage, so only a superadmin may do it.
+  // a superadmin can manage, so only a superadmin may do it. A deactivated admin keeps their row
+  // for a restore but can add nobody, so they do not count.
   if (!superOnly(id)) {
     const { rows: [last] } = await db.query<{ last: boolean }>(
-      `select count(*) filter (where m.role = 'admin') = 1
-              and bool_or(m.role = 'admin' and p.email = $2) as last
+      `select count(*) filter (where m.role = 'admin' and p.status = 'active') = 1
+              and bool_or(m.role = 'admin' and p.status = 'active' and p.email = $2) as last
          from membership m join team t on t.id = m.team_id join principal p on p.id = m.principal_id
         where t.slug = $1`, [team, email.toLowerCase()]);
     if (last?.last) {

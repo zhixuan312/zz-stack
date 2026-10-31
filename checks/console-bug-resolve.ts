@@ -321,15 +321,17 @@ async function run(c: Core): Promise<void> {
         || !twice.includes("already closed so by you; nothing changed") || afterRetry?.resolution !== close.resolution) {
       c.fail(step, `the resolve answered ${JSON.stringify([once, twice])}`);
     }
-    await c.call(step, "bug_delete", { id: D }, tool);
+    // In upper case, which the id's schema accepts: the retry finds the delete all the same.
+    const DU = D.toUpperCase();
+    await c.call(step, "bug_delete", { id: DU }, tool);
     const retryUntil = Date.now() + 5000;
     let again = "";
     // The delete's event is written after its answer, so the retry is waited on, briefly.
-    while (!again.startsWith(`bug ${D} was already deleted by ${c.email} at `) && Date.now() < retryUntil) {
-      again = await c.call(step, "bug_delete", { id: D }, tool);
+    while (!again.startsWith(`bug ${DU} was already deleted by ${c.email} at `) && Date.now() < retryUntil) {
+      again = await c.call(step, "bug_delete", { id: DU }, tool);
       await new Promise((r) => setTimeout(r, 100));
     }
-    if (!again.startsWith(`bug ${D} was already deleted by ${c.email} at `) || !again.endsWith('"Duplicate". Nothing more to remove.')) {
+    if (!again.startsWith(`bug ${DU} was already deleted by ${c.email} at `) || !again.endsWith('"Duplicate". Nothing more to remove.')) {
       c.fail(step, `the delete sent again answered ${JSON.stringify(again)}`);
     }
     c.pass("a resolve sent again with the same decision answers that close, and a delete sent again names who deleted it");

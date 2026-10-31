@@ -175,6 +175,7 @@ async function registerNamesAreReal(c: Core, _s: Seed): Promise<void> {
     ["", "1.0.0", "name and version must not be blank"],
     ["tp-blank", " ", "name and version must not be blank"],
     [PLUGIN.toUpperCase(), "1.0.0", `${PLUGIN.toUpperCase()} is a catalog plugin`],
+    [`${PLUGIN} `, "1.0.0", "must not have spaces around them"],
   ] as const) {
     const reply = await ask(door, "plugin_register", {
       name, version, source_kind: "local_dir", source_locator: "/nowhere", idempotency_key: `register-${name}-${version}` });

@@ -373,6 +373,10 @@ export function registerSubjectTools(server: McpServer): void {
         return text("ERROR: origin/owner/evolvable/release_owners are derived by the platform, not supplied");
       }
       if (!name.trim() || !version.trim()) return text("ERROR: name and version must not be blank");
+      // "zz-core " renders as zz-core wherever the name is shown, so it is refused rather than kept.
+      if (name !== name.trim() || version !== version.trim()) {
+        return text("ERROR: name and version must not have spaces around them — send them as the plugin writes them");
+      }
       // Compared without case: ZZ-CORE beside zz-core is a look-alike of a catalog plugin, not
       // another plugin.
       if (catalogEntries().some((e) => pluginName(e.flow).toLowerCase() === name.toLowerCase())) {

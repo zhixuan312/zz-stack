@@ -204,6 +204,8 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             marketplace/ and .claude-plugin/, through the same buildClientPackage
             the gateway serves packages with — the gate fails a release whose
             committed shelf no longer matches the catalog),
+            clean.ts (removes every workspace's dist/ and build info, a deleted
+            source's output included, which `tsc -b --clean` leaves behind),
             set-version.ts, skill-versions.ts (each skill's declared version beside
             the hash of what it actually says), plugin-versions.ts (the same
             argument one level up, for the unit a person actually installs: each

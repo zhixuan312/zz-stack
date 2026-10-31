@@ -173,7 +173,7 @@ export const IMPROVE: Record<string, TableTarget> = {
       decision: "class=state_machine; authority=this; question=has the owner applied or rejected it — deferred while it is open, and null for a strength, which is not open work?",
       created_at: "class=state_machine; authority=this; question=when was it recorded, the order the documents print it in?",
       decided_at: "class=state_machine; authority=this; question=when was it applied or rejected?",
-      decision_note: "class=state_machine; authority=this; question=why was it applied or rejected — for the 21 applied rows this prose is the only record of which release carried the fix, and it is empty while deferred, since the open state needs no reason and the two closed ones do?",
+      decision_note: "class=state_machine; authority=this; question=why was it applied or rejected — for the 21 applied rows this prose is the only record of which release carried the fix — and, on a finding a rollback reopened, which release it undid, since the rollback clears decided_by and decided_at; empty while a finding has never been decided?",
       owner_kind: "class=state_machine; authority=this; question=whose problem is it — the plugin's, a dependency's, the platform's, the environment's, the user's input, or unknown?",
       owner_ref: "class=state_machine; authority=this; question=which owner exactly, free prose for a platform, dependency or environment owner and always null when owner_kind is plugin, whose plugin is already reached through the run?",
       measure_id: "class=relation; authority=this; question=which measure of the run's protocol does it evidence, null when it evidences no single measure?",

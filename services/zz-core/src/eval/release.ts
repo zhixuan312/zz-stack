@@ -394,7 +394,8 @@ export function registerReleaseTools(server: McpServer): void {
         "improvement.md citing this attempt and quoting this exact digest, signed by an " +
         "owner-team member — NOT terminal, the attempt stays prepared " +
         "and a later call may still find it approved), digest_mismatch (approved_patch_digest " +
-        "does not match the candidate's own recorded patch_digest), stale_baseline (the plugin's " +
+        "does not match the candidate's own recorded patch_digest — NOT terminal either: the attempt " +
+        "stays prepared, so the same call with the approved digest applies it), stale_baseline (the plugin's " +
         "currently released subject has moved since this candidate's own base — rebase, " +
         "rebuild and re-approve before trying again), an unknown candidate_id, a " +
         "candidate with no prepared release_attempt, an improvement.md citing an attempt that is " +

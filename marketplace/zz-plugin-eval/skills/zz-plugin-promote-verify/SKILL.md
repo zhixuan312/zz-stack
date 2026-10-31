@@ -83,7 +83,8 @@ this plugin is applying — wait for it, or, once the refusal names it stale, ru
 command it prints; `no_release_owners`/`not_eligible` (recomputed live); `approval_required` (no
 approved `improvement.md` citing this attempt and quoting this exact digest, signed by an
 owner-team member — NOT terminal, try again once it is approved); `digest_mismatch` (the approved digest does not match the candidate's own recorded
-one); **`stale_baseline`** (the plugin's currently released subject has moved since this
+one — NOT terminal either: the attempt stays prepared, so call again with the digest
+`improvement.md` quotes); **`stale_baseline`** (the plugin's currently released subject has moved since this
 candidate's own base — rebase, rebuild and re-approve before trying again; a changed patch
 needs the whole cycle again too). Nothing here applies a patch or runs a gate —
 zz-core has no checkout of the plugin's own repository. That is the CLI, next:

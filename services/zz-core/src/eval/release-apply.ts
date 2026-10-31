@@ -412,11 +412,13 @@ export async function planApply(
   });
 
   if (decision.kind === "refuse") {
-    // approval_required is NOT terminal — the document may still be approved later, so `status`
-    // stays 'prepared'. Every other reason is: digest_mismatch and stale_baseline mean THIS
-    // candidate can never legally apply against THIS base again. `reason` is written either way,
-    // so a replay reads the same answer a fresh call would.
-    const terminal = decision.reason !== "approval_required";
+    // approval_required and digest_mismatch are NOT terminal, so `status` stays 'prepared': the
+    // document may still be approved later, and a digest the caller mistyped says nothing about
+    // the candidate — refusing the attempt for it would also void the approved improvement.md
+    // that cites it. The rest are: not_eligible and stale_baseline mean THIS candidate can never
+    // legally apply against THIS base again. `reason` is written either way, so a replay reads
+    // the same answer a fresh call would.
+    const terminal = decision.reason !== "approval_required" && decision.reason !== "digest_mismatch";
     await client.query(
       `update zz.release_attempt set reason = $2${terminal ? ", status = 'refused'" : ""}
         where id = $1::uuid and status = 'prepared'`,

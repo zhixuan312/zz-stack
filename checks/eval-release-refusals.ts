@@ -180,10 +180,16 @@ assert.equal((await run({ versions: ["1.1.0", "1.2.0"], retracted: ["1.2.0"] }).
 assert.equal((await run({}, OWNER, approvedDoc(A_OLD, STRANGER)).done).result.reason, "approval_required", "a non-member approver signs for nobody");
 assert.equal((await run({ candidate: [{ id: CAND, status: "released", base_plugin_version_id: BASE, patch_digest: DIGEST, patch: "x" }] }).done).result.reason,
   "not_eligible", "a candidate no longer valid (already released) is not releasable");
+// A wrong digest is the caller's mistake, not the candidate's: the approved attempt stays
+// prepared, and the same call with the approved digest applies it (runtime pass 2, F6 — one typo
+// had refused the attempt for good, and its approved improvement.md with it).
 {
   const c = applyClient({});
   const out = await planApply(c.client, CAND, "e".repeat(64), OWNER, approvedDoc(A_OLD));
   assert.equal(out.result.reason, "digest_mismatch");
+  assert.doesNotMatch(c.updates.at(-1)!.text, /status = 'refused'/, "a mistyped digest refused the approved attempt for good");
+  const again = await planApply(c.client, CAND, DIGEST, OWNER, approvedDoc(A_OLD));
+  assert.equal(again.result.status, "applying", `the corrected call answered ${JSON.stringify(again.result)}`);
 }
 await assert.rejects(run({ casError: { code: "23505" } }).done, /release_in_progress — another attempt of demo is already applying/);
 await assert.rejects(run({ casRows: [] }).done, /left 'prepared' before this call reached it/);

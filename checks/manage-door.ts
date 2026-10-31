@@ -16,7 +16,7 @@
  *     and a token bound to a team revokes only tokens bound to it; one who names a team they do not
  *     administer is refused alike whether it exists, the refusal naming the teams they do;
  *   - member_add and member_remove say what changed and keep a team's last admin, a deactivated
- *     admin not counting as one;
+ *     admin not counting as one, and two admins demoting each other at once leave one admin;
  *   - a deactivated person is issued no token, deactivating them again says nothing changed and
  *     records nothing, and a superadmin cannot deactivate themselves;
  *   - a NUL character in a tool's argument is refused by name on /manage and on /core, and an event
@@ -40,6 +40,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { mintPat } from "@zz/contracts";
+import pg from "pg";
 
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from "../scripts/schema/throwaway-gateway.ts";
@@ -184,6 +185,48 @@ async function leadActs(c: Core, g: Gateway): Promise<void> {
       where t.slug = 'lead-team' and p.email = 'lead@example.test'`)).rows[0]?.role;
   if (role !== "admin") c.fail(roles, `after a refused demotion the lead is ${role}`);
   c.pass(roles);
+}
+
+/** Two admins of one team demote each other at the same moment. Each count, read before the other's
+ *  write, saw two admins, and the team was left with none. The team's row is held here until both
+ *  calls are queued behind it, so they are as concurrent as two calls can be; one then demotes, and
+ *  the other counts again and is refused. */
+async function racedDemotions(c: Core, g: Gateway): Promise<void> {
+  const step = "two admins demoting each other at once leave the team one admin";
+  await c.sql.query(
+    `with p as (insert into zz.principal (email, display_name) values ('pair-a@example.test', 'Pair A'), ('pair-b@example.test', 'Pair B')
+                returning id, email),
+          t as (insert into zz.team (slug, name, created_by) select 'pair-team', 'Pair team', id from p where email = 'pair-a@example.test'
+                returning id)
+     insert into zz.membership (team_id, principal_id, role, added_by) select t.id, p.id, 'admin', p.id from t, p`);
+  const [a, b] = [await insertPat(c, "pair-a@example.test", "pair", null), await insertPat(c, "pair-b@example.test", "pair", null)];
+  const holder = new pg.Client({ connectionString: c.url });
+  await holder.connect();
+  try {
+    await holder.query("begin");
+    await holder.query("select 1 from zz.team where slug = 'pair-team' for update");
+    const demote = (token: string, email: string) => manageCall(g, token, "member_add", { team: "pair-team", email, role: "member" });
+    const replies = Promise.all([demote(a.token, "pair-b@example.test"), demote(b.token, "pair-a@example.test")]);
+    let queued = 0;
+    for (const until = Date.now() + 20_000; queued < 2 && Date.now() < until; await new Promise((r) => setTimeout(r, 50))) {
+      queued = Number((await c.sql.query<{ n: string }>(
+        `select count(*) as n from pg_catalog.pg_stat_activity
+          where wait_event_type = 'Lock' and query like '%from team where slug = $1 for update%'`)).rows[0].n);
+    }
+    await holder.query("commit");
+    const said = await replies;
+    if (queued < 2) c.fail(step, `${queued} of the two demotions waited for the team's row; they answered ${JSON.stringify(said)}`);
+    if (said.filter((r) => /is now member of pair-team \(was admin\)$/.test(r)).length !== 1
+        || said.filter((r) => /^ERROR: pair-[ab]@example\.test is the only admin of pair-team/.test(r)).length !== 1) {
+      c.fail(step, `answered ${JSON.stringify(said)}`);
+    }
+    const admins = Number((await c.sql.query<{ n: string }>(
+      `select count(*) as n from zz.membership m join zz.team t on t.id = m.team_id where t.slug = 'pair-team' and m.role = 'admin'`)).rows[0].n);
+    if (admins !== 1) c.fail(step, `pair-team has ${admins} admin(s)`);
+  } finally {
+    await holder.end();
+  }
+  c.pass(step);
 }
 
 /** A deactivated person stays out: no token is minted for them, a second deactivation is not
@@ -365,6 +408,7 @@ async function run(c: Core): Promise<void> {
   try {
     await applicationActs(c, g);
     await leadActs(c, g);
+    await racedDemotions(c, g);
     await retireActs(c, g);
     await nulActs(c, g);
     await bodyActs(c, g);

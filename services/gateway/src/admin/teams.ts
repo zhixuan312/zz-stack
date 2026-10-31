@@ -5,6 +5,8 @@
  * and the sentence, so the MCP tool and the console route that both call it answer the same
  * way. A write that throws would make those two disagree about what a refusal looks like.
  */
+import type { PoolClient } from "pg";
+
 import { platformDb } from "../db.js";
 import { PLATFORM_TEAM, TEAM_SLUG, TEAM_SLUG_RULE, auditAdmin, type Identity } from "../identity.js";
 import { isDeactivated, principalId, superOnly, teamAuthority, teamId } from "./authority.js";
@@ -57,21 +59,20 @@ export async function addMember(
   if (await isDeactivated(db, pid)) {
     return { ok: false, status: 400, error: `principal ${email} is deactivated — person_add restores them before a team can take them` };
   }
-  if (role === "member") {
-    const kept = await keepsLastAdmin(db, id, team, email);
-    if (kept) return kept;
-  }
   const actorId = await principalId(db, id.email);
   // The role before, read in the same statement as the write, so the answer says what changed.
-  const { rows: [done] } = await db.query<{ before: string | null; role: string; email: string }>(
+  const put = async (q: Pick<PoolClient, "query">) => (await q.query<{ before: string | null; role: string; email: string }>(
     `with prior as (select role from membership where team_id = $1 and principal_id = $2),
           put as (insert into membership (team_id, principal_id, role, added_by) values ($1, $2, coalesce($3, 'member'), $4)
                   on conflict (team_id, principal_id) do update set role = coalesce($3, membership.role)
                   returning role)
      select (select role from prior) as before, (select role from put) as role,
             (select email from principal where id = $2) as email`,
-    [tid, pid, role ?? null, actorId],
-  );
+    [tid, pid, role ?? null, actorId])).rows[0];
+  // Only a demotion can take away an admin; a new member or a promotion writes without the lock.
+  const kept = role === "member" ? await keepingLastAdmin(id, team, email, put) : { done: await put(db) };
+  if ("refused" in kept) return kept.refused;
+  const done = kept.done;
   if (done.before === done.role) {
     return { ok: true, message: `${done.email} is already ${done.role} of ${team} — nothing changed` };
   }
@@ -81,23 +82,42 @@ export async function addMember(
     : `${done.email} is now ${done.role} of ${team}` };
 }
 /**
- * The refusal for taking away `email`'s admin role in `team`, by removal or by demotion, when they are its last active
- * admin; null when they are not, or the caller is a superadmin. A team keeps someone who can add the next member: without
- * one it is a team only a superadmin can manage, so only a superadmin may leave it so. A deactivated admin keeps their row
- * for a restore but can add nobody, so they do not count.
+ * `write`, which may take away `email`'s admin role in `team` (a removal or a demotion), unless they are its last active
+ * admin. A team keeps someone who can add the next member: without one it is a team only a superadmin can manage, so
+ * only a superadmin may leave it so. A deactivated admin keeps their row for a restore but can add nobody, so they do
+ * not count.
+ *
+ * The count and the write share one transaction holding the team's row: read and written apart, two admins removing
+ * or demoting each other at once each counted the other and left the team with none.
  */
-async function keepsLastAdmin(db: ReturnType<typeof platformDb>, id: Identity | null, team: string,
-                              email: string): Promise<TeamWriteOutcome | null> {
-  if (superOnly(id)) return null;
-  const { rows: [last] } = await db.query<{ last: boolean }>(
-    `select count(*) filter (where m.role = 'admin' and p.status = 'active') = 1
-            and bool_or(m.role = 'admin' and p.status = 'active' and p.email = $2) as last
-       from membership m join team t on t.id = m.team_id join principal p on p.id = m.principal_id
-      where t.slug = $1`, [team, email.toLowerCase()]);
-  return last?.last
-    ? { ok: false, status: 400, error: `${email} is the only admin of ${team}, and a team keeps ` +
-        "someone who can add the next member. Make another member admin first (member_add with role admin)." }
-    : null;
+async function keepingLastAdmin<T>(id: Identity | null, team: string, email: string,
+                                   write: (q: PoolClient) => Promise<T>): Promise<{ refused: TeamWriteOutcome } | { done: T }> {
+  const client = await platformDb().connect();
+  try {
+    await client.query("begin");
+    await client.query("select 1 from team where slug = $1 for update", [team]);
+    if (!superOnly(id)) {
+      const { rows: [last] } = await client.query<{ last: boolean }>(
+        `select count(*) filter (where m.role = 'admin' and p.status = 'active') = 1
+                and bool_or(m.role = 'admin' and p.status = 'active' and p.email = $2) as last
+           from membership m join team t on t.id = m.team_id join principal p on p.id = m.principal_id
+          where t.slug = $1`, [team, email.toLowerCase()]);
+      if (last?.last) {
+        await client.query("rollback");
+        return { refused: { ok: false, status: 400, error: `${email} is the only admin of ${team}, and a team keeps ` +
+          "someone who can add the next member. Make another member admin first (member_add with role admin)." } };
+      }
+    }
+    const done = await write(client);
+    await client.query("commit");
+    return { done };
+  } catch (err) {
+    // A rollback that fails too (the connection gone) must not replace the write's own error.
+    await client.query("rollback").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /** Remove a principal from a team. `confirm` must repeat the team slug exactly. */
@@ -107,20 +127,18 @@ export async function removeMember(
 ): Promise<TeamWriteOutcome> {
   if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
   if (confirm !== team) return { ok: false, status: 400, error: `confirm must repeat the team slug exactly ('${team}')` };
-  const db = platformDb();
-  const kept = await keepsLastAdmin(db, id, team, email);
-  if (kept) return kept;
   // What was actually deleted, not what was asked for: reporting "removed" whatever happened
   // makes a mistyped address read as done while the person it was meant for stays a member.
   // COUPLED: the destructive siblings hold the same rule — team_archive refuses an inactive
   // team, pat_revoke refuses an id that is not there.
-  const r = await db.query(
+  const kept = await keepingLastAdmin(id, team, email, (q) => q.query(
     `delete from membership using team t, principal p
      where membership.team_id = t.id and membership.principal_id = p.id
        and t.slug = $1 and p.email = $2`,
     [team, email.toLowerCase()],
-  );
-  if (!r.rowCount) {
+  ));
+  if ("refused" in kept) return kept.refused;
+  if (!kept.done.rowCount) {
     return { ok: false, status: 400, error:
       `${email} is not a member of ${team} — nothing was removed. Check the address: the team's members ` +
       "are listed on the console's Access page, and by person_list for a superadmin." };

@@ -104,8 +104,9 @@ export function registerCandidateTools(server: McpServer): void {
         "\"ERROR: finding <id> is owned by <kind>; it is reported to its owner, not optimised\" " +
         "(a dependency/platform/environment/user_input/unknown finding stays an " +
         "owner-facing finding and starts no improvement). Pass `initiative` to record " +
-        "improvement_mode as that initiative's durable branch fact — release when the " +
-        "base subject records release_owners, proposal when it does not; omit `initiative` and " +
+        "improvement_mode as that initiative's durable branch fact — release when this " +
+        "evaluation's team is one of the base subject's release_owners, proposal when it is not " +
+        "(a third-party plugin, or one another team owns); omit `initiative` and " +
         "nothing is recorded. `skip: true` is the explicit route for no plugin-owned actionable " +
         "finding at all: opens no improvement_run, and — with `initiative` — records " +
         "improvement_mode: skip and release_mode: not_applicable in one call. Checked and " +
@@ -236,16 +237,17 @@ export function registerCandidateTools(server: McpServer): void {
           "it is reported to its owner, not optimised");
       }
 
-      // FR-58: release when the base subject this eval_run scored records release_owners, proposal
-      // when it does not — the SAME ownership split release_prepare/proposal_prepare's own mirror
-      // guard already enforces (release.ts), read here rather than re-derived a second way.
+      // FR-58: release when this eval_run's team is one of the scored subject's release owners,
+      // proposal when it is not — a plugin another team owns is a proposal for this one, which can
+      // neither prepare nor apply its release. The SAME split proposal_prepare's guard and
+      // improvement_stop read (`promotable`, proposal-doc.ts), never re-derived a second way.
       // Checked and refused as a HARD error, BEFORE the idempotency ledger below (never a soft
       // facts_refused) — the same reason the skip branch above moved its own write earlier: a
       // conflict here means a DIFFERENT improvement_mode already stands for this initiative, and
       // opening (or replaying into) a zz.improvement_run regardless would leave a release or
       // proposal running that the initiative's own facts do not admit to.
       const subject = await loadSubjectForEvalRun(p, eval_run_id);
-      const improvement_mode = (subject?.release_owners.length ?? 0) > 0 ? "release" : "proposal";
+      const improvement_mode = subject?.promotable ? "release" : "proposal";
       let runFacts: Record<string, string> = {};
       if (initiative) {
         const written = await writeBranchFacts(initiative, { improvement_mode });
@@ -564,7 +566,7 @@ export function registerCandidateTools(server: McpServer): void {
         "eval_run its findings.md records). RETURNS { improvement_run_id, facts }. REFUSES an " +
         "initiative with no findings.md eval_run (no_eval_run) or no improvement run on it " +
         "(no_improvement_run); an initiative with a valid (built and gated) candidate — " +
-        "release_prepare it instead; a subject with no release_owners — proposal_prepare writes " +
+        "release_prepare it instead; a subject this evaluation's team is not a release owner of — proposal_prepare writes " +
         "its proposal.md instead; and (a hard refusal) a release_mode already set to " +
         "something else. A mutator: writes through the idempotency ledger, anchored on the " +
         "improvement run's own row.",
@@ -579,8 +581,9 @@ export function registerCandidateTools(server: McpServer): void {
         "select eval_run_id::text as eval_run_id from zz.improvement_run where id = $1::uuid", [resolved])).rows[0];
       if (!run) return text(`ERROR: no improvement_run ${resolved}`);
       const subject = await loadSubjectForEvalRun(p, run.eval_run_id);
-      if (!subject?.release_owners.length) {
-        return text("ERROR: proposal_only — this subject records no release_owners; proposal_prepare(initiative) " +
+      if (!subject?.promotable) {
+        return text(`ERROR: proposal_only — ${subject?.run_team ?? "this team"} is not a release owner of this ` +
+          `subject (${subject?.release_owners.join(", ") || "it records none"}); proposal_prepare(initiative) ` +
           "writes its proposal.md, which is how IMPROVE ends for it");
       }
       const valid = (await p.query<{ id: string }>(`

@@ -40,7 +40,7 @@ import { resolveSource } from "./subject-source.js";
 import { recordStage } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { platformEvent } from "../indexing.js";
-import { db } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -114,7 +114,7 @@ async function resolveSubjectVersion(
  *  derivation `candidate_record` maps a patch onto (`componentManifestOf`) rather than from a
  *  second, response-only one that could answer differently. */
 async function subjectResponse(
-  runner: Pick<pg.Pool, "query">, subjectVersionId: string,
+  runner: Pick<pg.Pool, "query">, subjectVersionId: string, callerTeam: string | null,
 ): Promise<Record<string, unknown>> {
   const row = (await runner.query<SubjectVersionRow>(
     `${SUBJECT_SELECT} where pv.id = $1::uuid`, [subjectVersionId])).rows[0];
@@ -171,14 +171,15 @@ async function subjectResponse(
     origin: row.origin,
     owner_team: row.owner_team,
     release_owners: row.release_owners,
-    // Ownership's own release track, not the per-initiative branch fact of the same name
-    // FR-52/FR-58 has `release_prepare`/`proposal_prepare` write as a `zz.initiative_fact` row.
-    // That later fact is read from THIS one: a subject with no release owners can never be
-    // promoted (FR-47), so it is `proposal_only`; the reverse is `promotable`, contingent on
-    // every later gate this initiative still has to pass. Never `not_applicable` here — that
-    // value belongs to an initiative that never reached a release/proposal stage at all, which
-    // is not a fact plugin_locate, called before any evaluation exists, can see.
-    release_mode: row.release_owners.length > 0 ? "promotable" : "proposal_only",
+    // Ownership's own release track for the CALLER's team, not the per-initiative branch fact of
+    // the same name FR-52/FR-58 has `release_prepare`/`proposal_prepare` write as a
+    // `zz.initiative_fact` row. A team outside the release owners can never promote this subject
+    // (FR-47), so it is `proposal_only` for that team — the same rule `promotable` in
+    // proposal-doc.ts states for an evaluation run's team; one of the owners is `promotable`,
+    // contingent on every later gate. Never `not_applicable` here — that value belongs to an
+    // initiative that never reached a release/proposal stage at all, which is not a fact
+    // plugin_locate, called before any evaluation exists, can see.
+    release_mode: callerTeam !== null && row.release_owners.includes(callerTeam) ? "promotable" : "proposal_only",
     latest_protocol_version_id: protocol?.id ?? null,
     // What an evaluation may do with its findings follows from whose the plugin is — carried
     // over from plugin-eval.ts's pre-FR-1 plugin_locate, which this module replaces. Ours
@@ -271,7 +272,8 @@ export function registerSubjectTools(server: McpServer): void {
         "subject, derived from what a catalog release ships — a digest per component — for one " +
         "nobody captured), the row's other source columns (source locator, tree digest and " +
         "resolved commit: set for a third-party capture, null for a catalog release), " +
-        "ownership and its release mode, and the plugin's newest protocol version if one exists " +
+        "ownership and its release mode for the caller's team (promotable only when that team is " +
+        "one of its release owners), and the plugin's newest protocol version if one exists " +
         "(no compatibility check — protocol_read decides that) — with the SAME subject_version_id " +
         "for the same release content, whichever call resolved it. Every later tool takes the " +
         "subject_version_id this returns, so an evaluation cannot drift onto a different version " +
@@ -319,7 +321,7 @@ export function registerSubjectTools(server: McpServer): void {
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
       const recorded = await recordStage(initiative, "zz-plugin-identify", { subject_version_id: subjectVersionId });
-      return json({ ...await subjectResponse(pool, subjectVersionId), ...recorded });
+      return json({ ...await subjectResponse(pool, subjectVersionId, await teamFor(principal)), ...recorded });
     },
   );
 
@@ -459,7 +461,7 @@ export function registerSubjectTools(server: McpServer): void {
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
       const recorded = await recordStage(initiative, "zz-plugin-identify", { subject_version_id: subjectVersionId });
-      return json({ ...await subjectResponse(pool, subjectVersionId), ...recorded });
+      return json({ ...await subjectResponse(pool, subjectVersionId, await teamFor(principal)), ...recorded });
     },
   );
 }

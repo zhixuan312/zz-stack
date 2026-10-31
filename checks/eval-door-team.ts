@@ -17,7 +17,9 @@
  *     seeded team's text;
  *   - afterwards the run holds the same assessments, findings, decisions, improvement runs and
  *     candidates it held before, and the run is still unscored;
- *   - the seeded team's own caller reads its candidate, so the refusal is about the team.
+ *   - the seeded team's own caller reads its candidate, so the refusal is about the team;
+ *   - a run of a plugin whose release owners are another team is not promotable for the run's own
+ *     team, and is once that team is an owner too.
  *
  * The only database this touches is the one it started.
  *
@@ -25,6 +27,10 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { root } from "../scripts/deployment.ts";
 import { ask, evalDoor, finding, one, seed, type Seed } from "../scripts/schema/eval-door-seed.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 
@@ -92,6 +98,33 @@ async function outsiderChangesNothing(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
+/** A plugin another team owns is a proposal for this one: its improvement can neither be prepared
+ *  nor applied as a release by a team outside its release owners, so improvement_start,
+ *  proposal_prepare, improvement_stop and findings.md all read the run's own team against the
+ *  owners (`promotable`) rather than whether the plugin has any owner (runtime pass 2, F7 — an
+ *  outsider was routed to release, refused there, and refused a proposal). */
+async function anotherTeamsPluginIsAProposal(c: Core, s: Seed): Promise<void> {
+  const step = "an evaluation of a plugin another team owns";
+  const { pool } = await c.inProcess();
+  const { loadSubjectForEvalRun } = await import(
+    pathToFileURL(join(root, "services/zz-core/dist/eval/proposal-doc.js")).href);
+  const owners = (team: string) => c.sql.query(
+    `insert into zz.plugin_release_owner (plugin_id, team_id) select $1, id from zz.team where slug = $2`,
+    [s.pluginId, team]);
+  await c.sql.query("delete from zz.plugin_release_owner where plugin_id = $1", [s.pluginId]);
+  await owners("elsewhere");
+  const outside = await loadSubjectForEvalRun(pool, s.run) as { promotable: boolean; run_team: string };
+  if (outside.promotable !== false || outside.run_team !== c.team) {
+    c.fail(step, `owned by elsewhere, ${c.team}'s run read as ${JSON.stringify(outside)}`);
+  }
+  await owners(c.team);
+  const inside = await loadSubjectForEvalRun(pool, s.run) as { promotable: boolean };
+  if (inside.promotable !== true) c.fail(step, `with ${c.team} an owner too, the run read as ${JSON.stringify(inside)}`);
+  c.pass(step);
+}
+
 process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
-  await outsiderChangesNothing(c, await seed(c));
+  const s = await seed(c);
+  await outsiderChangesNothing(c, s);
+  await anotherTeamsPluginIsAProposal(c, s);
 });

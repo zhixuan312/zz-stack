@@ -232,7 +232,7 @@ export function renderFindings(findings: FindingRow[], kind: FindingRow["kind"])
 
 function renderBody(
   run: EvalRunRow, subject: { plugin: string; declared_version: string; origin: string;
-    owner_team: string | null; release_owners: readonly string[] },
+    owner_team: string | null; release_owners: readonly string[]; promotable: boolean },
   dims: DimensionScoreRow[],
   protocol: { protocol_key: string; version: number },
   trust: EvaluatorTrustRow[], findings: FindingRow[],
@@ -271,11 +271,12 @@ function renderBody(
     "## Ownership",
     `- Origin: ${subject.origin}`,
     `- Owner team: ${subject.owner_team ?? "none recorded"}`,
-    // Whether this subject can be promoted follows from
-    // whose release owners it has (FR-47), which is the same derivation `plugin_locate` answers
-    // `release_mode` with one table over. `not_applicable` is not reachable here — it belongs to
-    // an initiative that never reached a release stage, which a scored run is not.
-    `- Release mode: ${subject.release_owners.length ? "promotable" : "proposal_only"}`,
+    // Whether this evaluation's improvement can be promoted follows from whether its team is one
+    // of the subject's release owners (FR-47) — `loadSubjectForEvalRun`'s `promotable`, the one
+    // derivation improvement_start and proposal_prepare read too. `not_applicable` is not
+    // reachable here — it belongs to an initiative that never reached a release stage, which a
+    // scored run is not.
+    `- Release mode: ${subject.promotable ? "promotable" : "proposal_only"}`,
     `- Release owners: ${subject.release_owners.length ? subject.release_owners.join(", ") : "none"}`,
     "",
   ].join("\n");

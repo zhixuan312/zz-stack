@@ -50,6 +50,12 @@ interface ProposalSubjectRow {
   readonly plugin: string; readonly declared_version: string; readonly origin: string;
   readonly owner_team: string | null; readonly release_owners: readonly string[];
   readonly source_locator: { kind?: string; locator?: string } | null;
+  /** The team whose evaluation this is — the only team that can reach the run. */
+  readonly run_team: string;
+  /** Whether `run_team` is one of `release_owners`: what makes this evaluation's improvement a
+   *  release rather than a proposal. A plugin with owners is still a proposal for any other team —
+   *  it can neither prepare nor apply that plugin's release. */
+  readonly promotable: boolean;
 }
 
 interface FindingRow {
@@ -84,8 +90,10 @@ async function loadImprovementRun(p: pg.Pool, id: string): Promise<ImprovementRu
 export async function loadSubjectForEvalRun(p: pg.Pool, evalRunId: string): Promise<ProposalSubjectRow | null> {
   return (await p.query<ProposalSubjectRow>(`
     select pl.name as plugin, pv.version as declared_version, pl.origin, t.slug as owner_team,
-           owners.slugs as release_owners, pv.source_locator
+           owners.slugs as release_owners, pv.source_locator, rt.slug as run_team,
+           rt.slug = any(owners.slugs) as promotable
       from zz.eval_run er
+      join zz.team rt on rt.id = er.team_id
       join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
       join zz.plugin_version pv on pv.id = os.plugin_version_id
       join zz.plugin pl on pl.id = pv.plugin_id
@@ -188,7 +196,9 @@ function renderBody(
     `- Plugin: ${subject.plugin} ${subject.declared_version}`,
     `- Origin: ${subject.origin}`,
     `- Owner team (recorded on this platform): ${subject.owner_team ?? "none recorded"}`,
-    "- Release owners: none — release_mode: `proposal_only`",
+    subject.release_owners.length
+      ? `- Release owners: ${subject.release_owners.join(", ")} — not ${subject.run_team}, whose evaluation this is; release_mode: \`proposal_only\``
+      : "- Release owners: none — release_mode: `proposal_only`",
     `- Source: ${sourceAvailable ? JSON.stringify(subject.source_locator) : "not recorded (no source)"}`,
     `- improvement_run_id: \`${improvementRunId}\``,
     `- eval_run_id: \`${evalRunId}\``,

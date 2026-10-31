@@ -586,7 +586,8 @@ export function registerReleaseTools(server: McpServer): void {
     {
       annotations: WRITES,
       description:
-        "WHEN an improvement_run's own base subject records no release_owners and its " +
+        "WHEN this evaluation's team is not among the base subject's release_owners (a " +
+        "third-party plugin, or one another team owns) and its " +
         "findings/candidates are ready to be written up for whoever actually " +
         "owns that plugin: resolves the improvement_run from the initiative alone — the newest run " +
         "of the eval_run its findings.md records (a fresh improvement_start supersedes an earlier " +
@@ -607,8 +608,9 @@ export function registerReleaseTools(server: McpServer): void {
         "Applies NO patch and touches NO real repository, on this or any subject — its only two " +
         "side effects are a database read and a document write into this platform's own " +
         "governed store. REFUSES " +
-        "promotable — a base subject that DOES record release_owners: \"use release_prepare, " +
-        "not proposal_prepare, for an owned subject\" — an initiative with no findings.md eval_run " +
+        "promotable — a base subject whose release_owners include this evaluation's team: \"use " +
+        "release_prepare, not proposal_prepare, for a subject this team owns\" — an initiative " +
+        "with no findings.md eval_run " +
         "(no_eval_run) or no improvement run on it (no_improvement_run), " +
         "one whose own eval_run names a subject this call cannot read back, and (a hard " +
         "refusal, before any write) this initiative's release_mode already set to something " +
@@ -647,11 +649,11 @@ export function registerReleaseTools(server: McpServer): void {
       // proposal.md written for an owned subject would sit in the store looking like an
       // approval-free stand-in for improvement.md, which FR-53's own "gated only when
       // release_mode = promotable" exists to prevent.
-      if (subject.release_owners.length > 0) {
+      if (subject.promotable) {
         return text(
           `ERROR: promotable — ${subject.plugin} ${subject.declared_version} records ` +
-          `release_owners (${subject.release_owners.join(", ")}); use release_prepare, not ` +
-          "proposal_prepare, for an owned subject");
+          `release_owners (${subject.release_owners.join(", ")}), and ${subject.run_team} is one of ` +
+          "them; use release_prepare, not proposal_prepare, for a subject this team owns");
       }
 
       // FR-58, the mirror of release_prepare's own check: a hard refusal, in the same

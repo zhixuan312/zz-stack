@@ -68,10 +68,10 @@ function sourceReads(): void {
     fail("public prefixes", `PUBLIC_PREFIXES is ${prefixes ?? "unreadable"}, not the four it had and /u/`);
   }
   const mounted = server.indexOf("\nmountUpload(app);");
-  const parsed = server.indexOf("\napp.use(express.json(");
+  const parsed = server.indexOf("\nmountBodyParsers(app);");
   const gated = server.indexOf("\napp.use((req, res, next) => {\n  if (PUBLIC_PATHS.has(req.path)");
   if (mounted < 0 || parsed < 0 || gated < 0 || !(gated < mounted && mounted < parsed)) {
-    fail("mount order", `server.ts must run the identity gate, then mountUpload(app), then express.json (at ${gated}, ${mounted}, ${parsed})`);
+    fail("mount order", `server.ts must run the identity gate, then mountUpload(app), then mountBodyParsers(app) (at ${gated}, ${mounted}, ${parsed})`);
   }
   ok("PUBLIC_PREFIXES gains /u/ only, and the upload routes sit behind the gate and before the body parsers");
   const gatewaySrc = join(root, "services/gateway/src");

@@ -171,7 +171,7 @@ async function resolveMeasureEvaluators(
 function nextVersionRefusal(bodyVersion: number, currentMax: number | null): string | null {
   const want = (currentMax ?? 0) + 1;
   if (bodyVersion === want) return null;
-  return `REFUSED: this protocol's next version is ${want} (its newest recorded is ` +
+  return `ERROR: this protocol's next version is ${want} (its newest recorded is ` +
     `${currentMax ?? "none yet"}), and the body named version ${bodyVersion}. There is no update ` +
     "path for a recorded protocol version — read it back with protocol_read, and record the " +
     "next number.";
@@ -226,7 +226,7 @@ async function resolveLineage(
     const known = new Map(rows.map((r) => [r.id, r.failure_mode_id]));
     const missing = [...sightingIds].filter((id) => !known.has(id));
     if (missing.length) {
-      return `REFUSED: failureTaxonomy names candidateId(s) ${missing.join(", ")}, which name no ` +
+      return `ERROR: failureTaxonomy names candidateId(s) ${missing.join(", ")}, which name no ` +
         "zz.eval_failure_mode_sighting from THIS plugin's own observation snapshots — lineage " +
         "can only point at evidence DISCOVER mined for the plugin this protocol version is about.";
     }
@@ -309,13 +309,13 @@ export async function recordProtocolVersion(
   for (const dim of body.dimensions) {
     for (const measure of dim.measures) {
       const factIssue = factPathRefusal(measure);
-      if (factIssue) return `REFUSED: ${factIssue}`;
+      if (factIssue) return `ERROR: ${factIssue}`;
     }
   }
   const duplicateIssue = duplicateMeasureKeyRefusal(body);
-  if (duplicateIssue) return `REFUSED: ${duplicateIssue}`;
+  if (duplicateIssue) return `ERROR: ${duplicateIssue}`;
   const guardrailIssue = criticalGuardrailRefusal(body);
-  if (guardrailIssue) return `REFUSED: ${guardrailIssue}`;
+  if (guardrailIssue) return `ERROR: ${guardrailIssue}`;
 
   const maxRow = (await client.query<{ max: number | null }>(
     `select max(version) as max from zz.eval_protocol_version where plugin_id = $1::uuid`,
@@ -327,7 +327,7 @@ export async function recordProtocolVersion(
   if (typeof lineage === "string") return lineage;
 
   const evaluators = await resolveMeasureEvaluators(client, body);
-  if (typeof evaluators === "string") return `REFUSED: ${evaluators}`;
+  if (typeof evaluators === "string") return `ERROR: ${evaluators}`;
 
   const guards = guardrailsByMeasureKey(body);
   const digest = sha256Digest(canonicalJson(body));
@@ -345,7 +345,7 @@ export async function recordProtocolVersion(
        JSON.stringify(improvementPolicyOf(body.improvement)), digest, recordedBy])).rows[0];
   } catch (err) {
     if ((err as { code?: string }).code === UNIQUE_VIOLATION) {
-      return `REFUSED: version ${body.version} of this protocol was just recorded by another ` +
+      return `ERROR: version ${body.version} of this protocol was just recorded by another ` +
         "call — read it back with protocol_read before trying again.";
     }
     throw err;

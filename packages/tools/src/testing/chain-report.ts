@@ -49,7 +49,7 @@ export function check(name: string, got: string, wantError: boolean, because?: R
  */
 export function eitherOr(name: string, got: string, acceptableRefusal: RegExp): void {
   const body = got.trim();
-  const refused = /^(ERROR|REFUSED):/i.test(body);
+  const refused = /^ERROR:/i.test(body);
   const ok = !refused || acceptableRefusal.test(body);
   record(ok, name, got);
   if (!ok) console.log(`        refused for an unnamed reason: ${body.slice(0, 200)}`);

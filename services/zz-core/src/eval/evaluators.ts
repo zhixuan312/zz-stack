@@ -151,5 +151,5 @@ async function registerVersion(
   const winner = await reuseVersion(p, def.stable_key, digest);
   if (winner) return winner;
   throw new Refusal(
-    `REFUSED: version ${version} of evaluator "${def.stable_key}" was just registered by another call — try again`);
+    `ERROR: version ${version} of evaluator "${def.stable_key}" was just registered by another call — try again`);
 }

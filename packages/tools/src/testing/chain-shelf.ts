@@ -122,7 +122,7 @@ export async function walkShelf({ call, check, record, eitherOr, INIT }: ShelfDe
    */
   const broadened = await call("knowledge_search",
     { query: "chain-check subject probe zqxwvnotokeninanydocument" });
-  const refusedLegitimately = /^(ERROR|REFUSED):/i.test(broadened.trim())
+  const refusedLegitimately = /^ERROR:/i.test(broadened.trim())
     && /no platform database|no platform db|not in a team/.test(broadened);
   record(refusedLegitimately
          || (/No document contains all of those terms together/.test(broadened)

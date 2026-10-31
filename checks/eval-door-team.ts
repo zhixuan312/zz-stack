@@ -13,7 +13,7 @@
  * `finding_decide`, `improvement_start` (opening a run, and with `skip`), `candidate_record`,
  * `candidate_validate` and `candidate_read`. What it establishes:
  *
- *   - each refuses (`ERROR:`, or `REFUSED:` where the tool refuses in that form) with none of the
+ *   - each refuses with `ERROR:` and none of the
  *     seeded team's text;
  *   - afterwards the run holds the same assessments, findings, decisions, improvement runs and
  *     candidates it held before, and the run is still unscored;
@@ -87,7 +87,7 @@ async function outsiderChangesNothing(c: Core, s: Seed): Promise<void> {
   const wrong: string[] = [];
   for (const [tool, args] of calls) {
     const reply = await ask(door, tool, args);
-    if (!/^(ERROR|REFUSED):/.test(reply) || reply.includes(SECRET)) wrong.push(`${tool} answered ${reply.slice(0, 200)}`);
+    if (!/^ERROR:/.test(reply) || reply.includes(SECRET)) wrong.push(`${tool} answered ${reply.slice(0, 200)}`);
   }
   const after = await holdings(c, s);
   if (after !== before) wrong.push(`the seeded run held ${before} and now holds ${after}`);

@@ -61,6 +61,11 @@ export function recordingDoor(server: McpServer, door: string): McpServer {
         return await cb(...args);
       } catch (err) {
         if (err instanceof Refusal) return text(err.message);
+        // A caller's malformed id reaching a `::uuid` cast is the caller's slip, not a bug: said
+        // as a refusal, in this contract's words, rather than PostgreSQL's 22P02 sentence.
+        const malformed = (err as { code?: string }).code === "22P02"
+          ? /invalid input syntax for type (\w+): "(.*)"/.exec((err as Error).message) : null;
+        if (malformed) return text(`ERROR: "${malformed[2]}" is not ${malformed[1] === "uuid" ? "an id" : `a valid ${malformed[1]}`}`);
         throw err; // not ours to soften — a genuine bug stays as loud as it is
       }
     }) as never);

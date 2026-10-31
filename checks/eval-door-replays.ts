@@ -16,8 +16,9 @@
  *     refusal that the version is already affirmed, while another key is told it is already
  *     affirmed; one naming an initiative with no protocol.md is told the document does not exist;
  *   - a malformed id handed to `protocol_affirm`, `improvement_start`, `candidate_record`,
- *     `candidate_validate`, `finding_record`, `finding_decide` or `evaluation_start` is refused in
- *     the tool's own words, never with PostgreSQL's `invalid input syntax for type uuid`, and
+ *     `candidate_validate`, `finding_record`, `finding_decide`, `evaluation_start`, `protocol_read`,
+ *     `protocol_record`, `release_verify` or `release_apply` is refused with `ERROR:`, never with
+ *     PostgreSQL's `invalid input syntax for type uuid`, and
  *     `finding_decide` still decides the well-formed findings of the same batch;
  *   - `plugin_locate` naming a version a registered plugin has no row for names that version,
  *     not the plugin as unregistered;
@@ -176,11 +177,20 @@ async function malformedIdsAreNamed(c: Core, s: Seed): Promise<void> {
                                      { finding_id: good, decision: "applied", note: "n" }], idempotency_key: "bad-7" }],
     ["evaluation_start", { subject_version_id: s.versionId, protocol_version_id: s.protocols.replayed,
                            observation_snapshot_id: "abc", idempotency_key: "bad-8" }],
+    ["protocol_read", { subject_version_id: "zzz" }],
+    ["protocol_record", { subject_version_id: "nope", idempotency_key: "bad-9",
+                          protocol_body: JSON.parse(readFileSync(join(root, "catalog/zz/zz-plugin-eval/protocols/zz-core.json"), "utf8")) }],
+    ["release_verify", { release_attempt_id: "zz", idempotency_key: "bad-10" }],
+    ["release_apply", { candidate_id: "zz", approved_patch_digest: "d", initiative: SLUG, idempotency_key: "bad-11" }],
   ];
   const raw: string[] = [];
   for (const [tool, args] of calls) {
     const reply = await ask(door, tool, args);
-    if (/invalid input syntax|THROWN/.test(reply)) raw.push(`${tool}: ${reply.slice(0, 160)}`);
+    // A refusal opens with ERROR: — what the gateway counts as one — except finding_decide's, which
+    // decides the well-formed finding beside the malformed one.
+    if (/invalid input syntax|THROWN/.test(reply) || (tool !== "finding_decide" && !reply.startsWith("ERROR:"))) {
+      raw.push(`${tool}: ${reply.slice(0, 160)}`);
+    }
   }
   if (raw.length) c.fail(step, `answered with the database's words:\n    ${raw.join("\n    ")}`);
   const decided = (await one<{ decision: string | null }>(c, "select decision from zz.eval_finding where id = $1", [good])).decision;

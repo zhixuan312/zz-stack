@@ -379,7 +379,7 @@ export function registerPluginRecordTools(server: McpServer): void {
       const blank = decisions.filter((d) => !d.note.trim());
       if (blank.length) {
         return text(
-          `REFUSED: ${blank.length} decision(s) carry no note. An \`applied\` that does not say ` +
+          `ERROR: ${blank.length} decision(s) carry no note. An \`applied\` that does not say ` +
           "what changed cannot be checked by the next round, and a `rejected` that does not say " +
           "why is indistinguishable from the finding being forgotten. Both close a change " +
           "somebody proposed; say what happened to it.");
@@ -405,7 +405,7 @@ export function registerPluginRecordTools(server: McpServer): void {
               if ("decided" in decided) done.push(decided.decided);
               else refused.push(decided.refused);
             }
-            if (!done.length) throw new Refusal(`REFUSED: none of the ${decisions.length} decision(s) applied — ${refused.join("; ")}`);
+            if (!done.length) throw new Refusal(`ERROR: none of the ${decisions.length} decision(s) applied — ${refused.join("; ")}`);
             // The FIRST decided finding anchors the ledger row — a caller replaying this exact
             // batch gets back the same `done`/`refused` split, never a partial re-application.
             return { result: { done, refused }, result_table: "zz.eval_finding", result_id: done[0].id };

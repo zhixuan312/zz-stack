@@ -9,8 +9,8 @@
  * own built routes in this process (`listenGateway`), the seeded person a superadmin. What it
  * establishes:
  *
- *   - a token an application obtained through OAuth answers on the door it was issued for and on
- *     `/upload/`, is refused on every other door, and cannot issue a token of its own;
+ *   - a token an application obtained through OAuth for /core answers there and on `/upload/`, is
+ *     refused on /manage (the one other door this harness mounts), and cannot issue a token of its own;
  *   - a team admin's token authority reaches no further than the team: a lead may not mint a token
  *     for the superadmin, may not replace a member's token outside the team by reusing its label,
  *     and a token bound to a team revokes only tokens bound to it; one who names a team they do not
@@ -150,6 +150,10 @@ async function leadActs(c: Core, g: Gateway): Promise<void> {
     [await ask(lead.token, "member_add", { team: "lead-team", email: "mate@example.test" }),
      /^mate@example\.test is already admin of lead-team — nothing changed$/],
     [await ask(lead.token, "member_add", { team: "lead-tem", email: "mate@example.test" }), /^ERROR: team admin or superadmin required for lead-tem — you administer lead-team$/],
+    // A team that exists and that the lead does not administer: the same words, so the refusal
+    // says nothing about which slugs exist.
+    [await ask(lead.token, "member_add", { team: c.team, email: "mate@example.test" }),
+     new RegExp(`^ERROR: team admin or superadmin required for ${c.team} — you administer lead-team$`)],
     [await ask(lead.token, "member_add", { team: "lead-team", email: "mate@example.test", role: "member" }),
      /^mate@example\.test is now member of lead-team \(was admin\)$/],
     [await ask(lead.token, "member_remove", { team: "lead-team", email: "lead@example.test", confirm: "lead-team" }),
@@ -311,11 +315,11 @@ async function namingActs(c: Core, g: Gateway): Promise<void> {
      /^ERROR: 'MG-Upper' is not a team slug — a slug is 2 to 64 characters of lowercase letters, digits/],
     [await ask("team_create", { slug: "blank-name", name: "   " }), /^ERROR: a team's name cannot be blank/],
     [await ask("team_create", { slug: "long-name", name: "N".repeat(1000) }), /^ERROR: a team's name is at most 120 characters; this one is 1000$/],
-    [await ask("pat_issue", { label: "L".repeat(20_000) }), /100/],
+    [await ask("pat_issue", { label: "L".repeat(20_000) }), /^(MCP error -32602: |ERROR: ).*100/],
   ];
   for (const [reply, want] of said) if (!want.test(reply)) c.fail(step, `answered "${reply.slice(0, 200)}", expected ${want}`);
   const made = (await c.sql.query(
-    "select 1 from zz.team where slug in ('mg-upper', 'blank-name', 'long-name') union all select 1 from zz.pat where length(label) > 100")).rowCount;
+    "select 1 from zz.team where lower(slug) in ('mg-upper', 'blank-name', 'long-name') union all select 1 from zz.pat where length(label) >= 100")).rowCount;
   if (made) c.fail(step, `${made} team or token row(s) written by refused calls`);
 
   const switches = async (): Promise<number> => Number((await c.sql.query<{ n: string }>(

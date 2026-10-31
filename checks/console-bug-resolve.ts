@@ -27,6 +27,7 @@
  *     the other, the route answering one 204 and one 409;
  *   - a member's request to the route is 403 with no name in the body, and changes nothing;
  *   - `bug_report` refuses a title or a detail that is blank after trimming;
+ *   - `bug_delete` refuses a report another was closed as a duplicate of, naming that one;
  *   - the route records its act as the console's door, `via: "web"`.
  *
  * The only database it touches is the one it started.
@@ -281,6 +282,18 @@ async function run(c: Core): Promise<void> {
     await c.refused(step, "bug_report", { title: "It broke", detail: " \n " }, /^ERROR: `detail` is blank/);
     if (await rows() !== start) c.fail(step, "a blank report was filed");
     c.pass("bug_report refuses a title or a detail that is blank after trimming, and files nothing");
+
+    // The database's own foreign-key error reached the caller here, with no ERROR and no next step.
+    step = "deleting a report a duplicate names";
+    await reset();
+    const kept = await c.call(step, "bug_delete", { id: T }, tool);
+    if (!new RegExp(`^ERROR: bug ${T} is the report ${D} was closed as a duplicate of — `).test(kept)
+        || await rows() !== start) {
+      c.fail(step, `answered ${JSON.stringify(kept)}`);
+    }
+    const gone = await c.call(step, "bug_delete", { id: D }, tool);
+    if (!gone.includes('"deleted"')) c.fail(step, `deleting the duplicate itself answered ${JSON.stringify(gone)}`);
+    c.pass("bug_delete refuses a report a duplicate points at, naming the duplicate, and deletes the duplicate itself");
 
     step = "the route records the console's door";
     await reset();

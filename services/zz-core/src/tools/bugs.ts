@@ -392,7 +392,8 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         "Remove a row permanently, for rows that were never a report. WHEN it was filed by a " +
         "test against a live deployment — a `chain-check probe` — and the tracker is the worse " +
         "for carrying it. RETURNS what was removed, so a deletion can be quoted rather than " +
-        "being a silent gap. REFUSES anyone but a superadmin, and an id no report carries. " +
+        "being a silent gap. REFUSES anyone but a superadmin, an id no report carries, and a " +
+        "report another was closed as a duplicate of. " +
         "NOT THE SAME ACT AS `bug_resolve`, which is how this platform records what it has " +
         "FIXED and deliberately keeps every row it closes. Never delete a report a person " +
         "filed: if its resolution was wrong, file what you now know as a new report naming the " +
@@ -409,11 +410,22 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       // operator who removed the wrong one needs to read what it said in order to re-file it.
       // `using` rather than a second read, so the reporter's address comes back from the row being
       // removed and not from one a concurrent close could have changed.
+      // A report another one was closed as a duplicate of is kept: the duplicate's foreign key
+      // would refuse the delete anyway, and the refusal names which report points here.
       const { rows } = await db.query<{ id: string; title: string; reported_by: string; status: string }>(
         `delete from zz.bug b using zz.principal p
           where b.reported_by = p.id and b.id = $1::uuid
+            and not exists (select 1 from zz.bug d where d.duplicate_of = b.id)
           returning b.id::text as id, b.title, p.email as reported_by, b.status`, [id]);
-      if (!rows.length) return text(`ERROR: no bug with id ${id}`);
+      if (!rows.length) {
+        const { rows: dups } = await db.query<{ id: string }>(
+          "select id::text as id from zz.bug where duplicate_of = $1::uuid order by id", [id]);
+        if (!dups.length) return text(`ERROR: no bug with id ${id}`);
+        const named = dups.map((d) => d.id).join(", ");
+        return text(`ERROR: bug ${id} is the report ${named} was closed as a duplicate of — ` +
+          "deleting it would leave that close pointing at nothing. Delete the duplicate first " +
+          "when it too was never a report. Nothing was removed.");
+      }
       platformEvent({ actor: who, kind: "bug.delete", subject: id, team: null, detail: { title: rows[0].title } });
       return text(JSON.stringify({ deleted: rows[0], deleted_by: who }, null, 2));
     },

@@ -128,6 +128,13 @@ export function mountSearch(app: Express): void {
       res.status(400).json({ error: "search runs as one team and the platform's shared shelf — it has no fleet-wide reading, so not ?scope=platform" });
       return;
     }
+    // zz-core searches as the team the caller acts for and records the search there, so a ?team= naming another is
+    // refused before it runs: after, the refused search would stand in that team's record as one somebody was shown.
+    const acting = req.zzIdentity!.activeTeam;
+    if (acting !== null && acting !== scope.slug) {
+      res.status(400).json({ error: `search runs as the team you act for, ${acting}, not ${scope.slug} — switch teams to search another` });
+      return;
+    }
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (!q) { res.status(400).json({ error: "q required — the question to search for" }); return; }
     if (q.length > MAX_QUERY) { res.status(400).json({ error: `q is at most ${MAX_QUERY} characters` }); return; }

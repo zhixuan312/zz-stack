@@ -183,11 +183,16 @@ async function run(c: Core): Promise<void> {
     if (fleet.status !== 400 || !/scope=platform/.test(String(fleet.body.error))) {
       c.fail(step, `?scope=platform answered ${fleet.status}: ${JSON.stringify(fleet.body)}`);
     }
-    const elsewhere = await ask({ q: question, team: "another-team" }, "superadmin");
+    // A question asked nowhere else, so a search row for it can only be this refused one's.
+    const unshown = "refused elsewhere wombat";
+    const elsewhere = await ask({ q: unshown, team: "another-team" }, "superadmin");
     if (elsewhere.status !== 400 || !new RegExp(`the team you act for, ${c.team}, not another-team`).test(String(elsewhere.body.error))) {
       c.fail(step, `?team=another-team answered ${elsewhere.status}: ${JSON.stringify(elsewhere.body)}`);
     }
-    c.pass("no question, ?scope=platform and a ?team= the caller does not act for are each refused");
+    // Refused before zz-core runs: a search nobody was shown is not in the team's record of searches.
+    const recorded = await searchesBy(c, unshown);
+    if (recorded !== 0) c.fail(step, `the refused ?team= search left ${recorded} knowledge.search row(s)`);
+    c.pass("no question, ?scope=platform and a ?team= the caller does not act for are each refused, the last before anything is searched");
   } finally {
     await dbModule.platformDb().end();
     delete process.env.TEAM_DB_URL;

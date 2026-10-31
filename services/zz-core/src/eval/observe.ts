@@ -68,18 +68,6 @@ async function resolveSubject(
 
 type EvidenceWindowInput = { from: string; to: string } | { last_runs: number };
 
-/** `{from, to}` is already resolved. `{last_runs: n}` is resolved here, against every run this
- *  window's population has EVER produced (`unboundedRunsClause` — no window to bound by yet) —
- *  the caller's most recent `n`, spanning from the OLDEST of those runs' `started_at` to the
- *  YOUNGEST run's own end — never its `started_at`. A run's events happen AFTER it starts, so a
- *  window bounded by `max(started_at)` alone clips the very events the most recent run in the
- *  window exists to include. A run
- *  still open (`ended_at is null`) bounds by `now()`, so an in-progress run's events so far are
- *  still admitted rather than excluded for having no recorded end yet.
- *
- *  No run matches: an explicit empty range (`from` after `to`), so `between` downstream matches
- *  nothing and `pluginTraces` reports `runs: 0` with its own named reason, rather than this
- *  function inventing a window that happens to be wide enough to catch something else. */
 /** An ISO date or timestamp, which is all a window bound may be: PostgreSQL also reads words such
  *  as `yesterday` and `now`, which name a different time on every replay and were stored as no
  *  window at all. */
@@ -96,6 +84,18 @@ function windowRefusal(input: EvidenceWindowInput): string | null {
   return null;
 }
 
+/** `{from, to}` is already resolved. `{last_runs: n}` is resolved here, against every run this
+ *  window's population has EVER produced (`unboundedRunsClause` — no window to bound by yet) —
+ *  the caller's most recent `n`, spanning from the OLDEST of those runs' `started_at` to the
+ *  YOUNGEST run's own end — never its `started_at`. A run's events happen AFTER it starts, so a
+ *  window bounded by `max(started_at)` alone clips the very events the most recent run in the
+ *  window exists to include. A run
+ *  still open (`ended_at is null`) bounds by `now()`, so an in-progress run's events so far are
+ *  still admitted rather than excluded for having no recorded end yet.
+ *
+ *  No run matches: an explicit empty range (`from` after `to`), so `between` downstream matches
+ *  nothing and `pluginTraces` reports `runs: 0` with its own named reason, rather than this
+ *  function inventing a window that happens to be wide enough to catch something else. */
 async function resolveWindow(
   pool: pg.Pool, plugin: string, version: string, serves: boolean, input: EvidenceWindowInput,
 ): Promise<EvidenceWindow> {

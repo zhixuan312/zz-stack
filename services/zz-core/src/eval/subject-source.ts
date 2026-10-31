@@ -165,11 +165,6 @@ type SourceResolution =
   | { components: PluginComponent[]; identityExtra: { tree_digest: string } & Record<string, unknown> }
   | { error: string };
 
-/** `source_kind: "git"`: `<url>` or `<url>#<ref>` — a branch, tag or commit. Cloned shallow
- *  (`--depth 1`) into a temporary directory, resolved exactly like `local_dir`, and the ref it
- *  actually landed on recorded as `resolved_commit` — the immutable half of FR-1's release
- *  identity for a source that itself is not immutable (a branch moves; the commit it named at
- *  capture time does not). */
 /** git asks for a username when a host answers an anonymous clone with 401 — which GitHub does for
  *  a repository that does not exist as well as for a private one. Read as git words it, that is an
  *  authentication problem the caller cannot act on; it is said as what it is. */
@@ -179,6 +174,11 @@ function cloneError(url: string, error: string): string {
     : error;
 }
 
+/** `source_kind: "git"`: `<url>` or `<url>#<ref>` — a branch, tag or commit. Cloned shallow
+ *  (`--depth 1`) into a temporary directory, resolved exactly like `local_dir`, and the ref it
+ *  actually landed on recorded as `resolved_commit` — the immutable half of FR-1's release
+ *  identity for a source that itself is not immutable (a branch moves; the commit it named at
+ *  capture time does not). */
 async function resolveGit(locator: string): Promise<SourceResolution> {
   const hashAt = locator.lastIndexOf("#");
   const url = hashAt === -1 ? locator : locator.slice(0, hashAt);

@@ -26,6 +26,7 @@ const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { evalRunIn, releasableCandidateOn, improvementRunOn } = await load("services/zz-core/dist/eval/initiative-run.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 const { registerReleaseTools } = await load("services/zz-core/dist/eval/release.js");
+const { registerProposalTool } = await load("services/zz-core/dist/eval/proposal.js");
 
 // ---- the eval_run, from findings.md's frontmatter.
 assert.equal(evalRunIn(`---\ntitle: Findings\neval_run_id: ${RUN}\n---\n# Findings\n`, "i1"), RUN);
@@ -54,7 +55,9 @@ assert.match(seen.at(-1)!.sql, /where eval_run_id = \$1::uuid order by created_a
 
 // ---- both tools take the initiative; release_prepare alone may name the candidate.
 const schemas = new Map<string, Record<string, unknown>>();
-registerReleaseTools({ registerTool(name: string, def: { inputSchema: Record<string, unknown> }) { schemas.set(name, def.inputSchema); } });
+const capture = { registerTool(name: string, def: { inputSchema: Record<string, unknown> }) { schemas.set(name, def.inputSchema); } };
+registerReleaseTools(capture);
+registerProposalTool(capture);
 assert.deepEqual(Object.keys(schemas.get("release_prepare")!).sort(), ["candidate_id", "idempotency_key", "initiative"]);
 assert.deepEqual(Object.keys(schemas.get("proposal_prepare")!).sort(), ["idempotency_key", "initiative"]);
 

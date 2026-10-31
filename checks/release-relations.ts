@@ -29,7 +29,8 @@ const dead = ["patchset", "touched_owners", "base_subject_version_id", "released
 const files = ["services/zz-core/src/eval/candidates.ts", "services/zz-core/src/eval/release.ts",
                "services/zz-core/src/eval/release-apply.ts", "services/zz-core/src/eval/release-record.ts",
                "services/zz-core/src/eval/release-verify.ts", "services/zz-core/src/eval/release-rules.ts",
-               "services/zz-core/src/eval/proposal-doc.ts", "services/zz-core/src/eval/proposer-bundle.ts",
+               "services/zz-core/src/eval/proposal.ts", "services/zz-core/src/eval/proposal-doc.ts",
+               "services/zz-core/src/eval/proposer-bundle.ts",
                "services/zz-core/src/eval/improvement-doc.ts", "services/zz-core/src/release-owners.ts",
                "services/zz-core/src/release-head.ts", "services/gateway/src/console/plugin-eval.ts"];
 const hits: string[] = [];

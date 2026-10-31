@@ -55,7 +55,7 @@ const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
  *  six. This is also why this file never spells the retired boolean column of that name. */
 const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
-export interface ReopenedFinding { readonly id: string; readonly pattern: string }
+interface ReopenedFinding { readonly id: string; readonly pattern: string }
 
 interface RecordArgs {
   readonly release_attempt_id: string;

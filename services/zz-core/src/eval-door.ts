@@ -25,6 +25,7 @@ import { registerFailureDiscoverTools } from "./eval/discover.js";
 import { registerObserveTools } from "./eval/observe.js";
 import { registerPluginEvalTools } from "./eval/plugin-eval.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
+import { registerProposalTool } from "./eval/proposal.js";
 import { registerProtocolTools } from "./eval/protocol.js";
 import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
 import { registerReleaseTools } from "./eval/release.js";
@@ -98,5 +99,6 @@ export function buildEvalServer(): McpServer {
   registerCandidateTools(server);
   registerCandidateBuildTools(server);
   registerReleaseTools(server);
+  registerProposalTool(server);
   return server;
 }

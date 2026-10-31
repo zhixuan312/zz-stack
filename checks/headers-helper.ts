@@ -104,7 +104,8 @@ try {
     is(code === 0 && out === "", `the hook exited ${code} and printed ${JSON.stringify(out.slice(0, 80))}`);
     const call = seen[0];
     is(call?.auth === "Bearer tok-home", `the hook sent ${JSON.stringify(call?.auth)}, not the token the helper resolves`);
-    is(call?.client === "zz-hook", "the hook does not say it is the hook");
+    // The same client the MCP connection sends, so the load sets the step of that session's calls.
+    is(call?.client === "zz-plugin", `the hook sent x-zz-client ${JSON.stringify(call?.client)}, not the connection's zz-plugin`);
     is(/"name":"skill_read","arguments":\{"name":"zz-platform"\}/.test(call?.body ?? ""), "the hook did not report zz-platform as skill_read");
   } finally {
     core.close();

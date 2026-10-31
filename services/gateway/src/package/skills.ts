@@ -126,7 +126,7 @@ export function declaredCommands(flow: string): Record<string, string> {
 export function entryCommand(flow: string, entry: string): string | undefined {
   return Object.entries(declaredCommands(flow)).find(([, skill]) => skill === entry)?.[0];
 }
-/** The only skill we ship. Everything it names is fetched at run time.
+/** The router: the one skill generated per shelf, naming the flows on it.
  *
  * Its description is what makes the client load it, so it has to match delivery work and
  * nothing else: too broad and it fires on ordinary coding, too narrow and it never loads.
@@ -433,8 +433,10 @@ export function skillReportScript(coreUrl: string, plugins: string[],
     "    if (!h.Authorization) return;",
     "    await fetch(CORE, {",
     '      method: "POST",',
-    '      headers: { "content-type": "application/json", accept: "application/json, text/event-stream",',
-    '                 authorization: h.Authorization, "x-zz-client": "zz-hook" },',
+    // The helper's own headers, client included: the step trace and the session are keyed on the
+    // caller's email and client, so a load reported under another client sets no step for the
+    // session's own calls.
+    '      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...h },',
     '      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",',
     '                             params: { name: "skill_read", arguments: { name } } }),',
     "      signal: AbortSignal.timeout(8000),",

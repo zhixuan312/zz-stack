@@ -33,8 +33,7 @@ process.stdin.on("data", (d) => { raw += d; }).on("end", async () => {
     if (!h.Authorization) return;
     await fetch(CORE, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json, text/event-stream",
-                 authorization: h.Authorization, "x-zz-client": "zz-hook" },
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...h },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
                              params: { name: "skill_read", arguments: { name } } }),
       signal: AbortSignal.timeout(8000),

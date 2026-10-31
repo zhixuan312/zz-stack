@@ -20,6 +20,9 @@ export const FIELD_NAME = /^[a-z][a-z0-9_]*$/;
  * Derived from the Envelope schema in @zz/contracts, never a second list beside it. */
 export const RESERVED_ENVELOPE = new Set<string>(Object.keys(Envelope.shape));
 
+/** The longest slug an initiative is opened under, the date not counted. */
+const SLUG_MAX = 64;
+
 /** An initiative is named `<YYYY-MM-DD>-<slug>`, and the platform composes that name.
  *
  * The date is the sort key everywhere work is listed, so a day-first name sorts under its first
@@ -34,8 +37,6 @@ export const RESERVED_ENVELOPE = new Set<string>(Object.keys(Envelope.shape));
  * initiative — source_add, close, initiative_status — and the existing names that do not match
  * the shape could then never be closed. A name is checked when it is chosen; afterwards it is
  * simply the name. */
-/** The longest slug an initiative is opened under, the date not counted. */
-const SLUG_MAX = 64;
 export function slugRefusal(slug: string): string | null {
   const v = slug.trim();
   if (!v) {

@@ -15,7 +15,7 @@
  * kinds of claim and one cannot retire the other.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { catalogEntries } from "@zz/catalog";
+import { catalogEntries, pluginName } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { indexNode, supersedeNode } from "@zz/indexing";
 import { WRITES, requestHeaders, text } from "@zz/mcp-http";
@@ -51,9 +51,10 @@ async function issuedOrdinals(shelf: string | null): Promise<number> {
  * So a tag shaped `<kind>:<name>` must name a kind the platform has: the four classes of
  * pluggable thing plus the platform itself.
  *
- * `flow:` is checked against the catalog, which zz-core reads. The rest are not — zz-core
- * cannot see the plugin registry or the provider bindings, and a check that guessed would
- * refuse a true tag. Kind is verified, name is verified where it can be.
+ * `flow:` is checked against the catalog, which zz-core reads. A `plugin:` name is checked
+ * against the registry after the write, by `unregisteredPluginNote`, and said rather than refused:
+ * a plugin nobody registered is still something a lesson can be about. zz-core cannot see the
+ * provider bindings, so `provider:` and `interface:` names are not checked.
  *
  * Tags without a colon are ordinary free tags and are left alone. */
 // `plugin`, not `block`: a plugin — skills plus the MCP servers those skills call — is the
@@ -86,6 +87,22 @@ function subjectTagError(tags: string[] | undefined): string | null {
     }
   }
   return null;
+}
+
+/** What a reply says about a `plugin:` tag naming no plugin the catalog ships or the registry
+ *  holds: the node pins no version, and a search under the plugin's real name will not find it.
+ *  Null when every such tag names a known plugin, or when there is no registry to ask. */
+async function unregisteredPluginNote(tags: string[] | undefined, p: pg.Pool): Promise<string | null> {
+  const asked = (tags ?? []).map((t) => t.trim()).filter((t) => t.startsWith("plugin:")).map((t) => t.slice(7));
+  if (!asked.length) return null;
+  const known = new Set([...catalogEntries().map((e) => pluginName(e.flow)),
+                         ...(await p.query<{ name: string }>("select name from zz.plugin")).rows.map((r) => r.name)]);
+  const unknown = asked.filter((n) => !known.has(n));
+  return unknown.length
+    ? `Note: ${unknown.map((n) => `\`plugin:${n}\``).join(", ")} names no registered plugin, so this node pins no ` +
+      "version. If it meant a registered plugin, supersede this node with one tagged by that plugin's name; " +
+      "plugin_locate on /eval/mcp finds it."
+    : null;
 }
 
 /** The initiatives a set of slugs names across the shelves this caller may already read, as
@@ -129,7 +146,8 @@ export function registerKnowledgeTools(server: McpServer): void {
         "`provider:forgejo`, `interface:claude-code`, `platform:guardrail`. That is what makes " +
         "'what have we learned about this block' a query instead of a search through " +
         "documents, and the kinds are checked so " +
-        "one node cannot go missing behind a spelling.",
+        "one node cannot go missing behind a spelling. A `plugin:` name nothing registered is " +
+        "written, and the reply says so.",
       inputSchema: {
         title: z.string(), type: z.enum(["decision", "design", "behavior", "process", "knowledge", "style"]),
         body: z.string(), evidence: z.array(z.string()).min(1),
@@ -268,7 +286,8 @@ export function registerKnowledgeTools(server: McpServer): void {
           actor: who.email, kind: "knowledge.add", subject: ordinal, team: shelf,
           detail: { title, type, scope, verified_against: pinned || undefined, ids: { node: written.id } },
         });
-        return text(`journal node ${ordinal} created on ${shelf}'s shelf`);
+        const note = await unregisteredPluginNote(tags, p);
+        return text(`journal node ${ordinal} created on ${shelf}'s shelf` + (note ? `\n${note}` : ""));
       }
       return text("ERROR: could not allocate a journal node id after 50 attempts");
     },

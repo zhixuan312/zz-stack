@@ -18,6 +18,8 @@
  *     refused;
  *   - a node is superseded only by a current one, so the reverse of a supersede already made is
  *     refused and no two nodes name each other;
+ *   - a `plugin:` tag naming no registered plugin is written, and the reply says so after the
+ *     sentence below;
  *   - both tools answer exactly as before, so the release's chain check, which reads
  *     `journal node NNNN created`, still reads them.
  *
@@ -157,6 +159,23 @@ async function retryCases(c: Core, initiative: string): Promise<void> {
   c.pass("knowledge_add refuses a title or a body that is blank after trimming");
 }
 
+/** A `plugin:` tag naming no registered plugin is written and said, not refused: the reply keeps
+ *  the sentence the chain check reads, then says the node pins no version. A registered plugin's
+ *  tag adds nothing. */
+async function pluginTagCases(c: Core, initiative: string): Promise<void> {
+  const step = "knowledge_add tagged with a plugin";
+  await c.sql.query("insert into zz.plugin (name, origin) values ('casebox', 'third_party') on conflict do nothing");
+  const lesson = (title: string, tag: string) => c.ok(step, "knowledge_add", {
+    title, type: "decision", scope: "team", evidence: [initiative], tags: [tag], body: `A lesson about ${tag}.` });
+  const known = await lesson("Casebox retries", "plugin:casebox");
+  if (!/^journal node \d{4,} created on \S+'s shelf$/.test(known)) c.fail(step, `a registered plugin's tag answered "${known}"`);
+  const unknown = await lesson("Nobody's plugin", "plugin:no-such-plugin");
+  if (!/^journal node \d{4,} created on \S+'s shelf\nNote: `plugin:no-such-plugin` names no registered plugin, so this node pins no version\./.test(unknown)) {
+    c.fail(step, `an unregistered name answered "${unknown}"`);
+  }
+  c.pass("knowledge_add writes a node whose plugin tag names nothing registered and says so");
+}
+
 /** A node is superseded only by a current one: the reverse of a supersede already made would leave
  *  the topic with no current node, each pointing at the other. */
 async function cycleCase(c: Core, older: string, newer: string): Promise<void> {
@@ -182,6 +201,7 @@ async function run(c: Core): Promise<void> {
   const teamNewer = await supersedeCases(c, initiative, made);
   await cycleCase(c, made[c.team][0], teamNewer);
   await retryCases(c, initiative);
+  await pluginTagCases(c, initiative);
   c.pass("both tools answer in the sentences the release's chain check reads");
 }
 

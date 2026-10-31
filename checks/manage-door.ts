@@ -16,7 +16,8 @@
  *     and a token bound to a team revokes only tokens bound to it; one who names a team they do not
  *     administer is refused alike whether it exists, the refusal naming the teams they do;
  *   - member_add and member_remove say what changed and keep a team's last admin, a deactivated
- *     admin not counting as one, and two admins demoting each other at once leave one admin;
+ *     admin not counting as one, and two admins demoting each other at once leave one admin, while a
+ *     demotion's hold on the team does not keep a new member waiting;
  *   - a deactivated person is issued no token, deactivating them again says nothing changed and
  *     records nothing, and a superadmin cannot deactivate themselves;
  *   - a NUL character in a tool's argument is refused by name on /manage and on /core, and an event
@@ -207,12 +208,9 @@ async function racedDemotions(c: Core, g: Gateway): Promise<void> {
     await holder.query("select 1 from zz.team where slug = 'pair-team' for update");
     const demote = (token: string, email: string) => manageCall(g, token, "member_add", { team: "pair-team", email, role: "member" });
     const replies = Promise.all([demote(a.token, "pair-b@example.test"), demote(b.token, "pair-a@example.test")]);
-    let queued = 0;
-    for (const until = Date.now() + 20_000; queued < 2 && Date.now() < until; await new Promise((r) => setTimeout(r, 50))) {
-      queued = Number((await c.sql.query<{ n: string }>(
-        `select count(*) as n from pg_catalog.pg_stat_activity
-          where wait_event_type = 'Lock' and query like '%from team where slug = $1 for update%'`)).rows[0].n);
-    }
+    // Awaited below; a rejection while the poll runs is reported there, not as an unhandled one.
+    replies.catch(() => undefined);
+    const queued = await waiting(c, "%from team where slug = $1 for no key update%", 2);
     await holder.query("commit");
     const said = await replies;
     if (queued < 2) c.fail(step, `${queued} of the two demotions waited for the team's row; they answered ${JSON.stringify(said)}`);
@@ -227,6 +225,53 @@ async function racedDemotions(c: Core, g: Gateway): Promise<void> {
     await holder.end();
   }
   c.pass(step);
+}
+
+/** A demotion holds pair-team's row while its write waits. A new member added meanwhile writes a
+ *  membership row whose foreign key reads that team row; a hold that blocked the key read queued the
+ *  add behind the demotion, and two such calls for one person each waited for the other: a deadlock.
+ *  Here pair-c's membership row is held so the demotion stays mid-write, and the add must not wait. */
+async function addPassesADemotion(c: Core, g: Gateway): Promise<void> {
+  const step = "a new member is added while a demotion holds the team";
+  await c.sql.query(
+    `with p as (insert into zz.principal (email, display_name) values ('pair-c@example.test', 'Pair C'), ('pair-d@example.test', 'Pair D')
+                returning id, email)
+     insert into zz.membership (team_id, principal_id, role, added_by)
+     select t.id, p.id, 'admin', p.id from zz.team t, p where t.slug = 'pair-team' and p.email = 'pair-c@example.test'`);
+  const holder = new pg.Client({ connectionString: c.url });
+  await holder.connect();
+  try {
+    await holder.query("begin");
+    await holder.query(
+      `select 1 from zz.membership m join zz.principal p on p.id = m.principal_id
+        where p.email = 'pair-c@example.test' for update of m`);
+    const demoted = manageCall(g, g.token, "member_add", { team: "pair-team", email: "pair-c@example.test", role: "member" });
+    demoted.catch(() => undefined);
+    const held = await waiting(c, "%insert into membership%", 1);
+    if (held < 1) c.fail(step, `the demotion never waited on pair-c's row; it answered ${JSON.stringify(await demoted)}`);
+    const added = manageCall(g, g.token, "member_add", { team: "pair-team", email: "pair-d@example.test", role: "admin" });
+    added.catch(() => undefined);
+    const first = await Promise.race([added, new Promise<null>((r) => setTimeout(() => r(null), 5_000))]);
+    await holder.query("commit");
+    const said = [await demoted, await added];
+    if (first === null) c.fail(step, `the add waited behind the demotion's hold on pair-team; they answered ${JSON.stringify(said)}`);
+    if (!/is now member of pair-team \(was admin\)$/.test(said[0]!) || !/is now admin of pair-team$/.test(said[1]!)) {
+      c.fail(step, `answered ${JSON.stringify(said)}`);
+    }
+  } finally {
+    await holder.end();
+  }
+  c.pass(step);
+}
+
+/** How many statements matching `like` wait on a lock, polled until `n` do or 20 s pass. */
+async function waiting(c: Core, like: string, n: number): Promise<number> {
+  let queued = 0;
+  for (const until = Date.now() + 20_000; queued < n && Date.now() < until; await new Promise((r) => setTimeout(r, 50))) {
+    queued = Number((await c.sql.query<{ n: string }>(
+      `select count(*) as n from pg_catalog.pg_stat_activity where wait_event_type = 'Lock' and query like $1`, [like])).rows[0].n);
+  }
+  return queued;
 }
 
 /** A deactivated person stays out: no token is minted for them, a second deactivation is not
@@ -409,6 +454,7 @@ async function run(c: Core): Promise<void> {
     await applicationActs(c, g);
     await leadActs(c, g);
     await racedDemotions(c, g);
+    await addPassesADemotion(c, g);
     await retireActs(c, g);
     await nulActs(c, g);
     await bodyActs(c, g);

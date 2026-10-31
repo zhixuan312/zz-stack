@@ -69,7 +69,7 @@ export async function addMember(
      select (select role from prior) as before, (select role from put) as role,
             (select email from principal where id = $2) as email`,
     [tid, pid, role ?? null, actorId])).rows[0];
-  // Only a demotion can take away an admin; a new member or a promotion writes without the lock.
+  // Only role member can take away an admin; a promotion, or an add that keeps the role, writes without the lock.
   const kept = role === "member" ? await keepingLastAdmin(id, team, email, put) : { done: await put(db) };
   if ("refused" in kept) return kept.refused;
   const done = kept.done;
@@ -88,14 +88,16 @@ export async function addMember(
  * not count.
  *
  * The count and the write share one transaction holding the team's row: read and written apart, two admins removing
- * or demoting each other at once each counted the other and left the team with none.
+ * or demoting each other at once each counted the other and left the team with none. The hold is `no key update`, so a
+ * foreign key read of the team (a member added, an event written) passes it: a `for update` hold queued those, and two
+ * adds of one person, one with role member, each waited for the other.
  */
 async function keepingLastAdmin<T>(id: Identity | null, team: string, email: string,
                                    write: (q: PoolClient) => Promise<T>): Promise<{ refused: TeamWriteOutcome } | { done: T }> {
   const client = await platformDb().connect();
   try {
     await client.query("begin");
-    await client.query("select 1 from team where slug = $1 for update", [team]);
+    await client.query("select 1 from team where slug = $1 for no key update", [team]);
     if (!superOnly(id)) {
       const { rows: [last] } = await client.query<{ last: boolean }>(
         `select count(*) filter (where m.role = 'admin' and p.status = 'active') = 1

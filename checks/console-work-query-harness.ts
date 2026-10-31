@@ -20,11 +20,12 @@
  * DELIBERATE: the reporting timezone is Asia/Singapore, which keeps one offset all year, so a local date's midnight is
  * written with its offset here, never worked out with the code under test.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { mintPat } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 import type { Request, RequestHandler } from "express";
 import type pg from "pg";
@@ -134,7 +135,7 @@ export async function serveDoor(c: Core, { skills = false }: { skills?: boolean 
   return {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, pool: db.platformDb(), load,
     pat: async (email) => {
-      const token = `zzp_${randomBytes(24).toString("hex")}`;
+      const token = mintPat();
       await c.sql.query(
         `insert into zz.pat (principal_id, token_hash, team_id) select p.id, $2, null from zz.principal p where p.email = $1`,
         [email, createHash("sha256").update(token, "utf8").digest("hex")]);

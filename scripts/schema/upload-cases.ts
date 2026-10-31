@@ -14,14 +14,14 @@
  * that check runs live here, beside the harness they run on.
  */
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { documentBody } from "@zz/contracts";
+import { documentBody, mintPat } from "@zz/contracts";
 import type { Mcp } from "@zz/mcp-client";
 import type pg from "pg";
 
@@ -111,7 +111,7 @@ export async function listenGateway(): Promise<GatewayListener> {
       process.env.ZZ_CATALOG_DIR = join(root, "catalog");
       await db.initPlatformDb();
       const tokenFor = async (email: string): Promise<string> => {
-        const token = `zzp_${randomBytes(24).toString("hex")}`;
+        const token = mintPat();
         // Unlabelled, as a token nobody replaces is: one per principal, for this check's life.
         await c.sql.query("insert into zz.pat (principal_id, token_hash) select id, $2 from zz.principal where email = $1",
                           [email, sha(utf8(token))]);

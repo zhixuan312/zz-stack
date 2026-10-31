@@ -17,12 +17,13 @@
  * the teardown removes exactly what `up` created.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { mintPat } from "@zz/contracts";
 import { Mcp } from "@zz/mcp-client";
 
 import { owned, sweepOrphans } from "../owned-containers.ts";
@@ -194,7 +195,7 @@ async function start(stubPort: number, work: string, prefix: string, keep: boole
   // one purpose, so the token a previous run left under it is revoked before this one is
   // written; both statements go in one psql request, wrapped in a transaction, so the revoke
   // cannot outlive a failed insert.
-  const pat = `zzp_${randomBytes(24).toString("hex")}`;
+  const pat = mintPat();
   q(`begin;
      update zz.pat set revoked_at = now()
        where principal_id = (select id from zz.principal where email = '${OPERATOR}')

@@ -39,12 +39,13 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { mintPat } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 import type { Request, RequestHandler } from "express";
 import type pg from "pg";
@@ -171,7 +172,7 @@ async function listen(c: Core): Promise<Gateway> {
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
 
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
+  const token = mintPat();
   await c.sql.query("insert into zz.pat (principal_id, token_hash) select id, $2 from zz.principal where email = $1",
                     [c.email, createHash("sha256").update(token, "utf8").digest("hex")]);
   return {

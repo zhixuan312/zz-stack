@@ -43,6 +43,7 @@ import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { mintPat } from "@zz/contracts";
 import type { Express, RequestHandler } from "express";
 import type pg from "pg";
 
@@ -138,7 +139,7 @@ async function seed(sql: pg.Client): Promise<Seeded> {
     [CLIENT_A, CLIENT_B]);
   const out: Seeded = { tokens: {}, sessions: {} };
   for (const t of TOKENS) {
-    const value = mint(`token ${t.key}`, `zzp_${randomBytes(24).toString("hex")}`);
+    const value = mint(`token ${t.key}`, mintPat());
     const { rows: [row] } = await sql.query<{ id: string }>(
       `insert into zz.pat (principal_id, token_hash, label, created_at, last_used_at, revoked_at, oauth_client_id, expires_at)
        values ($1, $2, $3, $4, $5, $6, $7, case when $7::text is null then null else now() + interval '30 days' end) returning id::text as id`,

@@ -30,10 +30,11 @@
  * initiative, four documents, four sources and a close into whatever it is pointed at.
  */
 import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { mintPat } from "@zz/contracts";
 import pg from "pg";
 
 import { owned, sweepOrphans } from "./owned-containers.ts";
@@ -203,7 +204,7 @@ async function up(): Promise<Deployment> {
   // purpose, so the token a previous run left under it is revoked before this one is written; both
   // statements go in one request wrapped in a transaction, so the revoke cannot outlive a failed
   // insert.
-  const pat = `zzp_${randomBytes(24).toString("hex")}`;
+  const pat = mintPat();
   q(`begin;
      update zz.pat set revoked_at = now()
        where principal_id = (select id from zz.principal where email = '${OPERATOR}')

@@ -43,9 +43,10 @@
  * holding none of the second team's words. `lead` reads one page that way for every page step of the skeleton,
  * and answers the page for a step that reads more of it.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 
+import { mintPat } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 import type pg from "pg";
 
@@ -114,7 +115,7 @@ async function people(sql: pg.Client, member: string, team: string): Promise<{ c
   await sql.query("update zz.principal set active_team_id = (select id from zz.team where slug = $2) where email = $1", [ACTING, team]);
   const tokens = new Map<string, string>();
   for (const email of [member, ACTING]) {
-    const token = `zzp_${randomBytes(24).toString("hex")}`;
+    const token = mintPat();
     await sql.query("insert into zz.pat (principal_id, token_hash) select id, $2 from zz.principal where email = $1",
                     [email, createHash("sha256").update(token, "utf8").digest("hex")]);
     tokens.set(email, token);

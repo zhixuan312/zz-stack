@@ -13,8 +13,10 @@
  * code, that proves the deployment.
  */
 import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
+
+import { mintPat } from "@zz/contracts";
 
 import { IMAGE, asExecError, die, log, redact, root, run } from "../deployment.ts";
 import { initializeRefusal } from "../door-frame.ts";
@@ -99,7 +101,7 @@ export function walkToolChain(version: string | undefined): void {
     // COUPLED: the same row a fresh install writes — deploy/issue-first-pat.sh mints exactly
     // this, because `pat_issue` needs a token to issue one and a new deployment has none. When
     // that script and this disagree, the bootstrap is broken and nothing else would say so.
-    const token = `zzp_${randomBytes(24).toString("hex")}`;
+    const token = mintPat();
     const hash = createHash("sha256").update(token).digest("hex");
     // One live token per label, as every other writer of `pat` keeps: the row a label names is
     // revoked before the next one is written, so a second chain check replaces its own token

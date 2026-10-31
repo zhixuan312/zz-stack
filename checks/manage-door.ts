@@ -39,6 +39,8 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 
+import { mintPat } from "@zz/contracts";
+
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { headersOf, insertPat, listenGateway, manageCall, type Gateway } from "../scripts/schema/throwaway-gateway.ts";
 
@@ -271,7 +273,7 @@ async function tokenStateActs(c: Core, g: Gateway): Promise<void> {
   const bound = await insertPat(c, c.email, "fading-bound", "fading");
   await c.sql.query("update zz.team set status = 'archived' where slug = 'fading'");
   const cases: [string, RegExp][] = [
-    [`zzp_${randomBytes(24).toString("hex")}`, /^401 .*no token on this platform has this value/],
+    [mintPat(), /^401 .*no token on this platform has this value/],
     [revoked.token, /^401 .*this token was revoked on \d{4}-\d{2}-\d{2}/],
     [expired.token, /^401 .*this token expired on \d{4}-\d{2}-\d{2}/],
     [owner.token, /^401 .*gone@example\.test is deactivated/],

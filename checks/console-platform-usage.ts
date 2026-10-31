@@ -42,11 +42,12 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { mintPat } from "@zz/contracts";
 import type { Express, RequestHandler } from "express";
 import type pg from "pg";
 
@@ -243,7 +244,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
   const seeded = await seedUsage(db, TIMEZONE);
   const cookie = new Map<string, string>();
   for (const email of [MEMBER, SUPERADMIN]) cookie.set(email, await signIn(db, email));
-  const pat = `zzp_${randomBytes(24).toString("hex")}`;
+  const pat = mintPat();
   await db.query("insert into zz.pat (principal_id, token_hash) select id, $2 from zz.principal where email = $1",
                  [MEMBER, createHash("sha256").update(pat, "utf8").digest("hex")]);
 

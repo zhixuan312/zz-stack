@@ -48,12 +48,13 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
+import { mintPat } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 import type { Request, RequestHandler } from "express";
 import type pg from "pg";
@@ -113,7 +114,7 @@ interface Gateway {
 
 /** A PAT of the person's, acting for their active team. */
 async function patOf(c: Core, email: string): Promise<string> {
-  const token = `zzp_${randomBytes(24).toString("hex")}`;
+  const token = mintPat();
   await c.sql.query(
     "insert into zz.pat (principal_id, token_hash, team_id) select p.id, $2, null from zz.principal p where p.email = $1",
     [email, createHash("sha256").update(token, "utf8").digest("hex")]);

@@ -81,7 +81,8 @@ async function memberOf(db: pg.ClientBase | pg.Pool): Promise<{ member: string; 
 
 /**
  * Seeds the manage door's one call on D-4, which is where the days then begin, and `SEEDED`'s calls for the core
- * door from noon local on each of D-3, D-2 and D-1, one second apart, the first of them refused as a tool failure.
+ * door from noon local on each of D-3, D-2 and D-1, one second apart, each day's first `failures` of them refused
+ * as a tool failure.
  */
 async function seedDoors(db: pg.ClientBase | pg.Pool, now: number): Promise<void> {
   const { member, team } = await memberOf(db);

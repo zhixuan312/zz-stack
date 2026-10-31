@@ -2,8 +2,9 @@
 /**
  * zz-core's listening port: --port <n> when n is a port number in plain decimal, 8000 with no --port, refused otherwise —
  * `--port=<n>` and a repeated --port included, each by name. Its listening address: --host <ip> when ip is an IP
- * literal, every interface with no --host, refused otherwise; and the two scripts that start a throwaway zz-core on
- * this machine pass `--host 127.0.0.1`, so a local run is never reachable from the network.
+ * literal, every interface with no --host, refused otherwise; and the one script that starts a throwaway zz-core on
+ * this machine, scripts/schema/throwaway-core.ts, passes `--host 127.0.0.1`, so a local run is never reachable
+ * from the network.
  * Run: node checks/core-port.ts   (after npm run build; also run by scripts/gate.ts)
  */
 import { join } from "node:path";

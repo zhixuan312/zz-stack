@@ -117,14 +117,15 @@ check("a report counting an activity counts the ones that happened", () => {
 });
 
 check("a telemetry field a report reads is a field something writes", () => {
-  // A reader may not depend on a column no writer sets. watch-results builds "a team has gone
-  // quiet" from the distinct teams in the window, so an unwritten zz.event.team_slug reads
-  // exactly like a quiet platform.
+  // A reader may not depend on a team no writer sets. watch-results builds "a team has gone
+  // quiet" from the distinct teams in the window, so an event written with no zz.event.team_id
+  // reads exactly like a quiet platform.
   //
   // The invariant is not "every writer attributes": several logEvent call sites write no team
   // and are right to, since a self-issued PAT and a package download belong to a person rather
-  // than a team. It is that a reader of team_slug must be reading kinds that something
-  // attributes.
+  // than a team, and their team_id is null by design. It is that a reader of the event's team —
+  // selected as `team_slug`, the slug its team_id resolves to — must be reading kinds that
+  // something attributes.
   const bad: string[] = [];
   const attributed = new Set(), unattributed = new Set();
   let dynamic = 0;
@@ -150,7 +151,7 @@ check("a telemetry field a report reads is a field something writes", () => {
     for (const m of src.matchAll(/insert into (?:zz\.)?event\s*\(([^)]*)\)([\s\S]{0,400})/g)) {
       const cols = m[1];
       for (const k of m[2].matchAll(/'([a-z_.]+)'/g)) {
-        (/team_slug/.test(cols) ? attributed : unattributed).add(k[1]);
+        (/\bteam_(id|slug)\b/.test(cols) ? attributed : unattributed).add(k[1]);
       }
     }
   }

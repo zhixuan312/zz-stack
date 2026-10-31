@@ -222,17 +222,20 @@ Three more prefixes exist and are enforced by checks, so they are not a style ch
     RAW NAME:     checks/pre-rename-literals.ts
     SYNTHETIC:    checks/skill-paths.ts
 
-Each marks a code line that names a pre-rename tool word — `close`, `approve`, `add_source`,
-`reconcile` — in a string or a regex, and says it is the English word rather than the tool.
-Without the marker the check demands a rename that must not happen.
+The first two mark a code line that names a pre-rename tool word — `close`, `approve`,
+`add_source`, `reconcile` — in a string or a regex, and say it is the English word rather than
+the tool. Without the marker the check demands a rename that must not happen. `SYNTHETIC:` marks
+a `skills/<name>/SKILL.md` path in a script or check that is a field rather than a file, such as
+an in-memory package's `files[].path`. Without it the check demands a file that must not exist.
 
 They are `DELIBERATE:` under a name a check can find, and three rules follow from that:
 
 - keep the literal string, in capitals. The sentence-case rule above does not apply to them,
   and downcasing one to `Not a tool:` removes it while leaving the line looking fine — a diff
   shows nothing, because no line disappeared.
-- keep it in the contiguous comment block directly above the line it guards. A blank line
-  between the two breaks it.
+- keep it where its check looks. `NOT A TOOL:` and `RAW NAME:` count on the line itself or
+  anywhere in the contiguous comment block directly above it; a blank line between the two
+  breaks it. `SYNTHETIC:` counts only on the line itself or the one directly above.
 - never fold one into `DELIBERATE:`. The check matches the string, not the meaning.
 
 Two more, `SEAMED:` and `REDACTED:`, are conventions rather than checks. `SEAMED:` sits in

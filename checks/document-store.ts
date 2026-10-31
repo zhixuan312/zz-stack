@@ -4,7 +4,7 @@
  *
  *   node checks/document-store.ts   # needs Docker and a built tree (`npm run build`)
  *
- * It starts a throwaway PostgreSQL (`withThrowawayDb`), seeds one principal in one team with one
+ * It starts a throwaway PostgreSQL (`withThrowawayDbCheck`), seeds one principal in one team with one
  * freeform initiative, and drives the built `saveDocument` (`services/zz-core/dist/document-save.js`)
  * and `loadDocument` (`dist/versions.js`) against it with `TEAM_DB_URL` pointed at the container.
  * What it establishes:
@@ -53,7 +53,7 @@ import pg from "pg";
 
 import { SCHEMA_TARGET } from "../schema-target.ts";
 import { root } from "../scripts/deployment.ts";
-import { withThrowawayDb } from "../scripts/schema/throwaway.ts";
+import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 const EMAIL = "store@example.test";
 const TEAM = "store-team";
@@ -61,10 +61,7 @@ const INIT = "2026-10-06-store";
 const DOC = `${INIT}/notes.md`;
 const SRC = `${INIT}/sources/s1.md`;
 
-class CaseFailure extends Error {}
-function fail(step: string, detail: string): never {
-  throw new CaseFailure(`document-store: FAILED at "${step}": ${detail}`);
-}
+const fail: Fail = failing("document-store");
 const ok = (step: string): void => console.log(`  ${step}: ok`);
 
 /** Until `n` callers wait, ungranted, on the per-document lock `key` (polled in `pg_locks`, as
@@ -669,20 +666,5 @@ function base32(bytes: Buffer): string {
   return bits > 0 ? out + A[(value << (5 - bits)) & 31] : out;
 }
 
-async function main(): Promise<number> {
-  try {
-    await withThrowawayDb(run);
-  } catch (err) {
-    if (err instanceof Error && /Docker is not running/.test(err.message)) {
-      console.error("document-store: Docker is not available — the check could not run, which is not a pass");
-      return 2;
-    }
-    console.error(err instanceof CaseFailure ? err.message : `document-store: ${String((err as Error)?.stack ?? err)}`);
-    return 1;
-  }
-  console.log("document-store: pin rule, generation per row, immutable snapshots, state compare, lock, rollback, requests, " +
-              "version and snapshot reads, activity, set-based causes and reservations: ok");
-  return 0;
-}
-
-process.exitCode = await main();
+process.exitCode = await withThrowawayDbCheck("document-store", "document-store: pin rule, generation per row, immutable " +
+  "snapshots, state compare, lock, rollback, requests, version and snapshot reads, activity, set-based causes and reservations: ok", run);

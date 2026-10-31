@@ -165,7 +165,7 @@ if (!def) {
   const dateish = Object.keys(shape).filter((k) => /date|day|today|when|stamp/i.test(k));
   is(dateish.length === 0,
      `initiative_open takes ${dateish.join(", ")} — the date is the platform's, and an ` +
-     "argument for it is the one thing document-rules.ts:64-71 says must not exist");
+     "argument for it is the one thing document-rules.ts's comment above `slugRefusal` says must not exist");
 }
 
 // 2. The name the platform composes

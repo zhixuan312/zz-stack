@@ -192,9 +192,8 @@ const DOOR = "services/zz-core/src/tools/knowledge-index.ts";
 const door = stripComments(read(DOOR) ?? "").join("\n");
 const gate = /^[ \t]*(.*?)server\.registerTool\(\s*\n?\s*"knowledge_reindex"/m.exec(door);
 if (!gate) {
-  fail.push(`${DOOR} does not register knowledge_reindex — it is the module that serves it and ` +
-            "/manage is where it went, so neither door serves it and every caller gets " +
-            "\"tool not found\"");
+  fail.push(`${DOOR} does not register knowledge_reindex — it is the module that serves it on ` +
+            "/core, so no door serves it and every caller gets \"tool not found\"");
 } else {
   // The gate, exactly `if (sup) ` and nothing else: an ungated registration puts a tool that
   // rebuilds any team's index in front of every member on the deployment.

@@ -325,15 +325,20 @@ check("the audit criteria are written once", () => {
   const dir = join(catalogRoot, "sdlc/sdlc-flow/skills");
   const shared = join(dir, "sdlc-audit-criteria/SKILL.md");
   if (!existsSync(shared)) return "sdlc-audit-criteria is missing — the shared criteria have nowhere to live";
+  // Each criterion's name, as the shared file heads it: an auditor that names one is restating it.
+  // COUPLED: the `### Step N: Criterion N — NAME` headings of sdlc-audit-criteria/SKILL.md.
+  const criteria = [...readFileSync(shared, "utf8").matchAll(/^### Step \d+: Criterion \d+ — (.+)$/gm)].map((m) => m[1].trim());
+  if (criteria.length < 11) return `sdlc-audit-criteria heads ${criteria.length} criteria, not eleven — this check reads the wrong shape`;
   const bad: string[] = [];
-  const texts: Record<string, string> = {};
   for (const a of ["sdlc-spec-audit", "sdlc-plan-audit"]) {
     const f = join(dir, a, "SKILL.md");
     if (!existsSync(f)) { bad.push(`${a} is missing`); continue; }
-    texts[a] = readFileSync(f, "utf8");
-    if (!texts[a].includes("sdlc-audit-criteria")) {
+    const text = readFileSync(f, "utf8");
+    if (!text.includes("sdlc-audit-criteria")) {
       bad.push(`${a} never loads sdlc-audit-criteria, so its worker gets no criteria at all`);
     }
+    const restated = criteria.filter((c) => text.includes(c));
+    if (restated.length) bad.push(`${a} restates ${restated.join(", ")}, which sdlc-audit-criteria already holds`);
   }
   return bad.length ? bad.join("; ") : null;
 });

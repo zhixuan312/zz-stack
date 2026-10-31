@@ -4,7 +4,7 @@
  *
  *   node checks/console-figures.ts   # needs a built tree (`npm run build`)
  *
- * Exit 0: every case held. Exit 1: the first case that did not, with what came back.
+ * Exit 0: every case held. Exit 1: every case that did not, each with what came back.
  */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

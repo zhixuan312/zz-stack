@@ -9,8 +9,9 @@
  * own built routes in this process (`listenGateway`), the seeded person a superadmin. What it
  * establishes:
  *
- *   - a token an application obtained through OAuth for /core answers there and on `/upload/`, is
- *     refused on /manage (the one other door this harness mounts), and cannot issue a token of its own;
+ *   - a token an application obtained through OAuth for /manage answers there and cannot issue a token
+ *     of its own; an application's token bound to /core (inserted as its row) is refused on /manage,
+ *     naming its door, and is not refused on `/upload/`;
  *   - a team admin's token authority reaches no further than the team: a lead may not mint a token
  *     for the superadmin, may not replace a member's token outside the team by reusing its label,
  *     and a token bound to a team revokes only tokens bound to it; one who names a team they do not

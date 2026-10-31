@@ -37,8 +37,8 @@
  *     teams reads for the team `session_whoami` says it acts for (and its reads differ from the other team's);
  *     the unbound superadmin's status and record equal the console routes' answers to the same token, which
  *     a member's token may not read;
- *   - a `team`, a `scope` or any argument a tool does not declare, and forged identity headers on the core
- *     door, widen nothing: each answer equals the call without them;
+ *   - a `team`, a `scope` or any argument a tool does not declare is refused by name, with no structured
+ *     content; forged identity headers on the core door widen nothing: each answer equals the call without them;
  *   - no answer to the first team's member holds any of the second team's sentinels, in either half.
  *
  * DELIBERATE: the reporting timezone is Asia/Singapore, and an answer is compared with the function's read a

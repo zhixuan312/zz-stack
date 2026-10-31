@@ -52,7 +52,6 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { lastJson } from "@zz/mcp-client";
 import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
@@ -61,7 +60,7 @@ import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.t
 import { OTHER_EMAIL, OTHER_TEAM, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import {
   FIRST, bucketCases, canonical, count, datesCases, firstDayCases, iso, localDay, midnightOf, phase, request,
-  serveDoor, show, spelled, whereCases, type Days, type Query, type Who,
+  sender, serveDoor, show, spelled, whereCases, type Days, type Query, type Who,
 } from "./console-work-query-harness.ts";
 import { answer, type Obj, type Route } from "./in-process.ts";
 
@@ -111,28 +110,6 @@ async function listen(c: Core): Promise<Gateway> {
     refusalWeeks: ((await g.load("console/refusals.js")) as unknown as Pick<Gateway, "refusalWeeks">).refusalWeeks,
     stop: g.stop,
   };
-}
-
-/** Tool calls through the gateway's door, each expected to be answered or refused, counted so the rows they leave can
- *  be waited for. */
-function door(c: Core, g: Gateway) {
-  let sent = 0;
-  const send = async (step: string, token: string, client: string, name: string, args: Obj, refused = false): Promise<void> => {
-    const res = await fetch(`${g.url}/core/mcp`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json",
-                 accept: "application/json, text/event-stream", "x-zz-client": client },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const raw = await res.text();
-    sent++;
-    const env = lastJson(raw);
-    const reply = env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? raw.slice(0, 300);
-    const wasRefused = Boolean(env?.error) || Boolean((env?.result as { isError?: boolean } | undefined)?.isError) || reply.startsWith("ERROR");
-    if (res.status !== 200 || wasRefused !== refused) c.fail(step, `${name} as ${client} answered ${res.status}, ${wasRefused ? "refused" : "not refused"}: ${reply.slice(0, 300)}`);
-  };
-  return { send, sent: () => sent };
 }
 
 /** The rows the door cannot be made to give, as their seeds write them: tool calls (a skill's among them), and runs. */
@@ -199,7 +176,7 @@ async function run(c: Core): Promise<void> {
 }
 
 async function cases(c: Core, g: Gateway): Promise<void> {
-  const d = door(c, g);
+  const d = sender(c, g.url);
   const w0 = runningWeek(Date.now());
   const when = (w: When): number => at(w0, w);
   const maintenance = c.client({ client: MAINTENANCE });

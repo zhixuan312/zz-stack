@@ -351,9 +351,10 @@ is(traversalRefused, "safePath no longer refuses a path that walks out of the st
 
 // 5. Four source-level assertions, and what each catches
 //
-// Neither can be run: both handlers resolve through `db()` and the session. The loops are read
-// rather than executed, and each assertion fails on the specific defect the contract names rather
-// than on the absence of a word.
+// Both handlers run above only as far as their argument refusals; past those they resolve through
+// `db()` and the session, which this stub does not give them. The loops are read rather than
+// executed, and each assertion fails on the specific defect the contract names rather than on the
+// absence of a word.
 const src = readFileSync("services/zz-core/src/tools/artifacts.ts", "utf8");
 const slice = (tool: string) => {
   const at = src.indexOf(`registerTool(\n    "${tool}"`);

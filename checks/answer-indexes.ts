@@ -225,8 +225,8 @@ async function main(): Promise<void> {
                 case when g % 11 <> 0 then null else 'seeded failure' end
            from generate_series(1, 20000) g`);
 
-      // `zz.doc`: 20,000 documents across the 100 initiatives, of which the probe's holds 60 —
-      // five sources, which is what one initiative's sources list returns.
+      // `zz.doc`: 20,000 documents across the 100 initiatives, of which the probe's holds 200 —
+      // twelve sources, which is what one initiative's sources list returns.
       await client.query(
         `insert into zz.doc (id, initiative_id, path, type, status, updated_at, title, tags,
                              created_at, current_revision, approved_revision, current_version, content_generation)

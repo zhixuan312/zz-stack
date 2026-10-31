@@ -356,6 +356,8 @@ async function run(c: Core): Promise<void> {
     step = "Record: with the listener down, observedAt and revision are present and revision is an explicit null";
     const cold = await record();
     if (cold.status !== 200) c.fail(step, `/api/console/record answered ${cold.status}: ${cold.text.slice(0, 240)}`);
+    if (Number.isNaN(Date.parse(metaOf(cold).observedAt ?? ""))) c.fail(step, `meta.observedAt is ${JSON.stringify(metaOf(cold).observedAt)}, not an instant`);
+    if (metaOf(cold).revision !== null) c.fail(step, `meta.revision is ${JSON.stringify(metaOf(cold).revision)}, not an explicit null`);
     if (metaOf(cold).cacheHit !== false) c.fail(step, `meta.cacheHit is ${metaOf(cold).cacheHit} with nothing listening`);
     c.pass("with the listener down, observedAt and revision are present and revision is an explicit null");
 

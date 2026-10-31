@@ -97,7 +97,7 @@ const SEARCHES: [When, string, Obj][] = [
   [[1, 33], "work", { ranked_total: 0 }],
 ];
 /** Runs, `[start, end, skill]`: one fifty weeks back, one twenty back, and in the last two weeks two
- *  overlapping by an hour and one of a single call. */
+ *  overlapping by an hour and one of zero length. */
 const RUNS: [When, When, string][] = [
   [[50, 34], [50, 35], "rs-explore"], [[20, 34], [20, 36], "rs-spec"],
   [[2, 50], [2, 50], "rs-spec"], [[1, 34], [1, 36], "rs-spec"], [[1, 35], [1, 37], "rs-plan"],

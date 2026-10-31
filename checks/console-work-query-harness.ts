@@ -150,13 +150,14 @@ export async function serveDoor(c: Core, { skills = false }: { skills?: boolean 
   };
 }
 
-/** Tool calls through the door as a client holding `token`, counted so the rows they leave can be waited for. */
-export function door(c: Core, g: { url: string; token: string }) {
+/** Tool calls through the door at `url`, each as the holder of the token it is given and expected to be answered or, with
+ *  `refused`, refused; counted so the rows they leave can be waited for. */
+export function sender(c: Core, url: string) {
   let sent = 0;
-  const call = async (step: string, client: string, name: string, args: Obj): Promise<string> => {
-    const res = await fetch(`${g.url}/core/mcp`, {
+  const send = async (step: string, token: string, client: string, name: string, args: Obj, refused = false): Promise<string> => {
+    const res = await fetch(`${url}/core/mcp`, {
       method: "POST",
-      headers: { authorization: `Bearer ${g.token}`, "content-type": "application/json",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json",
                  accept: "application/json, text/event-stream", "x-zz-client": client },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
       signal: AbortSignal.timeout(60_000),
@@ -165,10 +166,17 @@ export function door(c: Core, g: { url: string; token: string }) {
     sent++;
     const env = lastJson(raw);
     const reply = env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? raw.slice(0, 300);
-    if (res.status !== 200 || reply.startsWith("ERROR")) c.fail(step, `${name} as ${client} answered ${res.status}: ${reply.slice(0, 300)}`);
+    const wasRefused = Boolean(env?.error) || Boolean((env?.result as { isError?: boolean } | undefined)?.isError) || reply.startsWith("ERROR");
+    if (res.status !== 200 || wasRefused !== refused) c.fail(step, `${name} ${JSON.stringify(args)} as ${client} answered ${res.status}, ${wasRefused ? "refused" : "not refused"}: ${reply.slice(0, 300)}`);
     return reply;
   };
-  return { call, sent: () => sent };
+  return { send, sent: () => sent };
+}
+
+/** Tool calls through the door as a client holding `token`, each expected to be answered. */
+export function door(c: Core, g: { url: string; token: string }) {
+  const { send, sent } = sender(c, g.url);
+  return { call: (step: string, client: string, name: string, args: Obj): Promise<string> => send(step, g.token, client, name, args), sent };
 }
 
 export const count = async (c: Core, where: string): Promise<number> =>
@@ -177,8 +185,8 @@ export const count = async (c: Core, where: string): Promise<number> =>
 /**
  * Runs `make` and waits until every row it leaves has landed (the gateway writes a tool call after its answer, and
  * zz-core most acts after its commit); then, with a `target`, moves every timestamp the phase wrote by one interval, so
- * its first instant lands there: the events, the revisions' written and presented times, the documents', the
- * initiatives' and the lessons'. One interval keeps a seal's written_at equal to its act's ts.
+ * its first instant lands there: the events, the revisions' written, presented and approved times, the documents',
+ * the initiatives' and the lessons'. One interval keeps a seal's written_at and approved_at beside its act's ts.
  */
 export async function phase(c: Core, d: { sent(): number }, target: number | null, make: () => Promise<unknown>): Promise<void> {
   const start = (await c.sql.query<{ t: string }>("select clock_timestamp()::text as t")).rows[0].t;
@@ -199,7 +207,7 @@ export async function phase(c: Core, d: { sent(): number }, target: number | nul
     `update ${table} set ${columns.map((k) => `${k} = case when ${k} >= $1::timestamptz then ${k} + ($2::timestamptz - $1::timestamptz) else ${k} end`).join(", ")}
       where ${columns.map((k) => `${k} >= $1::timestamptz`).join(" or ")}`, [start, new Date(target).toISOString()]);
   await move("zz.event", ["ts"]);
-  await move("zz.doc_revision", ["written_at", "presented_at"]);
+  await move("zz.doc_revision", ["written_at", "presented_at", "approved_at"]);
   await move("zz.doc", ["created_at", "updated_at"]);
   await move("zz.initiative", ["opened_at", "closed_at"]);
   await move("zz.knowledge_node", ["created_at", "updated_at"]);

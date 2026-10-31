@@ -29,13 +29,16 @@ export type Obj = Record<string, unknown>;
  * Every name in an import is a registrar candidate, not the first — `registerBugAdminTools,
  * registerBugTools` come from one module — and the module may sit beside server.ts
  * (`./document-panel.js`) as well as under `./tools/`. `true` goes where a registrar takes a role:
- * the door under test is the whole surface, what a superadmin is served.
+ * the door under test is the whole surface, what a superadmin is served. `wrap`, when given, is applied
+ * to the server before the first registrar runs, as server.ts applies `recordingDoor`.
  */
-export async function coreDoor(version: string): Promise<{ server: McpServer; registrars: string[] }> {
+export async function coreDoor(
+  version: string, wrap: (s: McpServer) => McpServer = (s) => s,
+): Promise<{ server: McpServer; registrars: string[] }> {
   const src = readFileSync(join(root, "services/zz-core/src/server.ts"), "utf8");
   const { coreServer } = await import(pathToFileURL(join(root, "services/zz-core/dist/orientation.js")).href) as
     { coreServer: (v: string) => McpServer };
-  const server = coreServer(version);
+  const server = wrap(coreServer(version));
   const registrars: string[] = [];
   for (const [, names, rel] of src.matchAll(/import \{ ([^}]+) \} from "\.\/((?:tools\/)?[\w-]+)\.js"/g)) {
     const fns = names!.split(",").map((n) => n.trim()).filter((n) => /^register\w+$/.test(n));

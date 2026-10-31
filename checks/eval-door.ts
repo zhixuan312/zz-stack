@@ -83,8 +83,9 @@ try {
 
 // The core door, built the way zz-core builds it
 //
-// Its tool modules are read out of server.ts's own imports rather than listed here, so this opens
-// the door as it is today.
+// Its tool modules are read out of server.ts's own imports by checks/in-process.ts's `coreDoor`
+// rather than listed here, so this opens the door as it is today, every registrar of a module and
+// the whole surface a superadmin is served.
 let coreClient = null;
 // The word buildServer passes to recordingDoor, read off the source and not typed here.
 // server.ts binds :8000 at module scope, so buildServer cannot be imported and this file
@@ -100,17 +101,11 @@ if (coreSrc && coreDoorWord === null) {
             "refusals would arrive in a shape nothing here expects");
 }
 try {
-  const { coreServer } = await import("../services/zz-core/dist/orientation.js");
+  const { coreDoor } = await import("./in-process.ts");
   const { recordingDoor } = await import("../services/zz-core/dist/door.js");
-  const server = coreDoorWord === null
-    ? coreServer("0.0.0-eval-door-check")
-    : recordingDoor(coreServer("0.0.0-eval-door-check"), coreDoorWord);
-  const mods = [...(coreSrc ?? "").matchAll(/import \{ (register\w+) \} from "(\.\/tools\/[\w-]+)\.js"/g)];
-  if (!mods.length) blind.push(`no tool modules found imported by ${CORE_SRC_PATH}`);
-  for (const [, fn, rel] of mods) {
-    const mod = await import(`../services/zz-core/dist/${rel.replace(/^\.\//, "")}.js`);
-    mod[fn](server);
-  }
+  const { server, registrars } = await coreDoor("0.0.0-eval-door-check",
+    coreDoorWord === null ? undefined : (s) => recordingDoor(s, coreDoorWord));
+  if (!registrars.length) blind.push(`no tool modules found imported by ${CORE_SRC_PATH}`);
   coreClient = await connectTo(server);
 } catch (err) {
   fail.push(`the core door could not be built or connected: ${errMessage(err)}`);
@@ -218,15 +213,25 @@ if (coreClient && evalClient && evalTools.size && coreTools.size) {
 // serves. The flow's skills are the outside witness.
 const FLOW_DIR = "catalog/zz/zz-plugin-eval";
 const skillsDir = `${FLOW_DIR}/skills`;
+// A tool is any name zz-core's source registers, whichever module and whether or not a door imports
+// it: a backticked field such as `subject_version_id` is not one, and a module whose import was
+// deleted still is.
+const registered = new Set<string>();
+let coreFiles: string[] = [];
+try { coreFiles = readdirSync("services/zz-core/src", { recursive: true, encoding: "utf8" }); } catch { blind.push("services/zz-core/src"); }
+for (const f of coreFiles) {
+  if (!f.endsWith(".ts")) continue;
+  for (const m of (read(join("services/zz-core/src", f)) ?? "").matchAll(/registerTool\(\s*"([a-z][a-z0-9_]*)"/g)) registered.add(m[1]);
+}
 const instructed = new Set<string>();
 for (const sk of listDir(skillsDir)) {
   const md = join(skillsDir, sk, "SKILL.md");
   if (!existsSync(md)) continue;
   // Named as a call — `tool(` or `tool` in backticks — not merely mentioned in prose.
-  for (const m of (read(md) ?? "").matchAll(/`(plugin_[a-z0-9_]+)[(`]/g)) instructed.add(m[1]);
+  for (const m of (read(md) ?? "").matchAll(/`([a-z][a-z0-9_]*)[(`]/g)) if (registered.has(m[1])) instructed.add(m[1]);
 }
 if (!instructed.size) {
-  blind.push(`${skillsDir}/*/SKILL.md — no plugin_* tool is instructed as a call by any skill ` +
+  blind.push(`${skillsDir}/*/SKILL.md — no tool zz-core registers is instructed as a call by any skill ` +
              "of the flow that owns this door, so the reachability clause asserted nothing");
 } else {
   for (const tool of instructed) {

@@ -17,7 +17,7 @@
  * "has stages". `zz-core` and `zz-access` declare neither documents nor stages.
  *
  * `record` and `nothing` are answers, not omissions, which is why the field is three-valued rather
- * than optional: three of zz-plugin-eval's five stages write into the platform's own tables and
+ * than optional: four of zz-plugin-eval's eight stages write into the platform's own tables and
  * produce no document, and sdlc-execute's output is the repository. An optional field answers "the
  * author forgot" and "this stage genuinely produces nothing" with the same absence.
  *

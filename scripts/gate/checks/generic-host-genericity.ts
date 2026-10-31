@@ -221,4 +221,19 @@ check("the generic host serves a second flow and the kernel never branches on an
     if (!r.invoked.includes(op)) return `the second-flow fixture never invoked ${op}, so it does not demonstrate the host is generic`;
   }
   if (r.reusedSdlcSemantics) return "the second-flow fixture reused SDLC stage semantics, so it proves nothing about genericity";
+  if (!r.detectorFiresOnAGatedDocumentPipeline) {
+    return "the detector does not fire on the gated document pipeline, so its answer about the second flow proves nothing";
+  }
+  if (!r.registered.includes("procurement-award")) return `the host registered ${JSON.stringify(r.registered)}, not the second flow`;
+  const [sourcing, award] = r.verdicts;
+  if (!sourcing?.satisfied || !award?.satisfied) {
+    return `the second flow's steps are not satisfied once their evidence is in: ${JSON.stringify(r.verdicts)}`;
+  }
+  const [tooEarly, shortlisted, ordered] = r.grants;
+  if (tooEarly?.granted !== false || !tooEarly.refusal) {
+    return `shortlist claimed after one quote was not refused with a reason: ${JSON.stringify(tooEarly)}`;
+  }
+  if (!shortlisted?.granted || !ordered?.granted) {
+    return `shortlist and purchase-order were not granted once their steps were complete: ${JSON.stringify([shortlisted, ordered])}`;
+  }
 });

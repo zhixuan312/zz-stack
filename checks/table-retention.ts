@@ -10,7 +10,7 @@
  * `ephemeral` table, and any table whose own comment calls it unbounded, must carry `retention=`.
  * That check has to be green for every table, so it can only ask whether a value EXISTS, never
  * whether it is TRUE. This is the five things that are `zz.doc_revision`'s alone, and it is
- * deliberately that one population: fifteen of the fifty-eight table comments in `schema-target/`
+ * deliberately that one population: sixteen of the fifty-eight table comments in `schema-target/`
  * carry a `retention=` today, and a class-wide reading of "is this retention true" is a different
  * job from the one rule 9's first failure needs done.
  *

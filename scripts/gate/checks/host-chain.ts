@@ -204,9 +204,10 @@ check("a fact a later entry withdrew stops being counted, and the log still only
 
 check("a stored run replays its withdrawals in order: a re-approval after a revision stands, and a run that does not replay in full is refused", () => {
   // The durable path, not the kernel alone. A run is judged by replaying its stored evidence
-  // into a fresh host, and ids repeat there: a document approved, revised and approved again
-  // records the same approval id twice. So this drives `judgeClaim`, the function `claimFor`
-  // hands its loaded facts to, with that exact history.
+  // into a fresh host. A document approved, revised and approved again records a new approval
+  // id in zz-core (`evidenceEntryId`, host/observe.ts, names the snapshot approved); this
+  // replays the harder history, the re-approval under the SAME id, through `judgeClaim`, the
+  // function `claimFor` hands its loaded facts to, so a replay that leans on unique ids fails.
   //
   // Three answers, each the one a reversed or dropped withdrawal gets wrong. Approve → revise
   // must refuse: a replay that dropped `supersedes` grants it. Approve → revise → re-approve

@@ -233,8 +233,8 @@ const DOORS = [
     nouns: true, skill: pointsAt, skillAt: (s: string) => [`skills/${s}/SKILL.md`],
     mustName: ["session_whoami"] },
   { name: "evaluation (/eval/mcp)", client: evalClient, tools: evalTools,
-    // Noun-first, like the core door: it serves one noun today, so the day a tool arrives
-    // under a second prefix this paragraph goes red rather than describing an older door.
+    // Noun-first, like the core door: its paragraph names every prefix it serves, so the day a
+    // tool arrives under a new prefix this paragraph goes red rather than describing an older door.
     nouns: true, skill: entrySkillFor("/eval/mcp"),
     // This door's orientation skill ships inside the catalog entry of the flow that declares
     // the door, not in `skills/`.

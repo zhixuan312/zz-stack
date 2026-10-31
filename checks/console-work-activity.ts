@@ -48,21 +48,15 @@
  * Exit 1: a case failed — the case and what was found.
  * Exit 2: Docker is not available — the check could not run, and that is not a pass.
  */
-import { createHash } from "node:crypto";
-import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-
-import { mintPat } from "@zz/contracts";
-import { lastJson } from "@zz/mcp-client";
-import type { Request, RequestHandler } from "express";
-import type pg from "pg";
 
 import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
+import { count, phase, sender, serveDoor } from "./console-work-query-harness.ts";
 import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-activity";
@@ -112,54 +106,23 @@ interface Gateway {
   stop(): Promise<void>;
 }
 
-/** A PAT of the person's, acting for their active team. */
-async function patOf(c: Core, email: string): Promise<string> {
-  const token = mintPat();
-  await c.sql.query(
-    "insert into zz.pat (principal_id, token_hash, team_id) select p.id, $2, null from zz.principal p where p.email = $1",
-    [email, createHash("sha256").update(token, "utf8").digest("hex")]);
-  return token;
-}
-
 /** The gateway's door to zz-core as server.ts mounts it, a PAT for each team's person, and the routes read. */
 async function listen(c: Core): Promise<Gateway> {
-  process.env.TEAM_DB_URL = c.url;
-  process.env.ZZ_TZ = TIMEZONE;
-  process.env.ZZ_CATALOG_DIR = join(root, "catalog");
-  process.env.CORE_MCP_URL = c.mcp.url;
-  const load = (p: string) => import(pathToFileURL(join(root, "services/gateway/dist", p)).href);
-  const express = (await import("express")).default;
-  const db = (await load("db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
-  await db.initPlatformDb();
-  const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
-  const { toolCallTelemetry, doorSurface } = (await load("tool-telemetry.js")) as
-    { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
-  const { passThrough } = (await load("relay.js")) as { passThrough: (url: string, what: string, refusal: string) => RequestHandler };
+  const g = await serveDoor(c);
   const routes = new Map<string, Route>();
   const fake = { get: (p: string, h: Route) => routes.set(`GET ${p}`, h), post: (p: string, h: Route) => routes.set(`POST ${p}`, h) };
-  ((await load("console/activity.js")) as { mountActivity: (app: unknown) => void }).mountActivity(fake);
-  ((await load("console/page-view.js")) as { mountPageView: (app: unknown) => void }).mountPageView(fake);
-  const { everyRefusalGroup, foldGroups } = (await load("console/refusals.js")) as {
+  ((await g.load("console/activity.js")) as { mountActivity: (app: unknown) => void }).mountActivity(fake);
+  ((await g.load("console/page-view.js")) as { mountPageView: (app: unknown) => void }).mountPageView(fake);
+  const { everyRefusalGroup, foldGroups } = (await g.load("console/refusals.js")) as unknown as {
     everyRefusalGroup: (team: string, window: { from: string; to: string }, asOf: string) => Promise<unknown[]>;
     foldGroups: (all: unknown[], limit: number) => unknown;
   };
   const refusalGroups: Gateway["refusalGroups"] = async (team, window, asOf) => foldGroups(await everyRefusalGroup(team, window, asOf), 20);
-
-  const app = express();
-  // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, the telemetry on the door and
-  // then the door's relay to zz-core, in the order server.ts mounts them.
-  app.use(identityMiddleware());
-  app.use(express.json({ limit: "20mb" }));
-  app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
-  app.all("/core/mcp", passThrough(c.mcp.url, "core proxy", "zz-core is not reachable"));
-  const server: Server = app.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const route = (key: string): Route => routes.get(key) ?? c.fail("mount", `no route ${key}`);
-  const pool = db.platformDb();
+  const pool = g.pool;
   const real = pool.query.bind(pool) as (text: unknown, params?: unknown[]) => Promise<unknown>;
   return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
-    mine: await patOf(c, c.email), theirs: await patOf(c, OTHER_EMAIL),
+    url: g.url, mine: await g.pat(c.email), theirs: await g.pat(OTHER_EMAIL),
     log: route("GET /api/console/activity"), summary: route("GET /api/console/activity/summary"),
     pageView: route("POST /api/console/page-view"), refusalGroups,
     failing: async (when, f) => {
@@ -167,61 +130,8 @@ async function listen(c: Core): Promise<Gateway> {
         typeof text === "string" && when(text, params ?? []) ? Promise.reject(new Error("injected by the check")) : real(text, params);
       try { return await f(); } finally { (pool as unknown as { query: unknown }).query = real; }
     },
-    stop: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await db.platformDb().end().catch(() => undefined);
-      for (const k of ["TEAM_DB_URL", "ZZ_TZ", "ZZ_CATALOG_DIR", "CORE_MCP_URL"]) delete process.env[k];
-    },
+    stop: g.stop,
   };
-}
-
-/** Tool calls through the gateway's door, each expected to be answered or refused, counted so the rows they
- *  leave can be waited for. */
-function door(c: Core, g: Gateway) {
-  let sent = 0;
-  const send = async (step: string, token: string, client: string, name: string, args: Obj, refused = false): Promise<string> => {
-    const res = await fetch(`${g.url}/core/mcp`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json",
-                 accept: "application/json, text/event-stream", "x-zz-client": client },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const raw = await res.text();
-    sent++;
-    const env = lastJson(raw);
-    const reply = env?.result?.content?.map((p) => p.text ?? "").join("") ?? env?.error?.message ?? raw.slice(0, 300);
-    const wasRefused = Boolean(env?.error) || Boolean((env?.result as { isError?: boolean } | undefined)?.isError) || reply.startsWith("ERROR");
-    if (res.status !== 200 || wasRefused !== refused) c.fail(step, `${name} ${JSON.stringify(args)} as ${client} answered ${res.status}, ${wasRefused ? "refused" : "not refused"}: ${reply.slice(0, 300)}`);
-    return reply;
-  };
-  return { send, sent: () => sent };
-}
-
-const count = async (c: Core, where: string): Promise<number> =>
-  (await c.sql.query<{ n: number }>(`select count(*)::int as n from zz.event where ${where}`)).rows[0].n;
-
-/** Runs `make`, waits until every row it leaves has landed, then with a `target` moves every event the phase
- *  wrote, and the initiatives it opened, by one interval so its first instant lands there. */
-async function phase(c: Core, d: ReturnType<typeof door>, target: number | null, make: () => Promise<void>): Promise<void> {
-  const start = (await c.sql.query<{ t: string }>("select clock_timestamp()::text as t")).rows[0].t;
-  const base = await count(c, "kind = 'tool_call'") - d.sent();
-  await make();
-  const until = Date.now() + 15_000;
-  let seen = -1;
-  for (;;) {
-    await new Promise((r) => setTimeout(r, 400));
-    const calls = await count(c, "kind = 'tool_call'");
-    const all = await count(c, "true");
-    if (calls >= base + d.sent() && all === seen) break;
-    if (Date.now() > until) c.fail("a phase settles", `${calls} tool calls of ${base + d.sent()}, events still moving`);
-    seen = all;
-  }
-  if (target === null) return;
-  const by = [start, new Date(target).toISOString()];
-  await c.sql.query("update zz.event set ts = ts + ($2::timestamptz - $1::timestamptz) where ts >= $1::timestamptz", by);
-  await c.sql.query(`update zz.initiative set opened_at = opened_at + ($2::timestamptz - $1::timestamptz) where opened_at >= $1::timestamptz`, by);
 }
 
 /** A refusal written as a row, as a seed writes one. */
@@ -252,7 +162,7 @@ async function run(c: Core): Promise<void> {
 const MARGIN_MS = 10 * 60_000;
 
 async function cases(c: Core, g: Gateway): Promise<void> {
-  const d = door(c, g);
+  const d = sender(c, g.url);
   const left = runningWeek(Date.now()) + WEEK - Date.now();
   if (left < MARGIN_MS) await new Promise((r) => setTimeout(r, left + 1000));
   const w0 = runningWeek(Date.now());

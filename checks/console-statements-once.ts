@@ -22,9 +22,10 @@
  * list that window feeds. A check that only counted concurrent repeats would pass on the tree that had
  * the defect, which is why each repeat is labelled and the label is printed with it.
  *
- * DELIBERATE: nothing mounts the change listener. With nothing listening `cachedWithHit` keeps no
- * answer at all, so every route computes its page and the statements counted are the page's own; with
- * the listener up the second read of a route would be a served answer and would count nothing.
+ * DELIBERATE: the change listener is taken down before any route is read. `mountConsole` opens it, and
+ * with it up `cachedWithHit` keeps answers, so a reader that asked the cache twice in one request would
+ * be served the second time and issue nothing — the repeat this check exists for, hidden. With nothing
+ * listening no answer is kept, every route computes its page, and each answer must say it was not served.
  *
  * DELIBERATE: each route is read once, in one process. A memo of a reader's answer is process state,
  * so a later route reading a window an earlier one already read runs fewer statements and says nothing
@@ -104,15 +105,23 @@ async function run(core: Core): Promise<void> {
     passThrough: (url: string, what: string, refusal: string) => RequestHandler;
   };
   const { mountConsole } = (await load("console.js")) as { mountConsole: (app: Express) => void };
+  const live = (await load("console/live-revision.js")) as { notListening: () => void; dataVersion: () => string | null };
   await dbModule.initPlatformDb();
 
   // COUPLED: services/gateway/src/server.ts — the identity gate, the core relay the list reaches its
-  // relayed `initiative_status` through, and the console's own routes. No change listener, by the
-  // module doc's DELIBERATE.
+  // relayed `initiative_status` through, and the console's own routes.
   const app = express();
   app.use(identityMiddleware());
   app.all("/core/mcp", passThrough(core.mcp.url, "core proxy", "zz-core is not reachable"));
   mountConsole(app);
+  // The listener `mountConsole` opened is taken down, by the module doc's DELIBERATE. The wait first, as
+  // checks/console-read-contract.ts does, so its own open cannot re-arm the marker after this.
+  for (let waited = 0; live.dataVersion() === null; waited += 100) {
+    if (waited > 15_000) fail("the change listener", "it never came up, so taking it down would prove nothing");
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  live.notListening();
+  if (live.dataVersion() !== null) fail("the change listener", `dataVersion is ${live.dataVersion()} after it was taken down`);
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -144,8 +153,9 @@ async function run(core: Core): Promise<void> {
       issued = [];
       const res = await fetch(`${base}${path}`, { headers: { cookie, accept: "application/json" } });
       if (res.status !== 200) fail(`${what} answers`, `${path} answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
-      const body = await res.json() as { meta?: unknown };
+      const body = await res.json() as { meta?: { cacheHit?: unknown } | null };
       if (typeof body.meta !== "object" || body.meta === null) fail(`${what} answers`, `${path} answered no meta`);
+      if (body.meta.cacheHit !== false) fail(`${what} answers`, `${path} answered meta.cacheHit ${JSON.stringify(body.meta.cacheHit)} with nothing listening`);
       if (issued.length === 0) fail(`${what} answers`, `${path} issued no statement this check could see — the wrapper is not on the pool it uses`);
 
       const groups = new Map<string, Issued[]>();

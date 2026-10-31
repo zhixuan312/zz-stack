@@ -10,7 +10,8 @@ const RETIRED = ["team_slug", "initiative", "flow", "outcome", "closed_by", "app
                  "approved_at", "evidence", "supports", "superseded_by", "produced_by_run_id"];
 
 const { SCHEMA_TARGET } = await import(pathToFileURL(join(process.cwd(), "schema-target.ts")).href);
-const doc = (SCHEMA_TARGET.tables.doc?.columns ?? []).map((c: [string, ...unknown[]]) => c[0]);
-for (const c of RETIRED) assert.ok(!doc.includes(c), `the target no longer declares doc.${c}`);
+assert.ok(SCHEMA_TARGET.tables.doc, "the target declares no zz.doc, so no retired column could be found on it");
+const doc = SCHEMA_TARGET.tables.doc.columns.map((c: [string, ...unknown[]]) => c[0]);
+for (const c of RETIRED) assert.ok(!doc.includes(c), `the target still declares the retired doc.${c}`);
 
 console.log("ok drop-is-complete");

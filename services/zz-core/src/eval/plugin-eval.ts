@@ -155,8 +155,8 @@ export function registerPluginEvalTools(server: McpServer): void {
         "what it returns is that starting point. It reads the catalog entry when there is one; " +
         "a plugin plugin_register captured instead is not refused for lacking one — it has no " +
         "manifest to read a surface from, so every clause below comes back not_measured rather " +
-        "than a guess. It REFUSES only a plugin that is neither in the catalog nor registered " +
-        "at all. It never guesses a clause it cannot settle — that clause comes back " +
+        "than a guess. It REFUSES a plugin that is neither in the catalog nor registered " +
+        "at all, and a version of it nobody registered. It never guesses a clause it cannot settle — that clause comes back " +
         "not_measured.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
@@ -168,16 +168,21 @@ export function registerPluginEvalTools(server: McpServer): void {
       // whole point of the tool — so the gate here is "does this platform know it at all",
       // never "is it in the catalog". Only the latter half changes what NO_SURFACE says below.
       let registeredWithNoManifest = false;
+      const pool = db();
+      if (!pool) return noDb();
+      const row = (await pool.query<{ has_version: boolean }>(`
+        select exists (select 1 from zz.plugin_version pv where pv.plugin_id = p.id and pv.version = $2) as has_version
+          from zz.plugin p where p.name = $1`, [plugin, version])).rows[0];
       if (entry) {
         named = toolsNamedBy(plugin, entry);
         servesOwnSurface = (entry.manifest.servers ?? []).length > 0;
       } else {
-        const pool = db();
-        if (!pool) return noDb();
-        const row = (await pool.query<{ origin: string }>(
-          `select origin from zz.plugin where name = $1`, [plugin])).rows[0];
         if (!row) return text(`ERROR: "${plugin}" is not in the catalog and has not been registered`);
         registeredWithNoManifest = true;
+      }
+      // An answer is about a version, so the version has to be one the platform holds.
+      if (!row?.has_version) {
+        return text(`ERROR: ${plugin} has no registered version ${version} — plugin_locate names the version to ask about`);
       }
 
       // DELIBERATE: every clause but R5 reports `not_measured` rather than a stand-in.

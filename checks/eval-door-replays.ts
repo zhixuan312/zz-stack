@@ -52,6 +52,7 @@
  *   - a key retried with a different `initiative` is a different request, refused as a conflict,
  *     and records nothing in that initiative;
  *   - `plugin_register` refuses a blank name or version, and a catalog plugin's name in any case;
+ *   - `plugin_conform` refuses a version the plugin never registered;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
@@ -273,6 +274,16 @@ async function registerNamesAreReal(c: Core, s: Seed): Promise<void> {
     if (!reply.startsWith("ERROR:") || !reply.includes(said)) c.fail(step, `${JSON.stringify(name)} answered ${reply.slice(0, 300)}`);
   }
   if (await plugins() !== before) c.fail(step, "a plugin was registered");
+  c.pass(step);
+}
+
+async function conformNamesARealVersion(c: Core): Promise<void> {
+  const step = "plugin_conform on a version nobody registered";
+  const door = evalDoor(c, c.email);
+  const missing = await ask(door, "plugin_conform", { plugin: PLUGIN, version: "99.9.9" });
+  if (!missing.startsWith("ERROR:") || !missing.includes("99.9.9")) c.fail(step, `answered ${missing.slice(0, 300)}`);
+  const real = await ask(door, "plugin_conform", { plugin: PLUGIN, version: VERSION });
+  if (!real.includes(`"version": "${VERSION}"`)) c.fail(step, `the registered version answered ${real.slice(0, 300)}`);
   c.pass(step);
 }
 
@@ -763,7 +774,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, replayIntoAnotherInitiative, registerNamesAreReal, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, replayIntoAnotherInitiative, registerNamesAreReal, conformNamesARealVersion, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

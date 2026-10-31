@@ -378,9 +378,10 @@ check("deactivating a person ends every way back in, in the same transaction as 
     "export async function deactivatePerson(", "\nexport ");
   if (!found.text) return `deactivatePerson cannot be read in ${REL}: ${found.why}`;
   const body = found.text;
-  const begin = body.indexOf('query("begin")');
-  const commit = body.indexOf('query("commit")');
-  if (begin < 0 || commit < begin) return "deactivatePerson does not run in one explicit transaction";
+  // `inTransaction` (db.ts) commits its callback's writes together or none of them.
+  const begin = body.indexOf("inTransaction(async");
+  const commit = body.indexOf("\n  });", begin);
+  if (begin < 0 || commit < 0) return "deactivatePerson does not run its writes in one inTransaction";
   const inside = body.slice(begin, commit);
   const bad: string[] = [];
   if (!/update principal set status='deactivated'/.test(inside)) bad.push("the status change is outside the transaction");

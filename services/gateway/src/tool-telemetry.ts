@@ -29,7 +29,6 @@ import { eventOrigin, refusalClass } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 // COUPLED: `tool_key` must fold onto the same series a reader building one from historical
 // `subject` values would, so nothing but this resolver may produce it.
-import { resolveToolKey } from "@zz/contracts";
 
 import { logEvent } from "./events.js";
 import { ANSWER_NAMES_INITIATIVE, initiativeFrom, stageOwing } from "./call-attribution.js";
@@ -269,8 +268,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
     // `skill_read(name, file: …)` serves a supporting file beside the SKILL.md, whose
     // frontmatter is not the skill's version — see stepLoaded.
     //
-    // RAW NAME: the name the CLIENT sent, so this is the REGISTERED spelling and
-    // `resolveToolKey` would be wrong here; `toolKey` below answers a different question.
+    // RAW NAME: the name the CLIENT sent, so this is the REGISTERED spelling.
     // COUPLED: this literal and the tool's registration must be renamed in the same commit.
     // Nothing goes red if they diverge — every call silently loses `step_version` and
     // `step_sha`, which is attribution, not display.
@@ -433,9 +431,10 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         // answers "what were they reading", which drifts mid-flow. A surface no manifest claims
         // comes back null and is written as null, never guessed at.
         const plugin = pluginForDoor(where);
-        // Alias-resolved, so `tool_key` reads as one series across a rename and no future reader
-        // has to resolve `subject` itself.
-        const toolKey = resolveToolKey(`${where}:${call.params?.name ?? ""}`);
+        // As sent, not alias-resolved: no door serves a name a rename retired, so a call naming one
+        // is refused as an unknown tool, and resolving it would file that refusal under the tool
+        // that replaced it. Rows from before a rename are resolved where they are read (tool-report).
+        const toolKey = `${where}:${call.params?.name ?? ""}`;
         // The client's own name for itself, as sent. One reading, so the origin the row carries and
         // the name its detail keeps cannot come from two.
         const client = req.headers["x-zz-client"] ? String(req.headers["x-zz-client"]) : undefined;

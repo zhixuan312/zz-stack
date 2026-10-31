@@ -192,7 +192,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         "document. Cite the measure a finding is evidence for by its measure_key, as written in " +
         "the protocol this eval_run was scored against. REFUSES an eval_run_id nothing minted, a " +
         "call missing owner_kind, a `measure_key` that protocol version does not have (naming " +
-        "the keys it does), and an `owner_ref` on a plugin-owned finding — that owner is the " +
+        "the keys it does), a blank pattern, an expected_effect on a finding that is not plugin-owned, and an `owner_ref` on a plugin-owned finding — that owner is the " +
         "subject's own plugin, reached through the run. To correct a finding already recorded, " +
         "record the corrected one with " +
         "`supersedes: <its id>` — the old one is closed as superseded in the same write and " +
@@ -235,6 +235,14 @@ export function registerPluginRecordTools(server: McpServer): void {
         const measure = await measureByKey(p, run.protocol_version_id, finding.measure_key);
         if ("error" in measure) return text(measure.error);
         measureId = measure.id;
+      }
+      // A blank pattern renders as an empty bullet in findings.md and says nothing to decide on.
+      if (!finding.pattern.trim()) return text("ERROR: pattern must say what was found, in one sentence");
+      // What a change is expected to move is only this platform's to predict for the subject's own
+      // plugin; anybody else's finding is reported to them, so it carries none.
+      if (finding.owner_kind !== "plugin" && finding.expected_effect !== undefined) {
+        return text(`ERROR: expected_effect belongs to a plugin-owned finding; a ${finding.owner_kind}-owned one is ` +
+          "reported to its owner and carries none — drop it");
       }
       // Checked before the ledger too, so a caller the table would refuse anchors nothing. A
       // plugin-owned finding's owner IS the subject's own plugin (`owner_ref` can only repeat what

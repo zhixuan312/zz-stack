@@ -54,6 +54,7 @@
  *     and records nothing in that initiative;
  *   - `plugin_register` refuses a blank name or version, and a catalog plugin's name in any case;
  *   - `plugin_conform` refuses a version the plugin never registered;
+ *   - `finding_record` refuses a blank pattern, and an expected_effect on a finding another owner holds;
  *   - `evaluation_score` on a run already scored is refused under a new key, and the published score
  *     stands;
  *   - `protocol_record` writes each model-backed measure against the evaluator version it registered;
@@ -315,6 +316,23 @@ async function conformNamesARealVersion(c: Core): Promise<void> {
   if (!missing.startsWith("ERROR:") || !missing.includes("99.9.9")) c.fail(step, `answered ${missing.slice(0, 300)}`);
   const real = await ask(door, "plugin_conform", { plugin: PLUGIN, version: VERSION });
   if (!real.includes(`"version": "${VERSION}"`)) c.fail(step, `the registered version answered ${real.slice(0, 300)}`);
+  c.pass(step);
+}
+
+async function findingRecordShape(c: Core, s: Seed): Promise<void> {
+  const step = "finding_record with a blank pattern, or an effect it cannot own";
+  const door = evalDoor(c, c.email);
+  const count = async () => Number((await one<{ n: string }>(c, "select count(*)::text as n from zz.eval_finding")).n);
+  const before = await count();
+  for (const [finding, said] of [
+    [{ kind: "defect", pattern: "  ", owner_kind: "plugin" }, "pattern must say what was found"],
+    [{ kind: "defect", pattern: "the platform refused", owner_kind: "platform", expected_effect: { tool_refusal_rate: "-0.1" } },
+     "expected_effect belongs to a plugin-owned finding"],
+  ] as const) {
+    const reply = await ask(door, "finding_record", { eval_run_id: s.run, finding, idempotency_key: `shape-${finding.owner_kind}` });
+    if (!reply.startsWith("ERROR:") || !reply.includes(said)) c.fail(step, `answered ${reply.slice(0, 300)}`);
+  }
+  if (await count() !== before) c.fail(step, "a finding was recorded");
   c.pass(step);
 }
 
@@ -805,7 +823,7 @@ process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   for (const run of [affirmBindsNothingWithoutATeam, affirmReplays, malformedIdsAreNamed, unknownVersionIsNamed,
                      decideReplays, profileReplays, releaseReplays, readingsCarryTheReading,
                      notApplicableGuardrailIsNotRead, qualifyReplays, qualifyOutageRecordsNothing, labelsPairWithinARun, staleRecordRegistersNothing,
-                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, replayIntoAnotherInitiative, registerNamesAreReal, conformNamesARealVersion, affirmWithNoDocument, scoredRunIsNotRescored,
+                     partsAreAskedTogether, unclearIsNamed, supersedeClosesTheOld, decideRefreshesFindingsDoc, rollbackReopensFindings, improvementStartTakesOpenDefects, profileWindowIsTimes, candidateBaseIsTheEvaluatedVersion, replayIntoAnotherInitiative, registerNamesAreReal, conformNamesARealVersion, affirmWithNoDocument, findingRecordShape, scoredRunIsNotRescored,
                      recordRegistersEvaluators, knowledgeRefsResolve]) {
     try {
       await run(c, s);

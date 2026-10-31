@@ -174,6 +174,8 @@ async function start(stubPort: number, work: string, prefix: string, keep: boole
   // walk restarts the gateway once to make it reconcile runs.
   const gwPort = sh("node", ["-e", "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})"]);
   sh("docker", ["run", "-d", ...owned(keep), "--name", core, "--network", net, "--network-alias", "zz-core", ...mounts,
+    // As deploy/docker-compose.yml gives it: upload_start's link names the gateway's address.
+    "-e", `GATEWAY_PUBLIC_URL=http://127.0.0.1:${gwPort}`,
     "-e", "TYPESAFE_API_KEY=stub", "-e", `TYPESAFE_BASE_URL=${stub}`, "-e", "TYPESAFE_ATTEMPTS=1",
     "-e", `LLM_BASE_URL=${stub}/v1`, "-e", "LLM_API_KEY=stub",
     "node:24", ...boot("services/zz-core/dist/server.js")]);

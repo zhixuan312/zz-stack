@@ -169,13 +169,18 @@ const dropExplained = (index: string): boolean =>
       !/^\s*-- Name: /.test(line) && line.includes(index));
   });
 
-/** The top-level `Buffers:` figure of an EXPLAIN text plan, hit and read summed. */
+/**
+ * The top-level `Buffers:` figure of an EXPLAIN text plan, hit and read summed: the pages the plan
+ * touched. A dirtied or written page is one of those already, and whether the first read after the
+ * seed sets its hint bits is not the plan's doing; counting them read 56 against a recorded 55 on
+ * identical code (release 0.101.2's gate).
+ */
 function buffersOf(plan: string[]): number | null {
   const line = plan.find((l) => /^\s+Buffers: /.test(l));
   if (line === undefined) return null;
   let total = 0;
   for (const [, key, n] of line.matchAll(/(\w+)=(\d+)/g)) {
-    if (key === "hit" || key === "read" || key === "dirtied" || key === "written") total += Number(n);
+    if (key === "hit" || key === "read") total += Number(n);
   }
   return total;
 }

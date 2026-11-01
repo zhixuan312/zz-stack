@@ -33,13 +33,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.101.1] — 2026-11-01
 
-### Fixed
+Three fixes found after 0.101.0 shipped: an update that reported a mismatch it never had, a client
+that would follow a redirect with its credentials, and a console that moved ancient dates by 1900
+years.
 
-- MCP clients refuse HTTP redirects during initialization and tool calls, preventing
-  identity headers and tool arguments from reaching a redirect destination. Configure
-  clients with the final endpoint address.
+### zz-stack 0.101.1
+
+- **`/zz-access:zz-update` no longer reports a clean update as mixed.** Each plugin is versioned
+  `<release>+<its own digest>`, so one release leaves four different suffixes, and the update
+  compared the whole string: every clean update ended "not all on one version" and sent the person
+  to the doctor. It now compares the release before the `+`; plugins left on two releases are still
+  reported.
+- **The platform's MCP client refuses a redirect.** On initialization or a tool call, a 3xx answer
+  is an error rather than a request resent to wherever it points, so identity headers and tool
+  arguments only ever reach the endpoint they were addressed to. The gateway's calls to zz-core
+  are on the internal network and never redirect.
+
+### zz-stack-dashboard 0.30.1
+
+- **Calendar dates before the year 100 keep their year.** A date such as `0042-03-01` was drawn as
+  1942, with 1942's weekday; it now reads as written, on every calendar display.
+
+### Upgrade notes
+
+- Nothing to do on the host: no migration, no environment key. Anything that calls an endpoint
+  through the platform's MCP client must name the final address, not one that redirects to it.
+- Installed clients re-pull to get the zz-update fix: `claude plugin marketplace update zz-stack`,
+  then `claude plugin update` for each installed plugin.
 
 ## [0.101.0] — 2026-11-01
 

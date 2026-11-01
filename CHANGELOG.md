@@ -33,6 +33,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.101.2] — 2026-11-01
+
+A console release. The platform's code is 0.101.1's; it carries a new number only because the
+console's changes are recorded here.
+
+### zz-stack 0.101.2
+
+- No change to the platform.
+
+### zz-stack-dashboard 0.30.2
+
+- **Reported and raw text no longer runs past its box.** A bug report's detail and decision, and a
+  skill's raw file, could hang a preserved space past the right edge at some widths (seen at 1024px
+  in Chromium on Linux). Spaces now wrap with the text; every line break the text has is kept.
+
+### Upgrade notes
+
+- Nothing to do: no migration, no environment key, no client re-pull.
+
 ## [0.101.1] — 2026-11-01
 
 Three fixes found after 0.101.0 shipped: an update that reported a mismatch it never had, a client

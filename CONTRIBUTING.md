@@ -41,6 +41,10 @@ unless the number of checks written under `scripts/gate/checks/` equals the numb
 ran. Neither number is written down here: a count in prose is a count that stops being
 true.
 
+The live sandbox checks use a readiness message before their build command exits, so a
+background subprocess is known to have started before its survival and write isolation are
+judged. Their existing execution timeout bounds startup as well as the command.
+
 ## Running it
 
 ```bash

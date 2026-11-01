@@ -59,6 +59,8 @@ try {
   // 2026-10-22 spun at ~60% of a core for four days and pinned its temp trees.
   writeFileSync(join(scratch, "loop.cjs"), `
     const fs = require("fs");
+    // Start after the check's observation pause, so a sleep can never stand in for readiness.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200);
     fs.writeFileSync("loop.pid", String(process.pid));
     const deadline = Date.now() + 60_000;
     const checkGone = () => { try { process.kill(${process.pid}, 0); return false; } catch (e) { return e.code === "ESRCH"; } };
@@ -77,10 +79,17 @@ try {
       setTimeout(swap, 2);
     };
     swap();
+    process.send("ready");
   `);
+  // The command returns only once the survivor has written its pid and begun swapping.
+  // Process startup time is not the isolation property this check measures.
   writeFileSync(join(scratch, "spawn.cjs"), `
-    require("child_process").spawn(process.execPath, [${JSON.stringify(join(scratch, "loop.cjs"))}],
-      { detached: true, stdio: "ignore", cwd: process.cwd() }).unref();
+    const child = require("child_process").spawn(process.execPath, [${JSON.stringify(join(scratch, "loop.cjs"))}],
+      { detached: true, stdio: ["ignore", "ignore", "ignore", "ipc"], cwd: process.cwd() });
+    let ready = false;
+    child.once("error", () => process.exit(1));
+    child.once("exit", () => { if (!ready) process.exit(1); });
+    child.once("message", () => { ready = true; child.disconnect(); child.unref(); });
   `);
   const fake = join(scratch, "build");
   writeFileSync(fake, [

@@ -33,6 +33,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### Fixed
+
+- MCP clients refuse HTTP redirects during initialization and tool calls, preventing
+  identity headers and tool arguments from reaching a redirect destination. Configure
+  clients with the final endpoint address.
+
 ## [0.101.0] — 2026-11-01
 
 Two full reads of every file in both repositories, and what they found fixed. Most of it makes a

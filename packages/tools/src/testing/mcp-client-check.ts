@@ -19,6 +19,7 @@ const HEADERS: IncomingMessage["headers"][] = [];
 /** Incrementing, so "it opened a new session" is something a check can see rather than
  * infer. The first client still gets S1, which is what the assertions below name. */
 let sessions = 0;
+let redirectTo = "";
 /** Tools that answer 404 once, mirroring a session-managed server that has reclaimed a session. */
 const expired = new Set<string>();
 
@@ -30,6 +31,12 @@ function stub(req: IncomingMessage, res: ServerResponse): void {
       method?: string;
       params?: { name?: string };
     };
+    const redirect = /redirect-(init|call)\/(301|302|303|307|308)$/.exec(req.url ?? "");
+    if (redirect && body.method === (redirect[1] === "init" ? "initialize" : "tools/call")) {
+      res.writeHead(Number(redirect[2]), { Location: redirectTo });
+      res.end();
+      return;
+    }
     SEEN.push({ method: body.method, session: (req.headers["mcp-session-id"] as string) ?? null });
     HEADERS.push(req.headers);
 
@@ -228,6 +235,29 @@ async function main(): Promise<number> {
     check("an unreachable endpoint raises McpError", false, "no exception");
   } catch (e) {
     check("an unreachable endpoint raises McpError", e instanceof McpError, String(e));
+  }
+
+  let reached = 0;
+  const other = createServer((req, res) => { reached++; stub(req, res); });
+  await new Promise<void>((r) => other.listen(0, "127.0.0.1", r));
+  redirectTo = `http://127.0.0.1:${(other.address() as AddressInfo).port}/mcp`;
+  try {
+    for (const phase of ["init", "call"]) {
+      for (const code of [301, 302, 303, 307, 308]) {
+        const before = reached;
+        let refused = false;
+        try {
+          await new Mcp(`${url}/redirect-${phase}/${code}`, {
+            headers: { "X-API-Key": "redirect-test", "x-zz-user-email": "reader@example.test" },
+          }).call("plain");
+        } catch (err) { refused = err instanceof McpError; }
+        check(`${code} at ${phase} refuses without sending identity or body to another origin`,
+          refused && reached === before, { refused, forwarded: reached - before });
+      }
+    }
+  } finally {
+    other.closeAllConnections();
+    other.close();
   }
 
   srv.close();

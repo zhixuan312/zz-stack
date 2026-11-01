@@ -135,6 +135,9 @@ export class Mcp {
     let res: Response;
     const send = (): Promise<Response> => fetch(this.url, {
       method: "POST",
+      // The endpoint alone is trusted with identity headers and tool arguments. A redirect
+      // must not forward either, even when fetch would strip the Authorization header.
+      redirect: "error",
       headers: { ...this.#head, ...extra },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.#timeoutMs),

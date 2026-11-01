@@ -49,6 +49,8 @@ packages/mcp-http/    stateless streamable-HTTP MCP hosting + identity — no se
                       none is required and one presented is not checked
 packages/mcp-client/  the one MCP client anything that ships uses to call an endpoint — the
                       counterpart to mcp-http, which hosts one
+                      Redirects fail: configure the final MCP endpoint so identity headers
+                      and tool arguments are never forwarded to a redirect destination.
 packages/indexing/    the knowledge index: the row a document gets in zz.doc, the claims
                       derived from it, and the walks that rebuild both. A package because
                       both services index — zz-core on every document write and for

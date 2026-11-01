@@ -11,8 +11,10 @@
  *   POST /oauth/token                                   the code becomes a platform token
  *
  * DELIBERATE: the access token is a PAT. `Identity.via` stays the closed three-value union it
- * is, `mayReadConsole` stays the literal `via === "session"`, and every reader downstream is
- * unchanged. A fourth `via` would express a distinction nobody downstream needs.
+ * is, `mayReadConsole` (console/shared.ts) still admits a browser session and a superadmin's PAT
+ * and nothing else, so an OAuth token reads the console exactly when its owner's PAT would, and
+ * every reader downstream is unchanged. A fourth `via` would express a distinction nobody
+ * downstream needs.
  *
  * Public clients only: no client secret is issued and none is accepted. PKCE (S256, mandatory)
  * proves the exchange instead.

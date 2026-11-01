@@ -91,14 +91,20 @@ reads it.
 cd <checkout>/zz-stack
 IMAGE=$(node --input-type=module -e "import('./scripts/release/postgres-service.ts').then((m) => process.stdout.write(m.postgresService('.').image))")
 
+REHEARSAL_PASSWORD=$(openssl rand -hex 24)
+
 docker network create zz-rehearsal
 docker run -d --name zz-rehearsal-db --network zz-rehearsal \
-  -e POSTGRES_PASSWORD="$(openssl rand -hex 24)" \
+  -e POSTGRES_PASSWORD="$REHEARSAL_PASSWORD" \
   -e POSTGRES_USER=zz -e POSTGRES_DB=zz_rehearsal \
   -p 127.0.0.1:55432:5432 \
   "$IMAGE" \
   postgres -c shared_buffers=512MB -c maintenance_work_mem=128MB -c work_mem=16MB
 ```
+
+The password is kept in `REHEARSAL_PASSWORD` because step 6 needs it to build the URL; step 4
+runs `psql` inside the container and step 5 starts a container of its own, so neither does. Run step 6 in the same shell, or read it
+back with `docker inspect zz-rehearsal-db --format '{{range .Config.Env}}{{println .}}{{end}}'`.
 
 `-p 127.0.0.1:55432` binds to loopback only. A rehearsal database that anything else on the
 network can reach is not isolated.
@@ -174,7 +180,7 @@ tenant the migration reported, never one the platform inferred.
 ## 6. The isolated database, and who reads it
 
 ```bash
-export ZZ_REHEARSAL_DB_URL="postgres://zz:<password>@127.0.0.1:55432/zz_rehearsal"
+export ZZ_REHEARSAL_DB_URL="postgres://zz:$REHEARSAL_PASSWORD@127.0.0.1:55432/zz_rehearsal"
 ```
 
 What this may name, and what it may never name:

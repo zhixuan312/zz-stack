@@ -101,7 +101,7 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
          FROM zz.membership m
          JOIN zz.team t ON t.id = m.team_id
          JOIN zz.principal p ON p.id = m.principal_id
-        WHERE lower(p.email) = $1 AND p.status = 'active'
+        WHERE lower(p.email) = lower($1) AND p.status = 'active'
         ORDER BY (t.status = 'active') DESC, m.role = 'admin' DESC, t.slug`,
       [email],
     );

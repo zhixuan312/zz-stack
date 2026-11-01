@@ -37,6 +37,8 @@
  */
 import type pg from "pg";
 
+import { at } from "./runs-seed.ts";
+
 export const TIMEZONE = "Asia/Singapore";
 export const TEAM = "refusals-one";
 export const OTHER = "refusals-two";
@@ -44,15 +46,8 @@ export const MANY = "refusals-many";
 /** Team two's refusal text: no answer of team one's may hold it. */
 export const SENTINEL = "ERROR: the beacon ledger is locked by the chargeback review";
 
-const HOUR = 3_600_000;
 const GATE = "ERROR: GATE_REFUSED spec.md needs explore.md approved";
 const PLAN = "ERROR: plan.md cannot be written before spec.md is approved";
-
-/** Local `HH:MM` on day `day` from Monday 7 September 2026, as an instant. */
-function at(day: number, time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  return new Date(Date.UTC(2026, 8, 7 + day, h, m) - 8 * HOUR).toISOString();
-}
 
 type Owner = "guardrail" | "ours" | "theirs" | "other";
 interface Call {

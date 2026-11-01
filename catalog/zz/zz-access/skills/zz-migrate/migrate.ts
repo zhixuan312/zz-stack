@@ -176,7 +176,7 @@ async function main() {
   const nodes = LIMIT ? importable.slice(0, LIMIT) : importable;
 
   // 1 ── the archive initiative. It has to exist before anything can cite it: evidence is
-  // checked against the folder on disk, not merely against being non-empty.
+  // checked against the initiatives in the caller's shelves, not merely against being non-empty.
   if (ledger.__initiative && ledger[EXPLORE_SENT]) {
     console.log(`Initiative already created.`);
   } else {

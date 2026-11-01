@@ -137,7 +137,7 @@ belongs in `findings.md` as an observation, never in the score.
 ## MCP-first, then a shell
 
 IDENTIFY through EXPLAIN are runnable by any client with no shell — every durable state change
-in those five stages goes through this door's own MCP tools alone. IMPROVE is where that
+in those six stages goes through this door's own MCP tools alone. IMPROVE is where that
 changes: a candidate is built and gated in a sandbox on the agent's own host (`npm run
 candidate-build`), and released or rolled back through the repository's own procedures
 (`zz-tool release-apply`, `zz-tool release-rollback`), so IMPROVE past its skip and PROMOTE/VERIFY

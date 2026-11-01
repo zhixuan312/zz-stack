@@ -6,8 +6,8 @@
  * Every function takes the team's slug, a window from one instant up to another, and the read's
  * cutoff, and counts what happened inside the window and before the cutoff. A period is cut on the reporting timezone's
  * calendar at the grain asked for, the running one not complete, and every figure is computed from
- * that period's own observations, never from finer periods. The team's knowledge shelf, the
- * _knowledge initiative, is never one of its initiatives.
+ * that period's own observations, never from finer periods. The team's knowledge shelf is
+ * zz.knowledge_node, not an initiative, so no statement here has a shelf to exclude.
  *
  * The searches are not counted here: they come from searchDays, the one statement Status, Knowledge
  * health and the Platform prepared query reduce (platform-measures.ts), narrowed to the team.
@@ -104,8 +104,31 @@ export function lastWholeWeek(asOf: string): Promise<Window> {
 
 async function readLastWholeWeek(asOf: string): Promise<Window> {
   const asOfMs = Date.parse(asOf);
-  const weeks = await periodsOf({ from: iso(asOfMs - 14 * 24 * HOUR), to: asOf }, asOf, "week");
-  return weeks.filter((w) => w.toMs <= asOfMs).at(-1)!.window;
+  return (await weeksAround(asOf)).filter((w) => w.toMs <= asOfMs).at(-1)!.window;
+}
+
+/** The weeks of the fortnight before the cutoff, the running one last: what the last whole week is cut from. */
+function weeksAround(asOf: string): Promise<Period[]> {
+  return periodsOf({ from: iso(Date.parse(asOf) - 14 * 24 * HOUR), to: asOf }, asOf, "week");
+}
+
+/** The end of the week running at the cutoff, when the last whole week turns into the next one with nothing
+ *  written; null at the very instant a week begins, when none of it has run yet. */
+export async function runningWeekEnd(asOf: string): Promise<number | null> {
+  return runningEnd((await weeksAround(asOf)).map((p) => p.window), asOf);
+}
+
+/** The first instant the clock alone turns one of these windows complete: the earliest end still ahead of the
+ *  cutoff among those not complete, or null when none is running. A kept answer drawn over them is not served
+ *  past it (answer-cache.ts's boundary). */
+export function runningEnd(windows: readonly Window[], asOf: string): number | null {
+  const asOfMs = Date.parse(asOf);
+  let first: number | null = null;
+  for (const w of windows) {
+    const to = Date.parse(w.to);
+    if (!w.complete && to > asOfMs && (first === null || to < first)) first = to;
+  }
+  return first;
 }
 
 /** A period as a window: observed over the part of it inside the window and before the cutoff, and
@@ -142,7 +165,7 @@ async function readClosuresIn(team: string, window: Span, asOf: string): Promise
             (extract(epoch from i.closed_at) * 1000)::float8 as closed_ms
        from zz.initiative i
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug <> '_knowledge'
+      where t.slug = $1
         and i.closed_at >= $2::timestamptz and i.closed_at < $3::timestamptz`, [team, from, end]);
   return rows.map((r) => ({ outcome: r.outcome, openedMs: r.opened_ms, closedMs: r.closed_ms }));
 }
@@ -220,7 +243,7 @@ async function readMostOpenAtOnce(team: string, window: Span, asOf: string): Pro
             (extract(epoch from i.closed_at) * 1000)::float8 as closed_ms
        from zz.initiative i
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug <> '_knowledge'
+      where t.slug = $1
         and i.opened_at < $3::timestamptz and (i.closed_at is null or i.closed_at > $2::timestamptz)`, [team, from, end]);
   const fromMs = Date.parse(from), endMs = Date.parse(end);
   // Each change in the count, a close before an open at the same instant; what opened before the
@@ -244,7 +267,7 @@ export async function openedRows(team: string, window: Span, asOf: string): Prom
     `select i.slug, i.flow, (extract(epoch from i.opened_at) * 1000)::float8 as opened_ms
        from zz.initiative i
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug <> '_knowledge'
+      where t.slug = $1
         and i.opened_at >= $2::timestamptz and i.opened_at < $3::timestamptz
       order by i.opened_at, i.slug`, [team, from, end]);
   return rows.map((r) => ({ slug: r.slug, flow: r.flow, opened: iso(r.opened_ms) }));

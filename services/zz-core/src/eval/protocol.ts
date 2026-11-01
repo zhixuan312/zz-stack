@@ -220,6 +220,11 @@ export function registerProtocolTools(server: McpServer): void {
       if (!subject) return text(`ERROR: unknown subject_version_id ${subject_version_id} — call plugin_locate or plugin_register first`);
 
       const latest = await latestProtocolVersion(p, subject.pluginId);
+      // What DISCOVER left for this stage to fold in or leave uncited, read here rather than
+      // carried from DISCOVER's own reply: a DEFINE opened in a new conversation has no other
+      // door to them, and re-running failure_discover would mint a duplicate set. Read once: the
+      // same rows decide `new_recurring_failure` and are answered as `open_candidates`.
+      const candidates = await openCandidates(p, subject.pluginId);
       let response: Record<string, unknown>;
       if (!latest) {
         response = { protocol_version_id: null, protocol_action: "create", triggers: ["none"],
@@ -229,7 +234,7 @@ export function registerProtocolTools(server: McpServer): void {
         // reusable — nothing may score against it — so the stage that recorded it is still open:
         // `create`/`revise` as the lineage began, which keeps protocol.md applying on this
         // initiative's branch. It is not a reason to record again unless a trigger fired.
-        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, subject.version, latest);
+        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.plugin, subject.version, latest, candidates);
         response = {
           protocol_version_id: latest.id, protocol_action: latest.any_affirmed ? "revise" : "create",
           triggers: triggers.length ? triggers : ["none"],
@@ -244,7 +249,7 @@ export function registerProtocolTools(server: McpServer): void {
               "qualifies or scores against it until then.",
         };
       } else {
-        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.pluginId, subject.plugin, subject.version, latest);
+        const { fired: triggers, missingSurfaces } = await triggersFor(p, subject.plugin, subject.version, latest, candidates);
         const protocol_action = triggers.length ? "revise" : "reuse";
         response = {
           protocol_version_id: latest.id, protocol_action, triggers: triggers.length ? triggers : ["none"],
@@ -255,10 +260,7 @@ export function registerProtocolTools(server: McpServer): void {
               `${lackingNote(missingSurfaces)} protocol_record never edits a version in place.`,
         };
       }
-      // What DISCOVER left for this stage to fold in or leave uncited, read here rather than
-      // carried from DISCOVER's own reply: a DEFINE opened in a new conversation has no other
-      // door to them, and re-running failure_discover would mint a duplicate set.
-      response.open_candidates = await openCandidates(p, subject.pluginId);
+      response.open_candidates = candidates;
       if (!initiative) return json({ ...response, facts_recorded: false });
       const written = await writeBranchFacts(initiative, { protocol_action: response.protocol_action as string });
       // create/revise: once protocol.md is approved this initiative owes the bind and the
@@ -403,7 +405,7 @@ export function registerProtocolTools(server: McpServer): void {
           select distinct m.key from zz.eval_measure m
            where m.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
            order by m.key`, [protocol_version_id])).rows.map((r) => r.key);
-        const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed, row.content_digest);
+        const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed, row.content_digest, replayed);
         return json({ approved_document_path: path, approved_by: approvedBy, qualify_owed: owed, ...recorded });
       };
       // A retry of the call that bound it replays from the binding it recorded — never from the

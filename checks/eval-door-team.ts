@@ -21,6 +21,9 @@
  *     candidates it held before, and the run is still unscored;
  *   - the seeded team's own caller reads its candidate, records a finding and decides one, so the
  *     refusals are about the team;
+ *   - a `finding_decide` replayed by that person, whose batch named one of its own findings and one
+ *     of the seeded team's, still answers the seeded one as naming nothing once its team has decided
+ *     it — never its decider or note;
  *   - a run of a plugin whose release owners are another team is not promotable for the run's own
  *     team, and is once that team is an owner too; release_prepare reads the same rule, so a member
  *     of the owner team acting for the run's team is sent to proposal_prepare.
@@ -130,6 +133,32 @@ async function outsiderChangesNothing(c: Core, s: Seed): Promise<void> {
   c.pass(step);
 }
 
+/** A replayed finding_decide reads the findings it names as its first call was given them: one of
+ *  another team's, refused there as unknown, stays unknown on the replay however it was decided
+ *  since (second read, rs12-2 — the replay read every id with no team filter). */
+async function replayNamesNothingOfAnotherTeam(c: Core, s: Seed): Promise<void> {
+  const step = "a replayed finding_decide names nothing of another team's finding";
+  const theirs = await finding(c, s, "decided by its own team after an outsider asked");
+  const outsiderRun = (await one<{ id: string }>(c,
+    `insert into zz.eval_run (protocol_version_id, created_at, team_id, observation_snapshot_id, started_by)
+     select $1, now(), t.id, $2, p.id from zz.team t, zz.principal p where t.slug = 'elsewhere' and p.email = $3
+     returning id::text as id`, [s.protocols.replayed, s.snapshot, OUTSIDER])).id;
+  const own = await finding(c, { ...s, run: outsiderRun }, "the outsider's own defect");
+  const args = { idempotency_key: "out-replay", decisions: [
+    { finding_id: own, decision: "rejected", note: "the outsider's own" },
+    { finding_id: theirs, decision: "rejected", note: "reached across" }] };
+  const door = evalDoor(c, OUTSIDER);
+  const first = await ask(door, "finding_decide", args);
+  await ask(evalDoor(c, c.email), "finding_decide", { idempotency_key: "own-after",
+    decisions: [{ finding_id: theirs, decision: "applied", note: `${SECRET} applied` }] });
+  const replay = await ask(door, "finding_decide", args);
+  if (!/"decided": 1/.test(first) || !/"decided": 1/.test(replay) || replay.includes(SECRET)
+      || !replay.includes(`${theirs} names no finding`)) {
+    c.fail(step, `first ${first.slice(0, 300)}; replay ${replay.slice(0, 300)}`);
+  }
+  c.pass(step);
+}
+
 /** A plugin another team owns is a proposal for this one: its improvement can neither be prepared
  *  nor applied as a release by a team outside its release owners, so improvement_start,
  *  proposal_prepare, improvement_stop and findings.md all read the run's own team against the
@@ -187,5 +216,6 @@ async function anotherTeamsPluginIsAProposal(c: Core, s: Seed): Promise<void> {
 process.exitCode = await withThrowawayCore(NAME, DONE, async (c) => {
   const s = await seed(c);
   await outsiderChangesNothing(c, s);
+  await replayNamesNothingOfAnotherTeam(c, s);
   await anotherTeamsPluginIsAProposal(c, s);
 });

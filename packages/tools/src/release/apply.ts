@@ -39,7 +39,10 @@
  * never moved. On success the worktree is removed and the branch KEPT — it holds the candidate's
  * commit, which `--reconcile` checks against the release tag. On
  * any failure before the release command succeeds, worktree and branch are both removed and the
- * attempt is recorded `failed`.
+ * attempt is recorded `failed`. When that record is not written, the attempt stays applying and
+ * the output says how to finish it: a branch holding the candidate's commit is kept for
+ * `--reconcile`, and one holding none is removed, since its tip is the base, which a release tag
+ * carries; that attempt is finished by rerunning with the printed `--idempotency-key`.
  *
  * Once the release command has succeeded, `failed` is never recorded again: the release happened.
  * If locating the new version or recording `released` is refused or the process dies, the
@@ -142,7 +145,7 @@ function reconcileHint(attemptId: string, candidateId: string, plugin: string, v
     `--release-version ${version} --release-tag ${tag} --repo <this clone>`;
 }
 
-async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<number> {
+export async function applyMain(mcp: Pick<Mcp, "call">, args: ReturnType<typeof parseArgs>): Promise<number> {
   const candidateId = required(args, "candidate", "the candidate_id release_apply is called for", 2);
   const repoRoot = required(args, "repo", "the repository checkout to release from — a throwaway clone while verifying, never the primary checkout", 2);
   const initiative = required(args, "initiative", "the initiative improvement.md was written into", 2);
@@ -171,21 +174,33 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
   const attemptId = apply.release_attempt_id;
   const plan = apply.plan;
   const diff = apply.patch.diff;
+  const hint = reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion, releaseTag);
   let createdBranch = false;
+  let candidateCommit: string | null = null;
   let released = false; // once true, `failed` is never recorded — see the module note
   let recorded = false;
   const recordFailed = async (tail: string): Promise<void> => {
     if (recorded || released) return;
     recorded = true;
-    removeWorktree(repoRoot, attemptId, createdBranch ? plan.branch : null);
-    const said = await mcp.call("release_record", {
-      release_attempt_id: attemptId, status: "failed",
-      failure_tail: tail.slice(-OUTPUT_TAIL_CHARS), idempotency_key: failedKey(attemptId),
-    });
-    console.log(`release_record (failed) -> ${said}`);
-    // The reason, here as well as in the record: an operator reading this output was otherwise
-    // told only that it failed.
+    // The reason, here as well as in the record, and before it: an operator reading this output
+    // learns it even when the record below is never written.
     console.error(`why: ${tail.slice(-OUTPUT_TAIL_CHARS)}`);
+    let said: string;
+    try {
+      said = await mcp.call("release_record", {
+        release_attempt_id: attemptId, status: "failed",
+        failure_tail: tail.slice(-OUTPUT_TAIL_CHARS), idempotency_key: failedKey(attemptId),
+      });
+    } catch (err) {
+      said = `ERROR: ${(err as Error).message ?? String(err)}`;
+    }
+    console.log(`release_record (failed) -> ${said}`);
+    if (!isRefusal(said)) { removeWorktree(repoRoot, attemptId, createdBranch ? plan.branch : null); return; }
+    // Not recorded, so the attempt stays applying — see the module note.
+    removeWorktree(repoRoot, attemptId, createdBranch && !candidateCommit ? plan.branch : null);
+    console.error("the attempt is left applying; to record it failed, run: " + (candidateCommit
+      ? hint
+      : `this same command with --idempotency-key ${idempotencyKey}`));
   };
 
   // Hashed before the repository is touched, on the bytes this process actually received.
@@ -219,7 +234,7 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
       "-c", "user.name=zz-release-apply", "-c", "user.email=release-apply@local",
       "commit", "-m", `release: apply candidate ${candidateId} (${digest})`,
     ]);
-    const candidateCommit = git(path, ["rev-parse", "HEAD"]);
+    candidateCommit = git(path, ["rev-parse", "HEAD"]);
 
     // A fresh worktree carries neither the locked dependencies nor a build, and the gate reads
     // both, and the console checkout it expects beside the repository. Without them the default
@@ -259,7 +274,6 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
     released = true;
 
     removeWorktree(repoRoot, attemptId, null);
-    const hint = reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion, releaseTag);
     const releaseRef = releaseRefFor(repoRoot, releaseTag, candidateCommit);
     if ("refused" in releaseRef) {
       console.error(`the release command succeeded but its release is not confirmed: ${releaseRef.refused}\n` +
@@ -273,8 +287,7 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
   } catch (err) {
     const message = (err as Error).message ?? String(err);
     if (released) {
-      console.error(`${message}\nThe release command succeeded, so this attempt is left applying. Run: ` +
-        reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion, releaseTag));
+      console.error(`${message}\nThe release command succeeded, so this attempt is left applying. Run: ${hint}`);
     } else {
       await recordFailed(message);
     }

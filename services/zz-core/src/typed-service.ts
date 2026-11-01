@@ -211,8 +211,9 @@ export async function ask(
     attempt += 1;
     const left = BUDGET_MS - (Date.now() - began);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(TIMEOUT_MS, Math.max(left, 1)));
-    const started = Date.now();
+    // This attempt's limit: the per-call timeout, or what is left of the budget when that is less.
+    const limit = Math.min(TIMEOUT_MS, Math.max(left, 1));
+    const timer = setTimeout(() => controller.abort(), limit);
     // Worth another attempt, by both clocks. `nextDelay` refuses a wait that would not fit in
     // the budget; this additionally refuses one leaving too little budget for the attempt after
     // the wait, because a retry scheduled with 100ms left aborts on arrival.
@@ -241,7 +242,7 @@ export async function ask(
           await new Promise((r) => setTimeout(r, wait));
           continue;
         }
-        const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+        const id = await record(runner, attempt, Date.now() - began, false, lastWhy);
         throw new TypedCallRefusal(
           `ERROR: the typed-judgement service ${lastWhy}. Nothing was scored from it.`,
           id, requestedModel());
@@ -259,7 +260,7 @@ export async function ask(
           ? `answered with a body that could not be read — ${batch.failure_reason}`
           : `answered ${total - batch.missing.length} of ${total} questions — ` +
             `missing ${batch.missing.join(", ")}`;
-        const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+        const id = await record(runner, attempt, Date.now() - began, false, lastWhy);
         throw new TypedCallRefusal(
           `ERROR: the typed-judgement service ${lastWhy}. A partial set would leave a round one ` +
           "mark short and looking complete.", id, requestedModel());
@@ -270,21 +271,21 @@ export async function ask(
       if (broken.length) {
         lastWhy = `answered ${broken.length} of ${total} questions unreadably — ` +
           broken.map(([name, a]) => `${name}: ${a.failure_reason ?? a.status}`).join("; ");
-        const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+        const id = await record(runner, attempt, Date.now() - began, false, lastWhy);
         throw new TypedCallRefusal(
           `ERROR: the typed-judgement service ${lastWhy}. Nothing was scored from it, because a ` +
           "figure that cannot be validated is indistinguishable in the record from one that was.",
           id, requestedModel());
       }
       const model_call_id = await record(
-        runner, attempt, Date.now() - started, true, null, batch.usage);
+        runner, attempt, Date.now() - began, true, null, batch.usage);
       return { model_call_id, model: requestedModel(), answers: batch.answers };
     } catch (err) {
       clearTimeout(timer);
       if (err instanceof Refusal) throw err;
       const aborted = err instanceof Error && err.name === "AbortError";
       lastWhy = aborted
-        ? `did not answer within ${Math.round(Math.min(TIMEOUT_MS, BUDGET_MS) / 1000)}s`
+        ? `did not answer within ${Math.round(limit / 1000)}s`
         : `could not be reached — ${err instanceof Error ? err.message : String(err)}`;
       // A call that produced no status at all is `transport` to the kernel's table, which is
       // retryable -- the same answer this file gave before it had a table.
@@ -293,7 +294,7 @@ export async function ask(
         await new Promise((r) => setTimeout(r, wait));
         continue;
       }
-      const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+      const id = await record(runner, attempt, Date.now() - began, false, lastWhy);
       throw new TypedCallRefusal(
         `ERROR: the typed-judgement service ${lastWhy}, after ${attempt} attempt` +
         `${attempt === 1 ? "" : "s"} in ${Math.round((Date.now() - began) / 1000)}s. ` +
@@ -307,6 +308,7 @@ export async function ask(
 interface TypedUsage { input_tokens: number | null; output_tokens: number | null }
 
 /** One row per call, in the table the reading judge already writes to, and the id it landed under.
+ *  `durationMs` is the whole call — every attempt `attempts` counts and the waits between them.
  *
  *  The model column carries what was asked for, not what the supplier says it ran; the resolved
  *  identity lives on each answer's record.

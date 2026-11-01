@@ -5,7 +5,8 @@
  *
  * It starts a throwaway PostgreSQL migrated by the real runner (`withThrowawayDb`), seeds 450 documents and two
  * knowledge nodes for one team with a stale `analyzer_version` — one document's body past the stored-body limit — and
- * three stale documents for a second team, then runs the built `reindexTeam` against it.
+ * three stale documents for a second team, then runs the built `reindexTeam` against it, and `reindexAllTeams`, whose
+ * log line is the only place the boot rebuild reports a row it could not re-derive.
  *
  *   node checks/reindex-walk.ts   # needs Docker and a built tree (`npm run build`)
  *
@@ -20,12 +21,12 @@ import { root } from "../scripts/deployment.ts";
 import { failing, withThrowawayDbCheck, type Fail } from "../scripts/schema/throwaway.ts";
 
 type Indexing = typeof import("../packages/indexing/dist/index.js");
-const { ANALYZER_NAME, MAX_INPUT_BYTES, configureIndexing, reindexTeam }: Indexing =
+const { ANALYZER_NAME, MAX_INPUT_BYTES, configureIndexing, reindexAllTeams, reindexTeam }: Indexing =
   await import(pathToFileURL(join(root, "packages/indexing/dist/index.js")).href);
 
 const NAME = "reindex-walk";
 const DONE = "reindex-walk: a team's rebuild re-derives all of that team's stale rows across pages and no other " +
-  "team's, naming the one row it could not: ok";
+  "team's, naming the one row it could not, and the every-team walk logs it: ok";
 const fail: Fail = failing(NAME);
 const STALE = "zz-lexical-v1";
 
@@ -74,6 +75,18 @@ process.exitCode = await withThrowawayDbCheck(NAME, DONE, async (c, url) => {
     const other = await count("reindex-b", STALE);
     if (other !== 3) fail(step, `the other team's documents were touched: ${3 - other} of 3 moved`);
     console.log(`  ${step}: 449 documents and 2 nodes re-derived, the unreadable one named, the other team untouched`);
+
+    // The boot rebuild drops reindexAllTeams' rows, so its log line is the only place a row it could
+    // not re-derive is seen. reindex-a/d225.md is still stale and still unreadable here.
+    const allStep = "reindexAllTeams logs the row a team could not re-derive";
+    const heard: string[] = [];
+    const [log, err] = [console.log, console.error];
+    console.log = console.error = (...a: unknown[]) => { heard.push(a.map(String).join(" ")); };
+    try { await reindexAllTeams(); } finally { [console.log, console.error] = [log, err]; }
+    if (!heard.some((l) => l.includes("reindex-a") && /could not be re-derived/.test(l))) {
+      fail(allStep, `logged ${JSON.stringify(heard)}`);
+    }
+    console.log(`  ${allStep}: named on reindex-a's line`);
   } finally {
     await pool.end();
   }

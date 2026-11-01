@@ -31,7 +31,7 @@ interface FlowDeclaration {
  * The flow's documents and source-stages, from the flow's own manifest.
  *
  * Never a hardcoded opening document: sdlc-flow opens on explore.md and zz-plugin-eval on
- * rulers.md, so a hardcoded name writes a document that flow has never heard of, which no gate
+ * protocol.md, so a hardcoded name writes a document that flow has never heard of, which no gate
  * governs, and then walks a chain it has already stepped outside of. Which flow a run walks is
  * what CHAIN_FLOW is for.
  *

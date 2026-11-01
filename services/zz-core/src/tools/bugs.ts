@@ -215,7 +215,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
           return text(`ERROR: nobody on this platform has the address "${reported_by}" — reported_by takes ` +
                       "an email address, as each report's reported_by shows it.");
         }
-        where.push(`lower(rp.email) = ${put(reported_by.toLowerCase())}`);
+        where.push(`lower(rp.email) = lower(${put(reported_by)})`);
       }
       // Both halves: somebody searching for "approve" means the thing they were doing, and
       // which field that word landed in is an accident of how the reporter wrote it.
@@ -470,7 +470,9 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
           "deleting it would leave that close pointing at nothing. Delete the duplicate first " +
           "when it too was never a report. Nothing was removed.");
       }
-      platformEvent({ actor: who, kind: "bug.delete", subject: id, team: null, detail: { title: rows[0].title } });
+      // The row's own id, in the lower case `::text` gives it, which the retry above looks up: the
+      // id as sent can be upper case, which the schema accepts.
+      platformEvent({ actor: who, kind: "bug.delete", subject: rows[0].id, team: null, detail: { title: rows[0].title } });
       return text(JSON.stringify({ deleted: rows[0], deleted_by: who }, null, 2));
     },
   );

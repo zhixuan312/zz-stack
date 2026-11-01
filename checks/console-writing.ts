@@ -32,7 +32,7 @@
  * It prints how long one read of the throwaway's small record took: a floor, not the representative
  * measure the plan asks for before anything is cached.
  *
- * DELIBERATE: three direct writes beside the moves. A missing_legacy revision is a fact only a legacy
+ * DELIBERATE: two direct writes beside the moves. A missing_legacy revision is a fact only a legacy
  * store states and no tool makes one, so one revision is marked so; the content acts of one document are
  * deleted, to stand for a revision sealed before the acts were recorded; and nothing else.
  *

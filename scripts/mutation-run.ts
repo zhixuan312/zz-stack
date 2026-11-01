@@ -177,7 +177,8 @@ function runGrouped(cmd: string, args: string[], cwd: string, env: NodeJS.Proces
  * which step went wrong: it has no timeout of its own, so a build that hangs is one more step of a
  * gate killed at CHILD_TIMEOUT_MS and the row reads TIMED OUT with nothing naming the build. Run
  * first, as its own process group under the same timeout, a hang or a failure is named on the row
- * (`prebuild_failed`, `prebuild_error`) before the gate builds again over it.
+ * (`prebuild_failed`, `prebuild_error`) before the gate builds again over it — or, at the
+ * baseline, stops the run.
  */
 function prebuild(repo: string): string | null {
   const r = runGrouped("npm", ["run", "-s", "build"], repo);
@@ -322,7 +323,10 @@ function main(): void {
   }
 
   console.log(dry ? "  dry: landing only, no gate runs" : "  baseline: one gate run with nothing planted");
-  if (!dry) prebuild(ws.repo);
+  // The baseline's own build is named too, and stops the run: every row is judged against this
+  // baseline, and one whose build hung would otherwise read TIMED OUT with nothing naming the build.
+  const baseBuild = dry ? null : prebuild(ws.repo);
+  if (baseBuild !== null) die(`the baseline build, with nothing planted, failed — no row could be measured: ${baseBuild}`);
   const baseline = dry
     ? { verdict: "SKIPPED", exit: 0, failed: [] as string[], ms: 0 }
     : runGate(ws.repo, join(ws.reports, "baseline.json"));

@@ -199,7 +199,7 @@ async function mostSources(team: string, window: Span, asOf: string): Promise<Be
        join zz.team t on t.id = i.team_id
        join zz.doc_link l on l.to_doc_id = d.id and l.kind = 'supports'
        join zz.doc s on s.id = l.from_doc_id and l.from_revision = s.current_revision
-      where t.slug = $1 and d.path not like 'sources/%' and i.slug <> '_knowledge' and s.path like 'sources/%'
+      where t.slug = $1 and d.path not like 'sources/%' and s.path like 'sources/%'
         and s.created_at >= $2::timestamptz and s.created_at < $3::timestamptz
       group by i.slug, d.path`,
     [team, new Date(fromMs).toISOString(), new Date(endMs).toISOString()]);
@@ -215,7 +215,7 @@ async function firstActs(team: string, asOf: string) {
   }>(
     `select (select (extract(epoch from min(i.closed_at)) * 1000)::float8
                from zz.initiative i join zz.team t on t.id = i.team_id
-              where t.slug = $1 and i.slug <> '_knowledge' and i.closed_at < $2::timestamptz) as closed_ms,
+              where t.slug = $1 and i.closed_at < $2::timestamptz) as closed_ms,
             (select (extract(epoch from min(e.ts)) * 1000)::float8
                from zz.event e join zz.team t on t.id = e.team_id
               where t.slug = $1 and e.kind = 'document.document_approve' and e.origin = 'work' and e.ts < $2::timestamptz) as approved_ms,
@@ -239,7 +239,7 @@ async function firstActs(team: string, asOf: string) {
                join zz.doc d on d.id = r.doc_id
                join zz.initiative i on i.id = d.initiative_id
                join zz.team t on t.id = i.team_id
-              where t.slug = $1 and d.path not like 'sources/%' and i.slug <> '_knowledge'
+              where t.slug = $1 and d.path not like 'sources/%'
                 and (r.approved_at at time zone $3::text)::date < ($2::timestamptz at time zone $3::text)::date) s`,
     [team, asOf, ZZ_TZ]);
   return r;

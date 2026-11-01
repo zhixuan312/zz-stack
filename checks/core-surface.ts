@@ -12,7 +12,8 @@
 // Where the indexer lives can pass while being wrong: a second copy of the two indexing
 // functions satisfies every assertion about where the tool is registered, and leaves two
 // indexers that agree until one is edited. So section 4 also asserts that exactly one definition of each exists, that it is in
-// @zz/indexing, and that both services reach it there.
+// @zz/indexing, and that zz-core's callers reach it there. Only zz-core runs the indexer; the gateway
+// imports the package's decision rules and nothing that writes the index.
 //
 // A removed tool needs the wider scan: asserting `encode_base64` is absent from one directory
 // passes a registration moved to another file, or a tool unregistered while every skill still
@@ -178,10 +179,9 @@ if (/JSON\.stringify\(\[\.\.\.names\]\.sort\(\)\)/.test(skills)) {
 // every team, a named team meaning that one, and a slug no team carries refused by name. A tool
 // that could only ever mean "my team" makes a deployment-wide rebuild one call per team.
 //
-// The refusal is the clause that matters most: `reindexTeam`'s contract for a team with no
-// store directory is to delete that team's rows — right for a team whose store was removed,
-// catastrophic for a typo, which has no directory either. Without a guard ahead of it those two
-// calls are indistinguishable.
+// The refusal is the clause that matters most: `reindexTeam` of a slug no team carries scans
+// nothing and answers `scanned: 0`, which is also the answer of a team with nothing to rebuild.
+// Without a guard ahead of it a typo and a current team are indistinguishable.
 //
 // Stripped, for the same reason section 3 is.
 //
@@ -209,7 +209,7 @@ if (!gate) {
   const MANAGE_CLAUSES: [RegExp, string][] = [
     [/team:\s*z\.string\(\)\.optional\(\)/,
      "knowledge_reindex does not take an OPTIONAL `team` — required, it cannot mean every " +
-     "team, which is the case a restore produces; absent, it is the /core tool again"],
+     "team, which is the case a restore produces"],
     [/force:\s*z\.boolean\(\)\.optional\(\)/,
      "knowledge_reindex does not take `force` — the skip is correct about the CURRENT " +
      "derivation and blind to a previous one, so a rebuild that cannot ignore its own hash " +
@@ -217,10 +217,7 @@ if (!gate) {
     [/team === undefined/,
      "knowledge_reindex does not branch on `team` being omitted, so it cannot mean every team"],
     [/reindexAllTeams\(/,
-     "knowledge_reindex does not call reindexAllTeams — the every-team walk is the union of " +
-     "the store directories and the slugs the index already believes in, and a team whose " +
-     "store was deleted appears only in the second, so a caller that lists the directories " +
-     "itself never visits the one team whose rows need cleaning"],
+     "knowledge_reindex does not call reindexAllTeams, so an omitted `team` rebuilds nothing"],
     [/reindexTeam\(/,
      "knowledge_reindex does not call reindexTeam, so a named team rebuilds nothing"],
     // The store is a database now, so the precondition is the database rather than a mounted
@@ -232,8 +229,8 @@ if (!gate) {
      "the same shape it uses for a team that had nothing to do"],
     // Schema-qualified, because zz-core names its schema on every query.
     [/from zz\.team where slug = \$1/,
-     "knowledge_reindex does not look the team up before rebuilding it — reindexTeam DELETES " +
-     "the rows of a team with no store directory, and a typo has no directory either"],
+     "knowledge_reindex does not look the team up before rebuilding it — reindexTeam of a " +
+     "slug no team carries scans nothing, and a typo would answer like a team with nothing to do"],
     [/\$\{slug\}/,
      "knowledge_reindex's refusal does not name the slug it was given — an unknown team is a " +
      "typo, and \"nothing to rebuild\" reads exactly like a team that had nothing to do"],
@@ -257,11 +254,11 @@ for (const fn of ["indexNode", "reindexTeam"]) {
               `— and an extraction that leaves a second copy behind is two indexers that ` +
               "agree until one of them is edited");
   } else if (defs[0] !== INDEXER) {
-    fail.push(`${fn} is defined in ${defs[0]} and not ${INDEXER} — a service cannot import ` +
-              "another service, so wherever it sits, one of the two doors cannot reach it");
+    fail.push(`${fn} is defined in ${defs[0]} and not ${INDEXER}, the package zz-core's ` +
+              "callers import it from");
   }
 }
-// And each door reaches it there, asserted against the file that does the work rather than the
+// And each caller reaches it there, asserted against the file that does the work rather than the
 // service around it. Asked as "does this service import @zz/indexing anywhere", platform-db.ts
 // calling configureIndexing satisfies the whole service while the door imports its indexer from
 // somewhere else. The question is whether the caller of each function calls the shared one.
@@ -272,14 +269,15 @@ const REACHES: [string, RegExp, string, string][] = [
    "reindexAllTeams", "knowledge_reindex walks every team through it"],
   // A journal node is a row, so zz-core writes it through the package's own writer rather than
   // composing the insert itself. The file store's `indexDoc` is gone with the store; this is
-  // what took its place, and one definition of it is what keeps the two doors' nodes identical.
+  // what took its place, and one definition of it is what keeps a node it writes identical to
+  // what a rebuild derives.
   ["services/zz-core/src/tools/knowledge.ts", /import \{[^}]*\bindexNode\b[^}]*\} from "@zz\/indexing"/,
    "indexNode", "zz-core writes every journal node through it, in the same call"],
 ];
 for (const [file, re, fn, why] of REACHES) {
   if (!re.test(read(file) ?? "")) {
     fail.push(`${file} does not import ${fn} from @zz/indexing, and ${why} — the package ` +
-              "exists so both doors run ONE indexer, and a caller reaching a different one is " +
+              "exists so zz-core runs ONE indexer, and a caller reaching a different one is " +
               "the second implementation this whole extraction was to remove");
   }
 }

@@ -41,6 +41,10 @@
 --   - `zz.eval_idempotency.created_at` names the declared retention, which no sweep implements yet.
 --   - `zz.eval_failure_mode_sighting.discovery_key` holds the failure mode's stable key
 --     (eval/discover.ts), not an idempotency key.
+--   - `zz.event.tool_key` and `zz.event_work_week.tool_key` hold the name a call was sent with, not an
+--     alias-resolved one, since the gateway stopped resolving it (services/gateway/src/tool-telemetry.ts).
+--   - `zz.initiative.no_signoff_reason` belongs to a `delivered` or `abandoned` close, never an
+--     `accepted` one: the closer's reason that nobody signed off (tools/initiative-close.ts).
 --
 -- `scripts/schema/compare.ts` does not model functions or triggers, so nothing in `schema-target/`
 -- describes the triggers, and no table's rows move, so `scripts/rehearse/expect.ts` needs no entry: the
@@ -96,4 +100,7 @@ COMMENT ON COLUMN zz.skill_run.session IS 'class=current_state; authority=this; 
 COMMENT ON COLUMN zz.skill_run.bytes_total IS 'class=current_state; authority=this; question=what the sum of response_bytes over the run''s events is, null when no event in the run was measured and distinct from 0, which means measured and empty, while the zeros written before null was told apart from zero are ambiguous and were deliberately not converted?';
 COMMENT ON COLUMN zz.assessment.answer_kind IS 'class=immutable_history; authority=this; question=which typed-service primitive answered this question — noul, choice or score — where the default noul exists only so that rows written before the column existed read as noul unchanged and every writer sets it?';
 COMMENT ON COLUMN zz.eval_idempotency.created_at IS 'class=ephemeral; authority=this; question=when the first write was recorded, the instant the declared 30-day retention measures from, though no sweep deletes a row yet?';
+COMMENT ON COLUMN zz.initiative.no_signoff_reason IS 'class=state_machine; authority=this; question=why did this initiative close with nobody named as having signed off — the reason a finished close gave, which records delivered rather than accepted, or one an abandoned close was sent — if a reason was given?';
+COMMENT ON COLUMN zz.event.tool_key IS 'class=immutable_history; authority=this; question=what <door>:<tool> name this call was sent with, stamped at write and required on every tool_call row — alias-resolved by the gateway until 2026-10-31, so the 2205 rows a rename folded then differ from subject, and as sent since, because no door serves a retired name and a call naming one is a refusal under the name it sent?';
+COMMENT ON COLUMN zz.event_work_week.tool_key IS 'class=projection; authority=zz.event.tool_key; question=which door:tool the calls counted here named, zz.event.tool_key itself and the empty string for a call that named no tool?; rebuilt_from=zz.event.tool_key';
 COMMENT ON COLUMN zz.eval_failure_mode_sighting.discovery_key IS 'class=immutable_history; authority=this; question=under which failure mode''s stable key was this sighting grouped when DISCOVER found it?';

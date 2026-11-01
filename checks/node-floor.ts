@@ -3,12 +3,14 @@
 //
 // That this Node strips TypeScript at all is not asserted here: this file and the module it imports
 // are TypeScript with type syntax, so a runtime that cannot strip them fails before the first line.
+// One that can and is still below the floor — Node 22.18 and later strip types unflagged — reaches
+// the comparison below and fails there.
 import { readFileSync } from "node:fs";
 
 import { errMessage } from "../scripts/gate/read.ts";
 
-const WHY = "this repository runs its scripts and checks as native TypeScript, and a Node " +
-  "below the floor cannot strip that syntax at all.";
+const WHY = "this repository runs its scripts and checks as native TypeScript on the Node " +
+  "that floor names, and a Node below it is not one they are run on.";
 
 let pkg: { engines?: { node?: string } };
 try {

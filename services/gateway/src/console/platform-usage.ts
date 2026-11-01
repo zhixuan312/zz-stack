@@ -194,7 +194,7 @@ export function mountPlatformUsage(app: Express): void {
     // caller, but both answers are the platform's and the two routes keep one shape. The flag is `isSuper`, so a
     // team-bound superadmin PAT is keyed as the member-shaped answer it receives.
     res.json(served(await usageServed(caller.superadmin, `usage|${audienceKey(caller)}`,
-      prefixFor("/api/console/platform/usage", req.zzIdentity!, req))));
+      prefixFor("/api/console/platform/usage", req.zzIdentity!))));
   }));
 }
 

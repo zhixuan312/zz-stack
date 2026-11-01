@@ -17,7 +17,6 @@ import { mountAgentDoor } from "./agent-door.js";
 import { mountBodyParsers } from "./body.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
-import { issueMyAccessTokenFor, revokeMyAccessTokenFor } from "./credentials.js";
 import { initPlatformDb, platformDbReady } from "./db.js";
 import { strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
@@ -252,20 +251,12 @@ app.get("/health", (_req, res) => {
 mountPasskey(app);
 mountConsole(app);
 mountConsoleWrite(app);
-// DELIBERATE: the `my_*` functions are handed over as a dependency object rather than
-// imported by settings.ts. They live in credentials.ts so /manage/mcp's tools and
-// settings.ts's browser routes call the same function, and a value import there would make
-// server.ts and settings.ts import each other at runtime. settings.ts's type-only import of
-// two result shapes is erased by `tsc` and is not that edge. See `SettingsDeps` in
-// settings.ts.
-//
-// Each write takes `extraDetail`, merged into its own `logEvent` call's `detail`. A tool
-// call passes none; these routes pass `{ via: "web" }`. COUPLED: the gate's "every console
-// write route records the door it came through" check reads that literal text back out of
-// the route body.
-mountSettings(app, {
-  issueMyAccessTokenFor, revokeMyAccessTokenFor,
-});
+// The token functions live in credentials.ts, so /manage/mcp's tools and settings/me.ts's
+// browser routes call the same function. Each write takes `extraDetail`, merged into its own
+// `logEvent` call's `detail`. A tool call passes none; these routes pass `{ via: "web" }`.
+// COUPLED: the gate's "every console write route records the door it came through" check reads
+// that literal text back out of the route body.
+mountSettings(app);
 
 // One event per tool call, on every door, recording the outcome. Mounted after identity (it
 // records who called) and before the routes (it wraps the response they write to). See
@@ -320,7 +311,7 @@ initPlatformDb()
     const runs = () => void repair()
       .then((n) => {
         if (n.runs || n.linked) {
-          console.log(`runs: ${n.runs} recorded, ${n.linked} event(s) linked`);
+          console.log(`runs: ${n.runs} rewritten, over the ${n.linked} event(s) behind them`);
         }
       })
       .catch((err: unknown) => console.error("run reconcile failed:", err));

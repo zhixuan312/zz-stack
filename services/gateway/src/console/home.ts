@@ -63,10 +63,11 @@ import { lessonImports } from "./imports.js";
 import { initiativeList, type Drawn } from "./initiative-list.js";
 import { teamPendingRevisions } from "./pending.js";
 import { observedRuns } from "./runs-observed.js";
-import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
+import { cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
 import { iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
-  closuresByWeek, grainFor, lastWholeWeek, medianHoursToClose, periodsOf, searchesWithResults, type ClosureWeek, type Period,
+  closuresByWeek, grainFor, lastWholeWeek, medianHoursToClose, periodsOf, runningWeekEnd, searchesWithResults, type ClosureWeek,
+  type Period,
 } from "./work-figures.js";
 import { additionsByPeriod, documentFacts } from "./writing.js";
 
@@ -127,7 +128,7 @@ async function firstOpened(team: string, asOf: string): Promise<number | null> {
     `select (extract(epoch from min(i.opened_at)) * 1000)::float8 as first_ms
        from zz.initiative i
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug <> '_knowledge' and i.opened_at <= $2::timestamptz`, [team, asOf]);
+      where t.slug = $1 and i.opened_at <= $2::timestamptz`, [team, asOf]);
   return rows[0]?.first_ms ?? null;
 }
 
@@ -188,7 +189,7 @@ async function closedIn(team: string, week: Window): Promise<{ slug: string; out
     `select i.slug, i.outcome, (extract(epoch from i.closed_at) * 1000)::float8 as closed_ms
        from zz.initiative i
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug <> '_knowledge'
+      where t.slug = $1
         and i.closed_at >= $2::timestamptz and i.closed_at < $3::timestamptz
       order by i.closed_at, i.slug`, [team, week.from, week.to]);
   return rows.map((r) => ({ slug: r.slug, outcome: r.outcome, closedAt: iso(r.closed_ms) }));
@@ -212,6 +213,17 @@ async function openWorkOf(team: string, asOf: string, relay: Relay, drawn: Drawn
 /** Closures in a week: the three outcomes together. */
 const closed = (w: ClosureWeek): number => (w.accepted.value ?? 0) + (w.delivered.value ?? 0) + (w.abandoned.value ?? 0);
 const sum = (figures: PeriodFigure[]): number => figures.reduce((n, p) => n + (p.figure.value ?? 0), 0);
+
+/** Home as the route keeps it: one computation per `key`, kept no longer than the running week's end, when the last
+ *  whole week it is drawn around turns into the next one with nothing written. */
+async function homeServed(
+  team: string, caller: string, asOf: string, relay: Relay, key: string, prefix: string | null,
+): Promise<Served<Home>> {
+  const kept = await cachedWithHit(key, async () => ({
+    answer: await homeOf(team, caller, asOf, relay), boundary: await runningWeekEnd(asOf),
+  }), prefix, (computed) => computed.boundary);
+  return { value: kept.value.answer, hit: kept.hit };
+}
 
 /** Home for the team at the cutoff, the approvals in it the caller's. */
 async function homeOf(team: string, caller: string, asOf: string, relay: Relay): Promise<Home> {
@@ -316,13 +328,12 @@ export function mountHome(app: Express): void {
     }
     // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
     // DELIBERATE: kept as one answer per caller and team until a write moves the marker of what it reads
-    // (answer-cache.ts). The email stays in the key because the answer itself uses it: `callerApprovals` is the
-    // approvals signed in the caller's own name. Home is the whole record reduced to a week — two full list reads
-    // plus the events behind them — and a person moving between destinations asks for it again without anything
-    // having happened since.
+    // (answer-cache.ts) or the week turns (homeServed). The email stays in the key because the answer itself uses
+    // it: `callerApprovals` is the approvals signed in the caller's own name. Home is the whole record reduced to a
+    // week — two full list reads plus the events behind them — and a person moving between destinations asks for it
+    // again without anything having happened since.
     const email = req.zzIdentity!.email;
-    res.json(served(await cachedWithHit(`home|${activeTeam}|${email}`, () =>
-      homeOf(activeTeam, email, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)),
-      prefixFor("/api/console/home", req.zzIdentity!, req))));
+    res.json(served(await homeServed(activeTeam, email, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req),
+      `home|${activeTeam}|${email}`, prefixFor("/api/console/home", req.zzIdentity!))));
   }));
 }

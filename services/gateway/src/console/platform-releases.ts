@@ -36,11 +36,11 @@ import type { Express } from "express";
 import type pg from "pg";
 
 import { platformDb } from "../db.js";
-import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
+import { cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
 import type { Figure, Part, PeriodFigure, ReadMeta, Window } from "./figures.js";
-import { malformedMeasure, readGrid } from "./platform-measures.js";
+import { earliestBoundary, malformedMeasure, readGrid } from "./platform-measures.js";
 import { BAD_PAGE, iso, platformPublic, ZZ_TZ } from "./shared.js";
-import { lastWholeWeek } from "./work-figures.js";
+import { lastWholeWeek, runningEnd, runningWeekEnd } from "./work-figures.js";
 
 /** How far either side of a release its windows reach. */
 const WINDOW_MS = 72 * 3_600_000;
@@ -212,11 +212,14 @@ export async function releaseRows(db: pg.Pool, versions: string[], asOfMs: numbe
 }
 
 /** The releases read, one page of its rows each with its changelog and upgrade notes: the latest, or with
- *  `since` the releases recorded after that version; null when `since` names no recorded release. */
-export async function releasesOf(page: { limit: number; offset: number; since: string | null }): Promise<Releases<ReleaseDetail> | null> {
+ *  `since` the releases recorded after that version; null when `since` names no recorded release. `at` is the
+ *  cutoff, the wall clock unless a check supplies one. */
+export async function releasesOf(
+  page: { limit: number; offset: number; since: string | null }, at?: number,
+): Promise<Releases<ReleaseDetail> | null> {
   const db = platformDb();
   // Three reads that answer apart; the week and the measure are cut from the grid.
-  const [all, grid, applied] = await Promise.all([releaseTimes(db), readGrid(db), migrationTimes(db)]);
+  const [all, grid, applied] = await Promise.all([releaseTimes(db), readGrid(db, at), migrationTimes(db)]);
   // The releases after `since` are the ones before it in recorded order, newest first.
   const after = page.since === null ? all.length : all.findIndex((r) => r.version === page.since);
   if (after < 0) return null;
@@ -269,6 +272,24 @@ export async function releasesOf(page: { limit: number; offset: number; since: s
   };
 }
 
+/**
+ * The latest releases as the route keeps them: one computation per page under `key`, kept no longer than the first
+ * instant the clock alone changes it. That is the running week's end, where the week turns complete and the tile of
+ * the last whole week moves on, or the end of a release's window still being observed, whichever comes first.
+ * `asOfMs` is the read's cutoff, supplied by a check that drives the clock and the wall clock by the route.
+ */
+export async function releasesServed(
+  page: { limit: number; offset: number }, key: string, prefix: string | null, asOfMs?: number,
+): Promise<Served<Releases<ReleaseDetail>>> {
+  const kept = await cachedWithHit(key, async () => {
+    const answer = (await releasesOf({ ...page, since: null }, asOfMs))!;
+    const windows = answer.rows.state === "ok" ? answer.rows.data.rows.flatMap((r) => [r.before.window, r.after.window]) : [];
+    const asOf = answer.meta.asOf;
+    return { answer, boundary: earliestBoundary(await runningWeekEnd(asOf), runningEnd(windows, asOf)) };
+  }, prefix, (computed) => computed.boundary);
+  return { value: kept.value.answer, hit: kept.hit };
+}
+
 export function mountPlatformReleases(app: Express): void {
   app.get("/api/console/platform/releases", platformPublic("the platform's releases", async (req, res) => {
     const limit = Number(req.query.limit ?? 10), offset = Number(req.query.offset ?? 0);
@@ -278,10 +299,10 @@ export function mountPlatformReleases(app: Express): void {
     }
     // No caller term: this answer is the platform's releases, the same figures for everybody the console lets
     // in, so two readers share it. Kept until a write moves the marker of what it reads — and `zz.release`
-    // raises no hint, so in practice until the minute in `answer-cache.ts` expires.
-    const { rows, ...answer } = served(await cachedWithHit(`releases|${limit}|${offset}`,
-      async () => (await releasesOf({ limit, offset, since: null }))!,
-      prefixFor("/api/console/platform/releases", req.zzIdentity!, req)));
+    // raises no hint, so in practice until the minute in `answer-cache.ts` expires — or the clock alone turns a
+    // window it draws (releasesServed).
+    const { rows, ...answer } = served(await releasesServed({ limit, offset }, `releases|${limit}|${offset}`,
+      prefixFor("/api/console/platform/releases", req.zzIdentity!)));
     const list: Releases = {
       ...answer,
       rows: rows.state === "ok"

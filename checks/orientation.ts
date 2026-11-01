@@ -24,7 +24,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
-import { errMessage } from "../scripts/gate/read.ts";
+import { errMessage, withoutComments } from "../scripts/gate/read.ts";
 
 import { connectTo, coreDoor } from "./in-process.ts";
 
@@ -48,34 +48,6 @@ const blind: string[] = [];
  *  so. */
 const read = (p: string) => { try { return readFileSync(p, "utf8"); } catch { blind.push(p); return null; } };
 const listDir = (d: string) => { try { return readdirSync(d); } catch { blind.push(d); return []; } };
-
-/** Source with its comments taken out, so a comment describing a property cannot stand in
- *  for the property.
- *
- *  DELIBERATE: a character scanner tracking strings and quotes, not the line-wise stripper
- *  core-surface.ts uses. A line comment ending in a block-comment opener makes the
- *  line-wise one open a block that never closes, blanking the rest of the file and turning
- *  every assertion over that region green. */
-const stripComments = (src: string) => {
-  let out = "";
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i], d = src[i + 1];
-    if (c === "/" && d === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
-    if (c === "/" && d === "*") {
-      i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) { if (src[i] === "\n") out += "\n"; i++; }
-      i += 2; continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      out += c; i++;
-      while (i < src.length && src[i] !== c) { if (src[i] === "\\") { out += src[i]; i++; } out += src[i]; i++; }
-      out += src[i] ?? ""; i++; continue;
-    }
-    out += c; i++;
-  }
-  return out;
-};
 
 // The core door, built the way the service builds it
 //
@@ -338,7 +310,7 @@ for (const noun of coreClient ? nounsOf(coreTools) : []) {
 //
 // COUPLED: the evaluation door's half of this seam is checks/eval-door.ts's, not repeated
 // here.
-const coreCode = stripComments(coreSrc ?? "");
+const coreCode = withoutComments(coreSrc ?? "");
 if (coreSrc) {
   if (!/coreServer\(/.test(coreCode)) {
     fail.push("services/zz-core/src/server.ts does not build its door with coreServer() — " +
@@ -352,7 +324,7 @@ if (coreSrc) {
     fail.push("services/zz-core/src/server.ts no longer mounts buildServer at /mcp");
   }
 }
-const gatewayCode = stripComments(read("services/gateway/src/server.ts") ?? "");
+const gatewayCode = withoutComments(read("services/gateway/src/server.ts") ?? "");
 if (gatewayCode && !/serveMcp\(app, "\/manage\/mcp", buildAccessServer\)/.test(gatewayCode)) {
   fail.push("the gateway no longer mounts buildAccessServer at /manage/mcp");
 }

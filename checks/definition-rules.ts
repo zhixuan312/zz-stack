@@ -240,12 +240,15 @@ const TOOL_DOMAIN: Record<string, string> = {
     fail.push("R12: the indexer no longer writes zz.knowledge_node — a knowledge node is back " +
               "in the document table, where `adopted` and `approved` share a column again");
   }
+  // The shelf was once the initiative `_knowledge`. initiative_slug_check now requires a date
+  // prefix, so no initiative can carry that slug: a statement that still compares an initiative's
+  // slug with it excludes or selects nothing, and believes the nodes sit beside the documents.
   for (const f of ts(["services", "packages"])) {
     const t = src(f);
-    if (/from zz\.doc\b[\s\S]{0,200}?initiative\s*=\s*'_knowledge'/.test(t)) {
-      fail.push(`R12: ${f} reads knowledge nodes out of zz.doc — they are their own subject in ` +
-                "zz.knowledge_node, and a query that still excludes or selects them here is " +
-                "reading a table that no longer holds them");
+    if (/\b(?:slug|initiative)\s*(?:<>|!=|=)\s*'_knowledge'/.test(t)) {
+      fail.push(`R12: ${f} compares an initiative with '_knowledge' — knowledge nodes are their ` +
+                "own subject in zz.knowledge_node and no initiative can carry that slug, so the " +
+                "clause excludes or selects nothing");
     }
   }
 }

@@ -71,6 +71,7 @@ import { regSql, skillVersionsMoved, writeRegistries } from "./release/registrie
 import { refusalLines, rollbackGuard } from "./release/rollback-guard.ts";
 import { rollback } from "./release/rollback.ts";
 import { recordRollbackTarget } from "./release/rollback-target.ts";
+import { placeTag } from "./release/tag.ts";
 import { tagVerifiedLive } from "./release/tag-live.ts";
 import { verifyLive, verifyPredeploy } from "./release/verify.ts";
 
@@ -162,9 +163,9 @@ if (branch !== "master" && !dryRun) {
 const dirty = run("git", ["status", "--porcelain"], { cwd: root });
 if (dirty && !dryRun) die(`working tree is dirty — release from a committed tree:\n${dirty}`);
 
-// The local branch must also match the remote: a release deploys what the host pulls from
-// origin, so anything committed locally and not pushed would be tagged as released and
-// never actually shipped.
+// The local branch must not be behind the remote: step 4 pushes HEAD to origin itself, and a
+// master behind origin is refused there as a non-fast-forward, after the images are pushed.
+// Ahead is fine — that push is what publishes it.
 if (!dryRun) {
   run("git", ["fetch", "-q", "origin"], { cwd: root });
   const ahead = run("git", ["rev-list", "--count", "origin/master..HEAD"], { cwd: root });
@@ -572,24 +573,28 @@ if (problems.length) {
 /* 7 · tag, last */
 step(7, "tag");
 
-/* DELIBERATE: a tag already at this commit is left alone — the tag claims "this commit is
- * released", and a second run makes the same claim about the same commit. A tag at a different
- * commit is refused rather than moved: one number would name two pieces of code, and a tag
- * people have already pulled is not ours to redefine.
+/* DELIBERATE: a tag already at this commit is kept and pushed again — the tag claims "this
+ * commit is released", a second run makes the same claim about the same commit, and an earlier
+ * push that failed is finished by it (release/tag.ts). A tag at a different commit is refused
+ * rather than moved.
  * COUPLED: the preflight tag guard in step 1 applies the same rule. */
 const tagOnce = (repo: string, name: string, message: string, label: string): void => {
-  const at = (() => { try { return run("git", ["rev-parse", `${name}^{commit}`], { cwd: repo }); } catch { return null; } })();
   const head = run("git", ["rev-parse", "HEAD"], { cwd: repo });
-  if (at === head) { log(`  ${label} ${name} already at this commit — left as it is`); return; }
-  if (at) {
-    die(`${label} ${name} already exists and points at ${at.slice(0, 7)}, not this release's ` +
+  let placed: ReturnType<typeof placeTag>;
+  try {
+    placed = placeTag(repo, name, head, message);
+  } catch (err) {
+    die(`${label} ${name} could not be written or pushed: ${(asExecError(err).stderr || String(err)).trim().slice(-300)}\n` +
+        `        THE DEPLOYMENT IS LIVE AND VERIFIED — this is a tagging problem, not a bad deployment. ` +
+        `Do not roll back on account of it; finish it with \`git -C ${repo} push origin refs/tags/${name}\`.`);
+  }
+  if ("elsewhere" in placed) {
+    die(`${label} ${name} already exists and points at ${placed.elsewhere.slice(0, 7)}, not this release's ` +
         `${head.slice(0, 7)}. The same version number would name two different pieces of code.\n` +
         `        THE DEPLOYMENT IS LIVE AND VERIFIED — this is a tagging problem, not a bad ` +
         `deployment. Do not roll back on account of it.`);
   }
-  run("git", ["tag", "-a", name, "-m", message], { cwd: repo });
-  run("git", ["push", "origin", name], { cwd: repo });
-  log(`  tagged ${label} ${name}`);
+  log(placed.wrote ? `  tagged ${label} ${name}` : `  ${label} ${name} already at this commit — kept, and on origin`);
 };
 
 // Every commit reaches origin before any tag is cut. tagOnce refuses by dying, and it dies on

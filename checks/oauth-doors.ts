@@ -18,13 +18,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { withoutComments } from "../scripts/gate/read.ts";
+
 process.env.GATEWAY_PUBLIC_URL ??= "https://api.doors.test";
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
 const server = readFileSync("services/gateway/src/server.ts", "utf8");
-const oauth = readFileSync("services/gateway/src/mcp-oauth.ts", "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+const oauth = withoutComments(readFileSync("services/gateway/src/mcp-oauth.ts", "utf8"));
 
 // 1. One list
 is(/mountMcpOauth\(\s*app\s*,\s*Object\.keys\(DOORS\)\s*\)/.test(server),

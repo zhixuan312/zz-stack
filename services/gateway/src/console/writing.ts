@@ -6,9 +6,9 @@
  * its bytes, and a lesson's by its id and updated_at, so a read fetches only the bodies it has not
  * counted. A team's revisions hold tens of megabytes, which every read fetching whole would cost seconds.
  *
- * A transition is revision n-1 to n of one of the team's flow documents (a path not under sources/,
- * outside the _knowledge initiative): its words added are max(0, W(n) - W(n-1)) and its words removed the
- * converse, revision 1 a creation from zero. A revision that retained no bytes (missing_legacy), and the
+ * A transition is revision n-1 to n of one of the team's flow documents (a path not under sources/; a
+ * lesson lives in zz.knowledge_node, not here): its words added are max(0, W(n) - W(n-1)) and its words
+ * removed the converse, revision 1 a creation from zero. A revision that retained no bytes (missing_legacy), and the
  * revision after it, is a gap: its words are unknown, so it adds nothing and is counted in the coverage,
  * never read as an empty document.
  *
@@ -140,7 +140,7 @@ async function documentLedger(team: string, asOf: string): Promise<{ rows: Row[]
          join zz.initiative i on i.id = d.initiative_id
          join zz.team t on t.id = i.team_id
          join zz.doc_revision r on r.doc_id = d.id
-        where t.slug = $1 and d.path not like 'sources/%' and i.slug <> '_knowledge' and d.created_at < $2::timestamptz
+        where t.slug = $1 and d.path not like 'sources/%' and d.created_at < $2::timestamptz
         order by d.id, r.revision`, [team, asOf]),
     db.query<{ initiative_id: string; path: string; seal: boolean; ts_us: string }>(
       `select e.initiative_id::text as initiative_id, ltrim(e.subject, '/') as path, e.kind = $3 as seal,

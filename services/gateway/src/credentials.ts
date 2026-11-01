@@ -12,7 +12,7 @@ import { logEvent } from "./events.js";
 /** Who is calling, from the request's own headers. */
 export const caller = (): ReturnType<typeof parseCaller> => parseCaller(requestHeaders());
 
-export type IssueTokenOutcome =
+type IssueTokenOutcome =
   | { ok: true; token: string; label: string; email: string }
   | { ok: false; error: string };
 

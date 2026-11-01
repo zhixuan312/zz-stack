@@ -71,7 +71,9 @@ export async function recordOpen(
       `ERROR: no team "${team}" — an initiative belongs to a team's roster, and nothing ` +
       "carries that slug on this deployment.");
   }
-  const declared = flow?.trim() || null;
+  // The flow's declared id, its `@N` pin cut as chain.ts cuts it: the row is matched by readers
+  // that compare it whole (`governed_by`, the console), and a pinned id matches none of them.
+  const declared = flow?.split("@")[0].trim() || null;
   const { rows } = await client.query<{ flow: string | null; opened_at: string; opened_by: string | null }>(
     // DELIBERATE: the row's `opened_at` is rendered in the DEPLOYMENT's zone, not the database's.
     // A `timestamptz` read by `to_char` alone comes back as the server's own date — UTC in these

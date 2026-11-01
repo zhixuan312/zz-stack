@@ -3,8 +3,10 @@
  *
  * A knowledge node is not a `doc` row: it lives in `zz.knowledge_node`, under a team, and the
  * document store is not its writer. It is addressed as a path — `_knowledge/nodes/<ordinal>-<slug>.md`
- * — and this module is the one place that address is parsed and resolved, for the read that
- * serves a node and the listing that shows a shelf's nodes.
+ * — and this module is the one place that address is parsed (`journalAddress`). It resolves it here
+ * for the read that serves a node and the listing that shows a shelf's nodes; an evaluation's
+ * `subject_ref` resolves the same parse its own way, by ordinal and slug across both shelves
+ * (`knowledgeNodeAt`, eval/subject-ref.ts).
  *
  * DELIBERATE: an ordinal is allocated PER SHELF, so `_knowledge/nodes/0034-…md` names one node on
  * the caller's own shelf and possibly another on the platform's. The shelf is the row's `team_id`
@@ -15,9 +17,10 @@ import type pg from "pg";
 
 import { KNOWLEDGE_TEAM } from "../paths.js";
 
-/** The ordinal a node path carries, or null when the path is not a node address. */
-export function journalOrdinal(rel: string): string | null {
-  return /^_knowledge\/nodes\/(\d+)-(.+)\.md$/.exec(rel.replace(/^\/+/, ""))?.[1] ?? null;
+/** The ordinal and slug a node path carries, or null when the path is not a node address. */
+export function journalAddress(rel: string): { ordinal: string; slug: string } | null {
+  const named = /^_knowledge\/nodes\/(\d+)-(.+)\.md$/.exec(rel.replace(/^\/+/, ""));
+  return named ? { ordinal: named[1], slug: named[2] } : null;
 }
 
 /** One node's title and body, or the refusal that says which shelf was read and — when the node

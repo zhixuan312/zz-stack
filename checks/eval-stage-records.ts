@@ -13,7 +13,8 @@
 // next_move said run EVALUATE while protocol_affirm and evaluator_qualify were still owed): once
 // protocol_read has recorded `owes`, an approved protocol.md routes to affirm, then to qualify
 // until every owed measure has a state, and only then to EVALUATE. The record is written in the
-// shape stage-record.ts's helpers write, through their own pure half.
+// shape stage-record.ts's helpers write, through their own pure half — which also decides that a
+// replayed protocol_affirm rewrites only a record naming no version yet.
 //
 // The records are `zz.initiative_record` ROWS under a stubbed `pg.Pool` — their own table, keyed
 // by (initiative, stage, id name) and latest-wins, which is what the `<initiative>/_records.json`
@@ -34,7 +35,7 @@ installWorld(world, "2026-09-25");
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");
 const { recordsFor, writeStageRecord } = await load("services/zz-core/dist/initiative-record.js");
-const { qualifiedUpdate } = await load("services/zz-core/dist/eval/stage-record.js");
+const { affirmReplay, qualifiedUpdate } = await load("services/zz-core/dist/eval/stage-record.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 
 const fail: string[] = [];
@@ -114,6 +115,15 @@ await record("define", qualifiedUpdate(await held(), "pv-1", "m.b", "unqualified
 n = await next();
 is(n.action === "run_stage" && n.stage === "evaluate",
    `every owed measure has a state: next_move is ${JSON.stringify(n)}, not run_stage evaluate`);
+// A replayed protocol_affirm leaves the record of the version it bound, qualifications and all, and
+// a late replay of another version's affirm never rewrites it (second read, rs13-1: the replay
+// replaced the record, dropping the qualifications, and an older version's stranded the initiative).
+is(JSON.stringify(affirmReplay(await held(), "pv-1")) === '{"write":false}',
+   "a replayed affirm of the version the record names rewrites it, dropping the qualifications recorded since");
+is(affirmReplay(await held(), "pv-0").write === false && /names protocol version pv-1/.test(affirmReplay(await held(), "pv-0").refused ?? ""),
+   "a late replay of another version's affirm rewrites the record, or says nothing of it");
+is(affirmReplay({ owes: "affirmed_path,qualified_measures" }, "pv-1").write === true,
+   "a replayed affirm does not write a record that names no version yet");
 // A protocol.md revised to quote a newer version owes that version's bind and qualification,
 // whatever the record says of the old one (2026-09-26-eval-sdlc: v2 and v3 approved, and
 // next_move went straight to EVALUATE on v1's record).

@@ -16,9 +16,10 @@ export async function traceOf(p: pg.Pool, runId: string): Promise<{ text: string
   const total = Number((await p.query<{ n: string }>(
     "select count(*) as n from zz.event where run_id = $1::uuid", [runId])).rows[0]?.n ?? 0);
   const { rows } = await p.query<{ at: string; subject: string; target: string; ok: boolean | null; refusal: string }>(`
-    -- The resolved name: a judge reading this transcript is asked which tools a run used, and a
-    -- renamed tool must read as one. tool_key is the folded name; subject is the fallback for a
-    -- row with no tool_key.
+    -- The <door>:<tool> name the call was sent with: a judge reading this transcript is asked which
+    -- tools a run used. tool_key is alias-resolved only on rows written before 2026-10-31; since then
+    -- a retired name is refused at the door, so it is the name the call sent. subject is the
+    -- fallback for a row with no tool_key.
     --
     -- And what each call was about: the identifying arguments the door recorded (a path, a skill
     -- name). Without them six document_read calls are indistinguishable, and "did this run read

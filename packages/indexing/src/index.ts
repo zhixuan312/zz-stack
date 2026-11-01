@@ -324,10 +324,12 @@ export async function reindexAllTeams(force = false): Promise<TeamReindex[]> {
   for (const { slug } of teams) {
     // One team's failure is one team's: an uncaught throw would end the boot rebuild and
     // leave every team after it unindexed. The row carries the reason so a caller reporting
-    // this can say which team.
+    // this can say which team; the boot rebuild drops the rows, so the log line carries it too.
     try {
       const r = await reindexTeam(slug, force);
-      console.log(`knowledge index: ${slug} — ${r.scanned} scanned, ${r.indexed} re-derived`);
+      const line = `knowledge index: ${slug} — ${r.scanned} scanned, ${r.indexed} re-derived`;
+      if (r.error) console.error(`${line}; ${r.error}`);
+      else console.log(line);
       out.push(r);
     } catch (err) {
       console.error(`reindex ${slug} failed:`, err);

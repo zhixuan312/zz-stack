@@ -157,7 +157,8 @@ async function start(stubPort: number, work: string, prefix: string, keep: boole
     "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=evalflow", "-e", "POSTGRES_DB=zz",
     "-p", "127.0.0.1:0:5432", pgsvc.image, ...pgsvc.command]);
   waitFor("postgres", () => { try { sh("docker", ["exec", pg, "pg_isready", "-U", "zz", "-d", "zz"]); return true; } catch { return false; } });
-  const pgPort = sh("docker", ["port", pg, "5432/tcp"]).split("\n")[0].split(":").pop();
+  const pgPort = (sh("docker", ["port", pg, "5432/tcp"]).split("\n")[0] ?? "").split(":").pop() ?? "";
+  if (!pgPort) throw new Error("postgres started but docker published no port for it");
 
   const inDb = "postgresql://zz:evalflow@postgres:5432/zz";
   const mounts = ["-v", `${work}:${work}`, ...(existsSync(dash) ? ["-v", `${dash}:${dash}:ro`] : []),

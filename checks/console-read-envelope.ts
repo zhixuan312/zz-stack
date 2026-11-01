@@ -126,7 +126,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
   const express = (await import("express")).default;
-  const dbModule = (await load("db.js")) as { initPlatformDb: () => Promise<void> };
+  const dbModule = (await load("db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
   const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
   const live = (await load("console/live-revision.js")) as {
     mountConsoleRevision: (app: Express) => void;
@@ -140,7 +140,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   };
   const cache = (await load("console/answer-cache.js")) as {
     cachedWithHit: <T>(key: string, read: () => Promise<T>, prefix: string | null) => Promise<{ value: T; hit: boolean }>;
-    prefixFor: (path: string, id: unknown, req: unknown) => string | null;
+    prefixFor: (path: string, id: unknown) => string | null;
     served: <T extends { meta: { asOf?: string; cacheHit?: boolean } }>(served: { value: T; hit: boolean }) => T;
   };
   const changes = (await load("console/live.js")) as { mountConsoleLive: (app: Express) => void };
@@ -162,7 +162,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     res.json(cache.served(await cache.cachedWithHit(`${NAME}|kept`, async () => ({
       meta: { asOf: new Date().toISOString() },
       kept: "an answer computed once",
-    }), cache.prefixFor(KEPT, id, req))));
+    }), cache.prefixFor(KEPT, id))));
   });
   const servers: Server[] = [];
   const server = app.listen(0, "127.0.0.1");
@@ -254,6 +254,8 @@ async function run(sql: pg.Client, url: string): Promise<void> {
 
   } finally {
     for (const s of servers) s.close();
+    // The platform pool `initPlatformDb` opened: its idle connections would hold the process open.
+    await dbModule.platformDb().end().catch(() => undefined);
   }
 }
 if (!built()) {
@@ -267,8 +269,4 @@ try {
   console.error(err.message);
   process.exit(1);
 }
-const code = await withThrowawayDbCheck(NAME, DONE, run);
-// Every case has been decided by the time this resolves, and the throwaway database is dropped. The
-// process's LISTEN connection is the one thing still alive, and its reconnect timer would otherwise keep
-// the process up and turn a green run red — so the run ends here, with the exit code its cases earned.
-process.exit(code);
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

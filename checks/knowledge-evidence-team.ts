@@ -8,7 +8,8 @@
  * The caller acts for the seeded team and is a member of a second; a third team they are not in holds an initiative
  * with the same slug as one of the second's, its id sorting first. knowledge_add citing that slug is validated against
  * the caller's shelves, so the evidence row must name the second team's initiative. And where the team the caller acts
- * for and their second team both hold one slug, the evidence names the acting team's.
+ * for and their second team both hold one slug, the evidence names the acting team's. A caller in no team whose
+ * platform lesson cites nothing real is told the one shelf searched, the platform's.
  *
  * Exit 0: the case held. Exit 1: it did not, quoting the row. Exit 2: Docker is not available — not a pass.
  */
@@ -69,6 +70,19 @@ async function run(c: Core): Promise<void> {
     c.fail(both, `the evidence links ${JSON.stringify(own)}, not the acting team's initiative ${OURS}`);
   }
   c.pass(`${both}: the acting team's initiative`);
+
+  // A caller in no team may still write to the platform shelf, and a refused citation names the
+  // shelves searched as that one alone (second read, rs14-7: it printed "(, zz-platform)").
+  const loner = "teamless shelves named";
+  await c.sql.query("insert into zz.principal (email, display_name) values ('loner@example.test', 'Loner')");
+  const refused = await c.call(loner, "knowledge_add", {
+    title: "A platform lesson citing nothing real", type: "knowledge", scope: "platform", tags: ["plugin:zz-core"],
+    body: "Cited from an initiative no shelf holds.", evidence: ["2026-10-03-nowhere"],
+  }, c.client({ email: "loner@example.test" }));
+  if (!refused.includes("any shelf you are a member of (zz-platform)")) {
+    c.fail(loner, `a teamless caller's refused citation answered ${JSON.stringify(refused)}`);
+  }
+  c.pass(`${loner}: (zz-platform)`);
 }
 
 process.exitCode = await withThrowawayCore(NAME, DONE, run);

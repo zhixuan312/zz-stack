@@ -7,11 +7,9 @@
  * finds it among the caller's own rows in the statement that changes it, so somebody else's
  * answers as one that does not exist.
  *
- * The credential and access-token logic already exists as `/manage/mcp` tools. server.ts hands
- * this file the same functions through `SettingsDeps`, passed into `mountSettings` as an
- * argument rather than imported as a value: server.ts imports `mountSettings` from here, so
- * importing back as values would make the two modules import each other at runtime. Nothing here
- * imports server.ts; the result shapes are `import type` from credentials.ts, erased by `tsc`.
+ * The credential and access-token logic already exists as `/manage/mcp` tools, in credentials.ts;
+ * settings/me.ts imports the same functions, so a token issued from a browser and one issued by an
+ * agent go through one body.
  *
  * `via: "web"` is added at the call site, never inside the shared function: an agent's chat turn
  * and a browser's button press reach the same function, and neither should inherit the other's
@@ -31,27 +29,10 @@
  */
 import type { Express } from "express";
 
-import type { EventOrigin } from "@zz/contracts";
-
-import type { IssueTokenOutcome } from "./credentials.js";
 import { type Identity } from "./identity.js";
 import { mountMySettings } from "./settings/me.js";
 import { mountTeamSettings } from "./settings/team.js";
 import { mountPlatformSettings } from "./settings/platform.js";
-
-/**
- * The `my_*` functions this file reuses rather than reimplements, handed in by server.ts. Every
- * write takes an optional `extraDetail`, merged into that function's own `logEvent` call, and the
- * request's origin after it; every route below passes `{ via: "web" }` and the identity's origin.
- */
-export interface SettingsDeps {
-  issueMyAccessTokenFor: (
-    email: string, label: string | undefined, extraDetail?: Record<string, unknown>, origin?: EventOrigin,
-  ) => Promise<IssueTokenOutcome>;
-  revokeMyAccessTokenFor: (
-    email: string, id: string, extraDetail?: Record<string, unknown>, origin?: EventOrigin,
-  ) => Promise<boolean>;
-}
 
 /** The caller's teams, and which one they act for — the same rule `team_mine` (access-door.ts)
  *  answers over MCP. It only reads the `Identity` the middleware resolved, so it lives here and
@@ -86,9 +67,9 @@ export function myTeamsSummary(id: Identity):
   };
 }
 
-export function mountSettings(app: Express, deps: SettingsDeps): void {
+export function mountSettings(app: Express): void {
   // The three scopes, and the boundary between them is the authorisation.
-  mountMySettings(app, deps);
+  mountMySettings(app);
   mountTeamSettings(app);
   mountPlatformSettings(app);
 }

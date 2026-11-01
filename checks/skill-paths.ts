@@ -29,7 +29,7 @@ const walk = (dir: string, out: string[] = []) => {
 //
 // A path that is a field rather than a file — `digest-per-plugin.ts` hashes an in-memory package
 // whose `files[].path` is `skills/a/SKILL.md` — declares itself `SYNTHETIC:` on the line or the
-// line above, the same convention `pre-rename-literals.ts` uses for `RAW NAME:`.
+// line directly above.
 const BASES = ["", "catalog/", "marketplace/"];
 const scripts = [...walk("scripts"), ...walk("checks")].filter((p) => /\.(ts|js)$/.test(p));
 let literals = 0;

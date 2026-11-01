@@ -18,7 +18,7 @@
  * step-trace.ts; which version was running is `versionAtEvent` below.
  *
  * The timer is repair-only. `reconcileRuns` recomputes the counters of runs that already exist and
- * attributes documents to them; it never computes which run an event belongs to, never writes
+ * attributes nothing, documents included; it never computes which run an event belongs to, never writes
  * `zz.event.run_id`, and never inserts a run for an event that arrived without one. A run that
  * exists is a run the door created, and the counters are the only thing here a late event can
  * change.

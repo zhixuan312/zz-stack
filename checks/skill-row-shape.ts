@@ -22,9 +22,10 @@
  * still read, and reported, for the reason `checks/dropped-columns.ts` gives: a message telling
  * its reader about a column the schema no longer has is wrong in the message too.
  *
- * DELIBERATE: a `/` opens a comment only where the next character is `/` or `*`. A regex literal
- * is not recognised as a literal, so a `//` inside one would be read as a comment and the
- * statement after it not seen at all — a violation this check misses, never one it invents.
+ * DELIBERATE: `withoutComments` reads a regex literal where punctuation or an operator precedes
+ * it, and not after a keyword such as `return`. There a `//` inside one is read as a comment and
+ * the statement after it on that line is not seen — a violation this check misses, never one it
+ * invents.
  *
  * A column list is matched only where it is one: every comma-separated part must be a bare
  * identifier, so the arguments of a `values (...)` or a nested `select (...)` are not mistaken for

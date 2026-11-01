@@ -9,7 +9,7 @@
  */
 import type { Express, Request, Response } from "express";
 
-import type { SettingsDeps } from "../settings.js";
+import { issueMyAccessTokenFor, revokeMyAccessTokenFor } from "../credentials.js";
 import { redact } from "../redact.js";
 import { CONSOLE_COOKIE, readCookie, sha256, TEAM_SLUG } from "../identity.js";
 import { logEvent } from "../events.js";
@@ -38,7 +38,7 @@ async function hintSettings(): Promise<void> {
   }
 }
 
-export function mountMySettings(app: Express, deps: SettingsDeps): void {
+export function mountMySettings(app: Express): void {
   /** Change which team this browser acts for: the console's own `team_switch`.
    *
    * COUPLED: the browser's team is `console_session.team_id`, which `resolveSession`
@@ -126,7 +126,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
         return;
       }
       const { label } = (req.body ?? {}) as Record<string, unknown>;
-      const result = await deps.issueMyAccessTokenFor(
+      const result = await issueMyAccessTokenFor(
         id.email, typeof label === "string" ? label : undefined, { via: "web" }, id.origin);
       if (!result.ok) { res.status(400).json({ error: result.error }); return; }
       await hintSettings();
@@ -153,7 +153,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       const tokenId = req.params.id;
       const missing = { error: "no such active token of yours" };
       if (!UUID.test(tokenId)) { res.status(404).json(missing); return; }
-      const ok = await deps.revokeMyAccessTokenFor(id.email, tokenId, { via: "web" }, id.origin);
+      const ok = await revokeMyAccessTokenFor(id.email, tokenId, { via: "web" }, id.origin);
       if (!ok) { res.status(404).json(missing); return; }
       await hintSettings();
       res.json(redact({ ok: true, revoked: tokenId }));

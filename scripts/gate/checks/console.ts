@@ -158,7 +158,7 @@ check("every console write route records the door it came through", () => {
   //
   // Two ways to recognise "this route writes". console-write.ts reaches zz-core through
   // `core.call(...)`. The settings modules write platform tables directly — `active_team_id`,
-  // and the shared token functions server.ts hands them (see settings.ts's `SettingsDeps`).
+  // and the shared token functions settings/me.ts imports from credentials.ts.
   //
   // Those shared functions run `logEvent` themselves, in credentials.ts, not in
   // the route body this check reads, so `via: "web"` appears as an argument to

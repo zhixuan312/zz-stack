@@ -196,7 +196,7 @@ export async function initiativeList(
                 where d.initiative_id = i.id and r.written_at <= $2::timestamptz) as written_ms
          from zz.initiative i
          join zz.team t on t.id = i.team_id
-        where t.slug = $1 and i.slug <> '_knowledge' and i.opened_at <= $2::timestamptz`, [team, asOf]),
+        where t.slug = $1 and i.opened_at <= $2::timestamptz`, [team, asOf]),
     // What stageOf reads of each document to count the gates: its path, type and status. No
     // correction: it decides whether a close was complete, never whether a gate passed.
     db.query<StageDoc & { initiative: string }>(
@@ -204,7 +204,7 @@ export async function initiativeList(
          from zz.doc d
          join zz.initiative i on i.id = d.initiative_id
          join zz.team t on t.id = i.team_id
-        where t.slug = $1 and i.slug <> '_knowledge'
+        where t.slug = $1
         order by i.slug, d.path`, [team]),
     // The branch facts that rule a gated document in or out of an initiative.
     db.query<{ initiative: string; fact: string; value: string }>(
@@ -328,6 +328,6 @@ export function mountInitiativeList(app: Express): void {
     res.json(served(await cachedWithHit(
       `initiatives|${activeTeam}|${isSuper(req.zzIdentity!)}|${JSON.stringify(params)}`,
       () => initiativeList(activeTeam, params, iso(Math.ceil(Date.now() / 1000) * 1000), coreFor(req)),
-      prefixFor("/api/console/initiatives", req.zzIdentity!, req))));
+      prefixFor("/api/console/initiatives", req.zzIdentity!))));
   }));
 }

@@ -32,8 +32,9 @@
  *     among them, and every answer naming the first team's slug, initiative, skill or lesson is alike to the
  *     same request naming a phantom no team holds;
  *   - every one of those answers, its instants masked, is the same before the first team's rows were planted
- *     as after: the team figures of Plugins, the skills, Runs, Activity and the prepared queries count nothing
- *     of the first team's.
+ *     as after, each after-answer computed once the plant was made and none served from the console's answer
+ *     cache as it stood before it: the team figures of Plugins, the skills, Runs, Activity and the prepared
+ *     queries count nothing of the first team's.
  *
  * The first direction, the first team's member asking every route about the second team's sentinels, is
  * `checks/console-isolation.ts`. The only database it touches is the one it started.
@@ -244,16 +245,15 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   await dbModule.initPlatformDb();
   const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountConsole } = (await load("console.js")) as { mountConsole: (app: Express) => void };
-  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express, deps: unknown) => void };
-  const credentials = (await load("credentials.js")) as Record<string, unknown>;
+  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express) => void };
+  const revision = (await load("console/live-revision.js")) as { dataVersion: () => string | null };
   const app = express();
   // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, then the console's reads
   // and its settings, in that order.
   app.use(identityMiddleware());
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
-  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-                       revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
+  mountSettings(app);
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -317,6 +317,21 @@ async function run(sql: pg.Client, url: string): Promise<void> {
     if (unseen.length) fail(step, `the first team's member read no answer holding ${unseen.join(", ")}`);
     pass(`${step}: the first team's member reads all ${FIELDS.length} of its sentinels in ${own.size} answers`);
 
+    // The plant raises hints for the first team alone, so the second team's member would be served, for up to a
+    // minute, the answers its own sweep kept before the plant, and the comparison below would compare an answer
+    // with itself. Every kept answer's marker names the `LISTEN` connection's boot: ending that connection from the
+    // database side and waiting for the next boot makes every answer kept before the plant unreachable.
+    step = "no answer kept before the plant is reachable";
+    const boot = (): string | null => revision.dataVersion()?.split(":")[0] ?? null;
+    const was = boot();
+    // None ended is a listener not yet up, under which nothing was kept; the wait below is for a boot either way.
+    await sql.query("select pg_terminate_backend(pid) from pg_stat_activity where query = 'listen zz_console_change'");
+    for (let waited = 0; boot() === null || boot() === was; waited += 100) {
+      if (waited > 15_000) fail(step, "the change listener did not come back within 15s");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    pass(`${step}: the change listener came back under a new boot`);
+
     for (const r of readers) {
       const answers = await sweep(r.cookie, fixed, { initiative: p.initiative, skill: x.skill });
       const prior = before.get(r.label)!;
@@ -339,6 +354,12 @@ async function run(sql: pg.Client, url: string): Promise<void> {
         if (masked(a, names) !== masked(g, names)) bad.push(`an existence oracle: ${u} answered ${masked(a, names).slice(0, 240)}; ${ghost}, ${masked(g, names).slice(0, 240)}`);
       }
       for (const u of prior.keys()) if (!answers.has(u)) bad.push(`${u} was asked before the first team's rows were planted and not after`);
+      // The reader's first read after the plant is computed, not served from before it: the comparison above is
+      // between two answers.
+      const home = answers.get("/api/console/home");
+      if (home?.status === 200 && (JSON.parse(home.text) as { meta?: { cacheHit?: unknown } }).meta?.cacheHit !== false) {
+        bad.push("/api/console/home was served an answer kept before the first team's rows were planted");
+      }
       if (bad.length) found.push(...bad.map((b) => `${r.label}: ${b}`));
       else pass(`${r.label} asked ${answers.size} reads of Home, Record, Approvals, Initiatives and its detail routes, Activity, ` +
         "Knowledge, Runs, Plugins and the skills, Access and " +

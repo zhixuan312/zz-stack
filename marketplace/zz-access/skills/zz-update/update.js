@@ -184,7 +184,8 @@ if (after === null) {
 }
 const now = new Map(after.map((p) => [p.id, p.version]));
 console.log("");
-let moved = 0;
+// A rename installed a plugin before any update ran, so it is a change this machine needs a restart for.
+let moved = renamed.length;
 for (const p of current) {
     const to = now.get(p.id);
     if (to === undefined)
@@ -204,7 +205,11 @@ for (const p of after) {
 }
 console.log("");
 if (failed) {
-    console.log(`${failed} plugin(s) did not update. Nothing else on this machine was changed.`);
+    // The others updated regardless, and they are on disk while this session runs the old ones.
+    console.log(moved
+        ? `${failed} plugin(s) did not update; the ${moved} change(s) above did go through. Restart ` +
+            `Claude Code so it picks those up, then run this again for the rest.`
+        : `${failed} plugin(s) did not update, and no plugin moved.`);
     process.exit(1);
 }
 // One version across the shelf, because one build stamps them all as `<version>+<digest>`. Two

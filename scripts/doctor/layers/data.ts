@@ -5,9 +5,9 @@
  * to be the consequence: a migration that never applied does not take a door down, it takes one
  * query down weeks later, for one caller.
  *
- * Both probes read the database user and name through the host's own configuration rather than as
- * literals — .env.example documents POSTGRES_USER and POSTGRES_DB as settable, and this probe is
- * what a release rolls back on.
+ * Every probe reads the database user and name through the host's own configuration rather than
+ * as literals, through `psql` below — .env.example documents POSTGRES_USER and POSTGRES_DB as
+ * settable, and this layer is what a release rolls back on.
  */
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";

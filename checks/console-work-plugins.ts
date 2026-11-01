@@ -12,9 +12,10 @@
  * `/plugins/:plugin/eval` and `/platform/evaluation` from this process, signed in with a real
  * console session cookie per person. What it establishes, against the values written below:
  *
- *   - each plugin row answers whether it is required (`zz-core` and the shelved `zz-access`) or
- *     optional, its version, skills and gates, its install command, and its latest public score with
- *     its bounds, standing, protocol version and date, the protocol's key to the superadmin alone;
+ *   - each plugin row answers its catalog owner, the baseline `zz-core` included, whether it is
+ *     required (`zz-core` and the shelved `zz-access`) or optional, its version, skills and gates,
+ *     its install command, and its latest public score with its bounds, standing, protocol version
+ *     and date, the protocol's key to the superadmin alone;
  *   - the score and the comparability statement are the Evaluation read's own: the newest run of its
  *     history with a score, so a newer run with none leaves the last score standing, and the
  *     history's statement; a plugin never scored answers `score: null`;
@@ -226,14 +227,14 @@ const score = (admin: boolean, plugin: string, s: { value: number; lower: number
 });
 /** Each plugin's public facts as `admin` or not reads them, and team one's use, in the order team one's last run puts them. */
 const expectedOne = (admin: boolean) => [
-  { plugin: "zz-core", required: true, install: "claude plugin install zz-core@zz-stack", score: null,
+  { plugin: "zz-core", owner: "zz", required: true, install: "claude plugin install zz-core@zz-stack", score: null,
     comparability: "No score to compare", yourTeam: { calls: 3, failed: 1, lastRun: "2026-10-06T08:00:00Z" } },
-  { plugin: "sdlc", required: false, install: "claude plugin install sdlc@zz-stack",
+  { plugin: "sdlc", owner: "sdlc", required: false, install: "claude plugin install sdlc@zz-stack",
     score: score(admin, "sdlc", { value: 7.1, lower: 6.7, upper: 7.5, version: 1, at: "2026-09-26T13:00:00Z" }),
     comparability: "Comparable: one protocol version and population", yourTeam: { calls: 6, failed: 1, lastRun: "2026-10-05T10:00:00Z" } },
-  { plugin: "zz-access", required: true, install: "claude plugin install zz-access@zz-stack", score: null,
+  { plugin: "zz-access", owner: "zz", required: true, install: "claude plugin install zz-access@zz-stack", score: null,
     comparability: "No score to compare", yourTeam: { calls: 0, failed: 0, lastRun: null } },
-  { plugin: "zz-plugin-eval", required: false, install: "claude plugin install zz-plugin-eval@zz-stack",
+  { plugin: "zz-plugin-eval", owner: "zz", required: false, install: "claude plugin install zz-plugin-eval@zz-stack",
     score: score(admin, "zz-plugin-eval", { value: 5, lower: 4.1, upper: 5.9, version: 1, at: "2026-09-26T10:00:00Z" }),
     comparability: "Not comparable: a different protocol version", yourTeam: { calls: 0, failed: 0, lastRun: null } },
 ];
@@ -258,7 +259,7 @@ const rowsOf = (step: string, a: Answer): Row[] => {
   return a.body.plugins as Row[];
 };
 const skillOf = (r: Row, name: string): Obj => r.skills.find((s) => s.name === name) ?? fail("a skill", `${r.plugin} ships no ${name}`);
-const ofTeam = (r: Row) => ({ plugin: r.plugin, required: r.required, install: r.install, score: r.score, comparability: r.comparability, yourTeam: r.yourTeam });
+const ofTeam = (r: Row) => ({ plugin: r.plugin, owner: r.owner, required: r.required, install: r.install, score: r.score, comparability: r.comparability, yourTeam: r.yourTeam });
 
 async function cases(ask: (email: string | null, path: string, method?: string) => Promise<Answer>, db: pg.Client,
                      platform: string, fakes: { plugins: Fn; skills: Fn; skillDetail: Fn }): Promise<void> {

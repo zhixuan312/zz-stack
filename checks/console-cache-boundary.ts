@@ -18,7 +18,8 @@
  * third read must be a fresh computation and must say what the rows say at that instant. Three times —
  * a refusal's lookahead, a week's completeness, and the local day turning over, which Status draws as
  * "today" and "through the latest complete day". On the tree before this task the third read is the kept
- * answer and still says `within_lookahead`, which is the defect.
+ * answer and still says `within_lookahead`, which is the defect. The week's completeness is read again
+ * through Record and Releases, which were kept with no boundary until the second full read found them.
  *
  * DELIBERATE: the clock is supplied, not slept. Both reads take the read's cutoff as an argument
  * (`usageServed(…, asOfMs)`), and the cache's own lifetime is measured against `Date.now()`, so the
@@ -77,7 +78,11 @@ type Modules = {
   usageAnswer: (superadmin: boolean, asOfMs?: number) => Promise<{ answer: Answer; boundary: number | null }>;
   usageServed: (superadmin: boolean, key: string, prefix: string | null, asOfMs?: number) => Promise<Served<Answer>>;
   statusServed: (caller: Caller, tool: string | null, key: string, prefix: string | null, asOfMs?: number) => Promise<Served<Answer>>;
+  recordServed: (team: string, caller: string, period: string, key: string, prefix: string | null, asOf?: string) => Promise<Served<Drawn>>;
+  releasesServed: (page: { limit: number; offset: number }, key: string, prefix: string | null, asOfMs?: number) => Promise<Served<Drawn>>;
 };
+/** What the Record and Releases arms read of an answer: the cutoff it was computed at, and the weeks Releases draws. */
+type Drawn = { meta: { asOf: string }; weeks?: { window: { from: string; complete: boolean } }[] };
 type Caller = { superadmin: boolean; activeTeam: string | null };
 /** The superadmin acting for no team: Status's widest answer, and the one every clock arm can read. */
 const CALLER: Caller = { superadmin: true, activeTeam: null };
@@ -134,6 +139,8 @@ async function run(sql: pg.Client, url: string, load: (p: string) => Promise<unk
       ...((await load("console/usage-figures.js")) as Pick<Modules, "followupWeeks">),
       ...((await load("console/platform-usage.js")) as Pick<Modules, "usageAnswer" | "usageServed">),
       ...((await load("console/platform-status.js")) as Pick<Modules, "statusServed">),
+      ...((await load("console/record.js")) as Pick<Modules, "recordServed">),
+      ...((await load("console/platform-releases.js")) as Pick<Modules, "releasesServed">),
     } as Modules;
 
     // A real-work call: what puts a refusal right inside its window and continues a session at any distance.
@@ -234,6 +241,34 @@ async function run(sql: pg.Client, url: string, load: (p: string) => Promise<unk
     }
     same("the week is complete once its end has passed", completeAt(after.value, W - 7 * DAY), true);
     pass(`nothing written and the clock at ${iso(W + 1_000)}: a miss, and the week ending ${iso(W)} is complete`);
+
+    // ---- The clock arm, the same week's end under Record and Releases. Both draw the running week — Record's
+    // periods and its best week, Releases' weeks and its last whole week's tile — and both were kept with no
+    // boundary at all, so on the tree before this arm the read a second past the week's end was the answer
+    // computed before it, inside the minute's backstop.
+    const keyR = "console-cache-boundary|record", keyL = "console-cache-boundary|releases";
+    const PAGE = { limit: 10, offset: 0 };
+    clock = W - 30_000;
+    const rPrime = await m.recordServed("cache-boundary-team", "nobody@example.test", "quarter", keyR, prefixC, iso(W - 30_000));
+    const rAgain = await m.recordServed("cache-boundary-team", "nobody@example.test", "quarter", keyR, prefixC, iso(W - 30_000));
+    const lPrime = await m.releasesServed(PAGE, keyL, prefixC, W - 30_000);
+    const lAgain = await m.releasesServed(PAGE, keyL, prefixC, W - 30_000);
+    same("Record and Releases are kept while the week is still running", [rPrime.hit, rAgain.hit, lPrime.hit, lAgain.hit],
+      [false, true, false, true]);
+    const releasesWeek = (d: Drawn): unknown => d.weeks?.find((w) => w.window.from === iso(W - 7 * DAY))?.window.complete ?? "not drawn";
+    same("before its end Releases draws the running week as not complete", releasesWeek(lPrime.value), false);
+
+    clock = W + 1_000;
+    const rAfter = await m.recordServed("cache-boundary-team", "nobody@example.test", "quarter", keyR, prefixC, iso(W + 1_000));
+    const lAfter = await m.releasesServed(PAGE, keyL, prefixC, W + 1_000);
+    if (rAfter.hit || lAfter.hit) {
+      fail("nothing written, the clock past the week's end: Record and Releases are computed again",
+        `Record ${rAfter.hit ? "was" : "was not"} and Releases ${lAfter.hit ? "was" : "was not"} served the answer computed ` +
+        `at ${iso(W - 30_000)}, which draws the week ending ${iso(W)} as running`);
+    }
+    same("Record is the answer at the new cutoff", rAfter.value.meta.asOf, iso(W + 1_000));
+    same("Releases draws the week complete once its end has passed", releasesWeek(lAfter.value), true);
+    pass(`nothing written and the clock at ${iso(W + 1_000)}: Record and Releases miss, and the week ending ${iso(W)} is complete`);
 
     // ---- The clock arm, the REFUSAL week's completeness, which settles 120 seconds later than the tiles' do.
     // The same week, read by the family `followupOf` draws at LOOKAHEAD_MS: its window turns complete only once

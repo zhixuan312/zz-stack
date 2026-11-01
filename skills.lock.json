@@ -80,8 +80,8 @@
     "sha": "776855fb88ca"
   },
   "zz-plugin-eval": {
-    "version": "2.9",
-    "sha": "d6db2a3d55fb"
+    "version": "2.10",
+    "sha": "896fb13d9095"
   },
   "zz-plugin-evaluate": {
     "version": "1.6",
@@ -96,8 +96,8 @@
     "sha": "fb88e6b72869"
   },
   "zz-plugin-improve": {
-    "version": "0.13",
-    "sha": "5758b6ab5522"
+    "version": "0.14",
+    "sha": "d9152d23aa97"
   },
   "zz-plugin-observe": {
     "version": "0.10",
@@ -116,8 +116,8 @@
     "sha": "ef9cd4334b71"
   },
   "zz-deck": {
-    "version": "2.6",
-    "sha": "f7a8d80c5a45"
+    "version": "2.7",
+    "sha": "7060a7731b9c"
   },
   "zz-handover": {
     "version": "2.19",

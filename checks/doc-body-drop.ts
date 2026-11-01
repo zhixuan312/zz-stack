@@ -44,8 +44,9 @@
  *   too: it is the statement the create and append paths never reach.
  *
  *   (6) THE INDEX IS CHOSEN, not merely present: `EXPLAIN` of the SHIPPED search statement — its
- *   union and its predicate read out of `knowledge-search.ts` at run time, so the plan explained
- *   cannot drift from the one that ships — names `doc_revision_body_trgm`.
+ *   union, columns, order and limit read out of `knowledge-search.ts` at run time, its predicate and
+ *   rank from the built `buildSearchPredicate` and `scoringOf`, so the plan explained cannot drift
+ *   from the one that ships — names `doc_revision_body_trgm`.
  *
  * Not asserted: at a TOAST-heavy shape the planner seq-scans the heap and does not choose the trigram
  * index. Arm 6's seed is the shape where the planner can price the heap and chooses it.
@@ -68,11 +69,6 @@ const { deferred }: DbModule =
 const NAME = "doc-body-drop";
 const DONE = "doc-body-drop: zz.doc keeps no copy of a document's bytes, the trigram index answers " +
   "from the revision table, and search reads the current revision only: ok";
-
-/** The document arm's columns, in the order the shipped statement selects them. */
-const COLS = "initiative, path, flow, type, status, outcome, approved_by, approved_at, " +
-  "updated_at, title, tags, evidence, superseded_by, team_slug, subject, initiative_id, cited_ids, " +
-  "id, cited_in";
 
 /** A heap the planner can price: many rows, modest bodies, so the trigram index is chosen and the
  *  arm is about the move rather than about a detoast it cannot see. */
@@ -301,30 +297,31 @@ async function run(c: Core): Promise<void> {
   )).rows[0];
   console.log(`  the seed the plan is read on: ${size.n} revision rows carrying ${size.bytes} of body text`);
 
-  // The union and the predicate read out of the source at run time, so neither can drift from what
-  // ships — a copy written here would explain a statement nobody issues.
+  // The statement's parts read out of the source at run time and its rank from the built `scoringOf`,
+  // so none can drift from what ships — a copy written here would explain a statement nobody issues.
   const source = readFileSync(join(process.cwd(), "services/zz-core/src/tools/knowledge-search.ts"), "utf8");
-  const grab = (name: string): string => {
-    const marker = `const ${name} = \``;
-    const i = source.indexOf(marker);
-    const j = i < 0 ? -1 : source.indexOf("`;", i + marker.length);
-    if (i < 0 || j < 0) c.fail("the shipped statement is readable", `no \`const ${name}\` in knowledge-search.ts`);
-    return source.slice(i + marker.length, j);
+  const read = (what: string, re: RegExp): string => {
+    const m = re.exec(source) ?? c.fail("the shipped statement is readable", `no ${what} in knowledge-search.ts`);
+    return m.slice(1).find((g) => g !== undefined) ?? "";
   };
+  /** A `const` the handler builds the statement from: a template, a string or a number. */
+  const grab = (name: string): string =>
+    read(`\`const ${name}\``, new RegExp(`const ${name} = (?:\`([\\s\\S]*?)\`;|"([^"]*)";|(\\d+);)`));
   const NODE = grab("NODE_ARM");
   const SOURCE = grab("SOURCE").replace("${NODE_ARM}", NODE);
+  // The ranked order, the arm of the handler's `order by` a query takes.
+  const order = read("ranked order", /order by \$\{query \? "([^"]+)"/);
+  const load = (p: string) => import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/tools", p)).href);
   type Predicate = typeof import("../services/zz-core/dist/tools/search-predicate.js");
-  const { buildSearchPredicate }: Predicate =
-    await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/tools/search-predicate.js")).href) as Predicate;
+  type Search = typeof import("../services/zz-core/dist/tools/knowledge-search.js");
+  const { buildSearchPredicate } = await load("search-predicate.js") as Predicate;
+  const { scoringOf } = await load("knowledge-search.js") as Search;
   const pred = buildSearchPredicate({ query: HAN, team: c.team, includeSuperseded: true });
-  const scoring = pred.rankExpr
-    ? `ts_rank_cd(body_tsv, ${pred.rankExpr}) as rank`
-    : `ts_rank_cd(body_tsv, to_tsquery('simple', $${pred.args.length + 1})) as rank`;
-  const args = pred.rankExpr ? [...pred.args] : [...pred.args, pred.hanTerms.join(" & ")];
-  const shipped = `select ${COLS}, ${scoring}
+  const { sql: scoring, args } = scoringOf(pred);
+  const shipped = `select ${grab("COLS")}, ${scoring}
                      from ${SOURCE} where ${pred.sql}
-                    order by rank desc, updated_at desc, subject, id
-                    limit 200`;
+                    order by ${order}, ${grab("TIE_BREAK")}
+                    limit ${grab("CANDIDATE_CAP")}`;
   const explained = (await c.sql.query(`explain (analyze, buffers, format text) ${shipped}`, args)).rows
     .map((r: Record<string, string>) => String(r["QUERY PLAN"]));
   if (!explained.some((l: string) => l.includes("doc_revision_body_trgm"))) {

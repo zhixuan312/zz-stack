@@ -46,7 +46,7 @@ import { present } from "../document-present.js";
 import { type PanelDocument, PRESENT_META } from "../document-panel.js";
 import { CONTEXT_INPUT, presentRefusal, viewerOf } from "../review-context.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
-import { journalOrdinal, listJournalNodes, readJournalNode } from "./journal.js";
+import { journalAddress, listJournalNodes, readJournalNode } from "./journal.js";
 
 import { isoToday } from "../write-guards.js";
 import { nextMoveLine } from "./initiative-status.js";
@@ -265,7 +265,7 @@ export function registerArtifactTools(server: McpServer): void {
           let readRel = rel;
           // A knowledge node is not a `doc` row, so it is answered from the journal — the one
           // shelf this store does not address. `journal.ts` owns how that address resolves.
-          const ordinal = journalOrdinal(rel);
+          const ordinal = journalAddress(rel)?.ordinal;
           if (ordinal && p) {
             rows.push({ rel: readRel, body: await readJournalNode(p, { rel, ordinal, team, scope }) });
             continue;

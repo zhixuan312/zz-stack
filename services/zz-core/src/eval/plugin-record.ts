@@ -144,15 +144,16 @@ export async function decideFinding(
 /** What a replayed `finding_decide` answers: the rows read back, a finding counted as done only
  *  when the call the ledger row records decided it — the same principal, in the same transaction —
  *  and every other one refused as a fresh call would refuse it now. A finding somebody else
- *  decided, before or since, is not this call's. */
+ *  decided, before or since, is not this call's. `ours` is the caller's team's findings, as the
+ *  first call was given them: another team's finding is unknown here too, read by nothing. */
 async function decisionsForReplay(
-  p: pg.Pool, findingIds: readonly string[], call: LedgerCall,
+  p: pg.Pool, findingIds: readonly string[], call: LedgerCall, ours: ReadonlySet<string>,
 ): Promise<{ done: DecidedFinding[]; refused: string[] }> {
   const stamp = await ledgerStamp(p, call);
   const done: DecidedFinding[] = [];
   const refused: string[] = [];
   for (const id of findingIds) {
-    const row = UUID_RE.test(id) ? (await p.query<{
+    const row = UUID_RE.test(id) && ours.has(id.toLowerCase()) ? (await p.query<{
       id: string; pattern: string; kind: string; decision: string | null; at: string | null;
       by: string | null; note: string | null; superseded_by: string | null; mine: boolean | null;
     }>(`
@@ -416,7 +417,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         );
 
       const result = outcome.replayed
-        ? await decisionsForReplay(p, decisions.map((d) => d.finding_id), { principal: who, tool: "finding_decide", key: idempotency_key })
+        ? await decisionsForReplay(p, decisions.map((d) => d.finding_id), { principal: who, tool: "finding_decide", key: idempotency_key }, ours)
         : outcome.result;
 
       platformEvent({ actor: who, kind: "finding_decide", decided: result.done.length, refused: result.refused.length, replayed: outcome.replayed });

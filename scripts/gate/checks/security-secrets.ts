@@ -14,28 +14,35 @@ import { check } from "../run.ts";
  * a string shaped like a key. Each is a shape rather than a list of markers, because a marker
  * list only finds what its author already knew.
  */
-/** Is this IPv4 address one a document may name? RFC 5737's TEST-NET blocks and the private
- *  ranges are what a document is supposed to use; anything else names a machine that exists.
+/** Is this IPv4 address one a document may name? RFC 5737's three TEST-NET /24s (192.0.2,
+ *  198.51.100, 203.0.113), RFC 2544's benchmarking 198.18.0.0/15 and the private ranges are what a
+ *  document is supposed to use; anything else names a machine that exists — the rest of 192.0,
+ *  198.51 and 203.0 included.
  *
  *  169.254.0.0/16 is link-local: it is never a machine anybody can reach from outside, and an
  *  SSRF blocklist has to name it. 100.64.0.0/10 is NOT allowed as a range — it is the CGNAT
  *  space a tailnet hands out, production's own tailnet address lives in it, and catching a 100.x
  *  disclosure is exactly what this rule is for. Only its network-address literal `100.64.0.0` is
- *  allowed, which is how a blocklist spells the range as base + /10 and names no host. */
+ *  allowed, which is how a blocklist spells the range as base + /10 and names no host; the same
+ *  holds for `192.0.0.0`, the base of the reserved 192.0.0.0/24 a blocklist names. */
 function documentationAddress(a: number, b: number, c: number, d: number): boolean {
-  return (a === 192 && b === 0) || (a === 198 && (b === 51 || b === 18 || b === 19)) ||
-    (a === 203 && b === 0) || a === 10 || a === 127 || a === 0 ||
+  return (a === 192 && b === 0 && c === 2) || (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) || (a === 198 && (b === 18 || b === 19)) ||
+    a === 10 || a === 127 || a === 0 ||
     (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224 ||
-    (a === 169 && b === 254) || (a === 100 && b === 64 && c === 0 && d === 0);
+    (a === 169 && b === 254) || (a === 100 && b === 64 && c === 0 && d === 0) ||
+    (a === 192 && b === 0 && c === 0 && d === 0);
 }
 
 check("nothing in this repository discloses an address, a host or a credential", () => {
   const bad: string[] = [];
-  // The narrowing above is the point of the 100.x exception, so it is asserted every run: a
-  // tailnet host address must still be flagged, and only the bare network literal passes.
-  for (const [a, b, c, d] of [[100, 100, 1, 1], [100, 64, 0, 1], [100, 127, 255, 254]]) {
+  // The narrowing above is the point of the 100.x and 192.0.0.0 exceptions and of the TEST-NET
+  // /24s, so it is asserted every run: a tailnet host, and a host beside each documentation
+  // block, must still be flagged, and only the bare network literals pass.
+  for (const [a, b, c, d] of [[100, 100, 1, 1], [100, 64, 0, 1], [100, 127, 255, 254],
+                              [192, 0, 3, 1], [192, 0, 0, 1], [198, 51, 7, 7], [203, 0, 1, 1]]) {
     if (documentationAddress(a, b, c, d)) {
-      bad.push(`this rule's own allowlist admits ${a}.${b}.${c}.${d}, a tailnet host address it exists to catch`);
+      bad.push(`this rule's own allowlist admits ${a}.${b}.${c}.${d}, a host address it exists to catch`);
     }
   }
   for (const rel of repositoryFiles()) {

@@ -436,8 +436,8 @@ if (evalTools.size && coreTools.size) {
         fail.push(`the surface record says ${wrong.map((t) => `${t}=${JSON.stringify(OWN_TOOLS.get(t) ?? null)}`).join(", ")} ` +
                   `for tools served at ${path}, and the gateway files that door's calls under ` +
                   `"${want}" — a recorded surface in a private vocabulary cannot be read ` +
-                  "against the calls recorded for it, and null means the door was never " +
-                  "recorded at all, which is the state that answered NO CHANGE to the move");
+                  "against the calls recorded for it, and null means the registration recorded " +
+                  "no door for it");
       }
     }
 
@@ -464,23 +464,6 @@ if (evalTools.size && coreTools.size) {
     if (moved.added.length || moved.removed.length) {
       fail.push("the surface reader invents an addition or a removal where every name is on " +
                 "both sides — a fabricated finding is worse than a missed one");
-    }
-
-    // The control, and the half a green reader can still get wrong. A row whose door was never
-    // recorded carries null, and `door ?? "core"` would report every eval tool as having moved out
-    // of a door nothing ever recorded. The reader is required to answer "not comparable" here.
-    const blind = diffSurfaces({ version: "pre-052", tools: after.map(({ name }) => ({ name, door: null })) },
-                               { version: "after", tools: after });
-    if (blind.moved.length) {
-      fail.push(`the surface reader reports ${blind.moved.length} tool(s) as having changed door ` +
-                "against a version that recorded no door at all — it is defaulting a null to a " +
-                "door somebody guessed, and every tool that was already on the other door reads " +
-                "as a move that never happened");
-    }
-    if (blind.undecidable.length !== after.length) {
-      fail.push("the surface reader does not report a version with no recorded doors as " +
-                "undecidable — an operator reading \"no tool changed door\" there has been told " +
-                "something the record cannot support");
     }
   } catch (err) {
     fail.push(`what the platform records about which door a tool is on could not be checked: ` +

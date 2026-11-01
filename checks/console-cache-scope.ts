@@ -120,9 +120,7 @@ async function run(core: Core): Promise<void> {
   const dbModule = (await load("db.js")) as { initPlatformDb: () => Promise<void> };
   const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountConsole } = (await load("console.js")) as { mountConsole: (app: Express) => void };
-  const live = (await load("console/live-revision.js")) as {
-    mountConsoleRevision: (app: Express) => void; listening: () => void; notListening: () => void;
-  };
+  const live = (await load("console/live-revision.js")) as { dataVersion: () => string | null };
   await dbModule.initPlatformDb();
 
   // COUPLED: services/gateway/src/server.ts — the identity gate in front of the console's own reads, which
@@ -173,11 +171,10 @@ async function run(core: Core): Promise<void> {
   };
 
   try {
-    // The listener has to be up: with nothing listening there is no version and nothing is kept at all.
-    live.mountConsoleRevision(app);
+    // The listener `mountConsole` started has to be up: with nothing listening there is no version and nothing
+    // is kept at all.
     for (let waited = 0; ; waited += 100) {
-      const up = (await load("console/live-revision.js")) as { dataVersion: () => string | null };
-      if (up.dataVersion() !== null) break;
+      if (live.dataVersion() !== null) break;
       if (waited > 15_000) fail("the change listener is up", "it did not come up within 15s");
       await new Promise((r) => setTimeout(r, 100));
     }

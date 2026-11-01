@@ -1,6 +1,6 @@
 ---
 name: zz-deck
-version: 2.6
+version: 2.7
 description: Turn something already written — a spec, a report, a changelog, a thread — into a slide deck that makes an argument, built on the house visual system. Not an outline of the source: a conclusion, the claims that carry it, and one composition per claim.
 when_to_use: "Someone needs to present something that already exists in prose. Only when a person opens it by name: `/zz-core:deck` in Claude Code, `$zz-core:deck` in Codex. Standalone — no initiative, no gate, no place in the sequence."
 ---
@@ -158,8 +158,10 @@ Read the chassis asset in full, then write the complete deck file in **one write
 
 - the `<style>` layer, the behaviour scripts, the dock and the self-QA travel **verbatim** —
   copy them exactly, changing nothing. The `<title>` is the one line of the chassis you change:
-  it carries the deck's name, the same as the manifest's `name`, which the scripts show in the
-  tab, the Menu and every slide's foot.
+  it carries the deck's name, the same as the manifest's `name`. The scripts take the name from
+  the manifest and show it as the Menu's title and in the tab, after the current slide's label —
+  replacing the `<title>`, which is what a browser shows before they run. A slide's foot shows
+  its chapter, and the deck's name only on a slide that declares none.
 - **there is nothing to exclude.** The chassis holds no slides and no manifest, so everything in
   it travels. The composition reference — the 53 guidebook `<section>` elements carrying the
   `slide` class, plus the `<script id="housebook-manifest">` block that describes them — lives in

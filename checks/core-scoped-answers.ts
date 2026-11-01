@@ -180,7 +180,10 @@ async function principalByName(c: Core): Promise<void> {
 /** A comparison of `email` with a bound address that `lower()` does not hold on both sides. The
  *  column is `citext`, whose operators live in schema `zz`: on a connection whose search path does
  *  not reach `zz` — every zz-core connection where the database user is not named `zz` — a bare
- *  `email = $1` compares as text and misses an address stored in another case. */
+ *  `email = $1` compares as text and misses an address stored in another case. So does
+ *  `lower(email) = $1` with an address the caller did not lower, and an address lowered in
+ *  TypeScript before it is bound is a second rule kept somewhere else: the bound side is a
+ *  placeholder, `$n` or an interpolated `${…}`, and `lower()` holds it in SQL. */
 async function emailLookupsAreCaseless(c: Core): Promise<void> {
   const step = "every address lookup in zz-core compares lower() of both sides";
   const bare: string[] = [];
@@ -188,7 +191,7 @@ async function emailLookupsAreCaseless(c: Core): Promise<void> {
     .flatMap((e) => e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []);
   for (const file of walk(join(root, "services/zz-core/src"))) {
     readFileSync(file, "utf8").split("\n").forEach((line, i) => {
-      if (/\bemail = \$\d/.test(line) && !/lower\([a-z.]*email\) = lower\(\$\d\)/.test(line)) {
+      if (/\bemail\)? = \$[\d{]/.test(line) && !/lower\([a-z.]*email\) = lower\(\$(\d+|\{[^}]*\})\)/.test(line)) {
         bare.push(`${file.slice(root.length + 1)}:${i + 1}`);
       }
     });

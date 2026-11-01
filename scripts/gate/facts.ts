@@ -14,7 +14,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { manifestPaths } from "../manifests.ts";
-import { codeOnly, contractsSource, errMessage, functionBody, gatewaySource, root, sourceFiles, toolsIn, trackedFiles, withoutComments, zzCoreTools } from "./read.ts";
+import { codeOnly, contractsSource, errMessage, functionBody, gatewaySource, root, sourceFiles, toolsIn, withoutComments, zzCoreTools } from "./read.ts";
 
 export const MANIFESTS = manifestPaths(root);
 
@@ -365,34 +365,20 @@ export const claimsPreRename = (name: string, s: PlatformSurface): boolean => {
          !s.foreign.has(name) && parts.slice(1).some((seg: string) => s.nouns.has(seg));
 };
 
-/** Documents a release is answerable for, discovered rather than listed.
+/** Documents a release is answerable for, discovered rather than listed. Memoised: five checks
+ * ask.
  *
- * git-ignored paths are invisible to this by construction, since they are not part of
- * what anyone receives. */
-export function ourDocs() {
-  // The same set every other check reads, so "what is part of this repository" is asked once
-  // and answered once.
-  const belongs = trackedFiles();
-  const out: string[] = [];
-  const walk = (rel: string): void => {
-    for (const e of readdirSync(rel ? join(root, rel) : root, { withFileTypes: true })) {
-      if (e.name.startsWith(".")) continue;
-      const r = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) {
-        // Skill and source trees are documented by their own content checks; a run report is
-        // a historical record and not something a release re-dates. `marketplace` is the
-        // rendered copy of `catalog` and `skills`: its documents are checked at their source,
-        // and the paths inside them resolve against the plugin root rather than this
-        // repository.
-        if (["catalog", "skills", "services", "packages", "testing", "marketplace"].includes(r)) continue;
-        walk(r);
-      } else if (e.name.endsWith(".md") && (!belongs || belongs.has(r))) {
-        out.push(r);
-      }
-    }
-  };
-  walk("");
-  return out.sort();
+ * The same walk every other check reads (`sourceFiles`), so "what is part of this repository" is
+ * asked once and answered once: git-ignored paths, dot entries, node_modules and dist are
+ * invisible to it by construction, since they are not part of what anyone receives. */
+let DOCS: string[] | null = null;
+export function ourDocs(): string[] {
+  // Skill and source trees are documented by their own content checks; a run report is a
+  // historical record and not something a release re-dates. `marketplace` is the rendered copy
+  // of `catalog` and `skills`: its documents are checked at their source, and the paths inside
+  // them resolve against the plugin root rather than this repository.
+  const skip = ["catalog", "skills", "services", "packages", "testing", "marketplace"];
+  return DOCS ??= sourceFiles(["."], [".md"]).filter((r) => !skip.includes(r.split("/")[0]));
 }
 
 /** The entry points under packages/tools, and the parts they are built from.

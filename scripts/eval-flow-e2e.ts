@@ -17,9 +17,10 @@
  * tree, the registries a release writes, every door, `npm run candidate-build` inside its OS
  * sandbox, `zz-tool release-apply` and `release-rollback`, and the post-release judgement on real
  * use the walk seeds after deploying the release. What is not: the two model endpoints (a
- * deterministic stub on loopback, eval-flow-e2e/stub-model.ts), the release/rollback commands
- * (stubs that tag, push to a bare origin and register, eval-flow-e2e/release.ts), and the deploy
- * (zz-core restarted announcing the released version, eval-flow-e2e/stack.ts).
+ * deterministic stub on loopback, eval-flow-e2e/stub-model.ts), the release command (a stub that
+ * tags, pushes to a bare origin and registers, eval-flow-e2e/release.ts), and the deploy the
+ * walk and the rollback command both make (zz-core restarted announcing the version, with the
+ * code unchanged, eval-flow-e2e/stack.ts and eval-flow-e2e/redeploy.ts).
  *
  * It needs docker and runs for minutes, so it is not a gate check.
  *

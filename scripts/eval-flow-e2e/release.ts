@@ -10,9 +10,10 @@
  * The release command is the stand-in for the repository's real release procedure: bump the
  * version, regenerate, commit on top of the candidate's branch (never a squash), tag, push to the
  * bare origin, and register what it published with the same two registry tools a real release
- * runs (scripts/release/registries.ts). The rollback command restores nothing — there is no
- * deployment behind the throwaway origin — and only confirms the version it is asked to restore
- * exists, which is what the CLI's own post-rollback check then reads back from the registry.
+ * runs (scripts/release/registries.ts). The rollback command confirms the version it is asked to
+ * restore is tagged, then deploys it again (eval-flow-e2e/redeploy.ts): zz-core restarted
+ * announcing that version, which is what `release_record(rolled_back)` waits for before it
+ * confirms a restore.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";

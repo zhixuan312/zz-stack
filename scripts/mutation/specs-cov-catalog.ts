@@ -213,8 +213,8 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/console.ts",
     target: "a console query is a literal check:sql can PREPARE",
     subject: INITIATIVE_LIST,
-    find: "        where t.slug = $1 and i.slug <> '_knowledge' and i.opened_at <= $2::timestamptz`, [team, asOf]),",
-    replace: "        where t.slug = '${team}' and i.slug <> '_knowledge' and i.opened_at <= $2::timestamptz`, [team, asOf]),",
+    find: "        where t.slug = $1 and i.opened_at <= $2::timestamptz`, [team, asOf]),",
+    replace: "        where t.slug = '${team}' and i.opened_at <= $2::timestamptz`, [team, asOf]),",
     planted: "one of the console's queries is assembled at request time from a value it was handed. " +
       "There is no longer a complete statement for check:sql to PREPARE before a release, so this " +
       "query ships with nothing having compiled it, and the team slug is pasted into the SQL text " +

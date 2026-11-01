@@ -66,14 +66,15 @@ import { OUTCOMES, writingEstimate, type WritingCoverage } from "@zz/contracts";
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { cachedWithHit, prefixFor, served } from "./answer-cache.js";
+import { cachedWithHit, prefixFor, served, type Served } from "./answer-cache.js";
 import { callerApprovals } from "./approvals.js";
 import type { Figure, Part, PeriodFigure, ReadMeta } from "./figures.js";
 import { localDate } from "./findings.js";
 import { agentsSlice, firstsSlice, knowledgeSlice } from "./record-slices.js";
 import { BAD_PAGE, flowShape, iso, NO_TEAM, platformPublic, ZZ_TZ } from "./shared.js";
 import {
-  closuresByWeek, grainFor, medianHoursToAbandon, medianHoursToClose, mostOpenAtOnce, openedRows, periodsOf, type ClosureWeek,
+  closuresByWeek, grainFor, medianHoursToAbandon, medianHoursToClose, mostOpenAtOnce, openedRows, periodsOf, runningEnd,
+  type ClosureWeek,
 } from "./work-figures.js";
 import { additionsByPeriod, documentFacts, retainedStock, transitions } from "./writing.js";
 
@@ -160,7 +161,7 @@ async function boundsOf(team: string, caller: string, asOf: string) {
             (extract(epoch from (date_trunc('year', $2::timestamptz at time zone $3::text) at time zone $3::text)) * 1000)::float8 as year_ms,
             (select (extract(epoch from min(i.opened_at)) * 1000)::float8
                from zz.initiative i join zz.team t on t.id = i.team_id
-              where t.slug = $1 and i.slug <> '_knowledge' and i.opened_at < $2::timestamptz) as first_ms,
+              where t.slug = $1 and i.opened_at < $2::timestamptz) as first_ms,
             (select (extract(epoch from min(m.created_at)) * 1000)::float8
                from zz.membership m
                join zz.team t on t.id = m.team_id
@@ -189,7 +190,7 @@ async function initiativesOf(team: string, asOf: string): Promise<Initiative[]> 
               where d.initiative_id = i.id and d.path like 'sources/%' and d.created_at < $2::timestamptz) as sources
        from zz.initiative i
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug <> '_knowledge' and i.opened_at < $2::timestamptz`, [team, asOf]);
+      where t.slug = $1 and i.opened_at < $2::timestamptz`, [team, asOf]);
   const asOfMs = Date.parse(asOf);
   return rows.map((r) => {
     const closed = r.closed_ms !== null && r.closed_ms < asOfMs;
@@ -226,7 +227,7 @@ async function sourcesUnderGated(team: string, window: Span): Promise<number[]> 
        from zz.doc d
        join zz.initiative i on i.id = d.initiative_id
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug <> '_knowledge' and i.flow is not null and d.path not like 'sources/%'
+      where t.slug = $1 and i.flow is not null and d.path not like 'sources/%'
         and d.created_at >= $2::timestamptz and d.created_at < $3::timestamptz`, [team, window.from, window.to]);
   return rows.filter((r) => {
     const shape = flowShape(r.flow).get(r.path);
@@ -245,7 +246,7 @@ async function citationsIn(team: string, window: Span): Promise<number> {
                join zz.initiative i on i.id = f.initiative_id
                join zz.team t on t.id = i.team_id
                left join zz.doc_revision r on r.doc_id = l.from_doc_id and r.revision = l.from_revision
-              where t.slug = $1 and i.slug <> '_knowledge' and l.kind = 'cites'
+              where t.slug = $1 and l.kind = 'cites'
               group by l.from_doc_id, l.to_doc_id) c
       where c.first_at >= $2::timestamptz and c.first_at < $3::timestamptz`, [team, window.from, window.to]);
   return r.n;
@@ -293,6 +294,26 @@ function pageOf(read: RecordRead, page: Page): RecordRead {
   if (read.record.state !== "ok") return read;
   const data = read.record.data;
   return { ...read, record: { ...read.record, data: { ...data, rows: data.rows.slice(page.offset, page.offset + page.limit) } } };
+}
+
+/**
+ * Record over the period as the route keeps it, every row of its table: one computation per `key`, kept no longer
+ * than the first instant the clock alone changes it. That is the running week's end, where the best week's words
+ * turn complete, or the running month's, where a coarser period turns and so do the quarter and the year a period
+ * is drawn from, whichever comes first. `asOf` is the read's cutoff: supplied by a check that drives the clock
+ * rather than sleeping through it, and the wall clock's next whole second by the route.
+ */
+export async function recordServed(
+  team: string, caller: string, period: PeriodName, key: string, prefix: string | null,
+  asOf = iso(Math.ceil(Date.now() / 1000) * 1000),
+): Promise<Served<RecordRead>> {
+  const kept = await cachedWithHit(key, async () => {
+    const read = await wholeRecord(team, caller, period, asOf);
+    const window: Span = { from: read.meta.period.from, to: asOf };
+    const [weeks, months] = await Promise.all([periodsOf(window, asOf, "week"), periodsOf(window, asOf, "month")]);
+    return { read, boundary: runningEnd([...weeks, ...months].map((p) => p.window), asOf) };
+  }, prefix, (computed) => computed.boundary);
+  return { value: kept.value.read, hit: kept.hit };
 }
 
 /** Record over the period with every row of its table, which the route keeps once and pages from. */
@@ -407,16 +428,16 @@ export function mountRecord(app: Express): void {
     }
     const params = recordParams(req.query as Record<string, unknown>);
     if (typeof params === "string") { res.status(400).json({ error: params }); return; }
-    // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it.
-    // DELIBERATE: kept as one answer per caller, team and period until a write moves the marker of what it reads
-    // (answer-cache.ts), and each page of the table cut from it: a page press re-read the whole history before. The
-    // email stays in the key because the answer itself uses it: the approvals are the ones signed in the caller's
-    // own name. The record is the whole history reduced by week; re-reading it between two clicks that changed
-    // nothing was most of the page's time.
+    // The cutoff in whole seconds, rounded up, so what was written in the second the read began is inside it
+    // (recordServed). DELIBERATE: kept as one answer per caller, team and period until a write moves the marker of
+    // what it reads (answer-cache.ts) or the clock alone turns a period, and each page of the table cut from it: a
+    // page press re-read the whole history before. The email stays in the key because the answer itself uses it: the
+    // approvals are the ones signed in the caller's own name. The record is the whole history reduced by week;
+    // re-reading it between two clicks that changed nothing was most of the page's time.
     const { period, ...page } = params;
-    const kept = await cachedWithHit(`record|${activeTeam}|${req.zzIdentity!.email}|${period}`, () =>
-      wholeRecord(activeTeam, req.zzIdentity!.email, period, iso(Math.ceil(Date.now() / 1000) * 1000)),
-      prefixFor("/api/console/record", req.zzIdentity!, req));
+    const email = req.zzIdentity!.email;
+    const kept = await recordServed(activeTeam, email, period, `record|${activeTeam}|${email}|${period}`,
+      prefixFor("/api/console/record", req.zzIdentity!));
     res.json(served({ value: pageOf(kept.value, page), hit: kept.hit }));
   }));
 }

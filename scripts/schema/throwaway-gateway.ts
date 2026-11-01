@@ -58,8 +58,7 @@ export async function listenGateway(c: Core): Promise<Gateway> {
   const passkey = (await load("services/gateway/dist/passkey.js")) as
     { mountPasskey: (app: Express) => void; issueEnrolment: (principalId: string) => Promise<{ url: string } | null> };
   const { mountSettings } = (await load("services/gateway/dist/settings.js")) as
-    { mountSettings: (app: Express, deps: Record<string, unknown>) => void };
-  const credentials = (await load("services/gateway/dist/credentials.js")) as Record<string, unknown>;
+    { mountSettings: (app: Express) => void };
   const { mountPageView } = (await load("services/gateway/dist/console/page-view.js")) as { mountPageView: (app: Express) => void };
   const { mountPlatformBugResolve } = (await load("services/gateway/dist/console/platform-bug-resolve.js")) as
     { mountPlatformBugResolve: (app: Express) => void };
@@ -87,10 +86,7 @@ export async function listenGateway(c: Core): Promise<Gateway> {
   mountPlatformBugResolve(app);
   mountConsoleClose(app);
   mountConsoleWrite(app);
-  mountSettings(app, {
-    issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-    revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor,
-  });
+  mountSettings(app);
   serveMcp(app, "/manage/mcp", buildAccessServer);
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));

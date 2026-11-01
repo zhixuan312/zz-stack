@@ -543,6 +543,30 @@ export async function seedNeedsPeople(db: pg.ClientBase | pg.Pool): Promise<void
   await db.query("update zz.principal set active_team_id = (select id from zz.team where slug = $2) where id = $1", [member, NEEDS_TEAMS[0]]);
 }
 
+/** A document and its revisions, each `[presented days ago | null, approved days ago | null]` (a negative day is after
+ *  the clock), the last current, all written by `member` 45 days before `now`. Its status is `approved` when its last
+ *  approved revision is the current one. */
+export async function seedDocument(db: pg.ClientBase, now: number, member: string, init: string, path: string, type: string,
+                                   revisions: [number | null, number | null][]): Promise<void> {
+  const ago = (days: number): string => new Date(now - days * DAY).toISOString();
+  await deferred(db, async () => {
+    const doc = (await db.query<{ id: string }>(
+      `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
+       values ($1, $2, $3, 'draft', now(), $2, $4, $4) returning id`, [init, path, type, revisions.length])).rows[0].id;
+    for (const [i, [presented, approved]] of revisions.entries()) {
+      await db.query(
+        `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
+                                      written_at, approved_by, approved_at, presented_at)
+         values ($1, $2, $2, 'retained', 'seeded', 'seeded', '{}', $3, $4, $5, case when $6::timestamptz is null then null else $4::uuid end,
+                 $6, $7)`,
+        [doc, i + 1, `hash-${doc}-${i + 1}`, member, ago(45), approved === null ? null : ago(approved), presented === null ? null : ago(presented)]);
+    }
+    const approvedAt = revisions.map(([, a], i) => (a === null ? 0 : i + 1)).filter(Boolean).pop() ?? null;
+    await db.query("update zz.doc set approved_revision = $2, status = case when $2 = current_revision then 'approved' else 'draft' end where id = $1",
+                   [doc, approvedAt]);
+  });
+}
+
 /**
  * Seeds the calls, reports, findings and documents above into `db`, after `seedNeedsPeople`, cutting days in
  * `timezone`, the gateway's `ZZ_TZ`; answers the open real report's id, the one a resolve closes. Read it within the
@@ -621,37 +645,18 @@ export async function seedNeeds(db: pg.ClientBase, timezone: string, now = Date.
   await finding("defect", "applied", 30);
   await finding("defect", "rejected", 30, replacing);
 
-  // A document and its revisions, each `[presented days ago | null, approved days ago | null]`, the last current.
-  const document = async (init: string, path: string, revisions: [number | null, number | null][]): Promise<void> => {
-    await deferred(db, async () => {
-      const doc = await one(
-        `insert into zz.doc (initiative_id, path, type, status, updated_at, title, current_revision, current_version)
-         values ($1, $2, 'seeded', 'draft', now(), $2, $3, $3) returning id`, [init, path, revisions.length]);
-      for (const [i, [presented, approved]] of revisions.entries()) {
-        await db.query(
-          `insert into zz.doc_revision (doc_id, revision, version, content_state, title, body, tags, content_hash, written_by,
-                                        written_at, approved_by, approved_at, presented_at)
-           values ($1, $2, $2, 'retained', 'seeded', 'seeded', '{}', $3, $4, $5, case when $6::timestamptz is null then null else $4::uuid end,
-                   $6, $7)`,
-          [doc, i + 1, `hash-${doc}-${i + 1}`, member, ago(45), approved === null ? null : ago(approved), presented === null ? null : ago(presented)]);
-      }
-      const approvedAt = revisions.map(([, a], i) => (a === null ? 0 : i + 1)).filter(Boolean).pop() ?? null;
-      await db.query("update zz.doc set approved_revision = $2, status = case when $2 = current_revision then 'approved' else 'draft' end where id = $1",
-                     [doc, approvedAt]);
-    });
-  };
   const [osprey, plover, wren, lark, finch] = teams;
   const ospreyOpen = await initiative(osprey, "2026-08-01-needs-open", "sdlc-flow", false);
-  await document(ospreyOpen, "plan.md", [[40, 39], [20, null]]);
-  await document(ospreyOpen, "explore.md", [[30, null]]);
-  await document(await initiative(osprey, "2026-08-02-needs-closed", "sdlc-flow", true), "spec.md", [[30, null]]);
-  await document(await initiative(plover, "2026-08-03-needs-open", "sdlc-flow", false), "spec.md", [[30, null]]);
+  await seedDocument(db, now, member, ospreyOpen, "plan.md", "seeded", [[40, 39], [20, null]]);
+  await seedDocument(db, now, member, ospreyOpen, "explore.md", "seeded", [[30, null]]);
+  await seedDocument(db, now, member, await initiative(osprey, "2026-08-02-needs-closed", "sdlc-flow", true), "spec.md", "seeded", [[30, null]]);
+  await seedDocument(db, now, member, await initiative(plover, "2026-08-03-needs-open", "sdlc-flow", false), "spec.md", "seeded", [[30, null]]);
   const wrenOpen = await initiative(wren, "2026-08-04-needs-open", "sdlc-flow", false);
-  await document(wrenOpen, "spec.md", [[18, null]]);
-  await document(wrenOpen, "review.md", [[16, null]]);
-  await document(wrenOpen, "plan.md", [[30, null], [null, null]]);
-  await document(await initiative(lark, "2026-08-05-needs-open", "sdlc-flow", false), "spec.md", [[3, null]]);
-  await document(await initiative(lark, "2026-08-06-needs-no-flow", null, false), "spec.md", [[30, null]]);
-  await document(await initiative(finch, "2026-08-07-needs-open", "sdlc-flow", false), "spec.md", [[30, 29]]);
+  await seedDocument(db, now, member, wrenOpen, "spec.md", "seeded", [[18, null]]);
+  await seedDocument(db, now, member, wrenOpen, "review.md", "seeded", [[16, null]]);
+  await seedDocument(db, now, member, wrenOpen, "plan.md", "seeded", [[30, null], [null, null]]);
+  await seedDocument(db, now, member, await initiative(lark, "2026-08-05-needs-open", "sdlc-flow", false), "spec.md", "seeded", [[3, null]]);
+  await seedDocument(db, now, member, await initiative(lark, "2026-08-06-needs-no-flow", null, false), "spec.md", "seeded", [[30, null]]);
+  await seedDocument(db, now, member, await initiative(finch, "2026-08-07-needs-open", "sdlc-flow", false), "spec.md", "seeded", [[30, 29]]);
   return open;
 }

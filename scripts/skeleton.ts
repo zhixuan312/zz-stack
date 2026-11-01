@@ -551,8 +551,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
   const { identityMiddleware } = (await load("services/gateway/dist/identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountConsole } = (await load("services/gateway/dist/console.js")) as { mountConsole: (app: Express) => void };
   const { mountConsoleWrite } = (await load("services/gateway/dist/console-write.js")) as { mountConsoleWrite: (app: Express) => void };
-  const { mountSettings } = (await load("services/gateway/dist/settings.js")) as { mountSettings: (app: Express, deps: unknown) => void };
-  const credentials = (await load("services/gateway/dist/credentials.js")) as Record<string, unknown>;
+  const { mountSettings } = (await load("services/gateway/dist/settings.js")) as { mountSettings: (app: Express) => void };
   const { toolCallTelemetry, doorSurface } = (await load("services/gateway/dist/tool-telemetry.js")) as
     { toolCallTelemetry: (surface: (req: Request) => string) => RequestHandler; doorSurface: (url: string) => string };
   const { passThrough } = (await load("services/gateway/dist/relay.js")) as
@@ -566,8 +565,7 @@ async function run(db: pg.Client, url: string): Promise<void> {
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
   mountConsoleWrite(app);
-  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-                       revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
+  mountSettings(app);
   app.use(["/core/mcp"], toolCallTelemetry((req) => doorSurface(req.originalUrl)));
   app.all("/core/mcp", passThrough(core, "core proxy", "zz-core is not reachable"));
   server.on("request", app);

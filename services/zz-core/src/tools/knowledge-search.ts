@@ -204,8 +204,9 @@ export function registerKnowledgeSearch(server: McpServer): void {
       // slug a caller reads.
       //
       // `initiative_id` and `cited_ids` are the citation graph in keys: a document's own
-      // initiative row, and the initiative ids its citations name. The neighbour lane below
-      // matches on them, because a slug is team-scoped and two teams can each carry one.
+      // initiative row, and the initiative ids its citations name — a node's evidence rows, a
+      // document's cites links. The neighbour lane below matches on them alone, because a slug is
+      // team-scoped and two teams can each carry one.
       //
       // `cited_in` is read by no lane: it is what `citedFor` answers a returned row's citations from.
       const COLS = `initiative, path, flow, type, status, outcome, approved_by, approved_at,
@@ -265,8 +266,8 @@ export function registerKnowledgeSearch(server: McpServer): void {
                i.outcome, a.email as approved_by, r.approved_at, d.updated_at, d.title, d.tags,
                -- The initiative slugs this revision's citations point at, as the array the union's
                -- other arm produces. DELIBERATE: read from the cites links, not from
-               -- r.fields->>'evidence' — no writer sets that key, so reading it would leave the
-               -- neighbour lane's document arm silent and no returned row carrying a citation.
+               -- r.fields->>'evidence' — no writer sets that key, so reading it would leave no
+               -- returned row carrying a citation.
                coalesce((select array_agg(distinct ti.slug order by ti.slug)
                            from zz.doc_link l
                            join zz.doc td on td.id = l.to_doc_id
@@ -282,7 +283,15 @@ export function registerKnowledgeSearch(server: McpServer): void {
                -- The union's column names come from this arm, so the two the node arm derives are
                -- named here: a bare i.id would arrive as id and a bare empty-array literal as
                -- ?column?, and the lanes below join on these two by name.
-               i.id as initiative_id, '{}'::uuid[] as cited_ids, d.id,
+               i.id as initiative_id,
+               -- The initiatives its cites links point at, as ids: the keys the neighbour lane
+               -- matches on, where evidence above spells them as slugs for a reader.
+               coalesce((select array_agg(distinct td.initiative_id)
+                           from zz.doc_link l
+                           join zz.doc td on td.id = l.to_doc_id
+                          where l.from_doc_id = d.id and l.from_revision = r.revision
+                            and l.kind = 'cites'), '{}'::uuid[]) as cited_ids,
+               d.id,
                -- A document's citations are its own team's: see citedFor.
                null::text[] as cited_in
           -- DELIBERATE: the revision leads the join, not zz.doc. The Han and substring lane
@@ -391,11 +400,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
       /* Expand to graph neighbours of the top hits. A node's citations are rows in
        * `knowledge_node_evidence` — the initiatives it was learned from, keyed by initiative id
        * — so a node citing the same initiative as a strong hit is about the same work even when
-       * it shares no vocabulary. The lane matches on those ids rather than on the slugs they
-       * spell: a slug is team-scoped, and two teams can each carry one. A document cites its
-       * evidence as initiative slugs, so the lane carries both keys and
-       * reads each subject by the one its citations are stored in. Bounded by (seeds x their
-       * citations), fetched in one targeted query — never a scan. */
+       * it shares no vocabulary. A document's citations are its cites links, carried as the ids
+       * of the initiatives they point at. The lane matches on ids alone, never on the slugs they
+       * spell: a slug is team-scoped, and the platform's shelf can hold an initiative of the
+       * caller's initiative's name. Bounded by (seeds x their citations), fetched in one
+       * targeted query — never a scan. */
       const keyOf = (r: { subject: string; id: string }) => `${r.subject}:${r.id}`;
       // Re-read as `SearchRow` here and not where it is declared: the lane selected `COLS`, so its
       // rows carry the key and the citation columns this lane and the fusion read.
@@ -406,15 +415,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
       const seeds = [...lexical.slice(0, 10), ...taggedRows.slice(0, 10)];
       const seedIds = [...new Set(seeds.flatMap((r) =>
         [...(r.cited_ids ?? []), ...(r.initiative_id ? [r.initiative_id] : [])]))];
-      const seedSlugs = [...new Set(seeds.filter((r) => r.subject === "document")
-        .flatMap((r) => [...(r.evidence ?? []), r.initiative]))];
       let neighbours: SearchRow[] = [];
-      if (query && (seedIds.length || seedSlugs.length)) {
-        const nArgs: unknown[] = [[team, KNOWLEDGE_TEAM], seedIds, seedSlugs];
+      if (query && seedIds.length) {
+        const nArgs: unknown[] = [[team, KNOWLEDGE_TEAM], seedIds];
         const nPut = (v: unknown) => { nArgs.push(v); return `$${nArgs.length}`; };
-        const nCond = ["team_slug = any($1::text[])",
-          "(initiative_id = any($2::uuid[]) or cited_ids && $2::uuid[]" +
-          " or (subject = 'document' and (initiative = any($3::text[]) or evidence && $3::text[])))"];
+        const nCond = ["team_slug = any($1::text[])", "(initiative_id = any($2::uuid[]) or cited_ids && $2::uuid[])"];
         applyFilters((c) => nCond.push(c), nPut);
         neighbours = ((await p.query(
           `select ${COLS}, 0::float4 as rank

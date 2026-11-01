@@ -43,8 +43,8 @@
  * a flow, through zz-core, as the caller.
  *
  * Reads the database, not the store: the console is a fleet view — counts, means and refusal rates
- * over every team, which are SQL questions. The two knowledge endpoints here read zz.doc, which
- * carries the body already.
+ * over every team, which are SQL questions. The four knowledge endpoints here (console/knowledge.ts,
+ * console/knowledge-summary.ts) read zz.knowledge_node, which carries a node's body, and zz.event.
  *
  * One route is the exception: `/api/console/search` (console/search.ts) is zz-core's
  * `knowledge_search`, called as the caller, because ranking a question against the documents and
@@ -155,8 +155,8 @@ export function mountConsole(app: Express): void {
   mountConsoleLive(app);
   // A page view, which records which page was opened and is counted as nothing else.
   mountPageView(app);
-  // The one act here: the superadmin's close of a bug report, which is zz-core's `bug_resolve` called as the person.
+  // The first of the two acts here: the superadmin's close of a bug report, which is zz-core's `bug_resolve` called as the person.
   mountPlatformBugResolve(app);
-  // The person's close of an initiative of their active team, which is zz-core's `initiative_close` called as the person.
+  // The second: the person's close of an initiative of their active team, which is zz-core's `initiative_close` called as the person.
   mountConsoleClose(app);
 }

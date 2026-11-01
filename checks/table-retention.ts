@@ -223,17 +223,15 @@ console.log(`ok  the declaration is written: ${TABLE}'s retention= names all ${F
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // 3 — TRUE OF THE TREE. No statement deletes a revision; every statement that deletes a document
-// is bounded. `checks/dropped-columns.ts` walks the same trees with the same reader and the same
-// two exclusions, and for the same reason: an applied migration is history, and a mutation spec
-// quotes a statement in order to plant a defect in it.
+// is bounded. The trees and files are `checks/sql-scan.ts`'s `statementSources`, which every
+// statement scanner reads through: an applied migration is history, and a mutation spec quotes a
+// statement in order to plant a defect in it.
 {
   type Scan = typeof import("../packages/tools/src/lib/sql-statements.ts");
-  const { sourceFiles, statementsOf }: Scan =
+  const { statementsOf }: Scan =
     await import(pathToFileURL(join(root, "packages/tools/dist/lib/sql-statements.js")).href) as Scan;
-
-  const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) &&
-    !/(^|\/)scripts\/mutation\/specs[^/]*\.ts$/.test(p) &&
-    !p.includes("services/gateway/migrations/");
+  type Sources = typeof import("./sql-scan.ts");
+  const { statementSources }: Sources = await import(pathToFileURL(join(root, "checks/sql-scan.ts")).href) as Sources;
 
   const deletesRevision = /^\s*delete\s+from\s+(?:only\s+)?zz\.doc_revision\b/i;
   const truncatesRevision = /^\s*truncate\b[\s\S]*?\bzz\.doc_revision\b/i;
@@ -242,7 +240,7 @@ console.log(`ok  the declaration is written: ${TABLE}'s retention= names all ${F
   const purge: string[] = [];
   const unbounded: string[] = [];
   const docDeletes: string[] = [];
-  for (const { path, src } of ["services", "packages", "scripts", "deploy"].flatMap((r) => sourceFiles(r, KEEP))) {
+  for (const { path, src } of statementSources()) {
     // `unquoted`: the reader hands back each literal WITH its delimiters unless asked otherwise, and
     // a statement that arrives as `` `delete from …` `` does not start with `delete`.
     for (const s of statementsOf(path, src, true)) {

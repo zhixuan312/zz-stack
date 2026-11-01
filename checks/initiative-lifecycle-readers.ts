@@ -22,12 +22,10 @@
  */
 import { readFileSync } from "node:fs";
 
+import { withoutComments } from "../scripts/gate/read.ts";
+
 const fail: string[] = [];
 
-/** Comments stripped so a rule cannot be satisfied (or defeated) by prose alone — the same
- *  reason scripts/gate.ts's own suites read `withoutComments` before they classify source. */
-const stripComments = (src: string): string =>
-  src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 interface Rule {
   pattern: RegExp; message: string;
@@ -135,7 +133,8 @@ const specs: FileSpec[] = [
 for (const spec of specs) {
   let src: string;
   try {
-    src = stripComments(readFileSync(spec.path, "utf8"));
+    // Comments taken out, so a rule cannot be satisfied (or defeated) by prose alone.
+    src = withoutComments(readFileSync(spec.path, "utf8"));
   } catch {
     fail.push(`${spec.path}: could not be read`);
     continue;

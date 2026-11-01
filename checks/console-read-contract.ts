@@ -247,8 +247,7 @@ async function run(c: Core): Promise<void> {
   };
   const envelopeProblem = envelope.envelopeProblem;
   const { mountConsole } = (await load("console.js")) as { mountConsole: (app: Express) => void };
-  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express, deps: unknown) => void };
-  const credentials = (await load("credentials.js")) as Record<string, unknown>;
+  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express) => void };
   await dbModule.initPlatformDb();
 
   // COUPLED: services/gateway/src/server.ts and console.ts — the identity gate, the console's reads with the
@@ -256,10 +255,7 @@ async function run(c: Core): Promise<void> {
   const app = express();
   app.use(identityMiddleware());
   mountConsole(app);
-  mountSettings(app, {
-    issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-    revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor,
-  });
+  mountSettings(app);
   const servers: Server[] = [];
   const server = app.listen(0, "127.0.0.1");
   servers.push(server);

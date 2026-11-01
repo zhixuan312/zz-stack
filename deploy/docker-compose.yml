@@ -134,9 +134,9 @@ services:
       # default the code carries: a knob `.env.example` documents and compose never forwards is
       # a switch that does nothing.
       - EVAL_MCP_URL=${EVAL_MCP_URL:-http://zz-core:8000/eval-mcp}
-      # The gateway's own pool (db.ts), listed for the same reason as zz-core's above.
+      # The gateway's own pool (db.ts), listed for the same reason as zz-core's above. No
+      # ZZ_DB_STATEMENT_TIMEOUT_MS: this pool runs the migrations and deliberately has none.
       - ZZ_DB_POOL_MAX=${ZZ_DB_POOL_MAX:-}
-      - ZZ_DB_STATEMENT_TIMEOUT_MS=${ZZ_DB_STATEMENT_TIMEOUT_MS:-}
       - ZZ_DB_CONNECT_TIMEOUT_MS=${ZZ_DB_CONNECT_TIMEOUT_MS:-}
       # Origins other than loopback that an MCP client may register a redirect on,
       # comma-separated. Normally empty: native clients redirect to localhost, 127.0.0.1

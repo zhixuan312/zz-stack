@@ -302,14 +302,14 @@ check("a platform-scoped node is about a registry entry", () => {
 });
 
 check("a team-scoped node cannot be written by somebody in no team", () => {
-  // userRoot() falls back to a personal directory outside teams/ when teamFor() is falsy, so a
-  // team-scoped write from a teamless caller would report success and land where team-gated
-  // search can never reach it.
+  // A team-scoped node lands on the caller's own shelf, and a caller in no team has none: without
+  // the refusal the write carries a null team where its shelf belongs, on no shelf team-gated
+  // search can reach.
   const body = toolBody("knowledge_add");
   if (body === null) return "knowledge_add is no longer registered";
   const bad: string[] = [];
   if (!/you are not in a team/.test(body)) {
-    bad.push("knowledge_add does not refuse a team-scoped write from a caller with no team — the node would land in a personal directory nothing can search");
+    bad.push("knowledge_add does not refuse a team-scoped write from a caller with no team — the node would be written on no team's shelf, where no search reaches it");
   }
   // Both halves: a refusal firing for every scope would satisfy the clause above while
   // breaking platform writes, which need no team.

@@ -9,10 +9,6 @@
  * can move without the set of names changing by a single element. `zz.plugin_tool.door` records
  * the door beside the name, and `diffSurfaces` compares both halves.
  *
- * It will not guess. A version whose doors were never recorded has none on any row, and this says
- * so rather than defaulting those rows to the core door, which would turn every `plugin_*` tool into a
- * fabricated move on the first run. See surface-diff.ts.
- *
  * Not a judgement: it reports what moved, and there is no verdict field.
  */
 import { parseArgs } from "../lib/cli.js";
@@ -63,8 +59,7 @@ function main(argv: string[]): number {
   const after = surfaceOf(versions[0]);
   if (versions.length === 1) {
     const doors = new Map<string, number>();
-    for (const t of after.tools) doors.set(t.door ?? "(door not recorded)",
-                                           (doors.get(t.door ?? "(door not recorded)") ?? 0) + 1);
+    for (const t of after.tools) doors.set(t.door, (doors.get(t.door) ?? 0) + 1);
     console.log(`\n  ${plugin} ${after.version}: ${after.tools.length} tool(s), ` +
                 `${[...doors].sort().map(([d, n]) => `${d}=${n}`).join(", ")}`);
     console.log("\n  Only one version has a recorded surface, so there is nothing to diff it");

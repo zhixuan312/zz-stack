@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DASH_IMAGE, DASH_SRC, HOST, REMOTE, catalogOwnerTeam, envToken, initFrame, log, probeToken, publicUrl, root, run, ssh } from "../deployment.ts";
+import { DASH_IMAGE, DASH_SRC, HOST, REMOTE, catalogOwnerTeam, envToken, initFrame, log, probeToken, publicUrl, root, run } from "../deployment.ts";
 import { exportMode } from "./config.ts";
 import { consoleImage, resolveDashboard } from "./dashboard.ts";
 import { tokenHolder } from "./token-holder.ts";
@@ -48,7 +48,7 @@ export function preflight(): void {
       dirty.length ? dirty.slice(0, 4).map((x) => x.trim()).join("; ") + (dirty.length > 4 ? " …" : "") : null);
   row(behind === "?" ? null : behind === "0", `master vs origin: ${ahead} ahead, ${behind} behind`,
       behind === "?" ? "git could not compare with origin/master"
-        : behind === "0" ? null : "the HOST pulls from origin — push before releasing");
+        : behind === "0" ? null : "the release refuses a master behind origin — pull before releasing");
 
   /* What moved */
   const tag = git(["describe", "--tags", "--abbrev=0"]);
@@ -60,16 +60,6 @@ export function preflight(): void {
   const d = resolveDashboard();
   row(d.blocked ? false : null, `console: ${d.why}`,
       null);
-  // How this host takes its deploy/ files. UAT is not a checkout, so `git reset --hard
-  // origin/master` is not universal. Nothing here decides anything — it reports which of the two
-  // paths this host is on.
-  const checkout = safe(() => ssh(`test -d ${REMOTE}/.git && echo yes || echo no`).trim(), "");
-  row(checkout ? null : false,
-      checkout === "yes" ? `${HOST}:${REMOTE} is a checkout — deploy/ comes from origin/master`
-        : checkout === "no" ? `${HOST}:${REMOTE} is not a checkout — deploy/ comes from the release bundle`
-        : `could not ask ${HOST} how it takes deploy/`,
-      checkout ? null : "the deploy step needs to reach it");
-
   const liveDash = safe(() => consoleImage(), "");
   const published = liveDash.startsWith(`${DASH_IMAGE}:`);
   row(published, `console live on ${HOST}: ${liveDash || "(nothing running)"}`,

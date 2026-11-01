@@ -471,24 +471,6 @@ export async function approvalRules(c: Core): Promise<void> {
   c.pass(step);
 }
 
-/** Two callers on the document's lock: the check holds it, the first queues, then the second, and
- *  both are let go together — the first commits first. */
-async function raced(c: Core, step: string, path: string, a: () => Promise<string>, b: () => Promise<string>): Promise<[string, string]> {
-  const key = c.docKey(path);
-  await c.hold(key);
-  let first: Promise<string>;
-  let second: Promise<string>;
-  try {
-    first = a();
-    await c.waiters(step, key, 1);
-    second = b();
-    await c.waiters(step, key, 2);
-  } finally {
-    await c.release(key);
-  }
-  return Promise.all([first, second]);
-}
-
 /** An approval and an edit, and a present and an edit, raced in both orders. */
 export async function races(c: Core): Promise<void> {
   const X = await c.open("present-races");
@@ -499,7 +481,7 @@ export async function races(c: Core): Promise<void> {
   await c.ok(step, "document_write", { path: a, content: `# Race\n\nbefore.\n\n${LONG}` });
   const { facts: fa } = await presented(c, step, { path: a }, { covered: true });
   const shownBody = documentBody(await c.ok(step, "document_read", { path: a }));
-  const [approved, edited] = await raced(c, step, a,
+  const [approved, edited] = await c.staged(step, a,
     () => c.call(step, "document_approve", { path: a, expected_revision: fa.target, review_context: fa.context }, other),
     () => c.call(step, "document_edit", { path: a, edits: [{ find: "before.", replace: "after." }] }));
   if (approved.startsWith("ERROR")) c.fail(step, `approve: ${approved}`);
@@ -513,7 +495,7 @@ export async function races(c: Core): Promise<void> {
   const b = `${X}/edit-first.md`;
   await c.ok(step, "document_write", { path: b, content: `# Race\n\nbefore.\n\n${LONG}` });
   const { facts: fb } = await presented(c, step, { path: b }, { covered: true });
-  const [edit, conflict] = await raced(c, step, b,
+  const [edit, conflict] = await c.staged(step, b,
     () => c.call(step, "document_edit", { path: b, edits: [{ find: "before.", replace: "after." }] }),
     () => c.call(step, "document_approve", { path: b, expected_revision: fb.target, review_context: fb.context }, other));
   const now = await tokenOf(c, b);
@@ -527,7 +509,7 @@ export async function races(c: Core): Promise<void> {
   await c.ok(step, "document_write", { path: p, content: `# Race\n\nbefore.\n\n${LONG}` });
   const t1 = await tokenOf(c, p);
   const presentedBody = documentBody(await c.ok(step, "document_read", { path: p }));
-  const [shown, after] = await raced(c, step, p,
+  const [shown, after] = await c.staged(step, p,
     () => c.call(step, "document_present", { path: p }),
     () => c.call(step, "document_edit", { path: p, edits: [{ find: "before.", replace: "after." }] }, other));
   if (shown.startsWith("ERROR") || !new RegExp(`target ${t1}, baseline none, covered\\.$`, "m").test(shown)) c.fail(step, `present: ${shown}`);
@@ -541,7 +523,7 @@ export async function races(c: Core): Promise<void> {
   const q = `${X}/edit-before-present.md`;
   await c.ok(step, "document_write", { path: q, content: `# Race\n\nbefore.\n\n${LONG}` });
   const q1 = await tokenOf(c, q);
-  const [moved, refused] = await raced(c, step, q,
+  const [moved, refused] = await c.staged(step, q,
     () => c.call(step, "document_edit", { path: q, edits: [{ find: "before.", replace: "after." }] }, other),
     () => c.call(step, "document_present", { path: q }));
   const q2 = await tokenOf(c, q);

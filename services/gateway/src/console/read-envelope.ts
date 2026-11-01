@@ -35,7 +35,7 @@
  * entry's figures are about. An entry whose answer is the whole platform's (`platform-public`,
  * `platform-admin`) folds every team's changes into its marker, so another team's write makes it
  * unreachable; one whose answer is the caller's own or their active team's (`active-team`,
- * `caller-in-active-team`) folds only the teams that caller hears. A route that declares no `scope` in its
+ * `caller-in-active-team`) folds only the caller's active team (every team for a superadmin). A route that declares no `scope` in its
  * `meta` takes the one its own wrapper states: `teamless` is the platform's, and a route that refuses a
  * caller acting for no team is its active team's.
  *

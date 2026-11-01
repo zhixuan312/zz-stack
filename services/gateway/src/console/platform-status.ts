@@ -396,7 +396,7 @@ export function mountPlatformStatus(app: Express): void {
     // differently.
     // `served` states the hit in the `meta` this route sends, where `read-envelope.ts` leaves it alone.
     res.json(served(await statusServed(caller, null, `status|${audienceKey(caller)}`,
-      prefixFor("/api/console/platform/status", req.zzIdentity!, req))));
+      prefixFor("/api/console/platform/status", req.zzIdentity!))));
   }));
 }
 

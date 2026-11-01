@@ -165,8 +165,7 @@ async function run(c: Core): Promise<void> {
   const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountConsole } = (await load("console.js")) as { mountConsole: (app: Express) => void };
   const { mountConsoleWrite } = (await load("console-write.js")) as { mountConsoleWrite: (app: Express) => void };
-  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express, deps: unknown) => void };
-  const credentials = (await load("credentials.js")) as Record<string, unknown>;
+  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express) => void };
   const app = express();
   // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, then the console's
   // reads, its acts and its settings, in that order.
@@ -174,8 +173,7 @@ async function run(c: Core): Promise<void> {
   app.use(express.json({ limit: "20mb" }));
   mountConsole(app);
   mountConsoleWrite(app);
-  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-                       revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
+  mountSettings(app);
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

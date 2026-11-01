@@ -11,8 +11,10 @@
 // statement it was written for passes while testing nothing.
 //
 // Drives the real `catalogOwnerTeam` and `writeRegistries` against a fake `ssh` first on PATH, so
-// nothing reaches a host: the fake answers the deploy/.env grep with a sentinel team and every
-// psql call with a row (the team's id where the statement asks zz.team for it), logs the SQL and
+// nothing reaches a host: the fake answers the deploy/.env grep with a sentinel team, the role
+// and database question by running the script's own printf with POSTGRES_USER empty and
+// POSTGRES_DB whatever FAKE_PG_DB says, and every psql call with a row (the team's id where the
+// statement asks zz.team for it), logs the SQL and
 // the bound `-v` variables every psql call is handed, and fails every psql call when told to. Then reads release.ts for the two
 // places it has to use them: the owner team before step 4, the failures before the rollback.
 import { execFileSync } from "node:child_process";
@@ -32,6 +34,9 @@ writeFileSync(join(dir, "ssh"), `#!/bin/sh
 case "$*" in
   *ZZ_CATALOG_OWNER_TEAM*"deploy/.env"*) echo ${SENTINEL}; exit 0 ;;
   *"deploy/.env"*) exit 1 ;;
+  *POSTGRES_USER*)
+    U="" D="\${FAKE_PG_DB:-}"
+    eval "$(printf '%s' "$*" | sed 's/.*&& printf/printf/')" ;;
   *psql*)
     sql=$(cat)
     echo "ARGS: $*" >> "${sqlLog}"
@@ -81,6 +86,17 @@ try {
   is(/insert into zz\.plugin_release_owner \(plugin_id, team_id\)/.test(sql),
      "register-plugins did not write a zz.plugin_release_owner row, so the plugin has an owner " +
      "team nobody can release under");
+
+  // An empty POSTGRES_USER beside a set POSTGRES_DB: the role is `zz` and the database is the one
+  // named. Split on a space the answer's trim had eaten, the database read as the role and `zz`
+  // as the database.
+  writeFileSync(sqlLog, "");
+  drive(`import { writeRegistries } from "./scripts/release/registries.ts";
+    writeRegistries("${SENTINEL}");`, { FAKE_PG_DB: "pgdb_from_host" });
+  const args = (() => { try { return readFileSync(sqlLog, "utf8"); } catch { return ""; } })()
+    .split("\n").filter((l) => l.startsWith("ARGS: "));
+  is(args.length > 0 && args.every((l) => l.includes("psql -U zz -d pgdb_from_host")),
+     `a host .env with POSTGRES_USER empty and POSTGRES_DB=pgdb_from_host reached psql as ${JSON.stringify(args[0] ?? "nothing")}`);
 
   const bad = drive(`import { writeRegistries } from "./scripts/release/registries.ts";
     console.log("FAILURES=" + JSON.stringify(writeRegistries("${SENTINEL}")));`, { FAKE_PSQL_FAILS: "1" });

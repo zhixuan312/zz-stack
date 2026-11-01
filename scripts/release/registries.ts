@@ -18,16 +18,19 @@ let regPsqlMemo: string | null = null;
 /** psql on the deployment's database, as one command line a tool's `--psql` takes. The role and
  *  database are asked of the host once (`PG_ROLE_DB_SH`) and then named literally, because the
  *  line is split on spaces and handed to ssh; a value that could not survive that is refused. An
- *  empty one is `zz`, as the deploy scripts' `${POSTGRES_USER:-zz}` reads it. */
+ *  empty one is `zz`, as the deploy scripts' `${POSTGRES_USER:-zz}` reads it.
+ *
+ *  Each value is fenced by `|` on both sides, because `ssh` trims its answer: a separator that is
+ *  whitespace is eaten when the role is empty, and the database then reads as the role. */
 function regPsql(): string {
   if (regPsqlMemo) return regPsqlMemo;
-  const [u = "", d = ""] = ssh(`cd ${REMOTE}/deploy && ${PG_ROLE_DB_SH} && printf '%s %s' "$U" "$D"`).split(" ");
-  const user = u || "zz", db = d || "zz";
-  const plain = /^[A-Za-z0-9_]+$/;
-  if (!plain.test(user) || !plain.test(db)) {
-    throw new Error(`the host's deploy/.env names the database role "${user}" and database "${db}", ` +
-                    "which a --psql command line cannot carry");
+  const said = ssh(`cd ${REMOTE}/deploy && ${PG_ROLE_DB_SH} && printf '|%s|%s|' "$U" "$D"`);
+  const fenced = /^\|([A-Za-z0-9_]*)\|([A-Za-z0-9_]*)\|$/.exec(said);
+  if (!fenced) {
+    throw new Error(`the host's deploy/.env names the database role and database as ${JSON.stringify(said)} ` +
+                    "(|role|database|), which a --psql command line cannot carry");
   }
+  const user = fenced[1] || "zz", db = fenced[2] || "zz";
   regPsqlMemo = `ssh ${HOST} docker compose -f ${REMOTE}/deploy/docker-compose.yml exec -T postgres ` +
                 `psql -U ${user} -d ${db}`;
   return regPsqlMemo;

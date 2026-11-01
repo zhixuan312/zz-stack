@@ -226,7 +226,9 @@ export function registerKnowledgeTools(server: McpServer): void {
       // The shelf comes from `scope` — a team-scoped lesson lands on the caller's own shelf, a
       // platform-scoped one on KNOWLEDGE_TEAM's.
       const shelf = scope === "platform" ? KNOWLEDGE_TEAM : team as string;
-      const shelves = [...new Set([team as string, shelf, ...[...evidenceTeams, KNOWLEDGE_TEAM].sort()])];
+      // A teamless caller writing to the platform shelf has no shelf of its own to list.
+      const shelves = [...new Set([team, shelf, ...[...evidenceTeams, KNOWLEDGE_TEAM].sort()])]
+        .filter((s): s is string => Boolean(s));
       const names = evidence.map((e) => e.trim());
       for (const e of names) {
         if (!PLAIN_TOKEN.test(e)) {

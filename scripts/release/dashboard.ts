@@ -54,8 +54,9 @@ export function resolveDashboard(): DashboardResolution {
              why: "never released — no tag in zz-stack-dashboard" };
   }
   if (since.length === 0) {
-    // The console is what people look at, so a production still on the previous image while
-    // UAT has moved is a difference nobody would attribute to the release.
+    // The console is what people look at, so a host still on an older image than the one already
+    // published is a difference nobody would attribute to the release: naming that published
+    // version deploys it without a rebuild.
     if (dashArg) {
       if (published(`${DASH_IMAGE}:${dashArg}`)) {
         return { release: true, version: dashArg, current, lastTag, alreadyPublished: true,

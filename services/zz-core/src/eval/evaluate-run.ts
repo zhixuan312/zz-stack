@@ -304,7 +304,7 @@ export async function startEvaluation(
     };
   }
   const opener = (await p.query<{ id: string }>(
-    "select id::text as id from zz.principal where lower(email) = $1", [principal])).rows[0];
+    "select id::text as id from zz.principal where lower(email) = lower($1)", [principal])).rows[0];
   if (!opener) return { error: `ERROR: "${principal}" resolves to no principal, so the run would name no starter` };
 
   let initiativeId: string | null = null;

@@ -19,10 +19,25 @@ import { KNOWLEDGE_TEAM } from "../paths.js";
 // the predicate a legacy caller already depends on.
 export const HAN_SCALAR_RE = /\p{Script=Han}/u;
 
-/** The same Han run as a PostgreSQL regex character class, for the scope probe below. Built from
- *  code points rather than literal characters, since every file in this repository is English.
- *  Bound as a parameter, never spliced into SQL. */
-export const HAN_SQL_CLASS = `[${String.fromCodePoint(0x4e00)}-${String.fromCodePoint(0x9fff)}]`;
+/** `HAN_SCALAR_RE` as a PostgreSQL regex character class, for the scope probe below: one range
+ *  per run of code points it matches, found by asking it of every scalar value once at load, so a
+ *  body the probe calls Han-bearing is one the clause split calls Han — Extension A and the
+ *  supplementary planes included — on whatever Unicode this runtime knows. PostgreSQL's regex has
+ *  no `\p{Script=…}` of its own. Bound as a parameter, never spliced into SQL. */
+export const HAN_SQL_CLASS = ((): string => {
+  const ranges: string[] = [];
+  let start = -1;
+  for (let cp = 0; cp <= 0x110000; cp++) {
+    const han = cp < 0x110000 && (cp < 0xd800 || cp > 0xdfff) && HAN_SCALAR_RE.test(String.fromCodePoint(cp));
+    if (han && start < 0) start = cp;
+    if (!han && start >= 0) {
+      ranges.push(start === cp - 1 ? String.fromCodePoint(start)
+        : `${String.fromCodePoint(start)}-${String.fromCodePoint(cp - 1)}`);
+      start = -1;
+    }
+  }
+  return `[${ranges.join("")}]`;
+})();
 
 /** A body with a Latin letter in it — the counterpart to `HAN_SQL_CLASS` for the lane that
  *  cannot reach Han.

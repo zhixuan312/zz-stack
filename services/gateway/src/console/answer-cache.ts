@@ -16,7 +16,7 @@
  * `activity` and `runs`, so it strands Usage, Status and Record and leaves `/api/console/initiatives`
  * — which reads `initiatives` and `document` — reachable, because nothing it reads moved. An answer whose
  * figures are the whole platform's folds every team's changes in, so another team's write strands it; a
- * team-scoped answer folds only the teams its caller hears, so another team's write does not.
+ * team-scoped answer folds only the team it is about, so another team's write does not.
  *
  * A table no trigger watches is the one way an answer can outlive its data, which is why the entry also
  * expires: a stale entry is never served for longer than `LIFETIME_MS`, whatever the listener missed. Nothing
@@ -40,11 +40,9 @@
  * says what each route reads and at what scope; and every route that wraps a read in `cachedWithHit` — each
  * says in its own comment what it means to be a few seconds behind.
  */
-import type { Request } from "express";
-
-import type { Identity } from "../identity.js";
+import { isSuper, type Identity } from "../identity.js";
 import type { ReadMeta } from "./figures.js";
-import { heardBy, revisionNamed } from "./live-revision.js";
+import { revisionNamed } from "./live-revision.js";
 import { routeFor } from "./read-envelope.js";
 
 /** How long an answer may be served, whatever the listener heard. A backstop, not the policy: the marker
@@ -92,18 +90,22 @@ type BoundaryOf<T> = (value: T) => number | null;
  * (`invalidates: "platform"`) folds EVERY team's changes in, so a write by a team its reader is not in still
  * makes it unreachable — which is what a public aggregate has to do, or team A's member would keep reading
  * figures team B had already moved. An entry whose answer is the caller's own or their active team's folds
- * only the teams `heardBy` resolves for them.
+ * only the identity's active team, the team every kept read of that kind is computed for (`platformPublic`),
+ * and a superadmin's every team, as `heardBy` hears for them — folding more only costs a recomputation.
+ *
+ * DELIBERATE: the active team, never the scope `resolveScope` reads off the request. A kept read ignores
+ * `?team=`, so a member of two teams asking with `?team=B` was answered team A's figures under team B's marker:
+ * A's writes never moved it, and the answer was served stale until the minute ran out.
  *
  * Null — nothing kept, the answer recomputed every time — in three cases, and each is a marker that cannot be
  * told to have moved: nothing is listening, so there are no counts to compose; the path declares no entry, so
- * there are no collections to fold; and the caller's scope is refused, so there are no teams to narrow to.
+ * there are no collections to fold; and the caller acts for no team, so there is no team to narrow to.
  */
-export function prefixFor(path: string, id: Identity, req: Request): string | null {
+export function prefixFor(path: string, id: Identity): string | null {
   const entry = routeFor(path);
   if (entry === null) return null;
-  if (entry.invalidates === "platform") return revisionNamed(entry.collections, null);
-  const heard = heardBy(id, req);
-  return "teams" in heard ? revisionNamed(entry.collections, heard.teams) : null;
+  if (entry.invalidates === "platform" || isSuper(id)) return revisionNamed(entry.collections, null);
+  return id.activeTeam === null ? null : revisionNamed(entry.collections, [id.activeTeam]);
 }
 
 /**

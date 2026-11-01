@@ -106,10 +106,7 @@ const read = (f: string) => { try { return readFileSync(f, "utf8"); } catch { re
 // migration for a `drop not null` is a claim about a file that a squashed schema no longer
 // carries.
 const runsSql = read("services/gateway/migrations/001_init.sql");
-// The table's name after 002 renames it, and after 002 is folded back into 001 this file is the
-// only place its definition lives — under the new name, with no rename left to read. Both are
-// accepted so the same column is asked of the schema before the fold and after it.
-const runTable = /create table zz\.(?:skill_run|run) \(([\s\S]*?)\n\);/i.exec(runsSql)?.[1] ?? "";
+const runTable = /create table zz\.skill_run \(([\s\S]*?)\n\);/i.exec(runsSql)?.[1] ?? "";
 const bytesTotal = /^\s+bytes_total\s+([^\n]*?),?$/im.exec(runTable)?.[1] ?? "";
 if (!bytesTotal) fail.push("zz.skill_run has no bytes_total column");
 if (/not null/i.test(bytesTotal)) fail.push("zz.skill_run.bytes_total is NOT NULL — an unmeasured run cannot say so");

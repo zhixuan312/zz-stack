@@ -20,7 +20,7 @@
   },
   "zz-access": {
     "version": "0.100.0",
-    "digest": "47004025",
+    "digest": "640a3710",
     "skills": {
       "zz-access": "dd49d5a438d3",
       "zz-admin": "544928bc060e",
@@ -31,11 +31,11 @@
   },
   "zz-core": {
     "version": "0.100.0",
-    "digest": "2766663a",
+    "digest": "4526925a",
     "skills": {
       "zz-authoring": "a2c3a1684d0c",
       "zz-breakout": "ef9cd4334b71",
-      "zz-deck": "f7a8d80c5a45",
+      "zz-deck": "7060a7731b9c",
       "zz-handover": "992da3790aea",
       "zz-platform": "8a0cc321478f",
       "zz-tldr": "2a3da1e766b9"
@@ -43,15 +43,15 @@
   },
   "zz-plugin-eval": {
     "version": "0.100.0",
-    "digest": "1bf34f3b",
+    "digest": "8dc1123b",
     "skills": {
       "zz-plugin-define-qualify": "efd17f1076f3",
       "zz-plugin-discover": "776855fb88ca",
-      "zz-plugin-eval": "d6db2a3d55fb",
+      "zz-plugin-eval": "896fb13d9095",
       "zz-plugin-evaluate": "39c297685da7",
       "zz-plugin-explain": "14acd54c4c14",
       "zz-plugin-identify": "fb88e6b72869",
-      "zz-plugin-improve": "5758b6ab5522",
+      "zz-plugin-improve": "d9152d23aa97",
       "zz-plugin-observe": "c214f6f0fbbb",
       "zz-plugin-promote-verify": "2e7859b666f2"
     }

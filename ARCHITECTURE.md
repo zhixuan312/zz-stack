@@ -665,8 +665,10 @@ One model exists, because its cost grows with `zz.event` and its answer does not
 
 A second model is worth declaring when a statement reads rows in proportion to a table's size rather than to
 what the page shows, the answer is derivable from something already stored, and the write path can absorb the
-change in the transaction that caused it. None of the seven meets that — a session's later history, the two
-minutes after a refusal, a local hour — and a model holding it would store state a rebuild loses.
+change in the transaction that caused it. Of the ten raw queries above, `callWeeks` and `searchesMeasure`
+already meet it, and moving them is the open decision named there; none of the other eight does — a
+session's later history, the two minutes after a refusal, a local hour — and a model holding it would store
+state a rebuild loses.
 
 ### What a page may cost
 

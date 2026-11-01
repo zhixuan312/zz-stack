@@ -87,7 +87,8 @@ export function sourceReport(rows: Map<string, DocRow>): {
  *
  *  `plan` is the document the flow declares with `role: "plan"`; `owing` the documents whose stage
  *  record owes an act, whose text `owedActs` searches for the record's affirmed digest; `verified`
- *  the documents some flow document verifies, whose sources a review consults; `drafts` the gated
+ *  the flow documents that verify others (declare `verifies`), whose supporting sources are their
+ *  review rounds and are read; `drafts` the gated
  *  documents not yet approved whose flow declares sections, read for the ones they still lack.
  *  Everything else is decided from metadata and is left without its text. */
 export async function fillStateBodies(

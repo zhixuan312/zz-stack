@@ -16,7 +16,7 @@
  * and `document_edit` and the retired `document_patch` and `document_revise`, whose `ids.path`, less a
  * leading `/`, names its initiative and its path, in its team. It is imported when it has at least one
  * and every one has origin `platform`; unrecorded when it has none; mixed when both origins appear.
- * Only a flow document is judged: one whose path is not under `sources/`, outside `_knowledge`.
+ * Only a flow document is judged: one whose path is not under `sources/`. A lesson is not a document.
  *
  * DELIBERATE: the document, not its revisions. A draft nobody has been shown is rewritten in place, so
  * several calls make one revision and no order of writing pairs a call with the revision it made.
@@ -133,7 +133,7 @@ async function readImportedDocuments(asOf: string): Promise<{ imported: DocRef[]
        join zz.initiative i on i.id = d.initiative_id
        join zz.team t on t.id = i.team_id
        left join writes w on w.team_id = i.team_id and w.path = i.slug || '/' || d.path
-      where d.path not like 'sources/%' and i.slug <> '_knowledge' and d.created_at < $1::timestamptz
+      where d.path not like 'sources/%' and d.created_at < $1::timestamptz
         and (w.path is null or w.platform > 0)
       order by t.slug, i.slug, d.path`, [asOf]);
   const told: Record<Told, DocRef[]> = { imported: [], unrecorded: [], mixed: [] };

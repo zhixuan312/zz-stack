@@ -4,7 +4,7 @@
 // git 2.50.1 (Apple Git-155) — every candidate failed before its build began, and nothing covered
 // it. Proves:
 //   - a diff applies, a trailing newline missing from the recorded diff included;
-//   - a filter named by the tree's own `.gitattributes` (or one the patch adds) never runs;
+//   - a filter named by the tree's own `.gitattributes` never runs;
 //   - a diff that does not match the tree throws, and leaves the tree unchanged.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

@@ -37,8 +37,8 @@
  * shape is checked here instead — every key a level this question declared, every value a
  * probability — and the map is carried verbatim, unsummed and unnormalised.
  *
- * `rejected` below builds the port's own record type for a reply this adapter refuses:
- * `interpret` accepts a reply with no model field against an exactly pinned version.
+ * `rejected` below builds the port's own record type for a reply this adapter refuses: under an
+ * alias pin `interpret` is handed no expected identity, so it accepts a reply with no model field.
  */
 import type {
   AnswerOption, AnswerSpec, AskedQuestion, AssessmentCall, AssessmentStatus,
@@ -360,9 +360,9 @@ function signalValue(assessed: SemanticAssessment, name: string, key: string): n
  * distribution arithmetic and the decision about what may become a value.
  *
  * The identity is checked here and handed to the port as the pinned identity, but only when the
- * pin is an exact version. DELIBERATE: the duplication — this adapter refuses an unidentified
- * reply, which the port cannot, and the port refuses a misidentified one independently of
- * whether this function was correct. Under an alias neither comparison is made.
+ * pin is an exact version. DELIBERATE: the duplication — under an exact pin the port refuses an
+ * unidentified or misidentified reply independently of whether this function was correct; under
+ * an alias only this adapter refuses an unidentified reply, and no version comparison is made.
  */
 export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
   const rec = asRecord(raw);

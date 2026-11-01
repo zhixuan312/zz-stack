@@ -429,11 +429,11 @@ export async function pluginTraces(
                                    and w.ts > r0.ts and w.ts < r.ts)))::text as repeats
       from reads r`, params).then((r) => r.rows[0]);
 
-  // Through tool_key, the alias-resolved name — never the raw subject. `subject` is what the
-  // caller literally typed; `tool_key` folds a rename onto one series. Read raw, one tool appears
-  // twice under two spellings, and `never_called` comes out backwards: a tool in daily use under
-  // its pre-rename name is reported as never called. coalesce covers rows written before the
-  // column existed, where it is null.
+  // Through tool_key, the `<door>:<tool>` name the call was sent with, stamped at write. Rows
+  // written before 2026-10-31 were alias-resolved there, so a tool's calls under its pre-rename name
+  // read as its new name; since then no door serves a retired name, so a call naming one is a
+  // refusal counted under the name it sent, not use of the tool that replaced it. coalesce covers
+  // rows written before the column existed, where it is null.
   //
   // For a plugin with a door, counted from the door directly and not through a run: a call that
   // reached the door is use of this plugin whether or not the reconciler has since tied it to a

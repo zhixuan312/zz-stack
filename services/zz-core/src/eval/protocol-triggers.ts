@@ -74,8 +74,9 @@ interface OpenCandidate {
  *  `eval_protocol_failure_mode` row that folds one in, and nothing else does. A failure mode is an
  *  identity and a discovery of it is a sighting, so what is unfolded is a sighting whose identity
  *  no version of this plugin has folded in; `failure_mode_id` is the id a `failureTaxonomy` entry
- *  folds in. The one statement both `new_recurring_failure` and `protocol_read`'s
- *  `open_candidates` read, so the trigger fires exactly when there is a candidate to fold. */
+ *  folds in. `protocol_read` runs it once and hands the rows to both `new_recurring_failure`
+ *  (`triggersFor`) and its own `open_candidates`, so the trigger fires exactly when there is a
+ *  candidate to fold. */
 export async function openCandidates(p: pg.Pool, pluginId: string): Promise<OpenCandidate[]> {
   return (await p.query<{
     id: string; description: string; failure_mode_id: string; stable_key: string;
@@ -117,15 +118,17 @@ async function evaluatorDrift(p: pg.Pool, protocolVersionId: string): Promise<bo
 /** Every trigger that fires for `plugin`'s latest protocol version, in the fixed order the
  *  contract lists them — empty means the version is still compatible, `protocol_action = reuse` —
  *  and the tools behind `new_evidence_surface`: which the version's surfaces lack, so the next
- *  version can add them rather than record the same surfaces again. */
+ *  version can add them rather than record the same surfaces again. `candidates` is
+ *  `openCandidates` of this plugin, read once by the caller. */
 export async function triggersFor(
-  p: pg.Pool, pluginId: string, plugin: string, version: string, latest: LatestProtocolVersion,
+  p: pg.Pool, plugin: string, version: string, latest: LatestProtocolVersion,
+  candidates: readonly OpenCandidate[],
 ): Promise<{ fired: Trigger[]; missingSurfaces: string[] }> {
   const fired: Trigger[] = [];
   const entry = entryOf(plugin);
   const entryPurpose = entry?.manifest.purpose;
   if (entryPurpose && entryPurpose !== latest.purpose) fired.push("purpose_changed");
-  if ((await openCandidates(p, pluginId)).length) fired.push("new_recurring_failure");
+  if (candidates.length) fired.push("new_recurring_failure");
   if (await evaluatorDrift(p, latest.id)) fired.push("evaluator_drift");
   const surfaces = new Set(latest.observable_surfaces ?? []);
   const surface = await doorSurface(p, plugin, version, servesOwnDoor(plugin, entry));

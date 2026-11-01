@@ -144,16 +144,15 @@ check("telemetry keeps identifiers and never the team's own words", () => {
 });
 
 check("a record that is counted is a record that is written once", () => {
-  // Both halves have to hold: the ledger appends once, and the close refuses a second one.
-  // Either alone lets the ledger's count and the closing document's outcome diverge.
+  // What a team's counts read is the anchor row in `zz.initiative` — `closed_at`, `outcome` — so
+  // an initiative is counted once only if it is closed once. initiative_close reads that row
+  // before any other rule and refuses a second close there, answering with the close that
+  // happened. What this check holds is the rest of that guard: the writes themselves refuse a
+  // close that raced past the read, and a closing document that already carries an outcome is
+  // refused rather than overwritten.
   const bad: string[] = [];
-  // COUPLED: `ledgerOnClose` went with the store. It appended one row per close to
-  // `<team>/_ledger.md`, and that ledger is a query over `zz.initiative` now — `closed_at`,
-  // `outcome` and the counts the console derives. So the append-once guard has ONE home rather
-  // than two, and it is the anchor row: the UPDATE that closes an initiative is guarded on
-  // `closed_at is null`, which is the ROW refusing a second close rather than a file the close
-  // chooses not to append to. A guard that reads the row it is about to write is stronger than
-  // one that reads a ledger beside it, and the check follows it there rather than dropping it.
+  // The race: the UPDATE that closes an initiative is guarded on `closed_at is null`, so the ROW
+  // refuses a second close however the read above was timed.
   //
   // COUPLED: a close that writes its closing document hands the anchor update to `saveDocument`
   // (`closeAnchor`), which runs it in the document's own transaction after the state compare, so

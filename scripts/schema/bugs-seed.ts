@@ -5,7 +5,8 @@
  *
  * Weeks are the status seed's: Monday to Monday in the reporting timezone, `back` 0 the running week,
  * 1 the last whole week (L), and so on to 5 (L-4), where the first real-work call falls on the week's
- * first instant. Their real-work calls are the status seed's, by `back`: 100, 0, 12, 200, 125 and 5.
+ * first instant. Their real-work calls are the status seed's, by `back` from 5 down to 0: 100, 0, 12,
+ * 200, 125 and 5.
  *
  * What it writes on top of `seedStatus`:
  *

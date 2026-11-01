@@ -229,14 +229,13 @@ tbody tr:first-child td{border-top:0}tbody tr:nth-child(even) td{background:rgba
 }
 
 /* ── cx · unified chart vocabulary ─────────────────────────────────────
-   Every chart exhibit in the book is inline SVG drawn in one of exactly two
-   viewBoxes — 480×300 (card) and 960×380 (wide) — so identical card widths
-   yield identical rendered stroke weights and type sizes.                */
+   Every chart exhibit is inline SVG drawn 480 units wide (card) or 960 (wide),
+   as tall as its content needs; the box takes its own viewBox's ratio, so equal
+   card widths yield equal stroke weights and type sizes, and nothing letterboxes. */
 .cx-card{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:var(--s2);min-height:0;padding:14px;background:var(--white);border:var(--edge)}
 .cx-card .kicker{align-self:start}
 .cx-card .small,.cx-card .source,.cx-card .legend{align-self:center;margin:0}
-.cx{display:block;width:100%;height:auto;min-height:0;max-height:100%;aspect-ratio:480/300;overflow:visible}
-.cx--wide{aspect-ratio:960/380}
+.cx{display:block;width:100%;height:auto;min-height:0;max-height:100%;overflow:visible}
 .cx text{font-family:var(--sans);fill:var(--ink)}
 /* one stroke system */
 .cx-axis{fill:none;stroke:var(--line-strong);stroke-width:calc(2px * var(--fscale, 1))}
@@ -655,7 +654,7 @@ function runChecks(slide){
 
   // Contrast. Composite the whole ancestor stack - stopping at the first
   // non-transparent background reads a 2%-tint zebra row as opaque and scores
-  // near-black text on near-white paper at 1.00:1.
+  // near-black text on near-white paper at 1.00:1. Then the ink's own alpha on it.
   const lum=c=>{const m=c.match(/[\d.]+/g);if(!m)return null;
     const a=m.slice(0,3).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});
     return .2126*a[0]+.7152*a[1]+.0722*a[2]};
@@ -667,12 +666,13 @@ function runChecks(slide){
     let acc=L[L.length-1].slice(0,3);
     for(let k=L.length-2;k>=0;k--){const[r,g,b,a]=L[k];acc=[r*a+acc[0]*(1-a),g*a+acc[1]*(1-a),b*a+acc[2]*(1-a)]}
     return 'rgb('+acc.map(Math.round).join(', ')+')'};
+  const over=(c,bg)=>{const m=c.match(/[\d.]+/g),g=bg.match(/[\d.]+/g);if(!m||!g)return c;const a=m.length>3?parseFloat(m[3]):1;return 'rgb('+[0,1,2].map(i=>Math.round(+m[i]*a+(+g[i])*(1-a))).join(', ')+')'};
   const dim=[];
   slide.querySelectorAll('.zone-head p,.zone-head h2,.zone-stage p,.zone-stage li,.zone-stage td,.zone-stage th,.zone-stage span,.zone-stage strong').forEach(el=>{
     if(el.children.length||!el.textContent.trim())return;
     if(!el.getBoundingClientRect().height)return;
     const cs=getComputedStyle(el),bg=ground(el);if(!bg)return;
-    const f=lum(cs.color),b=lum(bg);if(f===null||b===null)return;
+    const f=lum(over(cs.color,bg)),b=lum(bg);if(f===null||b===null)return;
     const cr=(Math.max(f,b)+.05)/(Math.min(f,b)+.05);
     const px=parseFloat(cs.fontSize),need=(px>=24||(px>=18.66&&parseInt(cs.fontWeight)>=600))?3:4.5;
     if(cr<need-.02) dim.push({el,cr,need});

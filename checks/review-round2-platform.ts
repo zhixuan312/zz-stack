@@ -126,13 +126,10 @@ async function settings(c: Core, found: string[]): Promise<void> {
 }
 
 async function routes(c: Core, found: string[], load: (p: string) => Promise<unknown>): Promise<void> {
-  const { mountMySettings } = (await load("settings/me.js")) as { mountMySettings: (app: unknown, deps: unknown) => void };
-  const credentials = (await load("credentials.js")) as Record<string, unknown>;
+  const { mountMySettings } = (await load("settings/me.js")) as { mountMySettings: (app: unknown) => void };
   const mounted = new Map<string, Route>();
   const on = (method: string) => (path: string, h: Route) => mounted.set(`${method} ${path}`, h);
-  mountMySettings({ get: on("GET"), post: on("POST"), delete: on("DELETE") }, {
-    issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-    revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
+  mountMySettings({ get: on("GET"), post: on("POST"), delete: on("DELETE") });
   const route = (key: string): Route => mounted.get(key) ?? c.fail("mount", `no route ${key}`);
   /** As the seeded person's signed-in browser, past the gateway's identity gate. */
   const ask = (key: string, params: Obj, body: Obj = {}) => answer(route(key), {

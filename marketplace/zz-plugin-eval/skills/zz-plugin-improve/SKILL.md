@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.13
+version: 0.14
 description: Stage 7 of zz-plugin-eval (IMPROVE). Turn plugin-owned findings into one candidate patch, build and gate it locally, and hand it to promotion for an owned subject — or write an owner-facing proposal for one this team cannot release. A released improvement is judged on real use afterwards, never by replaying past initiatives first.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. The skip is one MCP call any client can make; everything past it REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands. Every stage before this one runs with no shell at all."
 ---
@@ -119,6 +119,10 @@ before the build is recorded prints the same `build_required` again.
 - **a timeout, or a problem on this host** (`stage: host` — a docker daemon or registry out of
   reach) → back to `recorded`: nothing about the patch was judged. Fix the host and validate
   again.
+
+Each `candidate_validate` call is its own request: send a fresh `idempotency_key` every time, and
+reuse one only to retry that same call. A key sent again once a build has been recorded since its
+first use is refused as a conflict.
 
 ## Where this stage ends
 

@@ -486,45 +486,35 @@ async function main(): Promise<number> {
   record(!!afterClose.closed_by,
     "initiative_status reads closed_by from the anchor row after a close", JSON.stringify(afterClose));
 
-  // An initiative closes once. A second close must not overwrite the document's outcome while
-  // ledgerOnClose skips the second row — the document and the team's ledger would say different
-  // words.
-  //
-  // The same disposition as the close that landed, though either would do: a closed initiative
-  // is refused as already closed before every other rule, `abandoned`'s contradiction refusal
-  // included (services/zz-core/src/tools/initiative-close.ts reads the anchor row first).
+  // An initiative closes once. The same disposition as the close that landed, though either would
+  // do: a closed initiative is refused as already closed before every other rule, `abandoned`'s
+  // contradiction refusal included (services/zz-core/src/tools/initiative-close.ts reads the anchor
+  // row first).
   check("an initiative cannot be closed twice",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
     true, /already closed as/);
 
-  // And the way round that guard: initiative_close() and ledgerOnClose both refuse a second close
-  // by reading `outcome` off the document, so anything able to remove that field would reopen the
-  // initiative and put a second ledger row against the same work.
+  // And a correction of the closing document: initiative-close.ts's anchor read above refuses a
+  // second close before anything reads the document, so a correction leaves the initiative closed.
   //
   // DELIBERATE: the correction is asserted to be accepted, not refused — `outcome: accepted` and
-  // `closed_by` survive it, and it lands as a draft correction while the close and its ledger row
+  // `closed_by` survive it, and it lands as a draft correction while the close and its anchor row
   // stand. The closing document is approved, so its body changes only with a cause.
   check("a closed document may be corrected, and the outcome survives it",
     await changeDoc(`${INIT}/${closing}`, "reopened", {
       content: "chain-check corrected its own closing document to prove the outcome survives a correction.",
       title: "chain-check: correcting a closed document",
     }), false);
-  // Two guards stand behind "closes once" after a correction, and each is walked. The correction
-  // withdrew the closing document's approval, so the control loop refuses the claim first; once
-  // the corrected document is approved again, the kernel refuses the second close in its own
-  // words: `closeInitiative` words it "the disposition that closed the work is not written twice".
-  // DELIBERATE: the reason moved, and the assertion says what is true now. The close landed before
-  // this correction — that is what the block above walked — so a second close is refused because
-  // the work is closed, which is the stronger version of the same rule. Want of an approval was the
-  // refusal when the approve above could not land at all; a check that pinned that word reported a
-  // correct refusal as a failure.
-  check("correcting the closing document withdraws its approval, so a second close is refused",
+  // After the correction, and again once the corrected document is approved, a second close is
+  // refused by initiative-close.ts's anchor read before anything else, in the kernel's words:
+  // `closeInitiative` says "the disposition that closed the work is not written twice".
+  check("after a correction, the anchor row still refuses a second close",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
-    true, /needs 1 approval|closing record already exists/);
+    true, /already closed as/);
   await call("document_present", { path: `${INIT}/${closing}` });
   check("the corrected closing document can be approved again",
     await call("document_approve", { path: `${INIT}/${closing}`, on_behalf_of: signer }), false);
-  check("re-approving the closing document does not let the initiative close twice",
+  check("after a re-approval, the anchor row still refuses a second close",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
     true, /not written twice/);
 
@@ -621,10 +611,9 @@ async function main(): Promise<number> {
   // The plugin-eval surface, in chain-eval.ts.
   await walkEvalDoor({ callEval, eitherOr, PLUGIN });
 
-  // The claim is the same one the ledger row carried — a close records an outcome no writer can
-  // reach from outside — and it is now read off the initiative's own row. The status call is
-  // scoped to INIT rather than to a prefix, so the `<INIT>-freeform` probe beside this one cannot
-  // answer for it.
+  // A close records an outcome no writer can reach from outside, read off the initiative's own
+  // row. The status call is scoped to INIT rather than to a prefix, so the `<INIT>-freeform` probe
+  // beside this one cannot answer for it.
   const after = await call("initiative_status", { initiative: INIT });
   const closedRow = jsonOr<{ outcome: string | null; closed_by: string | null }>("initiative_status", after);
   const beforeRow = jsonOr<{ outcome: string | null }>("initiative_status", before);

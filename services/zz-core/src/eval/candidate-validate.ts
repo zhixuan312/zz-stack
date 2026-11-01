@@ -67,6 +67,13 @@ const validOutcome = (c: { id: string; patch_digest: string }, build: unknown): 
 
 type BuildRequired = ReturnType<typeof buildRequired>;
 
+/** The request a consume's idempotency digest covers: the candidate and the build it consumes. A
+ *  key reused once a fresh build is recorded is therefore another request, refused as a conflict,
+ *  never a replay of the first consumption that would leave the new build unconsumed. */
+export const consumeRequest = (c: { id: string; build_recorded_at: Date | null }) => ({
+  candidate_id: c.id, build_recorded_at: c.build_recorded_at ? new Date(c.build_recorded_at).toISOString() : null,
+});
+
 export async function validateCandidate(
   p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string,
 ): Promise<ValidOutcome | BuildRequired | { error: string }> {
@@ -109,7 +116,7 @@ export async function validateCandidate(
   const verdict = judgeBuild(candidateId, candidate.patch_digest, candidate.build_result);
   const next = verdict.next;
   const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-    principal, "candidate_validate", idempotencyKey, { candidate_id: candidateId },
+    principal, "candidate_validate", idempotencyKey, consumeRequest(candidate),
     async (client): Promise<MutatorOutcome<{ id: string }>> => {
       const moved = await client.query(`
         update zz.candidate

@@ -55,8 +55,9 @@ export const OTHER = "runs-two";
 const HOUR = 3_600_000;
 const MINUTE = 60_000;
 
-/** Local `time` (`HH:MM` or `HH:MM:SS`) on day `day` from Monday 7 September 2026, as an instant. */
-function at(day: number, time: string): string {
+/** Local `time` (`HH:MM` or `HH:MM:SS`) on day `day` from Monday 7 September 2026, as an instant —
+ *  refusals-seed.ts's clock too. */
+export function at(day: number, time: string): string {
   const [h, m, s = 0] = time.split(":").map(Number);
   return new Date(Date.UTC(2026, 8, 7 + day, h, m, s) - 8 * HOUR).toISOString();
 }

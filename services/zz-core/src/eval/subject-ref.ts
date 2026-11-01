@@ -22,6 +22,7 @@ import type pg from "pg";
 import { ZZ_TZ } from "../write-guards.js";
 
 import { KNOWLEDGE_TEAM, UUID_RE } from "../paths.js";
+import { journalAddress } from "../tools/journal.js";
 import { loadDocument } from "../versions.js";
 
 import type { SubjectKind } from "./evaluate-measures.js";
@@ -51,14 +52,14 @@ function splitDocumentRef(ref: string): { initiative: string; docPath: string } 
 export async function knowledgeNodeAt(
   p: pg.Pool, team: string, ref: string,
 ): Promise<{ id: string; title: string; body: string } | null> {
-  const named = /^_knowledge\/nodes\/(\d+)-(.+)\.md$/.exec(ref);
+  const named = journalAddress(ref);
   if (!named) return null;
   return (await p.query<{ id: string; title: string; body: string }>(
     `select k.id::text as id, k.title, k.body from zz.knowledge_node k
        join zz.team t on t.id = k.team_id
       where t.slug in ($1, $2) and k.node_ordinal = $3 and k.slug = $4
       order by t.slug = $1 desc limit 1`,
-    [team, KNOWLEDGE_TEAM, named[1], named[2]])).rows[0] ?? null;
+    [team, KNOWLEDGE_TEAM, named.ordinal, named.slug])).rows[0] ?? null;
 }
 
 /** One `subject_ref`, resolved to the text a model-backed measure is actually asked to judge, or

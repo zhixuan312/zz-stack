@@ -312,6 +312,9 @@ async function run(c: Core): Promise<void> {
     }
     // In upper case, which the id's schema accepts: the retry finds the delete all the same.
     const DU = D.toUpperCase();
+    // The events of the earlier delete of D, in lower case, would answer this retry whatever the
+    // delete below records: an upper-case delete recorded its id as sent.
+    await c.sql.query("delete from zz.event where kind = 'bug.delete'");
     await c.call(step, "bug_delete", { id: DU }, tool);
     const retryUntil = Date.now() + 5000;
     let again = "";

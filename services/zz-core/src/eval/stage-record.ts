@@ -98,16 +98,40 @@ export async function recordDefineOwes(initiative: string | undefined): Promise<
  *  the version names — none owed discharges the qualification here and now. The record is
  *  REPLACED, so an earlier version's qualifications never count for this one, and it keeps the
  *  digest the bound document quoted: initiative_status reads protocol.md for it, and a document
- *  revised to quote a newer version owes the bind and the qualification again. */
+ *  revised to quote a newer version owes the bind and the qualification again. A `replayed` call
+ *  writes only what `affirmReplay` allows. */
 export async function recordAffirmed(
   initiative: string, protocolVersionId: string, path: string, qualifyOwed: readonly string[],
-  contentDigest: string,
+  contentDigest: string, replayed: boolean,
 ): Promise<{ record_refused?: string }> {
-  return recordStage(initiative, DEFINE_STAGE, {
+  const ids = {
     owes: DEFINE_OWES.join(","), protocol_version_id: protocolVersionId, affirmed_path: path,
     affirmed_digest: contentDigest, qualify_owed: qualifyOwed.join(","),
     ...(qualifyOwed.length ? {} : { qualified_measures: "none owed" }),
-  }, true);
+  };
+  if (!replayed) return recordStage(initiative, DEFINE_STAGE, ids, true);
+  const at = await located(initiative);
+  if ("record_refused" in at) return at;
+  let refused: string | undefined;
+  await inRecordTransaction(at.p, initiative, async (client) => {
+    const replay = affirmReplay((await recordsFor(client, at.team, initiative))[DEFINE_STAGE] ?? {}, protocolVersionId);
+    if (replay.write) await writeStageRecord(client, at.initiativeId, DEFINE_STAGE, ids, true);
+    refused = replay.refused;
+  });
+  return refused ? { record_refused: refused } : {};
+}
+
+/** Whether a replayed protocol_affirm rewrites DEFINE/QUALIFY's record: only one that names no
+ *  version yet. A record naming this version is kept — replaced, it would drop every qualification
+ *  recorded since — and one naming another is a later bind that a late replay of an older version
+ *  must not strand: kept, and said. Pure, so a check can drive it without a request. */
+export function affirmReplay(
+  held: Readonly<Record<string, string>>, protocolVersionId: string,
+): { write: boolean; refused?: string } {
+  if (!held.protocol_version_id) return { write: true };
+  if (held.protocol_version_id === protocolVersionId) return { write: false };
+  return { write: false, refused: `this initiative's DEFINE/QUALIFY record names protocol version ` +
+    `${held.protocol_version_id}, and a replayed protocol_affirm of ${protocolVersionId} does not rewrite it` };
 }
 
 /** evaluator_qualify established `state` for one measure of this version. The qualification is

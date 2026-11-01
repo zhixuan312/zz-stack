@@ -84,7 +84,7 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   process.env.TEAM_DB_URL = url;
   process.env.ZZ_CATALOG_DIR = join(root, "catalog");
   const express = (await import("express")).default;
-  const dbModule = (await load("db.js")) as { initPlatformDb: () => Promise<void> };
+  const dbModule = (await load("db.js")) as { initPlatformDb: () => Promise<void>; platformDb: () => pg.Pool };
   const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
   const live = (await load("console/live-revision.js")) as {
     mountConsoleRevision: (app: Express) => void;
@@ -191,14 +191,12 @@ async function run(sql: pg.Client, url: string): Promise<void> {
 
   } finally {
     for (const s of servers) s.close();
+    // The platform pool `initPlatformDb` opened: its idle connections would hold the process open.
+    await dbModule.platformDb().end().catch(() => undefined);
   }
 }
 if (!built()) {
   console.error(`${NAME}: the check could not run — the tree is not built — run npm run build`);
   process.exit(2);
 }
-const code = await withThrowawayDbCheck(NAME, DONE, run);
-// Every case has been decided by the time this resolves, and the throwaway database is dropped. The process's
-// LISTEN connection is the one thing still alive, and its reconnect timer would otherwise keep the process up
-// and turn a green run red — so the run ends here, with the exit code its cases earned.
-process.exit(code);
+process.exitCode = await withThrowawayDbCheck(NAME, DONE, run);

@@ -142,7 +142,7 @@ export const DELIVERY: Record<string, TableTarget> = {
       closed_by: "class=state_machine; authority=this; question=which principal closed this initiative, if it has?",
       outcome: "class=state_machine; authority=this; question=what did this initiative's lifecycle conclude, if it has closed?",
       accepted_by: "class=state_machine; authority=this; question=who is recorded as having signed off on this initiative's accepted outcome, if it was accepted?",
-      no_signoff_reason: "class=state_machine; authority=this; question=why was this initiative's accepted outcome accepted without a named sign-off, if so?",
+      no_signoff_reason: "class=state_machine; authority=this; question=why did this initiative close with nobody named as having signed off — the reason a finished close gave, which records delivered rather than accepted, or one an abandoned close was sent — if a reason was given?",
     },
   },
   initiative_fact: {

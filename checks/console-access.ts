@@ -205,15 +205,13 @@ async function run(sql: pg.Client, url: string): Promise<void> {
   await db.initPlatformDb();
   const { identityMiddleware } = (await load("identity.js")) as { identityMiddleware: () => RequestHandler };
   const { mountAccess } = (await load("console/access.js")) as { mountAccess: (app: Express) => void };
-  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express, deps: unknown) => void };
-  const credentials = (await load("credentials.js")) as Record<string, unknown>;
+  const { mountSettings } = (await load("settings.js")) as { mountSettings: (app: Express) => void };
   const app = express();
   // COUPLED: services/gateway/src/server.ts — the identity gate, the JSON parser, then the console's reads and its settings.
   app.use(identityMiddleware());
   app.use(express.json({ limit: "1mb" }));
   mountAccess(app);
-  mountSettings(app, { issueMyAccessTokenFor: credentials.issueMyAccessTokenFor,
-                       revokeMyAccessTokenFor: credentials.revokeMyAccessTokenFor });
+  mountSettings(app);
   const server: Server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;

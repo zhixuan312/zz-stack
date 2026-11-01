@@ -373,13 +373,22 @@ const carried = (thrown: unknown): unknown => (thrown as { model_call_id?: unkno
 // Last, because the backoff between the three attempts is a real wait.
 {
   const rows: Record<string, unknown>[] = [];
-  const { thrown } = await typedRound(async () => ({
-    ok: false, status: 500, headers: NO_HEADERS, text: async () => "upstream exploded", json: async () => ({}),
-  }), rows, 9);
+  const t0 = Date.now();
+  const { thrown } = await typedRound(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+    return { ok: false, status: 500, headers: NO_HEADERS, text: async () => "upstream exploded", json: async () => ({}) };
+  }, rows, 9);
+  const elapsed = Date.now() - t0;
   const row = one(rows, "typed/retried");
   if (row) {
     eq("typed/retried", row, "ok", false);
     eq("typed/retried", row, "attempts", 3);
+    // The whole call, its three attempts and the waits between them: the last attempt alone is
+    // ~30ms, so this reads 90 or more only when every attempt is counted.
+    if (!(typeof row.duration_ms === "number" && row.duration_ms >= 90 && row.duration_ms <= elapsed)) {
+      fail.push(`typed/retried: duration_ms is ${JSON.stringify(row.duration_ms)} for a call of three 30ms ` +
+                `attempts that took ${elapsed}ms — the last attempt alone, not the call`);
+    }
   }
   if (!(thrown instanceof typed.TypedCallRefusal)) {
     fail.push(`typed/retried: the call threw ${String(thrown)}, expected a TypedCallRefusal`);

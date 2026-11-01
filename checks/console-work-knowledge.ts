@@ -54,7 +54,7 @@ import { root } from "../scripts/deployment.ts";
 import { withThrowawayCore, type Core } from "../scripts/schema/throwaway-core.ts";
 import { OTHER_EMAIL, OTHER_TEAM, TIMEZONE, WEEK, at, runningWeek, type When } from "../scripts/schema/work-seed.ts";
 import { shapeDiffs } from "../scripts/schema/shape-diffs.ts";
-import { canonical, count, iso, request, show, type Who } from "./console-work-query-harness.ts";
+import { canonical, count, iso, phase, request, show, type Who } from "./console-work-query-harness.ts";
 import { answer, type Obj, type Route } from "./in-process.ts";
 
 const NAME = "console-work-knowledge";
@@ -133,31 +133,8 @@ async function listen(c: Core): Promise<Gateway> {
   };
 }
 
-/**
- * Runs `make` and waits until every row it leaves has landed (zz-core writes a search's row after it answers); then,
- * with a `target`, moves every timestamp the phase wrote by one interval, so its first instant lands there.
- */
-async function phase(c: Core, target: number | null, make: () => Promise<void>): Promise<void> {
-  const start = (await c.sql.query<{ t: string }>("select clock_timestamp()::text as t")).rows[0].t;
-  await make();
-  const until = Date.now() + 15_000;
-  let seen = -1;
-  for (;;) {
-    await new Promise((r) => setTimeout(r, 400));
-    const all = await count(c, "true");
-    if (all === seen) break;
-    if (Date.now() > until) c.fail("a phase settles", "events still moving");
-    seen = all;
-  }
-  if (target === null) return;
-  const to = new Date(target).toISOString();
-  const move = (table: string, columns: string[]) => c.sql.query(
-    `update ${table} set ${columns.map((k) => `${k} = case when ${k} >= $1::timestamptz then ${k} + ($2::timestamptz - $1::timestamptz) else ${k} end`).join(", ")}
-      where ${columns.map((k) => `${k} >= $1::timestamptz`).join(" or ")}`, [start, to]);
-  await move("zz.event", ["ts"]);
-  await move("zz.initiative", ["opened_at", "closed_at"]);
-  await move("zz.knowledge_node", ["created_at", "updated_at"]);
-}
+/** The phases' calls go to zz-core itself, never through the door, so a phase waits on no door's row. */
+const DIRECT = { sent: (): number => 0 };
 
 async function run(c: Core): Promise<void> {
   const g = await listen(c);
@@ -192,16 +169,16 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     const reply = JSON.parse(await c.ok(step, "knowledge_search", { query }, via)) as { returned: number };
     if ((reply.returned > 0) !== finds) c.fail(step, `"${query}" returned ${reply.returned}, where the seed needs ${finds ? "some" : "none"}`);
   };
-  await phase(c, when([4, 10]), async () => {
+  await phase(c, DIRECT, when([4, 10]), async () => {
     source = await c.open("knowledge-source");
     for (const i of [0, 1, 2]) await add(i);
   });
-  await phase(c, when([3, 10]), async () => { for (const i of [3, 4, 5]) await add(i); });
-  await phase(c, when([2, 10]), async () => {
+  await phase(c, DIRECT, when([3, 10]), async () => { for (const i of [3, 4, 5]) await add(i); });
+  await phase(c, DIRECT, when([2, 10]), async () => {
     for (const i of [6, 7, 8]) await add(i);
     await c.ok(step, "knowledge_supersede", { old_id: "0001", new_id: "0007", shelf: "team" });
   });
-  await phase(c, when([1, 10]), async () => {
+  await phase(c, DIRECT, when([1, 10]), async () => {
     for (const i of [9, 10, 11]) await add(i);
     await c.ok(step, "knowledge_add", { title: "A gate is a person approving", type: "decision", scope: "platform", tags: ["platform:guardrail"],
       evidence: [source], body: "A check passing is evidence for the person; it is never the approval." });
@@ -210,18 +187,18 @@ async function cases(c: Core, g: Gateway): Promise<void> {
     await c.ok(step, "knowledge_add", { title: "Their private lesson", type: "process", scope: "team", evidence: [theirs.initiative],
       body: "Only the second team may read this lesson." }, other);
   });
-  await phase(c, when([3, 20]), async () => { await ask(ROTATED[0], false); await ask(FOUND[0], true); });
-  await phase(c, when([2, 20]), async () => {
+  await phase(c, DIRECT, when([3, 20]), async () => { await ask(ROTATED[0], false); await ask(FOUND[0], true); });
+  await phase(c, DIRECT, when([2, 20]), async () => {
     await ask(ROTATED[1], false); await ask(SNARF[0], false); await ask(FOUND[0], true); await ask(FOUND[1], true);
   });
-  await phase(c, when([1, 20]), async () => {
+  await phase(c, DIRECT, when([1, 20]), async () => {
     await ask(ROTATED[2], false); await ask(SNARF[1], false);
     for (const q of ONCE) await ask(q, false);
     for (const q of FOUND) await ask(q, true);
     await ask(MAINTAINED, false, maintenance);
     await ask(THEIRS, false, other);
   });
-  await phase(c, null, async () => { await ask(RUNNING_ONCE, false); await ask(FOUND[2], true); });
+  await phase(c, DIRECT, null, async () => { await ask(RUNNING_ONCE, false); await ask(FOUND[2], true); });
   if (await count(c, `kind = 'knowledge.search' and subject = '${THEIRS}' and team_id = (select id from zz.team where slug = '${OTHER_TEAM}')`) !== 1) {
     c.fail(step, "the second team's question was not recorded as its own, so its absence would prove nothing");
   }
@@ -432,7 +409,7 @@ async function cases(c: Core, g: Gateway): Promise<void> {
   c.pass(step);
 
   step = "a first search older than the weeks drawn: the newest 24 whole weeks, and its question outside them";
-  await phase(c, when([30, 10]), () => ask(OLD, false));
+  await phase(c, DIRECT, when([30, 10]), () => ask(OLD, false));
   const long = await summaryOf(step);
   const drawn = ok(step, long.weeks) as PF[];
   if (drawn.length !== 25 || drawn[0].window.from !== iso(w0 - 24 * WEEK) || ((long.meta as Obj).period as Obj).from !== drawn[0].window.from) {

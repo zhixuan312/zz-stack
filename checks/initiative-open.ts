@@ -422,6 +422,10 @@ is(written.flow === "sdlc-flow" && written.opened_by === "ada@zz.test"
    "and the platform's own date");
 is((await openRecord(db()!, TEAM, GOVERNED_NAME))?.flow === "sdlc-flow",
    "the flow an initiative was opened with cannot be read back");
+// The row holds the flow's declared id: a pin (`sdlc-flow@1`) is accepted at the door and cut by
+// the one writer, so a reader matching `flow = 'sdlc-flow'` finds it (second read, rs13-3).
+is((await recordOpen(db()!, TEAM, `${isoToday()}-pinned-flow`, " sdlc-flow@1 ", "ada@zz.test")).flow === "sdlc-flow",
+   "a flow opened with its @N pin is recorded with the pin, which an exact-match reader misses");
 
 const FREEFORM_NAME = `${isoToday()}-opened-freeform`;
 is((await recordOpen(db()!, TEAM, FREEFORM_NAME, null, "bo@zz.test")).flow === null,

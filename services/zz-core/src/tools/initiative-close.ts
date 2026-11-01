@@ -77,7 +77,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         "either.",
       inputSchema: {
         initiative: z.string().describe("The initiative's slug, e.g. '2026-08-23-sample-queue'"),
-        // The stop word is the outcome's, so what the caller says and what the ledger records are
+        // The stop word is the outcome's, so what the caller says and what the anchor row records are
         // the same word and a rename cannot leave one behind. `finished` is this tool's own — the
         // platform derives `delivered` or `accepted` from it and whether anybody signed off.
         disposition: z.enum(["finished", OUTCOME_STOPPED]).describe(
@@ -226,8 +226,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         if (stopped) {
           // An empty initiative is abandoned on its own anchor row, not on a document nobody
           // wrote — an initiative opened by mistake has no documents by definition and never
-          // will. No ledger row is appended: a team's counts are built from work that happened,
-          // and this is the record of work that did not.
+          // will. The team's counts read that row, so it counts as abandoned like any other.
           if (!anchor) {
             return text(
               `ERROR: ${initiative} has neither a document nor an anchor row, so there is ` +
@@ -256,8 +255,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           platformEvent({ actor: who.email, kind: "initiative_close", initiative, outcome: OUTCOME_STOPPED });
           return text(
             `${initiative} abandoned — it holds no document, so the outcome is recorded on its ` +
-            "own anchor row and no ledger row is appended. A team's counts are built from work " +
-            "that happened; this is the record of work that did not.");
+            "own anchor row, which the team's counts read: it counts as abandoned.");
         }
         return text(
           `ERROR: no flow governs '${initiative}', so nothing declares which document records ` +
@@ -277,9 +275,10 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // attempt below loads the text it records onto, so a body read here would be read twice.
       const missing = `ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`;
       if (!(await documentAt(p, team, relPath))) return text(missing);
-      // An initiative closes once. A second close overwrites `outcome` on the document while
-      // ledgerOnClose returns early when one is already there, so the document says the new word and
-      // the ledger goes on saying the first.
+      // An initiative closes once. The close is the anchor row, recorded by `saveDocument` in the
+      // transaction that writes the document and guarded on `closed_at is null`: a second close is
+      // refused above off the anchor read, and one racing this call by the row itself, which rolls
+      // the document back — so the document can never say a second word the row does not.
       //
       // Refused rather than reconciled: an outcome that can be revised months later is one nobody
       // can rely on having read. A close that was genuinely wrong is a journal node saying so.
@@ -396,11 +395,11 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           // One fact, so one branch: `already` is the only thing this call tells the kernel that the
           // kernel cannot say back in full.
           return text(`ERROR: ${record.refusals.join("; ")}.` + (already
-            ? `\n\n${initiative} is already closed as \`${already}\`. The ledger row was appended ` +
-              "at that close and is what the team's counts read, so changing the document now " +
-              "would leave the two disagreeing. If that close was wrong, record WHY as a journal " +
-              "node against this initiative — a correction somebody can find beats an overwrite " +
-              "nobody can."
+            ? `\n\n${initiative} is already closed as \`${already}\`. That close is recorded on ` +
+              "the initiative's own row, which is what the team's counts read, so a second word on " +
+              "the document would leave the two disagreeing. If that close was wrong, record WHY as " +
+              "a journal node against this initiative — a correction somebody can find beats a " +
+              "second close nobody can."
             : ""));
         }
         // The kernel returns null rather than guessing at a disposition it does not know, and a null
@@ -458,7 +457,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           : disposition === OUTCOME_STOPPED
             ? "Nobody accepted it, because it stopped before it was done.\n"
             : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
-        "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
+        "The close is recorded on the initiative's own row, which the team's counts read, so the word matters.\n" +
         // The close is terminal whatever it closed on. A finished close owes the handover — it is
         // where the platform collects what the cycle taught; an abandoned one does not.
         (disposition === OUTCOME_STOPPED

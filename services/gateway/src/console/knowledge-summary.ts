@@ -13,7 +13,7 @@
  *              lessonImports; its superseded lessons; and of the last whole week, its searches and those that
  *              found nothing, both read off searchesWithResults' denominator and numerator
  *   questions  the team's own real-work searches that found nothing over the weeks drawn, by the question
- *              normalised for case and spacing, most asked first then the latest asked, ten with their total
+ *              normalised for case and spacing, most asked first then the latest asked, at most fifty with their total
  *   weeks      searchesWithResults by week over the weeks drawn, the running week not complete
  *   newest     the team's five most recently made lessons, each said imported or not
  *

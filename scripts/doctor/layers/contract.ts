@@ -8,15 +8,38 @@
  * than by count. A count passes a tool that was renamed, passes one deleted while another was
  * added, and can only ever notice a door that lost one and gained nothing.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { initFrame } from "../../deployment.ts";
 import { mcpFrame, type McpFrame } from "../../door-frame.ts";
-import { zzCoreTools } from "../../gate/read.ts";
+import { root, zzCoreTools } from "../../gate/read.ts";
 import { checkoutVersion, layer, liveToken, liveUrl, probe } from "../run.ts";
 
 layer("contract", "is the live surface the one the source declares", ["services/zz-core/src", "packages/contracts/src"]);
 
 /** One MCP call to a door, with this layer's own address and token resolved first. */
 const mcp = (path: string, body: string): McpFrame => mcpFrame(liveUrl(), liveToken(), path, body);
+
+/** Registered behind `if (sup)`, the gate checks/core-surface.ts holds knowledge_reindex to: only a
+ *  superadmin is offered it, so its absence under the member token this layer usually asks with is
+ *  not a fault. Read off the line the registration starts on. */
+const superadminOnly = (t: { file: string; from: number }): boolean => {
+  const src = readFileSync(join(root, t.file), "utf8");
+  return /if \(sup\) server\.$/.test(src.slice(src.lastIndexOf("\n", t.from) + 1, t.from));
+};
+
+/** Every tool zz-core's source registers for every caller that `served` lacks, as `<file> (<names>)`
+ *  per module, or null. Each tool is looked for on its own: a module that registers one tool is
+ *  as droppable from a builder as one that registers five. */
+export function unservedTools(served: Set<string>): string | null {
+  const byFile = new Map<string, string[]>();
+  for (const t of zzCoreTools()) {
+    if (served.has(t.name) || superadminOnly(t)) continue;
+    byFile.set(t.file, [...(byFile.get(t.file) ?? []), t.name]);
+  }
+  return byFile.size ? [...byFile].map(([f, ns]) => `${f} (${ns.join(", ")})`).join("; ") : null;
+}
 
 probe("every tool the source registers is on the live door", () => {
   // The initialize handshake first: the doors are stateless, but a server that throws at
@@ -43,33 +66,17 @@ probe("every tool the source registers is on the live door", () => {
     names.push(...served);
   }
 
-  // The source side, file by file, so the answer names the module a missing tool came from —
-  // which is the whole diagnosis when a register<Door>Tools call is dropped from a builder.
-  const declared = zzCoreTools();
-  const coreDoor = new Set(names);
-  // Only the tools zz-core is supposed to carry: /manage/mcp holds the rest, and its list is
-  // the caller's role rather than a fixed set, so it is not comparable this way.
-  const missing = declared.filter((t) => !coreDoor.has(t.name));
-  const byFile = new Map();
-  for (const t of missing) byFile.set(t.file, [...(byFile.get(t.file) ?? []), t.name]);
-  // A tool declared in source and absent from both zz-core doors is normal — it may be a /manage
-  // door tool. A whole file's worth going missing at once is not, and that is what a dropped
-  // register call looks like.
-  //
-  // What this cannot see: `ns.length > 1` means a door module holding exactly one tool could be
-  // dropped from buildServer and pass here. Every door module today holds several, so the blind
-  // spot is empty rather than merely unlikely — but it is a property of the code, not of the
-  // check. Nor can it see which of zz-core's two doors a tool is on: the lists are unioned, so a
-  // tool that moved from one to the other reads as present. checks/eval-door.ts holds that
-  // offline, against the builders themselves.
-  const wholeFiles = [...byFile].filter(([file, ns]) =>
-    ns.length === declared.filter((t) => t.file === file).length && ns.length > 1);
-  return wholeFiles.length
+  // Per tool, so the answer names the module a missing tool came from — which is the whole
+  // diagnosis when a register<Door>Tools call is dropped from a builder. What this cannot see:
+  // which of zz-core's two doors a tool is on. The lists are unioned, so a tool that moved from
+  // one to the other reads as present; checks/eval-door.ts holds that offline, against the
+  // builders themselves.
+  const unserved = unservedTools(new Set(names));
+  return unserved
     ? `zz-core's doors (${DOORS.join(", ")}) carry ${names.length} tools between them and are ` +
-      "missing EVERY tool from " +
-      wholeFiles.map(([f, ns]) => `${f} (${ns.join(", ")})`).join("; ") +
-      " — that is the shape of a register call dropped from a builder. A tool MOVED between " +
-      "these two doors is invisible here, because both are asked and their lists are unioned."
+      `missing ${unserved} — every caller is offered these, so that is the shape of a register ` +
+      "call dropped from a builder. A tool MOVED between these two doors is invisible here, " +
+      "because both are asked and their lists are unioned."
     : null;
 });
 

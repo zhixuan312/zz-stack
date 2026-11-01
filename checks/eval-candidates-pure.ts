@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Task I-18's own pure slice beyond complexityDelta (the plan-authored eval-complexity.ts covers
-// that one alone): the unified-diff parser, the component mapping candidate_record's touched_
-// components reads from, and the proposer bundle's non_trivial rule (AC-37.1).
+// Task I-18's own pure slice: the unified-diff parser, the component mapping candidate_record's
+// touched_components reads from, complexityDelta as candidate_record composes it, and the proposer
+// bundle's non_trivial rule (AC-37.1). The plan-authored eval-complexity.ts holds complexityDelta's
+// own values and the parser's header-less `diff -ruN` form.
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";

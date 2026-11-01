@@ -27,11 +27,11 @@ import { PLATFORM_SKILLS_DIR, type ShippedSkill, readSkillAt, skillsIn } from ".
 /** One plugin as it sits on disk, before the store is asked anything about it. */
 interface DiskPlugin {
   plugin: string;
-  /** The catalog owner directory. Null for `zz`, which is not catalog-resident. */
-  owner: string | null;
+  /** The catalog owner directory: `zz` for zz-core as for the platform's other plugins. */
+  owner: string;
   agentName: string | null;
   description: string | null;
-  /** What the plugin declares it is — flow.json, or the gateway's manifest for `zz`. */
+  /** What the plugin declares it is: the platform's version, for every plugin this image ships. */
   version: string | null;
   /** The MCP servers this plugin's skills reach. */
   servers: string[];
@@ -48,21 +48,22 @@ interface DiskPlugin {
 }
 
 /**
- * Every plugin this image ships: the catalog's, plus `zz`. No `stages.length > 0` filter — a
+ * Every plugin this image ships: the catalog's, zz-core among them. No `stages.length > 0` filter — a
  * package with no stages is still a plugin somebody installs, and plugins.lock.json counts it.
  * The distinction is carried by each row's `flow` field, declared by the manifest and read
  * through `isFlow`.
  *
- * `zz-core` is built below rather than in the walk. It has a flow.json, so the walk finds it,
- * but client-package.ts synthesises its files per caller and its skills are the tree beside the
- * catalog rather than that entry's `skills/` — a row from the walk would report it as shipping
- * nothing, beside a second row of the same name.
+ * `zz-core` is built below rather than in the walk. It has a flow.json, so the walk finds it and
+ * its owner is that entry's, but client-package.ts synthesises its files per caller and its skills
+ * are the tree beside the catalog rather than that entry's `skills/` — a row from the walk would
+ * report it as shipping nothing, beside a second row of the same name.
  *
  * COUPLED: its skills are read from the directory `src/package/plugin-lock.ts` walks for its
  * digest.
  */
 function diskPlugins(): DiskPlugin[] {
-  const out: DiskPlugin[] = catalogEntries().filter((e) => e.flow !== BASELINE).map((e) => {
+  const entries = catalogEntries();
+  const out: DiskPlugin[] = entries.filter((e) => e.flow !== BASELINE).map((e) => {
     const docs = e.manifest.documents ?? [];
     return {
       plugin: pluginName(e.flow),
@@ -86,10 +87,11 @@ function diskPlugins(): DiskPlugin[] {
       skillsDir: join(e.dir, "skills"),
     };
   });
-  if (existsSync(PLATFORM_SKILLS_DIR)) {
+  const baseline = entries.find((e) => e.flow === BASELINE);
+  if (baseline && existsSync(PLATFORM_SKILLS_DIR)) {
     out.push({
       plugin: BASELINE,
-      owner: null,
+      owner: baseline.owner,
       agentName: null,
       description: "The platform itself: its MCP surface and the method for using it. Every account has it.",
       version: PLATFORM_VERSION,
@@ -134,7 +136,7 @@ export function mountCatalog(app: Express): void {
     const db = platformDb();
     const asOf = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const [ran, released, history] = await Promise.all([
-      // Every skill the store has seen, whatever kind it is. `zz` ships common skills
+      // Every skill the store has seen, whatever kind it is. zz-core ships common skills
       // (zz-platform), which are skills of a plugin here too, so a filter on
       // `kind = 'flow_step'` would show them as never run.
       //

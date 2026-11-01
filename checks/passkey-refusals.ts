@@ -20,8 +20,10 @@
  *   - a fresh link still registers;
  *   - a sign-in answering another challenge is refused in a sentence of the gateway's own, as the
  *     registration's is, and the same key then signs in;
- *   - a `next` that would leave the site — another origin, or `/` then a tab or a newline the URL
- *     parser strips — is stored as `/`, and the sign-in answers `/`; a path on the site is kept.
+ *   - a `next` that would leave the site — another origin, `/` then a tab or a newline the URL
+ *     parser strips, or a dot segment it consumes before a second slash (`/.//host`, `/x/..//host`),
+ *     which leaves a path a browser reads as another host — is stored as `/`, and the sign-in
+ *     answers `/`; a path on the site is kept.
  */
 import { randomBytes } from "node:crypto";
 
@@ -34,7 +36,8 @@ const DONE = "passkey-refusals: every failed registration says its enrolment lin
   "and a next that leaves the site is kept as /: ok";
 
 /** `next` values that resolve to another host, and one on the site that must be kept as it was sent. */
-const OFF_SITE = ["/\t/evil.example", "/\n/evil.example", "https://evil.example/x"];
+const OFF_SITE = ["/\t/evil.example", "/\n/evil.example", "https://evil.example/x",
+  "/.//evil.example", "/x/..//evil.example", "/%2e//evil.example"];
 const ON_SITE = "/console/home?tab=a#b";
 
 /** The words every failed verify must carry, and the ones none may. */

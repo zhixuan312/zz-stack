@@ -96,13 +96,15 @@ function clearCeremonyCookie(res: Response): void {
  * when it stays on that origin. A test of its first characters is not enough: `//evil`, `/\evil`,
  * and `/<tab>/evil` or `/<newline>/evil`, whose tab or newline the URL parser strips, each resolve
  * to another host. What is returned is the parsed path, query and fragment, so a character the
- * parser dropped cannot come back when the browser follows it. */
+ * parser dropped cannot come back when the browser follows it. That parsed path is refused when it
+ * starts `//`: a dot segment the parser consumes (`/.//evil`, `/x/..//evil`) keeps the origin ours
+ * and leaves exactly that path, which the browser then reads as another host. */
 function safeNext(value: unknown): string {
   if (typeof value !== "string" || !value.startsWith("/")) return "/";
   const base = "https://next.invalid";
   try {
     const url = new URL(value, base);
-    return url.origin === base ? `${url.pathname}${url.search}${url.hash}` : "/";
+    return url.origin === base && !url.pathname.startsWith("//") ? `${url.pathname}${url.search}${url.hash}` : "/";
   } catch {
     return "/";
   }

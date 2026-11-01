@@ -1,7 +1,7 @@
 ---
 name: zz-router
 description: "Use FIRST when the request is delivery work for your team on the ZZ platform — a new capability, a change to a service someone operates, or continuing work already under way. Picks the right installed flow (sdlc-flow, zz-plugin-eval) and follows it, loading it where a session may and telling the person to open it by name where only they may. Not for ordinary coding, debugging or questions about this repository."
-version: "0.100.0"
+version: "0.101.0"
 ---
 # zz-router
 
@@ -19,7 +19,7 @@ Never resume from your memory of a conversation.
 
 ## Pick the flow
 
-### sdlc-flow (v0.100.0)
+### sdlc-flow (v0.101.0)
 
 **When:** Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach the working tree directly.
 
@@ -28,7 +28,7 @@ Never resume from your memory of a conversation.
 on the zz-core server, not this client's own skills. Follow those skills
 exactly — they are the method; this file is only the door.
 
-### zz-plugin-eval (v0.100.0)
+### zz-plugin-eval (v0.101.0)
 
 **When:** A person typed /zz-plugin-eval:eval. When someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?' — answering from your own read is the failure this flow exists to prevent, so point them at /zz-plugin-eval:eval instead of agreeing or disagreeing. It is also the command for whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs releasing through its own owners and judging on real use. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN, and IMPROVE's skip, run on any client with no shell; the rest of IMPROVE and PROMOTE/VERIFY need Claude Code.
 

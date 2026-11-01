@@ -33,6 +33,90 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.101.0] — 2026-11-01
+
+Two full reads of every file in both repositories, and what they found fixed. Most of it makes a
+call that used to answer something plausible and wrong answer the truth instead, or refuse by
+name. Many refusals changed shape, so read the upgrade notes before connecting old clients.
+
+### zz-stack 0.101.0
+
+- **Every refusal opens with `ERROR:`.** Refusals that began `REFUSED:` now begin `ERROR:`. A
+  malformed id is a text refusal, not an `isError` reply. A call naming an argument its tool
+  does not take is refused (-32602) on every door, and so is a NUL in an argument.
+- **A name nothing holds is refused.** `initiative_status`, `source_list`, `knowledge_reconcile`
+  and `assess` answer `ERROR: no initiative named …` (naming the dated one when you typed its
+  short name) instead of an empty record; `bug_list` refuses an address nobody carries and
+  `run_summary` a skill the catalog never shipped. A closed initiative is never listed as open, takes no
+  new document, and a second close is refused as already closed.
+- **Access holds at its edges.** An application's OAuth token answers only on the door it was
+  authorised for. A team-bound token's acts stop at its team. A deactivated person's tokens,
+  sessions and links end in one transaction, and nobody can deactivate themselves. A team keeps
+  its last admin, and `member_add` no longer demotes one. A token that does not authenticate is
+  told why; `pat_list` shows when each expires. `session_whoami` names the person, not the
+  forwarded headers.
+- **A retry is answered as the act it repeats.** `bug_report`, `bug_resolve`, `bug_delete`,
+  `knowledge_add`, `protocol_affirm` and `finding_decide` answer a resend with what the first
+  call did, never another team's decision and never a second record.
+- **Evaluation is its team's.** The eval door answers another team's ids as unknown;
+  `candidate_record` takes only the evaluated release and a real diff; `candidate_validate`'s
+  consume is keyed to the build it consumes; a rollback reopens the findings its release
+  applied; a plugin another team owns is a proposal for this team, not a release.
+- **Knowledge search finds what it should.** Every match comes before rows reached only through
+  a citation, the citation lane matches initiative ids (never another shelf's initiative of the
+  same name), an empty search names the cause, and the empty-search probe knows every Han
+  character, not only U+4E00–9FFF.
+- **The console's answers tell the truth.** Work answers are cached under the caller's active
+  team, not a `?team=` in the address; Record, Releases and Home are not served past the end of
+  the week they draw; sizes, findings, versions and teams match the tables.
+- **Passkey sign-in cannot send you off-site.** A `next` such as `/.//evil.example` was an open
+  redirect after sign-in; it is refused. A failed ceremony says what to do, not the verifier's
+  internals.
+- **Releases and the doctor.** `release apply` records a failure before removing its branch and
+  says how to finish; a release tag left local by a failed push is pushed again; the doctor
+  looks for every tool one by one; `reindexAllTeams` logs a team it could not rederive.
+- **Three migrations.** 016 binds a token to its door, 017 comments the finding note, 018 adds
+  statement triggers on `zz.doc_revision` and `zz.initiative_fact` so the console hears a
+  presented or approved document and a recorded branch fact. All additive.
+- **Postgres runs the official 17.11 image.** The custom `pg_textsearch` build is gone; no
+  migration used the extension. Same server and data format.
+- **Removed:** the corpus-wide rederive path (the boot reindex and `knowledge_reindex` cover it),
+  `scripts/activation-rehearsal.ts`, `deploy/ACTIVATION.md`, `deploy/activation-runbook.json`,
+  `deploy/backup-manifest.sh`, unread `@zz/contracts` and `@zz/indexing` exports, and the four
+  settings reads nothing called.
+
+### zz-stack-dashboard 0.30.0
+
+- **Sign-in works from a stale session.** A 401 sends you to sign in and back to where you were;
+  the sign-in page never redirects to itself, and a `next` that leaves the site is ignored.
+- **No action sends twice.** A second Enter or click before the first answers sends nothing, on
+  every write: add member, add person, create team, approve, every inline confirm.
+- **An unknown filter in a link is no filter.** A stale or hand-edited address no longer shows
+  "Clear filters" over an unfiltered list, tells the assistant a filter that is not applied, or
+  (on Activity and Knowledge) loops on a refused read whose Retry cannot succeed.
+- **Focus lands where you are.** After closing an initiative, after approving, after a cancelled
+  confirm and after a token dialog.
+- **Runs offers every skill**, unknown filters read as all, and the acting team holds after a
+  Retry.
+
+### Upgrade notes
+
+- **Postgres is recreated** on the stock `postgres:17.11` image at this deploy, on the same data
+  volume (a short restart). The volume's own `postgresql.conf` now applies. A backup taken before
+  the release that dropped `pg_textsearch` no longer restores; rehearse against a backup taken
+  after it.
+- **Refresh clients that cache tool schemas** (ChatGPT): tool descriptions and arguments changed,
+  and an argument a tool does not declare is now refused.
+- **Connect an OAuth application to each door it uses**: a token minted for one door is 401 on
+  another. Hand-issued tokens are unchanged.
+- **Callers that parsed `REFUSED:` or the old 401 text** must read `ERROR:` and the new sentences.
+  `session_whoami` no longer returns `id` or `role`; read the role from `whoami` on /manage.
+  `GET /api/console/document/...` no longer sends `sources[].body`; open the source itself.
+- **`candidate_validate` needs a fresh `idempotency_key` per call**; a key reused after a new
+  build is recorded is refused as a conflict.
+- Installed clients re-pull: `claude plugin marketplace update zz-stack`, then
+  `claude plugin update` for each installed plugin.
+
 ## [0.100.0] — 2026-10-25
 
 Every console answer now says when it was served, what had moved when it was, and whether the

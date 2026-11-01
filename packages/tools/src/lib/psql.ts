@@ -27,6 +27,13 @@ export const DEFAULT_PSQL = "docker compose exec -T postgres psql -U zz -d zz";
  * answer this schema can produce for a single window. */
 const MAX_OUTPUT = 256 * 1024 * 1024;
 
+/** A `-v` binding as the command will deliver it. ssh joins every argument after the host into one
+ *  line the remote shell parses again, so a JSON list's quotes were stripped there and psql read
+ *  `[sdlc-...` (0.101.0's first release attempt); quoted once for that parse, it arrives whole. */
+function forShell(cmd: string, binding: string): string {
+  return cmd.split("/").pop() === "ssh" ? `'${binding.replaceAll("'", `'\\''`)}'` : binding;
+}
+
 /** One query, as raw `-tA` text. `vars` become psql `-v name=value` bindings.
  *
  * Always with `ON_ERROR_STOP`. Without it psql prints a refused statement to stderr and still exits
@@ -57,7 +64,7 @@ export function psqlTry(psql: string, sql: string, vars: Record<string, string> 
   // printing the error to stderr, continuing, and exiting 0 — which would read here as a
   // statement that passed.
   const argv = [...rest, "-tA", "-v", "ON_ERROR_STOP=1"];
-  for (const [k, v] of Object.entries(vars)) argv.push("-v", `${k}=${v}`);
+  for (const [k, v] of Object.entries(vars)) argv.push("-v", forShell(cmd, `${k}=${v}`));
   try {
     return { ok: true,
              text: execFileSync(cmd, argv,

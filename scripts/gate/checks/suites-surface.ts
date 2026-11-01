@@ -217,6 +217,7 @@ check("a finding is corrected by recording its replacement with supersedes: the 
 check("a release that lands closes the findings its candidate's improvement run targeted — through the one deciding write, with a note naming the released version — while a failed record and a rollback close nothing and an already-decided finding is left alone",
       runsCheck("release-closes-findings.ts"));
 check("the release reads the catalog owner team off the host's deploy/.env, hands it to register-plugins as owner and release_owners, and a register-plugins failure is a verification failure", runsCheck("release-plugin-owners.ts"));
+check("a psql binding reaches the remote psql whole when the command runs through ssh, which parses its arguments again", runsCheck("psql-over-ssh.ts"));
 check("a release tag ends on origin, one left on this machine by a failed push included, and a tag elsewhere is never moved", runsCheck("release-tag-pushed.ts"));
 check("the documents a release answers for are walked once, by sourceFiles, and hold nothing under node_modules, dist or a checked-at-source tree", runsCheck("our-docs.ts"));
 check("a registered skill's content_hash is the sha256 of its SKILL.md", runsCheck("skill-digest-sha256.ts"));

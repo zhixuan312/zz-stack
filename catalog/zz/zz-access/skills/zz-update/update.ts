@@ -211,9 +211,10 @@ if (failed) {
     : `${failed} plugin(s) did not update, and no plugin moved.`);
   process.exit(1);
 }
-// One version across the shelf, because one build stamps them all as `<version>+<digest>`. Two
-// numbers after a successful update means one plugin resolved against something else.
-const versions = [...new Set(after.map((p) => p.version))];
+// One release across the shelf. Each plugin is stamped `<version>+<its own digest>`, so the
+// digests differ by design and only the part before `+` is compared: two of those after a
+// successful update means one plugin resolved against something else.
+const versions = [...new Set(after.map((p) => p.version?.split("+")[0]))];
 if (versions.length > 1) {
   console.log(`These are not all on one version: ${versions.join(", ")}. That should not ` +
               `happen after an update — run /zz-access:doctor, which checks the rest of the picture.`);

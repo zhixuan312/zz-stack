@@ -32,7 +32,8 @@ a list written down somewhere, and prints each plugin's version before and after
   thing the script cannot do for them.
 - **Nothing moved** — say so. "Already up to date at `<version>`" is a complete answer and
   needs no follow-up.
-- **It ends with plugins on different versions** — that is not a normal outcome of an update.
+- **It ends with plugins on different releases** (the part before `+`; each plugin's digest after it
+  is its own) — that is not a normal outcome of an update.
   Run `/zz-access:doctor`, which checks the rest of the picture.
 
 If the person is not installed yet, the script says so and prints the two commands that

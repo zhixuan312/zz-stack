@@ -20,13 +20,13 @@
   },
   "zz-access": {
     "version": "0.101.0",
-    "digest": "640a3710",
+    "digest": "0c55231a",
     "skills": {
       "zz-access": "dd49d5a438d3",
       "zz-admin": "544928bc060e",
       "zz-doctor": "385985704693",
       "zz-migrate": "9a57fe905d3b",
-      "zz-update": "b8e3c03eabf2"
+      "zz-update": "657b54873bcc"
     }
   },
   "zz-core": {

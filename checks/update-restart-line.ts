@@ -12,6 +12,7 @@
  *      nothing else on the machine changed.
  *   2. nothing moves and one plugin fails to update: exit 1, and no restart line.
  *   3. a renamed plugin is replaced and every update is a no-op: exit 0, the restart line, not "Nothing changed".
+ *   4. plugins of one release, each with its own `+<digest>`, are not reported as mixed; two releases are.
  *
  * Exit 0: every case held. Exit 1: one did not, naming it.
  */
@@ -80,6 +81,23 @@ try {
   if (renamed.status !== 0) fail.push(`a rename with no-op updates exited ${renamed.status}, not 0:\n${renamed.out}`);
   if (!renamed.out.includes(RESTART) || renamed.out.includes("Nothing changed")) {
     fail.push(`zz was replaced by zz-core but the run did not ask for a restart:\n${renamed.out}`);
+  }
+
+  // Each plugin is versioned by its own digest, so one release leaves them on one version with
+  // different `+<digest>` suffixes, and that is not a mixed shelf.
+  const digests = run("digests", [
+    { "zz-core": "1.0.0+aaaa1111", "zz-access": "1.0.0+aaaa1111" },
+    { "zz-core": "1.1.0+bbbb2222", "zz-access": "1.1.0+cccc3333" },
+  ], []);
+  if (digests.out.includes("not all on one version")) {
+    fail.push(`two plugins of one release, each with its own digest, were reported as mixed:\n${digests.out}`);
+  }
+  const mixed = run("mixed", [
+    { "zz-core": "1.0.0+aaaa1111", "zz-access": "1.0.0+aaaa1111" },
+    { "zz-core": "1.1.0+bbbb2222", "zz-access": "1.0.0+aaaa1111" },
+  ], []);
+  if (!mixed.out.includes("not all on one version")) {
+    fail.push(`plugins left on two releases were not reported as mixed:\n${mixed.out}`);
   }
 } finally {
   rmSync(stubs, { recursive: true, force: true });

@@ -8,17 +8,17 @@
 # suite stops at the baseline and reports nothing. Here the whole gate passes — `images.yml` proves
 # that on this runner image — so the plants are judged against a real baseline.
 #
-# Twenty jobs at once, one shard each, then one job that merges them. The whole suite on one runner
-# takes about two minutes per row per worker, and GitHub cancels any job at six hours. Split by
-# `planShards`, the same planner a local `--workers N` uses, the largest shard is 25 rows (one check
-# file cannot be split) and every job ends in well under an hour. Twenty because that is how many
-# jobs a free account runs at once; more would only queue.
+# Twenty jobs at once, one shard each, then one job that merges them. Every row is a whole gate,
+# about eleven minutes on a runner (gate.yml, 2026-11-08), and GitHub cancels any job at six hours.
+# Split by `planShards`, the same planner a local `--workers N` uses, the largest shard is 28 rows
+# (one check file cannot be split), which is about five hours with its baseline. Twenty because that
+# is how many jobs a free account runs at once; more would only queue.
 #
 # The merge job writes `testing/mutation-report.json` and uploads it as an artifact. A dispatched run
 # stops there; the scheduled run also commits the report, and that is the one file it writes.
 #
 # Weekly, and on demand. The gate does not read the report and this is not on every push: even
-# twenty-wide it is most of an hour. But a suite nobody runs is a suite that claims coverage nobody
+# twenty-wide it is most of a working day. But a suite nobody runs is a suite that claims coverage nobody
 # has, so the scheduled run commits the refreshed report straight to master. Not a PR: a PR nobody
 # merges leaves the report as stale as a suite nobody runs.
 name: mutation
@@ -39,7 +39,8 @@ jobs:
     # 22.04 for the reason `images.yml` gives: the candidate-build check runs bwrap, which needs
     # unprivileged user namespaces that Ubuntu 24.04 restricts with an AppArmor rule.
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    # Under GitHub's 360: the largest shard needs about five hours, and a hang is still cut off.
+    timeout-minutes: 350
     strategy:
       # One shard failing must not cancel the other nineteen: the merge refuses anyway, and the
       # shards that finished are the evidence of which check files still measure.
@@ -94,7 +95,7 @@ jobs:
       # One gate at a time per job; the parallelism is the twenty jobs. Two workers in one job ran two
       # sandboxed candidate builds at once, and the candidate-build check went red in one worker's
       # baseline and green in the other's — the same tree answering two ways, which the merge
-      # rightly refuses. A shard is 18 to 25 rows, well under an hour serially.
+      # rightly refuses. A shard is 16 to 28 rows, three to five hours serially.
       - name: Plant this shard's defects and see which checks notice
         run: node scripts/mutation-run.ts --shard '${{ matrix.shard }}/${{ strategy.job-total }}'
 

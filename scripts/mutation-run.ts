@@ -144,14 +144,15 @@ interface GateRun {
 }
 
 /**
- * How long a child may take before it is a hang rather than a slow run. A gate run takes well under
- * a minute and a build is faster, so five minutes is a diagnosis rather than a budget, and
- * `spawnSync` without a timeout waits for ever in silence.
+ * How long a child may take before it is a hang rather than a slow run. A whole gate takes about
+ * eleven minutes on a runner (gate.yml, 2026-11-08), so thirty is a diagnosis rather than a budget,
+ * and `spawnSync` without a timeout waits for ever in silence. Five minutes once held; once the gate
+ * outgrew it, every baseline and every row read TIMED OUT and the suite measured nothing for weeks.
  *
  * SIGKILL rather than SIGTERM: what hangs is a grandchild — npm's `tsc` — and a polite signal to
  * npm leaves it running.
  */
-const CHILD_TIMEOUT_MS = 300_000;
+const CHILD_TIMEOUT_MS = 1_800_000;
 
 /** Runs `cmd` in a process group of its own and waits for it. Past CHILD_TIMEOUT_MS the whole group
  *  is killed: the child and every process under it — npm's `tsc` included, whose orphan holding the
@@ -332,6 +333,12 @@ function main(): void {
     : runGate(ws.repo, join(ws.reports, "baseline.json"));
   console.log(`      ${baseline.verdict} in ${(baseline.ms / 1000).toFixed(1)}s` +
     (baseline.failed.length ? ` — already red: ${baseline.failed.join(", ")}` : ""));
+  // A baseline that did not finish is no baseline: every row after it would read TIMED OUT and be
+  // recorded as SURVIVED, and the run would end green having measured nothing.
+  if (baseline.verdict === "TIMED OUT" || baseline.verdict === "NO REPORT") {
+    die(`the baseline gate, with nothing planted, ${baseline.verdict === "TIMED OUT" ?
+      `did not finish within ${CHILD_TIMEOUT_MS / 1000}s` : "wrote no report"} — no row could be measured`);
+  }
   const alreadyRed = new Set(baseline.failed);
 
   const declared = declaredChecks(ws.repo);

@@ -117,10 +117,12 @@ plan fails here far more often than it fails as prose.
    A phase whose tasks run one at a time only because each owns the same shared file is a
    finding: the file is a hotspot, or one fragment per task.
 7. **The full-suite gate exists**, as a section headed exactly `## Full-suite gate`, naming the
-   project's real build, typecheck, test and lint entry points — or, for a deliverable with no
-   suite, one line saying so and naming what stands in for it. Per-task checks prove each task did
-   its own job; they cannot prove it left the rest working, and every-check-green with the suite red
-   is the actual failure mode of a plan executed task by task.
+   after-change check and the project's real required checks, as its `AGENTS.md`, `CLAUDE.md` or
+   manifest names them — or, for a deliverable with no suite, one line saying so and naming what
+   stands in for it. Per-task checks prove each task did its own job; they cannot prove it left the
+   rest working, and every-check-green with the suite red is the actual failure mode of a plan
+   executed task by task. A plan that runs the full suite after every wave, rather than once before
+   delivery, is a finding.
 8. **No implementation code and no deliverable content leaked** into the plan. The only code is a
    declared check's source.
 9. **Zero `<!-- enrich` markers remain.**
@@ -137,12 +139,15 @@ plan fails here far more often than it fails as prose.
     fixes it — the tree will have moved by the time the task runs.
 14. **Every `command` AC names its evidence kind** — `check:`, `run:`, `probe:` or `test:` — the
     kinds `sdlc-review`'s `## Acceptance evidence` table accepts.
-15. **The plan is cut by tier.** Every phase heading carries its tier, one of Skeleton, See,
-    Feel or Unseen. The phases run in that order, or the plan says in one line why a phase is
-    out of order (a dependency the earlier tier cannot be built without, an external gate, or a
-    basic); a tier with no phase is stated, not silently absent. Feel and Unseen work is planned
-    as phases, not left as follow-ups. Every `## Full-suite gate` line carries its tier label
-    as `- [<Tier>] ...`. And every `Queued for Phase N` line in an earlier phase's `### As built`
+15. **The plan is cut by tier.** Every phase heading carries its tier, one of Works, Works well
+    or Built to last, and Phase 0 is Works. The phases run in that order, or the plan says in one
+    line why a phase is out of order (a dependency the earlier tier cannot be built without, an
+    external gate, or a basic); a tier with no phase is stated, not silently absent. Work the
+    person meets when it breaks (a migration, an error contract, a timeout under normal load)
+    sits in Works, never in a later tier; Built to last is bounded to what the change touches,
+    introduces or exposes, and adds no abstraction without a concrete need. Works well and Built
+    to last work is planned as phases, not left as follow-ups. Every `## Full-suite gate` line
+    but the after-change line carries its tier label as `- [<Tier>] ...`. And every `Queued for Phase N` line in an earlier phase's `### As built`
     is a task of Phase N once Phase N is planned, citing the finding; one that is not has
     been dropped, and that is a finding. This holds for a report, a study or a specification as
     much as for software.

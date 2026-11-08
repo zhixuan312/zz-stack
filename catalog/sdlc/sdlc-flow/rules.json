@@ -381,36 +381,37 @@
       "note": "Nothing in this repository freezes, stores or re-hashes a plan-authored check. The whole procedure is carried out by the orchestrating agent, and the hash comparison is a shell command it chooses to run."
     },
     {
-      "rule_id": "execute.gate_runs_after_every_wave",
+      "rule_id": "execute.wave_runs_its_own_checks",
       "skill": "sdlc-execute",
-      "locator": "**Then run the full-suite gate, once, on the integrated tree**",
-      "claim": "Then run the full-suite gate, once, on the integrated tree … Run the gate after every wave, not only after the last one.",
+      "locator": "**Then run the wave's checks, once, on the integrated tree:**",
+      "claim": "Then run the wave's checks, once, on the integrated tree: every task's checks and the plan's after-change check. That is all a wave runs. If a check goes red, stop.",
       "enforcement_class": "convention",
       "verified_by": "the main agent running sdlc-execute",
       "schema": null,
       "handler": null,
       "behavioural_test": null,
-      "note": "scripts/gate/run.ts exists and runs the suite, but nothing sequences it against a wave. A main agent that starts the next wave without running the gate is not refused by anything.",
+      "note": "Nothing sequences a check against a wave. A main agent that starts the next wave on a red check, or runs the full suite after every wave, is not refused by anything.",
       "also_claimed_in": [
         "sdlc-method/SKILL.md",
         "sdlc-plan/SKILL.md"
       ]
     },
     {
-      "rule_id": "execute.wave_held_by_skeleton_and_current_tier",
+      "rule_id": "execute.phase_end_and_delivery_runs",
       "skill": "sdlc-execute",
-      "locator": "## What holds a wave — the skeleton and the current tier",
-      "claim": "The walking skeleton holds every wave and every phase end, whatever the tier. A gate line of the current tier or an earlier one holds the wave.",
+      "locator": "## What each step runs — a wave, a phase, delivery",
+      "claim": "At the end of a phase, the phase's acceptance (its tasks' checks and the walking skeleton) and every gate line that covers existing behaviour the phase affects, named in the as-built. Before delivery, every full-suite gate line together, once; a later change re-runs only the lines it made stale.",
       "enforcement_class": "convention",
-      "verified_by": "the main agent running sdlc-execute",
+      "verified_by": "the main agent running sdlc-execute, and sdlc-plan-audit's point 7 for the plan's cadence",
       "schema": null,
       "handler": null,
       "behavioural_test": null,
-      "note": "scripts/gate/run.ts exists and runs the suite, but nothing sequences it against task dispatch, and nothing reads a gate line's tier. A worker that never runs the gate, or a main agent that lets a red line of the current tier pass, is not refused by anything.",
+      "note": "scripts/gate/run.ts exists and runs the suite, but nothing sequences it against a phase or a delivery, and nothing reads a gate line's tier. A main agent that skips the affected lines at a phase end, or hands over without the one full run, is not refused by anything.",
       "also_claimed_in": [
         "sdlc-flow/SKILL.md",
         "sdlc-method/SKILL.md",
-        "sdlc-plan/SKILL.md"
+        "sdlc-plan/SKILL.md",
+        "sdlc-review/SKILL.md"
       ]
     },
     {
@@ -572,7 +573,7 @@
       "rule_id": "spec.outline_cut_by_tier",
       "skill": "sdlc-spec",
       "locator": "## Cut the phases by tier",
-      "claim": "Order the phases Skeleton, See, Feel, Unseen, with one or more phases per tier. An empty tier is stated, never invented. A phase out of tier order carries its reason.",
+      "claim": "Order the phases Works, Works well, Built to last, Phase 0 the walking skeleton that opens Works. An empty tier is stated, never invented. A phase out of tier order carries its reason. Anything the person meets when it breaks is Works.",
       "enforcement_class": "convention",
       "verified_by": "the person agreeing the spec",
       "schema": null,
@@ -590,7 +591,7 @@
       "rule_id": "plan.phases_and_gate_lines_by_tier",
       "skill": "sdlc-plan",
       "locator": "### Phases — the build story, by tier",
-      "claim": "Write each phase as `## Phase N — <Tier>: <what works at the end>`. Feel and Unseen work are planned phases, never follow-ups. Label every full-suite gate line with its tier, as `- [<Tier>] `<command>` — <what it proves>`. Every `Queued for Phase N` line of an earlier `### As built` is a task of Phase N.",
+      "claim": "Write each phase as `## Phase N — <Tier>: <what works at the end>`. Works well and Built to last work are planned phases, never follow-ups. Label every full-suite gate line but the after-change line with the tier of the requirement it protects, as `- [<Tier>] `<command>` — <what it proves>`. Every `Queued for Phase N` line of an earlier `### As built` is a task of Phase N.",
       "enforcement_class": "convention",
       "verified_by": "sdlc-plan-audit's point 15",
       "schema": null,
@@ -624,7 +625,7 @@
       "rule_id": "execute.owner_told_at_preview_and_validation",
       "skill": "sdlc-execute",
       "locator": "## Two moments the owner is told",
-      "claim": "After the first See phase is built, show the owner the result as a preview; it does not stop the build. When the last See phase is built, tell the owner that everything works and that validation can start.",
+      "claim": "After the first Works phase past the skeleton is built, show the owner the result as a preview; it does not stop the build. When the last Works phase is built, tell the owner that everything works and that validation can start.",
       "enforcement_class": "convention",
       "verified_by": "the main agent running sdlc-execute",
       "schema": null,

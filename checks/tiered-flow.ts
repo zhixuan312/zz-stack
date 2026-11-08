@@ -5,12 +5,12 @@
  * Drives the real `specApprovalRefusal` (what `document_approve` calls for a spec) over a fixture
  * store resolved through the real `chainFor` and the sdlc-flow manifest, and the real
  * `validatePlan` (what `initiative_status` reports for a plan), with no typed-service key so only
- * the deterministic rules run. The fixtures are in the tiered shape: a Skeleton phase, a See
- * phase, a "No Feel phase" line, and an Unseen phase that is out of order.
+ * the deterministic rules run. The fixtures are in the tiered shape: two Works phases (the first the
+ * walking skeleton), a "No Works well phase" line, and a Built to last phase that is out of order.
  *
  *   1. the tiered spec is accepted
  *   2. the same spec with `Covers AC-2.1.` removed is refused, and the refusal names AC-2.1
- *   3. the "No Feel phase" line is not read as a phase: an outline holding only that line names
+ *   3. the "No Works well phase" line is not read as a phase: an outline holding only that line names
  *      no phase, and the line does not disturb coverage in the full spec
  *   4. the tiered plan validates ok, with Phase 1 current, Phase 2 unplanned, and Phase 1's
  *      tasks the two declared under it
@@ -67,14 +67,14 @@ const doc = (fields: Record<string, string>, body: string) =>
 // The spec fixture, in the tiered line format.
 const ACS = "## Stakeholders & Work\n\n- [ ] **AC-1.1** An intake email becomes a case. (FR-1)\n" +
             "- [ ] **AC-2.1** A case can be closed. (FR-2)\n" +
-            "- [ ] **AC-3.1** A closed case is archived. (FR-3)\n\n";
+            "- [ ] **AC-3.1** The old intake parser nobody calls any more is removed. (FR-3)\n\n";
 const OUTLINE_HEAD = "## Phase outline\n\n";
-const SKELETON = "- **Phase 0 — Intake path** (Skeleton): an email becomes a case end to end. Covers AC-1.1.\n";
-const SEE = "- **Phase 1 — Closing a case** (See): a person closes a case on screen. Covers AC-2.1.\n";
-const NO_FEEL = "- No Feel phase: the pilot has no interaction detail worth a separate pass.\n";
-const UNSEEN = "- **Phase 2 — Archive sweep** (Unseen, out of order: it needs no screen and can run last): " +
-               "closed cases are archived. Covers AC-3.1.\n";
-const OUTLINE = `${OUTLINE_HEAD}${SKELETON}${SEE}${NO_FEEL}${UNSEEN}\n`;
+const SKELETON = "- **Phase 0 — Intake path** (Works): an email becomes a case end to end. Covers AC-1.1.\n";
+const WORKS = "- **Phase 1 — Closing a case** (Works): a person closes a case on screen. Covers AC-2.1.\n";
+const NO_WORKS_WELL = "- No Works well phase: the pilot has no interaction detail worth a separate pass.\n";
+const BUILT_TO_LAST = "- **Phase 2 — Old parser removal** (Built to last, out of order: it waits on the relay's cut-over date): " +
+               "the old intake parser is gone. Covers AC-3.1.\n";
+const OUTLINE = `${OUTLINE_HEAD}${SKELETON}${WORKS}${NO_WORKS_WELL}${BUILT_TO_LAST}\n`;
 const STATEMENTS = "## Core statements\n\n" +
   "| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
   "| CS-1 | The mail relay delivers to the intake queue. | No email becomes a case. | holds | " +
@@ -113,14 +113,14 @@ const specApproval = async (body: string) => {
   report("tiered outline missing an AC: refused naming it");
 }
 
-// 3. The "No Feel phase" line is not a phase, and does not break coverage.
+// 3. The "No Works well phase" line is not a phase, and does not break coverage.
 {
-  const only = await specApproval("# Spec\n\n" + ACS + OUTLINE_HEAD + NO_FEEL + "\n" + STATEMENTS);
+  const only = await specApproval("# Spec\n\n" + ACS + OUTLINE_HEAD + NO_WORKS_WELL + "\n" + STATEMENTS);
   is(only.refusal !== null && /names no phase/.test(only.refusal),
-     `case 3: an outline holding only the No Feel line was not refused as naming no phase — got ${only.refusal ?? "an approval"}`);
+     `case 3: an outline holding only the No Works well line was not refused as naming no phase — got ${only.refusal ?? "an approval"}`);
   const full = await specApproval(SPEC);
-  is(full.refusal === null, `case 3: the No Feel line broke coverage in the full spec: ${full.refusal}`);
-  report("no-Feel line: not read as a phase, coverage intact");
+  is(full.refusal === null, `case 3: the No Works well line broke coverage in the full spec: ${full.refusal}`);
+  report("no-Works-well line: not read as a phase, coverage intact");
 }
 
 // 4. The tiered plan validates, with its current and unplanned phases.
@@ -128,14 +128,15 @@ const specApproval = async (body: string) => {
   const task = (id: string, ac: string, out: string, deps = "none") =>
     `### Task ${id}: ${out} (← ${ac})\n\n**Output:** \`${out}\`\n**Dependencies:** ${deps}\n**Owns:** \`${out}\`\n\n`;
   const PLAN = "# Plan: tiered fixture\n\nThe plan grows a phase at a time.\n\n" +
-    "## Phase 0 — Skeleton: an email becomes a case\n\n" + task("I-1", "AC-1.1", "src/intake.ts") +
+    "## Phase 0 — Works: an email becomes a case\n\n" + task("I-1", "AC-1.1", "src/intake.ts") +
     "### As built\n\nIntake lands; the skeleton runs.\n\n" +
-    "## Phase 1 — See: a person closes a case\n\n" +
+    "## Phase 1 — Works: a person closes a case\n\n" +
     task("I-2", "AC-2.1", "src/close.ts") + task("I-3", "AC-2.1", "src/screen.ts") +
-    "## Phase 2 — Unseen: closed cases are archived\n\nPlanned after Phase 1 is built.\n\n" +
+    "## Phase 2 — Built to last: the old intake parser is gone\n\nPlanned after Phase 1 is built.\n\n" +
     "## Integration hotspots\n\n- `CHANGELOG.md`\n\n" +
-    "## Full-suite gate\n\n- [Skeleton] `npm run test:intake` — intake still works\n" +
-    "- [See] `npm run test:close` — closing still works\n";
+    "## Full-suite gate\n\n- After each change: `npm run typecheck` — it still compiles\n" +
+    "- [Works] `npm run test:intake` — intake still works\n" +
+    "- [Works] `npm run test:close` — closing still works\n";
   const r = validatePlan(PLAN, "tiered-fixture");
   const phase1 = (r.phases as { phase: number; taskIds: string[] }[]).find((p) => p.phase === 1);
   is(r.ok === true, `case 4: the tiered plan is not ok: ${JSON.stringify(r.violations)}`);

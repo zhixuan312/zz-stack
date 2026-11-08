@@ -95,35 +95,43 @@ the executor reports failure rather than guessing — so make both precise.
 
 ### Phases — the build story, by tier
 
-Group the implementation into **sequential phases that tell the build story**, ordered by who
-notices the work and how: **Skeleton, then See, then Feel, then Unseen**. The spec's
-`## Phase outline` already cut the phases by tier; this stage keeps that order and that
-numbering. Each phase leaves a working increment a human could verify, and each carries one
-line: **what works at the end of it.**
+Group the implementation into **sequential phases that tell the build story**, ordered by tier:
+**Works, then Works well, then Built to last**. The spec's `## Phase outline` already cut the
+phases by tier; this stage keeps that order and that numbering. Each phase leaves a working
+increment a human could verify, and each carries one line: **what works at the end of it.**
 
-| Tier | Meaning | Ends when |
-|---|---|---|
-| **Skeleton** | The thinnest thing the person who asked can run or read end to end. | It runs or reads end to end. Every later phase keeps it running. |
-| **See** | Everything the person who asked uses or reads directly: every function, output, page, section and persona's access, with its visible presentation. Includes the basics. | The person can validate the whole result. |
-| **Feel** | The quality they perceive while using it: speed, loading, empty and error states, mobile, reading comfort, structure and order for the reader. | It feels right in use. |
-| **Unseen** | What nobody notices but must be done: budgets, hardening, test and evidence infrastructure, reproducibility, cleanup. | Every remaining requirement is met. |
+| Tier | Purpose | Covers | Ends when |
+|---|---|---|---|
+| **Works** (0 to 1) | The agreed result works, completely. | Functionality, data integrity, migrations, authority and access boundaries, contracts, compatibility, and every agreed operating requirement. Phase 0, the walking skeleton, is its first slice. Includes the basics. | The person can validate the whole result. |
+| **Works well** (1 to 100) | It already meets the requirement and becomes better to use. | Speed, latency, smoothness and responsiveness beyond what the requirement needs; for a document, reading comfort, structure and order for the reader. | It is good to use. |
+| **Built to last** | It is easy to maintain and change. | A clear and simple implementation, the existing conventions, dead code that already existed removed once confirmed unused, reuse or extension points where a concrete need exists. Bounded to what this work touches, introduces or exposes. | Nothing this work touched would slow the next change down. |
+
+Classify each piece of work by its main purpose; anything the person meets when it breaks is
+Works. Data lost to a missing migration is Works, and so is a request that times out under normal
+load; a page faster than the requirement asks is Works well; dead code that already existed is
+Built to last. Code a task leaves unused is deleted by that task, never queued for a later phase.
 
 For example, a new endpoint:
 
-- **Phase 0 — Skeleton:** the endpoint accepts a request and returns a stub response end-to-end,
+- **Phase 0 — Works:** the endpoint accepts a request and returns a stub response end-to-end,
   run by one command.
-- **Phase 1 — See:** each response section is populated from its source system — one task per
+- **Phase 1 — Works:** each response section is populated from its source system — one task per
   source (section 1 ← System A, section 2 ← System B) — the sections are combined into the real,
-  spec-shaped output, and the skeleton still runs.
-- **Phase 2 — Feel:** latency, empty-source and error responses read well for the caller.
-- **Phase 3 — Unseen:** rate budgets, retries, load tests and cleanup.
+  spec-shaped output, a source that errors or cannot connect gets its error contract, and the
+  skeleton still runs.
+- **Phase 2 — Works well:** the response comes back faster than the requirement asks, and the
+  slowest source no longer holds it.
+- **Phase 3 — Built to last:** a helper the extended module already carried with no caller is
+  removed once confirmed unused, and the module reads simply again. (The handler the endpoint
+  replaced went in Phase 1, with the change that left it unused.)
 
 The same order holds for a deliverable that is not software. A research report is a readable
-draft of every section's answer (Skeleton), every section written with each shown claim true and
-sourced (See), the reading edition, answer-first front page and figures (Feel), then the claims
-register and reproducible figure data (Unseen). A quantitative study is one scenario's result
-table on a frozen snapshot, then every scenario's result on locked definitions, then the
-per-day ledgers and summary page, then provenance manifests and leak checks.
+draft of every section's answer (Phase 0), every section written with each shown claim true,
+sourced and in the claims register (Works), the reading edition, answer-first front page and
+figures (Works well), then hashed inputs and reproducible figure data where the next edition will
+rerun them (Built to last). A quantitative study is one scenario's result table on a frozen
+snapshot, then every scenario's result on locked definitions with its leak checks, then the
+per-day ledgers and summary page, then provenance manifests.
 
 **Heading, exactly.** Write each phase as:
 
@@ -131,10 +139,10 @@ per-day ledgers and summary page, then provenance manifests and leak checks.
 ## Phase N — <Tier>: <what works at the end>
 ```
 
-`<Tier>` is one of `Skeleton`, `See`, `Feel`, `Unseen`; tasks live under the heading. The
+`<Tier>` is one of `Works`, `Works well`, `Built to last`; tasks live under the heading. The
 heading is still a phase to the platform, which reads only `## Phase N`.
 
-- **Feel and Unseen work are planned phases, never follow-ups.** Making it work well is
+- **Works well and Built to last work are planned phases, never follow-ups.** Making it work well is
   scheduled work with its own tasks, checks and "what works at the end" line. It is not
   something that arrives later as an extra task held against the current wave.
 - **An empty tier is stated, not invented.** If the spec's outline says a tier has no work, the
@@ -142,7 +150,7 @@ heading is still a phase to the platform, which reads only `## Phase N`.
 - **Basics are never deferred.** Security, data loss and authority, and the truth of what is
   shown — including the evidence, frozen definitions and frozen data that a shown claim or
   result rests on — are built in the phase that first shows or exposes them. A readable draft
-  whose claims are false is not a See result. Never place a basic in a later tier's phase to
+  whose claims are false is not a Works result. Never place a basic in a later tier's phase to
   keep an earlier one thin.
 - **A phase out of tier order keeps the reason the spec gave** (a dependency the earlier tier
   cannot be built without, an external gate, or a basic); carry the reason into the phase's
@@ -153,7 +161,7 @@ executing the plan would build Phase 0, see it run, then Phase 1, see it still r
 
 ### Phase 0 — the walking skeleton, run from the first day
 
-**Phase 0 is the Skeleton tier and is always an end-to-end harness that runs the whole deliverable**, with stubs wherever
+**Phase 0 is Works' first phase and is always an end-to-end harness that runs the whole deliverable**, with stubs wherever
 the real part does not exist yet: the endpoint that returns a canned body, the flow that walks
 every stage against placeholder documents, the report assembled from empty sections. Its
 `**Output:**` is the one command that runs it, and that command is the thing every later phase
@@ -228,6 +236,10 @@ declared check's source. When a task's technical AC has no deterministic check (
 section, a design decision, a configuration a human must eyeball) OMIT the whole Checks section — do
 not force a fake check just to have one; the contract and technical AC still carry the full weight of
 what "done" means for that task.
+
+**A check belongs to the tier of the requirement it protects.** Put its `Check:` path where the
+project's existing test entry points find it and where its tier is clear. Do not write equivalent
+checks just to give every tier one.
 
 ### How each technical AC gets verified — choose the method the claim requires
 
@@ -327,7 +339,7 @@ each in backticks, or `none`. A path owns everything beneath it; `*` stays withi
   a changelog, generated or lock files, a version stamp — go in a plan section headed
   `## Integration hotspots`, one backticked path per bullet. A task that needs a hotspot changed
   reports the exact lines; the integration step after each wave makes those edits, regenerates,
-  runs the gate and commits.
+  runs the wave's checks and commits.
 - **A task no other can run beside** — a repository-wide rename, a regeneration — owns what it
   touches and is depended on by whatever overlaps it, which puts it in a wave of its own.
 
@@ -337,10 +349,12 @@ not, because nobody knows what the silent ones may write.
 
 ### Close the plan with a full-suite gate
 
-End the plan with a section headed exactly `## Full-suite gate`, listing the commands or checks that
-must pass after every wave from their tier on (below) — the project's own build, typecheck, test and lint entry points as
-they actually exist in the target (do not invent commands; read the manifest or the existing docs and
-name the real ones).
+End the plan with a section headed exactly `## Full-suite gate`, listing the project's required
+checks: the commands that must pass before delivery, as they actually exist in the target. Every
+line together is the full suite, run once before delivery; a phase end runs only the lines that
+cover what the phase affects (below). Do not invent commands: read the target's `AGENTS.md` or
+`CLAUDE.md`, which says which checks apply to which changes and which must pass before delivery,
+or its manifest, and name the real ones.
 
 **Exactly, because this is the one section of `plan.md` the platform itself requires.**
 `flow.json` declares `Full-suite gate` and nothing else for this document. Everything else the
@@ -369,30 +383,37 @@ exactly this shape:
 - [<Tier>] `<command>` — <what it proves>
 ```
 
-`<Tier>` is `Skeleton`, `See`, `Feel` or `Unseen`. The label decides what a line holds:
+`<Tier>` is `Works`, `Works well` or `Built to last`: the tier of the requirement the line protects.
+The walking skeleton's command is a `[Works]` line. A project-wide command that protects no single
+tier (the repository's own build or test entry point) is labelled `[Works]`. The label says what a
+line protects; when it runs depends on what a change affects and on its cost:
 
-- `[Skeleton]` lines are the walking skeleton and hold every phase end.
-- `[See]` lines hold every wave from the first See phase on.
-- A later tier's lines (`[Feel]`, `[Unseen]`) hold waves from that tier's first phase on; before
-  then `sdlc-execute` runs them where cheap and records the result without holding the wave.
+- **After each change**, only the after-change line (below) and the task's own checks.
+- **At a phase end**, the phase's acceptance — its tasks' checks and the walking skeleton — with
+  the lines of the current tier and every earlier tier that the phase affects. A later tier keeps
+  the earlier tiers' results intact, so a Works well phase ends on the Works lines it could break
+  as well as its own. The phase's `### As built` names the lines that ran.
+- **Never the whole section after every change, wave or phase.** Its cost belongs before
+  delivery.
+- **Before delivery**, at the end of the last phase, every line, together, once. That run is the
+  full suite; review cites it, and a change after it re-runs only the lines it made stale.
 
-"From that tier's first phase on" follows the outline, not the tier list: when a phase is out of
-tier order, a tier's lines hold from its first phase in the outline.
+A later tier's line may run early when the phase affects what it covers and the run is cheap.
 
-A project-wide command that belongs to no later tier (the repository's own build or test
-entry point) is labelled by the earliest tier from which it must hold.
+**Name the after-change check in one line before the tier lines**, unlabelled, as
+``- After each change: `<command>` — <what it proves>``. It is the smallest project-wide check the
+target has that proves a change fits, usually the typecheck. Workers run it with their own task's
+checks, and the integration step runs it once on each wave's integrated tree. It is the only
+project-wide command a wave runs.
 
 Per-task checks prove the task did its own job. They cannot prove the task left the rest of the
 project working, and that is the failure a plan executed task-by-task actually produces: each check
-green, the suite red. State the gate once, at the end, so an executor knows what must hold after
-every wave rather than only after the last one.
+green, the suite red. The phase-end run of the affected lines catches it within the phase, and the
+run before delivery catches what no phase thought it affected.
 
-**Say where a slower check runs, when the deliverable has one.** The full-suite gate is what runs
-after every wave. A check the deliverable needs that is too slow to run after every wave is named
-in the same section with where it runs: at the end of the phase whose acceptance needs it, and at
-review. Naming it keeps it from being skipped, and keeps the executor from running it after every
-wave. Nothing moves out of the full-suite gate to save time unless the person agrees: what it
-holds is what every wave is proven against.
+**A slow check is never skipped for being slow.** It runs at the phase ends whose work affects
+what it covers, and before delivery. Nothing moves out of this section to save time unless the
+person agrees.
 
 **A file every task would write is a hotspot, not a chain.** When most tasks in a phase must add
 to one shared file, owning it in each task links them all into one sequence. Make it a hotspot
@@ -455,7 +476,7 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    a one-line **execution note** (`> **Execution:** implemented by \`sdlc-execute\`, one
    subagent per task and one wave at a time; each task's declared checks gate it and the Phase 0
    skeleton runs at every phase end.`), then Goal, Architecture, Tech Stack, Ground truth at HEAD,
-   File Structure — followed by `## Phase 0 — Skeleton: …` and the other phase headings, each
+   File Structure — followed by `## Phase 0 — Works: …` and the other phase headings, each
    under its tier with its "what works at the end" line, every task heading with its `**Output:**` / `**Dependencies:**` /
    `**Owns:**` lines and `← AC` refs, leaving each task's body as a single
    `<!-- enrich: I-N -->` slot carrying that task's own id. Do not reference another
@@ -580,10 +601,10 @@ read last time.
 phase from the spec's outline headed, built phases carrying `### As built`, a Phase 0 walking
 skeleton every later phase ends by running, phases each stating what works at the end, `### Task I-N` headings numbered straight
 through with a one-line `**Output:**`, `**Dependencies:**` and `**Owns:**`, an
-`## Integration hotspots` list, phases headed `## Phase N — <Tier>: …` in tier order, Feel and
-Unseen work planned as phases, every queued line a task of its phase, no volatile facts about the tree, a
+`## Integration hotspots` list, phases headed `## Phase N — <Tier>: …` in tier order, Works well and
+Built to last work planned as phases, every queued line a task of its phase, no volatile facts about the tree, a
 five-bullet contract and a technical acceptance criterion traced `← AC-N.N`, plan-authored checks
-wherever the claim is machine-decidable, a `## Full-suite gate` section whose every line is labelled `- [<Tier>] …` and a spec-coverage
+wherever the claim is machine-decidable, a `## Full-suite gate` section naming the after-change check and the project's required checks, each labelled `- [<Tier>] …`, and a spec-coverage
 traceability table — presented to the person and carrying their recorded approval.
 
 **Required evidence:** the approved spec. Ground truth at HEAD: every path, figure, symbol or

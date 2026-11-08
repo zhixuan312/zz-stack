@@ -81,7 +81,7 @@ const doc = (fields: Record<string, string>, body: string) =>
 
 const ACS = "## Stakeholders & Work\n\n- [ ] **AC-1.1** An intake email becomes a case. (FR-1)\n" +
             "- [ ] **AC-2.1** A case can be closed. (FR-2)\n\n";
-const OUTLINE = "## Phase outline\n\n- **Phase 1 — Skeleton:** an email becomes a case end to end. Covers AC-1.1.\n" +
+const OUTLINE = "## Phase outline\n\n- **Phase 1 — Works:** an email becomes a case end to end. Covers AC-1.1.\n" +
                 "- **Phase 2 — Closing:** a case closes. Covers AC-2.1.\n\n";
 const HEAD = "| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n";
 const HOLDS = "| CS-1 | The mail relay delivers to the intake queue. | No email becomes a case. | holds | " +

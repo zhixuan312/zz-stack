@@ -20,7 +20,7 @@ check("the plan validator refuses a duplicate task id, a dependency cycle and a 
 const task = (n: number, deps: string, owns?: string) =>
   `### Task I-${n}: T${n} (← AC-1.${n})\n**Output:** o${n}\n**Dependencies:** ${deps}\n` +
   (owns === undefined ? "" : `**Owns:** ${owns}\n`);
-const plan = (...tasks: string[]) => "## Phase 0 — Skeleton: runs end to end\n" + tasks.join("") +
+const plan = (...tasks: string[]) => "## Phase 0 — Works: runs end to end\n" + tasks.join("") +
   "## Integration hotspots\n- `CHANGELOG.md`\n- `scripts/gate.ts`\n";
 const kinds = (text: string) => validatePlan(text).violations.map((v) => v.kind);
 
@@ -69,7 +69,7 @@ check("a backticked or quoted `none` is none, in Dependencies and in Owns", () =
 });
 
 check("a plan written one phase at a time validates on the phases written, and yields the current phase's waves", () => {
-  const phase1 = "## Phase 1 — Skeleton: runs end to end\n" +
+  const phase1 = "## Phase 1 — Works: runs end to end\n" +
     task(1, "none", "`packages/a/**`") + task(2, "none", "`packages/b/x.ts`") + task(3, "Task I-1", "`packages/a/y.ts`");
   const pending = "## Phase 2 — Candidates: built in isolation\n";
   const tail = "## Integration hotspots\n- `CHANGELOG.md`\n## Full-suite gate\n`npm run gate`\n";

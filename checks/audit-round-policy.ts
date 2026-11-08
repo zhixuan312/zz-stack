@@ -64,9 +64,9 @@ const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
 const NOTE = "sdlc-plan-audit settled after round 1: it raised no critical or high finding.";
-const PLAN_BODY = "# Plan\n\n## Phase 0 — Skeleton: it runs\n\n### Task I-1: the skeleton (← AC-1.1)\n\n" +
+const PLAN_BODY = "# Plan\n\n## Phase 0 — Works: it runs\n\n### Task I-1: the skeleton (← AC-1.1)\n\n" +
   "**Output:** `run.sh`\n**Dependencies:** none\n**Owns:** `run.sh`\n\n" +
-  "## Full-suite gate\n\n- [Skeleton] `sh run.sh` — it runs\n";
+  "## Full-suite gate\n\n- [Works] `sh run.sh` — it runs\n";
 
 let n = 0;
 let seq = 0;

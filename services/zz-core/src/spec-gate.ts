@@ -3,7 +3,7 @@
  * `sections`: the route to the final shape, and the assumptions that route was tested against.
  *
  *   ## Phase outline
- *   - **Phase 1 — Skeleton:** one request travels end to end. Covers AC-1.1, AC-2.1.
+ *   - **Phase 1 — Works:** one request travels end to end. Covers AC-1.1, AC-2.1.
  *
  *   ## Core statements
  *   | ID | Statement | If false | Status | Evidence | Note |

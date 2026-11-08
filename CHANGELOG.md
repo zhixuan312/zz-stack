@@ -33,6 +33,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.102.0] — 2026-11-08
+
+The sdlc flow orders and checks its work differently. No change to the gateway, zz-core or the
+console.
+
+### Changed
+
+- **Three tiers, named for what each delivers: Works, Works well, Built to last.** They replace
+  Skeleton, See, Feel and Unseen. Works is the agreed result working completely: data integrity,
+  migrations, access, contracts, error and failed-connection handling, and every agreed operating
+  requirement. Works well makes a working result better to use than the requirement asks. Built to
+  last keeps what the work touched easy to change, and removes only dead code that already existed;
+  code a change leaves unused is deleted in that change. The walking skeleton is still Phase 0, now
+  the first slice of Works rather than a tier of its own.
+- **The full-suite gate runs once, before delivery, not after every wave.** A worker runs its task's
+  checks and the plan's new after-change check; a wave runs the same on the integrated tree; a phase
+  end runs its acceptance with the checks of the current tier and every earlier tier it affects, and
+  names them in its as-built. `sdlc-review` cites the one full run. Before, every wave ran the
+  gate's lines of the current tier and earlier, which was the slowest part of a build.
+- **A failed check is read, not re-run.** A deterministic failure is never re-run unchanged; one
+  retry is owed only when the cause is plausibly transient, and a retry that passes with no cause
+  found is reported as flaky.
+
+### Upgrade notes
+
+- `## Phase N — Skeleton|See|Feel|Unseen` headings, the outline's `(<Tier>)` labels and
+  `- [<Tier>]` gate lines now take `Works`, `Works well` or `Built to last`. A plan in flight
+  relabels Phase 0 as `Works`. Nothing on the platform reads the label, so an old plan is not
+  refused; the plan audit reports it.
+- `rules.json` renames `execute.gate_runs_after_every_wave` and
+  `execute.wave_held_by_skeleton_and_current_tier` to `execute.wave_runs_its_own_checks` and
+  `execute.phase_end_and_delivery_runs`.
+- Clients pick the new skills up on their next `/zz-access:zz-update`.
+
 ## [0.101.2] — 2026-11-01
 
 A console release. The platform's code is 0.101.1's; it carries a new number only because the

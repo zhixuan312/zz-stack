@@ -4,32 +4,32 @@
     "sha": "d73e3bb335bf"
   },
   "sdlc-execute": {
-    "version": "1.20",
-    "sha": "cab2689d981d"
+    "version": "1.21",
+    "sha": "e197efaf263b"
   },
   "sdlc-explore": {
     "version": "1.13",
     "sha": "3ba3c323ae8a"
   },
   "sdlc-flow": {
-    "version": "2.23",
-    "sha": "531c011ea9a1"
+    "version": "2.24",
+    "sha": "e05b98a2e42a"
   },
   "sdlc-investigate": {
     "version": "1.5",
     "sha": "15e674f6b8a1"
   },
   "sdlc-method": {
-    "version": "1.29",
-    "sha": "8e5dd1adfab6"
+    "version": "1.30",
+    "sha": "ee48f3e33699"
   },
   "sdlc-plan-audit": {
-    "version": "2.11",
-    "sha": "92b2af15f6f0"
+    "version": "2.12",
+    "sha": "7199465ef386"
   },
   "sdlc-plan": {
-    "version": "1.30",
-    "sha": "c7091282bf7f"
+    "version": "1.31",
+    "sha": "f8eaffc3445b"
   },
   "sdlc-recall": {
     "version": "1.12",
@@ -40,16 +40,16 @@
     "sha": "3acbabf13cb4"
   },
   "sdlc-review": {
-    "version": "1.19",
-    "sha": "9c3cd6b90dc9"
+    "version": "1.20",
+    "sha": "6874a499c4f5"
   },
   "sdlc-spec-audit": {
     "version": "2.9",
     "sha": "fdc5ce49ae67"
   },
   "sdlc-spec": {
-    "version": "1.24",
-    "sha": "3cf24069dd94"
+    "version": "1.25",
+    "sha": "d729b1b58b13"
   },
   "zz-access": {
     "version": "2.8",

@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.29
+version: 1.30
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -65,7 +65,7 @@ finds each one the day it lands, not all of them in the last phase.
 whose dependencies are done run together as a wave in one checkout; overlapping owners must
 depend on one another, and shared files — registrations, changelogs, generated files — are
 `## Integration hotspots` that no task owns. Workers report hotspot lines; the orchestrator
-applies them, regenerates, runs the gate and commits after each wave. Who writes what is decided
+applies them, regenerates, runs the wave's checks and commits after each wave. Who writes what is decided
 when the plan is written, because deciding it when two workers collide costs the work of both.
 
 **The plan says what and how-done, never a fact the tree will move under** — no migration
@@ -87,21 +87,33 @@ plan Phase N (its tasks only) → audit Phase N (structural report + Phase N-1's
   → execute Phase N (waves, skeleton) → append "### As built" → plan Phase N+1
 ```
 
-**The phases run in tier order: Skeleton, See, Feel, Unseen.** One question sorts a piece of work:
-who notices it, and how? The Skeleton is the thinnest thing the person who asked can run or read
-end to end; See is everything they use or read directly, basics included, so they can validate the
-whole result; Feel is the quality they perceive in use; Unseen is what nobody notices but must be
-done. This holds for a report, a study or a specification as much as for code: a report's Skeleton
-is a readable draft in the reader's format, not a command. `sdlc-spec` defines the tiers and cuts
-the outline by them, `sdlc-plan` writes each phase under its tier, and the basics (security, data
-loss, authority, and the truth of what is shown) are built in the phase that first shows them.
+**The phases run in tier order: Works, Works well, Built to last.** Each piece of work is
+classified by its main purpose. Works (0 to 1) is the agreed result working completely: every
+function and section, data integrity, migrations, authority, contracts, compatibility and every
+agreed operating requirement, basics included, so the person can validate the whole result. Its
+first slice, Phase 0, is the walking skeleton. Works well (1 to 100) makes a result that already
+meets the requirement better to use: speed, latency, smoothness beyond what it needs. Built to
+last keeps what this work touched, introduced or exposed easy to change: a clear and simple
+implementation, the existing conventions, dead code that already existed removed once confirmed
+unused, an abstraction only for a concrete need; code a change leaves unused is deleted in that
+same change. Anything the person meets when it breaks is Works, never Built to last. This holds
+for a report, a study or a specification as much as for code: a report's skeleton is a readable
+draft in the reader's format, not a command. `sdlc-spec` defines the tiers and cuts the outline by
+them, `sdlc-plan` writes each phase under its tier, and the basics (security, data loss,
+authority, and the truth of what is shown) are built in the phase that first shows them.
 
-**A wave is held by the skeleton and by the checks of the current tier and earlier.** A later
-tier's check is run where cheap and recorded, and does not hold the wave. A finding raised while
+**What runs when.** While editing, no repeated broad checks on intermediate states. After a
+change — one complete logical change that can be verified on its own — the smallest set of
+relevant checks that proves it, reusing what already covers it; for visible behaviour, exercise
+the flow or state that changed. After a phase, that phase's acceptance, with the checks of the
+current tier and every earlier tier that the phase affects. Before delivery, the project's required
+checks — the plan's `## Full-suite gate` — run together once, and whatever a later change makes
+stale runs again. The full suite never runs after every change, wave or phase; its cost belongs
+before delivery. A finding raised while
 building is rated on the review rubric below and given the tier of what it affects: S1 and S2 are
 fixed now whatever the tier, a small finding of a later tier is queued into that tier's phase. The
-owner sees a preview after the first See phase and is told when the last one is built.
-`sdlc-execute` has the rule in full.
+owner sees a preview after the first Works phase past the skeleton and is told when the last one
+is built. `sdlc-execute` has the rule in full.
 
 So each phase is planned from what the last one actually produced, and the finished plan is
 what happened. Per-phase approvals are quick: the audit round and the structural report are the
@@ -294,16 +306,22 @@ Two consequences, and quality rests on both:
   new. A re-run is owed only when the record is missing, its tree differs from the one being
   accepted, its log disagrees with what was reported, or there is a concrete doubt the run itself
   could not answer. Say which one when you re-run.
-- **At each step, the cheapest check that settles its claim.** A worker editing needs its task's
-  checks and whichever of the project's own test, typecheck or lint entry points its change
-  touches. Accepting a wave needs the full-suite gate on the integrated tree — the tree as the
-  integration step leaves it. A phase's end needs the walking skeleton. Final review needs
-  whatever the deliverable as a whole is verified by. Each step runs its own checks once, on its
-  own tree, and none runs what belongs to another.
+- **At each step, the smallest set of checks that settles its claim.** A worker editing needs its
+  task's checks and the after-change check the plan names, and, for visible behaviour, the flow it
+  changed exercised once. Accepting a wave needs the wave's task checks and the after-change check
+  on the integrated tree — the tree as the integration step leaves it. A phase's end needs the
+  phase's acceptance, the walking skeleton among it, with the gate lines of the current tier and
+  every earlier tier that the phase affects. Delivery needs every gate line run together once, and final review
+  cites that run. Each step runs its own checks once, on its own tree, and none runs what belongs
+  to another.
 
 **A run the machine could not finish is not a result.** On a machine other work is loading, a
 correct test can time out. A timeout while the machine is loaded earns one retry, run when it is
-quieter. A second timeout is a defect to investigate, not a third run. Stop only processes you
+quieter. A second timeout is a defect to investigate, not a third run. A check that ran and
+failed is read first: a deterministic failure is never re-run unchanged, and a retry is owed only
+when a transient cause is plausible. A retry that passes with no cause found is reported as flaky.
+After a fix, run the failed check and the checks the fix affects. A check that could not run is
+recorded as not run, with the reason, and never as passed. Stop only processes you
 started, by the id you started them with, and never by name: a process found by name may be
 somebody else's gate.
 

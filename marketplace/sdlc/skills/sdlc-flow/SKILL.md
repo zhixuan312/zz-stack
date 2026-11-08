@@ -2,7 +2,7 @@
 name: "flow"
 description: "Run the SDLC Agent flow for your team."
 when_to_use: "Only when a person opens it by name: `/sdlc:flow` in Claude Code, `$sdlc:flow` in Codex."
-version: "0.101.2"
+version: "0.102.0"
 disable-model-invocation: true
 ---
 
@@ -35,8 +35,8 @@ explore → spec → audit → plan → audit → execute → review → close (
 
 Not a ratchet. An audit that finds the spec rests on an unsettled decision sends you back into
 `sdlc-spec`, and that is the method working. And plan → audit → execute is a loop, one phase
-per turn: the spec's `## Phase outline` names the phases in tier order, Skeleton, See, Feel, Unseen
-(who notices the work, and how), `sdlc-plan` writes one under its tier heading, it is audited
+per turn: the spec's `## Phase outline` names the phases in tier order, Works, Works well, Built to
+last (make it work, then work well, then last), `sdlc-plan` writes one under its tier heading, it is audited
 and approved, `sdlc-execute` builds it and appends `### As built`, and the next phase is planned
 from that — until the outline's last phase is built, and review runs. A phase that disproves a
 spec core statement goes back to `sdlc-spec` (see `sdlc-method`).
@@ -48,7 +48,7 @@ spec core statement goes back to `sdlc-spec` (see `sdlc-method`).
 | 3 | `sdlc-spec-audit` | a SOURCE supporting `spec.md` | subagent per round, sequential, rounds routed by evidence |
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
 | 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, at most two rounds per phase, routed by evidence |
-| 6 | `sdlc-execute` | the change itself, and the phase's `### As built` in `plan.md` | subagent per plan item; a wave is held by the skeleton and the current tier's checks and earlier |
+| 6 | `sdlc-execute` | the change itself, and the phase's `### As built` in `plan.md` | subagent per plan item; a wave runs its own checks, a phase end what it affects, delivery the full suite once |
 | 7 | `sdlc-review` | `review.md` — and it closes the initiative — plus a SOURCE per sweep round | **main agent** for the evidence; subagent per round, sequential, rounds routed by evidence |
 
 Four documents, and the audits produce none of them. An audit report is a SOURCE: it is the

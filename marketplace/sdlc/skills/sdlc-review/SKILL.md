@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.19
+version: 1.20
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -61,11 +61,13 @@ declared, is refused by name.
 **Establish by running, not by reading.** The plan's checks, the full-suite gate, a probe, a walk
 of the flow end to end — run them and quote them. A run `sdlc-execute` already recorded on the tree
 you are reviewing is that run: quote its log rather than running it again, under the same locator
-you would have written, and name the tree it ran on in the row's note. Run afresh only what has no
-record on this tree —
-a fix landed since, or a check execute never ran, such as the deliverable's slowest verification. A criterion nothing can run is
+you would have written, and name the tree it ran on in the row's note. The full-suite gate ran
+once before delivery; cite it. Run afresh only what has no record on this tree — the gate lines a
+fix landed since made stale, or a check execute never ran. A criterion nothing can run is
 `not_established` and says why in its note; that is an honest row, and a reading dressed as
-evidence is not.
+evidence is not. A pass proves only what that check covers: quote the behaviour it verified, never
+"nothing is broken". A passing suite does not prove the work is built to last; judge that from
+the diff.
 
 The platform asks `evidence_relation` of every established row when `review.md` is written or
 edited — the criterion as the claim, your evidence as the passage, or only "did it pass" for a

@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.20
+version: 1.21
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no approved plan, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -17,7 +17,8 @@ when_to_use: "plan.md exists, has been audited, and the person has approved it. 
      task exists is a defect the gate itself will report against the wrong task. Evidence is
      recorded once per tree (sdlc-method): one initiative spent about two thirds of its time
      waiting on tests, much of it the orchestrator re-running what a worker had already run on
-     the same inputs, and workers running the gate the integration step runs anyway. -->
+     the same inputs, and the full suite run after every wave when once before delivery holds
+     the same evidence. -->
 
 **Read `sdlc-method` first.** This stage is unusual in the same way `sdlc-explore` is: the work
 is dispatched, the orchestration is not.
@@ -109,15 +110,19 @@ You write ONLY paths inside your Owns. Other workers are writing other paths in 
 You MUST NOT edit an integration hotspot. If your task needs one changed, report the exact lines
   to add or change, per file, in your final report; the orchestrator applies them after the wave.
 Do not commit. The orchestrator commits once the wave is integrated.
-While you work, run your task's checks and whichever of the project's own test, typecheck or lint
-  entry points your change touches. Do NOT run the full-suite gate, or anything else that verifies
-  the whole project rather than your change: the integration step runs the gate once on the
-  integrated tree, and another copy of it here, on a tree other workers are still writing, is
-  evidence about nothing.
+While you edit, do not run broad checks over and over on half-finished states; a quick diagnostic
+  that settles a real question is fine. Once the change is complete, run the smallest set of checks
+  that proves it: your task's checks and the plan's after-change check. If the person can see what
+  you changed, exercise the flow or state that changed, once. Do NOT run the full-suite gate, or
+  anything else that verifies the whole project rather than your change: it runs once before
+  delivery, and a copy of it here, on a tree other workers are still writing, is evidence about
+  nothing.
 Report each run that settles your task as a recorded run (sdlc-method): the command, the tree it
   ran on, its exit and the decisive output line, with the log's path.
-A test that times out while the machine is loaded is retried once; a second timeout is reported
-  as a defect, not run a third time. Stop only processes you started, by their id, never by name.
+When a check fails, read its output and find the cause first; never re-run a deterministic failure
+  unchanged. Retry once only when a transient cause is plausible (a timeout on a loaded machine),
+  and report a retry that passes with no cause found as flaky. Stop only processes you started, by
+  their id, never by name.
 ```
 
 ### A broken platform tool is filed, not worked around
@@ -173,50 +178,41 @@ a check from being weakened, and it is yours whatever any run says.
 **Then integrate.** Apply the hotspot lines the workers reported — registration entries, changelog
 text, version stamps — yourself, in one pass, then run whatever regenerates generated files.
 
-**Then run the full-suite gate, once, on the integrated tree** — the commands the plan names under
-`## Full-suite gate` — and record the run (`sdlc-method`). Per-task checks prove the task did its
-own job. They cannot prove it left the rest of the project working, and **every check green with
-the suite red is the actual failure mode** of a plan executed task by task. Run the gate after
-every wave, not only after the last one. Every gate line carries a tier label, and the label decides
-whether a red line holds the wave (below).
-
-**Every task's checks run on the integrated tree, once.** The worker's report is a claim; a
-recorded run on the tree you accept is the fact. A task check the gate discovers runs inside the
-gate, and its line in the gate's log is that task's evidence, so it is not run a second time beside
-it. A task check the gate does not discover runs once on the integrated tree, unless a worker's recorded run already carries that exact tree, which a wave of
-one task can leave. A worker's run on a tree that has since changed is the worker's own working
-loop, not evidence for the wave.
-
-**At the end of a phase, run the walking skeleton** — the Phase 0 command — and read its output.
-A phase whose tasks are green and whose skeleton no longer runs end to end is not done. The last
-wave's gate already ran on this tree; do not run it again, unless the tree moved since.
+**Then run the wave's checks, once, on the integrated tree:** every task's checks and the plan's
+after-change check, and record the run (`sdlc-method`). That is all a wave runs. The worker's report
+is a claim; a recorded run on the tree you accept is the fact. A task check runs once on the
+integrated tree, unless a worker's recorded run already carries that exact tree, which a wave of one
+task can leave. A worker's run on a tree that has since changed is the worker's own working loop,
+not evidence for the wave. If a check goes red, stop: do not start the next wave on a broken tree —
+the next workers will inherit the breakage and spend their turn on someone else's bug.
 
 Then commit the wave, if the person has agreed to commits along the way.
 
-## What holds a wave — the skeleton and the current tier
+## What each step runs — a wave, a phase, delivery
 
-A phase's heading names its tier (`## Phase N — <Tier>: <what works at the end>`), and each
-`## Full-suite gate` line is labelled `- [<Tier>] \`<command>\` — <what it proves>`. The tier of
-the phase you are building is the current tier. Tiers run in this order: Skeleton, See, Feel,
-Unseen. **An earlier tier is one the outline reached earlier.** When the outline puts a phase out of
-tier order (an Unseen phase before the first See phase, say), a tier counts from its first phase in
-the outline, not from its place in that list: a `[See]` line does not hold an Unseen phase built
-before any See phase, and a finding about See work is not of an earlier tier there.
+Per-task checks prove the task did its own job. They cannot prove it left the rest of the project
+working, and **every check green with the suite red is the actual failure mode** of a plan executed
+task by task. The phase end is where that is caught, and delivery is where everything is proven
+together. A phase's heading names its tier (`## Phase N — <Tier>: <what works at the end>`), and
+each `## Full-suite gate` line is labelled `- [<Tier>] \`<command>\` — <what it proves>` with the
+tier of the requirement it protects.
 
-- **The walking skeleton holds every wave and every phase end, whatever the tier.** If it goes red,
-  stop.
-- **A gate line of the current tier or an earlier one holds the wave.** `[Skeleton]` lines hold
-  every phase; `[See]` lines hold every wave from the first See phase on; a later tier's lines
-  hold waves from that tier's first phase on. If one goes red, stop. Do not start the next wave on a
-  broken tree — the next workers will inherit the breakage and spend their turn on someone else's
-  bug.
-- **A line of a later tier does not hold the wave.** Run it where it is cheap, record the run
-  (`sdlc-method`), and carry on. Its red result is a finding of that later tier, routed below, not a
-  stop. It holds waves again from that tier's first phase on.
+- **After each wave:** the wave's task checks and the after-change check, as above. Never the
+  full-suite gate.
+- **At the end of a phase:** the phase's acceptance — its tasks' checks on the final tree and the
+  walking skeleton, the Phase 0 command, with its output read — with the gate lines of the
+  current tier and every earlier tier that the phase affects. A later tier keeps the earlier
+  tiers' results intact, so a Works well or Built to last phase ends on the Works lines it could
+  break. Name the lines you ran, and why the rest did not apply, in the phase's `### As built`. A
+  phase whose tasks are green and whose skeleton or an affected line is red is not done; stop.
+- **Before delivery, at the end of the last phase:** every `## Full-suite gate` line, together,
+  once, on the final tree. That run is the full suite, and `sdlc-review` cites it. A change after
+  it — a review fix — re-runs the lines that change made stale, not the whole section.
 
-The same applies to a software deliverable and to a report, a study or a specification: a later
-tier's check, such as a reading-edition lint on a report whose sections are still being written,
-is recorded now and holds from its own tier.
+A later tier's line may run early when the phase affects what it covers and the run is cheap. A
+red result there is a finding of that tier, routed below. The same applies to a report, a study
+or a specification as to software: a reading-edition lint on a report whose sections are still
+being written is a Works well line, run when the phase affects it.
 
 ## Routing a finding raised during the build
 
@@ -248,15 +244,16 @@ one. Do not add a follow-up task to the approved current phase for a later tier'
 
 ## Two moments the owner is told
 
-- **After the first See phase is built, show the owner the result as a preview.** It does not stop
-  the build: the next phase goes ahead while they look. What they say is rated and routed like any
-  finding (above); most of it will be Feel work and feeds the Feel phases.
-- **When the last See phase is built, tell the owner that everything works and that validation can start.**
+- **After the first Works phase past the skeleton is built, show the owner the result as a
+  preview.** It does not stop the build: the next phase goes ahead while they look. What they say
+  is rated and routed like any finding (above); most of it will be Works well work and feeds the
+  Works well phases.
+- **When the last Works phase is built, tell the owner that everything works and that validation can start.**
   Say it in plain words, in the report that closes the phase. This is the moment the whole
-  result can be used or read; Feel and Unseen phases follow.
+  result can be used or read; Works well and Built to last phases follow.
 
-If the outline has a single See phase, both moments fall at its end: show the preview and say that
-validation can start in the same message.
+If the outline has a single Works phase past the skeleton, both moments fall at its end: show the
+preview and say that validation can start in the same message.
 
 ## When a task fails
 
@@ -270,7 +267,7 @@ they did not know. If two workers fail the same task the same way, the contract 
 
 ## When the phase is built — append what actually happened
 
-After the phase's last wave, its gate and its skeleton run, **append `### As built` under the
+After the phase's last wave and its phase-end run, **append `### As built` under the
 phase's heading** in `plan.md` with a section edit of that phase, citing what happened as its
 `source_content` (the skeleton's output, the gate result, the deviations):
 
@@ -297,7 +294,8 @@ as-built appended and nothing else changed, and the revision as `base`, so a pla
 since the read is refused rather than overwritten. The plan is approved, so the report is the
 cause that opens its next version — a change with none is refused. The as-built says, briefly
 and from the tree: which tasks landed, what differs from their contracts and why, decisions
-taken on the way, the skeleton command's decisive output line, and one `Queued for Phase N: <finding>`
+taken on the way, the skeleton command's decisive output line, the gate lines the phase end ran
+and why the rest did not apply, and one `Queued for Phase N: <finding>`
 line for each later-tier S3/S4 finding queued during the build. This is what the next phase is planned from, and what makes the finished
 plan the record of what was built.
 
@@ -309,8 +307,11 @@ outline's last phase is built — the end-of-plan report below.
 
 ## When every task is done
 
-**Say first whether the owner has been told the result works.** If the last See phase is built,
+**Say first whether the owner has been told the result works.** If the last Works phase is built,
 validation can start; make sure the owner has heard it (above).
+
+**Run the full-suite gate, once, before you hand over** — every `## Full-suite gate` line together,
+on the final tree — and record the run. This is the run `sdlc-review` cites.
 
 **Report what changed, from the tree rather than from the reports.** `git diff --name-only`
 against where you started, not the union of what the workers said they did.
@@ -318,8 +319,13 @@ against where you started, not the union of what the workers said they did.
 Say plainly:
 
 - which tasks are done, which are not, and which are unverifiable here
-- what the full-suite gate says right now
+- what the full-suite gate run says: the behaviour it verified, quoted, not "nothing is broken"
+- what was not verified, and any known failure or flaky retry
 - anything a worker flagged as a contract defect
+
+The work is done when the agreed result is delivered, the required checks are met, what was not
+verified and the known problems are stated, and the in-scope finishing work is complete. Further
+improvement needs a new, concrete reason.
 
 **Do not declare success on a partial run.** A shortfall is not a failure — a plan diverging from
 reality is expected — but it is also not "done". Name the outstanding task ids.
@@ -344,19 +350,20 @@ before.
 a claim; a run on another tree is about another tree.
 
 ❌ **Running a check twice on one tree.** The orchestrator re-running a worker's suite on unchanged
-inputs, the gate run again at a phase end on the tree the last wave's gate already passed, a worker
-running the gate the integration step runs anyway: each produces the same evidence a second time
-and costs the same time again.
+inputs, a phase-end line run again on a tree it already passed, a worker running the full-suite
+gate: each produces the same evidence a second time and costs the same time again.
 
-❌ **Skipping the full-suite gate between waves, or the skeleton at a phase end.** This is the
-failure mode, not an optimisation.
+❌ **Running the full-suite gate after every wave.** A wave runs its own task checks and the
+after-change check; the full suite runs once, before delivery.
 
-❌ **Letting a later tier's check hold the wave, or letting a later tier's small finding become a
-follow-up that holds it.** Record the check, queue the S3/S4 as `Queued for Phase N`. S1 and S2 are
-never queued.
+❌ **Skipping the skeleton or an affected line at a phase end, or the full suite before delivery.**
+This is the failure mode, not an optimisation.
 
-❌ **Waiting for the end of the build to show the owner anything.** Preview after the first See
-phase; say validation can start after the last.
+❌ **Letting a later tier's small finding become a follow-up that holds the wave.** Queue the S3/S4
+as `Queued for Phase N`. S1 and S2 are never queued.
+
+❌ **Waiting for the end of the build to show the owner anything.** Preview after the first Works
+phase past the skeleton; say validation can start after the last.
 
 ❌ **Re-dispatching the whole plan after one failure.** Scope it to what failed.
 
@@ -369,11 +376,11 @@ of tasks with disjoint ownership at a time, integrated after each wave, each tas
 reported from the tree, and appended to `plan.md` as the phase's `### As built`.
 
 **Required evidence:** the approval on `plan.md`, read from its frontmatter rather than from your
-memory of the conversation. Each task's checks recorded on the integrated tree — inside the gate's
-log where the gate discovers them, run once otherwise — because the worker's report is a claim and
-a recorded run on the tree you accept is the fact. Every changed path inside a task's Owns. The full-suite gate after every wave
-(held by the current tier's lines and earlier, later tiers' lines recorded) and the walking skeleton
-at every phase end, not only after the last. Each finding rated S1 to S4 with its tier, and every
+memory of the conversation. Each task's checks and the after-change check recorded once on the
+integrated tree, because the worker's report is a claim and a recorded run on the tree you accept
+is the fact. Every changed path inside a task's Owns. At every phase end the walking skeleton and
+the gate lines covering what the phase affects, named in the as-built; before delivery, every gate
+line together, once. Each finding rated S1 to S4 with its tier, and every
 later-tier S3/S4 listed as `Queued for Phase N` in the as-built. The active
 check's bytes compared by you against its frozen copy after each wave, where any byte difference
 means the task failed whatever else it reports. And `git diff --name-only` against where you started, not the
@@ -389,8 +396,8 @@ throws away finished work.
 **Work roles:** one dispatched worker per task, parallel within a wave, because the plan already
 made the decisions — including who writes what — and what remains is the change itself. This agent
 keeps the sequence, owns the branch, freezes and activates the checks, applies the hotspot edits,
-runs the gate and the skeleton once per tree, and stays accountable for what changed. A worker runs
-only its task's checks and the project's own checks its change touches.
+runs each wave's checks, each phase end's lines and the full suite once per tree, and stays
+accountable for what changed. A worker runs only its task's checks and the after-change check.
 The person decides whether the work is committed.
 
 **Checkpoints:** none. No bounded question at this stage has an answer the platform routes
@@ -398,15 +405,16 @@ on, so none is asked.
 
 **Action and exit paths:** the action is freeze every check up front, derive the waves, then per
 wave: activate its checks, dispatch its tasks together, check ownership, compare the hashes,
-integrate the hotspots, run the full-suite gate once on the integrated tree with every task check
-it discovers (and, once, any it does not), then the skeleton at a phase end; at the phase end,
-append `### As built`, with its queued findings, and tell the owner what the tier now allows: a
-preview after the first See phase, validation after the last. Five
+integrate the hotspots, run the wave's task checks and the after-change check once on the
+integrated tree; at the phase end, run the skeleton and the affected gate lines, append
+`### As built`, with the lines run and its queued findings, and tell the owner what the tier now
+allows: a preview after the first Works phase past the skeleton, validation after the last; after
+the last phase, run the full-suite gate once. Five
 exits. The phase built and more remain, so back to `sdlc-plan` for the next phase. Every phase
 built, so report from the tree, ask about committing, and hand to `sdlc-review`. A phase that
 disproved a core statement, so back to `sdlc-spec`.
 A contract defect, or the same failure twice, so back to `sdlc-plan` naming the unmet clause or
-the faulty check. The skeleton, or a gate line of the current tier or earlier, red, so stop — the next worker would
+the faulty check. A wave's check, the skeleton or an affected gate line red, so stop — the next worker would
 inherit the breakage and spend its turn on somebody else's bug.
 
 **Degraded behaviour:** a partial run is reported as a partial run, naming the outstanding task

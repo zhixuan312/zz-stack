@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.30
+version: 1.31
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -393,10 +393,10 @@ line protects; when it runs depends on what a change affects and on its cost:
   the lines of the current tier and every earlier tier that the phase affects. A later tier keeps
   the earlier tiers' results intact, so a Works well phase ends on the Works lines it could break
   as well as its own. The phase's `### As built` names the lines that ran.
-- **Never the whole section after every change, wave or phase.** Its cost belongs before
-  delivery.
 - **Before delivery**, at the end of the last phase, every line, together, once. That run is the
   full suite; review cites it, and a change after it re-runs only the lines it made stale.
+- **Never the whole section after every change, wave or phase.** Its cost belongs before
+  delivery.
 
 A later tier's line may run early when the phase affects what it covers and the run is cheap.
 

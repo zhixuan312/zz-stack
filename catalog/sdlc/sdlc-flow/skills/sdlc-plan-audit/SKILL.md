@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.11
+version: 2.12
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---

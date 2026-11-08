@@ -1,6 +1,7 @@
 {
   "version": 1,
   "tier2": ["*.perf"],
+  "always": ["build", "hygiene", "docs-integrity", "contracts-door", "security-secrets"],
   "groups": [
     {
       "comment": "The gate's own machinery and the break-test harness decide which checks run, so any change there runs the whole gate.",

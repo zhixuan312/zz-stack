@@ -35,7 +35,7 @@ const host = await load("packages/tools/dist/candidate/host.js");
 const { IMAGE_UNSHIPPED, pluginContentDigest, pluginDirComponents, pluginTreeDigest } = await load("packages/catalog/dist/index.js");
 
 // ---- the host line, on values: what the preflight runs, and which failures are the host's.
-assert.deepEqual(host.preflightCommands(["npm", "run", "build"], ["npm", "run", "gate", "--", "--quiet"]),
+assert.deepEqual(host.preflightCommands(["npm", "run", "build"], ["npm", "run", "test:release"]),
   [["npm", "--version"], ["git", "--version"], ["docker", "compose", "version"]], "the default gate needs docker compose");
 assert.deepEqual(host.preflightCommands(["node", "b.mjs"], ["make", "gate"]),
   [["npm", "--version"], ["git", "--version"], ["node", "--version"], ["make", "--version"]]);
@@ -74,7 +74,7 @@ g("init", "-q");
 writeFileSync(join(repo, "package.json"), JSON.stringify({
   name: "throwaway", version: "0.0.1", private: true,
   dependencies: { "locked-dep": "file:./locked-dep" },
-  scripts: { build: "node build.mjs", gate: "node gate.mjs" },
+  scripts: { build: "node build.mjs", "test:t1": "node gate.mjs" },
 }, null, 2) + "\n");
 // One dependency the release's lockfile names — local, so `npm ci` needs no network.
 mkdirSync(join(repo, "locked-dep"));
@@ -157,9 +157,9 @@ const server = createServer((req, res) => {
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
 const port = (server.address() as { port: number }).port;
 
-// `--gate-cmd "npm run gate"`, not the default: the default's preflight needs docker compose, which
-// this check must not require of the host. The default's own preflight is proven on values above.
-function runCli(id: string, gateCmd = "npm run gate"): Promise<{ code: number; out: string; err: string }> {
+// `--gate-cmd "npm run test:t1"`, not the default: the default's preflight needs docker compose,
+// which this check must not require of the host. The default's own preflight is proven on values above.
+function runCli(id: string, gateCmd = "npm run test:t1"): Promise<{ code: number; out: string; err: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["packages/tools/dist/candidate/build.js", "--candidate", id, "--repo", repo,
       "--gateway", `http://127.0.0.1:${port}`, "--gate-cmd", gateCmd],
@@ -214,7 +214,7 @@ try {
   assert.equal(okRec.candidate_id, okId);
   assert.equal(okRec.patch_digest, sha256(patchTo("after")), "the digest of the patch actually applied");
   assert.equal(okRec.result.ok, true, "sandbox held, lockfile installed, operator node_modules unseen");
-  assert.deepEqual(okRec.result.commands, ["npm ci --ignore-scripts --no-audit --no-fund", "npm run build", "npm run gate"]);
+  assert.deepEqual(okRec.result.commands, ["npm ci --ignore-scripts --no-audit --no-fund", "npm run build", "npm run test:t1"]);
   assert.equal(okRec.idempotency_key, sha256(["candidate_build_record", okId, "2026-09-25T12:00:00.000Z"].join("\u0000")),
     "one key per lease");
   assert.equal(existsSync(escaped), false, "nothing escaped the sandbox");

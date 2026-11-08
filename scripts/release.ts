@@ -267,7 +267,7 @@ log(`  console:   ${dashVersion ? `releasing ${dashVersion} (${dash.why})` : `sk
 //
 // pnpm, because the console declares `packageManager: pnpm` and carries a pnpm lockfile.
 // zz-stack is an npm workspace. `test:release` is the console's one whole-suite command: it runs
-// the gate, the type check, the lint and both browser tiers.
+// the static checks, the type check, the lint, every test and the production build.
 if (dashVersion) {
   try {
     run("pnpm", ["run", "test:release"], { cwd: DASH_SRC });

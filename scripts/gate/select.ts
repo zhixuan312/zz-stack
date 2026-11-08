@@ -9,8 +9,9 @@
  *
  * "Since the last green run" is a marker file at `.gate-last-green` (gitignored) holding the
  * commit of the last passing run. With no marker, the change set is the diff against master plus
- * the working tree, which is what a branch holds before its first passing run. Writing the marker
- * after every pass is what keeps a per-change run from growing with the branch.
+ * the working tree, which is what a branch holds before its first passing run; on master's own
+ * head — or with no history at all — there is no such diff, so the whole gate runs. Writing the
+ * marker after every pass is what keeps a per-change run from growing with the branch.
  *
  * Only `select()` and the marker helpers are exported; everything else here is how they answer.
  */
@@ -30,6 +31,8 @@ interface Rule {
 
 interface GroupFile {
   readonly tier2: readonly string[];
+  /** Modules that read the whole repository, so every change runs them whatever the map says. */
+  readonly always?: readonly string[];
   readonly groups: readonly Rule[];
 }
 
@@ -84,18 +87,35 @@ function lastGreen(): string | null {
   return ref && isCommit(ref) && isAncestor(ref) ? ref : null;
 }
 
-/** The change set and how it was found, for the line the runner prints. */
-export function changedPaths(): { paths: string[]; basis: string } {
+/**
+ * The change set and how it was found, for the line the runner prints.
+ *
+ * `green` says a marker named a commit this checkout can still reach. Without one, the diff
+ * against master is the fallback — but on master itself the merge base is HEAD, so that diff is
+ * empty while the work the branch holds is what needs judging. An empty diff with no marker is
+ * therefore not evidence that nothing is affected, and the caller runs the whole gate.
+ */
+export function changedPaths(): { paths: string[]; basis: string; green: boolean; whole: boolean } {
   const green = lastGreen();
-  if (green) return { paths: changedSince(green), basis: `since the last green run (${green.slice(0, 12)})` };
+  if (green) return { paths: changedSince(green), basis: `since the last green run (${green.slice(0, 12)})`, green: true, whole: false };
+  // A repository with no commits has no HEAD to compare; `git rev-parse` throws, and the whole gate is the answer.
+  let head = "";
+  try { head = git(["rev-parse", "HEAD"]); } catch { /* no commits yet */ }
   for (const base of ["master", "origin/master"]) {
     if (!isCommit(base)) continue;
     try {
       const mergeBase = git(["merge-base", base, "HEAD"]);
-      return { paths: changedSince(mergeBase), basis: `against ${base}` };
+      const paths = changedSince(mergeBase);
+      if (mergeBase === head) {
+        // `master` at its own head with no marker: the branch's committed work is invisible to a
+        // diff against itself, and an uncommitted edit does not make that work judged. The whole
+        // gate runs, whatever `paths` holds.
+        return { paths, basis: `as ${base}'s head with no last green run — the whole gate`, green: false, whole: true };
+      }
+      return { paths, basis: `against ${base}`, green: false, whole: false };
     } catch { /* not a related history; try the next ref */ }
   }
-  return { paths: [], basis: "with no git history to compare — the whole gate" };
+  return { paths: [], basis: "with no git history to compare — the whole gate", green: false, whole: true };
 }
 
 /** A path pattern as a regular expression: `**` crosses directories, `*` and `?` do not. */
@@ -197,19 +217,31 @@ export interface Selection {
 export function select(tier: Tier): Selection {
   const groups = readGroups();
   const all = gateModules();
-  const { paths, basis } = changedPaths();
+  const { paths, basis, whole: noBaseline } = changedPaths();
   const isTier2 = (module: string): boolean =>
     groups.tier2.some((p) => glob(p).test(module));
   const allow = (modules: readonly string[]): string[] =>
     modules.filter((m) => tier === 2 || !isTier2(m));
-
-  if (paths.length === 0) {
-    // Nothing changed, so nothing is affected. The build still runs: it is the one check every
-    // later check depends on, and a run that tested nothing should say so by doing only that.
-    return { modules: allow(["build"]), basis: `${basis}; nothing changed`, changed: paths, whole: false };
+  // A module that reads the whole repository is affected by a change anywhere, so the map never
+  // decides whether it runs. `build` is the static import every run needs.
+  const always = groups.always ?? ["build"];
+  for (const m of always) {
+    if (!all.includes(m)) throw new Error(`test-groups.json names "${m}" as always-run, which scripts/gate.ts does not load`);
   }
 
-  const selected = new Set<string>(["build"]);
+  if (noBaseline) {
+    // No marker and master's own head (or no history): no green run is evidence for this tree, so
+    // the whole gate runs, whatever uncommitted paths the diff holds. A build-only run would
+    // record a green nobody checked.
+    return { modules: allow(all), basis, changed: paths, whole: true };
+  }
+  if (paths.length === 0) {
+    // Nothing changed since the last passing run: there is nothing to prove again. The always-run
+    // checks still run, so a run that tested nothing says so by doing only the cheap ones.
+    return { modules: allow(always), basis: `${basis}; nothing changed`, changed: paths, whole: false };
+  }
+
+  const selected = new Set<string>(always);
   let whole = false;
   const uncovered: string[] = [];
   for (const path of paths) {

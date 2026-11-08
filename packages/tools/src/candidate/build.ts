@@ -210,7 +210,7 @@ async function buildCandidate(read: CandidateRead, opts: BuildOpts): Promise<Bui
         }
         // The tail carries what the step printed AND the line the sandbox runner wrote about it.
         // A step can exit non-zero with output that says nothing about why — npm's own header, and
-        // nothing after it, is what a failing `npm run gate --quiet` recorded when the walk first
+        // nothing after it, is what a failing `npm run test:release` recorded when the walk first
         // ran on a runner — and the runner's line names the command and its exit, which is the one
         // thing the step's own output may omit entirely.
         const streams = `${e.stdout ?? ""}${e.stderr ?? ""}`.trim();

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-promote-verify
-version: 1.5
+version: 1.6
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a built and gated candidate of an owned subject, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, then judge the release on real use — and roll it back if it measures worse.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE built and gated (valid) against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
@@ -94,7 +94,7 @@ zz-tool release-apply --candidate <id> --repo <throwaway-clone> --initiative <in
   --digest <approved_patch_digest> --release-cmd "<the repository's own release command>" \
   --release-version <the exact version that command publishes> \
   --release-tag <the git tag that command creates and pushes> [--base-ref <commit> [--base-tag <tag>]] \
-  [--gate-cmd "<override, default is npm run gate>"] [--gateway <url>] [--idempotency-key <key>]
+  [--gate-cmd "<override, default is npm run test:release>"] [--gateway <url>] [--idempotency-key <key>]
 ```
 
 Applies exactly the approved patch on a fresh `plan.branch` created at the base subject's release

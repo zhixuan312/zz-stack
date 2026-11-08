@@ -81,7 +81,7 @@ const GATE_TIMEOUT_MS = 15 * 60_000;
 const RELEASE_TIMEOUT_MS = 20 * 60_000;
 /** The failing command's own output tail — enough to act on, never a whole log. */
 const OUTPUT_TAIL_CHARS = 4000;
-const DEFAULT_GATE_CMD = "npm run gate -- --quiet";
+const DEFAULT_GATE_CMD = "npm run test:release";
 /** Run before the gate, whatever `--gate-cmd` says: the clone's own lock, never the operator's
  *  installed set, and no package script — the same install `npm run candidate-build` runs. */
 const INSTALL_CMD = ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"] as const;

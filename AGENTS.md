@@ -22,7 +22,8 @@ for a repository with no Tier 2 tests.
 The gate has no import graph, so the tests are chosen through the path-to-module map in
 `scripts/gate/test-groups.json`. A path the map does not cover runs the whole gate. A passing run
 writes the commit to `.gate-last-green` (gitignored) and the next run starts there; with no marker
-the runner diffs against `master`.
+the runner diffs against `master`, and on `master`'s own head (or with no history) it runs the
+whole gate rather than record a green nobody checked.
 
 **A release in this repository is a tagged release cut with `npm run release`,** which builds,
 deploys and tags. Pushing to `master` is not a release: CI runs `test:release` on every push, and
@@ -33,3 +34,12 @@ phases use `test:t2`. "Before delivery" in a plan means `test:release`.
 
 There is no separate lint command: `tsc -b` and the tooling project are the static checks, and the
 gate runs them.
+
+Two workflow steps are not test entry points, and their absence from `test:release` is deliberate:
+
+- `node scripts/mutation-run.ts` (`.github/workflows/mutation.yml`) measures the checks
+  themselves — it plants defects and records which check notices — rather than the product.
+- `npm run eval-flow-e2e` (`.github/workflows/images.yml`, dispatch-only with `walk: true`) is a
+  Tier 1 walk of the whole eval flow. It stands up a scratch Docker stack, the built images and a
+  scratch database, and runs for minutes; `images.yml` is where it runs, and it is not a release
+  step.

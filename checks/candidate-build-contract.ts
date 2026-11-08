@@ -34,7 +34,7 @@ const me = "a@x";
 // (runtime pass 2, F5).
 assert.match(rules.buildResultRefusal({ ok: true }) ?? "", /names no command/, "a bare ok is refused");
 assert.match(rules.buildResultRefusal({ ok: true, commands: [" "] }) ?? "", /names no command/, "a blank command names none");
-assert.equal(rules.buildResultRefusal({ ok: true, commands: ["npm run build", "npm run gate"] }), null);
+assert.equal(rules.buildResultRefusal({ ok: true, commands: ["npm run build", "npm run test:release"] }), null);
 assert.equal(rules.buildResultRefusal({ ok: false, stage: "gate", log_tail: "boom" }), null, "a failure is recorded as it stopped");
 
 // ---- the record guard, one branch at a time.
@@ -141,7 +141,7 @@ for (const status of ["invalid", "released", "rolled_back"]) {
 // ---- the in-process build is gone.
 for (const f of ["candidate-validate.ts", "candidate-build.ts", "candidate-build-rules.ts"]) {
   const src = readFileSync(`services/zz-core/src/eval/${f}`, "utf8");
-  assert.doesNotMatch(src, /node:child_process|discoverRepoRoot|worktree add|npm run gate/, `${f} runs no build of its own`);
+  assert.doesNotMatch(src, /node:child_process|discoverRepoRoot|worktree add|npm run test:release/, `${f} runs no build of its own`);
 }
 
 console.log("ok candidate-build-contract");

@@ -15,7 +15,7 @@
 
 /** COUPLED: packages/tools/src/candidate/build.ts's defaults. */
 export const DEFAULT_BUILD_CMD = "npm run build";
-export const DEFAULT_GATE_CMD = "npm run gate -- --quiet";
+export const DEFAULT_GATE_CMD = "npm run test:release";
 
 /** The argv lists the preflight runs. Always the dependency install's own `npm`, and `git` (the
  *  gate reads the clone through it); the first word of each configured command; and for the

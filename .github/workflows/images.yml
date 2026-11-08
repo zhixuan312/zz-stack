@@ -98,8 +98,8 @@ jobs:
       - name: Build the workspace the gate reads
         run: npm run build
 
-      # The release runs the console's own suite (`pnpm run typecheck`, `lint`, `test`, `gate`) out
-      # of its checkout, and installs nothing there itself. pnpm because zz-stack-dashboard declares
+      # The release runs the console's own suite (`pnpm test:release`) out of its checkout, and
+      # installs nothing there itself. pnpm because zz-stack-dashboard declares
       # `packageManager: pnpm@10.33.0` and carries a pnpm lockfile; the version is pinned to that
       # field rather than to a floating latest.
       - uses: pnpm/action-setup@v4

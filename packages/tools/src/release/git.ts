@@ -26,7 +26,7 @@ interface CommandOutcome { readonly ok: boolean; readonly output: string }
 
 /** One command, argv only, for `release-apply` and `release-rollback`.
  *
- *  A failure's output is both streams, stderr first: `npm run gate` prints its failed checks to
+ *  A failure's output is both streams, stderr first: `npm run test:release` prints its failed checks to
  *  stdout and npm's own "Lifecycle script failed" to stderr, and the record keeps the tail, so the
  *  gate's report is what ends it. Either stream alone hides what the other said. */
 export function runCommand(cwd: string, argv: readonly string[], timeoutMs: number): CommandOutcome {

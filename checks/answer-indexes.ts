@@ -173,7 +173,9 @@ const dropExplained = (index: string): boolean =>
  * The top-level `Buffers:` figure of an EXPLAIN text plan, hit and read summed: the pages the plan
  * touched. A dirtied or written page is one of those already, and whether the first read after the
  * seed sets its hint bits is not the plan's doing; counting them read 56 against a recorded 55 on
- * identical code (release 0.101.2's gate).
+ * identical code (release 0.101.2's gate). The measured execution is therefore preceded by one
+ * unmeasured execution of the same statement, so the hint bits are set before the figure is read;
+ * without it the check is nondeterministic on identical code at any load.
  */
 function buffersOf(plan: string[]): number | null {
   const line = plan.find((l) => /^\s+Buffers: /.test(l));
@@ -325,6 +327,11 @@ async function main(): Promise<void> {
           continue;
         }
         try {
+          // The first execution after the seed sets the hint bits on the pages it reads, and those
+          // reads are counted in that execution's `Buffers:` line. Run the statement once,
+          // unmeasured, so the figure compared below is the plan's cost and not the seed's first
+          // touch. COUPLED: buffersOf's note on the 55/56 hint-bit variation.
+          await client.query(`execute ${name}(${f.params})`);
           const { rows } = await client.query<Record<string, string>>(
             `explain (analyze, buffers) execute ${name}(${f.params})`);
           const plan = rows.map((r) => Object.values(r)[0] as string);

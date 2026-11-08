@@ -132,7 +132,7 @@ const PLAN = "# Plan\n\n## Phase 1 — cases\n\n### Task I-1: Intake (← AC-1.1
              "criteria** (← AC-1.1): the intake check passes on a sample email. It proves:\n" +
              "- one email becomes one case\n\n**Checks:**\n- Check: `verify/intake.ts`\n" +
              "- Run: `node verify/intake.ts`  Expected: PASS once implemented\n\n" +
-             "### As built\n\nPhase 1 is built.\n\n## Full-suite gate\n\nnpm run gate\n";
+             "### As built\n\nPhase 1 is built.\n\n## Full-suite gate\n\nnpm run test:release\n";
 
 let n = 0;
 let seq = 0;

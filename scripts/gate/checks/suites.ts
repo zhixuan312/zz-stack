@@ -230,7 +230,7 @@ check("every check in checks/ is registered here, or named here with a reason", 
   // file's real imports and reads its statically-known arguments, so a comment, a string and a
   // regex literal are data and an alias is still a launcher. A regex over spellings answers
   // "not a break-test" for `execFileSync("npm", ["run", "gate"])`, for `spawnSync as launch`
-  // and for `cp.execSync("npm run gate")`.
+  // and for `cp.execSync("npm run test:release")`.
   //
   // A read of the variable, not a mention of its name: `envNamesIn` reads `process.env.X` and
   // `envRequired("X")` over source whose string literals are blanked, so a name appearing only

@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.20
+version: 1.21
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -39,7 +39,7 @@ declared, is refused by name.
 | AC | Status | Evidence | Note |
 |---|---|---|---|
 | AC-1.1 | established | check:initiative-open — `initiative_open: ok` | |
-| I-4 | established | run:npm run gate -- --quiet — `gate: 412 passed, 0 failed` | |
+| I-4 | established | run:npm run test:release — `GATE PASSED — <n> checks` | |
 | AC-3.2 | blocked | probe:catalog-sync — `ECONNREFUSED 10.0.0.4:5432` | host down since 09-24 |
 | AC-5.1 | deferred | | the stakeholder moved it to the next release |
 ```

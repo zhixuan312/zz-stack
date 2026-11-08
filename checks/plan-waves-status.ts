@@ -47,12 +47,12 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 const task = (n: number, deps: string, owns: string) =>
   `### Task I-${n}: T${n} (← AC-1.${n})\n**Output:** o${n}\n**Dependencies:** ${deps}\n**Owns:** ${owns}\n\n`;
 const planBody = (...tasks: string[]) => "# Plan\n\n## Phase 0 — Works\n\n" + tasks.join("") +
-  "## Integration hotspots\n\n- `CHANGELOG.md`\n\n## Full-suite gate\n\n`npm run gate`\n";
+  "## Integration hotspots\n\n- `CHANGELOG.md`\n\n## Full-suite gate\n\n`npm run test:release`\n";
 /** The same plan with its phase's `### As built`, which is what `current_phase` reads to decide
  *  whether a phase is still to build. */
 const planBodyBuilt = (...tasks: string[]) => "# Plan\n\n## Phase 0 — Works\n\n" + tasks.join("") +
   "### As built\n\nPhase 0 is built.\n\n## Integration hotspots\n\n- `CHANGELOG.md`\n\n" +
-  "## Full-suite gate\n\n`npm run gate`\n";
+  "## Full-suite gate\n\n`npm run test:release`\n";
 
 const DISJOINT = planBody(task(1, "none", "`packages/a/**`"), task(2, "none", "`packages/b/x.ts`"),
                           task(3, "Task I-1", "`packages/a/extra.ts`"));

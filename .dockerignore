@@ -49,6 +49,7 @@ dist/release
 **/*.pem
 **/*.key
 **/.marketplace-staging
+**/.gate-last-green
 **/docs
 evals/results
 **/evals/results

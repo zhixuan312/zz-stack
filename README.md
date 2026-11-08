@@ -16,7 +16,7 @@ identity, a team's document store, and the rules about who may write what.
 result to be auditable by someone who was not in the room.
 
 ```bash
-npm install && npm run gate     # every check; the ones that start a PostgreSQL need Docker
+npm install && npm run test:release   # every check; the ones that start a PostgreSQL need Docker
 ```
 
 **Start there.** The gate is the most useful thing in this repository: its checks are
@@ -35,7 +35,7 @@ exercise the console read the fake gateway answers its checkout ships — so the
 required rather than convenient. Without it those checks fail instead of passing unproven,
 and *"every route this gateway serves has a caller"* fails naming the missing repository
 rather than reporting every console-only route as uncalled. A few checks note that they
-cannot answer and pass without answering. Clone it as a sibling before running `npm run gate`.
+cannot answer and pass without answering. Clone it as a sibling before running `npm run test:release`.
 
 ## What is where
 
@@ -177,9 +177,11 @@ deploy/     the server package: docker compose, the Caddyfile (a template —
             install) and zz-tool (the platform's tools, run inside the image
             already on the host). Plus the cron'd record-keeping installed by
             install-backup-cron.sh — a nightly backup and a weekly restore drill
-scripts/    gate.ts (the order the gate runs in — every check itself lives in
-            gate/checks/<subject>.ts, with gate/run.ts holding the one `check`
-            they all register through and gate/facts.ts the facts they share),
+scripts/    test-run.ts (the three test commands: each picks the gate modules a change
+            affects through gate/select.ts and the path map in gate/test-groups.json,
+            and test:release runs them all), gate.ts (the order the gate runs in — every
+            check itself lives in gate/checks/<subject>.ts, with gate/run.ts holding the
+            one `check` they all register through and gate/facts.ts the facts they share),
             doctor.ts (the order the layers run in — where the deployment stops
             matching what this checkout declares, with doctor/layers/<layer>.ts
             the probes and doctor/run.ts the runner that tells a probe's own

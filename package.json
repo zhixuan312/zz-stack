@@ -11,9 +11,11 @@
   "scripts": {
     "build": "tsc -b && node services/zz-core/app/build.ts",
     "typecheck:tooling": "tsc --noEmit -p tsconfig.tooling.json",
+    "test:t1": "node scripts/test-run.ts t1",
+    "test:t2": "node scripts/test-run.ts t2",
+    "test:release": "node scripts/test-run.ts release",
     "build:marketplace": "node scripts/build-marketplace.ts",
     "clean": "node scripts/clean.ts",
-    "gate": "node scripts/gate.ts",
     "eval-flow-e2e": "node scripts/eval-flow-e2e.ts",
     "skeleton": "node scripts/skeleton.ts",
     "doctor": "node scripts/doctor.ts",

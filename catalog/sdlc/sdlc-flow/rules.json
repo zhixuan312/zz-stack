@@ -567,7 +567,7 @@
       "handler": "services/gateway/src/package/skills.ts::skillReportScript and SKILL_REPORT_HOOKS, shipped in the baseline by services/gateway/src/client-package.ts::buildClientPackage",
       "behavioural_test": "scripts/gate/checks/marketplace.ts — the committed hook matches the Skill tool, names every shelf plugin, and prints nothing for a foreign skill or with no token",
       "test_drives": "marketplace/zz-core/scripts/zz-skill-report.mjs",
-      "report": "npm run gate"
+      "report": "npm run test:release"
     },
     {
       "rule_id": "spec.outline_cut_by_tier",

@@ -69,9 +69,9 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     target: "every literal path a script or check names under scripts/ or checks/ is a file that exists, so an import, a spawn or a read cannot outlive its target",
     assertion: "a spawned path names a file that is really there",
     subject: "scripts/release.ts",
-    find: "[join(root, \"scripts/gate.ts\")]",
-    replace: "[join(root, \"scripts/run-gate.ts\")]",
-    planted: "the release script spawns scripts/run-gate.ts, which does not exist — so the one " +
+    find: "[join(root, \"scripts/test-run.ts\"), \"release\"]",
+    replace: "[join(root, \"scripts/run-tests.ts\"), \"release\"]",
+    planted: "the release script spawns scripts/run-tests.ts, which does not exist — so the one " +
       "step that runs the whole gate before a release dies with 'cannot find module' at the " +
       "moment it is most relied on",
   },

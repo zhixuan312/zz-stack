@@ -59,17 +59,11 @@ jobs:
 
       - run: npm ci
 
-      # The three commands the plan's "Full-suite gate" fixes, in its order.
-      - name: Typecheck the workspace
-        run: npx tsc -b
-
-      # The document panel zz-core serves: bundled after the typecheck, as `npm run build` does,
-      # so the checks that read dist/apps/document-panel.html read the page the image ships.
-      - name: Build the document panel
-        run: node services/zz-core/app/build.ts
-
-      - name: Typecheck the tooling project
-        run: npx tsc -p tsconfig.tooling.json --noEmit
+      # The sandbox is proved by the code's own detector, which imports built output, so the
+      # workspace is built once before the proof. `test:release` builds again; `tsc -b` is
+      # incremental and the second run is the one that must pass.
+      - name: Build the workspace the gate reads
+        run: npm run build
 
       # Proved by the code's own detector after the build, as images.yml does, rather than found
       # missing inside the gate.
@@ -82,5 +76,7 @@ jobs:
             console.log('sandbox: ' + t);
           })"
 
-      - name: The gate
-        run: node scripts/gate.ts --quiet
+      # The only test command CI runs, here and in every other workflow. It builds (`tsc -b` and the
+      # document panel), type-checks the tooling project, and runs every check.
+      - name: test:release
+        run: npm run test:release

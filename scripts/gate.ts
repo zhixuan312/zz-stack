@@ -37,7 +37,32 @@ import "./gate/checks/build.ts";
 import { errMessage } from "./gate/read.ts";
 import { report } from "./gate/run.ts";
 
+/**
+ * `ZZ_GATE_MODULES` narrows the gate to named modules, for `test:t1` and `test:t2`.
+ *
+ * The modules are chosen by `scripts/gate/select.ts` from `scripts/gate/test-groups.json`; this
+ * file only honours the answer. `build` is always loaded, statically below, because every other
+ * module may read what the build produced. Unset, the gate loads every module — `test:release`
+ * does exactly that, and so does every break-test.
+ */
+const requested = process.env.ZZ_GATE_MODULES === undefined
+  ? null
+  : new Set(process.env.ZZ_GATE_MODULES.split(",").map((m) => m.trim()).filter(Boolean));
+/** The selection as it was asked for, for the completeness check at the end: `requested` is
+ *  consumed module by module below. */
+const selected = requested === null ? undefined : [...requested];
+
+const wanted = (module: string): boolean => {
+  if (requested === null) return true;
+  const name = module.replace(/^\.\/gate\/checks\//, "").replace(/\.ts$/, "");
+  if (name === "build") return true;
+  if (!requested.has(name)) return false;
+  requested.delete(name);
+  return true;
+};
+
 async function load(module: string): Promise<void> {
+  if (!wanted(module)) return;
   try {
     await import(module);
   } catch (err) {
@@ -109,4 +134,4 @@ await load("./gate/checks/suites-tooling.ts");
 await load("./gate/checks/suites-data.ts");
 await load("./gate/checks/suites-surface.ts");
 
-report();
+report(selected);

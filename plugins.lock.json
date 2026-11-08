@@ -1,7 +1,7 @@
 {
   "sdlc": {
     "version": "0.102.0",
-    "digest": "aa9fbb56",
+    "digest": "91d8d877",
     "skills": {
       "sdlc-audit-criteria": "d73e3bb335bf",
       "sdlc-execute": "e197efaf263b",
@@ -13,7 +13,7 @@
       "sdlc-plan-audit": "7199465ef386",
       "sdlc-recall": "29a2e6cd164d",
       "sdlc-research": "3acbabf13cb4",
-      "sdlc-review": "6874a499c4f5",
+      "sdlc-review": "9b755c7813d5",
       "sdlc-spec": "d729b1b58b13",
       "sdlc-spec-audit": "fdc5ce49ae67"
     }

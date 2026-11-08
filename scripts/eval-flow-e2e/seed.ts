@@ -67,7 +67,7 @@ export async function seedUsage(url: string, pat: string, tag: string, round: "u
     // Some real use goes wrong first: the agent jumps ahead to the plan before the spec's gate,
     // is refused, and goes back. That refusal is what DISCOVER has to mine.
     if (i % 4 === 0) {
-      await c.call("core", "document_write", { path: `${name}/plan.md`, content: `## Full-suite gate\nnpm run gate.\n` },
+      await c.call("core", "document_write", { path: `${name}/plan.md`, content: `## Full-suite gate\nnpm run test:release.\n` },
         { refusal: /^ERROR/ });
     }
     await doc("spec.md", SPEC.map((h) => `## ${h}\n${SPEC_BODY[h] ?? `Change ${topic} as asked in request ${i}.${mark}`}\n`).join("\n"));
@@ -78,7 +78,7 @@ export async function seedUsage(url: string, pat: string, tag: string, round: "u
     await c.call("core", "source_add", { initiative: name, title: `spec audit ${i}`,
       content: "Audit round 1 of spec.md: no blocking findings.", supports: ["spec.md"], stage: "sdlc-spec-audit" });
     await c.skill("sdlc-plan");
-    await doc("plan.md", `## Full-suite gate\nnpm run gate, for request ${i}.\n`);
+    await doc("plan.md", `## Full-suite gate\nnpm run test:release, for request ${i}.\n`);
     await sign("plan.md");
     await c.call("core", "source_add", { initiative: name, title: `plan audit ${i}`,
       content: "Audit round 1 of plan.md: no blocking findings.", supports: ["plan.md"], stage: "sdlc-plan-audit" });

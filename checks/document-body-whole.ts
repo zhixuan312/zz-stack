@@ -62,7 +62,7 @@ const handed = (re: RegExp, body: string) =>
   seen = [];
   const lines = ["# Plan", ""];
   for (let i = 0; lines.join("\n").length < 250_000; i++) lines.push(`Task ${i}: build the part numbered ${i}.`);
-  lines.push("", "## Full-suite gate", "", "npm run gate");
+  lines.push("", "## Full-suite gate", "", "npm run test:release");
   const body = lines.join("\n");
   const got = await write(body);
   is(!("refusal" in got), `a ${body.length}-character body was refused: ${JSON.stringify(got)}`);

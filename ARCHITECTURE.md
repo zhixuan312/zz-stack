@@ -208,7 +208,7 @@ knows the others.
 
 | | asks | reads | when |
 |---|---|---|---|
-| `npm run gate` | is this checkout correct | the repository, offline | before anything |
+| `npm run test:release` | is this checkout correct | the repository, offline | before anything |
 | `release.ts --preflight` | is this release worth starting | the checkout and the host, read-only | before a release |
 | `npm run doctor` | where does the deployment stop matching this checkout | both sides, layer by layer | any time, outage included |
 

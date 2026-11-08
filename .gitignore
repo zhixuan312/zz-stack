@@ -24,6 +24,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# The commit of the last passing test:t1 / test:t2 run. Local state, not a fact about the tree.
+.gate-last-green
+
 # build-marketplace.ts compiles catalog/**/skills/**/*.ts here before packaging, so the
 # marketplace/ tree never sees the .ts source beside the .js it ships. Rebuilt per invocation.
 .marketplace-staging/

@@ -72,7 +72,7 @@ check("a plan written one phase at a time validates on the phases written, and y
   const phase1 = "## Phase 1 — Works: runs end to end\n" +
     task(1, "none", "`packages/a/**`") + task(2, "none", "`packages/b/x.ts`") + task(3, "Task I-1", "`packages/a/y.ts`");
   const pending = "## Phase 2 — Candidates: built in isolation\n";
-  const tail = "## Integration hotspots\n- `CHANGELOG.md`\n## Full-suite gate\n`npm run gate`\n";
+  const tail = "## Integration hotspots\n- `CHANGELOG.md`\n## Full-suite gate\n`npm run test:release`\n";
   const report = validatePlan(phase1 + pending + tail);
   if (!report.ok) return `a plan with Phase 2 not yet written failed: ${kinds(phase1 + pending + tail).join(", ")}`;
   const [one, two] = report.phases;

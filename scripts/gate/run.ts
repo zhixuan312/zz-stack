@@ -157,9 +157,9 @@ function unaccountedFor(discovered: readonly string[], executed: readonly string
   return out;
 }
 
-function writeReport(verdict: "PASSED" | "FAILED" | "INCOMPLETE"): void {
+function writeReport(verdict: "PASSED" | "FAILED" | "INCOMPLETE", only?: readonly string[]): void {
   if (!reportPath) return;
-  const discovered = gateCheckNames();
+  const discovered = gateCheckNames(only);
   const executed = executions.map((e) => e.name);
   const tree = sourceTreeDigest();
   writeFileSync(reportPath, `${JSON.stringify({
@@ -204,25 +204,30 @@ export function note(message: string): void {
   if (!quiet) console.log(message);
 }
 
-/** Print the verdict and exit. Called by `gate.ts` after every module has been loaded. */
-export function report() {
+/** Print the verdict and exit. Called by `gate.ts` after every module has been loaded.
+ *
+ *  `only` is the module selection a `test:t1`/`test:t2` run asked for. The completeness check below
+ *  is the same question either way — did every check that should have run, run? — asked of the
+ *  modules that were selected. `test:release` passes nothing and asks it of the whole gate.
+ */
+export function report(only?: readonly string[]) {
   // Every check on disk actually ran, and this is the only place that can know it: a module
   // under gate/checks/ that gate.ts never loads keeps its `check(` lines where a count can find
   // them and registers nothing. Not a check itself, because a check runs partway
   // through and cannot see the final number.
-  const written = gateCheckNames().length;
+  const written = gateCheckNames(only).length;
   const ran = executions.length;
   const failed = executions.filter((e) => e.detail !== null).length;
   if (written !== ran) {
     // The report is written on this path too: `skipped_ids` names which checks never ran,
     // which the line below can only count.
-    writeReport("INCOMPLETE");
+    writeReport("INCOMPLETE", only);
     console.error(`\n  GATE INCOMPLETE — ${written} checks are written under ` +
       `scripts/gate/checks/ and ${ran} ran. A module is missing from gate.ts's loads, or failed ` +
       "to load above.");
     process.exit(1);
   }
-  writeReport(failed === 0 ? "PASSED" : "FAILED");
+  writeReport(failed === 0 ? "PASSED" : "FAILED", only);
   console.log(`\n  ${"─".repeat(56)}`);
   if (failed === 0) {
     console.log(`  GATE PASSED — ${ran} checks`);

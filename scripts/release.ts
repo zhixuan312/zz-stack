@@ -140,8 +140,8 @@ if (args.includes("--gate-in-ci")) {
   log(`  gate: not run here — CI's own run passed on this commit (${r.url})`);
 } else {
   try {
-    execFileSync("node", [join(root, "scripts/gate.ts")], { cwd: root, stdio: "inherit" });
-  } catch { die("gate did not pass"); }
+    execFileSync("node", [join(root, "scripts/test-run.ts"), "release"], { cwd: root, stdio: "inherit" });
+  } catch { die("test:release did not pass"); }
 }
 
 /* 1a · fit-for-purpose review */
@@ -266,25 +266,24 @@ log(`  console:   ${dashVersion ? `releasing ${dashVersion} (${dash.why})` : `sk
 // reports the pipe's.
 //
 // pnpm, because the console declares `packageManager: pnpm` and carries a pnpm lockfile.
-// zz-stack is an npm workspace.
+// zz-stack is an npm workspace. `test:release` is the console's one whole-suite command: it runs
+// the gate, the type check, the lint and both browser tiers.
 if (dashVersion) {
-  for (const script of ["typecheck", "lint", "test", "gate"]) {
-    try {
-      run("pnpm", ["run", script], { cwd: DASH_SRC });
-      log(`  console ${script}: passed`);
-    } catch (err) {
-      // The suite's own output is the only thing that says WHY it failed, and `run` captures it
-      // rather than letting it reach the terminal — so until this line existed the failure
-      // printed one sentence and nothing else. 0.83.1 is where that cost something real: its
-      // console gate failed inside the release and passes on every manual run, and with the
-      // output discarded there was no way to tell a broken build from a killed one.
-      const e = asExecError(err);
-      const tail = (e.stderr || e.stdout || e.message).split("\n").filter(Boolean).slice(-25).join("\n");
-      die(`the console's \`pnpm run ${script}\` failed. Its suite is the only thing standing\n` +
-          `        between a console change and every person who opens the platform — fix it\n` +
-          `        rather than releasing past it.\n\n` +
-          tail.replace(/^/gm, "        "));
-    }
+  try {
+    run("pnpm", ["run", "test:release"], { cwd: DASH_SRC });
+    log("  console test:release: passed");
+  } catch (err) {
+    // The suite's own output is the only thing that says WHY it failed, and `run` captures it
+    // rather than letting it reach the terminal — so until this line existed the failure
+    // printed one sentence and nothing else. 0.83.1 is where that cost something real: its
+    // console gate failed inside the release and passes on every manual run, and with the
+    // output discarded there was no way to tell a broken build from a killed one.
+    const e = asExecError(err);
+    const tail = (e.stderr || e.stdout || e.message).split("\n").filter(Boolean).slice(-25).join("\n");
+    die(`the console's \`pnpm run test:release\` failed. Its suite is the only thing standing\n` +
+        `        between a console change and every person who opens the platform — fix it\n` +
+        `        rather than releasing past it.\n\n` +
+        tail.replace(/^/gm, "        "));
   }
 }
 

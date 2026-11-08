@@ -89,9 +89,13 @@ const asWritten = (raw: string): string =>
  * Every check this gate registers, by name, in the order the modules declare them. Read across
  * `scripts/gate/checks/`, because two checks and the report ask about the gate's own inventory and
  * a self-referential check pointed at a file that registers nothing passes on an empty set.
+ *
+ * `only` is the module selection a `test:t1`/`test:t2` run made. Without it every module is in
+ * scope and the answer is the whole gate; with it the report is held to the modules that ran.
  */
-export const gateCheckNames = (): string[] =>
+export const gateCheckNames = (only?: readonly string[]): string[] =>
   sourceFiles(["scripts/gate/checks"], [".ts"])
+    .filter((f) => !only || only.includes(f.replace(/^scripts\/gate\/checks\//, "").replace(/\.ts$/, "")))
     .flatMap((f) => [...readFileSync(join(root, f), "utf8").matchAll(/^check\("(.+?)",/gm)]
       .map((m) => asWritten(m[1])));
 
@@ -108,23 +112,27 @@ export const gateCheckNames = (): string[] =>
 const CHILD_PROCESS_SPECIFIERS = new Set(["child_process", "node:child_process"]);
 const LAUNCHERS = new Set(["exec", "execFile", "execFileSync", "execSync", "fork", "spawn", "spawnSync"]);
 
-/** `npm run gate` and `node scripts/gate.ts` are the two spellings this repository's break-tests
- *  actually use, in either the argv-array form or one whole command line in a single string. */
+/** `npm run test:release` and `node scripts/gate.ts` are the two ways this repository's own gate
+ *  can be launched, in either the argv-array form or one whole command line in a single string.
+ *  The break-tests spawn the second through `testing/gate-plant.ts`; the first is the command a
+ *  person or CI runs. */
 function literalsNameTheGate(literals: readonly string[]): boolean {
   const flat = literals.map((l) => l.trim());
   const isGatePath = (word: string): boolean => /(^|\/)scripts\/gate\.ts$/.test(word);
+  const isGateCommand = (word: string): boolean => word === "test:release";
   const isNpm = (word: string): boolean => /(^|\/)npm(\.cmd)?$/.test(word);
   for (const text of flat) {
-    if (isGatePath(text)) return true;
+    if (isGatePath(text) || isGateCommand(text)) return true;
     const words = text.split(/\s+/);
     if (words.length < 2) continue;                       // a bare argv entry, judged below
-    if (words.some(isGatePath)) return true;
-    if (words.some((w, i) => w === "run" && words[i + 1] === "gate" && isNpm(words[i - 1] ?? ""))) return true;
+    if (words.some(isGatePath) || words.some(isGateCommand)) return true;
+    if (words.some((w, i) => w === "run" && isGateCommand(words[i + 1] ?? "") && isNpm(words[i - 1] ?? ""))) return true;
   }
-  // The argv-array form: the program in one argument, `run` and `gate` in the next. `gate` is
-  // compared whole — `checks/gate-catches-unregistered.ts` is an argument this must not match.
+  // The argv-array form: the program in one argument, `run` and `test:release` in the next. The
+  // script name is compared whole — `checks/gate-catches-unregistered.ts` is an argument this must
+  // not match.
   if (!flat.some(isNpm)) return false;
-  return flat.some((w, i) => w === "run" && flat[i + 1] === "gate");
+  return flat.some((w, i) => w === "run" && isGateCommand(flat[i + 1] ?? ""));
 }
 
 /**
@@ -134,7 +142,7 @@ function literalsNameTheGate(literals: readonly string[]): boolean {
  * A word in a comment, a string or a regex literal is data and never counts; a call is counted
  * only when its callee resolves through this module's own imports to a `node:child_process`
  * launcher (named, aliased, namespace or default) and its arguments, resolved through
- * single-assignment `const` string/array bindings in the same file, name `npm run gate` or
+ * single-assignment `const` string/array bindings in the same file, name `npm run test:release` or
  * `scripts/gate.ts`.
  *
  * What it does not see: a launcher reached through `require()`, a command assembled at runtime,

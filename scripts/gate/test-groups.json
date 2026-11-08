@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "tier2": ["*.perf"],
+  "groups": [
+    {
+      "comment": "The gate's own machinery and the break-test harness decide which checks run, so any change there runs the whole gate.",
+      "paths": ["scripts/gate/**", "testing/**", ".github/**"],
+      "all": true
+    },
+    {
+      "comment": "Contracts are imported by every service and package.",
+      "paths": ["packages/contracts/**"],
+      "all": true
+    },
+    {
+      "paths": ["catalog/**", "skills/**", "marketplace/**", "packages/catalog/**"],
+      "modules": ["catalog-manifest", "catalog-stages", "catalog-servers", "plugin-declaration", "stage-produces",
+                  "skill-shape", "skill-claims", "skill-tools", "skill-calls", "skill-prose", "prose-names",
+                  "marketplace", "skills-provider-neutral", "docs-integrity", "rule-registry"]
+    },
+    {
+      "paths": ["services/zz-core/**", "services/zz-core/app/**"],
+      "modules": ["assessment-port", "checkpoints-consumed", "close-truthfulness", "documents-envelope",
+                  "documents-frontmatter", "documents-guards", "documents-lifecycle", "documents-schema",
+                  "generic-host-genericity", "han-analysis", "host-chain", "jev-adapter", "knowledge",
+                  "legacy-han-retrieval", "plan-validator", "query-grammar", "recall-result-contract",
+                  "rederivation-generation", "search-predicate-parameters", "stopped-close-exemption",
+                  "text-search-config-agreement", "write-path-analysis", "suites-surface", "suites"]
+    },
+    {
+      "paths": ["packages/indexing/**"],
+      "modules": ["knowledge", "han-analysis", "legacy-han-retrieval", "query-grammar", "rederivation-generation",
+                  "search-predicate-parameters", "text-search-config-agreement", "suites-surface"]
+    },
+    {
+      "paths": ["services/gateway/**"],
+      "modules": ["config-env", "console", "contracts-door", "data-sql", "data-telemetry", "data-telemetry-reports",
+                  "host-chain", "security-boundary", "security-identity", "security-secrets", "suites-data",
+                  "suites-surface"]
+    },
+    {
+      "paths": ["packages/mcp-http/**", "packages/mcp-client/**"],
+      "modules": ["security-boundary", "security-identity", "security-secrets", "contracts-door", "suites-surface"]
+    },
+    {
+      "paths": ["packages/tools/**"],
+      "modules": ["suites-tooling", "suites", "hygiene", "image", "config-env", "deploy-compose", "deploy-release",
+                  "deploy-ops"]
+    },
+    {
+      "paths": ["deploy/**"],
+      "modules": ["deploy-compose", "deploy-release", "deploy-ops", "config-env", "image"]
+    },
+    {
+      "paths": ["Dockerfile", "**/Dockerfile", ".dockerignore", "docker-compose*.yml", "**/docker-compose*.yml"],
+      "modules": ["image", "deploy-compose"]
+    },
+    {
+      "paths": ["scripts/release.ts", "scripts/release/**", "scripts/deployment.ts", "scripts/manifests.ts",
+                "scripts/set-version.ts", "scripts/plugin-versions.ts", "scripts/skill-versions.ts"],
+      "modules": ["deploy-release", "deploy-ops", "config-env"]
+    },
+    {
+      "paths": ["scripts/doctor.ts", "scripts/doctor/**"],
+      "modules": ["deploy-compose", "deploy-ops", "config-env"]
+    },
+    {
+      "paths": ["scripts/build-marketplace.ts", "scripts/skeleton.ts", "scripts/skeleton-*.ts"],
+      "modules": ["marketplace", "catalog-manifest", "catalog-stages", "skill-shape"]
+    },
+    {
+      "paths": ["scripts/schema-target-extract.ts", "schema-target.ts", "SCHEMA.md"],
+      "modules": ["data-sql", "data-telemetry", "suites-data"]
+    },
+    {
+      "paths": ["package.json", "package-lock.json", "tsconfig*.json", "plugins.lock.json", "skills.lock.json",
+                ".nvmrc", ".gitignore"],
+      "modules": ["build", "image", "suites-tooling", "config-env", "hygiene"]
+    },
+    {
+      "comment": "Documentation is checked repository-wide.",
+      "paths": ["*.md", "docs/**"],
+      "modules": ["docs-integrity", "prose-names", "hygiene", "deploy-release"]
+    }
+  ]
+}

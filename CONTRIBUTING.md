@@ -21,7 +21,9 @@ the floor.
 
 ```bash
 npm install
-npm run gate          # offline; Docker for the checks that start a PostgreSQL; it prints how many checks ran
+npm run test:t1       # the affected checks, since the last green run
+npm run test:t2       # the affected Tier 2 checks plus the affected Tier 1 checks
+npm run test:release  # every check, plus the type checks; before a release
 ```
 
 Everything this project believes about itself is a check in there. They are named as
@@ -29,6 +31,12 @@ properties rather than as test cases — "a door that refuses ends the request",
 route this gateway serves has a caller", "redaction lets no secret through, on the real
 predicate" — so the output reads as a list of claims the repository is currently
 entitled to make.
+
+The three commands pick their own checks. `test:t1` and `test:t2` map the files a change touched to
+the gate modules that judge them (`scripts/gate/test-groups.json`), and a path the map does not
+cover runs the whole gate; a passing run records the commit in `.gate-last-green` and the next run
+starts there. `test:release` runs the whole gate and does not consult the map. Never narrow a run by
+hand: a smaller run must not be the one that skipped the check which would have failed.
 
 **A red gate is never bypassed.** If a check is wrong, fix the check and say in its
 comment what it was wrong about; a check nobody trusts is worse than no check. If you
@@ -49,7 +57,7 @@ judged. Their existing execution timeout bounds startup as well as the command.
 
 ```bash
 npm run build                                    # tsc -b, project references
-node scripts/gate.ts                             # every check; needs Docker for the ones that start a PostgreSQL
+npm run test:release                             # every check; needs Docker for the ones that start a PostgreSQL
 node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed

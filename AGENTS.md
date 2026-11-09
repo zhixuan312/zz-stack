@@ -25,6 +25,13 @@ writes the commit to `.gate-last-green` (gitignored) and the next run starts the
 the runner diffs against `master`, and on `master`'s own head (or with no history) it runs the
 whole gate rather than record a green nobody checked.
 
+**The standard from 2026-11-10: only Tier 1 blocks.** A Tier 1 failure fails the run. A Tier 2
+performance result is reported and compared against earlier releases; it never fails a run and
+never blocks a release — this repository has no Tier 2 checks today, so nothing here is affected.
+A check that did not run is listed as "not run" with its reason and is never counted as passed. A
+Tier 1 failure that passes on a retry with no cause found is reported as flaky, not as a pass. CI
+is the evidence for a release.
+
 **A release in this repository is a tagged release cut with `npm run release`,** which builds,
 deploys and tags. Pushing to `master` is not a release: CI runs `test:release` on every push, and
 a release may only be cut from a commit whose `test:release` passed.

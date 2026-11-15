@@ -52,9 +52,9 @@
  * (ZZ_DASHBOARD_PATH), and that compose file is the only thing of the console's on the host —
  * it ships as an image like the platform itself.
  */
-import { execFileSync, execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { execFileSync, execSync, spawnSync } from "node:child_process";
+import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import { buildAndSmoke, buildBundle, setConsoleVersion } from "./release/build.ts";
 import { requireCiGreen } from "./release/ci-runs.ts";
@@ -269,23 +269,23 @@ log(`  console:   ${dashVersion ? `releasing ${dashVersion} (${dash.why})` : `sk
 // zz-stack is an npm workspace. `test:release` is the console's one whole-suite command: it runs
 // the static checks, the type check, the lint, every test and the production build.
 if (dashVersion) {
-  try {
-    run("pnpm", ["run", "test:release"], { cwd: DASH_SRC });
+  // DELIBERATE: the suite writes to a file, never into memory. `run` buffers through
+  // execFileSync, whose 1 MiB maxBuffer kills the child once it is exceeded; the console's
+  // suite writes about 2.4 MB, most of it React act() warnings, so 0.103.0's release killed a
+  // suite that passes on its own. The file has no ceiling and keeps the whole run for reading.
+  const logPath = join(root, "dist/release/console-test-release.log");
+  mkdirSync(dirname(logPath), { recursive: true });
+  const fd = openSync(logPath, "w");
+  const r = spawnSync("pnpm", ["run", "test:release"], { cwd: DASH_SRC, stdio: ["ignore", fd, fd] });
+  closeSync(fd);
+  if (r.status === 0) {
     log("  console test:release: passed");
-  } catch (err) {
-    // The suite's own output is the only thing that says WHY it failed, and `run` captures it
-    // rather than letting it reach the terminal — so until this line existed the failure
-    // printed one sentence and nothing else. 0.83.1 is where that cost something real: its
-    // console gate failed inside the release and passes on every manual run, and with the
-    // output discarded there was no way to tell a broken build from a killed one.
-    // DELIBERATE: stdout first. The runner prints its verdict there, and stderr can be nothing
-    // but React's act() warnings, which is all 0.103.0's first console failure showed.
-    const e = asExecError(err);
-    const last = (s: string | undefined, n: number) => (s ?? "").split("\n").filter(Boolean).slice(-n).join("\n");
-    const tail = [last(e.stdout, 25), last(e.stderr, 8)].filter(Boolean).join("\n  -- stderr --\n") || e.message;
-    die(`the console's \`pnpm run test:release\` failed. Its suite is the only thing standing\n` +
-        `        between a console change and every person who opens the platform — fix it\n` +
-        `        rather than releasing past it.\n\n` +
+  } else {
+    const tail = readFileSync(logPath, "utf8").split("\n").filter(Boolean).slice(-25).join("\n");
+    const why = r.error ? r.error.message : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`;
+    die(`the console's \`pnpm run test:release\` failed (${why}). Its suite is the only thing\n` +
+        `        standing between a console change and every person who opens the platform — fix it\n` +
+        `        rather than releasing past it. The whole run is in ${logPath}.\n\n` +
         tail.replace(/^/gm, "        "));
   }
 }

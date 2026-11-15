@@ -41,9 +41,8 @@ function doorValueNames(source: string): string[] {
   return out;
 }
 
-/** The names this module imports from the door. `noUnusedLocals` is on for `scripts/**`, so a
- *  name that appears here is a name some check below actually calls — the compiler binds the
- *  import list to the exercised set, and this check does not have to. */
+/** The names this module imports from the door. An import is not a run: the check below also
+ *  asserts each imported probe is called. */
 function ownProbeImports(source: string): string[] {
   const out: string[] = [];
   for (const block of source.matchAll(/import\s+\{([^}]*)\}\s*from\s*"@zz\/contracts"/g)) {
@@ -61,8 +60,8 @@ function ownProbeImports(source: string): string[] {
  * the names this module imports. Add a probe to the door and this fails until it is wired;
  * delete one and this fails until the import goes.
  *
- * COUPLED: `noUnusedLocals` on `scripts/**` is doing half the work. An import no check below
- * calls fails the typecheck, which is what binds the import list to the exercised set.
+ * DELIBERATE: the call is checked here, not left to `noUnusedLocals`. The type check is Tier 3
+ * and never fails a run, so an imported probe no check calls would otherwise pass.
  *
  * The `Probe` suffix is the convention, and a probe named against it would be missed, so the
  * convention is asserted by failing when the door yields no probes at all.
@@ -76,8 +75,10 @@ check("every negative-control probe on the contracts door is run by this file", 
     return `${DOOR} yielded no exported value name ending in "Probe" — the door moved, changed ` +
       "shape, or the naming convention this check derives the set from has been abandoned";
   }
-  const own = ownProbeImports(withoutComments(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+  const self = withoutComments(readFileSync(fileURLToPath(import.meta.url), "utf8"));
+  const own = ownProbeImports(self);
   const imported = new Set(own);
+  const body = self.replace(/import\s+\{[^}]*\}\s*from\s*"@zz\/contracts"/g, "");
   const bad: string[] = [];
   for (const name of onDoor) {
     if (!imported.has(name)) {
@@ -88,6 +89,9 @@ check("every negative-control probe on the contracts door is run by this file", 
   for (const name of own) {
     if (/Probe$/.test(name) && !onDoor.includes(name)) {
       bad.push(`this file imports ${name} and the door no longer publishes it as a value`);
+    }
+    if (/Probe$/.test(name) && !new RegExp(`\\b${name}\\(`).test(body)) {
+      bad.push(`this file imports ${name} and no check calls it — an imported probe proves nothing`);
     }
   }
   return firstOf(bad);

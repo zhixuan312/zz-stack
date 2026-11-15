@@ -13,7 +13,7 @@ Three commands, no arguments. The runner picks the tests; a person never chooses
 | --- | --- |
 | `npm run test:t1` | The Tier 1 checks affected by changes since the last green run. |
 | `npm run test:t2` | The affected Tier 2 checks plus the affected Tier 1 checks. |
-| `npm run test:release` | Every Tier 1 and Tier 2 check, then the type check, which is reported and never fails the run. Once, before a release. |
+| `npm run test:release` | Every Tier 1 and Tier 2 check, then the type check and lint, which are reported and never fail the run. Once, before a release. |
 
 This repository has no Tier 2 checks yet: Tier 2 is the file convention `<name>.perf.ts`, and no
 such module exists. `test:t2` therefore selects the affected Tier 1 checks — the standard's rule
@@ -41,7 +41,8 @@ phases use `test:t2`. "Before delivery" in a plan means `test:release`.
 
 There is no separate lint command. `tsc -b` is the build, and the gate runs it as Tier 1: a build
 that does not compile cannot ship. The tooling project's type check (`checks/strict-tooling-zero.ts`)
-is Tier 3: `test:release` runs it after the gate and reports it, and it never fails a run.
+and the `any` sweeps (`checks/strict-checks-dir.ts`, `checks/strict-scripts-dir.ts`) are Tier 3:
+`test:release` runs them after the gate and reports each, and none fails a run.
 
 Two workflow steps are not test entry points, and their absence from `test:release` is deliberate:
 

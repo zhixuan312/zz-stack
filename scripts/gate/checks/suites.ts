@@ -199,9 +199,11 @@ const notRegistered = new Map<string, string>([
   ["in-process.ts", "a module checks import to drive the services in-process, not a check of its own"],
   // Not a check: what the SQL statement scanners share beside the statement reader.
   ["sql-scan.ts", "a module the SQL statement scanners import, not a check of its own"],
-  // Tier 3: a type check runs and reports and never blocks, so `npm run test:release` runs it after
-  // the gate and prints its result without failing the run.
+  // Tier 3: the type check and the lint sweeps run and report and never block, so `npm run
+  // test:release` runs them after the gate and prints each result without failing the run.
   ["strict-tooling-zero.ts", "the tooling project's type check — Tier 3, reported by test:release, never a gate failure"],
+  ["strict-checks-dir.ts", "the `any` sweep over checks/ — Tier 3, reported by test:release, never a gate failure"],
+  ["strict-scripts-dir.ts", "the `any` sweep over scripts/, testing/ and the skill scripts — Tier 3, reported by test:release, never a gate failure"],
 ]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {

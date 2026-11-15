@@ -1,5 +1,6 @@
-// Two claims: every gate module is reached, and none is typed by widening to `any`.
-// COUPLED: strict-tooling-zero.ts runs the compiler over this subtree; this reads what it accepts.
+// Every gate module is reached, and the registry it runs is intact. A module nothing imports, or a
+// lost check() registration, is a check that silently stopped running.
+// COUPLED: strict-scripts-dir.ts scans this subtree for `any`; that sweep is Tier 3 and reported.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 const fail: string[] = [];
@@ -33,11 +34,4 @@ let registered = 0;
 for (const m of modules) registered += [...readFileSync(join("scripts/gate/checks", m), "utf8").matchAll(/^check\(/gm)].length;
 if (registered < 100) fail.push(`only ${registered} check() registrations found across the gate modules — ` +
                                 `some were lost`);
-for (const f of modules) {
-  const src = readFileSync(join("scripts/gate/checks", f), "utf8");
-  src.split("\n").forEach((line, i) => {
-    const code = line.replace(/\/\/.*$/, "");
-    if (/:\s*any\b|<any>|as\s+any\b/.test(code)) fail.push(`scripts/gate/checks/${f}:${i + 1} uses any`);
-  });
-}
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

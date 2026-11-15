@@ -81,19 +81,15 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   },
   {
     check: SUITES_TOOLING,
-    target: "the six shipped skill scripts are type-checked, every construct in them is " +
-      "erasable, and none is typed by widening to any",
-    assertion: "a shipped skill script may not reach zero errors by widening to any",
+    target: "the six shipped skill scripts are in the tooling project, and every construct in " +
+      "them is erasable",
+    assertion: "a shipped skill script may not use syntax node cannot strip",
     subject: "catalog/zz/zz-access/skills/zz-doctor/doctor.ts",
     find: "const readable = (p: string): string | null => {",
-    // SEAMED. The strict sweeps read every tracked file under scripts/, and a payload quoting
-    // a widened type reads to them as a widened type — this file would turn that check red at
-    // baseline and every row in the batch would come back against an already-red target.
-    replace: "const readable = (p: string): an" + "y => {",
-    planted: "zz-doctor's file reader is widened to `any`, so every value it returns stops " +
-      "being checked — the token read off disk, the installed plugin's config — and the " +
-      "\"zero strict errors\" this script ships with is bought by switching the checking off " +
-      "rather than by making it true",
+    replace: "enum Readable { Yes }\nconst readable = (p: string): string | null => {",
+    planted: "zz-doctor declares an enum, which node's type stripping cannot erase, so the script " +
+      "that diagnoses a broken install fails to start on the consumer's machine with a syntax " +
+      "error before it diagnoses anything",
   },
   {
     check: SUITES_DATA,

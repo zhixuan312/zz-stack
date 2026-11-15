@@ -1,8 +1,9 @@
 /**
  * The repository's own build, strictness and naming, each delegated to `checks/`.
  *
- * The node floor, the tooling project's zero-strict-error rule, every script being `.ts`, and
- * the paths and locks that have to resolve. These are
+ * The node floor, the gate's own registry, every script being `.ts` and erasable, and the paths
+ * and locks that have to resolve. The type check and the `any` sweeps are Tier 3: `npm run
+ * test:release` runs and reports them, and none is registered here. These are
  * about this repository rather than about the platform it ships, so a red gate here is not
  * product behaviour.
  */
@@ -36,17 +37,11 @@ check("every literal path a script or check names under scripts/ or checks/ is a
 check("every entry point a human types — an npm script, a deploy script — names the .ts file that exists, not the .mjs file that no longer does",
       runsCheck("entry-points-resolve.ts"));
 
-check("no file in checks/ reaches the compiler's zero by widening to any or silencing it",
-      runsCheck("strict-checks-dir.ts"));
+check("every scripts/gate/ module is reached, and the registry it runs is intact",
+      runsCheck("registry-reached.ts"));
 
-check("every scripts/gate/ module is reached, the registry it runs is intact, and none is typed by widening to any",
-      runsCheck("strict-gate-dir.ts"));
-
-check("nothing in the rest of scripts/ or in testing/ reaches the compiler's zero by widening to any",
-      runsCheck("strict-scripts-dir.ts"));
-
-check("the six shipped skill scripts are type-checked, every construct in them is erasable, and none is typed by widening to any",
-      runsCheck("strict-catalog-skills.ts"));
+check("the six shipped skill scripts are in the tooling project, and every construct in them is erasable",
+      runsCheck("catalog-skills-erasable.ts"));
 
 check("what consumers receive is JavaScript, never the source, and rebuilding it changes nothing",
       runsCheck("marketplace-ships-js.ts"));

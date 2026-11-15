@@ -4,7 +4,7 @@
  *
  *   npm run test:t1       the Tier 1 checks affected by changes since the last green run
  *   npm run test:t2       the affected Tier 2 checks plus the affected Tier 1 checks
- *   npm run test:release  every Tier 1 and Tier 2 check, then the type check, reported only
+ *   npm run test:release  every Tier 1 and Tier 2 check, then the type check and lint, reported only
  *
  * No command takes an argument. The gate has no import graph, so the tests are chosen by
  * `scripts/gate/select.ts` from the path-to-module map in `scripts/gate/test-groups.json`: a path
@@ -56,15 +56,22 @@ if (tier === "t1" || tier === "t2") {
 }
 
 if (tier === "release") {
-  // Every Tier 1 and Tier 2 check, then lint and type check. There is no lint configuration in
-  // this repository, so the tooling project's type check is the whole of that (it is not in
-  // `tsc -b`, which the gate's build check runs because a build that does not compile is Tier 1).
-  // DELIBERATE: the type check is Tier 3 — it runs after the gate and is reported, and its result
-  // never changes the exit code. Both stages run whatever the first one returned.
-  console.log("  test:release — every Tier 1 and Tier 2 check, then the type check (reported, never blocks)");
+  // Every Tier 1 and Tier 2 check, then the type check and lint. There is no lint configuration
+  // in this repository, so lint is the `any` sweeps. The tooling project is not in `tsc -b`,
+  // which the gate's build check runs because a build that does not compile is Tier 1.
+  // DELIBERATE: the type check and lint are Tier 3 — they run after the gate and are reported,
+  // and their results never change the exit code. Every stage runs whatever the others returned.
+  console.log("  test:release — every Tier 1 and Tier 2 check, then the type check and lint (reported, never block)");
   const gatePassed = run("node", ["scripts/gate.ts"]);
-  const typesClean = run("node", ["checks/strict-tooling-zero.ts"]);
-  console.log(`  type check (Tier 3, reported only): ${typesClean ? "zero errors" : "errors above — not a failure"}`);
+  const reported: [string, string][] = [
+    ["type check", "checks/strict-tooling-zero.ts"],
+    ["lint, any in checks/", "checks/strict-checks-dir.ts"],
+    ["lint, any in scripts/, testing/, skills", "checks/strict-scripts-dir.ts"],
+  ];
+  for (const [what, file] of reported) {
+    const clean = run("node", [file]);
+    console.log(`  ${what} (Tier 3, reported only): ${clean ? "clean" : "findings above — not a failure"}`);
+  }
   if (!gatePassed) process.exit(1);
   const head = markGreen();
   console.log(`  last green: ${head.slice(0, 12)}`);

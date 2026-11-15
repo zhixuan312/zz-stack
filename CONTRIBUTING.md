@@ -23,7 +23,7 @@ the floor.
 npm install
 npm run test:t1       # the affected checks, since the last green run
 npm run test:t2       # the affected Tier 2 checks plus the affected Tier 1 checks
-npm run test:release  # every check, then the type check (reported, never blocks); before a release
+npm run test:release  # every check, then the type check and lint (reported, never block); before a release
 ```
 
 Everything this project believes about itself is a check in there. They are named as

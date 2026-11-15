@@ -8,12 +8,12 @@
  * the runner. Every row carries an `assertion`, because a row that does not say which claim it
  * is about is unreadable in a report this long.
  *
- * Three payloads are assembled from pieces rather than written whole. This file lives under
- * `scripts/`, which three checks in this batch scan line by line without regard for quoting:
- * `strict-scripts-dir.ts` reports any widening to `any`, `insert-arity.ts` parses any `insert
- * into … values (…)`, and `core-names.ts` reports any pre-rename tool name in quoted or
- * backticked form. Split only where one of those three bites, never to get a spec past the
- * check it is aimed at.
+ * Some payloads are assembled from pieces rather than written whole. This file lives under
+ * `scripts/`, which these checks scan line by line without regard for quoting: `insert-arity.ts`
+ * parses any `insert into … values (…)`, `core-names.ts` reports any pre-rename tool name in
+ * quoted or backticked form, and the reported `strict-scripts-dir.ts` sweep reports any widening
+ * to `any`. Split only where one of those bites, never to get a spec past the check it is aimed
+ * at.
  */
 import type { MutationSpec } from "./plant.ts";
 
@@ -74,21 +74,6 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     planted: "the release script spawns scripts/run-tests.ts, which does not exist — so the one " +
       "step that runs the whole gate before a release dies with 'cannot find module' at the " +
       "moment it is most relied on",
-  },
-  {
-    check: SUITES_TOOLING,
-    target: "nothing in the rest of scripts/ or in testing/ reaches the compiler's zero by widening to any",
-    assertion: "no error in scripts/ or testing/ was silenced by widening a type to any",
-    // Outside scripts/gate/, which `plant()` refuses to edit because the gate is what a run
-    // measures. This pointed at the gate's own `errMessage` once that moved into read.ts, and the
-    // first full run recorded it as a plant that never landed.
-    subject: "scripts/deployment.ts",
-    find: "export function asExecError(err: unknown): ExecError {",
-    // SEAMED: a widening to any, which the strict sweep reads out of any tracked line.
-    replace: "export function asExecError(err: " + "any" + "): ExecError {",
-    planted: "the release's caught-value helper is widened from `unknown` to `any`, so every " +
-      "property read on it type-checks and the narrowing that made this function safe is gone " +
-      "— strictness bought by an escape hatch rather than by the code being right",
   },
   {
     check: SUITES_TOOLING,

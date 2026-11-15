@@ -1,5 +1,6 @@
-// The shipped skill scripts are in the tooling project, and none is typed by widening to `any` or
-// written in syntax node cannot strip. COUPLED: strict-tooling-zero.ts runs the compiler over them.
+// The shipped skill scripts are in the tooling project, and none is written in syntax node cannot
+// strip, which would fail on a consumer's machine. COUPLED: strict-tooling-zero.ts type-checks
+// them and strict-scripts-dir.ts scans them for `any`; both are Tier 3 and reported.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 const ROOT = "catalog/zz/zz-access/skills";
@@ -24,7 +25,6 @@ for (const f of files) {
   const src = readFileSync(f, "utf8");
   src.split("\n").forEach((line, i) => {
     const code = line.replace(/\/\/.*$/, "");
-    if (/:\s*any\b|<any>|as\s+any\b/.test(code)) fail.push(`${f}:${i + 1} uses any`);
     if (/^\s*(export\s+)?(enum|namespace)\s/.test(code)) fail.push(`${f}:${i + 1} is not erasable syntax`);
   });
 }

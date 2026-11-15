@@ -214,11 +214,17 @@ async function main(): Promise<void> {
       const team = (await rows(
         `insert into zz.team (slug, name, created_by) values ('probe-team', 'probe', $1) returning id::text as id`,
         [who]))[0]!.id;
+      // DELIBERATE: initiative and document ids are derived from their ordinal, never random. The
+      // probe initiative's entries in doc_initiative_path straddle one more or one fewer leaf page
+      // depending on where its id sorts among the other 99, so a random id made the buffer figure
+      // 55 or 56 on identical code. COUPLED: the `buffers` figures recorded in FILTERS.
       const initiatives: string[] = [];
       for (let n = 0; n < 100; n++) {
         initiatives.push((await rows(
-          `insert into zz.initiative (team_id, slug, opened_by) values ($1, $2, $3) returning id::text as id`,
-          [team, n === 0 ? "2026-10-01-probe-init" : `2026-10-01-filler-${String(n).padStart(3, "0")}`, who]))[0]!.id);
+          `insert into zz.initiative (id, team_id, slug, opened_by)
+           values (md5($4)::uuid, $1, $2, $3) returning id::text as id`,
+          [team, n === 0 ? "2026-10-01-probe-init" : `2026-10-01-filler-${String(n).padStart(3, "0")}`, who,
+           `answer-indexes-initiative-${n}`]))[0]!.id);
       }
 
       // `zz.model_call`: 20,000 calls across 120 days, a season's worth of the platform's own
@@ -237,7 +243,7 @@ async function main(): Promise<void> {
       await client.query(
         `insert into zz.doc (id, initiative_id, path, type, status, updated_at, title, tags,
                              created_at, current_revision, approved_revision, current_version, content_generation)
-         select gen_random_uuid(), ($1::uuid[])[1 + (g % 100)],
+         select md5('answer-indexes-doc-' || g)::uuid, ($1::uuid[])[1 + (g % 100)],
                 case when (1 + (g % 100)) = 1 and g < 200 then 'sources/note-' || g || '.md'
                      when g % 17 = 0 then 'sources/other-' || g || '.md'
                      else 'docs/chapter-' || g || '.md' end,

@@ -278,8 +278,11 @@ if (dashVersion) {
     // printed one sentence and nothing else. 0.83.1 is where that cost something real: its
     // console gate failed inside the release and passes on every manual run, and with the
     // output discarded there was no way to tell a broken build from a killed one.
+    // DELIBERATE: stdout first. The runner prints its verdict there, and stderr can be nothing
+    // but React's act() warnings, which is all 0.103.0's first console failure showed.
     const e = asExecError(err);
-    const tail = (e.stderr || e.stdout || e.message).split("\n").filter(Boolean).slice(-25).join("\n");
+    const last = (s: string | undefined, n: number) => (s ?? "").split("\n").filter(Boolean).slice(-n).join("\n");
+    const tail = [last(e.stdout, 25), last(e.stderr, 8)].filter(Boolean).join("\n  -- stderr --\n") || e.message;
     die(`the console's \`pnpm run test:release\` failed. Its suite is the only thing standing\n` +
         `        between a console change and every person who opens the platform — fix it\n` +
         `        rather than releasing past it.\n\n` +

@@ -65,6 +65,7 @@ if (tier === "release") {
   const gatePassed = run("node", ["scripts/gate.ts"]);
   const reported: [string, string][] = [
     ["type check", "checks/strict-tooling-zero.ts"],
+    ["lint, unused names", "checks/unused-names.ts"],
     ["lint, any in checks/", "checks/strict-checks-dir.ts"],
     ["lint, any in scripts/, testing/, skills", "checks/strict-scripts-dir.ts"],
   ];

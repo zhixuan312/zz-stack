@@ -39,10 +39,10 @@ than how much code moved.
 - Releases no longer open a `release/<version>` branch. The bump and the changelog are
   committed on master, and a single `release` branch is fast-forwarded to each verified tag, so
   it always names the commit production runs.
-- The tooling project's type check and the `any` sweeps over `scripts/`, `checks/`, `testing/`
-  and the shipped skill scripts no longer fail `npm run test:release`, the gate or a release.
-  They run after the gate and are reported, following the standard that only Tier 1 checks
-  block. Still blocking: `tsc -b`, the build; every gate module being reached; and the shipped
+- The tooling project's type check, the `any` sweeps over `scripts/`, `checks/`, `testing/` and
+  the shipped skill scripts, and unused locals, imports and parameters no longer fail
+  `npm run test:release`, the gate or a release. They run after the gate and are reported,
+  following the standard that only Tier 1 checks block. Still blocking: `tsc -b`, the build; every gate module being reached; and the shipped
   skill scripts using only syntax node can strip.
 
 ## [0.102.0] — 2026-11-08

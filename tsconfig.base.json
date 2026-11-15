@@ -9,8 +9,6 @@
     "declaration": true,
     "sourceMap": false,
     "forceConsistentCasingInFileNames": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true
   }

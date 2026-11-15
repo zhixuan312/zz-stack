@@ -203,6 +203,7 @@ const notRegistered = new Map<string, string>([
   // test:release` runs them after the gate and prints each result without failing the run.
   ["strict-tooling-zero.ts", "the tooling project's type check — Tier 3, reported by test:release, never a gate failure"],
   ["strict-checks-dir.ts", "the `any` sweep over checks/ — Tier 3, reported by test:release, never a gate failure"],
+  ["unused-names.ts", "unused locals, imports and parameters across every project — Tier 3, reported by test:release, never a gate failure"],
   ["strict-scripts-dir.ts", "the `any` sweep over scripts/, testing/ and the skill scripts — Tier 3, reported by test:release, never a gate failure"],
 ]);
 

@@ -21,8 +21,8 @@ for (const [k, v] of Object.entries({
 })) {
   if (co[k] !== v) fail.push(`tsconfig.tooling.json compilerOptions.${k} is ${JSON.stringify(co[k])}, expected ${v}`);
 }
-// A local re-declaration of an inherited strictness flag can only soften it. None of these may
-// appear here at all.
+// Strictness is declared once, in the base, and checks/unused-names.ts passes the unused-name
+// flags itself. None of these may be re-declared here.
 for (const k of ["strict", "noUnusedLocals", "noUnusedParameters", "noImplicitAny"]) {
   if (k in co) fail.push(`tsconfig.tooling.json re-declares ${k} — it must inherit from the base`);
 }

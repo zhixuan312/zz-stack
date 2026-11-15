@@ -61,9 +61,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     // fires. `SUBJECT_KINDS` stays true of both readings because the guard above it is kept, so
     // the refusal clause is the only one that can be reporting.
     //
-    // The whole block goes, including `carried` and its `return text(…)`: `noUnusedLocals` is
-    // on, and parking the return behind `if (false)` leaves the refusal's own text in the code,
-    // which `withoutComments` preserves by design.
+    // The whole block goes, including `carried` and its `return text(…)`: parking the return
+    // behind `if (false)` leaves the refusal's own text in the code, which `withoutComments`
+    // preserves by design.
     find: "        if (!hasSubjectTag) {\n          const carried = tags && tags.length ? tags.join(\", \") : \"no tags\";\n          return text(\n            \"ERROR: `scope: \\\"platform\\\"` needs a registry-entry tag — `plugin:`, `flow:`, \" +\n            \"`provider:`, `interface:` or `platform:` — because platform knowledge is by \" +\n            `definition about one of them. This node carries \\`${carried}\\`. Tag what it is ` +\n            \"about, or send `scope: \\\"team\\\"`.\"\n          );\n        }",
     replace: "        if (!hasSubjectTag) {\n          // A platform node needs a registry-entry tag \u2014 plugin:, flow:, provider:,\n          // interface: or platform: \u2014 because platform knowledge is by definition\n          // about one of them.\n        }",
     planted: "the refusal for a platform node with no registry-entry tag is unreachable, and " +
@@ -447,19 +447,17 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
       "longer see the names the caller sent — `buildingBlock` where the skill said " +
       "`building_block` is dropped in silence, and the call reports the document written " +
       "with the field the flow was told to carry absent from it",
-    caveat: "the natural form of this defect — deleting the call — orphans the import and " +
-      "`fields` under `noUnusedLocals`, so the row would come back `build_failed` and measure " +
-      "nothing. Called over nothing while still reading `fields` is the same defect the check " +
-      "describes (the refusal no longer sees what arrived) in the only shape that compiles",
+    caveat: "planted as a call over nothing rather than a deleted call: it is the defect the " +
+      "check describes (the refusal no longer sees what arrived) while the import and `fields` " +
+      "stay in use",
   },
   {
     check: "scripts/gate/checks/documents-frontmatter.ts",
     target: "a frontmatter field that will not appear is refused, never dropped",
     assertion: "the frontmatter-name rule exists once, with no copy in a write path that drops instead",
-    // The duplicate, not the missing call. Deleting `fieldRefusal(fields)` from a write path
-    // orphans its import, and `noUnusedLocals` turns the row into a build failure that measures
-    // nothing. The second half of the rule is where the plantable defect is: the name predicate
-    // written twice, with the copy in the writer dropping the field instead of reporting it.
+    // The duplicate, not the missing call, which the row above plants. This is the second half
+    // of the rule: the name predicate written twice, with the copy in the writer dropping the
+    // field instead of reporting it.
     subject: "services/zz-core/src/write-guards.ts",
     find: "  for (const [k, v] of Object.entries(opts.fields ?? {})) {\n" +
       "    if (String(v).trim()) env[k.trim()] = String(v);\n  }",

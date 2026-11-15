@@ -59,10 +59,10 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     assertion: "the tooling project may not re-declare an inherited strictness flag",
     subject: "tsconfig.tooling.json",
     find: '    "types": ["node"]\n',
-    replace: '    "types": ["node"],\n    "noUnusedLocals": false\n',
-    planted: "the tooling project turns off noUnusedLocals locally instead of inheriting the " +
-      "base's strictness — the error count drops, the conversion looks finished, and dead " +
-      "locals and unused imports across scripts/, checks/ and testing/ stop being reported at all",
+    replace: '    "types": ["node"],\n    "strict": false\n',
+    planted: "the tooling project turns strict off locally instead of inheriting the base — " +
+      "the error count drops, the conversion looks finished, and implicit any and unchecked " +
+      "nulls across scripts/, checks/ and testing/ stop being reported at all",
   },
   {
     check: SUITES_TOOLING,

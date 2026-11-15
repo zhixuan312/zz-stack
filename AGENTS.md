@@ -41,7 +41,7 @@ phases use `test:t2`. "Before delivery" in a plan means `test:release`.
 
 There is no separate lint command. `tsc -b` is the build, and the gate runs it as Tier 1: a build
 that does not compile cannot ship. The tooling project's type check (`checks/strict-tooling-zero.ts`)
-and the `any` sweeps (`checks/strict-checks-dir.ts`, `checks/strict-scripts-dir.ts`) are Tier 3:
+and lint (`checks/unused-names.ts`, `checks/strict-checks-dir.ts`, `checks/strict-scripts-dir.ts`) are Tier 3:
 `test:release` runs them after the gate and reports each, and none fails a run.
 
 Two workflow steps are not test entry points, and their absence from `test:release` is deliberate:

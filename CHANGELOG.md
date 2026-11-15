@@ -33,17 +33,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.103.0] — 2026-11-15
+
+zz-stack 0.103.0 and the console 0.31.0. How both repositories are tested and released changes,
+and zz-plugin-eval's candidate gate runs the command that exists. No change to the gateway's
+tools, zz-core's data or the database.
 
 ### Changed
-- Releases no longer open a `release/<version>` branch. The bump and the changelog are
-  committed on master, and a single `release` branch is fast-forwarded to each verified tag, so
-  it always names the commit production runs.
-- The tooling project's type check, the `any` sweeps over `scripts/`, `checks/`, `testing/` and
-  the shipped skill scripts, and unused locals, imports and parameters no longer fail
-  `npm run test:release`, the gate or a release. They run after the gate and are reported,
-  following the standard that only Tier 1 checks block. Still blocking: `tsc -b`, the build; every gate module being reached; and the shipped
-  skill scripts using only syntax node can strip.
+
+- **zz-stack 0.103.0: zz-plugin-eval's candidate gate runs `npm run test:release`.** Its default
+  was `npm run gate -- --quiet`, which no longer exists; `--gate-cmd` still overrides it.
+- **zz-stack 0.103.0: three test commands replace `npm run gate`.** `npm run test:t1` runs the
+  Tier 1 checks a change affected, `npm run test:t2` adds the affected Tier 2 checks, and
+  `npm run test:release` runs every check once before a release. CI runs `test:release`.
+- **zz-stack 0.103.0: only Tier 1 checks block.** The tooling project's type check, the `any`
+  sweeps over `scripts/`, `checks/`, `testing/` and the shipped skill scripts, and unused locals,
+  imports and parameters run after the gate and are reported. Still blocking: `tsc -b`, the
+  build; every gate module being reached; and the shipped skill scripts using only syntax node
+  can strip.
+- **zz-stack 0.103.0: one release branch.** Releases no longer open a `release/<version>` branch.
+  The bump and the changelog are committed on master, and a single `release` branch is
+  fast-forwarded to each verified tag, so it always names the commit production runs.
+- **Console 0.31.0: on ZZ Meridian 0.39.5.** Its components, charts and tokens take Meridian's
+  current versions, and `pnpm test:t1`, `pnpm test:t2` and `pnpm test:release` replace
+  `pnpm verify` and `pnpm gate`. Lint, the type check and contrast are reported and block
+  nothing; the 20-sample navigation protocol moves to the weekly `pnpm test:t2` run.
+
+### Breaking
+
+- `npm run gate` (zz-stack) and `pnpm verify` / `pnpm gate` (console) are gone. Use the `test:t1`,
+  `test:t2` and `test:release` commands above.
+
+### Upgrade notes
+
+- Nothing to do on the host: no migration, no env key. Clients pick up zz-plugin-eval's new
+  default gate command on their next `/zz-access:zz-update`.
 
 ## [0.102.0] — 2026-11-08
 

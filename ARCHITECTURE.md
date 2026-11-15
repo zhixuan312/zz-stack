@@ -29,7 +29,7 @@ question is in the wrong place.
 | `skills/` | What does every flow carry, whoever owns it? | yes, at `/skills` |
 | `deploy/` | How does a host stand this up? | no — the host has it |
 | `scripts/` | How does this repository release and check itself? | no |
-| `checks/` | Which checks need a script of their own — the gate checks registered by name, and the break-tests that spawn the gate to prove a plant goes red? | no |
+| `checks/` | Which checks need a script of their own — the gate checks registered by name, the break-tests that spawn the gate to prove a plant goes red, and the Tier 3 type check and lint that `test:release` reports? | no |
 | `testing/` | How do we drive a deployment by hand? | no |
 | `marketplace/` | What does the public Claude Code shelf serve? Generated, committed | no |
 

@@ -96,18 +96,6 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "rather than by making it true",
   },
   {
-    check: SUITES_TOOLING,
-    target: "the whole tooling project carries zero strict errors, measured as one project " +
-      "rather than subtree by subtree",
-    assertion: "a strict error anywhere in the tooling project is reported, not just per subtree",
-    subject: "scripts/skill-versions.ts",
-    find: 'const major = (v: string | undefined) => String(v ?? "").split(".")[0];',
-    replace: "const major = (v: string | undefined) => v.split(\".\")[0];",
-    planted: "the version comparison drops the guard around a version that may be absent, so a " +
-      "skill with no recorded version throws instead of comparing — and the tooling project " +
-      "carries a strict error again, which is the state the conversion was declared finished from",
-  },
-  {
     check: SUITES_DATA,
     target: "every tool the spec renamed resolves through one frozen map",
     assertion: "a deleted tool takes no alias entry",

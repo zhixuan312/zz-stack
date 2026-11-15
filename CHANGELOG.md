@@ -33,6 +33,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### Changed
+- Releases no longer open a `release/<version>` branch. The bump and the changelog are
+  committed on master, and a single `release` branch is fast-forwarded to each verified tag, so
+  it always names the commit production runs.
+- The tooling project's type check no longer fails `npm run test:release`, the gate or a
+  release. It runs after the gate and is reported, following the standard that only Tier 1
+  checks block; `tsc -b`, the build, still blocks.
+
 ## [0.102.0] — 2026-11-08
 
 The sdlc flow orders and checks its work differently. No change to the gateway, zz-core or the

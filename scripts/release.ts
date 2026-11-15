@@ -150,10 +150,10 @@ if (args.includes("--gate-in-ci")) {
 step("1a", "fit-for-purpose review");
 fitForPurpose(args.includes(ATTEST));
 
-// DELIBERATE: a release runs from master, although the version bump and the changelog are
-// done on `release/<version>`. Work on the branch, release from what was merged. Releasing is
-// deploying, so a release cut from a feature branch would put unmerged, unreviewed code in
-// front of every user at once.
+// DELIBERATE: a release runs from master, where the version bump and the changelog are
+// committed. The `release` branch is moved to the tag only after verification, by `/release`
+// step 7, and nothing deploys from it. Releasing is deploying, so a release cut from any other
+// branch would put unmerged, unreviewed code in front of every user at once.
 const branch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root });
 if (branch !== "master" && !dryRun) {
   die(`on branch "${branch}" — releases come from master.\n` +

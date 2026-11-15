@@ -23,7 +23,7 @@ the floor.
 npm install
 npm run test:t1       # the affected checks, since the last green run
 npm run test:t2       # the affected Tier 2 checks plus the affected Tier 1 checks
-npm run test:release  # every check, plus the type checks; before a release
+npm run test:release  # every check, then the type check (reported, never blocks); before a release
 ```
 
 Everything this project believes about itself is a check in there. They are named as
@@ -187,7 +187,11 @@ migration, and let `checks/schema-inventory.ts` prove it matches.
 
 ## House rules
 
-- **Branches are `master` or `release/<version>`.** Nothing else.
+- **Branches are `master` and `release`.** Work lands on master; `release` names the commit
+  production runs and moves only through `/release`, fast-forward, after verification. Nothing
+  else.
+- **Every change landing on master adds its line under `## [Unreleased]` in `CHANGELOG.md`**,
+  in the same commit, when a person running or using the platform would feel it.
 - **No backward-compatibility scaffolding** — no shims, no deprecated markers, no
   re-exports from old locations. Change it and say what broke.
 - **Comments explain why, not what**, and a comment that states a fact the code can

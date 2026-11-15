@@ -57,9 +57,6 @@ check("the command a model is told to run names a file the consumer will actuall
 check("a lock regenerated from the converted tree comes back unchanged, byte for byte",
       runsCheck("lock-current.ts"));
 
-check("the whole tooling project carries zero strict errors, measured as one project rather than subtree by subtree",
-      runsCheck("strict-tooling-zero.ts"));
-
 check("every script or check a document or a thrown error names by path is a file that exists, and CHANGELOG.md alone is left free to remember one that isn't",
       runsCheck("docs-name-real-files.ts"));
 

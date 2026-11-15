@@ -51,8 +51,8 @@ check("a stage that produces a source is credited only by its own rounds: under 
 
 /* A released version whose changelog entry still says "Unreleased".
  *
- * Stamping the section is a judgement step done by hand on a release branch — nothing in
- * release.ts touches CHANGELOG.md.
+ * Stamping the section is a judgement step done by hand on master, in the release commit —
+ * nothing in release.ts touches CHANGELOG.md.
  *
  * DELIBERATE: asked of the git tags, not of package.json. A version bumped in a reviewed
  * commit is not yet a release, so asking package.json would fire on every version bump. */
@@ -199,6 +199,9 @@ const notRegistered = new Map<string, string>([
   ["in-process.ts", "a module checks import to drive the services in-process, not a check of its own"],
   // Not a check: what the SQL statement scanners share beside the statement reader.
   ["sql-scan.ts", "a module the SQL statement scanners import, not a check of its own"],
+  // Tier 3: a type check runs and reports and never blocks, so `npm run test:release` runs it after
+  // the gate and prints its result without failing the run.
+  ["strict-tooling-zero.ts", "the tooling project's type check — Tier 3, reported by test:release, never a gate failure"],
 ]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {

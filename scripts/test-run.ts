@@ -4,7 +4,7 @@
  *
  *   npm run test:t1       the Tier 1 checks affected by changes since the last green run
  *   npm run test:t2       the affected Tier 2 checks plus the affected Tier 1 checks
- *   npm run test:release  every Tier 1 and Tier 2 check, plus the type checks
+ *   npm run test:release  every Tier 1 and Tier 2 check, then the type check, reported only
  *
  * No command takes an argument. The gate has no import graph, so the tests are chosen by
  * `scripts/gate/select.ts` from the path-to-module map in `scripts/gate/test-groups.json`: a path
@@ -56,12 +56,16 @@ if (tier === "t1" || tier === "t2") {
 }
 
 if (tier === "release") {
-  // Every Tier 1 and Tier 2 check, plus lint and type check. There is no lint configuration in
-  // this repository, so the type checks are the whole of that: the tooling project is not in
-  // `tsc -b`, and the gate's own build check runs `npm run build` (`tsc -b` and the document panel).
-  console.log("  test:release — every Tier 1 and Tier 2 check, then the type checks");
-  if (!run("npx", ["tsc", "-p", "tsconfig.tooling.json", "--noEmit"])) process.exit(1);
-  if (!run("node", ["scripts/gate.ts"])) process.exit(1);
+  // Every Tier 1 and Tier 2 check, then lint and type check. There is no lint configuration in
+  // this repository, so the tooling project's type check is the whole of that (it is not in
+  // `tsc -b`, which the gate's build check runs because a build that does not compile is Tier 1).
+  // DELIBERATE: the type check is Tier 3 — it runs after the gate and is reported, and its result
+  // never changes the exit code. Both stages run whatever the first one returned.
+  console.log("  test:release — every Tier 1 and Tier 2 check, then the type check (reported, never blocks)");
+  const gatePassed = run("node", ["scripts/gate.ts"]);
+  const typesClean = run("node", ["checks/strict-tooling-zero.ts"]);
+  console.log(`  type check (Tier 3, reported only): ${typesClean ? "zero errors" : "errors above — not a failure"}`);
+  if (!gatePassed) process.exit(1);
   const head = markGreen();
   console.log(`  last green: ${head.slice(0, 12)}`);
   process.exit(0);

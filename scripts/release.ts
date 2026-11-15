@@ -333,7 +333,11 @@ for (const ref of imagesFromCi ? [] : [`${IMAGE}:${version}`,
 step(4, "deploy");
 const previous = ssh(`cd ${REMOTE}/deploy && grep -oP '(?<=^ZZ_VERSION=).*' .env || echo ''`);
 log(`  host is currently on ${previous || "(unset)"}`);
+// DELIBERATE: both repositories push before anything is deployed. A push origin refuses — another
+// session pushed in between — then stops the release while production is untouched. 0.103.0 pushed
+// the console only at the tag, after the deploy, and went live untagged when that push was refused.
 run("git", ["push", "origin", "HEAD"], { cwd: root });
+if (dashVersion) run("git", ["push", "origin", "HEAD"], { cwd: DASH_SRC });
 
 // Pull only this release's own images. `docker compose pull` would fetch every image in the
 // file, so a tag loosened there could start riding along with a release that never mentions it.
@@ -599,13 +603,7 @@ const tagOnce = (repo: string, name: string, message: string, label: string): vo
   log(placed.wrote ? `  tagged ${label} ${name}` : `  ${label} ${name} already at this commit — kept, and on origin`);
 };
 
-// Every commit reaches origin before any tag is cut. tagOnce refuses by dying, and it dies on
-// the first repo, so a push sitting beside its own repo's tag would leave the console's commits
-// on this laptop while its image was already deployed and verified.
-//
-// Only the tag has to be last: the commit is already deployed by this point.
-if (dashVersion) run("git", ["push", "origin", "HEAD"], { cwd: DASH_SRC });
-
+// Both repositories' commits reached origin in step 4, before the deploy; only the tags are last.
 // Same rule for both: the tag is what the next release measures "has it changed?" against, so
 // it is written only once this one is known to have worked.
 tagOnce(root, `v${version}`, `zz-stack ${version}\n\ndeployed and verified on ${HOST} from ${commit}`, "zz-stack");
